@@ -7,8 +7,9 @@
 //! speaks to it in texts: the machine's outbound events as their name and JSON payload
 //! ([`sce_peer_outbound`]), the relay's requests and responses as the protocol's JSON
 //! ([`sce_peer_poll_request`], [`sce_peer_respond`], [`sce_peer_fail`]), what a round came to as one
-//! JSON text ([`sce_peer_take_outcome`]), and what the device keeps between runs as one text
-//! ([`sce_peer_save`], [`sce_peer_restore`]). An administrator's device opens a list
+//! JSON text ([`sce_peer_take_outcome`]), and what the device keeps between runs, its secrets with
+//! the rest, as one sealed state and the data key the host wraps with its platform's key store
+//! ([`sce_peer_save_sealed`], [`sce_peer_restore_sealed`]). An administrator's device opens a list
 //! ([`sce_peer_open_list`]), grants, admits and takes off devices ([`sce_peer_grant`],
 //! [`sce_peer_add_member`], [`sce_peer_remove_member`]), and any device reads what it stands at in
 //! the list as one JSON text ([`sce_peer_standing`]). No structure is laid out twice in C: the shapes
@@ -41,8 +42,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::{Duration, Instant};
 
 use sce_rust_peer::{
-    drive, CourierError, Device, Driven, GroupStep, Kept, Outcome, Peer, PeerError, Profile,
-    Publication, Round, RoundKind, Signal, Standing, Transport, TransportError,
+    drive, CourierError, DataKey, Device, Driven, GroupStep, Kept, Outcome, Peer, PeerError,
+    Profile, Publication, Round, RoundKind, Signal, Standing, Transport, TransportError,
 };
 use sce_rust_relay::wss::WssLink;
 use sce_rust_relay::{Code, Notice};
@@ -52,8 +53,11 @@ use serde_json::{json, Value};
 /// The version of this ABI: a change to what a function takes or returns, or to the shape of a text
 /// it gives, makes it a new number. A function added alone does not, since a lane built against the
 /// number before calls none of it. Version 2: the outcome holds `owed`, and the save is the core's
-/// version 2, which holds what the relay is owed.
-pub const SCE_PEER_ABI_VERSION: u32 = 2;
+/// version 2, which holds what the relay is owed. Version 3: what the device keeps is one sealed
+/// state, its secrets with the rest, under a data key the host wraps
+/// ([`sce_peer_save_sealed`], [`sce_peer_restore_sealed`]); the plain save and restore and the
+/// group's state in the clear are gone, and [`sce_peer_with_group`] makes a new device only.
+pub const SCE_PEER_ABI_VERSION: u32 = 3;
 
 pub const SCE_PEER_OK: i32 = 0;
 pub const SCE_PEER_ERR_NOTHING_ASKED: i32 = 1;
@@ -69,6 +73,11 @@ pub const SCE_PEER_ERR_NOT_A_MEMBER: i32 = 10;
 pub const SCE_PEER_ERR_ADMITTED_THROUGH_GROUP: i32 = 11;
 pub const SCE_PEER_ERR_NO_KEY_PACKAGE: i32 = 12;
 pub const SCE_PEER_ERR_DRAWN_KEYS: i32 = 13;
+/// A sealed state did not open under the key given for this list and node: another key, a changed
+/// or cut state, or another device's. Nothing of it was taken.
+pub const SCE_PEER_ERR_NOT_OPENED: i32 = 14;
+/// The operating system gave no randomness for a data key.
+pub const SCE_PEER_ERR_NO_RANDOMNESS: i32 = 15;
 pub const SCE_PEER_ERR_NULL_ARGUMENT: i32 = 20;
 pub const SCE_PEER_ERR_BAD_TEXT: i32 = 21;
 pub const SCE_PEER_ERR_PANIC: i32 = 22;
@@ -165,6 +174,8 @@ fn status_of(error: &PeerError) -> i32 {
         PeerError::AdmittedThroughGroup(_) => SCE_PEER_ERR_ADMITTED_THROUGH_GROUP,
         PeerError::NoKeyPackage(_) => SCE_PEER_ERR_NO_KEY_PACKAGE,
         PeerError::DrawnKeys => SCE_PEER_ERR_DRAWN_KEYS,
+        PeerError::NotOpened => SCE_PEER_ERR_NOT_OPENED,
+        PeerError::NoRandomness => SCE_PEER_ERR_NO_RANDOMNESS,
     }
 }
 
@@ -176,11 +187,6 @@ fn role_of(role: u32) -> Result<u8, i32> {
 fn from_error(error: PeerError) -> i32 {
     let status = status_of(&error);
     fail(status, format!("{error:?}"))
-}
-
-/// The group's device refused, and why.
-fn from_group_error(error: impl std::fmt::Debug) -> i32 {
-    fail(SCE_PEER_ERR_GROUP, format!("{error:?}"))
 }
 
 /// Run `body`, turning a panic into a status.
@@ -483,7 +489,8 @@ pub unsafe extern "C" fn sce_peer_set_identity(
 
 /// The device holds the administrator's key the 32-byte `seed` makes: the one the genesis names when
 /// the device opens the list, and the one its administrator's acts are signed with
-/// ([`Peer::set_administrator`]). A secret, given again before [`sce_peer_restore`].
+/// ([`Peer::set_administrator`]). A secret, given once: the sealed state keeps it
+/// ([`sce_peer_save_sealed`]).
 ///
 /// # Safety
 /// `peer` is a live handle; `seed` points at 32 readable bytes.
@@ -512,57 +519,24 @@ pub unsafe extern "C" fn sce_peer_for_a_hub(peer: *mut ScePeer) -> i32 {
     })
 }
 
-/// The core holds the device of `node` in the list's MLS group, signing with the key the 32-byte
-/// `seed` makes ([`Peer::with_group`]): a new device when `len` is 0, or the one
-/// [`sce_peer_group_state`] gave, read from `state`. Called before the first exchange.
+/// The core holds a new device of `node` in the list's MLS group, signing with the key the 32-byte
+/// `seed` makes ([`Peer::with_group`]). Called once, before the first exchange of a device that has
+/// no sealed state yet: the sealed state keeps the group's device from then on
+/// ([`sce_peer_save_sealed`]).
 ///
 /// # Safety
-/// `peer` is a live handle; `seed` points at 32 readable bytes; `state` at `len`.
+/// `peer` is a live handle; `seed` points at 32 readable bytes.
 #[no_mangle]
 pub unsafe extern "C" fn sce_peer_with_group(
     peer: *mut ScePeer,
     node: u64,
     seed: *const u8,
-    state: *const u8,
-    len: usize,
 ) -> i32 {
     guard(|| {
         // SAFETY: the promises in the function's contract.
-        let (held, seed, state) =
-            unsafe { (handle(peer)?, array::<32>(seed)?, bytes(state, len)?) };
-        let identity = Identity::from_seed(seed);
-        let device = if state.is_empty() {
-            Device::new(&held.list, node, identity)
-        } else {
-            Device::from_bytes(&held.list, node, identity, state).map_err(from_group_error)?
-        };
+        let (held, seed) = unsafe { (handle(peer)?, array::<32>(seed)?) };
+        let device = Device::new(&held.list, node, Identity::from_seed(seed));
         held.rebuild(|peer| peer.with_group(device, node));
-        Ok(())
-    })
-}
-
-/// What the group's device keeps (its group, its secrets, the private halves of its key packages),
-/// secret, for the host's store: [`sce_peer_save`] does not hold it, and [`sce_peer_with_group`]
-/// takes it back.
-///
-/// # Safety
-/// `peer` is a live handle; `out` is valid for a write.
-#[no_mangle]
-pub unsafe extern "C" fn sce_peer_group_state(peer: *mut ScePeer, out: *mut ScePeerBuf) -> i32 {
-    guard(|| {
-        required(out)?;
-        // SAFETY: the promises in the function's contract.
-        let held = unsafe {
-            put(out, ScePeerBuf::EMPTY);
-            handle(peer)?
-        };
-        let member = held
-            .peer
-            .group()
-            .ok_or_else(|| from_error(PeerError::NoGroupDevice))?;
-        let state = member.device().to_bytes().map_err(from_group_error)?;
-        // SAFETY: `out` is valid for a write.
-        unsafe { put(out, ScePeerBuf::of(state)) };
         Ok(())
     })
 }
@@ -886,45 +860,97 @@ pub unsafe extern "C" fn sce_peer_floor_event(
     })
 }
 
-/// What the device keeps, as one text in `out` ([`Peer::save`]), the commits and Welcomes the relay
-/// is still owed included. It does not hold the device's secrets: the person's seed, the
-/// administrator's seed and the group's state are given again before [`sce_peer_restore`].
+/// What the device keeps, its secrets with the rest, sealed under a data key drawn for this save
+/// alone ([`Peer::save_sealed`]): `state` is set to the sealed state, and the 32 bytes at `key` to
+/// the data key. The host wraps the key with a key its platform's key store holds, keeps the
+/// wrapped key beside the state, and zeroes its copy of this one.
 ///
 /// # Safety
-/// `peer` is a live handle; `out` is valid for a write.
+/// `peer` is a live handle; `state` is valid for a write; `key` is valid for a write of 32 bytes.
 #[no_mangle]
-pub unsafe extern "C" fn sce_peer_save(peer: *mut ScePeer, out: *mut ScePeerBuf) -> i32 {
+pub unsafe extern "C" fn sce_peer_save_sealed(
+    peer: *mut ScePeer,
+    state: *mut ScePeerBuf,
+    key: *mut u8,
+) -> i32 {
     guard(|| {
-        required(out)?;
+        required(state)?;
+        required(key)?;
         // SAFETY: the promises in the function's contract.
         let held = unsafe {
-            put(out, ScePeerBuf::EMPTY);
+            put(state, ScePeerBuf::EMPTY);
             handle(peer)?
         };
-        let saved = held.peer.save();
-        // SAFETY: `out` is valid for a write.
-        unsafe { put(out, ScePeerBuf::of(saved.into_bytes())) };
+        let sealed = held.peer.save_sealed().map_err(from_error)?;
+        let data_key = sealed.key.as_bytes();
+        // SAFETY: `key` is valid for a write of 32 bytes, and `state` for a write.
+        unsafe {
+            std::ptr::copy_nonoverlapping(data_key.as_ptr(), key, data_key.len());
+            put(state, ScePeerBuf::of(sealed.state));
+        }
         Ok(())
     })
 }
 
-/// Take back what [`sce_peer_save`] wrote (NUL-terminated), into a core just made for the same list
-/// after its person was given again ([`Peer::restore`]); `kept` (which may be null) is set to how
-/// many operations and checkpoints the log verified. The device then signs nothing new until a
-/// round has read its own chain back from the relay.
+/// What [`sce_peer_save_sealed`] seals, under the 32-byte data `key` the host gives
+/// ([`Peer::save_sealed_under`]): a key the host drew from a source of its own, or a recording's
+/// fixed key. The same key and state give the same bytes. `state` is set to the sealed state.
 ///
 /// # Safety
-/// `peer` is a live handle; `saved` is a NUL-terminated string; `kept` is null or valid for a write.
+/// `peer` is a live handle; `key` points at 32 readable bytes; `state` is valid for a write.
 #[no_mangle]
-pub unsafe extern "C" fn sce_peer_restore(
+pub unsafe extern "C" fn sce_peer_save_sealed_under(
     peer: *mut ScePeer,
-    saved: *const c_char,
+    key: *const u8,
+    state: *mut ScePeerBuf,
+) -> i32 {
+    guard(|| {
+        required(state)?;
+        // SAFETY: the promises in the function's contract.
+        let (held, key) = unsafe {
+            put(state, ScePeerBuf::EMPTY);
+            (handle(peer)?, DataKey::from_bytes(array::<32>(key)?))
+        };
+        let sealed = held.peer.save_sealed_under(&key).map_err(from_error)?;
+        // SAFETY: `state` is valid for a write.
+        unsafe { put(state, ScePeerBuf::of(sealed)) };
+        Ok(())
+    })
+}
+
+/// Take back the `len` bytes of `state` that [`sce_peer_save_sealed`] sealed for the device of
+/// `node`, under the 32-byte data `key` the host unwrapped, into a core just made for the same list
+/// and given nothing else ([`Peer::restore_sealed`]); `kept` (which may be null) is set to how many
+/// operations and checkpoints the log verified. `SCE_PEER_ERR_NOT_OPENED` when the state does not
+/// open under the key for this list and node, `SCE_PEER_ERR_UNREADABLE` when the bytes are no
+/// sealed state; either way the core took nothing. The device then signs nothing new until a round
+/// has read its own chain back from the relay.
+///
+/// # Safety
+/// `peer` is a live handle; `state` points at `len` readable bytes; `key` at 32; `kept` is null or
+/// valid for a write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_restore_sealed(
+    peer: *mut ScePeer,
+    node: u64,
+    state: *const u8,
+    len: usize,
+    key: *const u8,
     kept: *mut u64,
 ) -> i32 {
     guard(|| {
         // SAFETY: the promises in the function's contract.
-        let (held, saved) = unsafe { (handle(peer)?, text(saved)?) };
-        let count = held.peer.restore(saved).map_err(from_error)?;
+        let (held, state, key) = unsafe {
+            (
+                handle(peer)?,
+                bytes(state, len)?,
+                DataKey::from_bytes(array::<32>(key)?),
+            )
+        };
+        let count = held
+            .peer
+            .restore_sealed(node, state, &key)
+            .map_err(from_error)?;
         // SAFETY: `kept` is null or valid for a write.
         unsafe { put(kept, count as u64) };
         Ok(())

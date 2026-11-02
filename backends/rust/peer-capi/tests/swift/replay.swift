@@ -3,8 +3,9 @@
 
 // Replays the recorded scenario of the peer core (backends/rust/peer-capi/tests/fixtures) through the
 // C ABI, from Swift, with no relay: the cores of two devices are made, given the administrator's acts,
-// the machine's sends, the rounds' answers and a save, and every text a core gives (each request, each
-// outcome, each standing, the genesis, the save, the reason of a refusal) must be the recorded one.
+// the machine's sends and the rounds' answers, and one is sealed and made again from its sealed state
+// with no key given again; every text a core gives (each request, each outcome, each standing, the
+// genesis, the sealed state, the reason of a refusal) must be the recorded one.
 //
 // The header is reached as the Clang module `CScePeer` (include/module.modulemap), the binding a
 // Swift host writes over the C header. The scenario is read as the whitespace-separated tokens the C
@@ -86,6 +87,25 @@ final class Replayer {
         let given = String(decoding: bytes, as: UTF8.self)
         sce_peer_buf_free(buf)
         return given
+    }
+
+    /// The bytes of a buffer the library gave, given back; nil for an empty buffer.
+    func takenBytes(_ buf: ScePeerBuf) -> [UInt8]? {
+        guard let ptr = buf.ptr else {
+            return nil
+        }
+        let bytes = Array(UnsafeBufferPointer(start: UnsafePointer(ptr), count: Int(buf.len)))
+        sce_peer_buf_free(buf)
+        return bytes
+    }
+
+    /// A data key token: 32 bytes in hex.
+    func dataKey() -> [UInt8] {
+        let key = unhex(need())
+        guard key.count == 32 else {
+            die("a data key is not 32 bytes")
+        }
+        return key
     }
 
     func expect(_ got: String?, _ want: String, _ what: String) {
@@ -180,25 +200,44 @@ final class Replayer {
         }
 
         var peers: [OpaquePointer?] = Array(repeating: nil, count: devices)
+        /// The core of a device given nothing but the list and the genesis.
+        func bare(_ device: Int) -> OpaquePointer {
+            if let old = peers[device] {
+                sce_peer_free(old)
+            }
+            let made: OpaquePointer?
+            if let genesis = geneses[device] {
+                made = sce_peer_invited(list, genesis)
+            } else {
+                made = sce_peer_open(list)
+            }
+            guard let core = made else {
+                die("the core is not made")
+            }
+            peers[device] = core
+            return core
+        }
         while let op = token() {
             let device = Int(number())
             guard device < devices else {
                 die("a step names no device")
             }
+            if op == "restore" {
+                // The device started again: a core given nothing but the list and the genesis.
+                let key = dataKey()
+                let state = unhex(need())
+                let want = number()
+                let core = bare(device)
+                var count: UInt64 = .max
+                check(sce_peer_restore_sealed(core, nodes[device], state, state.count, key, &count), "restore_sealed")
+                if count != want {
+                    die("the restore kept another number of operations than was recorded")
+                }
+                steps += 1
+                continue
+            }
             if op == "make" {
-                if let old = peers[device] {
-                    sce_peer_free(old)
-                }
-                let made: OpaquePointer?
-                if let genesis = geneses[device] {
-                    made = sce_peer_invited(list, genesis)
-                } else {
-                    made = sce_peer_open(list)
-                }
-                guard let core = made else {
-                    die("the core is not made")
-                }
-                peers[device] = core
+                let core = bare(device)
                 check(sce_peer_set_identity(core, nodes[device], seeds[device]), "set_identity")
                 if let administrator = administrators[device] {
                     check(sce_peer_set_administrator(core, administrator), "set_administrator")
@@ -233,14 +272,6 @@ final class Replayer {
                 let want = text()
                 check(sce_peer_standing(peer, &out), "standing")
                 expect(taken(out), want, "the standing")
-            case "restore":
-                let saved = text()
-                let want = number()
-                var count: UInt64 = .max
-                check(sce_peer_restore(peer, saved, &count), "restore")
-                if count != want {
-                    die("the restore kept another number of operations than was recorded")
-                }
             case "outbound":
                 let event = text()
                 let data = text()
@@ -278,9 +309,13 @@ final class Replayer {
                 }
                 expect(outcome, want, "the outcome")
             case "save":
-                let want = text()
-                check(sce_peer_save(peer, &out), "save")
-                expect(taken(out), want, "the save")
+                let key = dataKey()
+                let want = String(need())
+                check(sce_peer_save_sealed_under(peer, key, &out), "save_sealed_under")
+                guard let state = takenBytes(out) else {
+                    die("the sealed state is empty")
+                }
+                expect(hex(state), want, "the sealed state")
             default:
                 die("a step the replay does not know: \(op)")
             }

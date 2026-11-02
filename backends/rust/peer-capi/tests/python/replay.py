@@ -4,16 +4,17 @@
 
 usage: replay.py <libsce_peer_capi> <scenario.json>
 
-The cores of two devices are made, given the administrator's acts, the machine's sends, the rounds'
-answers and a save, with no relay, and every text a core gives (each request, each outcome, each
-standing, the genesis, the save, the reason of a refusal) must be the recorded one.
+The cores of two devices are made, given the administrator's acts, the machine's sends and the rounds'
+answers, with no relay, and one is sealed and made again from its sealed state with no key given
+again; every text a core gives (each request, each outcome, each standing, the genesis, the sealed
+state, the reason of a refusal) must be the recorded one.
 """
 
 import ctypes
 import json
 import sys
 
-ABI_VERSION = 2
+ABI_VERSION = 3
 OK = 0
 KEPT = {"taken": 0, "held": 1, "not_signed": 2, "refused": 3}
 KINDS = {"sync": 0, "resync": 1, "reread": 2}
@@ -52,8 +53,11 @@ def load(path):
         "sce_peer_respond": (ctypes.c_int32, [vp, cp]),
         "sce_peer_fail": (ctypes.c_int32, [vp, cp]),
         "sce_peer_take_outcome": (ctypes.c_int32, [vp, bufp]),
-        "sce_peer_save": (ctypes.c_int32, [vp, bufp]),
-        "sce_peer_restore": (ctypes.c_int32, [vp, cp, ctypes.POINTER(ctypes.c_uint64)]),
+        "sce_peer_save_sealed_under": (ctypes.c_int32, [vp, u8p, bufp]),
+        "sce_peer_restore_sealed": (
+            ctypes.c_int32,
+            [vp, ctypes.c_uint64, u8p, ctypes.c_size_t, u8p, ctypes.POINTER(ctypes.c_uint64)],
+        ),
     }
     for name, (restype, argtypes) in sig.items():
         function = getattr(lib, name)
@@ -80,13 +84,31 @@ def main():
         if status != OK:
             die(f"{what} failed with {status}")
 
-    def taken(buf):
-        """The text of a buffer the library gave, given back; None for an empty buffer."""
+    def taken_bytes(buf):
+        """The bytes of a buffer the library gave, given back; None for an empty buffer."""
         if not buf.ptr:
             return None
-        text = ctypes.string_at(buf.ptr, buf.len).decode("utf-8")
+        data = ctypes.string_at(buf.ptr, buf.len)
         lib.sce_peer_buf_free(buf)
-        return text
+        return data
+
+    def taken(buf):
+        """The text of a buffer the library gave, given back; None for an empty buffer."""
+        data = taken_bytes(buf)
+        return None if data is None else data.decode("utf-8")
+
+    def make(at):
+        """The core of the device at `at`, given nothing but the list and the genesis."""
+        device = devices[at]
+        if peers[at]:
+            lib.sce_peer_free(peers[at])
+        if device["genesis"] is None:
+            peers[at] = lib.sce_peer_open(list_name)
+        else:
+            peers[at] = lib.sce_peer_invited(list_name, raw(bytes.fromhex(device["genesis"])))
+        if not peers[at]:
+            die("the core is not made")
+        return peers[at]
 
     def expect(got, want, what):
         if (got or "") != want:
@@ -102,23 +124,36 @@ def main():
         op = step["op"]
         if op == "make":
             device = devices[at]
-            if peers[at]:
-                lib.sce_peer_free(peers[at])
-            if device["genesis"] is None:
-                peers[at] = lib.sce_peer_open(list_name)
-            else:
-                peers[at] = lib.sce_peer_invited(list_name, raw(bytes.fromhex(device["genesis"])))
-            if not peers[at]:
-                die("the core is not made")
+            core = make(at)
             check(
-                lib.sce_peer_set_identity(peers[at], device["node"], raw(bytes.fromhex(device["seed"]))),
+                lib.sce_peer_set_identity(core, device["node"], raw(bytes.fromhex(device["seed"]))),
                 "set_identity",
             )
             if device.get("administrator") is not None:
                 check(
-                    lib.sce_peer_set_administrator(peers[at], raw(bytes.fromhex(device["administrator"]))),
+                    lib.sce_peer_set_administrator(core, raw(bytes.fromhex(device["administrator"]))),
                     "set_administrator",
                 )
+            steps += 1
+            continue
+        if op == "restore":
+            # The device started again: a core given nothing but the list and the genesis.
+            core = make(at)
+            state = bytes.fromhex(step["state"])
+            count = ctypes.c_uint64(2**64 - 1)
+            check(
+                lib.sce_peer_restore_sealed(
+                    core,
+                    devices[at]["node"],
+                    raw(state),
+                    len(state),
+                    raw(bytes.fromhex(step["key"])),
+                    ctypes.byref(count),
+                ),
+                "restore_sealed",
+            )
+            if count.value != step["count"]:
+                die("the restore kept another number of operations than was recorded")
             steps += 1
             continue
         peer = peers[at]
@@ -137,11 +172,6 @@ def main():
         elif op == "standing":
             check(lib.sce_peer_standing(peer, ctypes.byref(out)), "standing")
             expect(taken(out), step["text"], "the standing")
-        elif op == "restore":
-            count = ctypes.c_uint64(2**64 - 1)
-            check(lib.sce_peer_restore(peer, step["text"].encode(), ctypes.byref(count)), "restore")
-            if count.value != step["count"]:
-                die("the restore kept another number of operations than was recorded")
         elif op == "outbound":
             kept = ctypes.c_int32(-1)
             check(
@@ -176,8 +206,12 @@ def main():
                 die("no exchange ended where an outcome was recorded")
             expect(outcome, step["text"], "the outcome")
         elif op == "save":
-            check(lib.sce_peer_save(peer, ctypes.byref(out)), "save")
-            expect(taken(out), step["text"], "the save")
+            key = raw(bytes.fromhex(step["key"]))
+            check(lib.sce_peer_save_sealed_under(peer, key, ctypes.byref(out)), "save_sealed_under")
+            state = taken_bytes(out)
+            if state is None:
+                die("the sealed state is empty")
+            expect(state.hex(), step["state"], "the sealed state")
         else:
             die(f"a step the replay does not know: {op}")
         steps += 1

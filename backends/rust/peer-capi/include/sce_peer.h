@@ -7,7 +7,8 @@
  * A lane holds the core of one device of one list and speaks to it in UTF-8 texts: the machine's
  * outbound record_list.write and record_list.supersede as the event's name and its JSON payload, the
  * relay's requests and responses as the protocol's JSON, what a round came to as one JSON text, and
- * what the device keeps between runs as one text. An administrator's device opens a list and grants,
+ * what the device keeps between runs, its secrets with the rest, as one sealed state under a data key
+ * the lane wraps with its platform's key store. An administrator's device opens a list and grants,
  * admits and takes off devices; any device reads what it stands at in the list as one JSON text.
  * The core does no I/O: the lane carries each request
  * to the relay and gives the response back, and it reads no clock and starts no thread. A lane that
@@ -34,7 +35,7 @@
 extern "C" {
 #endif
 
-#define SCE_PEER_ABI_VERSION 2u
+#define SCE_PEER_ABI_VERSION 3u
 
 #define SCE_PEER_OK 0
 #define SCE_PEER_ERR_NOTHING_ASKED 1
@@ -50,6 +51,8 @@ extern "C" {
 #define SCE_PEER_ERR_ADMITTED_THROUGH_GROUP 11
 #define SCE_PEER_ERR_NO_KEY_PACKAGE 12
 #define SCE_PEER_ERR_DRAWN_KEYS 13
+#define SCE_PEER_ERR_NOT_OPENED 14
+#define SCE_PEER_ERR_NO_RANDOMNESS 15
 #define SCE_PEER_ERR_NULL_ARGUMENT 20
 #define SCE_PEER_ERR_BAD_TEXT 21
 #define SCE_PEER_ERR_PANIC 22
@@ -99,16 +102,14 @@ void sce_peer_free(ScePeer *peer);
 
 /* The device's person: the node the log names them by, and the key the 32-byte seed makes. */
 int32_t sce_peer_set_identity(ScePeer *peer, uint64_t node, const uint8_t *seed /* 32 bytes */);
-/* The administrator's key the device holds, from its 32-byte seed: a secret, given again before a restore. */
+/* The administrator's key the device holds, from its 32-byte seed: a secret, given once and kept in the
+ * sealed state. */
 int32_t sce_peer_set_administrator(ScePeer *peer, const uint8_t *seed /* 32 bytes */);
 /* Before the first exchange: the machine is a hub's. */
 int32_t sce_peer_for_a_hub(ScePeer *peer);
-/* Before the first exchange: the core holds the device of node in the list's MLS group, a new one
- * when len is 0, or the one sce_peer_group_state gave. */
-int32_t sce_peer_with_group(ScePeer *peer, uint64_t node, const uint8_t *seed /* 32 bytes */, const uint8_t *state,
-                            size_t len);
-/* What the group's device keeps: secret, for the host's store. sce_peer_save does not hold it. */
-int32_t sce_peer_group_state(ScePeer *peer, ScePeerBuf *out);
+/* Before the first exchange of a device with no sealed state yet: the core holds a new device of node
+ * in the list's MLS group, which the sealed state keeps from then on. */
+int32_t sce_peer_with_group(ScePeer *peer, uint64_t node, const uint8_t *seed /* 32 bytes */);
 
 /* An administrator's acts. Opening a list writes the genesis and the grant of the device's person, makes
  * the group when the core holds a device of it, and sets *genesis to the hash (32 bytes) a person is
@@ -140,11 +141,22 @@ int32_t sce_peer_take_outcome(ScePeer *peer, ScePeerBuf *out);
 /* The event that says an instant is settled, as the JSON pair [name, payload]; empty when it is not. */
 int32_t sce_peer_floor_event(ScePeer *peer, int64_t before, uint32_t digest, ScePeerBuf *out);
 
-/* What the device keeps, as one text, and taking it back into a core just made for the same list.
- * *kept (may be NULL) is how many operations and checkpoints the log verified. A restored device
- * signs nothing new until a round has read its own chain back from the relay. */
-int32_t sce_peer_save(ScePeer *peer, ScePeerBuf *out);
-int32_t sce_peer_restore(ScePeer *peer, const char *saved, uint64_t *kept);
+/* What the device keeps, its secrets with the rest, as one sealed state, and taking it back into a
+ * core just made for the same list and given nothing else.
+ *
+ * sce_peer_save_sealed seals it under a data key drawn for this save alone and sets the 32 bytes at
+ * key to that key: the lane wraps it with a key its platform's key store holds and does not export,
+ * keeps the wrapped key beside the state, and zeroes its own copy. sce_peer_save_sealed_under seals
+ * it under a 32-byte key the lane gives (a key it drew itself, or a recording's fixed one); the same
+ * key and state give the same bytes. sce_peer_restore_sealed takes the state back for the device of
+ * node under the unwrapped key: SCE_PEER_ERR_NOT_OPENED when it does not open under that key for
+ * this list and node, SCE_PEER_ERR_UNREADABLE when the bytes are no sealed state, and either way
+ * nothing is taken. *kept (may be NULL) is how many operations and checkpoints the log verified. A
+ * restored device signs nothing new until a round has read its own chain back from the relay. */
+int32_t sce_peer_save_sealed(ScePeer *peer, ScePeerBuf *state, uint8_t *key /* 32 bytes */);
+int32_t sce_peer_save_sealed_under(ScePeer *peer, const uint8_t *key /* 32 bytes */, ScePeerBuf *state);
+int32_t sce_peer_restore_sealed(ScePeer *peer, uint64_t node, const uint8_t *state, size_t len,
+                                const uint8_t *key /* 32 bytes */, uint64_t *kept);
 
 /* A link to the relay that the library holds, and a run of an exchange over it.
  *

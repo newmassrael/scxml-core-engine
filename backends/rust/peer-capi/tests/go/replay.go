@@ -2,9 +2,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 // Replays the recorded scenario of the peer core through the C ABI, from Go (cgo): the cores of two
-// devices are made, given the administrator's acts, the machine's sends, the rounds' answers and a
-// save, with no relay, and every text a core gives (each request, each outcome, each standing, the
-// genesis, the save, the reason of a refusal) must be the recorded one.
+// devices are made, given the administrator's acts, the machine's sends and the rounds' answers, with
+// no relay, and one is sealed and made again from its sealed state with no key given again; every
+// text a core gives (each request, each outcome, each standing, the genesis, the sealed state, the
+// reason of a refusal) must be the recorded one.
 //
 // usage: go run replay.go <scenario.json>   (CGO_CFLAGS and CGO_LDFLAGS name the header and library)
 package main
@@ -45,6 +46,7 @@ type step struct {
 	Node    uint64 `json:"node"`
 	Role    uint32 `json:"role"`
 	Key     string `json:"key"`
+	State   string `json:"state"`
 }
 
 type scenario struct {
@@ -99,6 +101,40 @@ func taken(buf C.ScePeerBuf) (text string, ok bool) {
 	text = C.GoStringN((*C.char)(unsafe.Pointer(buf.ptr)), C.int(buf.len))
 	C.sce_peer_buf_free(buf)
 	return text, true
+}
+
+// takenBytes is the bytes of a buffer the library gave, given back; ok is false for an empty buffer.
+func takenBytes(buf C.ScePeerBuf) (bytes []byte, ok bool) {
+	if buf.ptr == nil {
+		return nil, false
+	}
+	bytes = C.GoBytes(unsafe.Pointer(buf.ptr), C.int(buf.len))
+	C.sce_peer_buf_free(buf)
+	return bytes, true
+}
+
+// dataKey is a data key of the scenario: 32 bytes in hex.
+func dataKey(text string) []byte {
+	key := unhex(text)
+	if len(key) != 32 {
+		fail("a data key is not 32 bytes")
+	}
+	return key
+}
+
+// bare is the core of d, given nothing but the list and the genesis.
+func bare(list *C.char, d device) *C.ScePeer {
+	var peer *C.ScePeer
+	if d.Genesis == nil {
+		peer = C.sce_peer_open(list)
+	} else {
+		genesis := unhex(*d.Genesis)
+		peer = C.sce_peer_invited(list, ptr(genesis))
+	}
+	if peer == nil {
+		fail("the core is not made")
+	}
+	return peer
 }
 
 func expect(got string, want string, what string) {
@@ -176,20 +212,28 @@ func main() {
 			if peers[s.Device] != nil {
 				C.sce_peer_free(peers[s.Device])
 			}
-			if d.Genesis == nil {
-				peers[s.Device] = C.sce_peer_open(list)
-			} else {
-				genesis := unhex(*d.Genesis)
-				peers[s.Device] = C.sce_peer_invited(list, ptr(genesis))
-			}
-			if peers[s.Device] == nil {
-				fail("the core is not made")
-			}
+			peers[s.Device] = bare(list, d)
 			seed := unhex(d.Seed)
 			check(C.sce_peer_set_identity(peers[s.Device], C.uint64_t(d.Node), ptr(seed)), "set_identity")
 			if d.Administrator != nil {
 				administrator := unhex(*d.Administrator)
 				check(C.sce_peer_set_administrator(peers[s.Device], ptr(administrator)), "set_administrator")
+			}
+			steps++
+			continue
+		}
+		if s.Op == "restore" {
+			// The device started again: a core given nothing but the list and the genesis.
+			d := sc.Devices[s.Device]
+			if peers[s.Device] != nil {
+				C.sce_peer_free(peers[s.Device])
+			}
+			peers[s.Device] = bare(list, d)
+			key, state := dataKey(s.Key), unhex(s.State)
+			var count C.uint64_t
+			check(C.sce_peer_restore_sealed(peers[s.Device], C.uint64_t(d.Node), ptr(state), C.size_t(len(state)), ptr(key), &count), "restore_sealed")
+			if uint64(count) != s.Count {
+				fail("the restore kept another number of operations than was recorded")
 			}
 			steps++
 			continue
@@ -213,14 +257,6 @@ func main() {
 			check(C.sce_peer_standing(peer, &out), "standing")
 			standing, _ := taken(out)
 			expect(standing, s.Text, "the standing")
-		case "restore":
-			saved := cstring(s.Text)
-			var count C.uint64_t
-			check(C.sce_peer_restore(peer, saved, &count), "restore")
-			free(saved)
-			if uint64(count) != s.Count {
-				fail("the restore kept another number of operations than was recorded")
-			}
 		case "outbound":
 			event, data := cstring(s.Event), cstring(s.Data)
 			var kept C.int32_t = -1
@@ -262,9 +298,13 @@ func main() {
 			}
 			expect(outcome, s.Text, "the outcome")
 		case "save":
-			check(C.sce_peer_save(peer, &out), "save")
-			saved, _ := taken(out)
-			expect(saved, s.Text, "the save")
+			key := dataKey(s.Key)
+			check(C.sce_peer_save_sealed_under(peer, ptr(key), &out), "save_sealed_under")
+			state, ok := takenBytes(out)
+			if !ok {
+				fail("the sealed state is empty")
+			}
+			expect(hex.EncodeToString(state), s.State, "the sealed state")
 		default:
 			fail("a step the replay does not know: %s", s.Op)
 		}

@@ -17,10 +17,16 @@
 // refuses another content under a stamp it signed, and, restored from a save older than what it
 // published, reads its own chain back from the relay before it signs, so that no host holds a frozen
 // chain of it.
+//
+// What a device keeps is one sealed state, its secrets with the rest, and every restore here is into
+// a core given nothing but the list: that a device restored so goes on with the protocol as it would
+// have (rounds, writes, the administrator's acts, the group's epochs); that a state is refused whole,
+// with nothing taken, under another key, changed, cut, or for another list or node; and that no
+// secret and no content is in it in the clear.
 
 use sce_rust_peer::{
-    CourierError, Device, GroupStep, Kept, LogError, MlsError, Outcome, Peer, PeerError, Profile,
-    Publication, RoundKind,
+    CourierError, DataKey, Device, GroupStep, Kept, LogError, MlsError, Outcome, Peer, PeerError,
+    Profile, Publication, RoundKind,
 };
 use sce_rust_relay::{Authority, Limits, MemoryStore, Relay};
 use sce_rust_trust::membership::{Body, Entry, Log};
@@ -138,6 +144,29 @@ fn invited(node: u64) -> Peer {
     peer
 }
 
+/// The device's core stopped and made again from its sealed state, as a host starts it: a core given
+/// nothing but the list (and the genesis it was invited with), and the state and its key.
+fn restarted(peer: Peer, node: u64) -> Peer {
+    let sealed = peer
+        .save_sealed()
+        .expect("a device with a person seals its state");
+    drop(peer);
+    let mut again = made_again(node);
+    again
+        .restore_sealed(node, &sealed.state, &sealed.key)
+        .expect("the state opens under its key");
+    again
+}
+
+/// A core of the list given nothing: alice's opened it, the others were invited with its genesis.
+fn made_again(node: u64) -> Peer {
+    if node == ALICE {
+        Peer::open(LIST)
+    } else {
+        Peer::invited(LIST, genesis().hash())
+    }
+}
+
 /// What a request text asks of the relay.
 fn op(request: &str) -> String {
     let value: Value = serde_json::from_str(request).unwrap();
@@ -216,7 +245,7 @@ fn what_alices_machine_sends_reaches_bobs_machine_as_it_was_sent() {
 
 /// The relay gives two records a batch, so a round has several steps to stop between. Alice's
 /// device is saved after it gave the relay part of what it lacks, bob's after it took part of the
-/// feed in; each is restarted from its text in a new core, given its person again, and goes on.
+/// feed in; each is restarted from its sealed state in a new core given nothing, and goes on.
 #[test]
 fn devices_saved_and_restored_in_the_middle_of_a_round_go_on_and_agree() {
     let mut network = Network::new(Limits {
@@ -243,11 +272,12 @@ fn devices_saved_and_restored_in_the_middle_of_a_round_go_on_and_agree() {
         let response = network.carry(ALICE, &request);
         alice.respond(&response).unwrap();
     }
-    let saved = alice.save();
+    let saved = alice.save_sealed().unwrap();
     drop(alice);
     let mut alice = Peer::open(LIST);
-    alice.set_identity(ALICE, person(ALICE));
-    let kept = alice.restore(&saved).unwrap();
+    let kept = alice
+        .restore_sealed(ALICE, &saved.state, &saved.key)
+        .unwrap();
     assert_eq!(kept, 4, "her four writes");
     let finished = network.round(&mut alice, ALICE, RoundKind::Sync);
     assert_eq!(
@@ -277,10 +307,7 @@ fn devices_saved_and_restored_in_the_middle_of_a_round_go_on_and_agree() {
         Some(pending.as_str()),
         "asked again, it asks the same"
     );
-    let saved = bob.save();
-    drop(bob);
-    let mut bob = invited(BOB);
-    bob.restore(&saved).unwrap();
+    let mut bob = restarted(bob, BOB);
     let told = network.round(&mut bob, BOB, RoundKind::Sync);
     let mut rows: Vec<Value> = named(&told, WRITE)
         .into_iter()
@@ -335,7 +362,7 @@ fn what_a_device_that_may_not_write_sends_is_refused_and_reaches_no_one() {
 }
 
 /// A host that answers before it asked, begins an exchange before taking the last one's outcome,
-/// or gives a text that is not a saved one, is told so; an answer that is not a response of the
+/// or gives bytes that are not a sealed state, is told so; an answer that is not a response of the
 /// protocol is a failure of the transport.
 #[test]
 fn a_host_that_answers_out_of_turn_is_told_so() {
@@ -381,11 +408,19 @@ fn a_host_that_answers_out_of_turn_is_told_so() {
     ));
 
     let mut fresh = Peer::open(LIST);
-    assert!(matches!(fresh.restore("{}"), Err(PeerError::Unreadable(_))));
-    assert!(matches!(
-        fresh.restore("not JSON"),
-        Err(PeerError::Unreadable(_))
-    ));
+    let key = DataKey::from_bytes([5; 32]);
+    let not_sealed: [&[u8]; 3] = [b"{}", b"not a sealed state", b""];
+    for bytes in not_sealed {
+        assert!(matches!(
+            fresh.restore_sealed(ALICE, bytes, &key),
+            Err(PeerError::Unreadable(_))
+        ));
+    }
+    assert_eq!(
+        fresh.save_sealed().map(|_| ()),
+        Err(PeerError::NoPerson),
+        "a sealed state is the state of one person's device"
+    );
     assert_eq!(fresh.publish_key_package(), Err(PeerError::NoGroupDevice));
     // A checkpoint is a publication like the group's: given after what the relay lacks.
     alice
@@ -501,16 +536,10 @@ fn what_the_relay_is_owed_outlives_a_save_and_a_failed_round() {
     alice.add_member(BOB, 2, person(BOB).public()).unwrap();
 
     // Alice's device stops with the commit and the Welcome not given, and starts again from its
-    // save, with its secrets given again.
-    let saved = alice.save();
-    let group = alice.group().unwrap().device().to_bytes().unwrap();
-    drop(alice);
-    let device = Device::from_bytes(LIST, ALICE, person(ALICE), &group).unwrap();
-    let mut alice = Peer::open(LIST).with_group(device, ALICE);
-    alice.set_identity(ALICE, person(ALICE));
-    alice.set_administrator(administrator());
-    alice.restore(&saved).unwrap();
+    // sealed state, its group's device and its keys with it.
+    let mut alice = restarted(alice, ALICE);
     assert_eq!(alice.standing().owed, 2);
+    assert!(alice.group().is_some(), "the group's device came back");
 
     // The round ends, and the transport fails as the commit is given: it is owed still, and the
     // outcome says why.
@@ -539,21 +568,219 @@ fn what_the_relay_is_owed_outlives_a_save_and_a_failed_round() {
     assert_eq!(given.owed, 0, "{given:?}");
     let joined = network.round(&mut bob, BOB, RoundKind::Sync);
     assert_eq!(joined.steps, vec![GroupStep::Joined(1)], "{joined:?}");
+}
 
-    // A save of the core before it kept what the relay is owed is still read; a save that says it
-    // keeps it and does not is not.
-    let mut old: Value = serde_json::from_str(&alice.save()).unwrap();
-    old["version"] = json!(1);
-    old.as_object_mut().unwrap().remove("owed");
+/// Alice's administrator's device and bob's are each stopped and made again from their sealed
+/// states, at the points where a device keeps the most that cannot be had again, with no key given
+/// again: alice's after her round read bob's key package and before she admitted him, bob's after
+/// he joined. Each goes on as it would have. Alice admits bob from the key package her state kept,
+/// with the administrator's key and the group's device it kept; bob opens what alice writes under
+/// the epoch, with the key his state kept; alice takes him off, and the group moves to an epoch his
+/// device holds no key of.
+#[test]
+fn a_device_restored_from_its_sealed_state_goes_on_with_no_key_given_again() {
+    let mut network = Network::new(Limits::default());
+    let mut alice = alice_with_group();
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    let mut bob = bob_with_a_key_package(&mut network);
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+
+    let mut alice = restarted(alice, ALICE);
+    let standing = alice.standing();
+    assert_eq!(standing.person, Some((ALICE, person(ALICE).public())));
+    assert!(standing.administrator, "the administrator's key came back");
+    assert!(standing.awaits_own_chain);
+    let back = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert!(back.refused().is_empty(), "{:?}", back.refused());
+    assert!(!alice.awaits_own_chain());
+    alice
+        .add_member(BOB, 2, person(BOB).public())
+        .expect("the key package the round read came back with the state");
+    let admitted = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert!(admitted.refused().is_empty(), "{:?}", admitted.refused());
+    assert_eq!(admitted.owed, 0);
+    let joined = network.round(&mut bob, BOB, RoundKind::Sync);
+    assert_eq!(joined.steps, vec![GroupStep::Joined(1)], "{joined:?}");
+
+    let epoch_key = bob.group().unwrap().device().epoch_key();
+    let mut bob = restarted(bob, BOB);
+    assert_eq!(
+        bob.standing().keys,
+        vec![1],
+        "the key of the epoch came back"
+    );
+    assert_eq!(bob.group().unwrap().device().epoch().ok(), Some(1));
+    assert_eq!(bob.group().unwrap().device().epoch_key(), epoch_key);
+    assert_eq!(alice.group().unwrap().device().epoch_key(), epoch_key);
+    network.round(&mut bob, BOB, RoundKind::Sync);
+    assert!(!bob.awaits_own_chain());
+
+    assert_eq!(
+        alice.outbound(WRITE, &write(1, ALICE, 3000, 5)),
+        Kept::Taken
+    );
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    let told = network.round(&mut bob, BOB, RoundKind::Sync);
+    let writes = named(&told, WRITE);
+    assert_eq!(writes.len(), 1, "{:?}", told.events());
+    assert_eq!(
+        writes[0]["value"], "5",
+        "opened under the key the state kept"
+    );
+    assert_eq!(bob.outbound(WRITE, &write(2, BOB, 3500, 6)), Kept::Taken);
+    network.round(&mut bob, BOB, RoundKind::Sync);
+    let theirs = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert_eq!(named(&theirs, WRITE).len(), 1, "{:?}", theirs.events());
+
+    alice.remove_member(BOB).unwrap();
+    let removed = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert!(removed.refused().is_empty(), "{:?}", removed.refused());
+    assert_eq!(alice.trust().epochs(), vec![1, 2]);
+    network.round(&mut bob, BOB, RoundKind::Sync);
+    assert_eq!(bob.standing().role, 0);
+    assert_eq!(bob.trust().epochs(), vec![1], "no key of the epoch after");
+}
+
+/// A sealed state is refused whole, and the core it was given to takes nothing of it, when the key is
+/// another, when a byte of it was changed, when it was cut, and when it is another list's or another
+/// node's; the right key for the right device then restores it.
+#[test]
+fn a_sealed_state_is_refused_whole_under_another_key_changed_cut_or_for_another_device() {
+    let mut network = Network::new(Limits::default());
+    let mut alice = alice();
+    assert_eq!(
+        alice.outbound(WRITE, &write(1, ALICE, 1000, 10)),
+        Kept::Taken
+    );
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    let sealed = alice.save_sealed().unwrap();
+    let state = &sealed.state;
+    let mut changed = state.clone();
+    changed[state.len() / 2] ^= 1;
+
+    let untouched = Peer::open(LIST).standing();
+    let cases: [(&str, &str, u64, &[u8], DataKey, bool); 6] = [
+        (
+            "another key",
+            LIST,
+            ALICE,
+            state,
+            DataKey::from_bytes([0; 32]),
+            true,
+        ),
+        (
+            "a changed byte",
+            LIST,
+            ALICE,
+            &changed,
+            DataKey::from_bytes(*sealed.key.as_bytes()),
+            true,
+        ),
+        (
+            "another node",
+            LIST,
+            BOB,
+            state,
+            DataKey::from_bytes(*sealed.key.as_bytes()),
+            true,
+        ),
+        (
+            "another list",
+            "work",
+            ALICE,
+            state,
+            DataKey::from_bytes(*sealed.key.as_bytes()),
+            true,
+        ),
+        (
+            "cut inside what it seals",
+            LIST,
+            ALICE,
+            &state[..state.len() - 1],
+            DataKey::from_bytes(*sealed.key.as_bytes()),
+            true,
+        ),
+        (
+            "cut short of a sealed state",
+            LIST,
+            ALICE,
+            &state[..10],
+            DataKey::from_bytes(*sealed.key.as_bytes()),
+            false,
+        ),
+    ];
+    for (what, list, node, bytes, key, opens_not) in cases {
+        let mut fresh = Peer::open(list);
+        let refused = fresh.restore_sealed(node, bytes, &key);
+        if opens_not {
+            assert_eq!(refused, Err(PeerError::NotOpened), "{what}");
+        } else {
+            assert!(
+                matches!(refused, Err(PeerError::Unreadable(_))),
+                "{what}: {refused:?}"
+            );
+        }
+        assert_eq!(fresh.standing(), untouched, "{what}: nothing was taken");
+        assert!(fresh.trust().entries().is_empty(), "{what}");
+        assert!(fresh.trust().signed_operations().is_empty(), "{what}");
+    }
+
     let mut fresh = Peer::open(LIST);
-    fresh.set_identity(ALICE, person(ALICE));
-    assert!(fresh.restore(&old.to_string()).is_ok());
-    old["version"] = json!(2);
-    let mut fresh = Peer::open(LIST);
-    assert!(matches!(
-        fresh.restore(&old.to_string()),
-        Err(PeerError::Unreadable(_))
-    ));
+    assert_eq!(fresh.restore_sealed(ALICE, state, &sealed.key), Ok(1));
+    assert_eq!(fresh.trust().heads(), alice.trust().heads());
+    assert_eq!(
+        fresh.standing().person,
+        Some((ALICE, person(ALICE).public()))
+    );
+}
+
+/// What a sealed state holds is not in it in the clear: not the seed of the person's key, not the
+/// administrator's, not the key of an epoch, not the list's content. Under one key it is the same
+/// bytes each time, which is what lets a recording hold it; a key drawn for each save makes other
+/// bytes each time.
+#[test]
+fn a_sealed_state_holds_no_secret_and_no_content_in_the_clear() {
+    let mut network = Network::new(Limits::default());
+    let mut alice = alice_with_group();
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    let mut bob = bob_with_a_key_package(&mut network);
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    alice.add_member(BOB, 2, person(BOB).public()).unwrap();
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    network.round(&mut bob, BOB, RoundKind::Sync);
+    assert_eq!(
+        alice.outbound(WRITE, &write(1, ALICE, 3000, 5)),
+        Kept::Taken
+    );
+    let epoch_keys = alice.trust().keys_for_backup();
+    assert!(!epoch_keys.is_empty(), "alice holds the key of an epoch");
+
+    let key = DataKey::from_bytes([42; 32]);
+    let sealed = alice.save_sealed_under(&key).unwrap();
+    let holds = |secret: &[u8]| sealed.windows(secret.len()).any(|window| window == secret);
+    let (seed, administrator_seed) = ([ALICE as u8; 32], [9u8; 32]);
+    assert!(!holds(&seed[..]), "the person's seed");
+    assert!(!holds(&administrator_seed[..]), "the administrator's seed");
+    for (epoch, epoch_key) in &epoch_keys {
+        assert!(!holds(&epoch_key[..]), "the key of epoch {epoch}");
+    }
+    let clear: [&[u8]; 3] = [b"record_list", b"wallTime", b"genesis"];
+    for text in clear {
+        assert!(!holds(text), "{}", String::from_utf8_lossy(text));
+    }
+
+    assert_eq!(
+        alice.save_sealed_under(&key).unwrap(),
+        sealed,
+        "one key, the same bytes"
+    );
+    let (first, second) = (alice.save_sealed().unwrap(), alice.save_sealed().unwrap());
+    assert_ne!(
+        first.key.as_bytes(),
+        second.key.as_bytes(),
+        "a key for each save"
+    );
+    assert_ne!(first.state, second.state);
 }
 
 /// An administrator's act the core cannot do is refused with why, and nothing of it is written.
@@ -753,11 +980,7 @@ fn a_device_that_replays_its_own_log_after_a_restart_writes_nothing_twice() {
     assert_eq!(named(&told, SUPERSEDE).len(), 1);
     let held = alice.trust().signed_operations();
 
-    let saved = alice.save();
-    drop(alice);
-    let mut alice = Peer::open(LIST);
-    alice.set_identity(ALICE, person(ALICE));
-    alice.restore(&saved).unwrap();
+    let mut alice = restarted(alice, ALICE);
     let back = network.round(&mut alice, ALICE, RoundKind::Sync);
     assert!(back.refused().is_empty(), "{:?}", back.refused());
     assert!(
@@ -832,7 +1055,9 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
         );
     }
     network.round(&mut alice, ALICE, RoundKind::Sync);
-    let older = alice.save();
+    // The older state and its key, as a host would find them in a copy of its storage: they open
+    // as well as the last, which is why the core waits for its own chain.
+    let older = alice.save_sealed().unwrap();
     for n in 3..=4 {
         assert_eq!(
             alice.outbound(WRITE, &write(n, ALICE, 1000 + i64::from(n), 1)),
@@ -845,8 +1070,12 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
     drop(alice);
 
     let mut alice = Peer::open(LIST);
-    alice.set_identity(ALICE, person(ALICE));
-    assert_eq!(alice.restore(&older).unwrap(), 2);
+    assert_eq!(
+        alice
+            .restore_sealed(ALICE, &older.state, &older.key)
+            .unwrap(),
+        2
+    );
     assert!(alice.trust().awaits_own_chain());
     match alice.outbound(WRITE, &write(5, ALICE, 5000, 5)) {
         Kept::Refused(reason) => assert!(reason.contains("signs nothing new"), "{reason}"),

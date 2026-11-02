@@ -3,8 +3,9 @@
 
 // Replays the recorded scenario of the peer core (backends/rust/peer-capi/tests/fixtures) through the
 // C ABI, from C++, with no relay: the cores of two devices are made, given the administrator's acts,
-// the machine's sends, the rounds' answers and a save, and every text a core gives (each request, each
-// outcome, each standing, the genesis, the save, the reason of a refusal) must be the recorded one.
+// the machine's sends and the rounds' answers, and one is sealed and made again from its sealed state
+// with no key given again; every text a core gives (each request, each outcome, each standing, the
+// genesis, the sealed state, the reason of a refusal) must be the recorded one.
 //
 // The scenario is read as the whitespace-separated tokens the C replay reads (the Rust test writes
 // them from the JSON file); tests/c/replay.c describes them.
@@ -128,6 +129,15 @@ std::string hex_of(const uint8_t *bytes, size_t n) {
     return text;
 }
 
+// A data key token: 32 bytes in hex.
+std::vector<uint8_t> data_key_of(const std::string &token) {
+    std::vector<uint8_t> key = unhex(token);
+    if (key.size() != 32) {
+        die("a data key is not 32 bytes");
+    }
+    return key;
+}
+
 int32_t kind_of(const std::string &name) {
     if (name == "sync") {
         return SCE_PEER_ROUND_SYNC;
@@ -239,6 +249,26 @@ int main(int argc, char **argv) {
             steps++;
             continue;
         }
+        if (op == "restore") {
+            // The device started again: a core given nothing but the list and the genesis.
+            const std::vector<uint8_t> key = data_key_of(tokens.need());
+            const std::vector<uint8_t> state = unhex(tokens.need());
+            const uint64_t want = tokens.number();
+            device.peer.reset(device.genesis ? sce_peer_invited(list.c_str(), device.genesis->data())
+                                             : sce_peer_open(list.c_str()));
+            if (!device.peer) {
+                die("the core is not made");
+            }
+            uint64_t count = UINT64_MAX;
+            check(
+                sce_peer_restore_sealed(device.peer.get(), device.node, state.data(), state.size(), key.data(), &count),
+                "restore_sealed");
+            if (count != want) {
+                die("the restore kept another number of operations than was recorded");
+            }
+            steps++;
+            continue;
+        }
         ScePeer *peer = device.peer.get();
         if (peer == nullptr) {
             die("the device's core is not made");
@@ -264,14 +294,6 @@ int main(int argc, char **argv) {
             const std::string want = tokens.text();
             check(sce_peer_standing(peer, &out), "standing");
             expect_text(taken(out), want, "the standing");
-        } else if (op == "restore") {
-            const std::string saved = tokens.text();
-            const uint64_t want = tokens.number();
-            uint64_t count = UINT64_MAX;
-            check(sce_peer_restore(peer, saved.c_str(), &count), "restore");
-            if (count != want) {
-                die("the restore kept another number of operations than was recorded");
-            }
         } else if (op == "outbound") {
             const std::string event = tokens.text();
             const std::string data = tokens.text();
@@ -311,9 +333,15 @@ int main(int argc, char **argv) {
             }
             expect_text(ended, want, "the outcome");
         } else if (op == "save") {
-            const std::string want = tokens.text();
-            check(sce_peer_save(peer, &out), "save");
-            expect_text(taken(out), want, "the save");
+            const std::vector<uint8_t> key = data_key_of(tokens.need());
+            const std::string want = tokens.need();
+            check(sce_peer_save_sealed_under(peer, key.data(), &out), "save_sealed_under");
+            if (out.ptr == nullptr) {
+                die("the sealed state is empty");
+            }
+            const std::string got = hex_of(out.ptr, out.len);
+            sce_peer_buf_free(out);
+            expect_text(got, want, "the sealed state");
         } else {
             die("a step the replay does not know");
         }

@@ -3,12 +3,14 @@
 // The application lanes that are not Rust reach the peer core through the C ABI. What is asked here:
 // that the header declares exactly what the library exports, with the same numbers; and that the
 // boundary refuses a null pointer, a text that is not UTF-8, an answer out of turn, a kind of round
-// that is none and a saved text that is not one, with a status and a text, takes no outcome into
+// that is none and bytes that are no sealed state, with a status and a text, takes no outcome into
 // nowhere, and never crosses with a panic; that an administrator's act the core cannot do is refused
 // with its own status and nothing written; that an administrator's device opens a list keyed by its
 // group, admits a device from the key package a round read and takes it off again through the ABI
 // alone, the device joining from the Welcome and holding the key of the epoch the administrator's
-// does, and holding none of the epoch after its removal; and that the recorded scenario of two devices and a relay
+// does, coming back whole from its sealed state with no key given again, and holding none of the
+// epoch after its removal; that a sealed state is refused under another key or for another node,
+// and bytes that are none, with nothing taken; and that the recorded scenario of two devices and a relay
 // (`tests/fixtures/two_devices_and_a_relay.json`, recorded and held to a fresh run by
 // `the_recorded_scenario_is_what_a_fresh_run_records`) is replayed through the shared library, with
 // no relay, by C, C++, Python (ctypes), Go (cgo), Kotlin (JNA) and Swift (a module map over the
@@ -154,6 +156,8 @@ fn the_header_declares_exactly_what_the_library_exports() {
         ),
         ("SCE_PEER_ERR_NO_KEY_PACKAGE", SCE_PEER_ERR_NO_KEY_PACKAGE),
         ("SCE_PEER_ERR_DRAWN_KEYS", SCE_PEER_ERR_DRAWN_KEYS),
+        ("SCE_PEER_ERR_NOT_OPENED", SCE_PEER_ERR_NOT_OPENED),
+        ("SCE_PEER_ERR_NO_RANDOMNESS", SCE_PEER_ERR_NO_RANDOMNESS),
         ("SCE_PEER_ERR_NULL_ARGUMENT", SCE_PEER_ERR_NULL_ARGUMENT),
         ("SCE_PEER_ERR_BAD_TEXT", SCE_PEER_ERR_BAD_TEXT),
         ("SCE_PEER_ERR_PANIC", SCE_PEER_ERR_PANIC),
@@ -352,43 +356,19 @@ fn the_boundary_refuses_what_it_is_not_given_and_says_why() {
         );
         assert_eq!(kept, SCE_PEER_KEPT_REFUSED);
 
-        // The group's device: none is held until one is given, and bytes that are no state of one
-        // are refused with the group's words; a new device leaves a key package, and what it keeps
-        // is given back and taken again.
-        let mut state = empty();
-        assert_eq!(
-            sce_peer_group_state(peer, &mut state),
-            SCE_PEER_ERR_NO_GROUP_DEVICE
-        );
-        assert!(state.ptr.is_null());
+        // The group's device: none is held until one is given, and a new device leaves a key
+        // package.
         assert_eq!(
             sce_peer_publish_key_package(peer),
             SCE_PEER_ERR_NO_GROUP_DEVICE
         );
-        let garbage = [1u8, 2, 3];
         assert_eq!(
-            sce_peer_with_group(peer, 1, seed.as_ptr(), garbage.as_ptr(), garbage.len()),
-            SCE_PEER_ERR_GROUP
+            sce_peer_with_group(peer, 1, std::ptr::null()),
+            SCE_PEER_ERR_NULL_ARGUMENT
         );
-        assert!(last_error().contains("Malformed"), "{}", last_error());
-        assert_eq!(
-            sce_peer_with_group(peer, 1, seed.as_ptr(), std::ptr::null(), 0),
-            SCE_PEER_OK
-        );
+        assert_eq!(sce_peer_with_group(peer, 1, seed.as_ptr()), SCE_PEER_OK);
         assert_eq!(sce_peer_publish_key_package(peer), SCE_PEER_OK);
-        let kept_state = group_state_of(peer);
-        assert!(!kept_state.is_empty());
         let again = sce_peer_open(list.as_ptr());
-        assert_eq!(
-            sce_peer_with_group(
-                again,
-                1,
-                seed.as_ptr(),
-                kept_state.as_ptr(),
-                kept_state.len()
-            ),
-            SCE_PEER_OK
-        );
         assert_eq!(sce_peer_for_a_hub(again), SCE_PEER_OK);
         assert_eq!(
             sce_peer_for_a_hub(std::ptr::null_mut()),
@@ -407,25 +387,129 @@ fn the_boundary_refuses_what_it_is_not_given_and_says_why() {
             SCE_PEER_ERR_NULL_ARGUMENT
         );
 
-        // A text that is not a saved one is refused; a save is one text, taken back by a core
-        // just made for the list.
+        // Bytes that are no sealed state are refused, and a sealed state that does not open under
+        // the key for this list and node is refused with its own status; the core takes nothing of
+        // either. A save is one sealed state and the key drawn for it, taken back by a core just
+        // made for the list and given nothing else: its person comes back with the state.
         let fresh = sce_peer_open(list.as_ptr());
+        let given = [5u8; 32];
+        let not_sealed = b"{}";
+        let none = std::ptr::null_mut();
         assert_eq!(
-            sce_peer_restore(fresh, c"{}".as_ptr(), std::ptr::null_mut()),
+            sce_peer_restore_sealed(
+                fresh,
+                1,
+                not_sealed.as_ptr(),
+                not_sealed.len(),
+                given.as_ptr(),
+                none
+            ),
             SCE_PEER_ERR_UNREADABLE
         );
         assert!(last_error().contains("Unreadable"), "{}", last_error());
         assert_eq!(
-            sce_peer_restore(fresh, c"not JSON".as_ptr(), std::ptr::null_mut()),
+            sce_peer_restore_sealed(fresh, 1, std::ptr::null(), 0, given.as_ptr(), none),
             SCE_PEER_ERR_UNREADABLE
         );
-        let saved = CString::new(text_of(peer, sce_peer_save).expect("a save is a text")).unwrap();
+        assert_eq!(
+            sce_peer_restore_sealed(
+                fresh,
+                1,
+                not_sealed.as_ptr(),
+                not_sealed.len(),
+                std::ptr::null(),
+                none
+            ),
+            SCE_PEER_ERR_NULL_ARGUMENT
+        );
+        let mut state = empty();
+        let mut drawn = [0u8; 32];
+        assert_eq!(
+            sce_peer_save_sealed(peer, std::ptr::null_mut(), drawn.as_mut_ptr()),
+            SCE_PEER_ERR_NULL_ARGUMENT
+        );
+        assert_eq!(
+            sce_peer_save_sealed(peer, &mut state, std::ptr::null_mut()),
+            SCE_PEER_ERR_NULL_ARGUMENT
+        );
+        assert_eq!(
+            sce_peer_save_sealed(peer, &mut state, drawn.as_mut_ptr()),
+            SCE_PEER_OK,
+            "{}",
+            last_error()
+        );
+        let sealed = bytes_of(state);
+        assert_ne!(drawn, [0u8; 32], "the key drawn for the save is given");
+        let wrong = [6u8; 32];
+        assert_eq!(
+            sce_peer_restore_sealed(
+                fresh,
+                1,
+                sealed.as_ptr(),
+                sealed.len(),
+                wrong.as_ptr(),
+                none
+            ),
+            SCE_PEER_ERR_NOT_OPENED
+        );
+        assert!(last_error().contains("NotOpened"), "{}", last_error());
+        assert_eq!(
+            sce_peer_restore_sealed(
+                fresh,
+                2,
+                sealed.as_ptr(),
+                sealed.len(),
+                drawn.as_ptr(),
+                none
+            ),
+            SCE_PEER_ERR_NOT_OPENED,
+            "another node's"
+        );
+        assert_eq!(standing_of(fresh)["node"], Value::Null, "nothing taken");
         let mut count = u64::MAX;
         assert_eq!(
-            sce_peer_restore(fresh, saved.as_ptr(), &mut count),
-            SCE_PEER_OK
+            sce_peer_restore_sealed(
+                fresh,
+                1,
+                sealed.as_ptr(),
+                sealed.len(),
+                drawn.as_ptr(),
+                &mut count
+            ),
+            SCE_PEER_OK,
+            "{}",
+            last_error()
         );
         assert_eq!(count, 0, "the core held no operation");
+        assert_eq!(
+            standing_of(fresh)["node"],
+            "1",
+            "the person came back with no seed given"
+        );
+
+        // Under a key the lane gives, the same state is the same bytes; a core with no person
+        // seals nothing.
+        let (mut first, mut second) = (empty(), empty());
+        assert_eq!(
+            sce_peer_save_sealed_under(fresh, given.as_ptr(), &mut first),
+            SCE_PEER_OK
+        );
+        assert_eq!(
+            sce_peer_save_sealed_under(fresh, given.as_ptr(), &mut second),
+            SCE_PEER_OK
+        );
+        assert_eq!(bytes_of(first), bytes_of(second));
+        let mut third = empty();
+        assert_eq!(
+            sce_peer_save_sealed_under(fresh, std::ptr::null(), &mut third),
+            SCE_PEER_ERR_NULL_ARGUMENT
+        );
+        assert!(third.ptr.is_null());
+        assert_eq!(
+            sce_peer_save_sealed(nobody, &mut third, drawn.as_mut_ptr()),
+            SCE_PEER_ERR_NO_PERSON
+        );
+        assert!(third.ptr.is_null());
 
         sce_peer_buf_free(empty());
         sce_peer_free(fresh);
@@ -436,24 +520,16 @@ fn the_boundary_refuses_what_it_is_not_given_and_says_why() {
     }
 }
 
-/// What the group's device of `peer` keeps, as bytes.
+/// The bytes of a buffer the library gave, which is given back; it is not empty.
 ///
 /// # Safety
-/// `peer` is a live handle holding a group's device.
-unsafe fn group_state_of(peer: *mut ScePeer) -> Vec<u8> {
-    let mut out = empty();
-    // SAFETY: `peer` is live and `out` is valid for a write.
-    assert_eq!(
-        unsafe { sce_peer_group_state(peer, &mut out) },
-        SCE_PEER_OK,
-        "{}",
-        last_error()
-    );
-    assert!(!out.ptr.is_null());
+/// `buf` is one the library returned and has not given back.
+unsafe fn bytes_of(buf: ScePeerBuf) -> Vec<u8> {
+    assert!(!buf.ptr.is_null(), "the library gave bytes");
     // SAFETY: the library's buffer is `len` readable bytes.
-    let bytes = unsafe { std::slice::from_raw_parts(out.ptr, out.len) }.to_vec();
+    let bytes = unsafe { std::slice::from_raw_parts(buf.ptr, buf.len) }.to_vec();
     // SAFETY: returned by the library and not given back yet.
-    unsafe { sce_peer_buf_free(out) };
+    unsafe { sce_peer_buf_free(buf) };
     bytes
 }
 
@@ -636,10 +712,7 @@ fn an_administrators_act_the_core_cannot_do_is_refused_and_says_why() {
         // A list keyed by its group admits a device only with its key package, and none was read;
         // another role for a member the group holds is a grant alone.
         let grouped = core_of(1, alice, None, Some(ADMINISTRATOR));
-        assert_eq!(
-            sce_peer_with_group(grouped, 1, alice.as_ptr(), std::ptr::null(), 0),
-            SCE_PEER_OK
-        );
+        assert_eq!(sce_peer_with_group(grouped, 1, alice.as_ptr()), SCE_PEER_OK);
         assert_eq!(
             sce_peer_open_list(grouped, SCE_PEER_PROFILE_UNTRUSTED, again.as_mut_ptr()),
             SCE_PEER_OK
@@ -736,10 +809,7 @@ fn the_administrators_acts_on_a_group_go_through_the_abi() {
     // length the function's contract names.
     unsafe {
         let admin = core_of(1, alice, None, Some(ADMINISTRATOR));
-        assert_eq!(
-            sce_peer_with_group(admin, 1, alice.as_ptr(), std::ptr::null(), 0),
-            SCE_PEER_OK
-        );
+        assert_eq!(sce_peer_with_group(admin, 1, alice.as_ptr()), SCE_PEER_OK);
         assert_eq!(
             sce_peer_open_list(admin, SCE_PEER_PROFILE_UNTRUSTED, genesis.as_mut_ptr()),
             SCE_PEER_OK,
@@ -751,10 +821,7 @@ fn the_administrators_acts_on_a_group_go_through_the_abi() {
 
         // Bob's device leaves a key package with the relay, and alice's next round reads it.
         let joiner = core_of(2, bob, Some(genesis), None);
-        assert_eq!(
-            sce_peer_with_group(joiner, 2, bob.as_ptr(), std::ptr::null(), 0),
-            SCE_PEER_OK
-        );
+        assert_eq!(sce_peer_with_group(joiner, 2, bob.as_ptr()), SCE_PEER_OK);
         assert_eq!(sce_peer_publish_key_package(joiner), SCE_PEER_OK);
         let left = network.finish(joiner, 2);
         assert_eq!(left["outcome"], "ended", "{left}");
@@ -784,6 +851,39 @@ fn the_administrators_acts_on_a_group_go_through_the_abi() {
         );
         assert_eq!(standing_of(joiner)["keys"], json!([1]));
         assert_eq!(standing_of(admin)["keys"], json!([1]));
+
+        // His device is stopped and made again from its sealed state, given nothing but the list
+        // and the genesis: its person, its group's device and the key of the epoch come back, and
+        // what alice writes next opens on it.
+        let mut state = empty();
+        let mut key = [0u8; 32];
+        assert_eq!(
+            sce_peer_save_sealed(joiner, &mut state, key.as_mut_ptr()),
+            SCE_PEER_OK,
+            "{}",
+            last_error()
+        );
+        let sealed = bytes_of(state);
+        sce_peer_free(joiner);
+        let joiner = sce_peer_invited(c"home".as_ptr(), genesis.as_ptr());
+        assert_eq!(
+            sce_peer_restore_sealed(
+                joiner,
+                2,
+                sealed.as_ptr(),
+                sealed.len(),
+                key.as_ptr(),
+                std::ptr::null_mut()
+            ),
+            SCE_PEER_OK,
+            "{}",
+            last_error()
+        );
+        let restored = standing_of(joiner);
+        assert_eq!(restored["keys"], json!([1]), "{restored}");
+        assert_eq!(restored["awaits_own_chain"], true, "{restored}");
+        let back = network.round(joiner, 2);
+        assert_eq!(back["refused"], json!([]), "{back}");
         let write = c"{\"id\":1,\"field\":3,\"value\":\"5\",\"text\":\"\",\"wallTime\":\"3000\",\"counter\":0,\"nodeId\":\"1\"}";
         let mut kept = -1;
         assert_eq!(
@@ -877,7 +977,13 @@ fn script_of(scenario: &Value) -> String {
                 word("key")
             ),
             "remove" => format!("remove {device} {}", step["node"]),
-            "restore" => format!("restore {device} {} {}", text("text"), step["count"]),
+            "save" => format!("save {device} {} {}", word("key"), word("state")),
+            "restore" => format!(
+                "restore {device} {} {} {}",
+                word("key"),
+                word("state"),
+                step["count"]
+            ),
             "outbound" => format!(
                 "outbound {device} {} {} {} {}",
                 text("event"),
@@ -886,7 +992,7 @@ fn script_of(scenario: &Value) -> String {
                 text("reason")
             ),
             "start" => format!("start {device} {}", word("kind")),
-            "request" | "respond" | "outcome" | "save" | "standing" => {
+            "request" | "respond" | "outcome" | "standing" => {
                 format!("{op} {device} {}", text("text"))
             }
             "fail" => format!("fail {device} {}", text("reason")),

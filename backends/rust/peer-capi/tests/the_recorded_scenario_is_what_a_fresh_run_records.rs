@@ -8,19 +8,21 @@
 // administrator's acts and the genesis the opening gave, the machine's sends and what the core did
 // with each (taken, held, not signed, refused and why), each request the core puts to the relay and
 // the relay's answer, a failure of the transport, the outcome each machine is told, what each device
-// stands at, and bob's save, after which his core is made again and restored from it. What it shows:
-// a list is opened and a device admitted through the ABI alone; bob's writes and his note reach
-// alice's machine; a restored device says it waits for its own chain, signs nothing new until the
-// chain is read back, and gives a write it holds as held; another content under a stamp a device
-// signed is refused; a round that loses its transport ends, and the next goes on; and a device taken
-// off is refused by the relay, so that what it writes afterwards reaches no one.
+// stands at, and bob's sealed state, after which his core is made again given nothing but the list
+// and the genesis, and restored from it. What it shows: a list is opened and a device admitted
+// through the ABI alone; bob's writes and his note reach alice's machine; a device restored from
+// its sealed state needs no key given again, says it waits for its own chain, signs nothing new
+// until the chain is read back, and gives a write it holds as held; another content under a stamp a
+// device signed is refused; a round that loses its transport ends, and the next goes on; and a
+// device taken off is refused by the relay, so that what it writes afterwards reaches no one.
 //
 // The core does no I/O, so a lane replays the scenario with no relay: it makes the same calls,
-// compares each request, outcome, standing, genesis and save the core gives with the recording, and
-// gives the core the recorded answers. Everything in it is deterministic (Ed25519 signs
-// deterministically, and nothing here reads a clock or draws a random number), so a run now records
-// the same scenario, and a test fails when the recording and a fresh run differ: the file cannot
-// drift from the library. The list's MLS group is not in it, since MLS draws randomness and a run
+// compares each request, outcome, standing, genesis and sealed state the core gives with the
+// recording, and gives the core the recorded answers. Everything in it is deterministic (Ed25519
+// signs deterministically, a state is sealed under a data key the recording fixes and under a nonce
+// that is a keyed hash of what it seals, and nothing here reads a clock or draws a random number),
+// so a run now records the same scenario, and a test fails when the recording and a fresh run
+// differ: the file cannot drift from the library. The list's MLS group is not in it, since MLS draws randomness and a run
 // would not record the same texts twice; the group's own C ABI has its own recorded scenario
 // (`backends/rust/mls/tests/fixtures/join_and_remove.json`), and the administrator's acts on a group
 // through this ABI are held by `the_administrators_acts_on_a_group_go_through_the_abi`.
@@ -67,6 +69,10 @@ fn person(node: u64) -> Identity {
 
 /// The seed of the administrator's key, which alice's device holds.
 const ADMINISTRATOR: [u8; 32] = [9; 32];
+
+/// The data key bob's state is sealed under: fixed here, so that the recording holds the same
+/// sealed bytes at every run. A host draws one for each save (`sce_peer_save_sealed`).
+const DATA_KEY: [u8; 32] = [7; 32];
 
 /// The genesis a list with one administrator, a quorum of one and a hub that is not trusted has:
 /// what alice's core is to write when it opens the list, made here by hand.
@@ -163,12 +169,11 @@ fn text(value: &str) -> CString {
 struct Core(*mut ScePeer);
 
 impl Core {
-    /// The core of `device` (an entry of [`devices`]), made and given its person, and the
-    /// administrator's key when it holds one.
-    fn make(device: &Value) -> Self {
+    /// The core of `device` (an entry of [`devices`]) given nothing but the list, and the genesis
+    /// it was invited with: what a sealed state is restored into.
+    fn bare(device: &Value) -> Self {
         let list = text(LIST);
-        let seed = unhex(device["seed"].as_str().unwrap());
-        // SAFETY: the list is NUL-terminated, the genesis and the seed are 32 bytes.
+        // SAFETY: the list is NUL-terminated, the genesis is 32 bytes.
         let peer = unsafe {
             match device["genesis"].as_str() {
                 None => sce_peer_open(list.as_ptr()),
@@ -179,21 +184,29 @@ impl Core {
             }
         };
         assert!(!peer.is_null(), "{}", last_error());
+        Core(peer)
+    }
+
+    /// The core of `device` (an entry of [`devices`]), made and given its person, and the
+    /// administrator's key when it holds one.
+    fn make(device: &Value) -> Self {
+        let core = Self::bare(device);
+        let seed = unhex(device["seed"].as_str().unwrap());
         let node = device["node"].as_u64().unwrap();
         // SAFETY: a live handle, and a seed of 32 bytes.
         check(
-            unsafe { sce_peer_set_identity(peer, node, seed.as_ptr()) },
+            unsafe { sce_peer_set_identity(core.0, node, seed.as_ptr()) },
             "set_identity",
         );
         if let Some(administrator) = device["administrator"].as_str() {
             let administrator = unhex(administrator);
             // SAFETY: a live handle, and a seed of 32 bytes.
             check(
-                unsafe { sce_peer_set_administrator(peer, administrator.as_ptr()) },
+                unsafe { sce_peer_set_administrator(core.0, administrator.as_ptr()) },
                 "set_administrator",
             );
         }
-        Core(peer)
+        core
     }
 
     /// The list opened with the hub's profile `profile`, and the hash of its genesis, in hex.
@@ -313,20 +326,43 @@ impl Core {
         taken(out).expect("an exchange ended")
     }
 
-    fn save(&mut self) -> String {
+    /// What the device keeps, sealed under the data key `key` (in hex), as hex.
+    fn save(&mut self, key: &str) -> String {
+        let key = unhex(key);
         let mut out = empty();
-        // SAFETY: a live handle, and a place valid for a write.
-        check(unsafe { sce_peer_save(self.0, &mut out) }, "save");
-        taken(out).expect("a save is a text")
+        // SAFETY: a live handle, a key of 32 bytes, and a place valid for a write.
+        check(
+            unsafe { sce_peer_save_sealed_under(self.0, key.as_ptr(), &mut out) },
+            "save_sealed_under",
+        );
+        assert!(!out.ptr.is_null(), "a sealed state is not empty");
+        // SAFETY: a buffer the library gave is `len` readable bytes, and is given back once, here.
+        let state = unsafe {
+            let state = std::slice::from_raw_parts(out.ptr, out.len).to_vec();
+            sce_peer_buf_free(out);
+            state
+        };
+        hex(&state)
     }
 
-    fn restore(&mut self, saved: &str) -> u64 {
-        let saved = text(saved);
+    /// The state sealed under `key` (both in hex) for the device of `node`, taken back.
+    fn restore(&mut self, node: u64, key: &str, state: &str) -> u64 {
+        let (key, state) = (unhex(key), unhex(state));
         let mut count = u64::MAX;
-        // SAFETY: a live handle, a NUL-terminated text, and a place valid for a write.
+        // SAFETY: a live handle, a state of its length, a key of 32 bytes, and a place valid for
+        // a write.
         check(
-            unsafe { sce_peer_restore(self.0, saved.as_ptr(), &mut count) },
-            "restore",
+            unsafe {
+                sce_peer_restore_sealed(
+                    self.0,
+                    node,
+                    state.as_ptr(),
+                    state.len(),
+                    key.as_ptr(),
+                    &mut count,
+                )
+            },
+            "restore_sealed",
         );
         count
     }
@@ -406,10 +442,16 @@ impl Recording {
         serde_json::from_str(&standing).expect("a standing is JSON")
     }
 
-    fn restore(&mut self, device: usize, saved: &str) -> u64 {
-        let count = self.core(device).restore(saved);
+    /// The core of `device` made again (the device started) given nothing but the list and the
+    /// genesis it was invited with, and the state sealed under `key` (both in hex) taken back.
+    fn restore(&mut self, device: usize, key: &str, state: &str) -> u64 {
+        let node = self.devices[device]["node"].as_u64().unwrap();
+        self.cores[device] = None;
+        self.cores[device] = Some(Core::bare(&self.devices[device]));
+        let count = self.core(device).restore(node, key, state);
         self.steps
-            .push(json!({"device": device, "op": "restore", "text": saved, "count": count}));
+            .push(json!({"device": device, "op": "restore", "key": key,
+                               "state": state, "count": count}));
         count
     }
 
@@ -468,16 +510,17 @@ impl Recording {
         self.outcome(device)
     }
 
-    fn save(&mut self, device: usize) -> String {
-        let saved = self.core(device).save();
+    /// What `device` keeps, sealed under `key` (in hex), as hex.
+    fn save(&mut self, device: usize, key: &str) -> String {
+        let state = self.core(device).save(key);
         self.steps
-            .push(json!({"device": device, "op": "save", "text": saved}));
-        saved
+            .push(json!({"device": device, "op": "save", "key": key, "state": state}));
+        state
     }
 
     fn into_scenario(self) -> Value {
         json!({
-            "version": 2,
+            "version": 3,
             "list": LIST,
             "devices": self.devices,
             "steps": self.steps,
@@ -574,15 +617,20 @@ fn record() -> Value {
     assert_eq!(named(&told, WRITE), 2, "{told}");
     assert_eq!(named(&told, SUPERSEDE), 1, "{told}");
 
-    // Bob's device is saved, stopped and started again from its save, and his machine, built again
-    // from his application's own log, sends his writes again: the core says it waits for his own
-    // chain, what it holds comes back held, a new write waits until a round has read his chain back,
-    // and then is taken.
-    let saved = run.save(AT_BOB);
-    run.make(AT_BOB);
-    assert_eq!(run.restore(AT_BOB, &saved), 3, "his three operations");
+    // Bob's device is saved, sealed, stopped and started again from its sealed state with no key
+    // given again, and his machine, built again from his application's own log, sends his writes
+    // again: the core says it waits for his own chain, what it holds comes back held, a new write
+    // waits until a round has read his chain back, and then is taken.
+    let key = hex(&DATA_KEY);
+    let sealed = run.save(AT_BOB, &key);
+    assert_eq!(
+        run.restore(AT_BOB, &key, &sealed),
+        3,
+        "his three operations"
+    );
     let waiting = run.standing(AT_BOB);
     assert_eq!(waiting["awaits_own_chain"], true, "{waiting}");
+    assert_eq!(waiting["node"], "2", "his person came back from the state");
     assert_eq!(
         run.outbound(AT_BOB, WRITE, &write(1, BOB, 1000, 10)),
         "held"
@@ -678,6 +726,19 @@ fn replay(scenario: &Value) -> usize {
             cores[device] = Some(Core::make(&devices[device]));
             continue;
         }
+        if step["op"] == "restore" {
+            // The device started again: a core given nothing but the list and the genesis.
+            cores[device] = None;
+            let mut core = Core::bare(&devices[device]);
+            let node = devices[device]["node"].as_u64().unwrap();
+            assert_eq!(
+                core.restore(node, &field("key"), &field("state")),
+                number("count"),
+                "step {at}"
+            );
+            cores[device] = Some(core);
+            continue;
+        }
         let core = cores[device]
             .as_mut()
             .unwrap_or_else(|| panic!("step {at}: the device's core is not made"));
@@ -690,7 +751,6 @@ fn replay(scenario: &Value) -> usize {
             ),
             "remove" => core.remove(number("node")),
             "standing" => assert_eq!(core.standing(), field("text"), "step {at}"),
-            "restore" => assert_eq!(core.restore(&field("text")), number("count"), "step {at}"),
             "outbound" => assert_eq!(
                 core.outbound(&field("event"), &field("data")),
                 (field("kept"), field("reason")),
@@ -701,7 +761,7 @@ fn replay(scenario: &Value) -> usize {
             "respond" => core.respond(&field("text")),
             "fail" => core.fail(&field("reason")),
             "outcome" => assert_eq!(core.outcome(), field("text"), "step {at}"),
-            "save" => assert_eq!(core.save(), field("text"), "step {at}"),
+            "save" => assert_eq!(core.save(&field("key")), field("state"), "step {at}"),
             other => panic!("step {at}: `{other}` is no step of the scenario"),
         }
     }

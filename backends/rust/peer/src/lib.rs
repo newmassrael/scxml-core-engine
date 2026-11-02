@@ -28,7 +28,9 @@
 //!   commit and the Welcome a change of the group makes are given to it after that round;
 //! - what the device stands at in the list (its person's role, the members, whether it waits for its
 //!   own chain, what the relay is still owed) is [`Peer::standing`];
-//! - what the device keeps between runs is one text ([`Peer::save`], [`Peer::restore`]).
+//! - what the device keeps between runs, its secrets with the rest, is one state sealed under a key
+//!   drawn for it ([`Peer::save_sealed`], [`Peer::restore_sealed`]), which the host wraps with its
+//!   platform's key store.
 //!
 //! The core reads no clock, opens no socket, starts no thread and waits on nothing: a host may hold
 //! a response for minutes, lose its connection, or be stopped by its operating system in the middle
@@ -39,14 +41,19 @@
 //! need it, read by the host and given with each call.
 //!
 //! The secrets of the device (the person's key, the administrator's key it holds, the keys of the
-//! epochs, the group's state) are not in what [`Peer::save`] writes: the host gives them again
-//! ([`Peer::set_identity`], [`Peer::set_administrator`], [`Peer::with_group`]) until the device's
-//! sealed state is specified (ADR 0079 section 6).
+//! epochs, the group's state) are given once ([`Peer::set_identity`], [`Peer::set_administrator`],
+//! [`Peer::with_group`]) and are kept, with everything else the device keeps, in the state the core
+//! seals (ADR 0079 section 6): envelope encryption under a data key the core draws for each save,
+//! which the host wraps with a key its platform's key store holds and does not export, and gives back
+//! unwrapped to restore. The core calls no platform's API, and the host handles no protocol secret
+//! in the clear.
 
 #![forbid(unsafe_code)]
 
 pub use sce_rust_mls::host::{Member, Step as GroupStep};
 pub use sce_rust_mls::{Device, MlsError};
+// The key a sealed state is sealed under, and why a sealed state was not made or not opened.
+pub use sce_rust_trust::backup::{BackupError, DataKey};
 // What runs the core over a transport: the one driver, the exchange it carries, how it ended, and
 // the transport's contract with what it is given.
 pub use sce_rust_relay::{drive, Driven, Exchange, Signal, Transport, TransportError};
@@ -56,13 +63,30 @@ pub use sce_rust_trust::membership::{Hash, LogError, Profile, OWNER, READER, WRI
 use sce_rust_mls::host::Issued;
 use sce_rust_relay::client::{floor_event, keep};
 use sce_rust_relay::{CourierState, LinkError, Request, Response, RoundMachine, Step};
+use sce_rust_trust::backup::{self, Contents};
 use sce_rust_trust::membership::{Body, Entry};
 use sce_rust_trust::{Identity, PublicKey, Trust};
 use serde_json::{json, Value};
 
-/// The version of what [`Peer::save`] writes. Version 2 holds what the relay is owed; a save of
-/// version 1, which owed nothing, is still read.
-pub const SAVE_VERSION: u64 = 2;
+/// The version of the state [`Peer::save_sealed`] seals. Version 3 is the first that is sealed and
+/// holds the device's secrets with the rest. The texts of versions 1 and 2 held no secret, were
+/// taken back only after the host gave every key again, and were never written outside this
+/// repository's tests (ADR 0079 ships no device before its review); they are not read.
+pub const SAVE_VERSION: u64 = 3;
+
+/// The names under which the sealed state keeps what the core holds beside the person's key and the
+/// keys of the epochs ([`Trust::secrets`]).
+const KEPT_STATE: &str = "peer/state";
+const KEPT_ADMINISTRATOR: &str = "peer/administrator";
+const KEPT_GROUP: &str = "peer/group";
+const KEPT_GROUP_NODE: &str = "peer/group-node";
+const KEPT_GROUP_KEY: &str = "peer/group-key";
+const KEPT_GROUP_HELD: &str = "peer/group-held";
+
+/// What a sealed state is bound to beside its list and its node: the core's state, at its version.
+fn sealed_context() -> String {
+    format!("sce-peer/state/{SAVE_VERSION}")
+}
 
 /// What a round, or a publication, came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,8 +163,15 @@ pub enum PeerError {
     NoGroupDevice,
     /// The group's device refused, and why.
     Group(MlsError),
-    /// A saved text is not what [`Peer::save`] writes, or does not hold for this list, and why.
+    /// Bytes given as a sealed state are not one ([`Peer::save_sealed`]), or what it holds does not
+    /// hold for this core, and why.
     Unreadable(String),
+    /// A sealed state did not open under the key given, for this list and the node given: the key
+    /// is not the one it was sealed under, the state was changed or cut, or it is another device's.
+    /// A cipher cannot tell these apart. Nothing of it was taken.
+    NotOpened,
+    /// The operating system gave no randomness for a data key, and no weaker source is used.
+    NoRandomness,
     /// An administrator's act and the core holds no administrator's key
     /// ([`Peer::set_administrator`]).
     NoAdministrator,
@@ -172,6 +203,77 @@ pub enum PeerError {
     DrawnKeys,
 }
 
+/// What [`Peer::save_sealed`] gives: the device's state, sealed, and the key it was sealed under.
+/// The host wraps the key with a key its platform's key store holds, keeps the wrapped key beside the
+/// state, and lets go of this one; to restore, it unwraps the key and gives both back
+/// ([`Peer::restore_sealed`]).
+#[derive(Debug)]
+pub struct SealedState {
+    pub state: Vec<u8>,
+    pub key: DataKey,
+}
+
+/// A sealed state that was not made or not opened, as the core says it.
+fn sealing_error(error: BackupError) -> PeerError {
+    match error {
+        BackupError::Corrupt => PeerError::NotOpened,
+        BackupError::NoRandomness => PeerError::NoRandomness,
+        BackupError::Malformed | BackupError::TooCostly => {
+            PeerError::Unreadable("it is not a sealed state".to_string())
+        }
+    }
+}
+
+/// What a sealed state holds that is no secret, read whole before the core takes any of it.
+struct Saved {
+    entries: Vec<Entry>,
+    trust: String,
+    courier: CourierState,
+    owed: Vec<Publication>,
+}
+
+impl Saved {
+    fn read(text: &str) -> Result<Self, PeerError> {
+        let unreadable = |why: &str| PeerError::Unreadable(why.to_string());
+        let value: Value = serde_json::from_str(text).map_err(|_| unreadable("it is not JSON"))?;
+        if value.get("version").and_then(Value::as_u64) != Some(SAVE_VERSION) {
+            return Err(unreadable("it is not a version this core reads"));
+        }
+        let owed = value
+            .get("owed")
+            .and_then(Value::as_array)
+            .ok_or_else(|| unreadable("it holds no list of what the relay is owed"))?
+            .iter()
+            .map(Publication::from_value)
+            .collect::<Option<Vec<Publication>>>()
+            .ok_or_else(|| unreadable("what it says the relay is owed is not a publication"))?;
+        let courier = value
+            .get("courier")
+            .and_then(Value::as_str)
+            .and_then(CourierState::from_text)
+            .ok_or_else(|| unreadable("it holds no state of the relay's client"))?;
+        let trust = value
+            .get("trust")
+            .and_then(Value::as_str)
+            .ok_or_else(|| unreadable("it holds nothing of the trust"))?
+            .to_string();
+        let entries = value
+            .get("log")
+            .and_then(Value::as_array)
+            .ok_or_else(|| unreadable("it holds no log"))?
+            .iter()
+            .map(|entry| entry.as_str().and_then(Entry::from_json))
+            .collect::<Option<Vec<Entry>>>()
+            .ok_or_else(|| unreadable("an entry of its log is not one"))?;
+        Ok(Self {
+            entries,
+            trust,
+            courier,
+            owed,
+        })
+    }
+}
+
 /// What a device stands at in its list, for its host to show as it is: [`Peer::standing`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Standing {
@@ -185,7 +287,7 @@ pub struct Standing {
     /// Whether the core holds an administrator's key that the log names as one.
     pub administrator: bool,
     /// Whether the device signs nothing new until a round has read its own chain back from the
-    /// relay ([`Peer::restore`]).
+    /// relay ([`Peer::restore_sealed`]).
     pub awaits_own_chain: bool,
     /// The members of the list now, each node with its role, in the order of the nodes.
     pub members: Vec<(u64, u8)>,
@@ -215,6 +317,8 @@ enum Keying {
 /// nothing: what it took in and did not hand over is handed over by the next round, and the state
 /// it leaves is the one the relay's client keeps after a completed step ([`CourierState`]).
 pub struct Peer {
+    /// The list's name: what the group's device and a sealed state are made for.
+    list: String,
     trust: Trust,
     /// What the relay's client keeps between exchanges; while one runs, its machine holds it.
     state: CourierState,
@@ -279,18 +383,19 @@ impl Peer {
     /// first given (the one [`Self::open_list`] makes, or its owner made) and every entry after it
     /// ([`Trust::open`]).
     pub fn open(list: &str) -> Self {
-        Self::over(Trust::open(list))
+        Self::over(list, Trust::open(list))
     }
 
     /// The core of a device invited to the list `list` with the hash of its genesis entry, which the
     /// person was told in a channel they trust: it takes that genesis and no other
     /// ([`Trust::invited`]).
     pub fn invited(list: &str, genesis: Hash) -> Self {
-        Self::over(Trust::invited(list, genesis))
+        Self::over(list, Trust::invited(list, genesis))
     }
 
-    fn over(trust: Trust) -> Self {
+    fn over(list: &str, trust: Trust) -> Self {
         Self {
+            list: list.to_string(),
             trust,
             state: CourierState::default(),
             running: None,
@@ -308,7 +413,7 @@ impl Peer {
 
     /// The device holds an administrator's key: the one the genesis names when the device opens the
     /// list ([`Self::open_list`]), and the one its administrator's acts are signed with. It is a
-    /// secret, given again before [`Self::restore`] as the person's key is.
+    /// secret, kept in the sealed state as the person's key is ([`Self::save_sealed`]).
     pub fn set_administrator(&mut self, administrator: Identity) {
         self.administrator = Some(administrator);
     }
@@ -484,7 +589,8 @@ impl Peer {
     }
 
     /// Whether the device signs nothing new until a round has read its own chain back from the
-    /// relay ([`Self::restore`]): a send that would make a new operation is refused meanwhile.
+    /// relay ([`Self::restore_sealed`]): a send that would make a new operation is refused
+    /// meanwhile.
     pub fn awaits_own_chain(&self) -> bool {
         self.trust.awaits_own_chain()
     }
@@ -524,8 +630,8 @@ impl Peer {
     /// the device signed already is [`Kept::Held`], the operation it holds with its number and its
     /// signature, and nothing new reaches the relay. A write under a stamp the device signed with
     /// another content is refused, since it would be the device signing two things for one write.
-    /// After [`Self::restore`], a send the device holds no operation for is refused until a round
-    /// has read the device's own chain back from the relay (see there).
+    /// After [`Self::restore_sealed`], a send the device holds no operation for is refused until a
+    /// round has read the device's own chain back from the relay (see there).
     pub fn outbound(&mut self, event: &str, data: &str) -> Kept {
         keep(&self.trust, event, data)
     }
@@ -591,13 +697,61 @@ impl Peer {
         floor_event(&self.trust, before, digest)
     }
 
-    /// What the device keeps, as one text: the membership log, what the trust holds
-    /// ([`Trust::to_text`]), the relay's client's state, which an exchange that runs, or an outcome
-    /// not taken, leaves as it would if it stopped here, and the commits and Welcomes the relay is
-    /// still owed. A host that saves in the middle of a round and restarts from the text goes on
-    /// where it was; what was handed over after the save is handed over again, and the machine's
-    /// merge takes an event twice as once.
-    pub fn save(&self) -> String {
+    /// What the device keeps, sealed under a data key drawn for this save alone from the operating
+    /// system, and that key ([`SealedState`]). The host wraps the key with its platform's key store
+    /// and keeps the wrapped key beside the state; it never handles a protocol secret in the clear,
+    /// and gives no key again to restore ([`Self::restore_sealed`]).
+    ///
+    /// The state is everything the device keeps: its person's key, the administrator's key it
+    /// holds, the keys of the epochs it holds, the group's device (its MLS state and the messages
+    /// it waits to use), the membership log, what the trust holds ([`Trust::to_text`]), the relay's
+    /// client's state, which an exchange that runs, or an outcome not taken, leaves as it would if
+    /// it stopped here, and the commits and Welcomes the relay is still owed. A host that saves in
+    /// the middle of a round and restarts from the state goes on where it was; what was handed over
+    /// after the save is handed over again, and the machine's merge takes an event twice as once.
+    ///
+    /// **Why a key for each save, and not one for the device.** A key seals one state, so no nonce is
+    /// ever at risk; a key that leaked (a process's memory) opens one save, not every save before
+    /// and after it; and a platform's key that the host rotates retires every save wrapped under
+    /// the old one once it is deleted from the key store, where one data key for the device would
+    /// be wrapped again and keep every old save readable. Wrapping 32 bytes at each save is what it
+    /// costs, and with a platform key that wraps with its public half (the Secure Enclave's, an RSA
+    /// key of the Android Keystore) a save in the background asks for no user's presence; only the
+    /// restore does. `docs/SCE_SHARED_LIST_PEER_ABI.md` section 6 gives each platform's wrapping.
+    pub fn save_sealed(&self) -> Result<SealedState, PeerError> {
+        let key = DataKey::draw().map_err(sealing_error)?;
+        let state = self.save_sealed_under(&key)?;
+        Ok(SealedState { state, key })
+    }
+
+    /// What [`Self::save_sealed`] seals, under the key `key` the host gives: a key it drew from a
+    /// source of randomness of its own, or, for a recording, a key fixed by a test. The same key and
+    /// the same state give the same bytes (the nonce is a keyed hash of what is sealed), so a key a
+    /// host gives twice gives away only whether two states were the same; a key is still meant for
+    /// one state, for the reasons [`Self::save_sealed`] gives. [`PeerError::NoPerson`] when the
+    /// device has no person: a sealed state is the state of one person's device.
+    pub fn save_sealed_under(&self, key: &DataKey) -> Result<Vec<u8>, PeerError> {
+        let mut contents = self
+            .trust
+            .secrets()
+            .ok_or(PeerError::NoPerson)?
+            .with(KEPT_STATE, self.state_text().into_bytes());
+        if let Some(administrator) = &self.administrator {
+            contents = contents.with_identity(KEPT_ADMINISTRATOR, administrator);
+        }
+        if let Some(member) = &self.group {
+            let device = member.device();
+            contents = contents
+                .with(KEPT_GROUP, device.to_bytes().map_err(PeerError::Group)?)
+                .with(KEPT_GROUP_NODE, member.node().to_be_bytes().to_vec())
+                .with_identity(KEPT_GROUP_KEY, device.identity())
+                .with(KEPT_GROUP_HELD, member.held_to_bytes());
+        }
+        backup::seal_state(key, &sealed_context(), &contents).map_err(sealing_error)
+    }
+
+    /// The part of the state that is no secret, as the text the sealed state holds it in.
+    fn state_text(&self) -> String {
         let mut state = match &self.running {
             Some(running) => running.saved_state(),
             None => self.state.clone(),
@@ -615,17 +769,28 @@ impl Peer {
         .to_string()
     }
 
-    /// Take back what [`Self::save`] wrote, into a core just made for the same list, after its
-    /// person and the keys it needs were given again: each entry of the log is checked as it is
-    /// appended, each operation and checkpoint the log verifies is kept ([`Trust::restore_from_text`],
-    /// whose count is returned), the relay's client goes on from its state, and what the relay is
-    /// owed is given after the next round. An exchange that ran is dropped.
+    /// Take back what [`Self::save_sealed`] sealed under `key` for the device of `node`, into a core
+    /// just made for the same list (opened, or invited with the same genesis), with no key given
+    /// again: the person's key, the administrator's key and the group's device come out of the state
+    /// with the rest. Each entry of the log is checked as it is appended, the keys of the epochs are
+    /// taken except those the list had destroyed, each operation and checkpoint the log verifies is
+    /// kept ([`Trust::restore_from_text`], whose count is returned), the relay's client goes on from
+    /// its state, and what the relay is owed is given after the next round. An exchange that ran is
+    /// dropped.
+    ///
+    /// A state that does not open (another key, a changed or cut state, another list's or another
+    /// node's) is [`PeerError::NotOpened`], bytes that are no sealed state are
+    /// [`PeerError::Unreadable`], and the state is read whole before the core takes any of it, so
+    /// either refusal changes nothing.
     ///
     /// **A restored device signs nothing new until its own chain is read back.** The core cannot
     /// tell the last save from an older one (a backup, a copy of the store, a save the device ran
-    /// past before it was stopped), and a device that published operations past what the text holds
-    /// would sign its next one at a number it used already, which every host that holds both takes
-    /// as the device signing two histories and freezes it for. So the trust waits
+    /// past before it was stopped): it keeps nothing across runs but what it is given, and no
+    /// platform gives it a counter no one can turn back. An older state and its wrapped key open as
+    /// well as the last. What an older state could do is what matters, and a device that published
+    /// operations past what the state holds would sign its next one at a number it used already,
+    /// which every host that holds both takes as the device signing two histories and freezes it
+    /// for. So the trust waits
     /// ([`Trust::await_own_chain`], [`Self::awaits_own_chain`]): [`Self::outbound`] refuses, with that
     /// reason, a send that would make a new operation, and still gives what the device holds as
     /// [`Kept::Held`]. The next round reads the relay's heads, asks for the device's own operations
@@ -635,52 +800,79 @@ impl Peer {
     /// last. The rule is the core's and not its host's, so that no host can forget it, and it asks
     /// the relay nothing the protocol did not already serve. A host that rebuilds its machine from
     /// its own log after a restore makes that round first, then gives the core the machine's sends,
-    /// then makes a [`RoundKind::Resync`] to tell the rebuilt machine the list.
-    pub fn restore(&mut self, text: &str) -> Result<usize, PeerError> {
+    /// then makes a [`RoundKind::Resync`] to tell the rebuilt machine the list. An older state may
+    /// also hold the key of an epoch the list has had destroyed since; the same round reads the
+    /// entry that destroys it, and the key is zeroed as the entry is taken.
+    pub fn restore_sealed(
+        &mut self,
+        node: u64,
+        sealed: &[u8],
+        key: &DataKey,
+    ) -> Result<usize, PeerError> {
+        let contents = backup::open_state(key, &self.list, node, &sealed_context(), sealed)
+            .map_err(sealing_error)?;
         let unreadable = |why: &str| PeerError::Unreadable(why.to_string());
-        let value: Value = serde_json::from_str(text).map_err(|_| unreadable("it is not JSON"))?;
-        let owed = match value.get("version").and_then(Value::as_u64) {
-            // A save of the core from before an administrator's act could owe the relay anything.
-            Some(1) => Vec::new(),
-            Some(SAVE_VERSION) => value
-                .get("owed")
-                .and_then(Value::as_array)
-                .ok_or_else(|| unreadable("it holds no list of what the relay is owed"))?
-                .iter()
-                .map(Publication::from_value)
-                .collect::<Option<Vec<Publication>>>()
-                .ok_or_else(|| unreadable("what it says the relay is owed is not a publication"))?,
-            _ => return Err(unreadable("it is not a version this core reads")),
+        let saved = contents
+            .extra(KEPT_STATE)
+            .and_then(|bytes| std::str::from_utf8(bytes).ok())
+            .ok_or_else(|| unreadable("it holds no state of the core"))
+            .and_then(Saved::read)?;
+        let administrator = match contents.extra(KEPT_ADMINISTRATOR) {
+            None => None,
+            Some(_) => Some(
+                contents
+                    .identity_named(KEPT_ADMINISTRATOR)
+                    .ok_or_else(|| unreadable("its administrator's key is not one"))?,
+            ),
         };
-        let state = value
-            .get("courier")
-            .and_then(Value::as_str)
-            .and_then(CourierState::from_text)
-            .ok_or_else(|| unreadable("it holds no state of the relay's client"))?;
-        let held = value
-            .get("trust")
-            .and_then(Value::as_str)
-            .ok_or_else(|| unreadable("it holds nothing of the trust"))?;
-        let entries = value
-            .get("log")
-            .and_then(Value::as_array)
-            .ok_or_else(|| unreadable("it holds no log"))?
-            .iter()
-            .map(|entry| entry.as_str().and_then(Entry::from_json))
-            .collect::<Option<Vec<Entry>>>()
-            .ok_or_else(|| unreadable("an entry of its log is not one"))?;
-        for entry in &entries {
+        let group = match contents.extra(KEPT_GROUP) {
+            None => None,
+            Some(bytes) => Some(self.group_of(&contents, bytes)?),
+        };
+
+        // Everything is read; the core takes it.
+        self.trust.set_identity(contents.node, contents.identity());
+        for entry in &saved.entries {
             self.trust.append(entry).map_err(|error| {
                 PeerError::Unreadable(format!("an entry of its log does not hold: {error:?}"))
             })?;
         }
-        let kept = self.trust.restore_from_text(held);
+        contents.restore_epoch_keys(&self.trust);
+        let kept = self.trust.restore_from_text(&saved.trust);
         self.trust.await_own_chain();
+        if administrator.is_some() {
+            self.administrator = administrator;
+        }
+        if group.is_some() {
+            self.group = group;
+        }
         self.running = None;
         self.outcome = None;
-        self.state = state;
-        self.owed = owed;
+        self.state = saved.courier;
+        self.owed = saved.owed;
         Ok(kept)
+    }
+
+    /// The group's device a sealed state holds, made again with the key it signed with and the
+    /// messages it waited to use; `device` is its MLS state.
+    fn group_of(&self, contents: &Contents, device: &[u8]) -> Result<Member, PeerError> {
+        let unreadable = |why: &str| PeerError::Unreadable(why.to_string());
+        let node = contents
+            .extra(KEPT_GROUP_NODE)
+            .and_then(|bytes| <[u8; 8]>::try_from(bytes).ok())
+            .map(u64::from_be_bytes)
+            .ok_or_else(|| unreadable("it holds no node of the group's device"))?;
+        let identity = contents
+            .identity_named(KEPT_GROUP_KEY)
+            .ok_or_else(|| unreadable("it holds no key of the group's device"))?;
+        let held = contents
+            .extra(KEPT_GROUP_HELD)
+            .ok_or_else(|| unreadable("it holds nothing the group's device waited to use"))?;
+        let device =
+            Device::from_bytes(&self.list, node, identity, device).map_err(PeerError::Group)?;
+        let mut member = Member::new(device, self.trust.clone(), node);
+        member.take_held(held).map_err(PeerError::Group)?;
+        Ok(member)
     }
 
     fn ready(&self) -> Result<(), PeerError> {

@@ -4,8 +4,9 @@
 /*
  * Replays the recorded scenario of the peer core (backends/rust/peer-capi/tests/fixtures) through the
  * C ABI, from C, with no relay: the cores of two devices are made, given the administrator's acts, the
- * machine's sends, the rounds' answers and a save, and every text a core gives (each request, each
- * outcome, each standing, the genesis, the save, the reason of a refusal) must be the recorded one.
+ * machine's sends and the rounds' answers, and one is sealed and made again from its sealed state with
+ * no key given again; every text a core gives (each request, each outcome, each standing, the genesis,
+ * the sealed state, the reason of a refusal) must be the recorded one.
  *
  * The scenario is read as whitespace-separated tokens (the Rust test writes them from the JSON file).
  * A text is written as x followed by its UTF-8 bytes in hex (so "x" is the empty text). First the
@@ -16,14 +17,16 @@
  *   grant <d> <node> <role> <key>                 the key in hex
  *   remove <d> <node>
  *   standing <d> <text>
- *   restore <d> <text> <count>
+ *   save <d> <key> <state>          the state sealed under the data key, both in hex
+ *   restore <d> <key> <state> <count>
+ *                                   the device's core made again given nothing but the list (and the
+ *                                   genesis), and the state taken back for its node under the key
  *   outbound <d> <event> <data> <taken|held|not_signed|refused> <reason>
  *   start <d> <sync|resync|reread>
  *   request <d> <text>      the core asks this
  *   respond <d> <text>      the relay answered this
  *   fail <d> <reason>       the transport failed
  *   outcome <d> <text>      the core asks nothing more, and the exchange came to this
- *   save <d> <text>
  */
 
 #include <stdint.h>
@@ -178,6 +181,16 @@ static char *hex_of(const uint8_t *bytes, size_t n) {
     return text;
 }
 
+/* A data key token: 32 bytes in hex, for the caller to free. */
+static uint8_t *data_key_of(const char *token) {
+    size_t n;
+    uint8_t *key = unhex(token, &n);
+    if (n != 32) {
+        die("a data key is not 32 bytes");
+    }
+    return key;
+}
+
 static int32_t kind_of(const char *name) {
     if (strcmp(name, "sync") == 0) {
         return SCE_PEER_ROUND_SYNC;
@@ -267,6 +280,27 @@ int main(int argc, char **argv) {
             steps++;
             continue;
         }
+        if (strcmp(op, "restore") == 0) {
+            /* The device started again: a core given nothing but the list and the genesis. */
+            uint8_t *key = data_key_of(need());
+            size_t len;
+            uint8_t *state = unhex(need(), &len);
+            uint64_t want = strtoull(need(), NULL, 10);
+            sce_peer_free(peers[d]);
+            peers[d] = geneses[d] == NULL ? sce_peer_open(list) : sce_peer_invited(list, geneses[d]);
+            if (peers[d] == NULL) {
+                die("the core is not made");
+            }
+            uint64_t count = UINT64_MAX;
+            check(sce_peer_restore_sealed(peers[d], nodes[d], state, len, key, &count), "restore_sealed");
+            if (count != want) {
+                die("the restore kept another number of operations than was recorded");
+            }
+            free(key);
+            free(state);
+            steps++;
+            continue;
+        }
         ScePeer *peer = peers[d];
         if (peer == NULL) {
             die("the device's core is not made");
@@ -294,15 +328,6 @@ int main(int argc, char **argv) {
             char *want = text_of(need());
             check(sce_peer_standing(peer, &out), "standing");
             expect_text(taken(out), want, "the standing");
-        } else if (strcmp(op, "restore") == 0) {
-            char *saved = text_of(need());
-            uint64_t want = strtoull(need(), NULL, 10);
-            uint64_t count = UINT64_MAX;
-            check(sce_peer_restore(peer, saved, &count), "restore");
-            if (count != want) {
-                die("the restore kept another number of operations than was recorded");
-            }
-            free(saved);
         } else if (strcmp(op, "outbound") == 0) {
             char *event = text_of(need());
             char *data = text_of(need());
@@ -345,9 +370,16 @@ int main(int argc, char **argv) {
             }
             expect_text(taken(out), want, "the outcome");
         } else if (strcmp(op, "save") == 0) {
-            char *want = text_of(need());
-            check(sce_peer_save(peer, &out), "save");
-            expect_text(taken(out), want, "the save");
+            uint8_t *key = data_key_of(need());
+            char *want = copy_of(need());
+            check(sce_peer_save_sealed_under(peer, key, &out), "save_sealed_under");
+            if (out.ptr == NULL) {
+                die("the sealed state is empty");
+            }
+            char *got = hex_of(out.ptr, out.len);
+            sce_peer_buf_free(out);
+            expect_text(got, want, "the sealed state");
+            free(key);
         } else {
             die("a step the replay does not know");
         }

@@ -3,9 +3,11 @@
 
 // Replays the recorded scenario of the peer core (backends/rust/peer-capi/tests/fixtures) through the
 // C ABI, from Kotlin with JNA: the cores of two devices are made, given the administrator's acts, the
-// machine's sends, the rounds' answers and a save, with no relay, and every text a core gives (each
-// request, each outcome, each standing, the genesis, the save, the reason of a refusal) must be the
-// recorded one.
+// machine's sends and the rounds' answers, with no relay, and one is sealed and made again from its
+// sealed state with no key given again; every text a core gives (each request, each outcome, each
+// standing, the genesis, the sealed state, the reason of a refusal) must be the recorded one. The
+// data key of a sealed state is wrapped as a host wraps it, with a key of its own (`Wrapper`), and
+// unwrapped to restore.
 //
 // usage: Replay <libsce_peer_capi> <scenario.json>
 
@@ -19,6 +21,10 @@ import com.sun.jna.Structure
 import com.sun.jna.ptr.IntByReference
 import com.sun.jna.ptr.LongByReference
 import java.io.File
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 import kotlin.system.exitProcess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -29,7 +35,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 
-private const val ABI_VERSION = 2
+private const val ABI_VERSION = 3
 private const val OK = 0
 private val KEPT = mapOf("taken" to 0, "held" to 1, "not_signed" to 2, "refused" to 3)
 private val KINDS = mapOf("sync" to 0, "resync" to 1, "reread" to 2)
@@ -66,8 +72,40 @@ interface ScePeerLib : Library {
     fun sce_peer_respond(peer: Pointer, response: String): Int
     fun sce_peer_fail(peer: Pointer, reason: String): Int
     fun sce_peer_take_outcome(peer: Pointer, out: Buf): Int
-    fun sce_peer_save(peer: Pointer, out: Buf): Int
-    fun sce_peer_restore(peer: Pointer, saved: String, kept: LongByReference): Int
+    fun sce_peer_save_sealed_under(peer: Pointer, key: ByteArray, state: Buf): Int
+    fun sce_peer_restore_sealed(
+        peer: Pointer,
+        node: Long,
+        state: ByteArray,
+        len: NativeLong,
+        key: ByteArray,
+        kept: LongByReference,
+    ): Int
+}
+
+/**
+ * How a host keeps the data key of a sealed state: wrapped with a key it holds, beside the state.
+ * The wrapping key here is a software AES key; on Android it is a key of the Keystore
+ * (`KeyGenParameterSpec` under the `AndroidKeyStore` provider, in StrongBox when the device has
+ * one), reached through these same `Cipher` calls, and it never leaves the store. The cipher draws
+ * the IV of each wrapping, which is kept with the wrapped key.
+ */
+private class Wrapper {
+    private val key: SecretKey = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+
+    /** The data key wrapped: the IV and the wrapped bytes. */
+    fun wrap(dataKey: ByteArray): Pair<ByteArray, ByteArray> {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        return cipher.iv to cipher.doFinal(dataKey)
+    }
+
+    /** The data key a wrapping holds. */
+    fun unwrap(wrapped: Pair<ByteArray, ByteArray>): ByteArray {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, wrapped.first))
+        return cipher.doFinal(wrapped.second)
+    }
 }
 
 private fun unhex(text: String): ByteArray =
@@ -94,16 +132,19 @@ fun main(args: Array<String>) {
         if (status != OK) die("$what failed with $status")
     }
 
-    // The text of a buffer the library gave, given back; null for an empty buffer.
-    fun taken(buf: Buf): String? {
+    // The bytes of a buffer the library gave, given back; null for an empty buffer.
+    fun takenBytes(buf: Buf): ByteArray? {
         val ptr = buf.ptr ?: return null
         val bytes = ptr.getByteArray(0, buf.len.toInt())
         val back = BufValue()
         back.ptr = ptr
         back.len = buf.len
         lib.sce_peer_buf_free(back)
-        return String(bytes, Charsets.UTF_8)
+        return bytes
     }
+
+    // The text of a buffer the library gave, given back; null for an empty buffer.
+    fun taken(buf: Buf): String? = takenBytes(buf)?.let { String(it, Charsets.UTF_8) }
 
     fun expect(got: String?, want: String, what: String) {
         val have = got ?: ""
@@ -117,23 +158,55 @@ fun main(args: Array<String>) {
     val list = scenario.getValue("list").jsonPrimitive.content
     val devices = scenario.getValue("devices").jsonArray.map { it.jsonObject }
     val peers = arrayOfNulls<Pointer>(devices.size)
+    val wrapper = Wrapper()
+    // The data key of each device's last sealed state, as its host keeps it: wrapped.
+    val wrapped = arrayOfNulls<Pair<ByteArray, ByteArray>>(devices.size)
+
+    // The core of the device at `at`, given nothing but the list and the genesis.
+    fun bare(at: Int): Pointer {
+        peers[at]?.let { lib.sce_peer_free(it) }
+        val genesis = devices[at]["genesis"]
+        val made = if (genesis == null || genesis is JsonNull) {
+            lib.sce_peer_open(list)
+        } else {
+            lib.sce_peer_invited(list, unhex(genesis.jsonPrimitive.content))
+        }
+        val core = made ?: die("the core is not made")
+        peers[at] = core
+        return core
+    }
 
     for (element in scenario.getValue("steps").jsonArray) {
         val step: JsonObject = element.jsonObject
         val at = step.getValue("device").jsonPrimitive.int
         if (at < 0 || at >= devices.size) die("a step names no device")
         val op = step.getValue("op").jsonPrimitive.content
+        if (op == "restore") {
+            // The device started again: a core given nothing but the list and the genesis, and the
+            // data key its host unwraps.
+            val kept = wrapped[at] ?: die("no sealed state of the device was kept")
+            val key = wrapper.unwrap(kept)
+            if (hex(key) != step.getValue("key").jsonPrimitive.content) {
+                die("the key unwrapped is not the recorded one")
+            }
+            val state = unhex(step.getValue("state").jsonPrimitive.content)
+            val core = bare(at)
+            val node = devices[at].getValue("node").jsonPrimitive.long
+            val count = LongByReference(-1)
+            check(
+                lib.sce_peer_restore_sealed(core, node, state, NativeLong(state.size.toLong()), key, count),
+                "restore_sealed",
+            )
+            key.fill(0)
+            if (count.value != step.getValue("count").jsonPrimitive.long) {
+                die("the restore kept another number of operations than was recorded")
+            }
+            steps++
+            continue
+        }
         if (op == "make") {
             val device = devices[at]
-            peers[at]?.let { lib.sce_peer_free(it) }
-            val genesis = device["genesis"]
-            val made = if (genesis == null || genesis is JsonNull) {
-                lib.sce_peer_open(list)
-            } else {
-                lib.sce_peer_invited(list, unhex(genesis.jsonPrimitive.content))
-            }
-            val core = made ?: die("the core is not made")
-            peers[at] = core
+            val core = bare(at)
             val node = device.getValue("node").jsonPrimitive.long
             val seed = unhex(device.getValue("seed").jsonPrimitive.content)
             check(lib.sce_peer_set_identity(core, node, seed), "set_identity")
@@ -168,13 +241,6 @@ fun main(args: Array<String>) {
                 check(lib.sce_peer_standing(peer, out), "standing")
                 expect(taken(out), text("text"), "the standing")
             }
-            "restore" -> {
-                val count = LongByReference(-1)
-                check(lib.sce_peer_restore(peer, text("text"), count), "restore")
-                if (count.value != step.getValue("count").jsonPrimitive.long) {
-                    die("the restore kept another number of operations than was recorded")
-                }
-            }
             "outbound" -> {
                 val kept = IntByReference(-1)
                 check(lib.sce_peer_outbound(peer, text("event"), text("data"), kept, out), "outbound")
@@ -201,8 +267,12 @@ fun main(args: Array<String>) {
                 expect(outcome, text("text"), "the outcome")
             }
             "save" -> {
-                check(lib.sce_peer_save(peer, out), "save")
-                expect(taken(out), text("text"), "the save")
+                val key = unhex(text("key"))
+                check(lib.sce_peer_save_sealed_under(peer, key, out), "save_sealed_under")
+                val state = takenBytes(out) ?: die("the sealed state is empty")
+                expect(hex(state), text("state"), "the sealed state")
+                wrapped[at] = wrapper.wrap(key)
+                key.fill(0)
             }
             else -> die("a step the replay does not know: $op")
         }
