@@ -633,10 +633,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce-build/src/forge/limits.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/forge/model.rs",
           "symbol": "AlgorithmModel",
           "kind": "implements"
@@ -7537,6 +7533,12 @@
       "target_kind": "section",
       "target_id": "synth-5-J-2",
       "reason": "ADR 0064 moved history recording into the runtime's run store; the template no longer records a history or cites the section"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "ADR 0077 §7 step 4b removed REPEAT_DEFAULT_MAX_COUNT, whose doc was the file's only RFC §synth-5-B B2 citation; the file holds no codec list default any more"
     }
   ],
   "frames": {},
