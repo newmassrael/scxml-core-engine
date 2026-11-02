@@ -113,6 +113,26 @@ A host connected to several relays has one `Trust` and a courier for each: a rel
 operation is seen by the heads the members' checkpoints name (`Trust::divergences`) and routed around
 by the next relay's round.
 
+A round is a state machine that does no I/O itself (`RoundMachine`): it says which request it wants
+put to the relay, is given the answer, and comes to the `Round` and the errors a `Courier` comes to,
+in the same requests and the same order; a `Courier` is that machine driven over a synchronous `Link`.
+What a courier keeps between rounds (`CourierState`: the cursor, the roster told, the operations parked
+for want of a key, the proof of a conflict given) changes only where a step of a round was completed,
+and what a round took in and did not hand over, because the link failed, the answer never came or the
+host abandoned it, is handed over first by the next round; the state is one text for a host's storage.
+`Publication` builds and checks the requests that give the relay a key package, a commit, a Welcome or
+a checkpoint (`a_round_driven_by_hand_asks_what_a_courier_asks`).
+
+The peer core (`sce-rust-peer`, ADR 0079) composes a device's `Trust`, the round machine and the
+device of the list's MLS group, and speaks to its host in texts. The machine's outbound
+`record_list.write` and `record_list.supersede` are signed and remembered (`Peer::outbound`, through
+the same `keep` that `Keep` uses); a round is request texts out and response texts in
+(`Peer::poll_request`, `Peer::respond`, `Peer::fail`), and its outcome is the events for the machine in
+order, the refusals, whether the machine is to be built again, whether it stalled, and what the group's
+device did with what was read; the device's state is saved and restored as one text. It reads no clock
+and starts no thread, so the C ABI every application lane links is a thin layer over it
+(`two_devices_hold_one_list_through_a_relay_with_a_core_each`).
+
 ## 7. Two profiles, one relay
 
 The relay does not know which profile a list is in and does not need to: the profile is a fact in the
