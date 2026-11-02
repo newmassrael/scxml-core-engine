@@ -141,14 +141,14 @@ impl Net {
 
     fn sealed(&self, index: usize, id: u64, text: &str) -> String {
         let mut host = self.trust(index);
-        host.seal("#server", "todo.write", &write(NODES[index], id, text))
+        host.seal("#hub", "record_list.write", &write(NODES[index], id, text))
             .unwrap()
             .unwrap()
     }
 
     fn opens(&self, index: usize, op: &str) -> Result<String, String> {
         let mut host = self.trust(index);
-        host.admit("relay", "todo.write", op).map(|told| {
+        host.admit("relay", "record_list.write", op).map(|told| {
             serde_json::from_str::<Value>(&told.unwrap()).unwrap()["text"]
                 .as_str()
                 .unwrap()

@@ -33,7 +33,7 @@ fn some_requests() -> Vec<Request> {
             entry: "{\"x\":1}".to_string(),
         },
         Request::Submit {
-            event: "todo.write".to_string(),
+            event: "record_list.write".to_string(),
             data: "{\"id\":\"1\"}".to_string(),
         },
         Request::Checkpoint {
@@ -121,7 +121,7 @@ pub fn responses() -> Target {
             records: vec![
                 Record::Entry("e".to_string()),
                 Record::Operation {
-                    event: "todo.write".to_string(),
+                    event: "record_list.write".to_string(),
                     data: "d".to_string(),
                 },
                 Record::KeyPackage {
@@ -142,7 +142,7 @@ pub fn responses() -> Target {
             more: false,
         },
         Response::Operations {
-            operations: vec![("todo.write".to_string(), "d".to_string())],
+            operations: vec![("record_list.write".to_string(), "d".to_string())],
         },
         Response::refused(
             sce_rust_relay::Code::RateLimited { retry_after_ms: 5 },

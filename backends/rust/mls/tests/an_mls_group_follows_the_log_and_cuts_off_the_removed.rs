@@ -154,12 +154,12 @@ fn devices_the_log_admitted_agree_on_the_key_of_each_epoch_and_seal_under_it() {
     bob.publish_epoch_key(hosts.of(2)).unwrap();
     let mut alice_host = hosts.of(1).clone();
     let sent = alice_host
-        .seal("#server", "todo.write", &write(1, 1, "buy milk"))
+        .seal("#hub", "record_list.write", &write(1, 1, "buy milk"))
         .unwrap()
         .unwrap();
     let mut bob_host = hosts.of(2).clone();
     let told = bob_host
-        .admit("alice", "todo.write", &sent)
+        .admit("alice", "record_list.write", &sent)
         .unwrap()
         .unwrap();
     let told: Value = serde_json::from_str(&told).unwrap();
@@ -408,13 +408,17 @@ fn a_removed_device_derives_no_key_of_a_later_epoch_and_opens_nothing_sealed_aft
     carol.publish_epoch_key(hosts.of(3)).unwrap();
     let mut alice_host = hosts.of(1).clone();
     let sent = alice_host
-        .seal("#server", "todo.write", &write(1, 2, "after bob"))
+        .seal("#hub", "record_list.write", &write(1, 2, "after bob"))
         .unwrap()
         .unwrap();
     let mut carol_host = hosts.of(3).clone();
-    assert!(carol_host.admit("alice", "todo.write", &sent).is_ok());
+    assert!(carol_host
+        .admit("alice", "record_list.write", &sent)
+        .is_ok());
     let mut bob_host = hosts.of(2).clone();
-    let reason = bob_host.admit("alice", "todo.write", &sent).unwrap_err();
+    let reason = bob_host
+        .admit("alice", "record_list.write", &sent)
+        .unwrap_err();
     assert!(reason.contains("no key of epoch 3"), "{reason}");
 }
 

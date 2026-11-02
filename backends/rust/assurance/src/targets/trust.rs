@@ -11,7 +11,7 @@ use sce_rust_trust::audit;
 use sce_rust_trust::backup::{self, Contents, Cost};
 use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{link_bytes, Body, Entry, Log, Profile};
-use sce_rust_trust::message::Link;
+use sce_rust_trust::message::{Link, FLOOR_EVENT, SIGNED_EVENTS, SUPERSEDE_EVENT, WRITE_EVENT};
 use sce_rust_trust::{Checkpoint, Identity, PublicKey, Settlement, Trust};
 use serde_json::{json, Value};
 
@@ -116,28 +116,35 @@ fn corpus() -> Corpus {
     }
 
     // Operations: bob writes three sealed writes; the hub is given the first and carol all three.
+    // Alice writes over two of them: once alone, and once as a part of a change of two, which
+    // carries the change's size and stamp (docs/adr/0046).
     let mut sealer = h2.clone();
     let mut operations: Vec<(String, String)> = (1..=3)
         .map(|n| {
             (
-                "todo.write".to_string(),
+                WRITE_EVENT.to_string(),
                 sealer
-                    .seal("#s", "todo.write", &write(2, n, 1000 + n as i64))
+                    .seal("#s", WRITE_EVENT, &write(2, n, 1000 + n as i64))
                     .unwrap()
                     .unwrap(),
             )
         })
         .collect();
-    let note =
-        json!({"id": 1, "field": 3, "wallTime": "1001", "counter": 0, "nodeId": "2", "by": "1"})
-            .to_string();
-    operations.push((
-        "todo.supersede".to_string(),
-        h1.clone()
-            .seal("#s", "todo.supersede", &note)
-            .unwrap()
-            .unwrap(),
-    ));
+    let notes = [
+        json!({"id": 1, "field": 3, "wallTime": "1001", "counter": 0, "nodeId": "2", "by": "1"}),
+        json!({"id": 2, "field": 3, "wallTime": "1002", "counter": 0, "nodeId": "2", "by": "1",
+               "parts": 2, "atWallTime": "1003", "atCounter": 0}),
+    ];
+    let mut note_sealer = h1.clone();
+    for note in notes {
+        operations.push((
+            SUPERSEDE_EVENT.to_string(),
+            note_sealer
+                .seal("#s", SUPERSEDE_EVENT, &note.to_string())
+                .unwrap()
+                .unwrap(),
+        ));
+    }
     let (mut hub_host, mut h3_host) = (hub.clone(), h3.clone());
     hub_host
         .admit("r", &operations[0].0, &operations[0].1)
@@ -340,7 +347,7 @@ pub fn operations(name: &'static str, own: Option<u64>) -> Target {
         .collect();
     Target::new(name, 2500, items, move |input| {
         let trust = fresh(&entries, genesis_hash, own);
-        for event in ["todo.write", "todo.supersede"] {
+        for event in SIGNED_EVENTS {
             let _ = trust.take_operation(event, &text(input));
             let _ = trust.clone().admit("relay", event, &text(input));
         }
@@ -352,10 +359,10 @@ pub fn floors() -> Target {
     let items = bytes_of(corpus().floors);
     Target::new("floors", 2500, items, |input| {
         let mut trust = host(Some(1));
-        let _ = trust.admit("hub", "todo.floor", &text(input));
+        let _ = trust.admit("hub", FLOOR_EVENT, &text(input));
         let mut allowed = host(None);
-        allowed.allow_unsigned(&["todo.floor"]);
-        let _ = allowed.admit("hub", "todo.floor", &text(input));
+        allowed.allow_unsigned(&[FLOOR_EVENT]);
+        let _ = allowed.admit("hub", FLOOR_EVENT, &text(input));
     })
 }
 
