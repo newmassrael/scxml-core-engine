@@ -1232,6 +1232,21 @@ pub fn swift_unmarshal_expr(raw: &str, ty: &str) -> String {
     }
 }
 
+/// The case of a Swift observer's `Tag` enumeration that the oracle's tag `tag` names.
+///
+/// The oracle writes an observer's events as the upper-snake names the other backends
+/// give their enumeration constants (`EMIT_WARNING`), and a Swift case is lowerCamel
+/// (`emitWarning`), spelled from the document's event name as an enum's case is
+/// ([`crate::forge::enum_naming::variant_ident`]). Lowering the tag first makes the
+/// camel-casing of its words the inverse of the upper-snake spelling.
+pub fn swift_event_case_of_tag(tag: &str) -> String {
+    crate::forge::enum_naming::variant_ident(
+        crate::generator::Language::Swift,
+        "",
+        &tag.to_lowercase(),
+    )
+}
+
 /// Register the conformance-specific type-mapping filters on a minijinja
 /// environment. Called from `render_harness` for every language so the
 /// same filter names are available to every template — but note that not
@@ -1261,6 +1276,9 @@ pub fn register_conformance_filters(env: &mut minijinja::Environment) {
     });
     env.add_filter("swift_unmarshal", |raw: String, ty: String| {
         swift_unmarshal_expr(&raw, &ty)
+    });
+    env.add_filter("swift_event_case", |tag: String| {
+        swift_event_case_of_tag(&tag)
     });
     // C11: `c_type` is the type-name mapping the harness
     // template uses for pre-baked oracle struct fields. `c_literal` is

@@ -435,8 +435,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     ),
     // The numerical conformance harness and its kind fragments.
     (Language::Swift, "conformance fragment `codec_content_line`", Why::NotYet(SWIFT_NO_FORGE)),
-    (Language::Swift, "conformance fragment `observer`", Why::NotYet(SWIFT_NO_FORGE)),
-    (Language::Swift, "conformance fragment `procedure`", Why::NotYet(SWIFT_NO_FORGE)),
     // The gates, which run what an emitter writes.
     // Mesh (SCE_MESH.md §mesh-19, §mesh-20).
     (Language::Swift, "Mesh emitter", Why::NotYet(SWIFT_NO_MESH)),

@@ -509,6 +509,155 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         expectClose(Double(actual), Double(expected), "filter_low_pass step \(i) input=\(input)")
     }}
 
+// MARK: - observer: observer_coolant
+
+@Test func observerCoolantMatchesReference() throws {
+
+    func tagName(_ tag: ObserverCoolant.Tag) -> String {
+        switch tag {
+        case .emitWarning: return "EMIT_WARNING"
+        case .clearWarning: return "CLEAR_WARNING"
+        case .emergencyShutdown: return "EMERGENCY_SHUTDOWN"
+        }
+    }
+
+    let spec = try oracleSpec("observers", "observer_coolant")
+    let observer = ObserverCoolant()
+    for (i, step) in try oracleArray(spec.member("sequence")).enumerated() {
+        let input = try oracleReal(step.member("input"))
+        let expected = try oracleArray(step.member("expected_events")).map { try oracleText($0) }
+        let actual = observer.update(input).asArray().map(tagName)
+        #expect(actual == expected, "observer_coolant step \(i) input=\(input)")
+    }}
+
+// MARK: - procedure: procedure_linear
+
+@Test func procedureLinearMatchesReference() throws {
+
+    for (n, testCase) in try oracleCases("pure_functions", "procedure_linear").enumerated() {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: Int32.self)
+        guard let expected = testCase.member("expected") else {
+            throw OracleError(description: "procedure_linear case \(n): the oracle states no expected result")
+        }
+        let expectedCompleted = try oracleTruth(expected.member("completed"))
+        let expectedFinal = try oracleText(expected.member("final_state"))
+        let expectedPayloads: [[UInt8]]
+        if let payloads = expected.member("dispatched_payload_bytes") {
+            expectedPayloads = try oracleArray(payloads).map { try oracleBytes($0) }
+        } else {
+            expectedPayloads = []
+        }
+        let responseData = try testCase.member("handler_response_data").map { try oracleText($0) } ?? ""
+
+        var captured: [[UInt8]] = []
+        let handler: ProcedureServiceHandler = { request in
+            if let payload = request.payload { captured.append(payload) }
+            return ProcedureServiceResponse(success: true, data: responseData)
+        }
+        let result = ProcedureLinear.execute(handler, arg0)
+        #expect(result.completed == expectedCompleted, "procedure_linear case \(n): completed")
+        #expect(result.finalState == expectedFinal, "procedure_linear case \(n): final_state")
+        #expect(captured == expectedPayloads, "procedure_linear case \(n): dispatched_payload_bytes")
+    }}
+
+// MARK: - procedure: procedure_diamond
+
+@Test func procedureDiamondMatchesReference() throws {
+
+    for (n, testCase) in try oracleCases("pure_functions", "procedure_diamond").enumerated() {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt16.self)
+        let arg1 = try oracleText(args[1])
+        guard let expected = testCase.member("expected") else {
+            throw OracleError(description: "procedure_diamond case \(n): the oracle states no expected result")
+        }
+        let expectedCompleted = try oracleTruth(expected.member("completed"))
+        let expectedFinal = try oracleText(expected.member("final_state"))
+        let expectedPayloads: [[UInt8]]
+        if let payloads = expected.member("dispatched_payload_bytes") {
+            expectedPayloads = try oracleArray(payloads).map { try oracleBytes($0) }
+        } else {
+            expectedPayloads = []
+        }
+        let responseData = try testCase.member("handler_response_data").map { try oracleText($0) } ?? ""
+
+        var captured: [[UInt8]] = []
+        let handler: ProcedureServiceHandler = { request in
+            if let payload = request.payload { captured.append(payload) }
+            return ProcedureServiceResponse(success: true, data: responseData)
+        }
+        let result = ProcedureDiamond.execute(handler, arg0, arg1)
+        #expect(result.completed == expectedCompleted, "procedure_diamond case \(n): completed")
+        #expect(result.finalState == expectedFinal, "procedure_diamond case \(n): final_state")
+        #expect(captured == expectedPayloads, "procedure_diamond case \(n): dispatched_payload_bytes")
+    }}
+
+// MARK: - procedure: procedure_startup_check
+
+@Test func procedureStartupCheckMatchesReference() throws {
+
+    for (n, testCase) in try oracleCases("pure_functions", "procedure_startup_check").enumerated() {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = Float(try oracleReal(args[0]))
+        let arg1 = Float(try oracleReal(args[1]))
+        guard let expected = testCase.member("expected") else {
+            throw OracleError(description: "procedure_startup_check case \(n): the oracle states no expected result")
+        }
+        let expectedCompleted = try oracleTruth(expected.member("completed"))
+        let expectedFinal = try oracleText(expected.member("final_state"))
+        let expectedPayloads: [[UInt8]]
+        if let payloads = expected.member("dispatched_payload_bytes") {
+            expectedPayloads = try oracleArray(payloads).map { try oracleBytes($0) }
+        } else {
+            expectedPayloads = []
+        }
+        let responseData = try testCase.member("handler_response_data").map { try oracleText($0) } ?? ""
+
+        var captured: [[UInt8]] = []
+        let handler: ProcedureServiceHandler = { request in
+            if let payload = request.payload { captured.append(payload) }
+            return ProcedureServiceResponse(success: true, data: responseData)
+        }
+        let result = ProcedureStartupCheck.execute(handler, arg0, arg1)
+        #expect(result.completed == expectedCompleted, "procedure_startup_check case \(n): completed")
+        #expect(result.finalState == expectedFinal, "procedure_startup_check case \(n): final_state")
+        #expect(captured == expectedPayloads, "procedure_startup_check case \(n): dispatched_payload_bytes")
+    }}
+
+// MARK: - procedure: procedure_security_access
+
+@Test func procedureSecurityAccessMatchesReference() throws {
+
+    for (n, testCase) in try oracleCases("pure_functions", "procedure_security_access").enumerated() {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt32.self)
+        guard let expected = testCase.member("expected") else {
+            throw OracleError(description: "procedure_security_access case \(n): the oracle states no expected result")
+        }
+        let expectedCompleted = try oracleTruth(expected.member("completed"))
+        let expectedFinal = try oracleText(expected.member("final_state"))
+        let expectedPayloads: [[UInt8]]
+        if let payloads = expected.member("dispatched_payload_bytes") {
+            expectedPayloads = try oracleArray(payloads).map { try oracleBytes($0) }
+        } else {
+            expectedPayloads = []
+        }
+        let responseData = try testCase.member("handler_response_data").map { try oracleText($0) } ?? ""
+
+        var captured: [[UInt8]] = []
+        let handler: ProcedureServiceHandler = { request in
+            if let payload = request.payload { captured.append(payload) }
+            return ProcedureServiceResponse(success: true, data: responseData)
+        }
+        // <sce:helper name="computeKey"> stub: XOR every byte with 165.
+        let stubComputeKey: ([UInt8]) -> [UInt8] = { input in input.map { $0 ^ 165 } }
+        let result = ProcedureSecurityAccess.execute(handler, stubComputeKey, arg0)
+        #expect(result.completed == expectedCompleted, "procedure_security_access case \(n): completed")
+        #expect(result.finalState == expectedFinal, "procedure_security_access case \(n): final_state")
+        #expect(captured == expectedPayloads, "procedure_security_access case \(n): dispatched_payload_bytes")
+    }}
+
 // MARK: - lookup: lookup_alarm_code
 
 @Test func lookupAlarmCodeMatchesReference() throws {

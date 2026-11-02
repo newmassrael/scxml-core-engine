@@ -1,0 +1,41 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Procedure kind: `execute(handler, helpers..., args...)` driven over the oracle's cases. The
+   handler answers every service with success and the case's response data, and records the
+   payload of each request so the bytes a procedure dispatched are held to the oracle byte by
+   byte. A helper is replaced by the deterministic stub the manifest names. #}
+    for (n, testCase) in try oracleCases("{{ f.ref_section }}", "{{ f.name }}").enumerated() {
+        let args = try oracleArray(testCase.member("args"))
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | swift_unmarshal(arg_ty) }}
+{% endfor %}
+        guard let expected = testCase.member("expected") else {
+            throw OracleError(description: "{{ f.name }} case \(n): the oracle states no expected result")
+        }
+        let expectedCompleted = try oracleTruth(expected.member("completed"))
+        let expectedFinal = try oracleText(expected.member("final_state"))
+        let expectedPayloads: [[UInt8]]
+        if let payloads = expected.member("dispatched_payload_bytes") {
+            expectedPayloads = try oracleArray(payloads).map { try oracleBytes($0) }
+        } else {
+            expectedPayloads = []
+        }
+        let responseData = try testCase.member("handler_response_data").map { try oracleText($0) } ?? ""
+
+        var captured: [[UInt8]] = []
+        let handler: ProcedureServiceHandler = { request in
+            if let payload = request.payload { captured.append(payload) }
+            return ProcedureServiceResponse(success: true, data: responseData)
+        }
+{% for h in f.helpers_ordered %}
+{% if h.stub.kind == "xor_bytes" %}
+        // <sce:helper name="{{ h.name }}"> stub: XOR every byte with {{ h.stub.mask }}.
+        let stub{{ h.name | to_pascal_case }}: ([UInt8]) -> [UInt8] = { input in input.map { $0 ^ {{ h.stub.mask }} } }
+{% endif %}
+{% endfor %}
+        let result = {{ f.name | to_pascal_case }}.execute(handler{% for h in f.helpers_ordered %}, stub{{ h.name | to_pascal_case }}{% endfor %}{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %})
+        #expect(result.completed == expectedCompleted, "{{ f.name }} case \(n): completed")
+        #expect(result.finalState == expectedFinal, "{{ f.name }} case \(n): final_state")
+        #expect(captured == expectedPayloads, "{{ f.name }} case \(n): dispatched_payload_bytes")
+    }

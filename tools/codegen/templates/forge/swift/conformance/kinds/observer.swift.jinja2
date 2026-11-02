@@ -1,0 +1,26 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Observer kind: a stateful `update(input)` driven over the oracle's sequence, the events
+   each sample raises held to the step's expected events in order.
+
+   The oracle names an event as the other backends spell their enumeration constants
+   (`EMIT_WARNING`); the switch maps each case of the observer's `Tag` to that name. It is
+   exhaustive, so an observer that gained or lost an event without the manifest moving does
+   not compile. #}
+    func tagName(_ tag: {{ f.name | to_pascal_case }}.Tag) -> String {
+        switch tag {
+{% for tag in f.event_tags %}
+        case .{{ tag | swift_event_case }}: return "{{ tag }}"
+{% endfor %}
+        }
+    }
+
+    let spec = try oracleSpec("{{ f.ref_section }}", "{{ f.name }}")
+    let observer = {{ f.name | to_pascal_case }}()
+    for (i, step) in try oracleArray(spec.member("sequence")).enumerated() {
+        let input = {{ "step.member(\"input\")" | swift_unmarshal(f.input) }}
+        let expected = try oracleArray(step.member("expected_events")).map { try oracleText($0) }
+        let actual = observer.update(input).asArray().map(tagName)
+        #expect(actual == expected, "{{ f.name }} step \(i) input=\(input)")
+    }
