@@ -9,8 +9,10 @@
 // that two members agree on one list through the relay, in the profile where the hub is not
 // trusted (content sealed, the relay reads none of it) and in the one where it is (the same relay,
 // the same protocol); that an instant is settled on the members' checkpoints, carried through the
-// relay, with no machine of the hub and no administrator; and that a member taken off is refused
-// by the relay and reaches no copy.
+// relay, with no machine of the hub and no administrator; that a member taken off is refused
+// by the relay and reaches no copy; and that a copy built again in the middle of the run from its
+// application's own log of commands writes nothing twice, and the copies still agree with no
+// conflict held.
 
 mod common;
 
@@ -20,6 +22,7 @@ use common::*;
 use sce_rust_relay::{
     Authority, Courier, DirectLink, Keep, Limits, MemoryStore, Relay, Request, Response,
 };
+use sce_rust_runtime::Engine;
 use sce_rust_trust::membership::{Body, Log, Profile};
 use sce_rust_trust::{Identity, Trust};
 use sce_rust_world::{Outcome, World};
@@ -347,4 +350,92 @@ fn a_member_taken_off_is_refused_by_the_relay_and_reaches_no_copy() {
         !alice_sees.contains_key(&(2, DUE)),
         "what he made after reaches no copy"
     );
+}
+
+/// Alice's application keeps its own log of commands as its original, and in the middle of the run
+/// builds her copy of the list again from it: a new machine, told her node, given her commands
+/// again with the instants they had. The machine sends every write and note again, as it made them
+/// the first time; her host gives each back as the operation it holds and signs nothing, so the
+/// relay is given nothing and bob's machine is told nothing twice. A resync tells the rebuilt copy
+/// the list, and the two copies agree as they did, with no conflict held anywhere.
+#[test]
+fn a_copy_built_again_from_its_own_commands_writes_nothing_twice() {
+    let mut members = Members::new(25, Profile::Untrusted);
+    members.pump();
+    // What alice's application keeps of her commands: the row, the field, the number, the text and
+    // the instant. The third writes over the first, so its change is a write and a note.
+    let commands: [(u64, u64, i64, &str, i64); 4] = [
+        (1, DUE, 10, "", 20_000),
+        (3, TITLE, 0, "buy milk", 20_001),
+        (1, DUE, 11, "", 20_002),
+        (4, DUE, 111, "", 20_003),
+    ];
+    for (id, field, value, text, now) in commands {
+        record_edit_at(&mut members.world, "alice", id, field, value, text, now);
+    }
+    record_edit_at(&mut members.world, "bob", 2, DUE, 20, "", 10_000);
+    record_edit_at(&mut members.world, "bob", 4, DUE, 222, "", 10_001);
+    quiet(&mut members.world);
+    members.pump();
+    assert_eq!(members.agreed(), 4);
+    let held = records_of(&mut members.world, "alice");
+    let operations = members.alice.signed_operations();
+    let last = members.alice.last_seq(ALICE);
+    assert_eq!(last, 5, "four writes and a note");
+
+    // Her copy is built again from nothing, and her commands are given to it again.
+    members.world.restart::<RecordList>("alice", |_, clock| {
+        let mut engine = Engine::new(RecordList::new());
+        engine.set_clock(clock);
+        engine.initialize();
+        engine
+    });
+    members
+        .world
+        .raise("alice", "record_list.join", r#"{"node":"1","hub":false}"#);
+    for (id, field, value, text, now) in commands {
+        record_edit_at(&mut members.world, "alice", id, field, value, text, now);
+    }
+    quiet(&mut members.world);
+    let errors = members.world.host_errors();
+    assert_eq!(
+        errors.len(),
+        5,
+        "every write and note sent again: {errors:?}"
+    );
+    assert!(
+        errors.iter().all(|error| error.contains("held already")),
+        "each is the operation her host holds, signed once: {errors:?}"
+    );
+    assert_eq!(members.alice.signed_operations(), operations);
+    assert_eq!(members.alice.last_seq(ALICE), last);
+
+    // A resync tells the rebuilt copy the list; it sends nothing on what it is told.
+    let told = members.courier("alice").resync().unwrap();
+    assert_eq!(told.pushed, 0, "the relay is given nothing new");
+    assert!(told.refused.is_empty(), "{:?}", told.refused);
+    for (event, data) in told.events {
+        members.world.raise("alice", &event, &data);
+    }
+    quiet(&mut members.world);
+    assert!(
+        members.world.host_errors().is_empty(),
+        "the rebuilt copy sent nothing on what it was told"
+    );
+
+    let round = members.courier("bob").sync().unwrap();
+    assert!(
+        round.events.is_empty(),
+        "bob's machine is told nothing twice: {:?}",
+        round.events
+    );
+    assert_eq!(round.pushed, 0);
+    members.pump();
+    assert_eq!(members.agreed(), 4);
+    assert_eq!(records_of(&mut members.world, "alice"), held);
+    assert_eq!(members.alice.signed_operations(), operations);
+    for host in [&members.alice, &members.bob] {
+        assert!(host.equivocating().is_empty(), "no chain is frozen");
+        assert!(host.divergences().is_empty());
+    }
 }
