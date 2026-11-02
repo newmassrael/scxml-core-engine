@@ -26909,6 +26909,11 @@ pub fn generate_swift_with_imports(
         // A timer is a period, a fire event and two optional hooks over the runtime's
         // clock, none of which depends on a type Swift has yet to spell.
         ForgeDocument::Timer(_) => None,
+        // An observer over its own inputs; an import that holds state is refused where it is
+        // read (`render_observer`), as it is on every backend.
+        ForgeDocument::Observer(m) => {
+            swift_observer_unlowered(m).map(|c| swift_observer_refusal(m, &c))
+        }
         // A log is refused for its element's codec, which only the document-set compile has
         // in hand: the renderer reads that refusal from the resolution it was handed
         // ([`crate::BroadcastLogElementFacts::swift_unlowered`]) and refuses before it writes.
@@ -26946,6 +26951,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Validator(m) => render_validator(&env, m, imports, Language::Swift)?,
         ForgeDocument::Codec(m) => swift_codec::render(&env, m, imports)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Observer(m) => render_observer(&env, m, imports, Language::Swift)?,
         ForgeDocument::BroadcastLog(m) => render_broadcast_log_swift(&env, m, imports, options)?,
         _ => unreachable!("every other kind returned above"),
     };
@@ -27276,6 +27282,57 @@ pub(crate) fn swift_codec_unlowered(m: &CodecModel) -> Option<String> {
 /// ([`crate::BroadcastLogElementFacts::swift_unlowered`]).
 pub(crate) fn swift_codec_refusal(m: &CodecModel, construct: &str) -> String {
     swift_codec::refusal(m, construct)
+}
+
+/// What of the observer `m` the Swift backend does not lower yet, described for a refusal by
+/// name (`generate/unsupported-feature`): an event whose case Swift reserves, two events
+/// that are the one case, and a monitor spelled as a member the class already has.
+///
+/// The events are the cases of an enumeration nested in the class
+/// ([`crate::forge::enum_naming::variant_ident`]), so a word the language reserves is refused
+/// and not escaped, and two names that become one case are refused and not merged: the
+/// observer would raise one event where the document names two. The same event named by two
+/// monitors is the ordinary case and is one case. A monitor is a property the `update` method
+/// reads bare, and Swift does not take a property and a method of one name.
+pub(crate) fn swift_observer_unlowered(m: &ObserverModel) -> Option<String> {
+    use crate::generator::Language;
+    let mut cases: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    let events = m
+        .monitors
+        .iter()
+        .flat_map(|mon| std::iter::once(&mon.on_enter).chain(mon.on_leave.as_ref()));
+    for event in events {
+        let case = crate::forge::enum_naming::variant_ident(Language::Swift, &m.name, event);
+        if crate::reader_names::is_reserved_word(Language::Swift, &case) {
+            return Some(format!("an event `{event}`, a case name Swift reserves,"));
+        }
+        match cases.get(&case) {
+            Some(first) if first != event => {
+                return Some(format!(
+                    "the events `{first}` and `{event}`, which are the one case `{case}`"
+                ));
+            }
+            Some(_) => {}
+            None => {
+                cases.insert(case, event.clone());
+            }
+        }
+    }
+    m.monitors.iter().find(|mon| mon.id == "update").map(|mon| {
+        format!(
+            "a monitor `{}`, the name of the method that reads it",
+            mon.id
+        )
+    })
+}
+
+/// The sentence `generate` answers the observer `m` with for the construct `construct` it
+/// holds ([`swift_observer_unlowered`]).
+fn swift_observer_refusal(m: &ObserverModel, construct: &str) -> String {
+    format!(
+        "observer '{}': {construct} has no Swift lowering yet",
+        m.name
+    )
 }
 
 /// What of a validator the Swift backend does not lower yet, described for a refusal by name
@@ -31215,7 +31272,11 @@ impl LangCtx {
             | crate::generator::Language::Kotlin
             | crate::generator::Language::Python
             | crate::generator::Language::C11 => to_upper_snake(s),
-            crate::generator::Language::Swift => no_swift_emitter("LangCtx::event_name"),
+            // The case of the `Tag` enumeration nested in the observer's class, spelled as
+            // a Swift enum spells its own (`enum_naming::variant_ident`).
+            crate::generator::Language::Swift => {
+                crate::forge::enum_naming::variant_ident(crate::generator::Language::Swift, "", s)
+            }
         }
     }
 
@@ -31982,7 +32043,9 @@ fn render_observer(
                 | crate::generator::Language::C11 => {
                     format!("{}_active", filters::to_snake_case(mon.id.clone()))
                 }
-                crate::generator::Language::Swift => no_swift_emitter("render_observer"),
+                // Held by the runtime's `ThresholdState`, as Kotlin's is: the template
+                // reads no flag of its own.
+                crate::generator::Language::Swift => format!("{}Active", mon.id),
             };
 
             // The struct field this monitor is. Go keeps it off the struct's own
@@ -32000,7 +32063,9 @@ fn render_observer(
                 crate::generator::Language::Cpp
                 | crate::generator::Language::Python
                 | crate::generator::Language::C11 => mon.id.clone(),
-                crate::generator::Language::Swift => no_swift_emitter("render_observer"),
+                // A property of the class the method reads bare, spelled as every Swift
+                // local is, so a monitor named for a type does not hide it.
+                crate::generator::Language::Swift => swift_local_spelling(&mon.id),
             };
 
             Ok(serde_json::json!({

@@ -1,0 +1,71 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="observer")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// A threshold observer: a class that holds one hysteresis state per monitor, whose `update`
+// reads the inputs of one sample and answers the events that sample raised, in the order the
+// monitors are written. It holds its states, so each holder of one instance shares them.
+//
+// The events are a `Tag` enumeration nested in the class. A file-local enumeration of one name
+// would be declared again by every observer of the module, which is one SwiftPM target.
+
+import SceForgeRuntime
+
+public final class {{ struct_name }} {
+{% if has_event_domain %}
+    // Event domain "{{ event_domain }}" is declared by the consuming module (typically a
+    // statechart that aggregates events from multiple observers in this domain). The module
+    // must provide
+    //
+    //     enum {{ event_domain }}Tag {
+{% for ev in events %}
+    //         case {{ ev }}
+{% endfor %}
+    //     }
+    //
+    // See SCE_FORGE.md Section 4.11.
+    public typealias Tag = {{ event_domain }}Tag
+{% else %}
+    // No sce:event-domain is declared on this <scxml> root: the observer falls back to an
+    // enumeration of its own. The resulting EventQueue type cannot be composed with other
+    // observers. To enable cross-file composition, add sce:event-domain="..." to the source
+    // SCXML. See SCE_FORGE.md Section 4.11.
+    public enum Tag {
+{% for ev in events %}
+        case {{ ev }}
+{% endfor %}
+    }
+{% endif %}
+
+{% for mon in monitors %}
+    private let {{ mon.field }} = SceForgeRuntime.ThresholdState()
+{% endfor %}
+
+    public init() {}
+
+    public func update({{ params }}) -> SceForgeRuntime.EventQueue<Tag> {
+        var sceEvents = SceForgeRuntime.EventQueue<Tag>()
+{% for mon in monitors %}
+        if {{ mon.field }}.enterIf({{ mon.enter_expr }}) {
+            sceEvents.push(.{{ mon.event_enter }})
+{% if mon.has_leave and mon.has_on_leave %}
+        } else if {{ mon.field }}.leaveIf({{ mon.leave_expr }}) {
+            sceEvents.push(.{{ mon.event_leave }})
+        }
+{% elif mon.has_leave %}
+        } else {
+            {{ mon.field }}.leaveIf({{ mon.leave_expr }})
+        }
+{% else %}
+        }
+{% endif %}
+{% endfor %}
+        return sceEvents
+    }
+}

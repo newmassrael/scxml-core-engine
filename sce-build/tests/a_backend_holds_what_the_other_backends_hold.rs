@@ -457,9 +457,11 @@ const SWIFT_NO_EMITTER: &str =
 /// (`generator::lowers_static_datamodel_in_part`).
 const SWIFT_STATIC_IN_PART: &str =
     "Swift lowers the variables, payloads, enums, records, lists, optionals, sends to its own \
-     queues and parent, child sessions and host actions of a sce-static machine; a send to a Mesh \
-     peer or over HTTP, a host-run invoke, a child that declares host acts and an invoke \
-     idlocation are refused by name";
+     queues, its parent and a URL, child sessions, host-run invokes and host actions of a \
+     sce-static machine; a send to a Mesh peer, a BasicHTTP send with a body or an event an \
+     expression computes, an invoke of a Mesh peer, an invoke whose child a contentexpr computes, \
+     a child that states a duty or runs a script engine, and an invoke with an idlocation or a \
+     finalize are refused by name";
 
 /// Swift writes the Forge kinds in part (`codegen_matrix::ships_in_part`).
 const SWIFT_NO_FORGE: &str =
