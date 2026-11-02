@@ -252,6 +252,22 @@ fn a_frame_is_written_in_one_write_so_a_bounded_sink_holds_all_of_it_or_none() {
 }
 
 #[test]
+fn a_codec_with_no_field_is_a_frame_of_no_bytes() {
+    let code = swift_of("tests/forge/resources/codec_zenoh_keep_alive.scxml")
+        .expect("a codec with no field is written");
+    assert!(code.contains("public static let frameLength = 0"), "{code}");
+    assert_eq!(
+        code.matches("public init(").count(),
+        1,
+        "a second initializer of no parameter would declare the first again: {code}"
+    );
+    assert!(
+        code.contains("let frame = [UInt8](repeating: 0, count: Self.frameLength)"),
+        "a frame nothing is stored into is a constant: {code}"
+    );
+}
+
+#[test]
 fn a_field_of_bits_inside_a_byte_is_cut_and_shifted_into_it() {
     let code =
         swift_of("tests/forge/resources/codec_subbyte.scxml").expect("bit fields are written");

@@ -1040,6 +1040,30 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     }
 }
 
+// MARK: - codec: codec_zenoh_keep_alive
+
+@Test func codecZenohKeepAliveMatchesReference() throws {
+
+    let cases = try oracleCases("codecs", "codec_zenoh_keep_alive")
+    #expect(!cases.isEmpty, "codec_zenoh_keep_alive: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_zenoh_keep_alive case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+
+        let value = CodecZenohKeepAlive(
+        )
+
+        var sink = BytesSink()
+        try value.encode(into: &sink)
+        #expect(sink.bytes == expectedBytes, "codec_zenoh_keep_alive case \(index) encode")
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecZenohKeepAlive.decode(&cursor)
+        #expect(roundTripped == value, "codec_zenoh_keep_alive case \(index) decode")
+        #expect(cursor.remaining == 0, "codec_zenoh_keep_alive case \(index) decode consumed the frame and nothing else")
+    }
+}
+
 // MARK: - codec: codec_zenoh_put
 
 @Test func codecZenohPutMatchesReference() throws {
@@ -1062,6 +1086,54 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let roundTripped = try CodecZenohPut.decode(&cursor)
         #expect(roundTripped == value, "codec_zenoh_put case \(index) decode")
         #expect(cursor.remaining == 0, "codec_zenoh_put case \(index) decode consumed the frame and nothing else")
+    }
+}
+
+// MARK: - codec: codec_zenoh_del
+
+@Test func codecZenohDelMatchesReference() throws {
+
+    let cases = try oracleCases("codecs", "codec_zenoh_del")
+    #expect(!cases.isEmpty, "codec_zenoh_del: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_zenoh_del case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+
+        let value = CodecZenohDel(
+        )
+
+        var sink = BytesSink()
+        try value.encode(into: &sink)
+        #expect(sink.bytes == expectedBytes, "codec_zenoh_del case \(index) encode")
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecZenohDel.decode(&cursor)
+        #expect(roundTripped == value, "codec_zenoh_del case \(index) decode")
+        #expect(cursor.remaining == 0, "codec_zenoh_del case \(index) decode consumed the frame and nothing else")
+    }
+}
+
+// MARK: - codec: codec_zenoh_decl_final
+
+@Test func codecZenohDeclFinalMatchesReference() throws {
+
+    let cases = try oracleCases("codecs", "codec_zenoh_decl_final")
+    #expect(!cases.isEmpty, "codec_zenoh_decl_final: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_zenoh_decl_final case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+
+        let value = CodecZenohDeclFinal(
+        )
+
+        var sink = BytesSink()
+        try value.encode(into: &sink)
+        #expect(sink.bytes == expectedBytes, "codec_zenoh_decl_final case \(index) encode")
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecZenohDeclFinal.decode(&cursor)
+        #expect(roundTripped == value, "codec_zenoh_decl_final case \(index) decode")
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_final case \(index) decode consumed the frame and nothing else")
     }
 }
 
@@ -4532,6 +4604,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecVariantSessionOpen.frameLength
+}
+
+// MARK: - codec: codec_zenoh_ext_unit
+
+@Test func codecZenohExtUnitMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohExtUnit.frameLength
 }
 
 // MARK: - enum: enum_content_line_class

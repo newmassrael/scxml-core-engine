@@ -51,9 +51,8 @@ pub(super) fn unlowered(m: &CodecModel) -> Option<String> {
     if !m.flag_inputs.is_empty() {
         return Some("a flag input".to_string());
     }
-    if m.fields.is_empty() {
-        return Some("a codec with no field".to_string());
-    }
+    // A codec with no field is a frame of no bytes: what a body whose tag is written outside it
+    // carries (`codec_zenoh_keep_alive`).
     m.fields
         .iter()
         .find_map(|f| field_unlowered(m, f))
