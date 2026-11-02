@@ -3,22 +3,27 @@
 //
 // Devices of one list, each holding it through a peer core, and a relay in the same process; every
 // text that crosses between a core and the relay is carried here by hand, as a host's transport
-// would carry it. Alice's device holds the administrator's key and opens the list; bob's is invited
-// with the hash of the genesis and granted; carol's may read. What is asked: that what alice's
-// machine sends, in the record list's own events, reaches bob's machine as the event alice's machine
-// sent; that a device saved and restored in the middle of a round goes on and both devices come to
-// hold the same; that what a device that may not write sends is refused, and reaches no one; that a
-// host that answers out of turn is told so; that the group key is followed by the core, so that
-// what alice writes under the group's epoch opens on bob's device; and that a device whose machine
-// is built again from its own log of commands writes nothing twice, refuses another content under a
-// stamp it signed, and, restored from a save older than what it published, reads its own chain back
-// from the relay before it signs, so that no host holds a frozen chain of it.
+// would carry it. Alice's device holds the administrator's key and opens the list through its core;
+// bob's is invited with the hash of the genesis and granted; carol's may read. What is asked: that
+// what alice's machine sends, in the record list's own events, reaches bob's machine as the event
+// alice's machine sent; that a device saved and restored in the middle of a round goes on and both
+// devices come to hold the same; that what a device that may not write sends is refused, and
+// reaches no one; that a host that answers out of turn is told so; that the group key is followed by
+// the core, and the administrator's core admits a device to the list and its group in one act, so
+// that what alice writes under the group's epoch opens on bob's device; that what the relay is owed
+// of such an act outlives a save and a failed round; that an administrator's act the core cannot do
+// is refused with its reason and writes nothing; that a device taken off is refused by the relay;
+// and that a device whose machine is built again from its own log of commands writes nothing twice,
+// refuses another content under a stamp it signed, and, restored from a save older than what it
+// published, reads its own chain back from the relay before it signs, so that no host holds a frozen
+// chain of it.
 
 use sce_rust_peer::{
-    CourierError, Device, GroupStep, Kept, Outcome, Peer, PeerError, Publication, RoundKind,
+    CourierError, Device, GroupStep, Kept, LogError, MlsError, Outcome, Peer, PeerError, Profile,
+    Publication, RoundKind,
 };
 use sce_rust_relay::{Authority, Limits, MemoryStore, Relay};
-use sce_rust_trust::membership::{Body, Entry, Log, Profile};
+use sce_rust_trust::membership::{Body, Entry, Log};
 use sce_rust_trust::Identity;
 use serde_json::{json, Value};
 
@@ -109,30 +114,21 @@ impl Network {
     }
 }
 
-/// Alice's device: it holds the administrator's key and opens the list, granting alice and bob
-/// writing and carol reading.
+/// Alice's device: it holds the administrator's key and opens the list, which makes her its owner,
+/// and grants bob writing and carol reading.
 fn alice() -> Peer {
     let mut alice = Peer::open(LIST);
     alice.set_identity(ALICE, person(ALICE));
-    grant_all(&alice);
-    alice
-}
-
-fn grant_all(alice: &Peer) {
-    let trust = alice.trust();
-    trust.append(&genesis()).unwrap();
-    for (node, role) in [(ALICE, 3u8), (BOB, 2), (CAROL, 1)] {
-        let entry = trust
-            .draft(Body::Grant {
-                node,
-                role,
-                key: person(node).public(),
-                final_seq: None,
-            })
-            .sign(&administrator())
-            .finish();
-        trust.append(&entry).unwrap();
+    alice.set_administrator(administrator());
+    assert_eq!(
+        alice.open_list(Profile::Untrusted).unwrap(),
+        genesis().hash(),
+        "the genesis a person is invited with"
+    );
+    for (node, role) in [(BOB, 2u8), (CAROL, 1)] {
+        alice.grant(node, role, person(node).public()).unwrap();
     }
+    alice
 }
 
 /// A device invited with the hash of the genesis, which is all an invitation carries.
@@ -403,82 +399,65 @@ fn a_host_that_answers_out_of_turn_is_told_so() {
     assert!(published.refused().is_empty(), "{:?}", published.refused());
 }
 
-/// The list's content key is its MLS group's, and the core follows the group: bob's device leaves a
-/// key package with the relay, alice's administrator device reads it and adds him (the log names the
-/// commit), and bob's core joins from the Welcome a round reads, giving his trust the key of the
-/// epoch; what alice writes then is sealed under it, and bob's machine is told it opened.
-#[test]
-fn the_core_follows_the_group_and_what_is_sealed_under_its_epoch_opens() {
-    let mut network = Network::new(Limits::default());
+/// Alice's device, which holds the administrator's key and a device of the list's group: it opens
+/// the list, and the group with it.
+fn alice_with_group() -> Peer {
     let mut alice = Peer::open(LIST).with_group(Device::new(LIST, ALICE, person(ALICE)), ALICE);
     alice.set_identity(ALICE, person(ALICE));
-    let trust = alice.trust().clone();
-    trust.append(&genesis()).unwrap();
-    let grant = trust
-        .draft(Body::Grant {
-            node: ALICE,
-            role: 3,
-            key: person(ALICE).public(),
-            final_seq: None,
-        })
-        .sign(&administrator())
-        .finish();
-    trust.append(&grant).unwrap();
+    alice.set_administrator(administrator());
+    alice.open_list(Profile::Untrusted).unwrap();
     alice
-        .group_mut()
-        .unwrap()
-        .device_mut()
-        .create_group()
-        .unwrap();
-    network.round(&mut alice, ALICE, RoundKind::Sync);
+}
 
+/// Bob's device, invited, with a device of the list's group, which has left a key package with the
+/// relay.
+fn bob_with_a_key_package(network: &mut Network) -> Peer {
     let mut bob =
         Peer::invited(LIST, genesis().hash()).with_group(Device::new(LIST, BOB, person(BOB)), BOB);
     bob.set_identity(BOB, person(BOB));
     bob.publish_key_package().unwrap();
     network.finish(&mut bob, BOB);
-    network.round(&mut alice, ALICE, RoundKind::Sync);
-    let package = alice
-        .group()
-        .unwrap()
-        .key_packages_of(BOB)
-        .last()
-        .cloned()
-        .expect("alice's core read bob's key package");
+    bob
+}
 
-    let issued = alice
-        .group_mut()
-        .unwrap()
-        .add_member(&administrator(), BOB, 2, person(BOB).public(), &package)
-        .unwrap();
+/// The list's content key is its MLS group's, and the core follows the group: bob's device leaves a
+/// key package with the relay, alice's administrator device reads it and admits him in one act (the
+/// grant, the commit and the entry that names it), the next round gives the relay the entries, then
+/// the commit and his Welcome, and bob's core joins from the Welcome a round reads, giving his trust
+/// the key of the epoch; what alice writes then is sealed under it, and bob's machine is told it
+/// opened.
+#[test]
+fn the_core_follows_the_group_and_what_is_sealed_under_its_epoch_opens() {
+    let mut network = Network::new(Limits::default());
+    let mut alice = alice_with_group();
     network.round(&mut alice, ALICE, RoundKind::Sync);
-    alice
-        .publish(&Publication::Commit {
-            epoch: issued.epoch,
-            commit: issued.commit.clone(),
-        })
-        .unwrap();
-    network.finish(&mut alice, ALICE);
-    alice
-        .publish(&Publication::Welcome {
-            epoch: issued.epoch,
-            node: BOB,
-            welcome: issued.welcome.clone().unwrap(),
-        })
-        .unwrap();
-    network.finish(&mut alice, ALICE);
+    let mut bob = bob_with_a_key_package(&mut network);
+    assert_eq!(
+        alice.add_member(BOB, 2, person(BOB).public()),
+        Err(PeerError::NoKeyPackage(BOB)),
+        "no round of alice's has read his key package yet"
+    );
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+
+    alice.add_member(BOB, 2, person(BOB).public()).unwrap();
+    assert_eq!(alice.standing().owed, 2, "the commit and his Welcome");
+    assert_eq!(alice.trust().role(BOB), 2);
+    let admitted = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert!(admitted.refused().is_empty(), "{:?}", admitted.refused());
+    assert_eq!(admitted.owed, 0);
+    assert_eq!(
+        admitted.round.pushed, 2,
+        "the grant and the entry that names the commit"
+    );
 
     let joined = network.round(&mut bob, BOB, RoundKind::Sync);
-    assert_eq!(
-        joined.steps,
-        vec![GroupStep::Joined(u64::from(issued.epoch))],
-        "{joined:?}"
-    );
+    assert_eq!(joined.steps, vec![GroupStep::Joined(1)], "{joined:?}");
     assert_eq!(
         bob.group().unwrap().device().epoch_key(),
         alice.group().unwrap().device().epoch_key()
     );
-    assert_eq!(bob.trust().epochs(), vec![issued.epoch]);
+    assert_eq!(bob.trust().epochs(), vec![1]);
+    assert_eq!(bob.standing().keys, alice.standing().keys);
 
     assert_eq!(
         alice.outbound(WRITE, &write(1, ALICE, 3000, 5)),
@@ -489,6 +468,263 @@ fn the_core_follows_the_group_and_what_is_sealed_under_its_epoch_opens() {
     let writes = named(&told, WRITE);
     assert_eq!(writes.len(), 1, "{:?}", told.events());
     assert_eq!(writes[0]["value"], "5", "opened under the group's key");
+
+    // Alice takes him off the list and the group in one act: the group moves to an epoch his
+    // device holds no key of, and what she writes under it reaches him no more.
+    alice.remove_member(BOB).unwrap();
+    assert_eq!(alice.standing().owed, 1, "the commit, and no Welcome");
+    let removed = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert!(removed.refused().is_empty(), "{:?}", removed.refused());
+    assert_eq!(removed.owed, 0);
+    assert_eq!(alice.trust().epochs(), vec![1, 2]);
+    assert_eq!(
+        alice.outbound(WRITE, &write(2, ALICE, 4000, 6)),
+        Kept::Taken
+    );
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    let cut = network.round(&mut bob, BOB, RoundKind::Sync);
+    assert!(named(&cut, WRITE).is_empty(), "{:?}", cut.events());
+    assert_eq!(bob.standing().role, 0);
+    assert_eq!(bob.trust().epochs(), vec![1], "no key of the epoch after");
+}
+
+/// What the relay is owed of an administrator's act is kept: in the save, so that a device that
+/// stops before its next round still gives the relay the commit its log names, and across a round
+/// whose delivery the transport lost, whose outcome says so. The round after gives it, and bob joins.
+#[test]
+fn what_the_relay_is_owed_outlives_a_save_and_a_failed_round() {
+    let mut network = Network::new(Limits::default());
+    let mut alice = alice_with_group();
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    let mut bob = bob_with_a_key_package(&mut network);
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    alice.add_member(BOB, 2, person(BOB).public()).unwrap();
+
+    // Alice's device stops with the commit and the Welcome not given, and starts again from its
+    // save, with its secrets given again.
+    let saved = alice.save();
+    let group = alice.group().unwrap().device().to_bytes().unwrap();
+    drop(alice);
+    let device = Device::from_bytes(LIST, ALICE, person(ALICE), &group).unwrap();
+    let mut alice = Peer::open(LIST).with_group(device, ALICE);
+    alice.set_identity(ALICE, person(ALICE));
+    alice.set_administrator(administrator());
+    alice.restore(&saved).unwrap();
+    assert_eq!(alice.standing().owed, 2);
+
+    // The round ends, and the transport fails as the commit is given: it is owed still, and the
+    // outcome says why.
+    alice.start(RoundKind::Sync).unwrap();
+    while let Some(request) = alice.poll_request() {
+        if op(&request) == "commit" {
+            alice.fail("the connection closed").unwrap();
+            continue;
+        }
+        let response = network.carry(ALICE, &request);
+        alice.respond(&response).unwrap();
+    }
+    let lost = alice
+        .take_outcome()
+        .expect("the round ended")
+        .expect("the round held, though what it owed was not given");
+    assert_eq!(lost.owed, 2, "{lost:?}");
+    assert!(
+        lost.refused().iter().any(|why| why.contains("owed")),
+        "{:?}",
+        lost.refused()
+    );
+    assert_eq!(alice.standing().owed, 2);
+
+    let given = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert_eq!(given.owed, 0, "{given:?}");
+    let joined = network.round(&mut bob, BOB, RoundKind::Sync);
+    assert_eq!(joined.steps, vec![GroupStep::Joined(1)], "{joined:?}");
+
+    // A save of the core before it kept what the relay is owed is still read; a save that says it
+    // keeps it and does not is not.
+    let mut old: Value = serde_json::from_str(&alice.save()).unwrap();
+    old["version"] = json!(1);
+    old.as_object_mut().unwrap().remove("owed");
+    let mut fresh = Peer::open(LIST);
+    fresh.set_identity(ALICE, person(ALICE));
+    assert!(fresh.restore(&old.to_string()).is_ok());
+    old["version"] = json!(2);
+    let mut fresh = Peer::open(LIST);
+    assert!(matches!(
+        fresh.restore(&old.to_string()),
+        Err(PeerError::Unreadable(_))
+    ));
+}
+
+/// An administrator's act the core cannot do is refused with why, and nothing of it is written.
+#[test]
+fn an_administrators_act_the_core_cannot_do_writes_nothing() {
+    // No administrator's key, no person, a list opened already, a genesis that is not the one the
+    // device was invited with.
+    let mut plain = Peer::open(LIST);
+    plain.set_identity(ALICE, person(ALICE));
+    assert_eq!(
+        plain.open_list(Profile::Untrusted),
+        Err(PeerError::NoAdministrator)
+    );
+    assert_eq!(
+        plain.grant(BOB, 2, person(BOB).public()),
+        Err(PeerError::NoAdministrator)
+    );
+    assert_eq!(plain.remove_member(BOB), Err(PeerError::NoAdministrator));
+    assert_eq!(
+        plain.add_member(BOB, 2, person(BOB).public()),
+        Err(PeerError::NoAdministrator)
+    );
+    let mut nobody = Peer::open(LIST);
+    nobody.set_administrator(administrator());
+    assert_eq!(
+        nobody.open_list(Profile::Untrusted),
+        Err(PeerError::NoPerson)
+    );
+    assert_eq!(nobody.standing().genesis, None);
+    let mut elsewhere = Peer::invited(LIST, genesis().hash());
+    elsewhere.set_identity(ALICE, person(ALICE));
+    elsewhere.set_administrator(Identity::from_seed([8; 32]));
+    assert_eq!(
+        elsewhere.open_list(Profile::Untrusted),
+        Err(PeerError::Log(LogError::NotTheGenesis))
+    );
+    assert_eq!(elsewhere.standing().genesis, None, "nothing written");
+
+    let mut alice = alice();
+    let head = alice.trust().head();
+    assert_eq!(alice.open_list(Profile::Untrusted), Err(PeerError::Opened));
+    for role in [0, 4] {
+        assert_eq!(
+            alice.grant(BOB, role, person(BOB).public()),
+            Err(PeerError::NoSuchRole(role))
+        );
+        assert_eq!(
+            alice.add_member(BOB, role, person(BOB).public()),
+            Err(PeerError::NoSuchRole(role))
+        );
+    }
+    assert_eq!(alice.remove_member(9), Err(PeerError::NotAMember(9)));
+    assert_eq!(
+        alice.add_member(BOB, 2, person(BOB).public()),
+        Err(PeerError::NoGroupDevice)
+    );
+    assert_eq!(alice.trust().head(), head, "nothing was written");
+    let standing = alice.standing();
+    assert_eq!(standing.genesis, Some(genesis().hash()));
+    assert!(standing.administrator);
+    assert_eq!(standing.role, 3);
+    assert_eq!(standing.members, vec![(ALICE, 3), (BOB, 2), (CAROL, 1)]);
+
+    // A grant that takes writing away carries where the device's chain ends, as the log requires
+    // of it; one that gives writing does not.
+    alice.grant(BOB, 1, person(BOB).public()).unwrap();
+    alice.grant(CAROL, 2, person(CAROL).public()).unwrap();
+    let grants: Vec<Body> = alice
+        .trust()
+        .entries()
+        .iter()
+        .rev()
+        .take(2)
+        .map(|entry| entry.body.clone())
+        .collect();
+    assert_eq!(
+        grants,
+        vec![
+            Body::Grant {
+                node: CAROL,
+                role: 2,
+                key: person(CAROL).public(),
+                final_seq: None,
+            },
+            Body::Grant {
+                node: BOB,
+                role: 1,
+                key: person(BOB).public(),
+                final_seq: Some(0),
+            },
+        ]
+    );
+
+    // A list keyed by its group admits a device only with its key package; another role for a
+    // member the group holds is a grant alone. Opening a list with a device already in a group is
+    // refused before anything is written.
+    let mut grouped = alice_with_group();
+    assert_eq!(
+        grouped.grant(BOB, 2, person(BOB).public()),
+        Err(PeerError::AdmittedThroughGroup(BOB))
+    );
+    grouped.grant(ALICE, 2, person(ALICE).public()).unwrap();
+    assert_eq!(grouped.standing().role, 2);
+    let mut again = Peer::open(LIST).with_group(
+        Device::from_bytes(
+            LIST,
+            ALICE,
+            person(ALICE),
+            &grouped.group().unwrap().device().to_bytes().unwrap(),
+        )
+        .unwrap(),
+        ALICE,
+    );
+    again.set_identity(ALICE, person(ALICE));
+    again.set_administrator(administrator());
+    assert_eq!(
+        again.open_list(Profile::Untrusted),
+        Err(PeerError::Group(MlsError::InGroup))
+    );
+    assert_eq!(again.standing().genesis, None, "nothing written");
+
+    // A list whose keys an administrator draws is not one the core takes a member off: the
+    // members left would need a new key the core does not hand over.
+    alice
+        .trust()
+        .rotate_epoch(&administrator(), &[person(ALICE).public()])
+        .unwrap();
+    let head = alice.trust().head();
+    assert_eq!(alice.remove_member(BOB), Err(PeerError::DrawnKeys));
+    assert_eq!(alice.trust().head(), head, "nothing was written");
+}
+
+/// Alice takes bob off a list with no keys: one entry of the log, which ends his chain at the last
+/// operation of his her device holds. What he writes after it is refused by the relay, and reaches
+/// no one; his own device, once it read the entry, says he is no member.
+#[test]
+fn a_device_taken_off_writes_to_no_one() {
+    let mut network = Network::new(Limits::default());
+    let mut alice = alice();
+    let mut bob = invited(BOB);
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert_eq!(bob.outbound(WRITE, &write(1, BOB, 1000, 1)), Kept::Taken);
+    network.round(&mut bob, BOB, RoundKind::Sync);
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert_eq!(alice.trust().last_seq(BOB), 1);
+
+    alice.remove_member(BOB).unwrap();
+    assert_eq!(alice.standing().members, vec![(ALICE, 3), (CAROL, 1)]);
+    let removed = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert_eq!(removed.round.pushed, 1, "the removal");
+    assert_eq!(
+        alice
+            .trust()
+            .entries()
+            .last()
+            .map(|entry| entry.body.clone()),
+        Some(Body::Grant {
+            node: BOB,
+            role: 0,
+            key: person(BOB).public(),
+            final_seq: Some(1),
+        })
+    );
+
+    assert_eq!(bob.outbound(WRITE, &write(2, BOB, 2000, 2)), Kept::Taken);
+    let cut = network.round(&mut bob, BOB, RoundKind::Sync);
+    assert_eq!(cut.round.pushed, 0);
+    assert_eq!(cut.refused().len(), 1, "{:?}", cut.refused());
+    assert_eq!(bob.standing().role, 0);
+    let after = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert!(named(&after, WRITE).is_empty(), "{:?}", after.events());
 }
 
 /// Alice's application keeps its own log of commands and builds her machine again from it after

@@ -8,8 +8,11 @@
 //! ([`sce_peer_outbound`]), the relay's requests and responses as the protocol's JSON
 //! ([`sce_peer_poll_request`], [`sce_peer_respond`], [`sce_peer_fail`]), what a round came to as one
 //! JSON text ([`sce_peer_take_outcome`]), and what the device keeps between runs as one text
-//! ([`sce_peer_save`], [`sce_peer_restore`]). No structure is laid out twice in C: the shapes are the
-//! texts, written down in `docs/SCE_SHARED_LIST_PEER_ABI.md`.
+//! ([`sce_peer_save`], [`sce_peer_restore`]). An administrator's device opens a list
+//! ([`sce_peer_open_list`]), grants, admits and takes off devices ([`sce_peer_grant`],
+//! [`sce_peer_add_member`], [`sce_peer_remove_member`]), and any device reads what it stands at in
+//! the list as one JSON text ([`sce_peer_standing`]). No structure is laid out twice in C: the shapes
+//! are the texts, written down in `docs/SCE_SHARED_LIST_PEER_ABI.md`.
 //!
 //! Every function that does something returns 0 for success and a nonzero status otherwise, and
 //! says why in [`sce_peer_last_error`] (per thread). Buffers the library returns ([`ScePeerBuf`])
@@ -29,15 +32,18 @@ use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use sce_rust_peer::{
-    CourierError, Device, GroupStep, Kept, Outcome, Peer, PeerError, Publication, Round, RoundKind,
+    CourierError, Device, GroupStep, Kept, Outcome, Peer, PeerError, Profile, Publication, Round,
+    RoundKind, Standing,
 };
 use sce_rust_relay::Code;
-use sce_rust_trust::Identity;
+use sce_rust_trust::{encoding, Identity, PublicKey};
 use serde_json::{json, Value};
 
 /// The version of this ABI: a change to what a function takes or returns, or to the shape of a text
-/// it gives, makes it a new number.
-pub const SCE_PEER_ABI_VERSION: u32 = 1;
+/// it gives, makes it a new number. A function added alone does not, since a lane built against the
+/// number before calls none of it. Version 2: the outcome holds `owed`, and the save is the core's
+/// version 2, which holds what the relay is owed.
+pub const SCE_PEER_ABI_VERSION: u32 = 2;
 
 pub const SCE_PEER_OK: i32 = 0;
 pub const SCE_PEER_ERR_NOTHING_ASKED: i32 = 1;
@@ -45,6 +51,14 @@ pub const SCE_PEER_ERR_OUTCOME_NOT_TAKEN: i32 = 2;
 pub const SCE_PEER_ERR_NO_GROUP_DEVICE: i32 = 3;
 pub const SCE_PEER_ERR_GROUP: i32 = 4;
 pub const SCE_PEER_ERR_UNREADABLE: i32 = 5;
+pub const SCE_PEER_ERR_NO_ADMINISTRATOR: i32 = 6;
+pub const SCE_PEER_ERR_NO_PERSON: i32 = 7;
+pub const SCE_PEER_ERR_OPENED: i32 = 8;
+pub const SCE_PEER_ERR_LOG: i32 = 9;
+pub const SCE_PEER_ERR_NOT_A_MEMBER: i32 = 10;
+pub const SCE_PEER_ERR_ADMITTED_THROUGH_GROUP: i32 = 11;
+pub const SCE_PEER_ERR_NO_KEY_PACKAGE: i32 = 12;
+pub const SCE_PEER_ERR_DRAWN_KEYS: i32 = 13;
 pub const SCE_PEER_ERR_NULL_ARGUMENT: i32 = 20;
 pub const SCE_PEER_ERR_BAD_TEXT: i32 = 21;
 pub const SCE_PEER_ERR_PANIC: i32 = 22;
@@ -60,6 +74,10 @@ pub const SCE_PEER_KEPT_REFUSED: i32 = 3;
 pub const SCE_PEER_ROUND_SYNC: i32 = 0;
 pub const SCE_PEER_ROUND_RESYNC: i32 = 1;
 pub const SCE_PEER_ROUND_REREAD: i32 = 2;
+
+/// Whether the hub of a list [`sce_peer_open_list`] opens is trusted ([`Profile`]).
+pub const SCE_PEER_PROFILE_UNTRUSTED: i32 = 0;
+pub const SCE_PEER_PROFILE_TRUSTED_HUB: i32 = 1;
 
 /// The core of one device of one list, and the list's name, which the group's device is made for.
 pub struct ScePeer {
@@ -116,7 +134,21 @@ fn status_of(error: &PeerError) -> i32 {
         PeerError::NoGroupDevice => SCE_PEER_ERR_NO_GROUP_DEVICE,
         PeerError::Group(_) => SCE_PEER_ERR_GROUP,
         PeerError::Unreadable(_) => SCE_PEER_ERR_UNREADABLE,
+        PeerError::NoAdministrator => SCE_PEER_ERR_NO_ADMINISTRATOR,
+        PeerError::NoPerson => SCE_PEER_ERR_NO_PERSON,
+        PeerError::Opened => SCE_PEER_ERR_OPENED,
+        PeerError::Log(_) => SCE_PEER_ERR_LOG,
+        PeerError::NotAMember(_) => SCE_PEER_ERR_NOT_A_MEMBER,
+        PeerError::NoSuchRole(_) => SCE_PEER_ERR_BAD_ARGUMENT,
+        PeerError::AdmittedThroughGroup(_) => SCE_PEER_ERR_ADMITTED_THROUGH_GROUP,
+        PeerError::NoKeyPackage(_) => SCE_PEER_ERR_NO_KEY_PACKAGE,
+        PeerError::DrawnKeys => SCE_PEER_ERR_DRAWN_KEYS,
     }
+}
+
+/// A role as the core takes it: a number a lane gives wider than a role is refused, not cut.
+fn role_of(role: u32) -> Result<u8, i32> {
+    u8::try_from(role).map_err(|_| fail(SCE_PEER_ERR_BAD_ARGUMENT, format!("{role} is not a role")))
 }
 
 fn from_error(error: PeerError) -> i32 {
@@ -280,6 +312,7 @@ fn outcome_text(outcome: &Result<Outcome, CourierError>) -> String {
                 "stalled": outcome.stalled(),
                 "reread": outcome.reread.is_some(),
                 "steps": outcome.steps.iter().map(group_step).collect::<Vec<_>>(),
+                "owed": outcome.owed,
             })
         }
         Err(CourierError::Link(reason)) => {
@@ -302,6 +335,28 @@ fn outcome_text(outcome: &Result<Outcome, CourierError>) -> String {
         }
     };
     value.to_string()
+}
+
+/// What a device stands at in its list, as the one text [`sce_peer_standing`] gives: a hash and a
+/// key in the URL alphabet, as the log's entries write them, and a 64-bit number as text.
+fn standing_text(standing: &Standing) -> String {
+    json!({
+        "genesis": standing.genesis.map(|hash| encoding::encode(&hash)),
+        "node": standing.person.map(|(node, _)| node.to_string()),
+        "key": standing.person.map(|(_, key)| key.to_text()),
+        "role": standing.role,
+        "administrator": standing.administrator,
+        "awaits_own_chain": standing.awaits_own_chain,
+        "members": standing
+            .members
+            .iter()
+            .map(|(node, role)| json!({"node": node.to_string(), "role": role}))
+            .collect::<Vec<_>>(),
+        "epoch": standing.epoch,
+        "keys": standing.keys,
+        "owed": standing.owed,
+    })
+    .to_string()
 }
 
 /// The number of this ABI.
@@ -394,6 +449,22 @@ pub unsafe extern "C" fn sce_peer_set_identity(
     })
 }
 
+/// The device holds the administrator's key the 32-byte `seed` makes: the one the genesis names when
+/// the device opens the list, and the one its administrator's acts are signed with
+/// ([`Peer::set_administrator`]). A secret, given again before [`sce_peer_restore`].
+///
+/// # Safety
+/// `peer` is a live handle; `seed` points at 32 readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_set_administrator(peer: *mut ScePeer, seed: *const u8) -> i32 {
+    guard(|| {
+        // SAFETY: the promises in the function's contract.
+        let (held, seed) = unsafe { (handle(peer)?, array::<32>(seed)?) };
+        held.peer.set_administrator(Identity::from_seed(seed));
+        Ok(())
+    })
+}
+
 /// The machine is a hub's: it is told who ever wrote, not who writes now ([`Peer::for_a_hub`]).
 /// Called before the first exchange.
 ///
@@ -460,6 +531,122 @@ pub unsafe extern "C" fn sce_peer_group_state(peer: *mut ScePeer, out: *mut SceP
         let state = member.device().to_bytes().map_err(from_group_error)?;
         // SAFETY: `out` is valid for a write.
         unsafe { put(out, ScePeerBuf::of(state)) };
+        Ok(())
+    })
+}
+
+/// Open a new list as its administrator, with the hub's profile `profile` (`SCE_PEER_PROFILE_*`)
+/// ([`Peer::open_list`]): the genesis names the administrator's key the device holds, a grant makes
+/// the device's person a member with the highest role, and the group is made when the core holds a
+/// device of it. `genesis` is set to the hash (32 bytes) of the genesis, which a person is invited
+/// with. The entries go to the relay with the next round.
+///
+/// # Safety
+/// `peer` is a live handle; `genesis` is valid for a write of 32 bytes.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_open_list(
+    peer: *mut ScePeer,
+    profile: i32,
+    genesis: *mut u8,
+) -> i32 {
+    guard(|| {
+        required(genesis)?;
+        // SAFETY: the promise in the function's contract.
+        let held = unsafe { handle(peer)? };
+        let profile = match profile {
+            SCE_PEER_PROFILE_UNTRUSTED => Profile::Untrusted,
+            SCE_PEER_PROFILE_TRUSTED_HUB => Profile::TrustedHub,
+            other => {
+                return Err(fail(
+                    SCE_PEER_ERR_BAD_ARGUMENT,
+                    format!("{other} is not a profile"),
+                ))
+            }
+        };
+        let hash = held.peer.open_list(profile).map_err(from_error)?;
+        // SAFETY: `genesis` is valid for a write of 32 bytes.
+        unsafe { std::ptr::copy_nonoverlapping(hash.as_ptr(), genesis, hash.len()) };
+        Ok(())
+    })
+}
+
+/// Grant the device of `node`, which signs with the 32-byte public `key`, the role `role` (1 to 3)
+/// ([`Peer::grant`]). On a list keyed by its group a device the group does not hold is admitted with
+/// [`sce_peer_add_member`] instead.
+///
+/// # Safety
+/// `peer` is a live handle; `key` points at 32 readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_grant(
+    peer: *mut ScePeer,
+    node: u64,
+    role: u32,
+    key: *const u8,
+) -> i32 {
+    guard(|| {
+        // SAFETY: the promises in the function's contract.
+        let (held, key) = unsafe { (handle(peer)?, array::<32>(key)?) };
+        held.peer
+            .grant(node, role_of(role)?, PublicKey::from_bytes(key))
+            .map_err(from_error)
+    })
+}
+
+/// Admit the device of `node`, which signs with the 32-byte public `key`, to the list and its group
+/// with the role `role` (1 to 3), from the newest key package of it a round read
+/// ([`Peer::add_member`]): the grant and the commit are one change. The entries go to the relay with
+/// the next round, the commit and the Welcome after it.
+///
+/// # Safety
+/// `peer` is a live handle; `key` points at 32 readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_add_member(
+    peer: *mut ScePeer,
+    node: u64,
+    role: u32,
+    key: *const u8,
+) -> i32 {
+    guard(|| {
+        // SAFETY: the promises in the function's contract.
+        let (held, key) = unsafe { (handle(peer)?, array::<32>(key)?) };
+        held.peer
+            .add_member(node, role_of(role)?, PublicKey::from_bytes(key))
+            .map_err(from_error)
+    })
+}
+
+/// Take the device of `node` off the list, and off its group when the list is keyed by one
+/// ([`Peer::remove_member`]). The entries go to the relay with the next round, the commit after it.
+///
+/// # Safety
+/// `peer` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_remove_member(peer: *mut ScePeer, node: u64) -> i32 {
+    guard(|| {
+        // SAFETY: the promise in the function's contract.
+        let held = unsafe { handle(peer)? };
+        held.peer.remove_member(node).map_err(from_error)
+    })
+}
+
+/// What the device stands at in its list, as one JSON text in `out` ([`Peer::standing`]): the
+/// genesis, its person and their role, whether it holds an administrator's key the log names,
+/// whether it waits for its own chain, the members, the epochs, and what the relay is still owed.
+///
+/// # Safety
+/// `peer` is a live handle; `out` is valid for a write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_standing(peer: *mut ScePeer, out: *mut ScePeerBuf) -> i32 {
+    guard(|| {
+        required(out)?;
+        // SAFETY: the promises in the function's contract.
+        let held = unsafe {
+            put(out, ScePeerBuf::EMPTY);
+            handle(peer)?
+        };
+        let text = standing_text(&held.peer.standing());
+        // SAFETY: `out` is valid for a write.
+        unsafe { put(out, ScePeerBuf::of(text.into_bytes())) };
         Ok(())
     })
 }
@@ -667,8 +854,9 @@ pub unsafe extern "C" fn sce_peer_floor_event(
     })
 }
 
-/// What the device keeps, as one text in `out` ([`Peer::save`]). It does not hold the device's
-/// secrets: the person's seed and the group's state are given again before [`sce_peer_restore`].
+/// What the device keeps, as one text in `out` ([`Peer::save`]), the commits and Welcomes the relay
+/// is still owed included. It does not hold the device's secrets: the person's seed, the
+/// administrator's seed and the group's state are given again before [`sce_peer_restore`].
 ///
 /// # Safety
 /// `peer` is a live handle; `out` is valid for a write.

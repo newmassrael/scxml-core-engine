@@ -4,7 +4,11 @@
 // that the header declares exactly what the library exports, with the same numbers; and that the
 // boundary refuses a null pointer, a text that is not UTF-8, an answer out of turn, a kind of round
 // that is none and a saved text that is not one, with a status and a text, takes no outcome into
-// nowhere, and never crosses with a panic; and that the recorded scenario of two devices and a relay
+// nowhere, and never crosses with a panic; that an administrator's act the core cannot do is refused
+// with its own status and nothing written; that an administrator's device opens a list keyed by its
+// group, admits a device from the key package a round read and takes it off again through the ABI
+// alone, the device joining from the Welcome and holding the key of the epoch the administrator's
+// does, and holding none of the epoch after its removal; and that the recorded scenario of two devices and a relay
 // (`tests/fixtures/two_devices_and_a_relay.json`, recorded and held to a fresh run by
 // `the_recorded_scenario_is_what_a_fresh_run_records`) is replayed through the shared library, with
 // no relay, by C, C++, Python (ctypes), Go (cgo), Kotlin (JNA) and Swift (a module map over the
@@ -19,7 +23,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use sce_peer_capi::*;
-use serde_json::Value;
+use sce_rust_relay::{Authority, Limits, MemoryStore, Relay};
+use sce_rust_trust::{encoding, Identity};
+use serde_json::{json, Value};
 
 const MANIFEST: &str = env!("CARGO_MANIFEST_DIR");
 
@@ -121,7 +127,7 @@ fn the_header_declares_exactly_what_the_library_exports() {
         .flat_map(|line| names_in(line, "sce_peer_"))
         .collect();
     assert_eq!(declared, exported);
-    assert!(exported.len() >= 21, "{exported:?}");
+    assert!(exported.len() >= 27, "{exported:?}");
 
     // The statuses, the answers to a send and the kinds of round are the same numbers on both sides.
     for (name, value) in [
@@ -134,6 +140,20 @@ fn the_header_declares_exactly_what_the_library_exports() {
         ("SCE_PEER_ERR_NO_GROUP_DEVICE", SCE_PEER_ERR_NO_GROUP_DEVICE),
         ("SCE_PEER_ERR_GROUP", SCE_PEER_ERR_GROUP),
         ("SCE_PEER_ERR_UNREADABLE", SCE_PEER_ERR_UNREADABLE),
+        (
+            "SCE_PEER_ERR_NO_ADMINISTRATOR",
+            SCE_PEER_ERR_NO_ADMINISTRATOR,
+        ),
+        ("SCE_PEER_ERR_NO_PERSON", SCE_PEER_ERR_NO_PERSON),
+        ("SCE_PEER_ERR_OPENED", SCE_PEER_ERR_OPENED),
+        ("SCE_PEER_ERR_LOG", SCE_PEER_ERR_LOG),
+        ("SCE_PEER_ERR_NOT_A_MEMBER", SCE_PEER_ERR_NOT_A_MEMBER),
+        (
+            "SCE_PEER_ERR_ADMITTED_THROUGH_GROUP",
+            SCE_PEER_ERR_ADMITTED_THROUGH_GROUP,
+        ),
+        ("SCE_PEER_ERR_NO_KEY_PACKAGE", SCE_PEER_ERR_NO_KEY_PACKAGE),
+        ("SCE_PEER_ERR_DRAWN_KEYS", SCE_PEER_ERR_DRAWN_KEYS),
         ("SCE_PEER_ERR_NULL_ARGUMENT", SCE_PEER_ERR_NULL_ARGUMENT),
         ("SCE_PEER_ERR_BAD_TEXT", SCE_PEER_ERR_BAD_TEXT),
         ("SCE_PEER_ERR_PANIC", SCE_PEER_ERR_PANIC),
@@ -145,6 +165,8 @@ fn the_header_declares_exactly_what_the_library_exports() {
         ("SCE_PEER_ROUND_SYNC", SCE_PEER_ROUND_SYNC),
         ("SCE_PEER_ROUND_RESYNC", SCE_PEER_ROUND_RESYNC),
         ("SCE_PEER_ROUND_REREAD", SCE_PEER_ROUND_REREAD),
+        ("SCE_PEER_PROFILE_UNTRUSTED", SCE_PEER_PROFILE_UNTRUSTED),
+        ("SCE_PEER_PROFILE_TRUSTED_HUB", SCE_PEER_PROFILE_TRUSTED_HUB),
     ] {
         assert!(
             header.contains(&format!("#define {name} {value}\n")),
@@ -425,6 +447,384 @@ unsafe fn group_state_of(peer: *mut ScePeer) -> Vec<u8> {
     bytes
 }
 
+/// The seed of the administrator's key in the tests of the administrator's acts.
+const ADMINISTRATOR: [u8; 32] = [9; 32];
+
+/// The public key (32 bytes) the seed `seed` makes.
+fn public_of(seed: [u8; 32]) -> [u8; 32] {
+    Identity::from_seed(seed).public().to_bytes()
+}
+
+/// What `peer` stands at in its list.
+///
+/// # Safety
+/// `peer` is a live handle.
+unsafe fn standing_of(peer: *mut ScePeer) -> Value {
+    // SAFETY: `peer` is live.
+    let text = unsafe { text_of(peer, sce_peer_standing) }.expect("a standing is a text");
+    serde_json::from_str(&text).expect("a standing is JSON")
+}
+
+/// A core of the list `home`: opened by whoever makes it, or invited with `genesis`; with the person
+/// of `node` whose key `seed` makes, and the administrator's key when `administrator`.
+fn core_of(
+    node: u64,
+    seed: [u8; 32],
+    genesis: Option<[u8; 32]>,
+    administrator: Option<[u8; 32]>,
+) -> *mut ScePeer {
+    let list = c"home";
+    // SAFETY: the list is NUL-terminated, and the genesis, the seeds are 32 bytes each.
+    unsafe {
+        let peer = match genesis {
+            None => sce_peer_open(list.as_ptr()),
+            Some(genesis) => sce_peer_invited(list.as_ptr(), genesis.as_ptr()),
+        };
+        assert!(!peer.is_null(), "{}", last_error());
+        assert_eq!(
+            sce_peer_set_identity(peer, node, seed.as_ptr()),
+            SCE_PEER_OK
+        );
+        if let Some(administrator) = administrator {
+            assert_eq!(
+                sce_peer_set_administrator(peer, administrator.as_ptr()),
+                SCE_PEER_OK
+            );
+        }
+        peer
+    }
+}
+
+/// An administrator's act the core cannot do is refused with its own status, says why, and writes
+/// nothing: no administrator's key, no person, a list opened already, a genesis that is not the one
+/// the device was invited with, a role that is none, a device that is no member, a device that is
+/// admitted to a list keyed by its group without its key package.
+#[test]
+fn an_administrators_act_the_core_cannot_do_is_refused_and_says_why() {
+    let (alice, bob) = ([1u8; 32], [2u8; 32]);
+    let bob_key = public_of(bob);
+    let mut genesis = [0u8; 32];
+    // SAFETY: each call below passes live handles, and pointers that are null or valid for the
+    // length the function's contract names.
+    unsafe {
+        // A core with no administrator's key opens nothing and grants and takes off no one.
+        let plain = core_of(1, alice, None, None);
+        assert_eq!(
+            sce_peer_open_list(plain, SCE_PEER_PROFILE_UNTRUSTED, genesis.as_mut_ptr()),
+            SCE_PEER_ERR_NO_ADMINISTRATOR
+        );
+        assert!(last_error().contains("NoAdministrator"), "{}", last_error());
+        assert_eq!(
+            sce_peer_grant(plain, 2, 2, bob_key.as_ptr()),
+            SCE_PEER_ERR_NO_ADMINISTRATOR
+        );
+        assert_eq!(
+            sce_peer_remove_member(plain, 2),
+            SCE_PEER_ERR_NO_ADMINISTRATOR
+        );
+        assert_eq!(
+            sce_peer_set_administrator(plain, std::ptr::null()),
+            SCE_PEER_ERR_NULL_ARGUMENT
+        );
+        assert_eq!(standing_of(plain)["administrator"], false);
+
+        // A core with the administrator's key and no person opens no list it would not be in.
+        let nobody = sce_peer_open(c"home".as_ptr());
+        assert_eq!(
+            sce_peer_set_administrator(nobody, ADMINISTRATOR.as_ptr()),
+            SCE_PEER_OK
+        );
+        assert_eq!(
+            sce_peer_open_list(nobody, SCE_PEER_PROFILE_UNTRUSTED, genesis.as_mut_ptr()),
+            SCE_PEER_ERR_NO_PERSON
+        );
+        assert_eq!(standing_of(nobody)["genesis"], Value::Null);
+
+        // The administrator's device: the place for the genesis and the profile are asked for
+        // before anything is written, and a list is opened once.
+        let admin = core_of(1, alice, None, Some(ADMINISTRATOR));
+        assert_eq!(
+            sce_peer_open_list(admin, SCE_PEER_PROFILE_UNTRUSTED, std::ptr::null_mut()),
+            SCE_PEER_ERR_NULL_ARGUMENT
+        );
+        assert_eq!(
+            sce_peer_open_list(admin, 7, genesis.as_mut_ptr()),
+            SCE_PEER_ERR_BAD_ARGUMENT
+        );
+        assert!(last_error().contains("profile"), "{}", last_error());
+        assert_eq!(
+            standing_of(admin)["genesis"],
+            Value::Null,
+            "nothing written"
+        );
+        assert_eq!(
+            sce_peer_open_list(admin, SCE_PEER_PROFILE_UNTRUSTED, genesis.as_mut_ptr()),
+            SCE_PEER_OK
+        );
+        let opened = standing_of(admin);
+        assert_eq!(opened["genesis"], encoding::encode(&genesis), "{opened}");
+        assert_eq!(opened["administrator"], true, "{opened}");
+        assert_eq!(opened["members"], json!([{"node": "1", "role": 3}]));
+        let mut again = [0u8; 32];
+        assert_eq!(
+            sce_peer_open_list(admin, SCE_PEER_PROFILE_UNTRUSTED, again.as_mut_ptr()),
+            SCE_PEER_ERR_OPENED
+        );
+
+        // A role is 1 to 3, and a number wider than a role is refused, not cut to one.
+        for role in [0, 4, 258] {
+            assert_eq!(
+                sce_peer_grant(admin, 2, role, bob_key.as_ptr()),
+                SCE_PEER_ERR_BAD_ARGUMENT,
+                "{role}"
+            );
+        }
+        assert_eq!(
+            sce_peer_grant(admin, 2, 2, std::ptr::null()),
+            SCE_PEER_ERR_NULL_ARGUMENT
+        );
+        assert_eq!(sce_peer_remove_member(admin, 2), SCE_PEER_ERR_NOT_A_MEMBER);
+        assert_eq!(
+            sce_peer_add_member(admin, 2, 2, bob_key.as_ptr()),
+            SCE_PEER_ERR_NO_GROUP_DEVICE
+        );
+        assert_eq!(standing_of(admin)["members"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            sce_peer_grant(admin, 2, 2, bob_key.as_ptr()),
+            SCE_PEER_OK,
+            "{}",
+            last_error()
+        );
+        assert_eq!(
+            standing_of(admin)["members"],
+            json!([{"node": "1", "role": 3}, {"node": "2", "role": 2}])
+        );
+        assert_eq!(sce_peer_remove_member(admin, 2), SCE_PEER_OK);
+        assert_eq!(
+            standing_of(admin)["members"],
+            json!([{"node": "1", "role": 3}])
+        );
+        assert_eq!(
+            sce_peer_standing(admin, std::ptr::null_mut()),
+            SCE_PEER_ERR_NULL_ARGUMENT
+        );
+
+        // A device invited to the list opens no other: its log takes only the genesis it was
+        // invited with, and another administrator's is not that one.
+        let invited = core_of(1, alice, Some(genesis), Some([8; 32]));
+        assert_eq!(
+            sce_peer_open_list(invited, SCE_PEER_PROFILE_UNTRUSTED, again.as_mut_ptr()),
+            SCE_PEER_ERR_LOG
+        );
+        assert!(last_error().contains("NotTheGenesis"), "{}", last_error());
+        assert_eq!(
+            standing_of(invited)["genesis"],
+            Value::Null,
+            "nothing written"
+        );
+
+        // A list keyed by its group admits a device only with its key package, and none was read;
+        // another role for a member the group holds is a grant alone.
+        let grouped = core_of(1, alice, None, Some(ADMINISTRATOR));
+        assert_eq!(
+            sce_peer_with_group(grouped, 1, alice.as_ptr(), std::ptr::null(), 0),
+            SCE_PEER_OK
+        );
+        assert_eq!(
+            sce_peer_open_list(grouped, SCE_PEER_PROFILE_UNTRUSTED, again.as_mut_ptr()),
+            SCE_PEER_OK
+        );
+        assert_eq!(
+            sce_peer_grant(grouped, 2, 2, bob_key.as_ptr()),
+            SCE_PEER_ERR_ADMITTED_THROUGH_GROUP
+        );
+        assert_eq!(
+            sce_peer_add_member(grouped, 2, 2, bob_key.as_ptr()),
+            SCE_PEER_ERR_NO_KEY_PACKAGE
+        );
+        assert_eq!(
+            sce_peer_grant(grouped, 1, 2, public_of(alice).as_ptr()),
+            SCE_PEER_OK,
+            "{}",
+            last_error()
+        );
+        assert_eq!(standing_of(grouped)["role"], 2);
+
+        for peer in [plain, nobody, admin, invited, grouped] {
+            sce_peer_free(peer);
+        }
+    }
+}
+
+/// The relay of a test in this process, and the authority whose tokens it takes.
+struct Network {
+    relay: Relay<MemoryStore>,
+    authority: Authority,
+    /// The relay's clock: a second further at each request, so that no device spends its allowance.
+    now: u64,
+}
+
+impl Network {
+    fn new() -> Self {
+        let authority = Authority::new([3; 32], "the-relay");
+        Self {
+            relay: Relay::open(MemoryStore::new(), authority.clone(), Limits::default()).unwrap(),
+            authority,
+            now: 0,
+        }
+    }
+
+    /// The exchange `peer`, the device of `node`, runs, every request carried to the relay and every
+    /// answer back, and what it came to.
+    ///
+    /// # Safety
+    /// `peer` is a live handle.
+    unsafe fn finish(&mut self, peer: *mut ScePeer, node: u64) -> Value {
+        // SAFETY: `peer` is live, and every text given to it is NUL-terminated.
+        unsafe {
+            while let Some(request) = text_of(peer, sce_peer_poll_request) {
+                let token = self.authority.issue("home", node, u64::MAX);
+                self.now += 1000;
+                let response = CString::new(self.relay.handle(&token, &request, self.now)).unwrap();
+                assert_eq!(
+                    sce_peer_respond(peer, response.as_ptr()),
+                    SCE_PEER_OK,
+                    "{}",
+                    last_error()
+                );
+            }
+            let outcome = text_of(peer, sce_peer_take_outcome).expect("the exchange ended");
+            serde_json::from_str(&outcome).expect("an outcome is JSON")
+        }
+    }
+
+    /// A round of `peer`, the device of `node`, carried to its end.
+    ///
+    /// # Safety
+    /// `peer` is a live handle.
+    unsafe fn round(&mut self, peer: *mut ScePeer, node: u64) -> Value {
+        // SAFETY: `peer` is live.
+        unsafe {
+            assert_eq!(sce_peer_start(peer, SCE_PEER_ROUND_SYNC), SCE_PEER_OK);
+            self.finish(peer, node)
+        }
+    }
+}
+
+/// An administrator's device opens a list keyed by its group, admits bob's device from the key
+/// package a round read from the relay, and takes it off again, each in one call through the ABI;
+/// the commit and the Welcome go to the relay after the next round. Bob's device joins from the
+/// Welcome and holds the key of the epoch alice's holds (what she writes under it opens on his), and
+/// once he is taken off it holds no key of the epoch after. What MLS draws at random is not compared:
+/// the properties are.
+#[test]
+fn the_administrators_acts_on_a_group_go_through_the_abi() {
+    let (alice, bob) = ([1u8; 32], [2u8; 32]);
+    let mut network = Network::new();
+    let mut genesis = [0u8; 32];
+    // SAFETY: each call below passes live handles, and pointers that are null or valid for the
+    // length the function's contract names.
+    unsafe {
+        let admin = core_of(1, alice, None, Some(ADMINISTRATOR));
+        assert_eq!(
+            sce_peer_with_group(admin, 1, alice.as_ptr(), std::ptr::null(), 0),
+            SCE_PEER_OK
+        );
+        assert_eq!(
+            sce_peer_open_list(admin, SCE_PEER_PROFILE_UNTRUSTED, genesis.as_mut_ptr()),
+            SCE_PEER_OK,
+            "{}",
+            last_error()
+        );
+        let opened = network.round(admin, 1);
+        assert_eq!(opened["refused"], json!([]), "{opened}");
+
+        // Bob's device leaves a key package with the relay, and alice's next round reads it.
+        let joiner = core_of(2, bob, Some(genesis), None);
+        assert_eq!(
+            sce_peer_with_group(joiner, 2, bob.as_ptr(), std::ptr::null(), 0),
+            SCE_PEER_OK
+        );
+        assert_eq!(sce_peer_publish_key_package(joiner), SCE_PEER_OK);
+        let left = network.finish(joiner, 2);
+        assert_eq!(left["outcome"], "ended", "{left}");
+        network.round(admin, 1);
+
+        // One call admits him to the list and to the group; the relay is owed the commit and his
+        // Welcome until the next round gives them.
+        assert_eq!(
+            sce_peer_add_member(admin, 2, 2, public_of(bob).as_ptr()),
+            SCE_PEER_OK,
+            "{}",
+            last_error()
+        );
+        assert_eq!(standing_of(admin)["owed"], 2);
+        let admitted = network.round(admin, 1);
+        assert_eq!(admitted["refused"], json!([]), "{admitted}");
+        assert_eq!(admitted["owed"], 0, "{admitted}");
+        assert_eq!(standing_of(admin)["owed"], 0);
+
+        // He joins from the Welcome, both hold the key of the epoch it began, and what alice writes
+        // under it opens on his device.
+        let joined = network.round(joiner, 2);
+        assert_eq!(
+            joined["steps"],
+            json!([{"step": "joined", "epoch": "1"}]),
+            "{joined}"
+        );
+        assert_eq!(standing_of(joiner)["keys"], json!([1]));
+        assert_eq!(standing_of(admin)["keys"], json!([1]));
+        let write = c"{\"id\":1,\"field\":3,\"value\":\"5\",\"text\":\"\",\"wallTime\":\"3000\",\"counter\":0,\"nodeId\":\"1\"}";
+        let mut kept = -1;
+        assert_eq!(
+            sce_peer_outbound(
+                admin,
+                c"record_list.write".as_ptr(),
+                write.as_ptr(),
+                &mut kept,
+                std::ptr::null_mut()
+            ),
+            SCE_PEER_OK
+        );
+        assert_eq!(kept, SCE_PEER_KEPT_TAKEN);
+        network.round(admin, 1);
+        let told = network.round(joiner, 2);
+        let writes: Vec<Value> = told["events"]
+            .as_array()
+            .expect("an ended round tells events")
+            .iter()
+            .filter(|pair| pair[0] == "record_list.write")
+            .map(|pair| serde_json::from_str(pair[1].as_str().unwrap()).unwrap())
+            .collect();
+        assert_eq!(writes.len(), 1, "{told}");
+        assert_eq!(writes[0]["value"], "5", "opened under the group's key");
+
+        // One call takes him off the list and the group: the group moves to an epoch his device
+        // holds no key of, and the relay reads him nothing more.
+        assert_eq!(
+            sce_peer_remove_member(admin, 2),
+            SCE_PEER_OK,
+            "{}",
+            last_error()
+        );
+        assert_eq!(standing_of(admin)["owed"], 1, "the commit, and no Welcome");
+        let removed = network.round(admin, 1);
+        assert_eq!(removed["refused"], json!([]), "{removed}");
+        assert_eq!(removed["owed"], 0, "{removed}");
+        let after = standing_of(admin);
+        assert_eq!(after["keys"], json!([1, 2]), "{after}");
+        assert_eq!(after["members"], json!([{"node": "1", "role": 3}]));
+        let cut = network.round(joiner, 2);
+        assert_eq!(cut["outcome"], "ended", "{cut}");
+        let off = standing_of(joiner);
+        assert_eq!(off["role"], 0, "{off}");
+        assert_eq!(off["keys"], json!([1]), "no key of the epoch after: {off}");
+
+        sce_peer_free(joiner);
+        sce_peer_free(admin);
+    }
+}
+
 /// A text as the token the C, C++ and Swift replays read: `x` and its UTF-8 bytes in hex.
 fn token(text: &str) -> String {
     let mut token = String::with_capacity(1 + 2 * text.len());
@@ -445,10 +845,11 @@ fn script_of(scenario: &Value) -> String {
     );
     for device in devices {
         script += &format!(
-            "{} {} {}\n",
+            "{} {} {} {}\n",
             device["node"],
             device["seed"].as_str().unwrap(),
-            device["genesis"].as_str().unwrap_or("-")
+            device["genesis"].as_str().unwrap_or("-"),
+            device["administrator"].as_str().unwrap_or("-")
         );
     }
     for step in scenario["steps"].as_array().unwrap() {
@@ -458,6 +859,14 @@ fn script_of(scenario: &Value) -> String {
         let op = step["op"].as_str().unwrap();
         script += &match op {
             "make" => format!("make {device}"),
+            "open" => format!("open {device} {} {}", word("profile"), word("genesis")),
+            "grant" => format!(
+                "grant {device} {} {} {}",
+                step["node"],
+                step["role"],
+                word("key")
+            ),
+            "remove" => format!("remove {device} {}", step["node"]),
             "restore" => format!("restore {device} {} {}", text("text"), step["count"]),
             "outbound" => format!(
                 "outbound {device} {} {} {} {}",
@@ -467,7 +876,9 @@ fn script_of(scenario: &Value) -> String {
                 text("reason")
             ),
             "start" => format!("start {device} {}", word("kind")),
-            "request" | "respond" | "outcome" | "save" => format!("{op} {device} {}", text("text")),
+            "request" | "respond" | "outcome" | "save" | "standing" => {
+                format!("{op} {device} {}", text("text"))
+            }
             "fail" => format!("fail {device} {}", text("reason")),
             other => panic!("`{other}` is no step of the scenario"),
         };
