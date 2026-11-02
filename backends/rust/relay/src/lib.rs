@@ -35,7 +35,10 @@ pub mod token;
 #[cfg(feature = "serve")]
 pub mod serve;
 
-pub use client::{Courier, CourierError, CourierState, DirectLink, Keep, Link, LinkError, Round};
+pub use client::{
+    Courier, CourierError, CourierState, DirectLink, Keep, Link, LinkError, Publication, Round,
+    RoundKind, RoundMachine, Step,
+};
 pub use hub::{slot_of, Hub, Shards};
 pub use limits::Limits;
 pub use protocol::{Code, Record, Request, Response};

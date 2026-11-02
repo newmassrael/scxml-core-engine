@@ -24,7 +24,8 @@ use sce_rust_mesh::endpoint::Sealer;
 use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{Body, Entry, LogError};
 use sce_rust_trust::message;
-use sce_rust_trust::{Checkpoint, CheckpointError, TakeError, Trust};
+use sce_rust_trust::{Checkpoint, CheckpointError, Head, TakeError, Trust};
+use serde_json::{json, Value};
 
 use crate::protocol::{Code, Record, Request, Response};
 use crate::relay::Relay;
@@ -92,8 +93,9 @@ impl From<LinkError> for CourierError {
 /// What a round did.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Round {
-    /// The events for the machine to be told, in order: the roster when the log moved, then each
-    /// operation the host did not hold.
+    /// The events for the machine to be told, in order: the roster when the log moved, then what
+    /// an earlier round took in and did not hand over because it did not end ([`CourierState`]),
+    /// then each operation the host did not hold.
     pub events: Vec<(String, String)>,
     /// How many operations and checkpoints the relay was given that it lacked.
     pub pushed: usize,
@@ -121,6 +123,25 @@ pub struct Round {
 /// What a courier keeps of one relay between its rounds, apart from the link it speaks over and the
 /// [`Trust`] it holds: where it is in what the relay holds, what the machine was last told of the
 /// roster, and what it holds back or has given.
+///
+/// A round changes it only where a step of the round was completed, so that a round that does not
+/// end (the link fails, the answer never comes, the host abandons it or is stopped) leaves it as a
+/// state the next round starts cleanly from:
+///
+/// - the cursor moves past a batch of the feed once every record of the batch was taken in, or to
+///   the record a stall stopped at, and never past a record that was not taken in;
+/// - the roster is counted as told only when a round ends and hands it over;
+/// - a proof of a conflict is counted as given only once the relay accepted it;
+/// - the amendments of the log are counted when the relay is read again from the start for them,
+///   and a round that stops in that reading leaves the cursor where it stopped, so the next round
+///   goes on with it;
+/// - what a round took in and did not hand over, because it did not end, is kept here: the events
+///   for the machine and the group's messages it read. The next round hands them over first, after
+///   the roster. A [`RoundKind::Resync`] reads everything again and drops them, and a
+///   [`RoundKind::Reread`] drops the messages, which it reads again.
+///
+/// What a round took into the [`Trust`] stays there whether the round ends or not: the trust
+/// holds what verified, and a record given again is taken as one held already.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CourierState {
     /// How many records of the relay were read.
@@ -136,9 +157,94 @@ pub struct CourierState {
     amendments_seen: usize,
     /// The proof of a conflict this courier has given the relay (by the data it travels as).
     evidence_sent: BTreeSet<String>,
+    /// Events for the machine that a round took in and did not hand over, in order.
+    untold: Vec<(String, String)>,
+    /// The group's messages that a round read and did not hand over, in the order read.
+    unread: Vec<Record>,
 }
 
 impl CourierState {
+    /// Keep `events` to be handed over by the next round, before what is kept already: what a host
+    /// that composes rounds of its own took from a round and did not hand over.
+    pub fn hold_events(&mut self, mut events: Vec<(String, String)>) {
+        events.append(&mut self.untold);
+        self.untold = events;
+    }
+
+    /// Keep the group's `messages` to be handed over by the next round, before what is kept
+    /// already.
+    pub fn hold_messages(&mut self, mut messages: Vec<Record>) {
+        messages.append(&mut self.unread);
+        self.unread = messages;
+    }
+
+    /// How many events for the machine are kept for the next round to hand over.
+    pub fn untold(&self) -> usize {
+        self.untold.len()
+    }
+
+    /// The state as one text, for a host's storage: a JSON object, every 64-bit number as text.
+    pub fn to_text(&self) -> String {
+        let pairs = |pairs: &[(String, String)]| {
+            pairs
+                .iter()
+                .map(|(event, data)| json!([event, data]))
+                .collect::<Vec<_>>()
+        };
+        json!({
+            "cursor": self.cursor.to_string(),
+            "rosterLen": self.roster_len.to_string(),
+            "hub": self.hub,
+            "parked": pairs(&self.parked),
+            "amendmentsSeen": self.amendments_seen.to_string(),
+            "evidenceSent": self.evidence_sent.iter().collect::<Vec<_>>(),
+            "untold": pairs(&self.untold),
+            "unread": self.unread.iter().map(Record::to_value).collect::<Vec<_>>(),
+        })
+        .to_string()
+    }
+
+    /// Read back what [`Self::to_text`] wrote; `None` when the text is not that.
+    pub fn from_text(text: &str) -> Option<Self> {
+        let value: Value = serde_json::from_str(text).ok()?;
+        let number = |name: &str| -> Option<u64> { value.get(name)?.as_str()?.parse::<u64>().ok() };
+        let pairs = |name: &str| -> Option<Vec<(String, String)>> {
+            value
+                .get(name)?
+                .as_array()?
+                .iter()
+                .map(|pair| -> Option<(String, String)> {
+                    match pair.as_array()?.as_slice() {
+                        [event, data] => {
+                            Some((event.as_str()?.to_string(), data.as_str()?.to_string()))
+                        }
+                        _ => None,
+                    }
+                })
+                .collect()
+        };
+        Some(Self {
+            cursor: number("cursor")?,
+            roster_len: number("rosterLen")?,
+            hub: value.get("hub")?.as_bool()?,
+            parked: pairs("parked")?,
+            amendments_seen: usize::try_from(number("amendmentsSeen")?).ok()?,
+            evidence_sent: value
+                .get("evidenceSent")?
+                .as_array()?
+                .iter()
+                .map(|data| data.as_str().map(str::to_string))
+                .collect::<Option<BTreeSet<String>>>()?,
+            untold: pairs("untold")?,
+            unread: value
+                .get("unread")?
+                .as_array()?
+                .iter()
+                .map(Record::from_value)
+                .collect::<Option<Vec<Record>>>()?,
+        })
+    }
+
     /// The machine of this host is a hub's: it is told who ever wrote, not who writes now.
     pub fn for_a_hub(mut self) -> Self {
         self.hub = true;
@@ -162,6 +268,917 @@ impl CourierState {
     /// How many operations this courier holds back for want of the key of their epoch.
     pub fn parked(&self) -> usize {
         self.parked.len()
+    }
+
+    /// What a round that did not end took in and did not hand over, kept for the next one.
+    fn keep_untold(&mut self, round: &mut Round) {
+        self.untold.append(&mut round.events);
+        self.unread.append(&mut round.messages);
+    }
+}
+
+/// Which round a [`RoundMachine`] makes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoundKind {
+    /// The logs level, the relay given what it lacks, the host given what it lacks.
+    Sync,
+    /// Everything the relay holds read from the start, and every operation told to the machine,
+    /// the ones the host held already included: for a machine that lost its state.
+    Resync,
+    /// Everything the relay holds read from the start, and only what the host did not hold told to
+    /// the machine: for a host's MLS device that was not given a commit the first time (a feed does
+    /// not give a record twice), and whose machine is not to be told the list again.
+    Reread,
+}
+
+/// What a [`RoundMachine`] wants next.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Step {
+    /// Put this request to the relay, and give the machine the answer ([`RoundMachine::respond`]).
+    Request(Request),
+    /// The round is over: what it did, or why it stopped.
+    Done(Result<Round, CourierError>),
+}
+
+/// What a host gives a relay outside a round: a message of the list's MLS group, or a checkpoint of
+/// its person. Each is one request ([`Publication::request`]) whose answer is checked by
+/// [`Publication::check`]; a checkpoint is given after the relay is given what it lacks of the
+/// operations the checkpoint names ([`Publication::pushes_first`]), so that a member who reads it
+/// can fetch them. [`RoundMachine::publish`] makes the whole exchange.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Publication {
+    /// A key package of this host's device, for an administrator to add it with.
+    KeyPackage(Vec<u8>),
+    /// The commit that begins `epoch` (the log names its hash).
+    Commit { epoch: u32, commit: Vec<u8> },
+    /// The Welcome for the device of `node` that the commit of `epoch` added.
+    Welcome {
+        epoch: u32,
+        node: u64,
+        welcome: Vec<u8>,
+    },
+    /// What this host's person says their copy held of everything up to `before` (the digest the
+    /// machine computed).
+    Checkpoint { before: i64, digest: u32 },
+}
+
+impl Publication {
+    /// The request that gives the relay this publication. A checkpoint is made here, signed by the
+    /// host's person; a host that cannot make one is told why and asks nothing.
+    pub fn request(&self, trust: &Trust) -> Result<Request, CourierError> {
+        Ok(match self {
+            Publication::KeyPackage(package) => Request::PublishKeyPackage {
+                data: encoding::encode(package),
+            },
+            Publication::Commit { epoch, commit } => Request::PublishCommit {
+                epoch: *epoch,
+                data: encoding::encode(commit),
+            },
+            Publication::Welcome {
+                epoch,
+                node,
+                welcome,
+            } => Request::PublishWelcome {
+                epoch: *epoch,
+                node: *node,
+                data: encoding::encode(welcome),
+            },
+            Publication::Checkpoint { before, digest } => {
+                let checkpoint = trust.checkpoint(*before, *digest).map_err(|error| {
+                    CourierError::Unexpected(format!("no checkpoint could be made: {error:?}"))
+                })?;
+                Request::Checkpoint {
+                    checkpoint: checkpoint.to_json(),
+                }
+            }
+        })
+    }
+
+    /// Whether the relay is given what it lacks before the publication.
+    pub fn pushes_first(&self) -> bool {
+        matches!(self, Publication::Checkpoint { .. })
+    }
+
+    /// What the relay's answer to [`Self::request`] says: taken, refused, or not an answer to it.
+    pub fn check(response: Response) -> Result<(), CourierError> {
+        match response {
+            Response::Refused { code, reason } => Err(CourierError::Relay { code, reason }),
+            Response::Accepted { .. } => Ok(()),
+            other => Err(CourierError::Unexpected(format!("{other:?}"))),
+        }
+    }
+}
+
+/// One round of a courier, or one publication, with no link: it says which request it wants put to
+/// the relay ([`Self::poll`]), is given the answer ([`Self::respond`]), and says what the round did
+/// when it is over. It reads no clock, opens nothing and waits on nothing, so a host drives it as
+/// its transport and its operating system let it: an answer may come minutes later, or never.
+///
+/// It makes the requests a [`Courier`] makes, in the same order, and comes to the same [`Round`]
+/// and the same errors: a courier is this machine driven over a [`Link`]. It holds the
+/// [`CourierState`] while it runs and gives it back ([`Self::into_state`]), changed only where a
+/// step of the round was completed, as [`CourierState`] says; a host that abandons a round takes
+/// the state back and starts the next round from it.
+pub struct RoundMachine {
+    trust: Trust,
+    state: CourierState,
+    mode: Mode,
+    round: Round,
+    phase: Phase,
+    /// The request put to the relay and not answered yet.
+    asked: Option<Request>,
+    outcome: Option<Result<Round, CourierError>>,
+}
+
+/// What a machine is making.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    /// A round, which tells the machine every operation it reads when `redeliver`.
+    Round { redeliver: bool },
+    /// A publication, which tells the machine nothing.
+    Publish,
+}
+
+/// Where a machine is.
+enum Phase {
+    /// Bringing the two logs level.
+    Log(LogExchange),
+    /// Giving the relay what it lacks.
+    Push(Push),
+    /// Reading what the relay holds after the cursor.
+    Pull(Pull),
+    /// Giving the relay one publication, and reading that it took it.
+    Publish(Request),
+    /// Everything was asked: the round is to be summed up.
+    Finish,
+    /// The outcome is known.
+    Over,
+}
+
+/// The two logs brought level: the relay's entries asked for from what the host holds, until the
+/// host takes no more of them, then the ones the relay lacks given to it.
+struct LogExchange {
+    stage: LogStage,
+    then: AfterLog,
+}
+
+enum LogStage {
+    /// The entries after the host's log are to be asked for.
+    Ask,
+    /// They were asked for from `from`.
+    Asked { from: u64 },
+    /// The entries the relay lacks are given, one request each, from `next`.
+    Give { entries: Vec<String>, next: usize },
+}
+
+/// What follows the logs brought level.
+enum AfterLog {
+    /// The parked operations are tried again and the relay is given what it lacks: the start of a
+    /// round.
+    Push,
+    /// A record of the feed named an entry the host lacked: it is taken again when the log moved
+    /// since `before`, and the feed stalls on it when it did not.
+    Retake { pull: Pull, before: u64 },
+}
+
+/// The relay given what it lacks: its heads asked for, the operations of each device past the
+/// relay's head given, then the proof of conflicts not given yet, then the host's checkpoints.
+struct Push {
+    stage: PushStage,
+    then: AfterPush,
+}
+
+enum PushStage {
+    Heads,
+    Devices(Devices),
+    Evidence {
+        items: Vec<(String, String)>,
+        next: usize,
+    },
+    Checkpoints {
+        items: Vec<String>,
+        next: usize,
+    },
+}
+
+/// The operations of each device the host holds past what the relay holds of it.
+struct Devices {
+    /// The relay's head of each device.
+    theirs: BTreeMap<u64, u64>,
+    /// The host's heads, as they were when the relay's came.
+    heads: Vec<Head>,
+    /// The device whose operations are given.
+    device: usize,
+    /// Its operations, once read from the trust, and the next to give.
+    ops: Option<Ops>,
+}
+
+struct Ops {
+    list: Vec<(String, String)>,
+    next: usize,
+}
+
+/// What follows the relay given what it lacks.
+enum AfterPush {
+    /// The feed is read, when the relay lets this device read.
+    Pull,
+    /// The publication is given, whether the relay let this device read or not.
+    Publish(Request),
+}
+
+/// What the relay holds after the cursor, read a batch at a time.
+struct Pull {
+    redeliver: bool,
+    /// Whether this is the reading from the start that an amendment of the log asks for.
+    second: bool,
+    batch: Option<Batch>,
+}
+
+/// One batch of the feed, taken in a record at a time.
+struct Batch {
+    records: Vec<Record>,
+    /// The cursor the batch was read from.
+    base: u64,
+    /// The record taken in next.
+    index: usize,
+    /// Whether the log was brought level once for this record already.
+    retried: bool,
+    next: u64,
+    more: bool,
+}
+
+/// A refusal of a whole request, as an error of the round.
+fn expected(response: Response) -> Result<Response, CourierError> {
+    match response {
+        Response::Refused { code, reason } => Err(CourierError::Relay { code, reason }),
+        other => Ok(other),
+    }
+}
+
+impl RoundMachine {
+    /// A round of `kind` over `state` and the host's `trust`. What an earlier round took in and did
+    /// not hand over is handed over by this one ([`CourierState`]).
+    pub fn start(kind: RoundKind, mut state: CourierState, trust: Trust) -> Self {
+        match kind {
+            RoundKind::Sync => {}
+            RoundKind::Resync => {
+                state.cursor = 0;
+                state.untold.clear();
+                state.unread.clear();
+            }
+            RoundKind::Reread => {
+                state.cursor = 0;
+                state.unread.clear();
+            }
+        }
+        let round = Round {
+            events: std::mem::take(&mut state.untold),
+            messages: std::mem::take(&mut state.unread),
+            ..Round::default()
+        };
+        Self {
+            trust,
+            state,
+            mode: Mode::Round {
+                redeliver: kind == RoundKind::Resync,
+            },
+            round,
+            phase: Phase::Log(LogExchange {
+                stage: LogStage::Ask,
+                then: AfterLog::Push,
+            }),
+            asked: None,
+            outcome: None,
+        }
+    }
+
+    /// The exchange that gives the relay `publication`. Its round tells the machine nothing: it
+    /// says what the relay was given before a checkpoint, and what it refused.
+    pub fn publish(publication: &Publication, state: CourierState, trust: Trust) -> Self {
+        let (phase, outcome) = match publication.request(&trust) {
+            Ok(request) if publication.pushes_first() => (
+                Phase::Push(Push {
+                    stage: PushStage::Heads,
+                    then: AfterPush::Publish(request),
+                }),
+                None,
+            ),
+            Ok(request) => (Phase::Publish(request), None),
+            Err(error) => (Phase::Over, Some(Err(error))),
+        };
+        Self {
+            trust,
+            state,
+            mode: Mode::Publish,
+            round: Round::default(),
+            phase,
+            asked: None,
+            outcome,
+        }
+    }
+
+    /// The request to put to the relay next, or the outcome once the round is over. Asking again
+    /// before an answer is given is asked the same request; asking after the round is over is told
+    /// the same outcome.
+    pub fn poll(&mut self) -> Step {
+        loop {
+            if let Some(outcome) = &self.outcome {
+                return Step::Done(outcome.clone());
+            }
+            if let Some(request) = &self.asked {
+                return Step::Request(request.clone());
+            }
+            let phase = std::mem::replace(&mut self.phase, Phase::Over);
+            self.phase = match phase {
+                Phase::Log(log) => self.drive_log(log),
+                Phase::Push(push) => self.drive_push(push),
+                Phase::Pull(pull) => self.drive_pull(pull),
+                Phase::Publish(request) => {
+                    self.asked = Some(request.clone());
+                    Phase::Publish(request)
+                }
+                Phase::Finish => self.finish(),
+                Phase::Over => self.fail(CourierError::Unexpected(
+                    "the round ended with no outcome".to_string(),
+                )),
+            };
+        }
+    }
+
+    /// Whether a request was put and waits for its answer.
+    pub fn is_asking(&self) -> bool {
+        self.asked.is_some() && self.outcome.is_none()
+    }
+
+    /// The answer to the request [`Self::poll`] gave, or why the link did not carry it. An answer
+    /// when no request waits for one is not taken.
+    pub fn respond(&mut self, answer: Result<Response, LinkError>) {
+        if self.outcome.is_some() || self.asked.take().is_none() {
+            return;
+        }
+        let response = match answer {
+            Ok(response) => response,
+            Err(error) => {
+                self.phase = self.fail(error.into());
+                return;
+            }
+        };
+        let phase = std::mem::replace(&mut self.phase, Phase::Over);
+        self.phase = match phase {
+            Phase::Log(log) => self.answer_log(log, response),
+            Phase::Push(push) => self.answer_push(push, response),
+            Phase::Pull(pull) => self.answer_pull(pull, response),
+            Phase::Publish(_) => match Publication::check(response) {
+                Ok(()) => Phase::Finish,
+                Err(error) => self.fail(error),
+            },
+            other @ (Phase::Finish | Phase::Over) => other,
+        };
+    }
+
+    /// The state as the courier would be left with it if the round were abandoned now: what a host
+    /// saves in the middle of a round.
+    pub fn abandoned_state(&self) -> CourierState {
+        let mut state = self.state.clone();
+        if self.outcome.is_none() {
+            state.untold.extend(self.round.events.iter().cloned());
+            state.unread.extend(self.round.messages.iter().cloned());
+        }
+        state
+    }
+
+    /// The state back, at the end of the round or in the middle of it: a round that did not end
+    /// leaves what it took in and did not hand over in it, for the next round.
+    pub fn into_state(mut self) -> CourierState {
+        if self.outcome.is_none() {
+            self.state.keep_untold(&mut self.round);
+        }
+        self.state
+    }
+
+    fn ask(&mut self, request: Request) {
+        self.asked = Some(request);
+    }
+
+    /// The round stops with `error`; what it took in and did not hand over is kept.
+    fn fail(&mut self, error: CourierError) -> Phase {
+        self.state.keep_untold(&mut self.round);
+        self.outcome = Some(Err(error));
+        Phase::Over
+    }
+
+    /// The round sums up: what the trust stopped holding or holds again, and the roster at the
+    /// front of the events when the log moved or every operation is told again.
+    fn finish(&mut self) -> Phase {
+        let mut round = std::mem::take(&mut self.round);
+        if let Mode::Round { redeliver } = self.mode {
+            round.evicted = self.trust.take_evicted();
+            round.restored = self.trust.take_restored();
+            let len = self.trust.log_len();
+            if len != self.state.roster_len || redeliver {
+                self.state.roster_len = len;
+                let roster = if self.state.hub {
+                    self.trust.hub_role_events()
+                } else {
+                    self.trust.role_events()
+                };
+                round.events.splice(0..0, roster);
+            }
+        }
+        self.outcome = Some(Ok(round));
+        Phase::Over
+    }
+
+    fn drive_log(&mut self, log: LogExchange) -> Phase {
+        let LogExchange { stage, then } = log;
+        match stage {
+            // `Asked` is left by every answer, so it is not met here; were it, it asks again.
+            LogStage::Ask | LogStage::Asked { .. } => {
+                let from = self.trust.log_len();
+                self.ask(Request::Entries { from });
+                Phase::Log(LogExchange {
+                    stage: LogStage::Asked { from },
+                    then,
+                })
+            }
+            LogStage::Give { entries, next } => match entries.get(next).cloned() {
+                Some(entry) => {
+                    self.ask(Request::Append { entry });
+                    Phase::Log(LogExchange {
+                        stage: LogStage::Give { entries, next },
+                        then,
+                    })
+                }
+                None => self.after_log(then),
+            },
+        }
+    }
+
+    fn answer_log(&mut self, log: LogExchange, response: Response) -> Phase {
+        let LogExchange { stage, then } = log;
+        match stage {
+            LogStage::Asked { from } => {
+                let (entries, len) = match expected(response) {
+                    Ok(Response::Entries { entries, len }) => (entries, len),
+                    Ok(_) => {
+                        return self.fail(CourierError::Unexpected(
+                            "it did not answer with entries".to_string(),
+                        ))
+                    }
+                    Err(error) => return self.fail(error),
+                };
+                for text in entries {
+                    match Entry::from_json(&text) {
+                        Some(entry) => {
+                            if let Err(error) = self.trust.append(&entry) {
+                                self.round
+                                    .refused
+                                    .push(format!("an entry of the relay: {error:?}"));
+                            }
+                        }
+                        None => self
+                            .round
+                            .refused
+                            .push("an entry of the relay is not one".to_string()),
+                    }
+                }
+                let now = self.trust.log_len();
+                // Go on while the relay has more and the last call took some of it in.
+                if now < len && now > from {
+                    return Phase::Log(LogExchange {
+                        stage: LogStage::Ask,
+                        then,
+                    });
+                }
+                let held = self.trust.entries();
+                let start = usize::try_from(len).unwrap_or(held.len()).min(held.len());
+                Phase::Log(LogExchange {
+                    stage: LogStage::Give {
+                        entries: held[start..].iter().map(Entry::to_json).collect(),
+                        next: 0,
+                    },
+                    then,
+                })
+            }
+            LogStage::Give { entries, next } => match expected(response) {
+                Ok(Response::Appended { .. }) => {
+                    self.round.pushed += 1;
+                    Phase::Log(LogExchange {
+                        stage: LogStage::Give {
+                            entries,
+                            next: next + 1,
+                        },
+                        then,
+                    })
+                }
+                Ok(other) => self.fail(CourierError::Unexpected(format!("{other:?}"))),
+                Err(error) => self.fail(error),
+            },
+            // Nothing is asked in it, so no answer is given to it.
+            LogStage::Ask => Phase::Log(LogExchange {
+                stage: LogStage::Ask,
+                then,
+            }),
+        }
+    }
+
+    fn after_log(&mut self, then: AfterLog) -> Phase {
+        match then {
+            AfterLog::Push => {
+                retry_parked(&self.trust, &mut self.state.parked, &mut self.round);
+                Phase::Push(Push {
+                    stage: PushStage::Heads,
+                    then: AfterPush::Pull,
+                })
+            }
+            AfterLog::Retake { pull, before } => {
+                if self.trust.log_len() != before {
+                    return Phase::Pull(pull);
+                }
+                if let Some(batch) = &pull.batch {
+                    self.state.cursor = batch.base + batch.index as u64;
+                }
+                self.round.stalled = true;
+                self.after_pull(pull.second)
+            }
+        }
+    }
+
+    fn drive_push(&mut self, push: Push) -> Phase {
+        let Push { stage, then } = push;
+        match stage {
+            PushStage::Heads => {
+                self.ask(Request::Heads);
+                Phase::Push(Push {
+                    stage: PushStage::Heads,
+                    then,
+                })
+            }
+            PushStage::Devices(devices) => self.drive_devices(devices, then),
+            PushStage::Evidence { items, next } => {
+                // What shows that a device signed conflicting operations is given to the relay
+                // too, so that a host that was not given both of them is given them by the relay:
+                // the proof is no host's own knowledge. Each is given once from this courier; the
+                // relay holds it already when it was.
+                let mut next = next;
+                while items
+                    .get(next)
+                    .is_some_and(|(_, data)| self.state.evidence_sent.contains(data))
+                {
+                    next += 1;
+                }
+                match items.get(next).cloned() {
+                    Some((event, data)) => {
+                        self.ask(Request::Submit { event, data });
+                        Phase::Push(Push {
+                            stage: PushStage::Evidence { items, next },
+                            then,
+                        })
+                    }
+                    None => Phase::Push(Push {
+                        stage: PushStage::Checkpoints {
+                            items: self
+                                .trust
+                                .checkpoints()
+                                .iter()
+                                .map(Checkpoint::to_json)
+                                .collect(),
+                            next: 0,
+                        },
+                        then,
+                    }),
+                }
+            }
+            PushStage::Checkpoints { items, next } => match items.get(next).cloned() {
+                Some(checkpoint) => {
+                    self.ask(Request::Checkpoint { checkpoint });
+                    Phase::Push(Push {
+                        stage: PushStage::Checkpoints { items, next },
+                        then,
+                    })
+                }
+                None => self.after_push(true, then),
+            },
+        }
+    }
+
+    fn drive_devices(&mut self, devices: Devices, then: AfterPush) -> Phase {
+        let Devices {
+            theirs,
+            heads,
+            mut device,
+            ops,
+        } = devices;
+        let ops = match ops {
+            Some(ops) => ops,
+            None => loop {
+                let Some(head) = heads.get(device).copied() else {
+                    return self.evidence(then);
+                };
+                let held = theirs.get(&head.node).copied().unwrap_or(0);
+                if head.seq <= held {
+                    device += 1;
+                    continue;
+                }
+                break Ops {
+                    list: self.trust.operations(head.node, held + 1, head.seq),
+                    next: 0,
+                };
+            },
+        };
+        match ops.list.get(ops.next).cloned() {
+            Some((event, data)) => {
+                self.ask(Request::Submit { event, data });
+                Phase::Push(Push {
+                    stage: PushStage::Devices(Devices {
+                        theirs,
+                        heads,
+                        device,
+                        ops: Some(ops),
+                    }),
+                    then,
+                })
+            }
+            None => Phase::Push(Push {
+                stage: PushStage::Devices(Devices {
+                    theirs,
+                    heads,
+                    device: device + 1,
+                    ops: None,
+                }),
+                then,
+            }),
+        }
+    }
+
+    /// The devices are done: the proof of conflicts the trust holds is given next.
+    fn evidence(&self, then: AfterPush) -> Phase {
+        Phase::Push(Push {
+            stage: PushStage::Evidence {
+                items: self.trust.evidence(),
+                next: 0,
+            },
+            then,
+        })
+    }
+
+    fn answer_push(&mut self, push: Push, response: Response) -> Phase {
+        let Push { stage, then } = push;
+        match stage {
+            PushStage::Heads => match response {
+                Response::Heads { heads, .. } => {
+                    let theirs = heads.iter().map(|head| (head.node, head.seq)).collect();
+                    Phase::Push(Push {
+                        stage: PushStage::Devices(Devices {
+                            theirs,
+                            heads: self.trust.heads(),
+                            device: 0,
+                            ops: None,
+                        }),
+                        then,
+                    })
+                }
+                // The relay will not let this device read yet (it is not a member), in which case
+                // there is nothing to read either.
+                Response::Refused {
+                    code: Code::Forbidden,
+                    reason,
+                } => {
+                    self.round.stalled = true;
+                    self.round.refused.push(reason);
+                    self.after_push(false, then)
+                }
+                Response::Refused { code, reason } => {
+                    self.fail(CourierError::Relay { code, reason })
+                }
+                other => self.fail(CourierError::Unexpected(format!("{other:?}"))),
+            },
+            PushStage::Devices(devices) => {
+                let Devices {
+                    theirs,
+                    heads,
+                    device,
+                    ops,
+                } = devices;
+                match response {
+                    Response::Accepted { new, .. } => {
+                        self.round.pushed += usize::from(new);
+                        Phase::Push(Push {
+                            stage: PushStage::Devices(Devices {
+                                theirs,
+                                heads,
+                                device,
+                                ops: ops.map(|ops| Ops {
+                                    list: ops.list,
+                                    next: ops.next + 1,
+                                }),
+                            }),
+                            then,
+                        })
+                    }
+                    // A reader holds operations and may not write them anywhere.
+                    Response::Refused {
+                        code: Code::Forbidden,
+                        reason,
+                    } => {
+                        self.round.refused.push(reason);
+                        self.evidence(then)
+                    }
+                    Response::Refused { reason, .. } => {
+                        self.round.refused.push(reason);
+                        Phase::Push(Push {
+                            stage: PushStage::Devices(Devices {
+                                theirs,
+                                heads,
+                                device: device + 1,
+                                ops: None,
+                            }),
+                            then,
+                        })
+                    }
+                    other => self.fail(CourierError::Unexpected(format!("{other:?}"))),
+                }
+            }
+            PushStage::Evidence { items, next } => match response {
+                Response::Accepted { new, .. } => {
+                    self.round.pushed += usize::from(new);
+                    if let Some((_, data)) = items.get(next) {
+                        self.state.evidence_sent.insert(data.clone());
+                    }
+                    Phase::Push(Push {
+                        stage: PushStage::Evidence {
+                            items,
+                            next: next + 1,
+                        },
+                        then,
+                    })
+                }
+                Response::Refused { reason, .. } => {
+                    self.round.refused.push(reason);
+                    Phase::Push(Push {
+                        stage: PushStage::Evidence {
+                            items,
+                            next: next + 1,
+                        },
+                        then,
+                    })
+                }
+                other => self.fail(CourierError::Unexpected(format!("{other:?}"))),
+            },
+            PushStage::Checkpoints { items, next } => match response {
+                Response::Accepted { new, .. } => {
+                    self.round.pushed += usize::from(new);
+                    Phase::Push(Push {
+                        stage: PushStage::Checkpoints {
+                            items,
+                            next: next + 1,
+                        },
+                        then,
+                    })
+                }
+                Response::Refused { reason, .. } => {
+                    self.round.refused.push(reason);
+                    Phase::Push(Push {
+                        stage: PushStage::Checkpoints {
+                            items,
+                            next: next + 1,
+                        },
+                        then,
+                    })
+                }
+                other => self.fail(CourierError::Unexpected(format!("{other:?}"))),
+            },
+        }
+    }
+
+    /// The relay was given what it lacks; `readable` is false when it would not let this device
+    /// read, and a round then reads nothing.
+    fn after_push(&mut self, readable: bool, then: AfterPush) -> Phase {
+        match then {
+            AfterPush::Pull if readable => Phase::Pull(Pull {
+                redeliver: matches!(self.mode, Mode::Round { redeliver: true }),
+                second: false,
+                batch: None,
+            }),
+            AfterPush::Pull => Phase::Finish,
+            AfterPush::Publish(request) => Phase::Publish(request),
+        }
+    }
+
+    /// Read what the relay holds after the cursor, and take each record in. A record that names an
+    /// entry of the log the host lacks stops the round after one more try at the log, and the
+    /// cursor stays before it.
+    fn drive_pull(&mut self, pull: Pull) -> Phase {
+        let Pull {
+            redeliver,
+            second,
+            batch,
+        } = pull;
+        let Some(mut batch) = batch else {
+            self.ask(Request::Feed {
+                cursor: self.state.cursor,
+                limit: FEED_BATCH,
+            });
+            return Phase::Pull(Pull {
+                redeliver,
+                second,
+                batch: None,
+            });
+        };
+        while batch.index < batch.records.len() {
+            let taken = take(
+                &self.trust,
+                &mut self.state.parked,
+                &batch.records[batch.index],
+                redeliver,
+                &mut self.round,
+            );
+            match taken {
+                Taken::Done => {
+                    batch.index += 1;
+                    batch.retried = false;
+                }
+                Taken::Behind if !batch.retried => {
+                    batch.retried = true;
+                    let before = self.trust.log_len();
+                    return Phase::Log(LogExchange {
+                        stage: LogStage::Ask,
+                        then: AfterLog::Retake {
+                            pull: Pull {
+                                redeliver,
+                                second,
+                                batch: Some(batch),
+                            },
+                            before,
+                        },
+                    });
+                }
+                Taken::Behind => {
+                    self.state.cursor = batch.base + batch.index as u64;
+                    self.round.stalled = true;
+                    return self.after_pull(second);
+                }
+            }
+        }
+        self.state.cursor = batch.next;
+        if batch.more {
+            Phase::Pull(Pull {
+                redeliver,
+                second,
+                batch: None,
+            })
+        } else {
+            self.after_pull(second)
+        }
+    }
+
+    fn answer_pull(&mut self, pull: Pull, response: Response) -> Phase {
+        let Pull {
+            redeliver, second, ..
+        } = pull;
+        match expected(response) {
+            Ok(Response::Feed {
+                records,
+                next,
+                more,
+            }) => Phase::Pull(Pull {
+                redeliver,
+                second,
+                batch: Some(Batch {
+                    records,
+                    base: self.state.cursor,
+                    index: 0,
+                    retried: false,
+                    next,
+                    more,
+                }),
+            }),
+            Ok(_) => self.fail(CourierError::Unexpected(
+                "it did not answer with a feed".to_string(),
+            )),
+            Err(error) => self.fail(error),
+        }
+    }
+
+    /// A reading of the feed ended. An amendment raised the last operation accepted of a device
+    /// taken off: what the host refused of it before is true now, so it reads what the relay holds
+    /// again from the start (the operations it already holds are not told to the machine twice).
+    fn after_pull(&mut self, second: bool) -> Phase {
+        if second {
+            return Phase::Finish;
+        }
+        let amends = amendments(&self.trust);
+        if amends > self.state.amendments_seen {
+            self.state.amendments_seen = amends;
+            self.state.cursor = 0;
+            Phase::Pull(Pull {
+                redeliver: false,
+                second: true,
+                batch: None,
+            })
+        } else {
+            Phase::Finish
+        }
     }
 }
 
