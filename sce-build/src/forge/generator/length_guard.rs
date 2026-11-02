@@ -230,7 +230,9 @@ pub(super) fn carried_held(name: &str, fields: &[CodecField], lang: Language) ->
             Language::Rust | Language::C11 | Language::Cpp | Language::Python => {
                 sibling(carrier.trim()).map_or(Held::HostInt, |f| held_of(&f.sce_type))
             }
-            Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("carried_held"),
+            // The bits are shifted down and masked in the carrier's own type, and compared with
+            // a plain literal, which Swift types as the operand.
+            Language::Swift => Held::HostInt,
         },
         None => sibling(name).map_or(Held::HostInt, |f| held_of(&f.sce_type)),
     }

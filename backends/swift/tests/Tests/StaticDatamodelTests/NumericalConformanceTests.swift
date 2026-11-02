@@ -1294,6 +1294,32 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     }
 }
 
+// MARK: - codec: codec_length_ref_dotted_basic
+
+@Test func codecLengthRefDottedBasicMatchesReference() throws {
+
+    let cases = try oracleCases("codecs", "codec_length_ref_dotted_basic")
+    #expect(!cases.isEmpty, "codec_length_ref_dotted_basic: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_length_ref_dotted_basic case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+
+        let value = CodecLengthRefDottedBasic(
+            carrier: try oracleInteger(decoded.member("carrier"), as: UInt8.self),
+            payload: try oracleBytes(decoded.member("payload"))
+        )
+
+        var sink = BytesSink()
+        try value.encode(into: &sink)
+        #expect(sink.bytes == expectedBytes, "codec_length_ref_dotted_basic case \(index) encode")
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecLengthRefDottedBasic.decode(&cursor)
+        #expect(roundTripped == value, "codec_length_ref_dotted_basic case \(index) decode")
+        #expect(cursor.remaining == 0, "codec_length_ref_dotted_basic case \(index) decode consumed the frame and nothing else")
+    }
+}
+
 // MARK: - lookup: lookup_engine_status
 
 @Test func lookupEngineStatusMatchesReference() throws {
@@ -5019,6 +5045,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecTlvEntry.frameLength
 }
 
+// MARK: - codec: codec_transport_envelope
+
+@Test func codecTransportEnvelopeMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecTransportEnvelope.frameLength
+}
+
 // MARK: - codec: codec_until_eof_basic
 
 @Test func codecUntilEofBasicMatchesReference() throws {
@@ -5155,12 +5189,36 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecZenohExtZint.frameLength
 }
 
+// MARK: - codec: codec_zenoh_hello
+
+@Test func codecZenohHelloMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohHello.frameLength
+}
+
+// MARK: - codec: codec_zenoh_init_body
+
+@Test func codecZenohInitBodyMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohInitBody.frameLength
+}
+
 // MARK: - codec: codec_zenoh_interest_body
 
 @Test func codecZenohInterestBodyMatchesReference() throws {
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohInterestBody.frameLength
+}
+
+// MARK: - codec: codec_zenoh_join
+
+@Test func codecZenohJoinMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohJoin.frameLength
 }
 
 // MARK: - codec: codec_zenoh_open_body
@@ -5185,6 +5243,30 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohPushBody.frameLength
+}
+
+// MARK: - codec: codec_zenoh_scout
+
+@Test func codecZenohScoutMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohScout.frameLength
+}
+
+// MARK: - codec: codec_zenoh_source_info
+
+@Test func codecZenohSourceInfoMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohSourceInfo.frameLength
+}
+
+// MARK: - codec: codec_zenoh_source_info_ext
+
+@Test func codecZenohSourceInfoExtMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohSourceInfoExt.frameLength
 }
 
 // MARK: - codec: codec_zenoh_timestamp

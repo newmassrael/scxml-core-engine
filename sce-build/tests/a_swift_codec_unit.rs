@@ -600,9 +600,26 @@ fn what_a_variable_length_field_cannot_be_is_refused_by_name() {
             "{field}: {refusal}"
         );
     }
-    let dotted = swift_of("tests/forge/resources/codec_length_ref_dotted_basic.scxml")
-        .expect_err("a length held in a flag is not lowered");
-    assert!(dotted.contains("a flag of a carrier"), "{dotted}");
+}
+
+#[test]
+fn a_length_held_in_the_bits_of_a_flag_is_read_shifted_down_and_masked() {
+    let code = swift_of("tests/forge/resources/codec_length_ref_dotted_basic.scxml")
+        .expect("a length in a flag is written");
+    assert!(
+        !code.contains("if ((frame.carrier >> 4) & 0xF)"),
+        "four bits cannot say more than the 15 bytes the document admits, so nothing is judged: {code}"
+    );
+    assert!(
+        code.contains("if self.payload.count > 15 {"),
+        "an encode still refuses a value past the bound: {code}"
+    );
+    assert!(
+        code.contains(
+            "frame.payload = Array(try reader.readSlice(Int(clamping: ((frame.carrier >> 4) & 0xF))))"
+        ),
+        "{code}"
+    );
 }
 
 #[test]

@@ -1,0 +1,139 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: 814c7782483a2e1383636d59b115ce52cb83fc95e5c66e5ef4b90acbc7ce1d0e
+// SCE-MAP: codec_zenoh_join.scxml:41 :: _forge_body
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+// Runtime: none
+// Do not edit — regenerate from the source SCXML file.
+
+import SceForgeRuntime
+
+/// The frame this codec lays on the wire: 8 field(s) of integers, each at its
+/// byte offset and in its byte order. A value, so a host that reads one holds a copy.
+public struct CodecZenohJoin: Equatable, Sendable {
+    /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
+    /// integer or a field of bytes may take more.
+    public static let frameLength = 5
+
+    /// The field at byte 0, little-endian.
+    public var version: UInt8 = 0
+
+    /// The field at byte 1, little-endian.
+    public var cbyte: UInt8 = 0
+
+    /// The 2 bits of `cbyte` from bit 0 (flag `whatami`). A value
+    /// wider than the flag is cut to it when written.
+    public var whatami: UInt8 {
+        get { UInt8(truncatingIfNeeded: (cbyte >> 0) & 0x3) }
+        set { cbyte = (cbyte & ~(0x3 << 0)) | (((UInt8(truncatingIfNeeded: newValue)) & 0x3) << 0) }
+    }
+
+    /// The 4 bits of `cbyte` from bit 4 (flag `zid_len_m1`). A value
+    /// wider than the flag is cut to it when written.
+    public var zidLenM1: UInt8 {
+        get { UInt8(truncatingIfNeeded: (cbyte >> 4) & 0xF) }
+        set { cbyte = (cbyte & ~(0xF << 4)) | (((UInt8(truncatingIfNeeded: newValue)) & 0xF) << 4) }
+    }
+
+    /// The bytes, as many as `cbyte.zid_len_m1` says, plus 1, as many as the document's `max-size` admits: a frame that says
+    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
+    public var zid: [UInt8] = []
+
+    /// On the wire only when `(S & 0x1) != 0`; `nil` when it is not. An encode
+    /// writes it when it is not `nil`.
+    /// The field at byte 3, little-endian.
+    public var sn_res: UInt8? = nil
+
+    /// On the wire only when `(S & 0x1) != 0`; `nil` when it is not. An encode
+    /// writes it when it is not `nil`.
+    /// The field at byte 4, little-endian.
+    public var batch_size: UInt16? = nil
+
+    /// A variable-length integer: base-128, the least significant group first, at most as many
+    /// bytes as its type needs.
+    public var lease: UInt64 = 0
+
+    /// A variable-length integer: base-128, the least significant group first, at most as many
+    /// bytes as its type needs.
+    public var next_sn_reliable: UInt64 = 0
+
+    /// A variable-length integer: base-128, the least significant group first, at most as many
+    /// bytes as its type needs.
+    public var next_sn_best_effort: UInt64 = 0
+
+    /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
+    /// frame yet holds, as a validator that composes this codec does until it is given one.
+    public init() {}
+
+    public init(version: UInt8, cbyte: UInt8, zid: [UInt8], sn_res: UInt8?, batch_size: UInt16?, lease: UInt64, next_sn_reliable: UInt64, next_sn_best_effort: UInt64) {
+        self.version = version
+        self.cbyte = cbyte
+        self.zid = zid
+        self.sn_res = sn_res
+        self.batch_size = batch_size
+        self.lease = lease
+        self.next_sn_reliable = next_sn_reliable
+        self.next_sn_best_effort = next_sn_best_effort
+    }
+
+    /// Decodes the frame at the cursor and moves the cursor past it. The frame is read field by
+    /// field through a copy of the cursor, which replaces it only when the whole frame was read: a
+    /// frame that is short, or says more than it holds, answers `needMoreBytes`, and a variable-
+    /// length integer wider than its type `vleWidthOverflow`, and either leaves the cursor where
+    /// it was. A count the wire states is clamped and then added to, so a huge one wraps negative
+    /// and is refused like any other count past the end, and is no trap.
+    public static func decode(_ cursor: inout SceCursor, S: UInt8) throws(CodecError) -> CodecZenohJoin {
+        var reader = cursor
+        var frame = CodecZenohJoin()
+        frame.version = try reader.readInteger(UInt8.self, .little)
+        frame.cbyte = try reader.readInteger(UInt8.self, .little)
+        frame.zid = Array(try reader.readSlice(Int(clamping: ((frame.cbyte >> 4) & 0xF)) &+ (1)))
+        if (S & 0x1) != 0 {
+            frame.sn_res = try reader.readInteger(UInt8.self, .little)
+        }
+        if (S & 0x1) != 0 {
+            frame.batch_size = try reader.readInteger(UInt16.self, .little)
+        }
+        frame.lease = try reader.readVle(UInt64.self)
+        frame.next_sn_reliable = try reader.readVle(UInt64.self)
+        frame.next_sn_best_effort = try reader.readVle(UInt64.self)
+        cursor = reader
+        return frame
+    }
+
+    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// `bufferOverflow` and holds none of it.
+    public func encode<Sink: SceSink>(into sink: inout Sink, S: UInt8) throws(CodecError) {
+        if (S & 0x1) != 0 {
+            if self.sn_res == nil {
+                throw CodecError.presentIfMismatch
+            }
+        } else if self.sn_res != nil {
+            throw CodecError.presentIfMismatch
+        }
+        if (S & 0x1) != 0 {
+            if self.batch_size == nil {
+                throw CodecError.presentIfMismatch
+            }
+        } else if self.batch_size != nil {
+            throw CodecError.presentIfMismatch
+        }
+        if self.zid.count < 1 || self.zid.count > 16 {
+            throw CodecError.lengthOutOfRange
+        }
+        var frame: [UInt8] = []
+        appendInteger(self.version, to: &frame, .little)
+        appendInteger(self.cbyte, to: &frame, .little)
+        frame += self.zid
+        if let sn_res = self.sn_res {
+            appendInteger(sn_res, to: &frame, .little)
+        }
+        if let batch_size = self.batch_size {
+            appendInteger(batch_size, to: &frame, .little)
+        }
+        appendVle(self.lease, to: &frame)
+        appendVle(self.next_sn_reliable, to: &frame)
+        appendVle(self.next_sn_best_effort, to: &frame)
+        try sink.writeBytes(frame)
+    }
+}

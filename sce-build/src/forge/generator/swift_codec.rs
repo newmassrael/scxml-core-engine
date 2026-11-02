@@ -396,8 +396,9 @@ fn vle_field_unlowered(f: &CodecField) -> Option<String> {
 /// It is a `bytes` field, held as an array, or a `string` field, held as the `String` its UTF-8 bytes
 /// spell. A `length-ref` takes its count from an unsigned integer field of the codec, plus the
 /// `length-arith` the document names; a length field that is on the wire only on a condition is
-/// read inside the gate of the field it counts, so the two must hold the one predicate. Each shape
-/// past that (a length held in the flag of a carrier or in a signed field) is named.
+/// read inside the gate of the field it counts, so the two must hold the one predicate. A length
+/// held in the bits of a flag is read from the carrier the frame has read. A length held in a signed
+/// field is named.
 fn variable_field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
     let what = |text: &str| Some(format!("field '{}': {text}", f.id));
     if !matches!(f.sce_type, SceType::Bytes | SceType::String) {
@@ -410,27 +411,29 @@ fn variable_field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
         let Some(name) = f.length_field.as_deref() else {
             return what("a length-ref with no length field");
         };
-        if dotted_length_field(name).is_some() {
-            return what("a length held in a flag of a carrier");
-        }
-        let unsigned = m.fields.iter().find(|g| g.id == name).map(|g| {
-            matches!(
-                g.sce_type,
-                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64
-            )
-        });
-        if unsigned != Some(true) {
-            return what(&format!(
-                "a length held in `{name}`, which is not an unsigned integer"
-            ));
-        }
-        if m.fields
-            .iter()
-            .any(|g| g.id == name && g.present_if.is_some() && g.present_if != f.present_if)
-        {
-            return what(&format!(
-                "a length held in `{name}`, which is on the wire only on a condition the field is not"
-            ));
+        // A length held in the bits of a flag is read from a carrier the frame has already
+        // read, which validation holds to a flags carrier of an unsigned type that every frame
+        // carries; only a length held in a field of its own has more to be held to.
+        if dotted_length_field(name).is_none() {
+            let unsigned = m.fields.iter().find(|g| g.id == name).map(|g| {
+                matches!(
+                    g.sce_type,
+                    SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64
+                )
+            });
+            if unsigned != Some(true) {
+                return what(&format!(
+                    "a length held in `{name}`, which is not an unsigned integer"
+                ));
+            }
+            if m.fields
+                .iter()
+                .any(|g| g.id == name && g.present_if.is_some() && g.present_if != f.present_if)
+            {
+                return what(&format!(
+                    "a length held in `{name}`, which is on the wire only on a condition the field is not"
+                ));
+            }
         }
     }
     None
@@ -440,6 +443,11 @@ fn variable_field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
 /// frame is decoded: the field, or, where it is on the wire only on the predicate `f` holds too, the
 /// value it has where `f` is read, which the gate the two share proves to be present.
 fn carried_length_expr(m: &CodecModel, name: &str) -> String {
+    // The bits of a flag of a carrier the frame has read, shifted down and masked.
+    if let Some((carrier, flag)) = dotted_length_field(name) {
+        let (shift, mask) = dotted_length_resolve(carrier, flag, &m.fields);
+        return format!("((frame.{carrier} >> {shift}) & 0x{mask:X})");
+    }
     if m.fields
         .iter()
         .any(|g| g.id == name && g.present_if.is_some())
