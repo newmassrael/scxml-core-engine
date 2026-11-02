@@ -5672,6 +5672,7 @@ mod tests {
     let deployment = sce_build::forge::deployment::RustDeployment {
         name: "Narrow".to_string(),
         capacities,
+        storage: Default::default(),
         gates: Default::default(),
         source: "deploy.yaml".to_string(),
     };
@@ -5877,6 +5878,7 @@ mod tests {
     let deployment = sce_build::forge::deployment::RustDeployment {
         name: "Narrow".to_string(),
         capacities,
+        storage: Default::default(),
         gates: Default::default(),
         source: "deploy.yaml".to_string(),
     };
@@ -6085,6 +6087,7 @@ fn narrow_deployment() -> sce_build::forge::deployment::RustDeployment {
     sce_build::forge::deployment::RustDeployment {
         name: "Narrow".to_string(),
         capacities,
+        storage: Default::default(),
         gates: Default::default(),
         source: "deploy.yaml".to_string(),
     }
@@ -6493,6 +6496,121 @@ fn c11_holds_a_content_line_text_with_no_bound_at_its_capacity() {
         assert!(header.contains(needle), "{needle}\n{header}");
     }
     run_c_driver(dir.path(), "codec_open_line.h", header, OPEN_LINE_C_DRIVER);
+}
+
+/// A heap node's deployment holds a field on the heap to its policy limit
+/// (docs/adr/0077 §7): the capacity the deploy input gives it, refused past it
+/// with `CapacityExceeded` as an inline node refuses past its array, the frame
+/// read whole first; a field the protocol bounds by nothing and the deployment
+/// limits by nothing grows, where an inline deployment refuses to generate it.
+#[test]
+fn a_heap_node_holds_a_field_to_its_policy_limit() {
+    const HARNESS: &str = r#"// Injected by a_heap_node_holds_a_field_to_its_policy_limit.
+#[cfg(test)]
+mod tests {
+    use crate::codec_open_bytes::CodecOpenBytesIn;
+    use crate::codec_open_line::CodecOpenLineIn;
+    use crate::codec_open_list::CodecOpenListIn;
+    use crate::policy::Policy;
+    use ::sce_forge_runtime::codec::{CodecError, SceCursor};
+
+    #[test]
+    fn a_list_holds_its_limit_and_refuses_past_it() {
+        let two = [0x00, 0x01, 0x00, 0x02];
+        let held = CodecOpenListIn::<Policy>::decode(&mut SceCursor::new(&two)).expect("two");
+        assert_eq!(held.frags.len(), 2);
+        let three = [0x00, 0x01, 0x00, 0x02, 0x00, 0x03];
+        assert_eq!(
+            CodecOpenListIn::<Policy>::decode(&mut SceCursor::new(&three)).err(),
+            Some(CodecError::CapacityExceeded)
+        );
+    }
+
+    #[test]
+    fn a_byte_string_holds_its_limit_and_refuses_past_it() {
+        let four = [0x01, b'n', 0x01, 0x02, 0x03, 0x04];
+        let held = CodecOpenBytesIn::<Policy>::decode(&mut SceCursor::new(&four)).expect("four");
+        assert_eq!(held.payload.len(), 4);
+        let five = [0x01, b'n', 0x01, 0x02, 0x03, 0x04, 0x05];
+        assert_eq!(
+            CodecOpenBytesIn::<Policy>::decode(&mut SceCursor::new(&five)).err(),
+            Some(CodecError::CapacityExceeded)
+        );
+    }
+
+    #[test]
+    fn a_field_with_no_bound_and_no_limit_grows() {
+        let mut wire = String::from("BEGIN:VEVENT\r\nDESCRIPTION:d\r\n");
+        for n in 0..40 {
+            wire.push_str(&format!("ATTENDEE:mailto:a{n}@x\r\n"));
+        }
+        wire.push_str("END:VEVENT\r\n");
+        let held = CodecOpenLineIn::<Policy>::decode(&mut SceCursor::new(wire.as_bytes()))
+            .expect("forty attendees on a heap node");
+        assert_eq!(held.attendee.len(), 40);
+        let past = "BEGIN:VEVENT\r\nDESCRIPTION:ddddddddd\r\nATTENDEE:a\r\nEND:VEVENT\r\n";
+        assert_eq!(
+            CodecOpenLineIn::<Policy>::decode(&mut SceCursor::new(past.as_bytes())).err(),
+            Some(CodecError::CapacityExceeded)
+        );
+    }
+}
+"#;
+    use sce_build::forge::deployment::NodeStorage;
+    use sce_build::generator::Language;
+    let (dir, lists) = open_lists();
+    std::fs::write(dir.path().join("codec_open_bytes.scxml"), OPEN_BYTES).expect("write");
+    std::fs::write(dir.path().join("codec_open_line.scxml"), OPEN_LINE).expect("write");
+    let set: Vec<&str> = lists
+        .iter()
+        .copied()
+        .chain(["codec_open_bytes.scxml", "codec_open_line.scxml"])
+        .collect();
+    // A list with no bound judges a frame past a capacity by its view.
+    let mut opts = golden_options(Language::Rust);
+    opts.views = true;
+    let mut files = generate_files_for_codec_set_with(dir.path(), &set, Language::Rust, opts)
+        .expect("the documents with no bound generate");
+    // The narrow capacities as policy limits, and none for the attendees, which
+    // the protocol bounds by nothing either.
+    let mut deployment = narrow_deployment();
+    deployment.name = "Policy".to_string();
+    deployment.storage = NodeStorage::Heap;
+    deployment
+        .capacities
+        .retain(|codec, _| codec != "codec_open_map");
+    if let Some(line) = deployment.capacities.get_mut("codec_open_line") {
+        line.remove("attendee");
+    }
+    let paths: Vec<std::path::PathBuf> = set.iter().map(|d| dir.path().join(d)).collect();
+    let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
+    let output =
+        sce_build::compile_rust_deployment(&refs, &deployment, &golden_options(Language::Rust))
+            .expect("a heap node's deployment generates a field it gives no limit");
+    let policy = output
+        .files
+        .iter()
+        .map(|(_, text)| text.as_str())
+        .collect::<String>();
+    assert!(policy.contains("CappedVec<T, 2>"), "{policy}");
+    assert!(policy.contains("CappedStr<8>"), "{policy}");
+    assert!(policy.contains("CappedBytes<4>"), "{policy}");
+    assert!(policy.contains("GrowVec<T>"), "{policy}");
+    files.extend(output.files);
+    files.push(("policy_harness.rs".to_string(), HARNESS.to_string()));
+    rustc_run_generated_set(files, "heap_policy", "test", RustcProfile::Alloc)
+        .expect("a heap node holds each field to its limit");
+
+    // The same set on an inline node, which holds the attendees in an array of
+    // no size, is refused, naming them.
+    deployment.storage = NodeStorage::Inline;
+    match sce_build::compile_rust_deployment(&refs, &deployment, &golden_options(Language::Rust)) {
+        Err(e) => assert!(
+            e.to_string().contains("attendee") && e.to_string().contains("needs a capacity"),
+            "{e}"
+        ),
+        Ok(_) => panic!("an inline node holds no field of no bound and no capacity"),
+    }
 }
 
 /// A driver of the C11 forms of [`OPEN_LIST`], [`OPEN_CHAIN`] and [`OPEN_BYTES`]
@@ -15775,6 +15893,7 @@ fn deployment_output(
     let deployment = sce_build::forge::deployment::RustDeployment {
         name: name.to_string(),
         capacities,
+        storage: Default::default(),
         gates,
         source: "deploy.yaml".to_string(),
     };

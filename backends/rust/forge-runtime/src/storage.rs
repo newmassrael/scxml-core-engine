@@ -67,6 +67,8 @@
 use crate::codec::CodecError;
 
 #[cfg(feature = "alloc")]
+pub use crate::capped::{CappedBytes, CappedStr, CappedVec};
+#[cfg(feature = "alloc")]
 pub use sce_portable_bytes::HeapBytes;
 pub use sce_portable_bytes::{InlineBytes, SceBytes};
 
@@ -389,6 +391,12 @@ pub type GrowBytes = HeapBytes<{ usize::MAX }>;
 /// The text [`Heap`] holds: growable, for a field of any bound.
 #[cfg(feature = "alloc")]
 pub type GrowStr = HeapStr<{ usize::MAX }>;
+
+/// The list [`Heap`] holds: growable, for a field of any bound. A deployment's
+/// file on a heap node names it for a field it gives no capacity, so the file
+/// needs no `alloc` of the crate it is compiled in (docs/adr/0077 §7).
+#[cfg(feature = "alloc")]
+pub type GrowVec<T> = alloc::vec::Vec<T>;
 
 /// The storage profile a build treats as the default: [`Heap`] where an
 /// allocator is available, [`Inline`] on the heap-free tier.

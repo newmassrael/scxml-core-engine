@@ -10,11 +10,20 @@
 // SCE Forge: Auto-generated deployment `{{ deployment }}` from {{ source }}
 // Do not edit — regenerate from the deploy input and the codec documents.
 
+{% if heap %}
+/// The deployment of {{ source }} on a node with an allocator: a storage profile
+/// whose every field of a codec of its set is held on the heap, to the capacity
+/// the deploy input gives it, its policy limit, or to the field's bound, and
+/// grows where there is neither. Past what it holds a storing decode refuses
+/// with `CodecError::CapacityExceeded`, and a frame it cannot hold is still
+/// judged whole first (docs/adr/0077 §7).
+{% else %}
 /// The deployment of {{ source }}: a storage profile whose every field of a
 /// codec of its set is held inline, at the capacity the deploy input gives it
 /// or at the field's bound. Past what it holds a storing decode refuses with
 /// `CodecError::CapacityExceeded`, and a frame it cannot hold is still judged
 /// whole first (docs/adr/0077 §7).
+{% endif %}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct {{ deployment }};
 
@@ -26,6 +35,10 @@ impl ::sce_forge_runtime::codec::Copying for {{ deployment }} {}
 {% if codec.cfg %}
 {{ codec.cfg }}
 {% endif %}
+{% if heap %}
+{{ storage.holds_on_heap("::sce_forge_runtime::codec", deployment, codec.module ~ "::" ~ field.tag, field) }}
+{% else %}
 {{ storage.holds("::sce_forge_runtime::codec", deployment, codec.module ~ "::" ~ field.tag, field) }}
+{% endif %}
 {% endfor %}
 {% endfor %}

@@ -13,7 +13,7 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test forge_conformance
-mutation_targets sce-build/src/forge/model.rs sce-build/src/forge/generator.rs sce-build/src/lib.rs
+mutation_targets sce-build/src/forge/model.rs sce-build/src/forge/generator.rs sce-build/src/lib.rs sce-build/src/forge/deployment.rs tools/codegen/templates/_macros/forge_rust_storage.jinja2 backends/rust/forge-runtime/src/capped.rs
 mutation_runtime_targets tools/codegen/templates/forge/rust/codec.rs.jinja2 backends/rust/forge-runtime/src/storage.rs
 mutation_oracles sce-build/tests/forge_conformance.rs
 
@@ -60,4 +60,32 @@ mutation_case "a C11 list past its capacity is called too many" <<'PY'
 edit("sce-build/src/forge/generator.rs",
      r'''if (_i >= {capacity}U) _over = true;''',
      r'''if (_i >= {capacity}U) return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;''')
+PY
+
+# A heap node holds a list with no limit, so a frame past its policy is held.
+# Killed by `a_heap_node_holds_a_field_to_its_policy_limit` (the needle
+# `CappedVec<T, 2>` and a third entry past two).
+mutation_case "a heap node's list grows past its policy limit" <<'PY'
+edit("tools/codegen/templates/_macros/forge_rust_storage.jinja2",
+     r'''    type List<T> = {{ runtime }}::CappedVec<T, {{ field.capacity }}> where''',
+     r'''    type List<T> = {{ runtime }}::GrowVec<T> where''')
+PY
+
+# A capped text takes a view past its limit. Killed by
+# `a_heap_node_holds_a_field_to_its_policy_limit` (a description of nine bytes
+# past eight).
+mutation_case "a capped text holds a view past its limit" <<'PY'
+edit("backends/rust/forge-runtime/src/capped.rs",
+     r'''    fn from_view(s: &str) -> Result<Self, CodecError> {
+        if s.len() > N {''',
+     r'''    fn from_view(s: &str) -> Result<Self, CodecError> {
+        if s.len() > usize::MAX - 1 {''')
+PY
+
+# A heap node is refused for a field with no bound and no limit, as an inline
+# node is. Killed by `a_heap_node_holds_a_field_to_its_policy_limit`.
+mutation_case "a heap node is held to an inline node's refusal" <<'PY'
+edit("sce-build/src/forge/deployment.rs",
+     r'''        let unheld = (deployment.storage == NodeStorage::Inline)''',
+     r'''        let unheld = (deployment.storage == NodeStorage::Inline || true)''')
 PY

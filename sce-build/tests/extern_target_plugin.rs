@@ -50,6 +50,7 @@ fn deploy_with_plugin(path: std::path::PathBuf) -> DeployConfig {
         }),
         variant_defaults: std::collections::BTreeMap::new(),
         codecs: std::collections::BTreeMap::new(),
+        codec_storage: Default::default(),
         build: None,
     }
 }
@@ -306,6 +307,7 @@ fn deploy_without_plugin_preserves_baseline_only_semantics() {
         extern_symbols: None,
         variant_defaults: std::collections::BTreeMap::new(),
         codecs: std::collections::BTreeMap::new(),
+        codec_storage: Default::default(),
         build: None,
     };
 

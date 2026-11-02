@@ -141,6 +141,12 @@ pub struct DeployConfig {
     #[serde(default)]
     pub codecs: BTreeMap<String, CodecDeployConfig>,
 
+    /// `codec_storage:` (docs/adr/0077 §7): which kind of node this
+    /// deployment's storing forms run on, and so what they hold a field in.
+    /// Absent ⇒ `inline`.
+    #[serde(default)]
+    pub codec_storage: crate::forge::deployment::NodeStorage,
+
     /// `build:` block — facts about the build environment that SCE
     /// records but does not act on.
     ///

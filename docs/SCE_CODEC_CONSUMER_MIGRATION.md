@@ -779,3 +779,19 @@ Landing: the commit that adds this section.
 - A codec no capacity reaches, which is every codec of a tree generated without a deployment, is generated exactly
   as before.
 
+## A deployment on a heap node holds a field to its policy limit (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- The deploy input takes `codec_storage: heap` beside `codecs:`, saying the deployment's node has an allocator. Absent,
+  or `inline`, it is the deployment a file was before: every field in an array.
+- On a heap node a field is held on the heap to what it holds, the capacity the `codecs:` block gives it (its policy
+  limit) or else its bound, and refused past it with `CodecError::CapacityExceeded`, read whole first, as an inline
+  node refuses past its array. A field the protocol bounds by nothing and the deployment limits by nothing grows, where
+  an inline deployment is refused for it.
+- The runtime, under `alloc`, adds the containers: `CappedVec<T, N>`, `CappedStr<N>` and `CappedBytes<N>`, which grow
+  and refuse past `N`, and `GrowVec<T>` beside `GrowStr` and `GrowBytes`. They dereference to a slice or a `str`.
+  `HeapStr<N>` and `HeapBytes<N>` keep `N` advisory.
+- `RustDeployment` gains `storage: NodeStorage`; a caller that builds one names it or takes `..Default::default()`,
+  which is `Inline`.
+

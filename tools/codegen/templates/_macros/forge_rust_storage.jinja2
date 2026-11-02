@@ -23,6 +23,26 @@ impl {{ runtime }}::Holds{{ field.kind }}<{{ tag }}> for {{ profile }} {
 {% endif %}
 }
 {%- endmacro %}
+{#- How the heap node `profile` holds the field `field` (docs/adr/0077 §7): on
+    the heap, to `field.capacity`, what the field holds (the deployment's policy
+    limit, or the field's bound where it gives none), and refused past it as an
+    inline node refuses past its array; growing where the protocol states no
+    bound and the deployment no limit. #}
+{%- macro holds_on_heap(runtime, profile, tag, field) %}
+impl {{ runtime }}::Holds{{ field.kind }}<{{ tag }}> for {{ profile }} {
+{% if field.kind == "List" %}
+{% if field.capacity is not none %}
+    type List<T> = {{ runtime }}::CappedVec<T, {{ field.capacity }}> where T: Default + ::core::fmt::Debug + Clone + PartialEq;
+{% else %}
+    type List<T> = {{ runtime }}::GrowVec<T> where T: Default + ::core::fmt::Debug + Clone + PartialEq;
+{% endif %}
+{% elif field.kind == "Str" %}
+    type Str = {% if field.capacity is not none %}{{ runtime }}::CappedStr<{{ field.capacity }}>{% else %}{{ runtime }}::GrowStr{% endif %};
+{% else %}
+    type Bytes = {% if field.capacity is not none %}{{ runtime }}::CappedBytes<{{ field.capacity }}>{% else %}{{ runtime }}::GrowBytes{% endif %};
+{% endif %}
+}
+{%- endmacro %}
 {%- macro declare(struct_name, runtime, fields, gated, bound, lent_bound, from_bound) %}
 {% for field in fields %}
 /// The field `{{ field.id }}` of `{{ struct_name }}`, which a storage profile

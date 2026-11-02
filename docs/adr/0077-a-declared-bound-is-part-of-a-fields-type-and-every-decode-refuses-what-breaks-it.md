@@ -475,10 +475,14 @@ are one value held two ways. So:
   into `Inline`'s lists, which refused one past its bound. `{Codec}<'a>` stays the eager form at `Inline` for a codec
   that has one, and only using it on a codec with a list of no bound fails to compile, as this section says of
   `Inline`.
-- **Inline only, so far.** A deployment holds every field inline. A heap node's policy limit, which this section counts
-  as a capacity, needs a growable container that refuses past a number; `HeapBytes<N>` treats `N` as advisory, and
-  the algorithm kind relies on that. It is a landing of its own, with a key in the deploy input saying which kind of
-  node the deployment is.
+- **A heap node, as landed.** The deploy input's `codec_storage:` says which kind of node a deployment is, `inline`
+  by default or `heap` (`NodeStorage`). A heap node's deployment holds each field on the heap to what it holds, the
+  deployment's capacity (its policy limit) or else the field's bound, in containers that grow and refuse past their
+  number with `CapacityExceeded`: `CappedVec<T, N>`, `CappedStr<N>`, `CappedBytes<N>`, apart from `HeapStr<N>` and
+  `HeapBytes<N>`, whose `N` the algorithm kind relies on being advisory. A field the protocol bounds by nothing and
+  the deployment limits by nothing grows there (`GrowVec`, `GrowStr`, `GrowBytes`), where an inline deployment is
+  refused for it. A storing decode on either kind of node reads a frame past what it holds whole and answers the
+  capacity last, so the two kinds differ in where a field is held and not in what a frame is answered.
 
 ## Alternatives
 

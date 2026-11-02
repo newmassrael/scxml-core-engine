@@ -13070,6 +13070,7 @@ fn cmd_deployment(
     let deployment = sce_build::forge::deployment::RustDeployment {
         name,
         capacities: deploy.codec_capacities(),
+        storage: deploy.codec_storage,
         gates,
         source: deploy_path.to_string(),
     };

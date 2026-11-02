@@ -26,6 +26,22 @@ use crate::forge::error::{ForgeError, Located, ValidationError};
 use crate::forge::import_source::ImportSource;
 use crate::forge::model::{CodecCapacities, CodecModel, ForgeDocument, ForgeImport, ForgeKind};
 
+/// Which kind of node a deployment's storing forms run on (docs/adr/0077 §7),
+/// the deploy input's `codec_storage:`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NodeStorage {
+    /// A node with no allocator, or a path that must not allocate: every field
+    /// is held in an array, at its capacity or its bound, and a field with
+    /// neither has no storage and is refused.
+    #[default]
+    Inline,
+    /// A node with an allocator: a field the deployment gives a capacity is held
+    /// on the heap to that capacity, its policy limit, and refused past it as an
+    /// inline node refuses past its array; every other field grows.
+    Heap,
+}
+
 /// What a deployment's file is generated from, beside the document set.
 #[derive(Debug, Clone, Default)]
 pub struct RustDeployment {
@@ -33,6 +49,8 @@ pub struct RustDeployment {
     pub name: String,
     /// What the deployment's storing forms hold, from its deploy input.
     pub capacities: CodecCapacities,
+    /// Which kind of node they run on, from its deploy input.
+    pub storage: NodeStorage,
     /// The `cfg` predicate each codec of the set is compiled under, by codec
     /// name, for a codec the consumer compiles under one: `feature = "serial"`.
     pub gates: BTreeMap<String, String>,
@@ -218,9 +236,13 @@ pub(crate) fn context(
         if fields.is_empty() {
             continue;
         }
-        // A deployment holds every field inline, so a field the protocol bounds
-        // by nothing needs a capacity from it (docs/adr/0077 §7).
-        if let Some(unheld) = fields.iter().find(|f| f["capacity"].is_null()) {
+        // An inline deployment holds every field in an array, so a field the
+        // protocol bounds by nothing needs a capacity from it; on a heap node
+        // such a field grows (docs/adr/0077 §7).
+        let unheld = (deployment.storage == NodeStorage::Inline)
+            .then(|| fields.iter().find(|f| f["capacity"].is_null()))
+            .flatten();
+        if let Some(unheld) = unheld {
             return Err(Located::in_file(
                 ValidationError::CodecCapacityInvalid {
                     codec: name.clone(),
@@ -244,6 +266,10 @@ pub(crate) fn context(
     let mut ctx = serde_json::Map::new();
     ctx.insert("deployment".into(), deployment.name.clone().into());
     ctx.insert("source".into(), deployment.source.clone().into());
+    ctx.insert(
+        "heap".into(),
+        (deployment.storage == NodeStorage::Heap).into(),
+    );
     ctx.insert("codecs".into(), codecs.into());
     Ok((ctx, deps))
 }

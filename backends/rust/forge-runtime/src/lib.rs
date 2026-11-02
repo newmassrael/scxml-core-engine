@@ -40,6 +40,10 @@ pub mod broadcast_log_core;
 /// target has no swap (ADR 0062 section 4, "Stamp width").
 #[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
 pub mod broadcast_log_narrow;
+/// The containers of a heap node's policy limit (docs/adr/0077 §7), re-exported
+/// from [`codec`].
+#[cfg(feature = "alloc")]
+pub mod capped;
 pub mod cbor;
 pub mod codec;
 pub mod content_line;
