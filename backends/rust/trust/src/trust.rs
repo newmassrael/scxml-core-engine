@@ -11,7 +11,10 @@
 //! and otherwise the one it arrived with, which is how a hub hands on what a member wrote
 //! without being able to make it.
 //!
-//! A note that a write was written over (`todo.supersede`) is signed by the person who wrote
+//! The list it guards is the standard shared record list (`crate::message::LIST_DOCUMENT`), and
+//! the events it signs, admits and refuses are that part's ([`crate::message::SIGNED`]).
+//!
+//! A note that a write was written over (`record_list.supersede`) is signed by the person who wrote
 //! over it, with the time they made it at (`at`), and the host keeps who wrote over what
 //! (the note's provenance): the machine sends a tombstone again on a resync as the copy that
 //! holds it, and the host puts back on it who really wrote over it and the signature they made.
@@ -42,7 +45,10 @@ use crate::checkpoint::{Checkpoint, Head, Settlement};
 use crate::encoding;
 use crate::identity::{Identity, PublicKey};
 use crate::membership::{Body, Draft, Entry, Hash, Log, LogError, Profile, WRITER};
-use crate::message::{self, Link, SETTLEMENT_FIELD, SIGNATURE_FIELD};
+use crate::message::{
+    self, Link, FLOOR_EVENT, ROLE_EVENT, SETTLEMENT_FIELD, SIGNATURE_FIELD, SUPERSEDE_EVENT,
+    WRITE_EVENT,
+};
 use crate::secrecy;
 
 /// Why a checkpoint was not made or not taken in.
@@ -140,8 +146,10 @@ struct State {
     /// The checkpoints the host made or took in, one for each device and each instant and digest
     /// it speaks of: what a settlement is made from, and what shows an operation withheld.
     checkpoints: BTreeMap<(u64, i64, u32), Checkpoint>,
-    /// Each write that was admitted or made here, by the bytes it is signed as when the machine
-    /// holds it: what the host that relays it sends it on as. It is the operation as it travels.
+    /// Each write that was admitted or made here, by its subject as the machine holds it (its
+    /// register, its stamp and its content, opened: [`message::Signing::subject`]): what the host
+    /// that relays it sends it on as, whether the machine sends it as a part of its change or, on
+    /// a resync, alone. It is the operation as it travels.
     wires: BTreeMap<Vec<u8>, Wire>,
     /// Who wrote over each write, by the note's subject: the operation of the person who did, as
     /// it travels, so that a tombstone the machine sends again is sent as theirs.
@@ -190,13 +198,13 @@ impl State {
     }
 }
 
-/// The events a host that trusts nobody refuses unless it was told to take them: `todo.floor`
-/// is the word that an instant is settled, on which a copy forgets the tombstones up to it,
-/// and a copy that forgot a tombstone takes a write it named in again. It carries no
-/// settlement by the members, so a host that relays it could settle an instant its copies have
-/// not, and bring back with the old signed writes what was deleted. A host that trusts the one
-/// that settles (its own hub) allows it.
-pub const UNSIGNED_REFUSED: [&str; 1] = ["todo.floor"];
+/// The events a host that trusts nobody refuses unless it was told to take them:
+/// `record_list.floor` is the word that an instant is settled, on which a copy forgets the
+/// tombstones up to it, and a copy that forgot a tombstone takes a write it named in again. It
+/// carries no settlement by the members, so a host that relays it could settle an instant its
+/// copies have not, and bring back with the old signed writes what was deleted. A host that trusts
+/// the one that settles (its own hub) allows it.
+pub const UNSIGNED_REFUSED: [&str; 1] = [FLOOR_EVENT];
 
 /// The trust of one host in one list. Clones share it.
 #[derive(Clone)]
@@ -783,8 +791,8 @@ impl Trust {
     }
 
     /// What tells a person's machine the roster the log makes, as `(event, data)` for the host to
-    /// raise: a `todo.role` for each node the log has a grant for, a member that was taken off
-    /// included, so that a role the machine held is overwritten.
+    /// raise: a `record_list.role` for each node the log has a grant for, a member that was taken
+    /// off included, so that a role the machine held is overwritten.
     pub fn role_events(&self) -> Vec<(String, String)> {
         let state = self.state();
         state
@@ -919,7 +927,7 @@ fn sync_tables(state: &mut State, node: u64) {
         .notes
         .retain(|_, wire| !signatures.contains(&wire.signature));
     for (event, key, wire) in told {
-        let table = if event == "todo.write" {
+        let table = if event == WRITE_EVENT {
             &mut state.wires
         } else {
             &mut state.notes
@@ -1052,7 +1060,7 @@ fn hold(state: &mut State, node: u64, held: Held) -> (bool, bool) {
             .and_then(|chain| chain.at(seq))
             .map(|one| (one.event, one.key.clone(), one.wire.clone()));
         if let Some((event, key, wire)) = table_entry {
-            let table = if event == "todo.write" {
+            let table = if event == WRITE_EVENT {
                 &mut state.wires
             } else {
                 &mut state.notes
@@ -1241,7 +1249,7 @@ fn verify_settlement(
 
 fn role_event(node: u64, role: u8) -> (String, String) {
     (
-        "todo.role".to_string(),
+        ROLE_EVENT.to_string(),
         json!({"node": node.to_string(), "role": role}).to_string(),
     )
 }
@@ -1261,13 +1269,13 @@ impl Admission for Trust {
     fn admit(&mut self, _peer: &str, event: &str, data: &str) -> Result<Option<String>, String> {
         let mut state = self.state();
         if let Some(index) = state.forked {
-            if event == message::FLOOR_EVENT || message::SIGNED_EVENTS.contains(&event) {
+            if event == FLOOR_EVENT || message::SIGNED_EVENTS.contains(&event) {
                 return Err(format!(
                     "{event}: the membership log forked at {index}, and nothing is taken in until an administrator resolves it"
                 ));
             }
         }
-        if event == message::FLOOR_EVENT {
+        if event == FLOOR_EVENT {
             return admit_floor(&state, data);
         }
         if state.refuses_unsigned(event) {
@@ -1399,8 +1407,8 @@ struct Verified {
     wid: Option<Vec<u8>>,
     travelling: Value,
     visible: Value,
-    /// What the host keeps it under: the bytes of the write the machine holds, or the subject of a
-    /// note.
+    /// What the host keeps it under: the subject of the write as the machine holds it, or the
+    /// subject of a note.
     key: Vec<u8>,
 }
 
@@ -1488,7 +1496,7 @@ fn verify_operation(
 
     // A write's stamp is its author's clock when it wrote it, and what a write is sealed under is
     // the fields that make its stamp: both are the author's own claims, which the chain checks.
-    let (stamp, wid) = if event == "todo.write" {
+    let (stamp, wid) = if event == WRITE_EVENT {
         (
             Some(message::stamp_of(&value).map_err(|error| format!("{event}: {error:?}"))?),
             Some(message::write_stamp(&value).map_err(|error| format!("{event}: {error:?}"))?),
@@ -1497,16 +1505,16 @@ fn verify_operation(
         (None, None)
     };
 
-    let visible = if event == "todo.write" {
+    let visible = if event == WRITE_EVENT {
         open_write(state, &value, link.log)?
     } else {
         value.clone()
     };
-    let key = if event == "todo.write" {
+    let key = if event == WRITE_EVENT {
         message::signing(&state.calendar, event, &visible)
             .and_then(Result::ok)
             .ok_or_else(|| format!("{event}: what it holds is not a write"))?
-            .message
+            .subject
     } else {
         signing.subject
     };
@@ -1534,69 +1542,66 @@ fn open_write(state: &State, wire: &Value, entry: u64) -> Result<Value, Refusal>
     let sealed = wire.get("text").and_then(Value::as_str).unwrap_or("");
     if epoch_then == 0 {
         if secrecy::epoch_of(sealed).is_some() {
-            return Err(refused(
-                "todo.write: it is sealed under an epoch, and the membership log it names has begun none"
-                    .to_string(),
-            ));
+            return Err(refused(format!(
+                "{WRITE_EVENT}: it is sealed under an epoch, and the membership log it names has begun none"
+            )));
         }
         return Ok(wire.clone());
     }
     let Some(epoch) = secrecy::epoch_of(sealed) else {
-        return Err(refused(
-            "todo.write: its content is not sealed, and the list keeps content from the hub"
-                .to_string(),
-        ));
+        return Err(refused(format!(
+            "{WRITE_EVENT}: its content is not sealed, and the list keeps content from the hub"
+        )));
     };
     if epoch == 0 || epoch > epoch_then {
         return Err(refused(format!(
-            "todo.write: it is sealed under epoch {epoch}, which the membership log it names has not begun"
+            "{WRITE_EVENT}: it is sealed under epoch {epoch}, which the membership log it names has not begun"
         )));
     }
     // A hub that holds no key carries it as it is; a host that opens refuses what the list has had
     // destroyed the keys of, for good (it is not parked: no key will come).
     if state.log.is_shredded(epoch) && !state.relays_sealed() {
         return Err(refused(format!(
-            "todo.write: it is sealed under epoch {epoch}, whose keys the list had destroyed"
+            "{WRITE_EVENT}: it is sealed under epoch {epoch}, whose keys the list had destroyed"
         )));
     }
     if state.relays_sealed() {
         return Ok(wire.clone());
     }
     let stamp =
-        message::write_stamp(wire).map_err(|error| refused(format!("todo.write: {error:?}")))?;
+        message::write_stamp(wire).map_err(|error| refused(format!("{WRITE_EVENT}: {error:?}")))?;
     let (value, text) =
         secrecy::open(&state.calendar, &state.epoch_keys, &stamp, sealed).map_err(|error| {
             match error {
-            secrecy::OpenError::NotSealed => refused(
-                "todo.write: its content is not sealed, and this host keeps content from the hub"
-                    .to_string(),
-            ),
-            // A key this host does not hold yet (the group's commit has not reached it) or never
-            // will (an epoch before it joined): the host asks again later, and does not take the
-            // write for one that cannot hold.
-            secrecy::OpenError::NoKey { epoch } => {
-                Refusal::NoKey(format!("todo.write: this host holds no key of epoch {epoch}"))
+                secrecy::OpenError::NotSealed => refused(format!(
+                "{WRITE_EVENT}: its content is not sealed, and this host keeps content from the hub"
+            )),
+                // A key this host does not hold yet (the group's commit has not reached it) or never
+                // will (an epoch before it joined): the host asks again later, and does not take the
+                // write for one that cannot hold.
+                secrecy::OpenError::NoKey { epoch } => Refusal::NoKey(format!(
+                    "{WRITE_EVENT}: this host holds no key of epoch {epoch}"
+                )),
+                secrecy::OpenError::Corrupt => {
+                    refused(format!("{WRITE_EVENT}: its content does not open"))
+                }
             }
-            secrecy::OpenError::Corrupt => {
-                refused("todo.write: its content does not open".to_string())
-            }
-        }
         })?;
     let mut visible = wire.clone();
     let object = visible
         .as_object_mut()
-        .ok_or_else(|| refused("todo.write: the data is not an object".to_string()))?;
+        .ok_or_else(|| refused(format!("{WRITE_EVENT}: the data is not an object")))?;
     object.insert("value".to_string(), Value::String(value.to_string()));
     object.insert("text".to_string(), Value::String(text));
     Ok(visible)
 }
 
-/// A `todo.floor` is admitted when the members settled it: its `cert` is the checkpoints of every
-/// writer, each for this instant and this hash ([`verify_settlement`]). The machine is told the
-/// floor without it. One with no settlement is admitted only when the host was told to take it
+/// A `record_list.floor` is admitted when the members settled it: its `cert` is the checkpoints of
+/// every writer, each for this instant and this hash ([`verify_settlement`]). The machine is told
+/// the floor without it. One with no settlement is admitted only when the host was told to take it
 /// unsigned, and a settlement that does not hold is refused whatever the host was told.
 fn admit_floor(state: &State, data: &str) -> Result<Option<String>, String> {
-    let event = message::FLOOR_EVENT;
+    let event = FLOOR_EVENT;
     let mut value: Value =
         serde_json::from_str(data).map_err(|_| format!("{event}: the data is not JSON"))?;
     let carried = value
@@ -1686,7 +1691,7 @@ fn make_operation(
         .ok_or_else(|| format!("{event}: the data is not what it names"))?;
     let bytes = message::operation_bytes(&signing.message, &link);
     let signature = identity.sign(&bytes);
-    let (stamp, wid) = if event == "todo.write" {
+    let (stamp, wid) = if event == WRITE_EVENT {
         (
             Some(message::stamp_of(&travelling).map_err(|error| format!("{event}: {error:?}"))?),
             Some(message::write_stamp(&travelling).map_err(|error| format!("{event}: {error:?}"))?),
@@ -1746,7 +1751,7 @@ fn signed_name(event: &str) -> Option<&'static str> {
 /// note names that person: a copy that holds a tombstone and sends it again vouches for it by
 /// sending what the person signed, and a host that holds no author for it sends nothing.
 fn seal_note(state: &mut State, data: &str) -> Result<Option<String>, String> {
-    let event = "todo.supersede";
+    let event = SUPERSEDE_EVENT;
     let malformed = || format!("{event}: the data is not a note");
     let value: Value = serde_json::from_str(data).map_err(|_| malformed())?;
     let signing = message::signing(&state.calendar, event, &value)
@@ -1770,16 +1775,16 @@ impl Sealer for Trust {
     fn seal(&mut self, _target: &str, event: &str, data: &str) -> Result<Option<String>, String> {
         let mut state = self.state();
         if let Some(index) = state.forked {
-            if event == message::FLOOR_EVENT || message::SIGNED_EVENTS.contains(&event) {
+            if event == FLOOR_EVENT || message::SIGNED_EVENTS.contains(&event) {
                 return Err(format!(
                     "{event}: the membership log forked at {index}, and nothing is sent until an administrator resolves it"
                 ));
             }
         }
-        if event == message::FLOOR_EVENT {
+        if event == FLOOR_EVENT {
             return Ok(seal_floor(&state, data));
         }
-        if event == "todo.supersede" {
+        if event == SUPERSEDE_EVENT {
             return seal_note(&mut state, data);
         }
         if !message::SIGNED_EVENTS.contains(&event) {
@@ -1795,13 +1800,13 @@ impl Sealer for Trust {
 /// as something else: a host that keeps content and holds no key of the epoch the log is in sends
 /// nothing, and does not fall back to an older key or to the clear.
 fn seal_write(state: &mut State, data: &str) -> Result<String, String> {
-    let event = "todo.write";
+    let event = WRITE_EVENT;
     let malformed = || format!("{event}: the data is not a write");
     let visible: Value = serde_json::from_str(data).map_err(|_| malformed())?;
     let signing = message::signing(&state.calendar, event, &visible)
         .and_then(Result::ok)
         .ok_or_else(malformed)?;
-    let held = signing.message;
+    let held = signing.subject;
     let own = matches!(&state.own, Some((node, _)) if *node == signing.author);
     // What was made or admitted before leaves as it did: one write is one set of bytes.
     if let Some(wire) = state.wires.get(&held) {

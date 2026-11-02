@@ -44,7 +44,7 @@ pub struct Checkpoint {
     pub log: u64,
     pub log_hash: Hash,
     /// The instant up to which the copy is settled, and the digest it held of everything up to it
-    /// (`todo.settle` and `todo.floor` of the machine).
+    /// (`record_list.settle` and `record_list.floor` of the machine).
     pub before: i64,
     pub digest: u32,
     /// The head of each device's chain the host holds, lowest node first, one per node.

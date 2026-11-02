@@ -5,10 +5,10 @@
 //!
 //! A list has a key for each epoch, held by its members and by no one else, and a write that
 //! leaves a member's host has its number and its text sealed under the key of the latest epoch:
-//! what the hub holds and relays is the stamp of the write (which to-do, which field, when, by
+//! what the hub holds and relays is the stamp of the write (which row, which field, when, by
 //! whom) and a text it cannot read. The stamp stays in the clear, because the hub's machine
 //! orders, merges, forgets and compares digests by it; what a hub learns is that a member changed
-//! a field of a to-do at a time, and not what it was changed to.
+//! a field of a row at a time, and not what it was changed to.
 //!
 //! The cipher is XChaCha20-Poly1305. Its nonce is made from the stamp, which every write has
 //! of its own, so that a host needs no source of randomness and one write is sealed one way
