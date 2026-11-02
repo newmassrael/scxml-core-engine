@@ -66,7 +66,7 @@ fn id_and_time_of(data: &str) -> ([u8; 32], i64, u64) {
     let mut value: Value = serde_json::from_str(data).unwrap();
     value.as_object_mut().unwrap().remove(SIGNATURE_FIELD);
     let link = Link::take_from(&mut value).unwrap();
-    let signing = message::signing(LIST, "todo.write", &value)
+    let signing = message::signing(LIST, "record_list.write", &value)
         .unwrap()
         .unwrap();
     let id = message::operation_id(&message::operation_bytes(&signing.message, &link));
@@ -90,7 +90,7 @@ fn forged_write(
 ) -> String {
     let mut data = json!({"id": id.to_string(), "field": "3", "value": value.to_string(), "text": "",
         "wallTime": wall.to_string(), "counter": "0", "nodeId": node.to_string()});
-    let signing = message::signing(LIST, "todo.write", &data)
+    let signing = message::signing(LIST, "record_list.write", &data)
         .unwrap()
         .unwrap();
     let (next, log_hash) = host.head();
@@ -259,7 +259,7 @@ impl World {
             wall,
             id as i64 + 1000,
         );
-        self.ops.push(("todo.write".to_string(), forged));
+        self.ops.push(("record_list.write".to_string(), forged));
     }
 
     /// A device signs two different operations at one number: its key is on two hosts that have not
@@ -280,12 +280,14 @@ impl World {
         for (index, mut sealer) in [host, twin].into_iter().enumerate() {
             let id = self.next_id;
             self.next_id += 1;
-            let Ok(Some(sent)) =
-                sealer.seal("#server", "todo.write", &write(node, id, 1000 + id as i64))
-            else {
+            let Ok(Some(sent)) = sealer.seal(
+                "#server",
+                "record_list.write",
+                &write(node, id, 1000 + id as i64),
+            ) else {
                 return;
             };
-            self.ops.push(("todo.write".to_string(), sent));
+            self.ops.push(("record_list.write".to_string(), sent));
             if index == 0 {
                 self.delivered[device + 1].insert(self.ops.len() - 1);
             }
@@ -303,12 +305,14 @@ impl World {
         self.next_id += 1;
         let wall = 1000 + id as i64;
         let mut sealer = host.clone();
-        let Ok(Some(sent)) =
-            sealer.seal("#server", "todo.write", &write(DEVICES[device], id, wall))
-        else {
+        let Ok(Some(sent)) = sealer.seal(
+            "#server",
+            "record_list.write",
+            &write(DEVICES[device], id, wall),
+        ) else {
             return;
         };
-        self.ops.push(("todo.write".to_string(), sent));
+        self.ops.push(("record_list.write".to_string(), sent));
         // The device holds what it made.
         self.delivered[device + 1].insert(self.ops.len() - 1);
     }

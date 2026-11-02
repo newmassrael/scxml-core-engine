@@ -95,7 +95,7 @@ fn numbered(author: u64, wall_time: i64, value: i64) -> String {
 
 /// What a host sends for a write, or the reason it does not.
 fn try_send(host: &mut Trust, data: &str) -> Result<Option<String>, String> {
-    host.seal("#server", "todo.write", data)
+    host.seal("#server", "record_list.write", data)
 }
 
 fn send(host: &mut Trust, data: &str) -> String {
@@ -127,7 +127,10 @@ fn a_write_leaves_sealed_and_a_member_reads_it_where_the_hub_cannot() {
 
     // The hub's host holds no key: it admits what it can verify and its machine holds the
     // sealed text, which it sends on as it is.
-    let held_by_the_hub = hub.admit("alice", "todo.write", &wire).unwrap().unwrap();
+    let held_by_the_hub = hub
+        .admit("alice", "record_list.write", &wire)
+        .unwrap()
+        .unwrap();
     assert_eq!(text_of(&held_by_the_hub), text_of(&wire));
     let relayed = send(&mut hub, &held_by_the_hub);
     assert_eq!(
@@ -138,7 +141,7 @@ fn a_write_leaves_sealed_and_a_member_reads_it_where_the_hub_cannot() {
 
     // Bob's host opens it, and his machine is told what alice wrote.
     let told = bob
-        .admit("server", "todo.write", &relayed)
+        .admit("server", "record_list.write", &relayed)
         .unwrap()
         .unwrap();
     let told: Value = serde_json::from_str(&told).unwrap();
@@ -149,7 +152,10 @@ fn a_write_leaves_sealed_and_a_member_reads_it_where_the_hub_cannot() {
     let wire = send(&mut alice, &numbered(1, 1001, -7));
     assert_eq!(text_of(&wire).chars().next(), Some('~'));
     assert_eq!(serde_json::from_str::<Value>(&wire).unwrap()["value"], "0");
-    let told = bob.admit("server", "todo.write", &wire).unwrap().unwrap();
+    let told = bob
+        .admit("server", "record_list.write", &wire)
+        .unwrap()
+        .unwrap();
     assert_eq!(serde_json::from_str::<Value>(&told).unwrap()["value"], "-7");
 }
 
@@ -158,7 +164,7 @@ fn a_write_leaves_sealed_and_a_member_reads_it_where_the_hub_cannot() {
 fn clear_write_naming_the_tip(host: &Trust, signer: &Identity) -> String {
     let mut value = json!({"id": "1", "field": "1", "value": "0", "text": "buy milk",
         "wallTime": "1000", "counter": "0", "nodeId": "1"});
-    let signing = message::signing(CALENDAR, "todo.write", &value)
+    let signing = message::signing(CALENDAR, "record_list.write", &value)
         .unwrap()
         .unwrap();
     let (next, log_hash) = host.head();
@@ -194,7 +200,9 @@ fn a_list_that_keeps_content_takes_and_sends_no_write_in_the_clear() {
         host_in(&one, Some((2, 2)), &[(1, 5)]),
     ] {
         let mut host = host;
-        assert!(host.admit("server", "todo.write", &in_the_clear).is_ok());
+        assert!(host
+            .admit("server", "record_list.write", &in_the_clear)
+            .is_ok());
     }
 
     // One that names the entry that began the epoch, or one after it, is sealed or it is refused, at
@@ -205,7 +213,9 @@ fn a_list_that_keeps_content_takes_and_sends_no_write_in_the_clear() {
         host_in(&one, Some((2, 2)), &[(1, 5)]),
     ] {
         let mut host = host;
-        let reason = host.admit("server", "todo.write", &after).unwrap_err();
+        let reason = host
+            .admit("server", "record_list.write", &after)
+            .unwrap_err();
         assert!(reason.contains("not sealed"), "{reason}");
     }
 
@@ -223,26 +233,34 @@ fn sealed_content_under_another_key_or_epoch_is_refused() {
     let wire = send(&mut alice, &titled(1, 1000, "buy milk"));
 
     let mut without_it = host_in(&two, Some((2, 2)), &[(1, 5)]);
-    let reason = without_it.admit("server", "todo.write", &wire).unwrap_err();
+    let reason = without_it
+        .admit("server", "record_list.write", &wire)
+        .unwrap_err();
     assert!(reason.contains("no key of epoch 2"), "{reason}");
 
     let mut another_key = host_in(&two, Some((2, 2)), &[(2, 7)]);
     let reason = another_key
-        .admit("server", "todo.write", &wire)
+        .admit("server", "record_list.write", &wire)
         .unwrap_err();
     assert!(reason.contains("does not open"), "{reason}");
 
     let mut right_key = host_in(&two, Some((2, 2)), &[(1, 5), (2, 6)]);
-    assert!(right_key.admit("server", "todo.write", &wire).is_ok());
+    assert!(right_key
+        .admit("server", "record_list.write", &wire)
+        .is_ok());
 
     // A host whose log has not begun epoch 2 does not take what is sealed under it: the operation
     // names the entry that begins it, which the host does not hold, and neither does a hub that
     // holds no key.
     let mut behind = host_in(one, Some((2, 2)), &[(1, 5), (2, 6)]);
-    let reason = behind.admit("server", "todo.write", &wire).unwrap_err();
+    let reason = behind
+        .admit("server", "record_list.write", &wire)
+        .unwrap_err();
     assert!(reason.contains("does not hold as it is"), "{reason}");
     let mut behind_hub = host_in(one, None, &[]);
-    assert!(behind_hub.admit("alice", "todo.write", &wire).is_err());
+    assert!(behind_hub
+        .admit("alice", "record_list.write", &wire)
+        .is_err());
 }
 
 #[test]
@@ -263,11 +281,17 @@ fn a_write_seals_under_the_epoch_the_log_is_in_and_the_older_ones_still_open() {
 
     let mut bob = host_in(&two, Some((2, 2)), &[(1, 5), (2, 6)]);
     for (wire, text) in [(&old, "old"), (&new, "new")] {
-        let told = bob.admit("server", "todo.write", wire).unwrap().unwrap();
+        let told = bob
+            .admit("server", "record_list.write", wire)
+            .unwrap()
+            .unwrap();
         assert_eq!(serde_json::from_str::<Value>(&told).unwrap()["text"], text);
     }
     // What was sealed before is sent again as it was, on a resync.
-    let told = alice.admit("server", "todo.write", &old).unwrap().unwrap();
+    let told = alice
+        .admit("server", "record_list.write", &old)
+        .unwrap()
+        .unwrap();
     assert_eq!(
         text_of(&try_send(&mut alice, &told).unwrap().unwrap()),
         text_of(&old),
@@ -295,7 +319,7 @@ fn a_key_is_given_to_a_member_and_to_no_one_else() {
     let mut alice = alice;
     let mut bob = bob;
     let wire = send(&mut alice, &titled(1, 1000, "buy milk"));
-    assert!(bob.admit("server", "todo.write", &wire).is_ok());
+    assert!(bob.admit("server", "record_list.write", &wire).is_ok());
 
     // A grant that is changed, for another list, or from a key nobody knows is not taken.
     let changed = grant.replace("\"epoch\":1", "\"epoch\":4");
@@ -330,7 +354,10 @@ fn what_a_host_keeps_comes_back_from_its_store_and_still_opens() {
     let mut alice = host_in(&one, Some((1, 1)), &[(1, 5)]);
     let mut hub = host_in(&one, None, &[]);
     let wire = send(&mut alice, &titled(1, 1000, "buy milk"));
-    let held = hub.admit("alice", "todo.write", &wire).unwrap().unwrap();
+    let held = hub
+        .admit("alice", "record_list.write", &wire)
+        .unwrap()
+        .unwrap();
     let text = hub.to_text();
     assert!(!text.contains("buy milk"));
 
@@ -341,7 +368,10 @@ fn what_a_host_keeps_comes_back_from_its_store_and_still_opens() {
     // A person's host that kept the key reads the same text back, and holds the write as its
     // machine holds it.
     let mut bob = host_in(&one, Some((2, 2)), &[(1, 5)]);
-    let told = bob.admit("server", "todo.write", &wire).unwrap().unwrap();
+    let told = bob
+        .admit("server", "record_list.write", &wire)
+        .unwrap()
+        .unwrap();
     let text = bob.to_text();
     let mut restarted = host_in(&one, Some((2, 2)), &[(1, 5)]);
     assert_eq!(restarted.restore_from_text(&text), 1);
@@ -417,19 +447,21 @@ fn a_member_taken_off_opens_nothing_written_after_the_next_epoch() {
     // From now on alice seals under epoch 2; carol opens it and bob does not.
     let after = send(&mut alice, &titled(1, 2000, "after"));
     let told = carol
-        .admit("server", "todo.write", &after)
+        .admit("server", "record_list.write", &after)
         .unwrap()
         .unwrap();
     assert_eq!(
         serde_json::from_str::<Value>(&told).unwrap()["text"],
         "after"
     );
-    let reason = bob.admit("server", "todo.write", &after).unwrap_err();
+    let reason = bob
+        .admit("server", "record_list.write", &after)
+        .unwrap_err();
     assert!(reason.contains("no key of epoch 2"), "{reason}");
 
     // What was sealed before opens for the keys that opened it: the new key is no part of it.
-    assert!(carol.admit("server", "todo.write", &before).is_ok());
-    assert!(bob.admit("server", "todo.write", &before).is_ok());
+    assert!(carol.admit("server", "record_list.write", &before).is_ok());
+    assert!(bob.admit("server", "record_list.write", &before).is_ok());
 
     // Only an administrator begins an epoch, and a key that is held is not replaced.
     assert_eq!(

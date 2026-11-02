@@ -246,7 +246,7 @@ fn recorded() -> (Trust, Entry, Vec<String>) {
             alice_host
                 .seal(
                     "#s",
-                    "todo.write",
+                    "record_list.write",
                     &write(1, n as u64 + 1, 1000 + n as i64, text),
                 )
                 .unwrap()
@@ -258,7 +258,7 @@ fn recorded() -> (Trust, Entry, Vec<String>) {
             bob_host
                 .seal(
                     "#s",
-                    "todo.write",
+                    "record_list.write",
                     &write(2, 10 + n as u64, 2000 + n as i64, text),
                 )
                 .unwrap()
@@ -267,7 +267,7 @@ fn recorded() -> (Trust, Entry, Vec<String>) {
     }
     let mut hub_host = hub.clone();
     for op in &ops {
-        hub_host.admit("relay", "todo.write", op).unwrap();
+        hub_host.admit("relay", "record_list.write", op).unwrap();
     }
     let bobs = bob.checkpoint(30_000, 7).unwrap();
     alice.take_checkpoint(&bobs).unwrap();

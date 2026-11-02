@@ -93,7 +93,7 @@ fn sent(host: &mut Trust, event: &str, data: &str) -> String {
 
 /// The hub's floor as it leaves for the members.
 fn floor_leaving(hub: &mut Trust) -> Value {
-    serde_json::from_str(&sent(hub, "todo.floor", FLOOR)).unwrap()
+    serde_json::from_str(&sent(hub, "record_list.floor", FLOOR)).unwrap()
 }
 
 /// A hub that holds the checkpoints of alice and bob for the instant 30000 and the digest 7.
@@ -116,7 +116,7 @@ fn the_members_settle_an_instant_with_no_administrator() {
     // A host that holds only the log, and has seen none of the checkpoints, checks it alone, and
     // the machine is told the floor as it made it.
     let admitted = member
-        .admit("server", "todo.floor", &leaving.to_string())
+        .admit("server", "record_list.floor", &leaving.to_string())
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -132,8 +132,10 @@ fn a_floor_without_the_word_of_every_writer_leaves_as_it_is_and_is_refused() {
     hub.take_checkpoint(&host(Some(1)).checkpoint(30_000, 7).unwrap())
         .unwrap();
     assert_eq!(hub.settlement(30_000, 7), None, "bob has not said");
-    assert_eq!(hub.seal("#server", "todo.floor", FLOOR), Ok(None));
-    let reason = member.admit("server", "todo.floor", FLOOR).unwrap_err();
+    assert_eq!(hub.seal("#server", "record_list.floor", FLOOR), Ok(None));
+    let reason = member
+        .admit("server", "record_list.floor", FLOOR)
+        .unwrap_err();
     assert!(reason.contains("no settlement"), "{reason}");
 }
 
@@ -170,7 +172,7 @@ fn a_settlement_is_for_one_instant_and_one_digest() {
         let mut value: Value = serde_json::from_str(floor).unwrap();
         value["cert"] = good.to_value();
         let reason = member
-            .admit("server", "todo.floor", &value.to_string())
+            .admit("server", "record_list.floor", &value.to_string())
             .unwrap_err();
         assert!(
             reason.contains("another instant or digest"),
@@ -187,7 +189,7 @@ fn a_hub_cannot_make_a_settlement_out_of_what_is_not_the_writers() {
     let admit = |member: &mut Trust, checkpoints: Vec<Checkpoint>| {
         let mut value: Value = serde_json::from_str(FLOOR).unwrap();
         value["cert"] = Settlement { checkpoints }.to_value();
-        member.admit("server", "todo.floor", &value.to_string())
+        member.admit("server", "record_list.floor", &value.to_string())
     };
 
     // Whole, it holds.
@@ -214,7 +216,7 @@ fn a_hub_cannot_make_a_settlement_out_of_what_is_not_the_writers() {
     let mut value: Value = serde_json::from_str(FLOOR).unwrap();
     value["cert"] = json!("trust me");
     let reason = member
-        .admit("server", "todo.floor", &value.to_string())
+        .admit("server", "record_list.floor", &value.to_string())
         .unwrap_err();
     assert!(reason.contains("not checkpoints"), "{reason}");
 }
@@ -223,7 +225,7 @@ fn a_hub_cannot_make_a_settlement_out_of_what_is_not_the_writers() {
 fn a_checkpoint_that_is_forged_or_foreign_is_not_taken_in() {
     let hub = host(None);
     let mut alice = host(Some(1));
-    sent(&mut alice, "todo.write", &write_at(1, 1, 1000));
+    sent(&mut alice, "record_list.write", &write_at(1, 1, 1000));
     let genuine = alice.checkpoint(30_000, 7).unwrap();
     assert_eq!(genuine.heads.len(), 1);
 
@@ -299,26 +301,28 @@ fn a_checkpoint_that_is_forged_or_foreign_is_not_taken_in() {
 fn a_member_sees_the_operations_a_relay_did_not_give_and_fetches_them_elsewhere() {
     let mut alice = host(Some(1));
     let ops = [
-        sent(&mut alice, "todo.write", &write_at(1, 1, 1000)),
-        sent(&mut alice, "todo.write", &write_at(1, 2, 1001)),
-        sent(&mut alice, "todo.write", &write_at(1, 3, 1002)),
+        sent(&mut alice, "record_list.write", &write_at(1, 1, 1000)),
+        sent(&mut alice, "record_list.write", &write_at(1, 2, 1001)),
+        sent(&mut alice, "record_list.write", &write_at(1, 3, 1002)),
     ];
     let mut honest_relay = host(None);
     let mut withholding_relay = host(None);
     for op in &ops {
-        honest_relay.admit("alice", "todo.write", op).unwrap();
+        honest_relay
+            .admit("alice", "record_list.write", op)
+            .unwrap();
     }
     // The relay that withholds passes on the first and the last, and not the one between.
     withholding_relay
-        .admit("alice", "todo.write", &ops[0])
+        .admit("alice", "record_list.write", &ops[0])
         .unwrap();
     withholding_relay
-        .admit("alice", "todo.write", &ops[2])
+        .admit("alice", "record_list.write", &ops[2])
         .unwrap();
 
     let mut bob = host(Some(2));
     for op in [&ops[0], &ops[2]] {
-        bob.admit("withholding", "todo.write", op).unwrap();
+        bob.admit("withholding", "record_list.write", op).unwrap();
     }
     assert_eq!(bob.heads().iter().map(|h| h.seq).collect::<Vec<_>>(), [1]);
     assert_eq!(bob.divergences(), vec![], "nothing is named yet");
@@ -341,7 +345,7 @@ fn a_member_sees_the_operations_a_relay_did_not_give_and_fetches_them_elsewhere(
     assert_eq!(fetched.len(), 2);
     assert_eq!(honest_relay.operations(1, 3, 2), Vec::new());
     for (event, data) in &fetched {
-        assert_eq!(event, "todo.write");
+        assert_eq!(event, "record_list.write");
         bob.admit("honest", event, data).unwrap();
     }
     assert_eq!(bob.divergences(), vec![]);
@@ -351,7 +355,7 @@ fn a_member_sees_the_operations_a_relay_did_not_give_and_fetches_them_elsewhere(
     let mut altered: Value = serde_json::from_str(&fetched[0].1).unwrap();
     altered["value"] = json!("2");
     assert!(host(Some(2))
-        .admit("honest", "todo.write", &altered.to_string())
+        .admit("honest", "record_list.write", &altered.to_string())
         .is_err());
 }
 
@@ -362,11 +366,11 @@ fn a_checkpoint_that_names_another_operation_is_a_difference_and_settles_nothing
     // Two hosts hold alice's key, as a copy of her device that forked would.
     let mut first = host(Some(1));
     let mut second = host(Some(1));
-    let one = sent(&mut first, "todo.write", &write_at(1, 1, 1000));
-    sent(&mut second, "todo.write", &write_at(1, 9, 1000));
+    let one = sent(&mut first, "record_list.write", &write_at(1, 1, 1000));
+    sent(&mut second, "record_list.write", &write_at(1, 9, 1000));
 
     let mut bob = host(Some(2));
-    bob.admit("relay", "todo.write", &one).unwrap();
+    bob.admit("relay", "record_list.write", &one).unwrap();
     bob.take_checkpoint(&second.checkpoint(30_000, 7).unwrap())
         .unwrap();
     assert_eq!(
@@ -387,7 +391,7 @@ fn a_checkpoint_that_names_another_operation_is_a_difference_and_settles_nothing
     let mut value: Value = serde_json::from_str(FLOOR).unwrap();
     value["cert"] = hub.settlement(30_000, 7).unwrap().to_value();
     let reason = bob
-        .admit("server", "todo.floor", &value.to_string())
+        .admit("server", "record_list.floor", &value.to_string())
         .unwrap_err();
     assert!(reason.contains("another operation"), "{reason}");
 }
@@ -422,7 +426,7 @@ fn a_device_taken_off_is_not_asked_and_an_earlier_settlement_stays_true() {
     let mut value: Value = serde_json::from_str(FLOOR).unwrap();
     value["cert"] = before_removal.to_value();
     assert!(member
-        .admit("server", "todo.floor", &value.to_string())
+        .admit("server", "record_list.floor", &value.to_string())
         .is_ok());
 }
 
@@ -431,16 +435,22 @@ fn a_device_taken_off_is_not_asked_and_an_earlier_settlement_stays_true() {
 fn the_head_of_a_chain_is_the_last_number_held_with_every_one_before_it() {
     let mut alice = host(Some(1));
     let ops: Vec<String> = (1..=3)
-        .map(|n| sent(&mut alice, "todo.write", &write_at(1, n, 1000 + n as i64)))
+        .map(|n| {
+            sent(
+                &mut alice,
+                "record_list.write",
+                &write_at(1, n, 1000 + n as i64),
+            )
+        })
         .collect();
     let mut hub = host(None);
     assert_eq!(hub.heads(), Vec::new());
-    hub.admit("a", "todo.write", &ops[2]).unwrap();
+    hub.admit("a", "record_list.write", &ops[2]).unwrap();
     assert_eq!(hub.heads(), Vec::new(), "3 without 1 is no head");
-    hub.admit("a", "todo.write", &ops[0]).unwrap();
+    hub.admit("a", "record_list.write", &ops[0]).unwrap();
     assert_eq!(hub.heads().len(), 1);
     assert_eq!(hub.heads()[0].seq, 1);
-    hub.admit("a", "todo.write", &ops[1]).unwrap();
+    hub.admit("a", "record_list.write", &ops[1]).unwrap();
     assert_eq!(hub.heads()[0].seq, 3);
     assert_eq!(alice.heads(), hub.heads(), "the same chain, the same head");
 }

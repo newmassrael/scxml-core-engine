@@ -80,7 +80,7 @@ fn operation(
 ) -> (String, [u8; 32]) {
     let mut value = json!({"id": id.to_string(), "field": "3", "value": "1", "text": "",
         "wallTime": (1000 + seq as i64).to_string(), "counter": "0", "nodeId": node.to_string()});
-    let signing = message::signing(LIST, "todo.write", &value)
+    let signing = message::signing(LIST, "record_list.write", &value)
         .unwrap()
         .unwrap();
     let (log, log_hash) = tip(host);
@@ -97,7 +97,7 @@ fn operation(
 }
 
 fn refused(host: &Trust, data: &str) -> String {
-    match host.take_operation("todo.write", data) {
+    match host.take_operation("record_list.write", data) {
         Err(TakeError::Refused(reason)) => reason,
         other => panic!("expected a refusal, got {other:?}"),
     }
@@ -112,7 +112,7 @@ fn a_chain_begins_at_one_and_the_first_operation_names_nothing_before_it() {
     let (first, _) = operation(&host, &key(1), 1, 1, [9; 32], 2);
     assert!(refused(&host, &first).contains("names an operation before it"));
     let (good, _) = operation(&host, &key(1), 1, 1, NO_OPERATION, 3);
-    assert!(host.take_operation("todo.write", &good).is_ok());
+    assert!(host.take_operation("record_list.write", &good).is_ok());
 }
 
 #[test]
@@ -121,8 +121,8 @@ fn a_new_key_does_not_reuse_the_numbers_of_the_chain_the_old_key_ended() {
     grant(&host, 1, 2, 1);
     let (first, first_id) = operation(&host, &key(1), 1, 1, NO_OPERATION, 1);
     let (second, _) = operation(&host, &key(1), 1, 2, first_id, 2);
-    host.take_operation("todo.write", &first).unwrap();
-    host.take_operation("todo.write", &second).unwrap();
+    host.take_operation("record_list.write", &first).unwrap();
+    host.take_operation("record_list.write", &second).unwrap();
     // The device's key is replaced, and its chain ended at 2.
     publish(
         &host,
@@ -142,7 +142,7 @@ fn a_new_key_does_not_reuse_the_numbers_of_the_chain_the_old_key_ended() {
     );
     // Numbered past it, it begins the new chain, which names nothing before it.
     let (fresh, _) = operation(&host, &key(21), 1, 3, NO_OPERATION, 6);
-    assert!(host.take_operation("todo.write", &fresh).is_ok());
+    assert!(host.take_operation("record_list.write", &fresh).is_ok());
 }
 
 #[test]
@@ -151,7 +151,7 @@ fn a_chain_that_does_not_follow_itself_is_the_device_signing_two_histories() {
     let host_a = host();
     grant(&host_a, 1, 2, 1);
     let (first, first_id) = operation(&host_a, &key(1), 1, 1, NO_OPERATION, 1);
-    host_a.take_operation("todo.write", &first).unwrap();
+    host_a.take_operation("record_list.write", &first).unwrap();
     let (wrong_prev, _) = operation(&host_a, &key(1), 1, 2, [7; 32], 2);
     assert!(held_as_proof(&host_a, &wrong_prev));
     assert_eq!(host_a.equivocating(), vec![(1, 1)]);
@@ -165,8 +165,8 @@ fn a_chain_that_does_not_follow_itself_is_the_device_signing_two_histories() {
     let (three, _) = operation(&host_b, &key(1), 1, 3, two_id, 3);
     // The host holds the first and the third (which names the true second), and then is given another
     // second.
-    host_b.take_operation("todo.write", &one).unwrap();
-    host_b.take_operation("todo.write", &three).unwrap();
+    host_b.take_operation("record_list.write", &one).unwrap();
+    host_b.take_operation("record_list.write", &three).unwrap();
     let (other_two, _) = operation(&host_b, &key(1), 1, 2, one_id, 9);
     assert!(held_as_proof(&host_b, &other_two));
     assert_eq!(host_b.equivocating(), vec![(1, 2)]);
@@ -182,7 +182,7 @@ fn a_chain_that_does_not_follow_itself_is_the_device_signing_two_histories() {
 /// it is held, and the machine is told nothing of the device from the first conflict on.
 fn held_as_proof(host: &Trust, data: &str) -> bool {
     let taken = host
-        .take_operation("todo.write", data)
+        .take_operation("record_list.write", data)
         .expect("held as proof, not refused");
     !taken.applied
 }
@@ -227,7 +227,7 @@ fn a_settlement_of_checkpoints_under_different_entries_is_not_one() {
     let reason = receiver
         .admit(
             "hub",
-            "todo.floor",
+            "record_list.floor",
             &floor_with(&Settlement {
                 checkpoints: vec![alice, bob],
             }),
@@ -259,7 +259,7 @@ fn a_settlement_whose_checkpoints_name_different_operations_at_one_number_is_not
     };
     let mut receiver = host.clone();
     let reason = receiver
-        .admit("hub", "todo.floor", &floor_with(&settlement))
+        .admit("hub", "record_list.floor", &floor_with(&settlement))
         .unwrap_err();
     assert!(
         reason.contains("different operations at one number"),
@@ -274,7 +274,7 @@ fn a_settlement_whose_checkpoints_name_different_operations_at_one_number_is_not
         ],
     };
     assert!(receiver
-        .admit("hub", "todo.floor", &floor_with(&agreed))
+        .admit("hub", "record_list.floor", &floor_with(&agreed))
         .is_ok());
 }
 

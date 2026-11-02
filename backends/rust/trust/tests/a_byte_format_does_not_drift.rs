@@ -7,6 +7,12 @@
 // exists stop verifying, and passes every test that signs and verifies in one process. These
 // vectors are the guard: each is a fixed input and the bytes it must give, written down, so that
 // a change shows as a difference here and is a decision, not an accident.
+//
+// The vectors of a write, a note and an operation were made again, once, when the layer moved to
+// the standard shared record list (docs/adr/0042, step 3): the event domain became
+// `sce-trust/event/2`, the events are named `record_list.*`, and the fields the second revision of
+// the list's schemas added are signed (docs/adr/0046). They are new pins of that decision; the
+// sealed stamp, the checkpoint and the entries of the log did not move.
 
 use sce_rust_trust::checkpoint::{Checkpoint, Head};
 use sce_rust_trust::encoding;
@@ -47,21 +53,21 @@ fn link() -> message::Link {
 
 #[test]
 fn an_operation_is_signed_and_named_as_it_always_was() {
-    let signing = message::signing("home", "todo.write", &write())
+    let signing = message::signing("home", "record_list.write", &write())
         .unwrap()
         .unwrap();
     let operation = message::operation_bytes(&signing.message, &link());
     assert_eq!(
         hex(&operation),
-        "00000000000000157363652d74727573742f6f7065726174696f6e2f31000000000000007900000000000000117363652d74727573742f6576656e742f310000000000000004686f6d65000000000000000a746f646f2e7772697465000000000000000131000000000000000133000000000000000231300000000000000000000000000000000431303030000000000000000130000000000000000131000000000000000133000000000000002b42776348427763484277634842776348427763484277634842776348427763484277634842776348427763000000000000000134000000000000002b43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b"
+        "00000000000000157363652d74727573742f6f7065726174696f6e2f31000000000000008900000000000000117363652d74727573742f6576656e742f320000000000000004686f6d6500000000000000117265636f72645f6c6973742e7772697465000000000000000131000000000000000133000000000000000231300000000000000000000000000000000431303030000000000000000130000000000000000131000000000000000131000000000000000133000000000000002b42776348427763484277634842776348427763484277634842776348427763484277634842776348427763000000000000000134000000000000002b43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b"
     );
     assert_eq!(
         encoding::encode(&message::operation_id(&operation)),
-        "B4xt_c5Ap-C332dYB2GKHI0xMM2sOIMUZmrRkvkWo1s"
+        "JInVDbQHgBWrzZxfJ9gmcgelmJ9Abr2ZLLVzY5bzdIY"
     );
     assert_eq!(
         encoding::encode(&alice().sign(&operation)),
-        "zylbw8cFt5qwJInbIYV9yiO6wqCInc-hRPYbmqG3i6odRU5mNMyeBlVxxnUJsc3RFYj_7IY0iFaOlmr5fk9yAA"
+        "86eN9Yh6yXI0W7KQCvMTNO-RBIA2lyaA6SNT3QYpGeQt5ZwfytNESWz8zL3WdVyMAZQR7L3_osDEYkD0xe7fAA"
     );
 }
 
@@ -75,27 +81,44 @@ fn a_public_key_is_written_the_same_way() {
 
 #[test]
 fn the_bytes_a_write_is_signed_as_do_not_move() {
-    let signing = message::signing("home", "todo.write", &write())
+    let signing = message::signing("home", "record_list.write", &write())
         .unwrap()
         .unwrap();
     assert_eq!(
         hex(&signing.message),
-        "00000000000000117363652d74727573742f6576656e742f310000000000000004686f6d65000000000000000a746f646f2e7772697465000000000000000131000000000000000133000000000000000231300000000000000000000000000000000431303030000000000000000130000000000000000131"
+        "00000000000000117363652d74727573742f6576656e742f320000000000000004686f6d6500000000000000117265636f72645f6c6973742e7772697465000000000000000131000000000000000133000000000000000231300000000000000000000000000000000431303030000000000000000130000000000000000131000000000000000131"
     );
     assert_eq!(
         encoding::encode(&alice().sign(&signing.message)),
-        "TvLfTlPvOoWYoTzD2snS56UPCTKkx0bUENgrNaJE8mSRm66YK5EwifYb8d_squIc19KZuUdxGwGisE3Bp5ulBg"
+        "nrtDDo5FiFhAw3jHc-A1M0jiupWF-n4ZL3Sn59p55cxlvgM8QInK6Pjhn2U-XSd9WUP_dPTNH8dMdJqFm7KHAg"
     );
 }
 
 #[test]
 fn the_bytes_a_note_is_signed_as_do_not_move() {
-    let signing = message::signing("home", "todo.supersede", &note())
+    let signing = message::signing("home", "record_list.supersede", &note())
         .unwrap()
         .unwrap();
     assert_eq!(
         hex(&signing.message),
-        "00000000000000117363652d74727573742f6576656e742f310000000000000004686f6d65000000000000000e746f646f2e737570657273656465000000000000000131000000000000000133000000000000000431303030000000000000000130000000000000000132000000000000000131"
+        "00000000000000117363652d74727573742f6576656e742f320000000000000004686f6d6500000000000000157265636f72645f6c6973742e737570657273656465000000000000000131000000000000000133000000000000000431303030000000000000000130000000000000000132000000000000000131000000000000000131000000000000000130000000000000000130"
+    );
+}
+
+/// A note that is one part of a change of more carries the change's size and stamp, and they are
+/// signed in the order the schema declares them, after `by`.
+#[test]
+fn the_bytes_a_part_of_a_change_is_signed_as_do_not_move() {
+    let mut part = note();
+    part["parts"] = json!(2);
+    part["atWallTime"] = json!("2000");
+    part["atCounter"] = json!(1);
+    let signing = message::signing("home", "record_list.supersede", &part)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        hex(&signing.message),
+        "00000000000000117363652d74727573742f6576656e742f320000000000000004686f6d6500000000000000157265636f72645f6c6973742e737570657273656465000000000000000131000000000000000133000000000000000431303030000000000000000130000000000000000132000000000000000131000000000000000132000000000000000432303030000000000000000131"
     );
 }
 

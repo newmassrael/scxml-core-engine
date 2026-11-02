@@ -79,7 +79,7 @@ fn write_data(time: i64, counter: u64, text: &str) -> String {
 
 /// The write as node 1's host sends it, through the host's own signing.
 fn sealed(host: &mut Trust, time: i64, text: &str) -> Result<String, String> {
-    host.seal("relay", "todo.write", &write_data(time, 0, text))
+    host.seal("relay", "record_list.write", &write_data(time, 0, text))
         .map(|sent| sent.expect("a write is sent"))
 }
 
@@ -95,7 +95,7 @@ fn forged(
     text: &str,
 ) -> (String, [u8; 32]) {
     let mut value: Value = serde_json::from_str(&write_data(time, counter, text)).unwrap();
-    let signing = message::signing(LIST, "todo.write", &value)
+    let signing = message::signing(LIST, "record_list.write", &value)
         .unwrap()
         .unwrap();
     let (next, log_hash) = host.head();
@@ -112,7 +112,7 @@ fn forged(
 }
 
 fn take(host: &Trust, data: &str) -> Result<sce_rust_trust::Taken, TakeError> {
-    host.take_operation("todo.write", data)
+    host.take_operation("record_list.write", data)
 }
 
 /// What a host holds of every device: the operations it tells its machine, device by device.
