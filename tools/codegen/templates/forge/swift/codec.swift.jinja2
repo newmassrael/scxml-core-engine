@@ -112,9 +112,9 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% if f.variable %}
         frame += self.{{ f.id }}
 {% elif f.bits %}
-        frame[{{ f.offset }}] |= ({{ f.id }} & {{ f.bits.mask }}) << {{ f.bits.shift }}
+        frame[{{ f.offset }}] |= (self.{{ f.id }} & {{ f.bits.mask }}) << {{ f.bits.shift }}
 {% else %}
-        storeInteger({{ f.id }}, into: &frame, at: {{ f.offset }}, .{{ f.order }})
+        storeInteger(self.{{ f.id }}, into: &frame, at: {{ f.offset }}, .{{ f.order }})
 {% endif %}
 {% endfor %}
         try sink.writeBytes(frame)

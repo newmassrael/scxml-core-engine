@@ -54,9 +54,9 @@ public struct CodecSubbyte: Equatable, Sendable {
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
         var frame = [UInt8](repeating: 0, count: Self.frameLength)
-        frame[0] |= (priority & 0x7) << 5
-        frame[0] |= (channel & 0x7) << 2
-        frame[0] |= (direction & 0x3) << 0
+        frame[0] |= (self.priority & 0x7) << 5
+        frame[0] |= (self.channel & 0x7) << 2
+        frame[0] |= (self.direction & 0x3) << 0
         try sink.writeBytes(frame)
     }
 }

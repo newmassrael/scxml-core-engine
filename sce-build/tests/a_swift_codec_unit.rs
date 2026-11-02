@@ -95,7 +95,7 @@ fn a_flag_of_one_bit_is_a_bool_property_over_its_carrier() {
         "{code}"
     );
     assert!(
-        code.contains("storeInteger(header, into: &frame, at: 0, .big)"),
+        code.contains("storeInteger(self.header, into: &frame, at: 0, .big)"),
         "the flags do not change the wire: {code}"
     );
 }
@@ -196,7 +196,7 @@ fn a_codec_of_integers_is_a_struct_with_a_decode_and_an_encode() {
         "a field is read at its byte offset in the document's byte order: {code}"
     );
     assert!(
-        code.contains("storeInteger(payload, into: &frame, at: 2, .big)"),
+        code.contains("storeInteger(self.payload, into: &frame, at: 2, .big)"),
         "and written at the same place: {code}"
     );
 }
@@ -214,7 +214,7 @@ fn a_field_is_read_and_written_in_the_documents_byte_order() {
         "{code}"
     );
     assert!(
-        code.contains("storeInteger(value, into: &frame, at: 1, .little)"),
+        code.contains("storeInteger(self.value, into: &frame, at: 1, .little)"),
         "{code}"
     );
     assert!(code.contains("public static let frameLength = 4"), "{code}");
@@ -249,6 +249,27 @@ fn a_frame_is_written_in_one_write_so_a_bounded_sink_holds_all_of_it_or_none() {
         1,
         "the frame is laid out in a buffer and handed over once: {code}"
     );
+}
+
+#[test]
+fn an_encode_reads_a_field_through_self_so_a_local_cannot_hide_it() {
+    // The encode lays the frame out in a local named `frame` and writes to a parameter named
+    // `sink`; a field of either name, read bare, would be read as the local or the parameter.
+    let code = swift_of_datamodel(
+        r#"<sce:field id="frame" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+           <sce:field id="sink" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+           <sce:field id="low" sce:type="uint8" sce:byte="2" sce:bit-offset="0" sce:bit-size="4"/>"#,
+    )
+    .expect("fields named for the encode's own names are written");
+    assert!(
+        code.contains("storeInteger(self.frame, into: &frame, at: 0, .big)"),
+        "{code}"
+    );
+    assert!(
+        code.contains("storeInteger(self.sink, into: &frame, at: 1, .big)"),
+        "{code}"
+    );
+    assert!(code.contains("frame[2] |= (self.low & 0xF) << 0"), "{code}");
 }
 
 #[test]
@@ -357,7 +378,7 @@ fn a_field_of_bits_inside_a_byte_is_cut_and_shifted_into_it() {
         "{code}"
     );
     assert!(
-        code.contains("frame[0] |= (channel & 0x7) << 2"),
+        code.contains("frame[0] |= (self.channel & 0x7) << 2"),
         "an encode cuts the value to its width and ors it into the byte: {code}"
     );
     assert!(

@@ -41,7 +41,7 @@ public struct CodecOriginScalar: Equatable, Sendable {
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
         var frame = [UInt8](repeating: 0, count: Self.frameLength)
-        storeInteger(value, into: &frame, at: 0, .big)
+        storeInteger(self.value, into: &frame, at: 0, .big)
         try sink.writeBytes(frame)
     }
 }

@@ -51,7 +51,7 @@ public struct CodecExtAttachment: Equatable, Sendable {
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
         var frame = [UInt8](repeating: 0, count: Self.frameLength)
-        storeInteger(length, into: &frame, at: 0, .big)
+        storeInteger(self.length, into: &frame, at: 0, .big)
         frame += self.body
         try sink.writeBytes(frame)
     }
