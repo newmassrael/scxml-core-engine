@@ -481,24 +481,33 @@ fn a_variant_over_the_bits_of_a_flag_reads_them_shifted_down_and_masked() {
 }
 
 #[test]
-fn a_variant_the_swift_codec_does_not_write_is_refused_by_name() {
-    for (document, what) in [
-        (
-            "codec_variant_peek_basic",
-            "a `<sce:variant>` that dispatches on a byte it peeks",
+fn a_variant_over_a_peeked_byte_reads_the_tag_and_leaves_the_byte_for_the_arm() {
+    let code = swift_of("tests/forge/resources/codec_variant_peek_basic.scxml")
+        .expect("a variant over a peeked byte is written");
+    assert!(
+        code.contains(
+            "let body_tag = try (reader.peekInteger(UInt8.self, at: 0, .big) >> 0) & 0x1\n        switch body_tag {\n        case 0x0:"
         ),
-        (
-            "codec_variant_default_marker",
-            "a `<sce:variant>` that dispatches on a byte it peeks",
+        "the tag is read without moving the cursor, so the arm reads the byte as its own header: {code}"
+    );
+    assert!(
+        code.contains(
+            "default:\n            frame.body = .codecPeekArmB(try CodecPeekArmB.decode(&reader))"
         ),
-    ] {
-        let refusal = swift_of(&format!("tests/forge/resources/{document}.scxml"))
-            .expect_err(&format!("{document} must be refused, not written"));
-        assert!(
-            refusal.contains("has no Swift lowering yet") && refusal.contains(what),
-            "{document}: {refusal}"
-        );
-    }
+        "no catch-all: the last arm stands for what is left: {code}"
+    );
+}
+
+#[test]
+fn an_embedded_variant_whose_arm_the_embedder_drives_is_refused_by_name() {
+    // The importer declares a dispatch that writes the arm into one of its own flags at encode, which
+    // the Swift codec does not do, so the codec is not written rather than written without it.
+    let refusal = swift_of("tests/forge/resources/codec_embed_variant_dispatch.scxml")
+        .expect_err("an embed whose arm is driven into a flag is not written");
+    assert!(
+        refusal.contains("its arm is driven into a flag of the codec that embeds it"),
+        "{refusal}"
+    );
 }
 
 #[test]

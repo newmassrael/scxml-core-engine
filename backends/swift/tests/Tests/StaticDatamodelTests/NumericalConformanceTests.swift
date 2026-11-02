@@ -4963,6 +4963,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecVariantDispatch.frameLength
 }
 
+// MARK: - codec: codec_variant_peek_basic
+
+@Test func codecVariantPeekBasicMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecVariantPeekBasic.frameLength
+}
+
 // MARK: - codec: codec_variant_session_close
 
 @Test func codecVariantSessionCloseMatchesReference() throws {

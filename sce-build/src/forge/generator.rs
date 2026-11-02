@@ -27400,7 +27400,13 @@ pub fn generate_swift_with_imports(
             imports
                 .iter()
                 .find(|import| import.alias == alias)
-                .and_then(|import| import.swift_unlowered.clone())
+                .and_then(|import| {
+                    import.swift_unlowered.clone().or_else(|| {
+                        import.embed_dispatch.as_ref().map(|_| {
+                            "its arm is driven into a flag of the codec that embeds it".to_string()
+                        })
+                    })
+                })
         })
         .map(|construct| swift_codec::refusal(m, &construct)),
         // A timer is a period, a fire event and two optional hooks over the runtime's

@@ -186,9 +186,6 @@ fn variant_unlowered(
     element: &dyn Fn(&str) -> Option<String>,
 ) -> Option<String> {
     let what = |text: &str| Some(format!("a `<sce:variant>` {text}"));
-    if v.peek_byte.is_some() {
-        return what("that dispatches on a byte it peeks");
-    }
     if v.tag_field.is_none() {
         return what("whose tag its caller supplies");
     }
@@ -499,33 +496,56 @@ fn variant_context(
         .tag_field
         .as_deref()
         .expect("a variant this renderer is given has a tag field");
-    let carrier = m
-        .fields
-        .iter()
-        .find(|f| f.id == tag_field)
-        .expect("validation holds the tag to a field of the codec");
-    let (carrier_type, _) =
-        integer(&carrier.sce_type).expect("validation holds the tag to an unsigned integer");
-    // The tag as the prefix has read it, and the type a tag the arms do not name is held in.
-    let (tag, tag_type) = match &v.tag_flag {
-        Some(name) => {
-            let flag = carrier
-                .flags
-                .iter()
-                .find(|fl| &fl.name == name)
-                .expect("validation holds the tag to a flag of its carrier");
-            let width = flag.width.max(1);
-            let mask = if width >= 64 {
-                u64::MAX
-            } else {
+    // The tag as the fields before the arm have left it, and the type a tag the arms do not name is
+    // held in. A tag that is peeked is a range of bits of the next byte, which stays where it is
+    // for the arm to read as its own header; any other is a field of the codec.
+    let (tag, tag_type) = if let Some(peek) = &v.peek_byte {
+        let name = v
+            .tag_flag
+            .as_ref()
+            .expect("validation holds a peeked tag to a flag of the byte");
+        let flag = peek
+            .flags
+            .iter()
+            .find(|fl| &fl.name == name)
+            .expect("validation holds a peeked tag to a flag of the byte");
+        let width = flag.width.max(1);
+        (
+            format!(
+                "try (reader.peekInteger(UInt8.self, at: 0, .big) >> {}) & 0x{:X}",
+                flag.bit,
                 (1u64 << width) - 1
-            };
-            (
-                format!("(frame.{tag_field} >> {}) & 0x{mask:X}", flag.bit),
-                smallest_unsigned(width),
-            )
+            ),
+            smallest_unsigned(width),
+        )
+    } else {
+        let carrier = m
+            .fields
+            .iter()
+            .find(|f| f.id == tag_field)
+            .expect("validation holds the tag to a field of the codec");
+        let (carrier_type, _) =
+            integer(&carrier.sce_type).expect("validation holds the tag to an unsigned integer");
+        match &v.tag_flag {
+            Some(name) => {
+                let flag = carrier
+                    .flags
+                    .iter()
+                    .find(|fl| &fl.name == name)
+                    .expect("validation holds the tag to a flag of its carrier");
+                let width = flag.width.max(1);
+                let mask = if width >= 64 {
+                    u64::MAX
+                } else {
+                    (1u64 << width) - 1
+                };
+                (
+                    format!("(frame.{tag_field} >> {}) & 0x{mask:X}", flag.bit),
+                    smallest_unsigned(width),
+                )
+            }
+            None => (format!("frame.{tag_field}"), carrier_type),
         }
-        None => (format!("frame.{tag_field}"), carrier_type),
     };
     let local = format!("{VARIANT_FIELD}_tag");
     let narrowed = if v.tag_flag.is_some() {
