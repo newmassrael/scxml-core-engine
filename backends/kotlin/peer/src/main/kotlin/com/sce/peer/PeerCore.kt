@@ -88,6 +88,26 @@ class PeerCore private constructor(lib: ScePeerLib, handle: Pointer) : Handle(li
             return PeerCore(lib, made(lib, lib.sce_peer_invited(list, genesis), "invited"))
         }
 
+        /**
+         * The core of the device an invitation's text (as its QR code holds it) invites: the one
+         * [invited] makes for its list and genesis (`sce_peer_invited_by`).
+         */
+        fun invitedBy(lib: ScePeerLib, invitation: String): PeerCore {
+            val bytes = invitation.toByteArray(Charsets.UTF_8)
+            return PeerCore(lib, made(lib, lib.sce_peer_invited_by(bytes, NativeLong(bytes.size.toLong())), "invited_by"))
+        }
+
+        /**
+         * What an invitation's text says, as the JSON text of the ABI (`sce_peer_invitation_read`):
+         * the relay's address and name, the list, the node, the genesis and the expiry; no secret.
+         */
+        fun readInvitation(lib: ScePeerLib, invitation: String): String {
+            val bytes = invitation.toByteArray(Charsets.UTF_8)
+            val out = Buf()
+            lib.check(lib.sce_peer_invitation_read(bytes, NativeLong(bytes.size.toLong()), out), "invitation_read")
+            return lib.text(out) ?: throw IllegalStateException("the core read nothing of the invitation")
+        }
+
         private fun made(lib: ScePeerLib, handle: Pointer?, what: String): Pointer = handle ?: throw ScePeerException(ScePeerAbi.ERR_NULL_ARGUMENT, "$what: ${lib.sce_peer_last_error()}")
     }
 
@@ -141,6 +161,43 @@ class PeerCore private constructor(lib: ScePeerLib, handle: Pointer) : Handle(li
      * link ([PeerLink.setToken]). `ERR_NO_PERSON` when the core has no person.
      */
     fun login(audience: String) = lib.check(lib.sce_peer_login(pointer, audience), "login")
+
+    /**
+     * An administrator's invitation of the device of [node], which the log never granted, at the relay
+     * of address [relay] named [audience], from [nowMs] for [validMs] (at most a day): the text for a
+     * QR code (`sce_peer_invite`, or `sce_peer_invite_under` with a 32-byte [secret] the host gives).
+     */
+    fun invite(relay: String, audience: String, node: Long, nowMs: Long, validMs: Long, secret: ByteArray? = null): String {
+        val out = Buf()
+        if (secret == null) {
+            lib.check(lib.sce_peer_invite(pointer, relay, audience, node, nowMs, validMs, out), "invite")
+        } else {
+            require(secret.size == 32) { "a secret is 32 bytes" }
+            lib.check(lib.sce_peer_invite_under(pointer, relay, audience, node, nowMs, validMs, secret, out), "invite_under")
+        }
+        return lib.text(out) ?: throw IllegalStateException("the core made no invitation")
+    }
+
+    /**
+     * Begins the exchange that joins under the invitation's text (`sce_peer_join`), run as a round
+     * is; the fingerprint the person compares with the administrator's device's.
+     */
+    fun join(invitation: String): String {
+        val bytes = invitation.toByteArray(Charsets.UTF_8)
+        val fingerprint = Buf()
+        lib.check(lib.sce_peer_join(pointer, bytes, NativeLong(bytes.size.toLong()), fingerprint), "join")
+        return lib.text(fingerprint) ?: throw IllegalStateException("the core gave no fingerprint")
+    }
+
+    /**
+     * The devices that joined under this core's invitation of [node], as the JSON array of the ABI
+     * (`sce_peer_joined`): each key and fingerprint; `null` when none.
+     */
+    fun joined(node: Long): String? {
+        val out = Buf()
+        lib.check(lib.sce_peer_joined(pointer, node, out), "joined")
+        return lib.text(out)
+    }
 
     fun publishCheckpoint(before: Long, digest: Int) = lib.check(lib.sce_peer_publish_checkpoint(pointer, before, digest), "publish_checkpoint")
 

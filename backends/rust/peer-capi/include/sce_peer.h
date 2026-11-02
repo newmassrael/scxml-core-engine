@@ -53,6 +53,9 @@ extern "C" {
 #define SCE_PEER_ERR_DRAWN_KEYS 13
 #define SCE_PEER_ERR_NOT_OPENED 14
 #define SCE_PEER_ERR_NO_RANDOMNESS 15
+#define SCE_PEER_ERR_GRANTED 16
+#define SCE_PEER_ERR_INVITATION 17
+#define SCE_PEER_ERR_NOT_JOINED 18
 #define SCE_PEER_ERR_NULL_ARGUMENT 20
 #define SCE_PEER_ERR_BAD_TEXT 21
 #define SCE_PEER_ERR_PANIC 22
@@ -104,6 +107,9 @@ void sce_peer_buf_free(ScePeerBuf buf);
  * list's genesis entry (32 bytes). NULL on failure. */
 ScePeer *sce_peer_open(const char *list);
 ScePeer *sce_peer_invited(const char *list, const uint8_t *genesis /* 32 bytes */);
+/* The core of the device an invitation's text (len bytes of UTF-8, as the QR code holds it) invites:
+ * sce_peer_invited for its list and genesis. NULL on failure. */
+ScePeer *sce_peer_invited_by(const uint8_t *invitation, size_t len);
 void sce_peer_free(ScePeer *peer);
 
 /* The device's person: the node the log names them by, and the key the 32-byte seed makes. */
@@ -150,6 +156,24 @@ int32_t sce_peer_take_outcome(ScePeer *peer, ScePeerBuf *out);
  * relay says): an exchange as a round is, over a link that presents no token or one that expired,
  * whose outcome holds "token", which the lane gives the link with sce_peer_link_set_token. */
 int32_t sce_peer_login(ScePeer *peer, const char *audience);
+
+/* Invitations (ADR 0080 section 4). An administrator's device invites the device of a node the log
+ * never granted, at the relay of address relay and name audience, from now_ms for valid_ms (at most
+ * a day): *out is the text for a QR code (the relay's address, the signed invitation and its
+ * secret, drawn here, or the 32 bytes the host gives with _under). sce_peer_invitation_read gives
+ * what an invitation says as one JSON text (relay, audience, list, node, genesis, expires_at_ms),
+ * its secret left out. The invited device's core (sce_peer_invited_by) joins: an exchange as a
+ * round is, over a link that presents no token, and *fingerprint is the digits its person compares
+ * with the administrator's device's. sce_peer_joined gives the devices that joined under the
+ * core's invitation of node, as a JSON array of {key, fingerprint}, empty when none; the device is
+ * then admitted with sce_peer_add_member or sce_peer_grant and that key, and with no other. */
+int32_t sce_peer_invite(ScePeer *peer, const char *relay, const char *audience, uint64_t node, uint64_t now_ms,
+                        uint64_t valid_ms, ScePeerBuf *out);
+int32_t sce_peer_invite_under(ScePeer *peer, const char *relay, const char *audience, uint64_t node, uint64_t now_ms,
+                              uint64_t valid_ms, const uint8_t *secret /* 32 bytes */, ScePeerBuf *out);
+int32_t sce_peer_invitation_read(const uint8_t *invitation, size_t len, ScePeerBuf *out);
+int32_t sce_peer_join(ScePeer *peer, const uint8_t *invitation, size_t len, ScePeerBuf *fingerprint);
+int32_t sce_peer_joined(ScePeer *peer, uint64_t node, ScePeerBuf *out);
 
 /* The event that says an instant is settled, as the JSON pair [name, payload]; empty when it is not. */
 int32_t sce_peer_floor_event(ScePeer *peer, int64_t before, uint32_t digest, ScePeerBuf *out);

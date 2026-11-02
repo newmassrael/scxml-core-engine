@@ -51,6 +51,7 @@ use sce_rust_peer::{
 use sce_rust_relay::tls::{self, Roots};
 use sce_rust_relay::wss::WssLink;
 use sce_rust_relay::{Code, Notice};
+use sce_rust_trust::invitation::Ticket;
 use sce_rust_trust::{encoding, Identity, PublicKey};
 use serde_json::{json, Value};
 
@@ -68,7 +69,12 @@ use serde_json::{json, Value};
 /// [`sce_peer_login`]) and the outcome of a login holds `token`; a link made with a null or empty
 /// token dials a connection that presents none, where version 4 presented the empty text as a token
 /// the relay refused, a changed meaning of an input; and a link is given the token a login earned
-/// ([`sce_peer_link_set_token`]).
+/// ([`sce_peer_link_set_token`]). The invitations and the join of ADR 0080 section 4
+/// ([`sce_peer_invite`], [`sce_peer_invite_under`], [`sce_peer_invitation_read`],
+/// [`sce_peer_invited_by`], [`sce_peer_join`], [`sce_peer_joined`]) are functions added alone, with
+/// statuses appended (`SCE_PEER_ERR_GRANTED`, `_INVITATION`, `_NOT_JOINED`) that only they and the
+/// acts on a node they invited give, and move no number; the sealed state is the core's version 5,
+/// which holds the invitations.
 pub const SCE_PEER_ABI_VERSION: u32 = 5;
 
 pub const SCE_PEER_OK: i32 = 0;
@@ -88,8 +94,16 @@ pub const SCE_PEER_ERR_DRAWN_KEYS: i32 = 13;
 /// A sealed state did not open under the key given for this list and node: another key, a changed
 /// or cut state, or another device's. Nothing of it was taken.
 pub const SCE_PEER_ERR_NOT_OPENED: i32 = 14;
-/// The operating system gave no randomness for a data key.
+/// The operating system gave no randomness for a data key or an invitation's secret.
 pub const SCE_PEER_ERR_NO_RANDOMNESS: i32 = 15;
+/// The log has granted the node an invitation is asked for: an invitation is for a node it never
+/// granted.
+pub const SCE_PEER_ERR_GRANTED: i32 = 16;
+/// An invitation that is not one, or one this core cannot make or join with (another list or
+/// genesis, another node than its person's, a lifetime past a day, a list not opened yet).
+pub const SCE_PEER_ERR_INVITATION: i32 = 17;
+/// The core invited the node, and no join a round read proves the key given under its invitation.
+pub const SCE_PEER_ERR_NOT_JOINED: i32 = 18;
 pub const SCE_PEER_ERR_NULL_ARGUMENT: i32 = 20;
 pub const SCE_PEER_ERR_BAD_TEXT: i32 = 21;
 pub const SCE_PEER_ERR_PANIC: i32 = 22;
@@ -196,6 +210,9 @@ fn status_of(error: &PeerError) -> i32 {
         PeerError::DrawnKeys => SCE_PEER_ERR_DRAWN_KEYS,
         PeerError::NotOpened => SCE_PEER_ERR_NOT_OPENED,
         PeerError::NoRandomness => SCE_PEER_ERR_NO_RANDOMNESS,
+        PeerError::Granted(_) => SCE_PEER_ERR_GRANTED,
+        PeerError::Invitation(_) => SCE_PEER_ERR_INVITATION,
+        PeerError::NotJoined(_) => SCE_PEER_ERR_NOT_JOINED,
     }
 }
 
@@ -257,6 +274,24 @@ unsafe fn text<'a>(ptr: *const c_char) -> Result<&'a str, i32> {
     unsafe { CStr::from_ptr(ptr) }
         .to_str()
         .map_err(|_| fail(SCE_PEER_ERR_BAD_TEXT, "a string is not UTF-8"))
+}
+
+/// The text of an invitation the caller gives as `len` bytes of UTF-8, read as an invitation
+/// ([`Ticket`]).
+///
+/// # Safety
+/// `ptr` is valid for reads of `len` bytes.
+unsafe fn ticket_of(ptr: *const u8, len: usize) -> Result<Ticket, i32> {
+    // SAFETY: the caller's promise of `len` readable bytes.
+    let given = unsafe { bytes(ptr, len) }?;
+    let text = std::str::from_utf8(given)
+        .map_err(|_| fail(SCE_PEER_ERR_BAD_TEXT, "an invitation is not UTF-8"))?;
+    Ticket::from_text(text).map_err(|error| {
+        fail(
+            SCE_PEER_ERR_INVITATION,
+            format!("it is not an invitation: {error:?}"),
+        )
+    })
 }
 
 /// A token the caller gives, null for none: a link with none dials a connection that presents no
@@ -790,6 +825,209 @@ pub unsafe extern "C" fn sce_peer_login(peer: *mut ScePeer, audience: *const c_c
         // SAFETY: the promises in the function's contract.
         let (held, audience) = unsafe { (handle(peer)?, text(audience)?) };
         held.peer.login(audience).map_err(from_error)
+    })
+}
+
+/// An administrator's invitation of the device of `node`, which the log never granted, to the list
+/// at the relay whose address is `relay` and whose name is `audience` (both NUL-terminated), from
+/// `now_ms` (the host's clock) for `valid_ms` (1 to 86 400 000: at most a day) ([`Peer::invite`],
+/// ADR 0080 section 4). `out` is set to the text a host shows as a QR code: the relay's address, the
+/// signed invitation and the secret the core drew, of which it keeps the key the secret makes.
+/// `SCE_PEER_ERR_NO_ADMINISTRATOR` without a key the log names as an administrator's,
+/// `SCE_PEER_ERR_GRANTED` for a node the log granted, `SCE_PEER_ERR_INVITATION` for a lifetime past a
+/// day or a list not opened.
+///
+/// # Safety
+/// `peer` is a live handle; `relay` and `audience` are NUL-terminated strings; `out` is valid for a
+/// write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_invite(
+    peer: *mut ScePeer,
+    relay: *const c_char,
+    audience: *const c_char,
+    node: u64,
+    now_ms: u64,
+    valid_ms: u64,
+    out: *mut ScePeerBuf,
+) -> i32 {
+    guard(|| {
+        required(out)?;
+        // SAFETY: the promises in the function's contract.
+        let (held, relay, audience) = unsafe {
+            put(out, ScePeerBuf::EMPTY);
+            (handle(peer)?, text(relay)?, text(audience)?)
+        };
+        let invitation = held
+            .peer
+            .invite(relay, audience, node, now_ms, valid_ms)
+            .map_err(from_error)?;
+        // SAFETY: `out` is valid for a write.
+        unsafe { put(out, ScePeerBuf::of(invitation.into_bytes())) };
+        Ok(())
+    })
+}
+
+/// [`sce_peer_invite`] under the 32-byte `secret` the host gives ([`Peer::invite_under`]): one it
+/// drew from a source of its own, or a recording's fixed one. The same secret and the same
+/// invitation give the same text.
+///
+/// # Safety
+/// `peer` is a live handle; `relay` and `audience` are NUL-terminated strings; `secret` points at 32
+/// readable bytes; `out` is valid for a write.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn sce_peer_invite_under(
+    peer: *mut ScePeer,
+    relay: *const c_char,
+    audience: *const c_char,
+    node: u64,
+    now_ms: u64,
+    valid_ms: u64,
+    secret: *const u8,
+    out: *mut ScePeerBuf,
+) -> i32 {
+    guard(|| {
+        required(out)?;
+        // SAFETY: the promises in the function's contract.
+        let (held, relay, audience, secret) = unsafe {
+            put(out, ScePeerBuf::EMPTY);
+            (
+                handle(peer)?,
+                text(relay)?,
+                text(audience)?,
+                array::<32>(secret)?,
+            )
+        };
+        let invitation = held
+            .peer
+            .invite_under(relay, audience, node, now_ms, valid_ms, secret)
+            .map_err(from_error)?;
+        // SAFETY: `out` is valid for a write.
+        unsafe { put(out, ScePeerBuf::of(invitation.into_bytes())) };
+        Ok(())
+    })
+}
+
+/// What the invitation in the `len` bytes of UTF-8 at `invitation` says, as one JSON text in `out`
+/// for a host to make the invited device with and show its person: `relay` (the address to dial),
+/// `audience`, `list`, `node` and `expires_at_ms` (as text), and `genesis` in the URL alphabet. Its
+/// secret is not in it. `SCE_PEER_ERR_INVITATION` when the bytes are not an invitation's text.
+///
+/// # Safety
+/// `invitation` points at `len` readable bytes; `out` is valid for a write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_invitation_read(
+    invitation: *const u8,
+    len: usize,
+    out: *mut ScePeerBuf,
+) -> i32 {
+    guard(|| {
+        required(out)?;
+        // SAFETY: the promises in the function's contract.
+        let ticket = unsafe {
+            put(out, ScePeerBuf::EMPTY);
+            ticket_of(invitation, len)?
+        };
+        let said = &ticket.invitation;
+        let value = json!({
+            "relay": ticket.relay,
+            "audience": said.audience,
+            "list": said.list,
+            "node": said.node.to_string(),
+            "genesis": encoding::encode(&said.genesis),
+            "expires_at_ms": said.expires_at_ms.to_string(),
+        });
+        // SAFETY: `out` is valid for a write.
+        unsafe { put(out, ScePeerBuf::of(value.to_string().into_bytes())) };
+        Ok(())
+    })
+}
+
+/// The core of the device the invitation in the `len` bytes of UTF-8 at `invitation` invites: the
+/// one [`sce_peer_invited`] makes for its list and the hash of its genesis. Null when it fails.
+///
+/// # Safety
+/// `invitation` points at `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_invited_by(invitation: *const u8, len: usize) -> *mut ScePeer {
+    made(|| {
+        // SAFETY: the promise in the function's contract.
+        let ticket = unsafe { ticket_of(invitation, len)? };
+        let said = &ticket.invitation;
+        Ok(ScePeer {
+            list: said.list.clone(),
+            peer: Peer::invited(&said.list, said.genesis),
+        })
+    })
+}
+
+/// Begin the exchange that leaves the device's identity key, and its key package when the core
+/// holds a device of the list's group, with the relay under the invitation in the `len` bytes of
+/// UTF-8 at `invitation` ([`Peer::join`], ADR 0080 section 4). Its requests are taken and answered
+/// as a round's, over a link that presents no token, and its outcome tells the machine nothing.
+/// `fingerprint` is set to the digits the person compares with the ones the administrator's device
+/// shows ([`sce_peer_joined`]). `SCE_PEER_ERR_INVITATION` for an invitation of another list, genesis
+/// or node than the core's; `SCE_PEER_ERR_NO_PERSON` with no person.
+///
+/// # Safety
+/// `peer` is a live handle; `invitation` points at `len` readable bytes; `fingerprint` is valid for a
+/// write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_join(
+    peer: *mut ScePeer,
+    invitation: *const u8,
+    len: usize,
+    fingerprint: *mut ScePeerBuf,
+) -> i32 {
+    guard(|| {
+        required(fingerprint)?;
+        // SAFETY: the promises in the function's contract.
+        let (held, given) = unsafe {
+            put(fingerprint, ScePeerBuf::EMPTY);
+            (handle(peer)?, bytes(invitation, len)?)
+        };
+        let text = std::str::from_utf8(given)
+            .map_err(|_| fail(SCE_PEER_ERR_BAD_TEXT, "an invitation is not UTF-8"))?;
+        let digits = held.peer.join(text).map_err(from_error)?;
+        // SAFETY: `fingerprint` is valid for a write.
+        unsafe { put(fingerprint, ScePeerBuf::of(digits.into_bytes())) };
+        Ok(())
+    })
+}
+
+/// The devices that joined under an invitation this core made for `node`, as the rounds read them,
+/// as one JSON array in `out`, each `{"key": .., "fingerprint": ..}` (the key in the URL alphabet):
+/// what the administrator's device shows before it admits one with [`sce_peer_add_member`] or
+/// [`sce_peer_grant`] and that key ([`Peer::joined`]). An empty buffer when none was read, or the node
+/// was admitted.
+///
+/// # Safety
+/// `peer` is a live handle; `out` is valid for a write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_joined(
+    peer: *mut ScePeer,
+    node: u64,
+    out: *mut ScePeerBuf,
+) -> i32 {
+    guard(|| {
+        required(out)?;
+        // SAFETY: the promises in the function's contract.
+        let held = unsafe {
+            put(out, ScePeerBuf::EMPTY);
+            handle(peer)?
+        };
+        let joined = held.peer.joined(node);
+        if !joined.is_empty() {
+            let text = json!(joined
+                .iter()
+                .map(|device| json!({"key": device.key.to_text(),
+                                     "fingerprint": device.fingerprint}))
+                .collect::<Vec<_>>())
+            .to_string();
+            // SAFETY: `out` is valid for a write.
+            unsafe { put(out, ScePeerBuf::of(text.into_bytes())) };
+        }
+        Ok(())
     })
 }
 

@@ -39,6 +39,9 @@ object ScePeerAbi {
     const val ERR_DRAWN_KEYS = 13
     const val ERR_NOT_OPENED = 14
     const val ERR_NO_RANDOMNESS = 15
+    const val ERR_GRANTED = 16
+    const val ERR_INVITATION = 17
+    const val ERR_NOT_JOINED = 18
     const val ERR_NULL_ARGUMENT = 20
     const val ERR_BAD_TEXT = 21
     const val ERR_PANIC = 22
@@ -126,6 +129,7 @@ interface ScePeerLib : Library {
     fun sce_peer_buf_free(buf: BufValue)
     fun sce_peer_open(list: String): Pointer?
     fun sce_peer_invited(list: String, genesis: ByteArray): Pointer?
+    fun sce_peer_invited_by(invitation: ByteArray, len: NativeLong): Pointer?
     fun sce_peer_free(peer: Pointer)
     fun sce_peer_set_identity(peer: Pointer, node: Long, seed: ByteArray): Int
     fun sce_peer_set_administrator(peer: Pointer, seed: ByteArray): Int
@@ -139,6 +143,11 @@ interface ScePeerLib : Library {
     fun sce_peer_outbound(peer: Pointer, event: String, data: String, kept: IntByReference, reason: Buf): Int
     fun sce_peer_start(peer: Pointer, kind: Int): Int
     fun sce_peer_login(peer: Pointer, audience: String): Int
+    fun sce_peer_invite(peer: Pointer, relay: String, audience: String, node: Long, nowMs: Long, validMs: Long, out: Buf): Int
+    fun sce_peer_invite_under(peer: Pointer, relay: String, audience: String, node: Long, nowMs: Long, validMs: Long, secret: ByteArray, out: Buf): Int
+    fun sce_peer_invitation_read(invitation: ByteArray, len: NativeLong, out: Buf): Int
+    fun sce_peer_join(peer: Pointer, invitation: ByteArray, len: NativeLong, fingerprint: Buf): Int
+    fun sce_peer_joined(peer: Pointer, node: Long, out: Buf): Int
     fun sce_peer_publish_checkpoint(peer: Pointer, before: Long, digest: Int): Int
     fun sce_peer_publish_key_package(peer: Pointer): Int
     fun sce_peer_poll_request(peer: Pointer, out: Buf): Int

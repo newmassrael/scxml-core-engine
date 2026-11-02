@@ -32,6 +32,13 @@
 //!   exchange over the same transport, made on a connection that presents no token, or one that
 //!   expired, whose outcome holds the token the relay issued ([`Outcome::token`]); the host gives the
 //!   token to its transport, which carries it, and the core holds none;
+//! - an administrator's device invites a device that is not in the log yet ([`Peer::invite`], ADR
+//!   0080 section 4): a text for a QR code that holds the relay's address, the signed invitation and
+//!   its secret, of which the core keeps the key the secret makes; the invited device joins with it
+//!   ([`Peer::join`]), leaving its identity key and its key package with a proof; and the
+//!   administrator's device admits only a key a proof under its invitation names
+//!   ([`Peer::joined`], [`Peer::add_member`], [`Peer::grant`]), after the two people compare the
+//!   fingerprint each device shows;
 //! - what the device stands at in the list (its person's role, the members, whether it waits for its
 //!   own chain, what the relay is still owed) is [`Peer::standing`];
 //! - what the device keeps between runs, its secrets with the rest, is one state sealed under a key
@@ -66,12 +73,17 @@ pub use sce_rust_relay::{drive, Driven, Exchange, Signal, Transport, TransportEr
 pub use sce_rust_relay::{CourierError, Kept, Publication, Round, RoundKind, Token};
 pub use sce_rust_trust::membership::{Hash, LogError, Profile, OWNER, READER, WRITER};
 
+use std::collections::BTreeMap;
+
 use sce_rust_mls::host::Issued;
 use sce_rust_relay::client::{floor_event, keep};
 use sce_rust_relay::{
-    CourierState, LinkError, LoginMachine, LoginStep, Request, Response, RoundMachine, Step,
+    CourierState, JoinMachine, JoinStep, LinkError, LoginMachine, LoginStep, Record, Request,
+    Response, RoundMachine, Step,
 };
 use sce_rust_trust::backup::{self, Contents};
+use sce_rust_trust::encoding;
+use sce_rust_trust::invitation::{self, Invitation, Ticket};
 use sce_rust_trust::membership::{Body, Entry};
 use sce_rust_trust::{Identity, PublicKey, Trust};
 use serde_json::{json, Value};
@@ -83,8 +95,10 @@ use serde_json::{json, Value};
 /// holds what the machine sent that waits to be signed ([`Peer::outbound`], [`Kept::Waiting`]),
 /// and what became of the sends that waited that a round did not hand over; the version is bound
 /// into the sealed state, so a core of version 3, which would open it and lose them, does not open
-/// it. A state of version 3 was written by this repository's tests alone, and is not read.
-pub const SAVE_VERSION: u64 = 4;
+/// it. Version 5 holds the invitations an administrator's device made and the joins under them it
+/// read ([`Peer::invite`], [`Peer::joined`]), which a core of version 4 would lose. States of
+/// versions 3 and 4 were written by this repository's tests alone, and are not read.
+pub const SAVE_VERSION: u64 = 5;
 
 /// The names under which the sealed state keeps what the core holds beside the person's key and the
 /// keys of the epochs ([`Trust::secrets`]).
@@ -123,14 +137,15 @@ pub struct Outcome {
 }
 
 impl Outcome {
-    /// What a login that came to `token` came to: a round that told the machine nothing.
-    fn of_login(token: Token, owed: usize) -> Self {
+    /// What a login that came to `token`, or a join (no token), came to: a round that told the
+    /// machine nothing.
+    fn of_exchange(token: Option<Token>, owed: usize) -> Self {
         Self {
             round: Round::default(),
             reread: None,
             steps: Vec::new(),
             owed,
-            token: Some(token),
+            token,
         }
     }
 
@@ -247,6 +262,80 @@ pub enum PeerError {
     /// core does not hand over, and taking one off with no new epoch would leave what is written
     /// after it readable by the device taken off.
     DrawnKeys,
+    /// The log has granted the device of this node already: an invitation is for a node it never
+    /// granted ([`Peer::invite`]).
+    Granted(u64),
+    /// An invitation that is not one, or one this core cannot make or join with, and why: a text
+    /// that is not an invitation's, another list or genesis than the core's, another node than its
+    /// person's, a lifetime past a day, a list not opened yet.
+    Invitation(String),
+    /// The device of this node was invited by this core, and no join under its invitation that a
+    /// round read names the key given with a proof that holds: a key package or a key the relay
+    /// made up, or a join not read yet ([`Peer::joined`]).
+    NotJoined(u64),
+}
+
+/// A device that joined under an invitation this core made, as [`Peer::joined`] tells it: the key
+/// it proved, and the digits the two people compare before the administrator's device admits it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JoinedDevice {
+    pub key: PublicKey,
+    pub fingerprint: String,
+}
+
+/// An invitation this core made: the key its secret makes, and when it expires.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Invited {
+    key: PublicKey,
+    expires_at_ms: u64,
+}
+
+/// A join a round read whose proof holds under an invitation this core made.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct JoinHeld {
+    /// The key of the invitation it was made under.
+    invitation_key: PublicKey,
+    /// The identity key it proved.
+    key: PublicKey,
+    /// Its key package, empty for a device that left none.
+    key_package: Vec<u8>,
+}
+
+/// The exchange of a challenge and a signed request under way instead of a round.
+enum Asking {
+    Login(Box<LoginMachine>),
+    Join(Box<JoinMachine>),
+}
+
+impl Asking {
+    fn is_asking(&self) -> bool {
+        match self {
+            Asking::Login(machine) => machine.is_asking(),
+            Asking::Join(machine) => machine.is_asking(),
+        }
+    }
+
+    fn respond(&mut self, answer: Result<Response, LinkError>) {
+        match self {
+            Asking::Login(machine) => machine.respond(answer),
+            Asking::Join(machine) => machine.respond(answer),
+        }
+    }
+
+    /// The request to put to the relay next, or what the exchange came to: the token of a login,
+    /// none for a join.
+    fn poll(&mut self) -> Result<Request, Result<Option<Token>, CourierError>> {
+        match self {
+            Asking::Login(machine) => match machine.poll() {
+                LoginStep::Request(request) => Ok(request),
+                LoginStep::Done(result) => Err(result.map(Some)),
+            },
+            Asking::Join(machine) => match machine.poll() {
+                JoinStep::Request(request) => Ok(request),
+                JoinStep::Done(result) => Err(result.map(|()| None)),
+            },
+        }
+    }
 }
 
 /// What [`Peer::save_sealed`] gives: the device's state, sealed, and the key it was sealed under.
@@ -276,6 +365,55 @@ struct Saved {
     trust: String,
     courier: CourierState,
     owed: Vec<Publication>,
+    invitations: BTreeMap<u64, Vec<Invited>>,
+    joins: BTreeMap<u64, Vec<JoinHeld>>,
+}
+
+/// The invitations a core made, as its state holds them: each node in decimal, the key in the URL
+/// alphabet and the expiry as text.
+fn invitations_value(invitations: &BTreeMap<u64, Vec<Invited>>) -> Value {
+    invitations
+        .iter()
+        .flat_map(|(node, invited)| {
+            invited.iter().map(move |one| {
+                json!({"node": node.to_string(), "key": one.key.to_text(),
+                       "expires_at_ms": one.expires_at_ms.to_string()})
+            })
+        })
+        .collect()
+}
+
+/// The joins a core holds, as its state holds them.
+fn joins_value(joins: &BTreeMap<u64, Vec<JoinHeld>>) -> Value {
+    joins
+        .iter()
+        .flat_map(|(node, held)| {
+            held.iter().map(move |join| {
+                json!({"node": node.to_string(),
+                       "invitation_key": join.invitation_key.to_text(),
+                       "key": join.key.to_text(),
+                       "key_package": encoding::encode(&join.key_package)})
+            })
+        })
+        .collect()
+}
+
+/// The rows of `name` in a saved state, each read by `read` with its node.
+fn read_rows<T>(
+    value: &Value,
+    name: &str,
+    read: impl Fn(&Value) -> Option<T>,
+) -> Option<BTreeMap<u64, Vec<T>>> {
+    let mut rows: BTreeMap<u64, Vec<T>> = BTreeMap::new();
+    for row in value.get(name)?.as_array()? {
+        let node = row.get("node")?.as_str()?.parse().ok()?;
+        rows.entry(node).or_default().push(read(row)?);
+    }
+    Some(rows)
+}
+
+fn key_in(row: &Value, name: &str) -> Option<PublicKey> {
+    PublicKey::from_text(row.get(name)?.as_str()?)
 }
 
 impl Saved {
@@ -311,11 +449,28 @@ impl Saved {
             .map(|entry| entry.as_str().and_then(Entry::from_json))
             .collect::<Option<Vec<Entry>>>()
             .ok_or_else(|| unreadable("an entry of its log is not one"))?;
+        let invitations = read_rows(&value, "invitations", |row| {
+            Some(Invited {
+                key: key_in(row, "key")?,
+                expires_at_ms: row.get("expires_at_ms")?.as_str()?.parse().ok()?,
+            })
+        })
+        .ok_or_else(|| unreadable("the invitations it holds are not ones"))?;
+        let joins = read_rows(&value, "joins", |row| {
+            Some(JoinHeld {
+                invitation_key: key_in(row, "invitation_key")?,
+                key: key_in(row, "key")?,
+                key_package: encoding::decode(row.get("key_package")?.as_str()?)?,
+            })
+        })
+        .ok_or_else(|| unreadable("the joins it holds are not ones"))?;
         Ok(Self {
             entries,
             trust,
             courier,
             owed,
+            invitations,
+            joins,
         })
     }
 }
@@ -379,9 +534,13 @@ pub struct Peer {
     /// The commits and Welcomes the administrator's acts made that the relay has not taken, in the
     /// order they were made.
     owed: Vec<Publication>,
-    /// A login under way ([`Self::login`]): an exchange of its own, which keeps nothing of the
-    /// relay's client and runs instead of a round.
-    login: Option<LoginMachine>,
+    /// A login ([`Self::login`]) or a join ([`Self::join`]) under way: an exchange of its own, which
+    /// keeps nothing of the relay's client and runs instead of a round.
+    asking: Option<Asking>,
+    /// The invitations this core made, by the node each is for ([`Self::invite`]).
+    invitations: BTreeMap<u64, Vec<Invited>>,
+    /// The joins a round read under them whose proof holds, by node ([`Self::joined`]).
+    joins: BTreeMap<u64, Vec<JoinHeld>>,
 }
 
 /// An exchange with the relay under way.
@@ -455,7 +614,9 @@ impl Peer {
             group: None,
             administrator: None,
             owed: Vec::new(),
-            login: None,
+            asking: None,
+            invitations: BTreeMap::new(),
+            joins: BTreeMap::new(),
         }
     }
 
@@ -560,6 +721,11 @@ impl Peer {
     /// its key package ([`Self::add_member`], [`PeerError::AdmittedThroughGroup`]): a grant alone
     /// would make the log's members differ from the group's, and every later commit would be
     /// refused for it. Another role for a member the group holds is a grant alone.
+    ///
+    /// A device this core invited ([`Self::invite`]) is granted only the key a join a round read
+    /// proved under the invitation ([`Self::joined`]), and [`PeerError::NotJoined`] otherwise: on a
+    /// list no group keys, the join leaves no key package, and its proof is what makes the key
+    /// the device's.
     pub fn grant(&mut self, node: u64, role: u8, key: PublicKey) -> Result<(), PeerError> {
         if !(READER..=OWNER).contains(&role) {
             return Err(PeerError::NoSuchRole(role));
@@ -568,12 +734,17 @@ impl Peer {
             .administrator
             .as_ref()
             .ok_or(PeerError::NoAdministrator)?;
-        if self.keying() == Keying::Group && !self.trust.current_members().contains(&(node, key)) {
+        let member_with_key = self.trust.current_members().contains(&(node, key));
+        if self.keying() == Keying::Group && !member_with_key {
             return Err(PeerError::AdmittedThroughGroup(node));
+        }
+        if !member_with_key {
+            self.joined_with(node, key)?;
         }
         self.trust
             .administer(administrator, self.trust.grant_body(node, role, key))
             .map_err(PeerError::Log)?;
+        self.admitted(node);
         Ok(())
     }
 
@@ -586,6 +757,11 @@ impl Peer {
     /// (`sce_rust_mls::host`). The entries go to the relay with the next round, and the commit and
     /// the device's Welcome after it ([`Outcome::owed`]): the relay keeps a commit only once its log
     /// names it.
+    ///
+    /// A device this core invited ([`Self::invite`]) is admitted only from the key package of a
+    /// join a round read whose proof holds under the invitation's key and names `key`
+    /// ([`Self::joined`]), and [`PeerError::NotJoined`] otherwise: a relay knows the invitation's
+    /// public key alone, and cannot make a proof for a key package of its own.
     pub fn add_member(&mut self, node: u64, role: u8, key: PublicKey) -> Result<(), PeerError> {
         if !(READER..=OWNER).contains(&role) {
             return Err(PeerError::NoSuchRole(role));
@@ -594,17 +770,260 @@ impl Peer {
             .administrator
             .as_ref()
             .ok_or(PeerError::NoAdministrator)?;
+        // A device this core invited is admitted from the key package of its join alone, and with
+        // the key its proof names: a key package the relay made up is under no proof that holds.
+        let invited = self
+            .joined_with(node, key)?
+            .map(|join| join.key_package.clone());
         let member = self.group.as_mut().ok_or(PeerError::NoGroupDevice)?;
-        let package = member
-            .key_packages_of(node)
-            .last()
-            .cloned()
-            .ok_or(PeerError::NoKeyPackage(node))?;
+        let package = match invited {
+            Some(package) if package.is_empty() => return Err(PeerError::NoKeyPackage(node)),
+            Some(package) => package,
+            None => member
+                .key_packages_of(node)
+                .last()
+                .cloned()
+                .ok_or(PeerError::NoKeyPackage(node))?,
+        };
         let issued = member
             .add_member(administrator, node, role, key, &package)
             .map_err(PeerError::Group)?;
         self.owe(issued, Some(node));
+        self.admitted(node);
         Ok(())
+    }
+
+    /// Invite the device of `node`, which the log has never granted, to the list at the relay whose
+    /// address is `relay` and whose name is `audience`, from `now_ms` (the host's clock) for
+    /// `valid_ms` (at most a day, [`invitation::MOST_MS`]) (ADR 0080 section 4). A secret is drawn
+    /// from the operating system, the key it makes is kept in the sealed state, and the invitation
+    /// is signed with the administrator's key the device holds. What is returned is the text a host
+    /// shows as a QR code: the relay's address, the invitation and the secret
+    /// ([`sce_rust_trust::invitation::Ticket`]); whoever holds it may join once, so it is shown and
+    /// not kept. The invitation is not withdrawn before it expires: its day is its bound.
+    pub fn invite(
+        &mut self,
+        relay: &str,
+        audience: &str,
+        node: u64,
+        now_ms: u64,
+        valid_ms: u64,
+    ) -> Result<String, PeerError> {
+        let secret = invitation::draw_secret().map_err(|_| PeerError::NoRandomness)?;
+        self.invite_under(relay, audience, node, now_ms, valid_ms, secret)
+    }
+
+    /// [`Self::invite`] with the secret `secret` the host gives: one it drew from a source of its
+    /// own, or a recording's fixed one.
+    pub fn invite_under(
+        &mut self,
+        relay: &str,
+        audience: &str,
+        node: u64,
+        now_ms: u64,
+        valid_ms: u64,
+        secret: [u8; 32],
+    ) -> Result<String, PeerError> {
+        if valid_ms == 0 || valid_ms > invitation::MOST_MS {
+            return Err(PeerError::Invitation(format!(
+                "an invitation lives from a millisecond to a day, and not {valid_ms} ms"
+            )));
+        }
+        let administrators = self.trust.administrators();
+        let administrator = self
+            .administrator
+            .as_ref()
+            .filter(|key| administrators.contains(&key.public()))
+            .ok_or(PeerError::NoAdministrator)?;
+        let genesis = self.trust.genesis().ok_or_else(|| {
+            PeerError::Invitation("the list is not open: the log holds no genesis".to_string())
+        })?;
+        if self.trust.has_granted(node) {
+            return Err(PeerError::Granted(node));
+        }
+        let expires_at_ms = now_ms.saturating_add(valid_ms);
+        let key = invitation::key_of(&secret).public();
+        let ticket = Ticket {
+            relay: relay.to_string(),
+            invitation: Invitation::sign(
+                administrator,
+                audience,
+                &self.list,
+                genesis,
+                node,
+                expires_at_ms,
+                key,
+            ),
+            secret,
+        };
+        let text = ticket
+            .to_text()
+            .map_err(|error| PeerError::Invitation(format!("{error:?}")))?;
+        self.forget_invitations(now_ms);
+        self.invitations
+            .entry(node)
+            .or_default()
+            .push(Invited { key, expires_at_ms });
+        Ok(text)
+    }
+
+    /// Begin the exchange that leaves the device's identity key, and its key package when the core
+    /// holds a device of the list's group, with the relay under the invitation `text` (ADR 0080
+    /// section 4): a challenge for the invitation's list and node, and a join proved with the key
+    /// its secret makes. The core is the one invited to the invitation's list with its genesis, and
+    /// its person is the invitation's node. The relay's name is the one the invitation carries, and
+    /// a relay that names itself otherwise is given nothing. Its outcome tells the machine nothing
+    /// and holds no token: the device logs in ([`Self::login`]) once the administrator's device
+    /// admits it. What is returned is the fingerprint the person compares with the one the
+    /// administrator's device shows ([`Self::joined`]).
+    pub fn join(&mut self, text: &str) -> Result<String, PeerError> {
+        self.ready()?;
+        let ticket =
+            Ticket::from_text(text).map_err(|error| PeerError::Invitation(format!("{error:?}")))?;
+        let (node, key) = self.trust.person().ok_or(PeerError::NoPerson)?;
+        let invitation = &ticket.invitation;
+        if invitation.list != self.list {
+            return Err(PeerError::Invitation(format!(
+                "the invitation is to the list `{}`, and this core holds `{}`",
+                invitation.list, self.list
+            )));
+        }
+        if self.trust.genesis_taken() != Some(invitation.genesis) {
+            return Err(PeerError::Invitation(
+                "the invitation names another genesis than the one this core takes".to_string(),
+            ));
+        }
+        if invitation.node != node {
+            return Err(PeerError::Invitation(format!(
+                "the invitation is for node {}, and the device's person is node {node}",
+                invitation.node
+            )));
+        }
+        let fingerprint = invitation::fingerprint(&self.list, node, &invitation.key, &key);
+        let key_package = match self.group.as_mut() {
+            None => Vec::new(),
+            Some(member) => member
+                .device_mut()
+                .key_package()
+                .map_err(PeerError::Group)?,
+        };
+        if let Some(running) = self.running.take() {
+            self.state = (*running).into_state();
+        }
+        self.asking = Some(Asking::Join(Box::new(JoinMachine::start(
+            ticket,
+            key,
+            key_package,
+        ))));
+        Ok(fingerprint)
+    }
+
+    /// The devices that joined under an invitation this core made for `node`, as the rounds read
+    /// them, each the key its proof names and the fingerprint the two people compare: what the
+    /// administrator's device shows before it admits one ([`Self::add_member`], [`Self::grant`]).
+    /// Empty when none was read, and once the node is admitted. Two are a relay that took two joins
+    /// of one invitation, or a person who photographed the code and raced the device: the
+    /// fingerprint tells which one is the device in front of the administrator.
+    pub fn joined(&self, node: u64) -> Vec<JoinedDevice> {
+        self.joins
+            .get(&node)
+            .map(|held| {
+                held.iter()
+                    .map(|join| JoinedDevice {
+                        key: join.key,
+                        fingerprint: invitation::fingerprint(
+                            &self.list,
+                            node,
+                            &join.invitation_key,
+                            &join.key,
+                        ),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// For a node this core invited, the join a round read whose proof names `key`, and
+    /// [`PeerError::NotJoined`] when there is none; `None` for a node it did not invite.
+    fn joined_with(&self, node: u64, key: PublicKey) -> Result<Option<&JoinHeld>, PeerError> {
+        if !self.invitations.contains_key(&node) {
+            return Ok(None);
+        }
+        self.joins
+            .get(&node)
+            .and_then(|held| held.iter().find(|join| join.key == key))
+            .map(Some)
+            .ok_or(PeerError::NotJoined(node))
+    }
+
+    /// The device of `node` was admitted: its invitations and joins are done with.
+    fn admitted(&mut self, node: u64) {
+        self.invitations.remove(&node);
+        self.joins.remove(&node);
+    }
+
+    /// Forget the invitations that expired a day or more before `now_ms` and that no join read
+    /// names: no relay takes a join under one, and a join it took before the expiry has had a day
+    /// to be read.
+    fn forget_invitations(&mut self, now_ms: u64) {
+        let joins = &self.joins;
+        self.invitations.retain(|node, invited| {
+            if !joins.contains_key(node) {
+                invited
+                    .retain(|one| one.expires_at_ms.saturating_add(invitation::MOST_MS) > now_ms);
+            }
+            !invited.is_empty()
+        });
+    }
+
+    /// Keep the joins `round` read whose proof holds under an invitation this core made for their
+    /// node; one under an invitation it made that does not hold is a refusal of the round. A join
+    /// for a node this core did not invite (another administrator's) is not its to judge.
+    fn take_joins(&mut self, round: &mut Round) {
+        let mut refused = Vec::new();
+        for record in &round.messages {
+            let Record::KeyPackage {
+                node,
+                data,
+                join: Some(join),
+            } = record
+            else {
+                continue;
+            };
+            let Some(invited) = self.invitations.get(node) else {
+                continue;
+            };
+            let package = if data.is_empty() {
+                Some(Vec::new())
+            } else {
+                encoding::decode(data).filter(|bytes| !bytes.is_empty())
+            };
+            let holds = invited.iter().any(|one| one.key == join.invitation.key)
+                && join.invitation.node == *node
+                && join.invitation.list == self.list
+                && package
+                    .as_ref()
+                    .is_some_and(|package| join.proof.holds(&join.invitation, package));
+            let Some(package) = package.filter(|_| holds) else {
+                refused.push(format!(
+                    "a key package of node {node} under no invitation this device made, or whose \
+                     proof does not hold under it, is not taken"
+                ));
+                continue;
+            };
+            let held = self.joins.entry(*node).or_default();
+            if !held
+                .iter()
+                .any(|kept| kept.key == join.proof.key && kept.key_package == package)
+            {
+                held.push(JoinHeld {
+                    invitation_key: join.invitation.key,
+                    key: join.proof.key,
+                    key_package: package,
+                });
+            }
+        }
+        round.refused.extend(refused);
     }
 
     /// Take the device of `node` off the list, ending its chain at the last operation of it the
@@ -730,7 +1149,10 @@ impl Peer {
         if let Some(running) = self.running.take() {
             self.state = (*running).into_state();
         }
-        self.login = Some(LoginMachine::start(self.trust.clone(), audience));
+        self.asking = Some(Asking::Login(Box::new(LoginMachine::start(
+            self.trust.clone(),
+            audience,
+        ))));
         Ok(())
     }
 
@@ -855,6 +1277,8 @@ impl Peer {
             "trust": self.trust.to_text(),
             "courier": state.to_text(),
             "owed": self.owed.iter().map(Publication::to_value).collect::<Vec<_>>(),
+            "invitations": invitations_value(&self.invitations),
+            "joins": joins_value(&self.joins),
         })
         .to_string()
     }
@@ -939,10 +1363,12 @@ impl Peer {
             self.group = group;
         }
         self.running = None;
-        self.login = None;
+        self.asking = None;
         self.outcome = None;
         self.state = saved.courier;
         self.owed = saved.owed;
+        self.invitations = saved.invitations;
+        self.joins = saved.joins;
         Ok(kept)
     }
 
@@ -1021,7 +1447,7 @@ impl Peer {
         if let Some(running) = self.running.take() {
             self.state = (*running).into_state();
         }
-        self.login = None;
+        self.asking = None;
         let state = std::mem::take(&mut self.state);
         self.running = Some(Box::new(Running {
             machine: make(state, self.trust.clone()),
@@ -1031,11 +1457,11 @@ impl Peer {
     }
 
     fn give_answer(&mut self, answer: Result<Response, LinkError>) -> Result<(), PeerError> {
-        if let Some(login) = self.login.as_mut() {
-            if !login.is_asking() {
+        if let Some(asking) = self.asking.as_mut() {
+            if !asking.is_asking() {
                 return Err(PeerError::NothingAsked);
             }
-            login.respond(answer);
+            asking.respond(answer);
             return Ok(());
         }
         let running = self.running.as_mut().ok_or(PeerError::NothingAsked)?;
@@ -1057,7 +1483,8 @@ impl Peer {
         let Running { machine, purpose } = *running;
         self.state = machine.into_state();
         let ended = match (purpose, result) {
-            (Purpose::Round, Ok(round)) => {
+            (Purpose::Round, Ok(mut round)) => {
+                self.take_joins(&mut round);
                 let steps = self
                     .group
                     .as_mut()
@@ -1083,7 +1510,8 @@ impl Peer {
                     token: None,
                 }
             }
-            (Purpose::Follow { first, mut steps }, Ok(again)) => {
+            (Purpose::Follow { first, mut steps }, Ok(mut again)) => {
+                self.take_joins(&mut again);
                 if let Some(member) = self.group.as_mut() {
                     steps.extend(member.take_round(&again));
                 }
@@ -1166,13 +1594,13 @@ impl Peer {
 /// it) is one exchange to the driver, whose outcome is taken with [`Peer::take_outcome`].
 impl Exchange for Peer {
     fn request(&mut self) -> Option<Request> {
-        if let Some(login) = self.login.as_mut() {
-            return match login.poll() {
-                LoginStep::Request(request) => Some(request),
-                LoginStep::Done(result) => {
-                    self.login = None;
+        if let Some(asking) = self.asking.as_mut() {
+            return match asking.poll() {
+                Ok(request) => Some(request),
+                Err(result) => {
+                    self.asking = None;
                     let owed = self.owed.len();
-                    self.outcome = Some(result.map(|token| Outcome::of_login(token, owed)));
+                    self.outcome = Some(result.map(|token| Outcome::of_exchange(token, owed)));
                     None
                 }
             };
