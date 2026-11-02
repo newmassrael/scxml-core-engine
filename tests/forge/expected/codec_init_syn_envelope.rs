@@ -199,7 +199,7 @@ impl CodecInitSynEnvelope {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecInitSynEnvelope::encode_source(self, w)
+        CodecInitSynEnvelopeWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -312,10 +312,17 @@ impl CodecInitSynEnvelopeSource for CodecInitSynEnvelope {
     }
 }
 
+/// The codec `CodecInitSynEnvelope` itself: what writes a value read through
+/// [`CodecInitSynEnvelopeSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecInitSynEnvelopeWire;
+
 #[allow(dead_code)]
-impl CodecInitSynEnvelope {
+impl CodecInitSynEnvelopeWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecInitSynEnvelope::encode` writes for the value it holds, read through
     /// [`CodecInitSynEnvelopeSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -333,15 +340,15 @@ impl CodecInitSynEnvelope {
     pub fn write_source<S: CodecInitSynEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         let _d_header_mid: u8 = src.body().tag();
         let _n_d_header_s_arm: usize = match src.body() {
-            CodecInitSynEnvelopeVariantSource::CodecInitSynBody(_b) => usize::from(CodecInitSynBody::input_s(_b)),
-            CodecInitSynEnvelopeVariantSource::Default { body: _b, .. } => usize::from(CodecInitSynBody::input_s(_b)),
+            CodecInitSynEnvelopeVariantSource::CodecInitSynBody(_b) => usize::from(super::codec_init_syn_body::CodecInitSynBodyWire::input_s(_b)),
+            CodecInitSynEnvelopeVariantSource::Default { body: _b, .. } => usize::from(super::codec_init_syn_body::CodecInitSynBodyWire::input_s(_b)),
         };
         let _v_header_s: u8 = _n_d_header_s_arm as u8;
         let _c_header: u8 = (((src.header() & !0x1F) | _d_header_mid) & !0x40) | (_v_header_s << 6);
         w.write_u8(_c_header)?;
         match src.body() {
-            CodecInitSynEnvelopeVariantSource::CodecInitSynBody(_b) => CodecInitSynBody::write_source(_b, w)?,
-            CodecInitSynEnvelopeVariantSource::Default { body: _b, .. } => CodecInitSynBody::write_source(_b, w)?,
+            CodecInitSynEnvelopeVariantSource::CodecInitSynBody(_b) => super::codec_init_syn_body::CodecInitSynBodyWire::write_source(_b, w)?,
+            CodecInitSynEnvelopeVariantSource::Default { body: _b, .. } => super::codec_init_syn_body::CodecInitSynBodyWire::write_source(_b, w)?,
         }
         Ok(())
     }
@@ -356,7 +363,7 @@ impl CodecInitSynEnvelope {
     }
 }
 
-impl<S: CodecInitSynEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecInitSynEnvelope {
+impl<S: CodecInitSynEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecInitSynEnvelopeWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -365,7 +372,7 @@ impl<S: CodecInitSynEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceW
 }
 
 #[allow(dead_code)]
-impl CodecInitSynEnvelope {
+impl CodecInitSynEnvelopeWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size

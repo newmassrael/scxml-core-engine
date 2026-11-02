@@ -123,7 +123,7 @@ impl CodecPresentIfBasic {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecPresentIfBasic::encode_source(self, w)
+        CodecPresentIfBasicWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -196,10 +196,17 @@ impl CodecPresentIfBasicSource for CodecPresentIfBasic {
     }
 }
 
+/// The codec `CodecPresentIfBasic` itself: what writes a value read through
+/// [`CodecPresentIfBasicSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecPresentIfBasicWire;
+
 #[allow(dead_code)]
-impl CodecPresentIfBasic {
+impl CodecPresentIfBasicWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecPresentIfBasic::encode` writes for the value it holds, read through
     /// [`CodecPresentIfBasicSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -230,7 +237,7 @@ impl CodecPresentIfBasic {
     }
 }
 
-impl<S: CodecPresentIfBasicSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecPresentIfBasic {
+impl<S: CodecPresentIfBasicSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecPresentIfBasicWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -239,7 +246,7 @@ impl<S: CodecPresentIfBasicSource + ?Sized> ::sce_forge_runtime::codec::SourceWr
 }
 
 #[allow(dead_code)]
-impl CodecPresentIfBasic {
+impl CodecPresentIfBasicWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size

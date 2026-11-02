@@ -280,8 +280,12 @@ fn streamed_fields(codec: &SizedCodec) -> Result<u64, Unbounded> {
                 body_bytes(codec, &site, alias)?.saturating_mul(u64::from(count))
             }
             BitSize::TlvChain { max_depth, .. } => {
+                let depth = max_depth.ok_or_else(|| Unbounded::Missing {
+                    subject: format!("field '{}' (a <sce:tlv-chain>)", field.id),
+                    declaration: "max-depth",
+                })?;
                 let alias = field.tlv_chain_body_alias.as_deref().unwrap_or_default();
-                body_bytes(codec, &site, alias)?.saturating_mul(u64::from(*max_depth))
+                body_bytes(codec, &site, alias)?.saturating_mul(u64::from(depth))
             }
             BitSize::Embed => {
                 let alias = field.embed_body_alias.as_deref().unwrap_or_default();

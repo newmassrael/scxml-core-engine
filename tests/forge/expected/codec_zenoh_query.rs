@@ -17,8 +17,6 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
-
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
@@ -273,7 +271,7 @@ impl<S: CodecZenohQueryStorage> CodecZenohQueryIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecZenohQuery::encode_source(self, w)
+        CodecZenohQueryWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -372,10 +370,17 @@ impl<S: CodecZenohQueryStorage> CodecZenohQuerySource for CodecZenohQueryOwned<S
     }
 }
 
+/// The codec `CodecZenohQuery` itself: what writes a value read through
+/// [`CodecZenohQuerySource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecZenohQueryWire;
+
 #[allow(dead_code)]
-impl<'a> CodecZenohQuery<'a> {
+impl CodecZenohQueryWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecZenohQuery::encode` writes for the value it holds, read through
     /// [`CodecZenohQuerySource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -409,7 +414,7 @@ impl<'a> CodecZenohQuery<'a> {
         }
         if let Some(_v) = src.extensions() {
             for _e in _v {
-                CodecZenohExtEntry::write_source(&_e, w)?;
+                super::codec_zenoh_ext_entry::CodecZenohExtEntryWire::write_source(&_e, w)?;
             }
         }
         Ok(())
@@ -425,7 +430,7 @@ impl<'a> CodecZenohQuery<'a> {
     }
 }
 
-impl<'a, S: CodecZenohQuerySource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohQuery<'a> {
+impl<S: CodecZenohQuerySource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohQueryWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -434,7 +439,7 @@ impl<'a, S: CodecZenohQuerySource + ?Sized> ::sce_forge_runtime::codec::SourceWr
 }
 
 #[allow(dead_code)]
-impl<'a> CodecZenohQuery<'a> {
+impl CodecZenohQueryWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -488,8 +493,11 @@ impl<'a> CodecZenohQuery<'a> {
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecZenohQuery<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecZenohQuery<'a> {
+impl<'a, D> CodecZenohQueryIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohQueryStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohQueryOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -530,8 +538,8 @@ impl<S: CodecZenohQueryStorage> CodecZenohQueryOwned<S> {
     /// more than its declared `N` raises `CodecError::TooManyElements` — the
     /// same bound decode enforces. Only a growable profile can hold such a
     /// list; on the inline profile the source is already within bounds.
-    pub fn try_as_borrowed(&self) -> Result<CodecZenohQuery<'_>, CodecError> {
-        let mut _out = CodecZenohQuery::default();
+    pub fn try_as_borrowed(&self) -> Result<CodecZenohQueryIn<::sce_forge_runtime::codec::Lent<'_, S>>, CodecError> {
+        let mut _out = Default::default();
         self.try_as_borrowed_into(&mut _out)?;
         Ok(_out)
     }
@@ -546,7 +554,7 @@ impl<S: CodecZenohQueryStorage> CodecZenohQueryOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohQuery<'o>) -> Result<(), CodecError> {
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohQueryIn<::sce_forge_runtime::codec::Lent<'o, S>>) -> Result<(), CodecError> {
         _out.header = self.header;
         _out.consolidation = self.consolidation;
         _out.parameters_len = self.parameters_len;

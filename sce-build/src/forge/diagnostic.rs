@@ -1757,16 +1757,6 @@ pub enum DiagnosticCode {
     #[serde(rename = "algorithm/test-vector-unsupported-kind")]
     AlgorithmTestVectorUnsupportedKind,
 
-    // ── §synth-5-B B3 TLV chain primitive (SCE Protocol-Synthesis RFC §synth-5-B) ──
-    //    `<sce:tlv-chain>` is MCU-class and the runtime decoder needs a
-    //    build-time bound to size its working set; missing `max-depth`
-    //    is rejected here. RFC line 488 "max-depth MUST be specified
-    //    for MCU targets" + line 533 "Iterative parse only; max-depth
-    //    lowers to a max-iter on the chain traversal loop". Repair is
-    //    structural — add `max-depth="N"` (N > 0). Stage = Validation. ──
-    #[serde(rename = "codec/tlv-chain-depth-unspecified")]
-    CodecTlvChainDepthUnspecified,
-
     // ── §synth-5-B B3 DMA alignment primitive (SCE Protocol-Synthesis RFC §synth-5-B) ──
     //    `sce:dma-burst-align="N"` requires the field's `sce:byte` be
     //    divisible by N AND every preceding field be Fixed bit-size
@@ -3999,8 +3989,6 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecRepeatCountRefsLaterField,
         // Algorithm §synth-5-B test-vector primitive (SCE Protocol-Synthesis RFC §synth-5-B, items B2 + B5)
         AlgorithmTestVectorUnsupportedKind,
-        // Codec §synth-5-B B3 TLV chain primitive (SCE Protocol-Synthesis RFC §synth-5-B)
-        CodecTlvChainDepthUnspecified,
         // Codec §synth-5-B B3 DMA alignment primitive (SCE Protocol-Synthesis RFC §synth-5-B)
         CodecDmaAlignmentUnsatisfiable,
         // Codec §synth-5-B peek-byte cross-codec layout match
@@ -4690,7 +4678,6 @@ impl DiagnosticCode {
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
-            | CodecTlvChainDepthUnspecified
             | CodecDmaAlignmentUnsatisfiable
             | CodecPeekByteFlagLayoutMismatch => Some("SCE Protocol-Synthesis RFC §5.B"),
 
@@ -5578,7 +5565,6 @@ impl DiagnosticCode {
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
-            | CodecTlvChainDepthUnspecified
             | CodecDmaAlignmentUnsatisfiable
             | CodecPeekByteFlagLayoutMismatch
             | LinkFramerMissing
@@ -6065,7 +6051,6 @@ impl DiagnosticCode {
             CodecPresentIfRefsLaterField => "codec/present-if-refs-later-field",
             CodecRepeatCountRefsLaterField => "codec/repeat-count-refs-later-field",
             AlgorithmTestVectorUnsupportedKind => "algorithm/test-vector-unsupported-kind",
-            CodecTlvChainDepthUnspecified => "codec/tlv-chain-depth-unspecified",
             CodecDmaAlignmentUnsatisfiable => "codec/dma-alignment-unsatisfiable",
             CodecPeekByteFlagLayoutMismatch => "codec/peek-byte-flag-layout-mismatch",
             LinkFramerMissing => "link/framer-missing",
@@ -8831,19 +8816,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(name.clone()),
             fix: None,
             key_fragments: vec![name.clone(), format!("{kind:?}")],
-        },
-        ValidationError::CodecTlvChainDepthUnspecified { codec, field } => DiagnosticPayload {
-            code: DiagnosticCode::CodecTlvChainDepthUnspecified,
-            stage: Stage::Validation,
-            // Repair is text-level (add `max-depth="N"`), but the
-            // candidate value is author-domain (depends on the protocol
-            // shape) so `fix` stays `None`. (codec, field) keys the
-            // violation across multiple <sce:tlv-chain> elements on the
-            // same codec.
-            expected: None,
-            actual: Some(field.clone()),
-            fix: None,
-            key_fragments: vec![codec.clone(), field.clone()],
         },
         ValidationError::CodecDmaAlignmentUnsatisfiable {
             codec,
@@ -16038,16 +16010,6 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:b10188077e684de4","code":"algorithm/test-vector-unsupported-kind","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"<sce:test-vector> is only supported on sce:kind=\"algorithm\" and sce:kind=\"codec\", but 'session_filter' declares sce:kind=\"Filter\" — move the test vector to an algorithm/codec file or use the kind-specific harness oracle","actual":"session_filter"}"#,
             ),
-            // ── §synth-5-B B3 TLV chain primitive (SCE Protocol-Synthesis RFC §synth-5-B) ─
-            (
-                "forge/codec-tlv-chain-depth-unspecified",
-                ValidationError::CodecTlvChainDepthUnspecified {
-                    codec: "session_envelope".into(),
-                    field: "extensions".into(),
-                }
-                .into(),
-                r#"{"v":1,"id":"fnv1a:569cbc9e420b26e4","code":"codec/tlv-chain-depth-unspecified","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': tlv-chain field 'extensions' is missing the required `max-depth` attribute — TLV chain decoders need a build-time bound to size their working set and enforce iterative-only parse (RFC §5.B line 488); add `max-depth=\"N\"` for some N > 0","actual":"extensions"}"#,
-            ),
             // ── §synth-5-B B3 DMA alignment primitive (SCE Protocol-Synthesis RFC §synth-5-B) ─
             (
                 "forge/codec-dma-alignment-unsatisfiable",
@@ -19557,7 +19519,6 @@ mod tests {
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
-            | CodecTlvChainDepthUnspecified
             | CodecDmaAlignmentUnsatisfiable
             | CodecPeekByteFlagLayoutMismatch
             | LinkFramerMissing
@@ -20372,7 +20333,6 @@ mod tests {
                 | CodecPresentIfRefsLaterField
                 | CodecRepeatCountRefsLaterField
                 | AlgorithmTestVectorUnsupportedKind
-                | CodecTlvChainDepthUnspecified
                     | CodecDmaAlignmentUnsatisfiable
                 | CodecPeekByteFlagLayoutMismatch
                 | LinkFramerMissing
@@ -20664,7 +20624,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            493,
+            492,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 493 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
@@ -21413,7 +21373,6 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
-            | CodecTlvChainDepthUnspecified
             | CodecDmaAlignmentUnsatisfiable
             | CodecPeekByteFlagLayoutMismatch
             | LinkFramerMissing

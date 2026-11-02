@@ -19,13 +19,13 @@ mutation_oracles sce-build/tests/forge_conformance.rs
 
 mutation_case "a list holds its bound whatever the deployment says" <<'PY'
 edit("sce-build/src/forge/model.rs",
-     r'''        self.capacity.unwrap_or_else(|| match &self.bit_size {
+     r'''        self.capacity.or(match &self.bit_size {
             BitSize::TlvChain { max_depth, .. } => *max_depth,
-            _ => crate::forge::limits::resolve_max_count(self.max_count),
+            _ => self.max_count,
         })''',
      r'''        match &self.bit_size {
             BitSize::TlvChain { max_depth, .. } => *max_depth,
-            _ => crate::forge::limits::resolve_max_count(self.max_count),
+            _ => self.max_count,
         }''')
 PY
 
@@ -61,6 +61,6 @@ PY
 
 mutation_case "a C11 list past its capacity is called too many" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''            "if ({n} > {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}"''',
-     r'''            "if ({n} > {capacity}) return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;\n{indent}"''')
+     r'''            format!("if ({n} > {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}")''',
+     r'''            format!("if ({n} > {capacity}) return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;\n{indent}")''')
 PY

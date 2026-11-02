@@ -251,7 +251,7 @@ pub(crate) fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
                 &m.name,
                 &e.id,
                 kind,
-                rust_owned_capacity(e),
+                Some(rust_owned_capacity(e)),
             ))
         })
         .collect()

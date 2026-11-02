@@ -135,6 +135,11 @@ pub struct {{ struct_name }} {
 {% endfor %}
 }
 
+/// What the codec's wire is written through, as every codec has: this value
+/// takes no profile, so it is this type (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub type {{ struct_name }}Wire = {{ struct_name }};
+
 #[allow(dead_code)]
 impl {{ struct_name }} {
     /// An instance with every value at its type's [`Default`] and every

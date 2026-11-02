@@ -935,7 +935,7 @@ fn a_codec_renders_every_field_it_can_carry() {
         byte_offset: 4,
         bit_offset: Some(2),
         bit_size: BitSize::TlvChain {
-            max_depth: 3,
+            max_depth: Some(3),
             terminate_on: TlvTerminateStrategy::EntryFlag {
                 flag_name: "more".to_string(),
             },
@@ -1126,7 +1126,7 @@ fn a_chain_identifier_that_leaves_flags_out_renders_one_line_per_flag() {
         byte_offset: 1,
         bit_offset: None,
         bit_size: BitSize::TlvChain {
-            max_depth: 4,
+            max_depth: Some(4),
             terminate_on: TlvTerminateStrategy::EntryFlag {
                 flag_name: "Z".to_string(),
             },

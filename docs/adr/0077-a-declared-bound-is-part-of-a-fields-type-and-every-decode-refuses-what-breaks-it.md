@@ -382,6 +382,24 @@ are one value held two ways. So:
   of its own, and a file that names a module the build leaves out does not compile. Neither the documents nor the deploy
   input know a build's layout, so the gate is an input of the file's generation, `--gate <codec>=<predicate>`, and a gate
   for a codec the set does not hold is refused.
+- **Step 4 for lists, as landed.** `max-count` and `max-depth` are optional, and nothing stands in for an absent one:
+  `CodecField::storage_entries` and `list_bound` answer `None`, where a default of 16 entries used to answer. A walk
+  with no bound loops until the chain or the frame ends, with no refusal past a depth and no reservation. What cannot
+  hold such a list says so by name: `Inline` has no impl for its tag, a deployment that gives it no capacity is
+  refused, C11 is refused without a capacity, and a Rust tree without views is refused, since its decode past a
+  capacity would judge the frame by the lent form, which holds lists as `Inline` does. A gated C11 chain wrote past its
+  array when a deployment's capacity was below the depth; it now refuses, as the ungated chain did. Byte and text
+  fields with no `sce:max-size` are the next landing.
+- **No generated item stands on the lent form at `Inline`.** The first run of a list with no bound found every static
+  of a borrowed codec, and its lent projections, on `{Codec}<'a>`, which is `Lent<'a, Inline>`: such a codec did not
+  compile anywhere, an MCU build with a deployment included. A codec's wire functions are on `{Codec}Wire`, a unit
+  type of each codec that takes no profile, and a parent, a view, a broadcast log and every form write through it. The
+  lent form's methods are written for `{Codec}In<Lent<'a, D>>` with `D: {Codec}Storage`, bounding `D` and not the
+  lent profile, since a bound on `Lent<'a, D>` in a `where` clause shadows its impls and its fields' types stop
+  normalizing. An owned value re-borrows to `{Codec}In<Lent<'_, S>>`, its lists as `S` holds them; it was re-borrowed
+  into `Inline`'s lists, which refused one past its bound. `{Codec}<'a>` stays the eager form at `Inline` for a codec
+  that has one, and only using it on a codec with a list of no bound fails to compile, as this section says of
+  `Inline`.
 - **Inline only, so far.** A deployment holds every field inline. A heap node's policy limit, which this section counts
   as a capacity, needs a growable container that refuses past a number; `HeapBytes<N>` treats `N` as advisory, and
   the algorithm kind relies on that. It is a landing of its own, with a key in the deploy input saying which kind of

@@ -1,0 +1,66 @@
+# Mutation cases for "a list states its bound only where the protocol does".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_list_states_its_bound_only_where_the_protocol_does.cases`.
+#
+# A `<sce:repeat>` with no `max-count` and a `<sce:tlv-chain>` with no `max-depth`
+# have no bound, and nothing stands in for one (docs/adr/0077 §7): the walk reads
+# to its end, Rust holds the list at `{ usize::MAX }`, and what cannot hold it
+# (`Inline`, a deployment with no capacity for it, C11 with none, a Rust tree with
+# no views) says so by name. A defect here is a list cut at a number no document
+# states, or a form that compiles holding a list it cannot hold.
+#
+# The oracle is `sce-build/tests/forge_conformance.rs`: a chain and a list of
+# twenty entries read on a growing profile, in a view and on a deployment of two,
+# and the refusals of each form that cannot hold them.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test forge_conformance
+mutation_targets sce-build/src/forge/generator.rs sce-build/src/forge/codec_totality.rs sce-build/src/forge/deployment.rs
+mutation_oracles sce-build/tests/forge_conformance.rs
+
+# A Rust chain with no depth walked to a count anyway stops at that count and
+# calls the rest of the frame an entry past its depth. Killed by
+# `a_list_with_no_bound_reads_what_its_frame_holds` (twenty entries).
+mutation_case "a Rust chain with no depth is walked to sixteen" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        (Language::Rust, None) => "loop {".to_string(),''',
+     r'''        (Language::Rust, None) => "for _ in 0..16u32 {".to_string(),''')
+PY
+
+# A Rust list with no bound held at a number refuses a list past it. Killed by
+# `a_list_with_no_bound_reads_what_its_frame_holds` (twenty entries).
+mutation_case "a Rust list with no bound is held at sixteen" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''        None => "{ usize::MAX }".to_string(),''',
+     r'''        None => "16".to_string(),''')
+PY
+
+# A Rust tree with no views judges a frame past a capacity by a form that holds
+# lists at their bound, which a list with no bound does not compile into. Killed by
+# `what_cannot_hold_a_list_with_no_bound_refuses_it` (the refusal names `--views`).
+mutation_case "a Rust tree with no views takes a list with no bound" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    if matches!(lang, crate::generator::Language::Rust) && !views {''',
+     r'''    if matches!(lang, crate::generator::Language::Rust) && !views && false {''')
+PY
+
+# C11 holds every list in an array of its capacity, so a list with neither a bound
+# nor a capacity has none. Killed by `what_cannot_hold_a_list_with_no_bound_refuses_it`
+# (`codec/capacity-invalid`).
+mutation_case "C11 takes a list it holds no number of" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        c11_refuse_a_list_it_cannot_hold(m)?;''',
+     r'''        let _ = c11_refuse_a_list_it_cannot_hold;''')
+PY
+
+# A deployment holds every field inline, so a field with no bound needs a capacity
+# from it. Killed by `what_cannot_hold_a_list_with_no_bound_refuses_it` (`needs a
+# capacity`).
+mutation_case "a deployment takes a field it holds no number of" <<'PY'
+edit("sce-build/src/forge/deployment.rs",
+     r'''        if let Some(unheld) = fields.iter().find(|f| f["capacity"].is_null()) {''',
+     r'''        if let Some(unheld) = fields.iter().find(|_| false) {''')
+PY

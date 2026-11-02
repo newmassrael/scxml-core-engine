@@ -73,18 +73,19 @@ impl Rng {
 /// Returns whether the frame decoded. `$canonical` is whether the frame is one a
 /// document gives, which the encode must reproduce.
 ///
+/// `$wire` is the type the codec's wire is written through, `{Codec}Wire`.
 /// `[$view]` and `[$owned]` are the codec's view and owned form when it has
 /// them: a form is another representation of the value, so the frame decodes to
 /// it exactly when it decodes to the builder, and the encode of it is the
 /// builder's.
 macro_rules! agree {
-    ($ty:ty, $frame:expr, $canonical:expr, [$($view:ty)?], [$($owned:ty)?]) => {{
+    ($ty:ty, $wire:ty, $frame:expr, $canonical:expr, [$($view:ty)?], [$($owned:ty)?]) => {{
         let frame: &[u8] = $frame;
         match <$ty>::decode(&mut SceCursor::new(frame)) {
             Ok(value) => {
                 let mut by_source = Vec::new();
                 let verdict =
-                    <$ty>::encode_source(&value, &mut VecSink::new(&mut by_source)).answer();
+                    <$wire>::encode_source(&value, &mut VecSink::new(&mut by_source)).answer();
                 // The method is the function, applied to the value.
                 let mut by_method = Vec::new();
                 assert_eq!(
@@ -98,13 +99,13 @@ macro_rules! agree {
                 // value the encode refuses has no length (docs/adr/0061). The
                 // window is filled twice with different bytes, so a byte left
                 // unwritten cannot pass for one that matched.
-                match <$ty>::measure(&value).answer() {
+                match <$wire>::measure(&value).answer() {
                     Ok(measured) => {
                         assert!(verdict.is_ok(), "measure admits a value encode refuses, frame {frame:02x?}");
                         assert_eq!(measured.len(), by_source.len(), "measure counts other bytes, frame {frame:02x?}");
                         for fill in [0x00u8, 0xFF] {
                             let mut window = vec![fill; by_source.len()];
-                            <$ty>::measure(&value).answer().unwrap().write_into(&mut window);
+                            <$wire>::measure(&value).answer().unwrap().write_into(&mut window);
                             assert_eq!(window, by_source, "the window holds other bytes, frame {frame:02x?}");
                         }
                     }
@@ -120,7 +121,7 @@ macro_rules! agree {
                 // short. It leaves a prefix on an error, so nothing is claimed
                 // of what it holds then.
                 let mut roomy = vec![0xA5u8; by_source.len() + 8];
-                let windowed = <$ty>::write_window(&value, &mut roomy);
+                let windowed = <$wire>::write_window(&value, &mut roomy);
                 assert_eq!(
                     windowed.map(|_| ()),
                     verdict,
@@ -132,7 +133,7 @@ macro_rules! agree {
                     if !by_source.is_empty() {
                         let mut tight = vec![0u8; by_source.len() - 1];
                         assert_eq!(
-                            <$ty>::write_window(&value, &mut tight),
+                            <$wire>::write_window(&value, &mut tight),
                             Err(::sce_forge_runtime::codec::CodecError::BufferOverflow),
                             "write_window fits a window a byte short, frame {frame:02x?}"
                         );
@@ -144,7 +145,7 @@ macro_rules! agree {
                         panic!("the encode writes undecodable bytes for frame {frame:02x?}: {e:?}")
                     });
                     let mut by_again = Vec::new();
-                    <$ty>::encode_source(&again, &mut VecSink::new(&mut by_again))
+                    <$wire>::encode_source(&again, &mut VecSink::new(&mut by_again))
                         .answer()
                         .unwrap_or_else(|e| {
                             panic!("the encode refuses its own frame, from frame {frame:02x?}: {e:?}")
@@ -171,7 +172,7 @@ macro_rules! agree {
                     });
                     let mut by_view = Vec::new();
                     let from_view =
-                        <$ty>::encode_source(&viewed, &mut VecSink::new(&mut by_view)).answer();
+                        <$wire>::encode_source(&viewed, &mut VecSink::new(&mut by_view)).answer();
                     assert_eq!(
                         from_view, verdict,
                         "a view answers another verdict for frame {frame:02x?}"
@@ -181,8 +182,8 @@ macro_rules! agree {
                         "a view writes other bytes for frame {frame:02x?}"
                     );
                     assert_eq!(
-                        <$ty>::measure(&viewed).answer().map(|m| m.len()),
-                        <$ty>::measure(&value).answer().map(|m| m.len()),
+                        <$wire>::measure(&viewed).answer().map(|m| m.len()),
+                        <$wire>::measure(&value).answer().map(|m| m.len()),
                         "a view is another length for frame {frame:02x?}"
                     );
                 )?
@@ -192,7 +193,7 @@ macro_rules! agree {
                     });
                     let mut by_owned = Vec::new();
                     let from_owned =
-                        <$ty>::encode_source(&owned, &mut VecSink::new(&mut by_owned)).answer();
+                        <$wire>::encode_source(&owned, &mut VecSink::new(&mut by_owned)).answer();
                     assert_eq!(
                         from_owned, verdict,
                         "an owned form answers another verdict for frame {frame:02x?}"
@@ -221,7 +222,7 @@ macro_rules! agree {
 /// seeded random frames drawn from `pool`; for each the decode accepts, its
 /// prefixes and its one-byte changes. Returns how many frames were accepted.
 macro_rules! sweep {
-    ($ty:ty, $pool:expr, $seeds:expr, [$($view:ty)?], [$($owned:ty)?]) => {{
+    ($ty:ty, $wire:ty, $pool:expr, $seeds:expr, [$($view:ty)?], [$($owned:ty)?]) => {{
         let pool: &[u8] = $pool;
         let mut seeds: Vec<Vec<u8>> = $seeds;
         // The frames the document gives are frames of it: each one decodes, and
@@ -251,7 +252,7 @@ macro_rules! sweep {
         let frames: Vec<Vec<u8>> = seeds.into_iter().chain(random).collect();
         let mut accepted = 0usize;
         for (index, frame) in frames.iter().enumerate() {
-            let decoded = agree!($ty, frame, index < given, [$($view)?], [$($owned)?]);
+            let decoded = agree!($ty, $wire, frame, index < given, [$($view)?], [$($owned)?]);
             assert!(
                 decoded || index >= given,
                 "a seed frame is not a frame of the codec: {frame:02x?}"
@@ -259,13 +260,13 @@ macro_rules! sweep {
             if decoded {
                 accepted += 1;
                 for cut in 0..frame.len() {
-                    agree!($ty, &frame[..cut], false, [$($view)?], [$($owned)?]);
+                    agree!($ty, $wire, &frame[..cut], false, [$($view)?], [$($owned)?]);
                 }
                 for at in 0..frame.len() {
                     for &b in pool {
                         let mut changed = frame.clone();
                         changed[at] = b;
-                        agree!($ty, &changed, false, [$($view)?], [$($owned)?]);
+                        agree!($ty, $wire, &changed, false, [$($view)?], [$($owned)?]);
                     }
                 }
             }
@@ -276,11 +277,11 @@ macro_rules! sweep {
 
 /// One generated test: the codec `$name` as the module `build.rs` included it.
 macro_rules! sweep_codec {
-    ($name:ident, $ty:ty, $pool:expr, $seeds:expr, [$($view:ty)?], [$($owned:ty)?]) => {
+    ($name:ident, $ty:ty, $wire:ty, $pool:expr, $seeds:expr, [$($view:ty)?], [$($owned:ty)?]) => {
         #[test]
         #[allow(non_snake_case)]
         fn $name() {
-            let accepted = sweep!($ty, $pool, $seeds, [$($view)?], [$($owned)?]);
+            let accepted = sweep!($ty, $wire, $pool, $seeds, [$($view)?], [$($owned)?]);
             assert!(
                 accepted > 0,
                 "no frame of {} was accepted, so nothing was compared",
@@ -297,7 +298,7 @@ include!(concat!(env!("OUT_DIR"), "/source_sweeps.rs"));
 // interface: the sender keeps its entries in its own type and no builder is
 // filled to send them.
 mod foreign {
-    use super::codecs::codec_repeat_basic::{CodecRepeatBasic, CodecRepeatBasicSource};
+    use super::codecs::codec_repeat_basic::{CodecRepeatBasicSource, CodecRepeatBasicWire};
     use super::codecs::codec_repeat_elem::CodecRepeatElemSource;
     use sce_forge_runtime::codec::{Bounded, BoundedIter, VecSink};
 
@@ -324,7 +325,8 @@ mod foreign {
     fn a_foreign_source_is_encoded_with_its_count_derived() {
         let frags = Bounded::new(vec![1, 2, 3]).expect("within 32");
         let mut bytes = Vec::new();
-        CodecRepeatBasic::encode_source(&Fragments(frags), &mut VecSink::new(&mut bytes)).unwrap();
+        CodecRepeatBasicWire::encode_source(&Fragments(frags), &mut VecSink::new(&mut bytes))
+            .unwrap();
         assert_eq!(bytes, [3, 0, 1, 0, 2, 0, 3]);
     }
 
@@ -341,12 +343,14 @@ mod foreign {
 // the types a caller already has, lists as slices and bodies as references, and
 // is encoded by the same function as every other source.
 mod parts {
-    use super::codecs::codec_embed_basic::{CodecEmbedBasic, CodecEmbedBasicParts};
-    use super::codecs::codec_repeat_basic::{CodecRepeatBasic, CodecRepeatBasicParts};
+    use super::codecs::codec_embed_basic::{
+        CodecEmbedBasic, CodecEmbedBasicParts, CodecEmbedBasicWire,
+    };
+    use super::codecs::codec_repeat_basic::{CodecRepeatBasicParts, CodecRepeatBasicWire};
     use super::codecs::codec_repeat_elem::CodecRepeatElemParts;
     use super::codecs::codec_variant_dispatch::{
         CodecVariantDispatch, CodecVariantDispatchParts, CodecVariantDispatchPartsBody,
-        CodecVariantDispatchUnknownTag,
+        CodecVariantDispatchUnknownTag, CodecVariantDispatchWire,
     };
     use super::codecs::codec_variant_session_close::CodecVariantSessionCloseParts;
     use super::codecs::codec_variant_session_open::CodecVariantSessionOpenParts;
@@ -361,7 +365,7 @@ mod parts {
             CodecRepeatElemParts { seq: 3 },
         ];
         let mut bytes = Vec::new();
-        CodecRepeatBasic::encode_source(
+        CodecRepeatBasicWire::encode_source(
             &CodecRepeatBasicParts {
                 frags: (&entries).into(),
             },
@@ -392,7 +396,7 @@ mod parts {
         let source = CodecRepeatBasicParts {
             frags: (&entries).into(),
         };
-        let measured = CodecRepeatBasic::measure(&source);
+        let measured = CodecRepeatBasicWire::measure(&source);
         assert_eq!(measured.len(), 7);
         let mut slot = [0xEEu8; 9];
         measured.write_into(&mut slot[1..8]);
@@ -405,7 +409,7 @@ mod parts {
         let close = CodecVariantSessionCloseParts { reason: 4 };
         let write = |body| {
             let mut bytes = Vec::new();
-            CodecVariantDispatch::encode_source(
+            CodecVariantDispatchWire::encode_source(
                 &CodecVariantDispatchParts { body },
                 &mut VecSink::new(&mut bytes),
             )
@@ -445,7 +449,7 @@ mod parts {
     fn a_value_says_the_tag_of_the_arm_it_holds() {
         let open = CodecVariantSessionOpenParts { version: 7 };
         let close = CodecVariantSessionCloseParts { reason: 4 };
-        let tag_of = |body| CodecVariantDispatch::tag_of(&CodecVariantDispatchParts { body });
+        let tag_of = |body| CodecVariantDispatchWire::tag_of(&CodecVariantDispatchParts { body });
         assert_eq!(
             tag_of(CodecVariantDispatchPartsBody::CodecVariantSessionOpen(
                 &open
@@ -468,7 +472,7 @@ mod parts {
         for frame in [[1u8, 0, 7].as_slice(), &[2, 4], &[9, 4]] {
             let decoded =
                 CodecVariantDispatch::decode(&mut SceCursor::new(frame)).expect("a frame");
-            assert_eq!(CodecVariantDispatch::tag_of(&decoded), frame[0]);
+            assert_eq!(CodecVariantDispatchWire::tag_of(&decoded), frame[0]);
         }
     }
 
@@ -483,7 +487,7 @@ mod parts {
             locator: &locator,
         };
         let mut bytes = Vec::new();
-        CodecEmbedBasic::encode_source(&source, &mut VecSink::new(&mut bytes)).unwrap();
+        CodecEmbedBasicWire::encode_source(&source, &mut VecSink::new(&mut bytes)).unwrap();
         let decoded = CodecEmbedBasic::decode(&mut SceCursor::new(&bytes)).unwrap();
         assert_eq!(decoded.tag, 5);
         let mut again = Vec::new();
@@ -500,17 +504,19 @@ mod parts {
 // refusal stays only where a value handed from elsewhere can disagree.
 mod said_inputs {
     use super::codecs::codec_chain_prev_carrier::{
-        CodecChainPrevCarrier, CodecChainPrevCarrierEntriesLaw, CodecChainPrevCarrierParts,
+        CodecChainPrevCarrierEntriesLaw, CodecChainPrevCarrierParts, CodecChainPrevCarrierWire,
     };
     use super::codecs::codec_chain_prev_entry::{
         CodecChainPrevEntryAfterMarker, CodecChainPrevEntryParts,
     };
-    use super::codecs::codec_zenoh_decl_token::{CodecZenohDeclToken, CodecZenohDeclTokenParts};
-    use super::codecs::codec_zenoh_interest_body::{
-        CodecZenohInterestBody, CodecZenohInterestBodyParts,
+    use super::codecs::codec_zenoh_decl_token::{
+        CodecZenohDeclTokenParts, CodecZenohDeclTokenWire,
     };
-    use super::codecs::codec_zenoh_open_body::{CodecZenohOpenBody, CodecZenohOpenBodyParts};
-    use super::codecs::codec_zenoh_wireexpr::{CodecZenohWireexpr, CodecZenohWireexprParts};
+    use super::codecs::codec_zenoh_interest_body::{
+        CodecZenohInterestBodyParts, CodecZenohInterestBodyWire,
+    };
+    use super::codecs::codec_zenoh_open_body::{CodecZenohOpenBodyParts, CodecZenohOpenBodyWire};
+    use super::codecs::codec_zenoh_wireexpr::{CodecZenohWireexprParts, CodecZenohWireexprWire};
     use sce_forge_runtime::codec::{Bounded, Lawful, VecSink};
 
     fn wireexpr(suffix: Option<&str>) -> CodecZenohWireexprParts<'_> {
@@ -522,16 +528,18 @@ mod said_inputs {
 
     #[test]
     fn an_input_is_set_exactly_when_the_one_field_it_gates_is_there() {
-        assert!(CodecZenohWireexpr::input_n(&wireexpr(Some("a"))));
-        assert!(!CodecZenohWireexpr::input_n(&wireexpr(None)));
+        assert!(CodecZenohWireexprWire::input_n(&wireexpr(Some("a"))));
+        assert!(!CodecZenohWireexprWire::input_n(&wireexpr(None)));
         // `open_body` gates its cookie on `!A`: the input is set where it is absent.
         let open = |cookie| CodecZenohOpenBodyParts {
             lease: 1,
             initial_sn: 2,
             cookie,
         };
-        assert!(CodecZenohOpenBody::input_a(&open(None)));
-        assert!(!CodecZenohOpenBody::input_a(&open(Some((&[1u8]).into()))));
+        assert!(CodecZenohOpenBodyWire::input_a(&open(None)));
+        assert!(!CodecZenohOpenBodyWire::input_a(&open(Some(
+            (&[1u8]).into()
+        ))));
     }
 
     #[test]
@@ -539,7 +547,7 @@ mod said_inputs {
         for suffix in [Some("a"), None] {
             let body = wireexpr(suffix);
             assert_eq!(
-                CodecZenohDeclToken::input_n(&CodecZenohDeclTokenParts {
+                CodecZenohDeclTokenWire::input_n(&CodecZenohDeclTokenParts {
                     id: 1,
                     wireexpr: &body,
                 }),
@@ -553,7 +561,7 @@ mod said_inputs {
         let encode = |parts: &CodecZenohInterestBodyParts<'_>| {
             let mut bytes = Vec::new();
             let Ok(()) =
-                CodecZenohInterestBody::encode_source(parts, &mut VecSink::new(&mut bytes));
+                CodecZenohInterestBodyWire::encode_source(parts, &mut VecSink::new(&mut bytes));
             bytes
         };
         // The value presents `N` clear; the body has a suffix, so the frame sets it.
@@ -618,7 +626,8 @@ mod said_inputs {
             entries: list(true).expect("the entry says the start"),
         };
         let mut bytes = Vec::new();
-        let Ok(()) = CodecChainPrevCarrier::encode_source(&carrier, &mut VecSink::new(&mut bytes));
+        let Ok(()) =
+            CodecChainPrevCarrierWire::encode_source(&carrier, &mut VecSink::new(&mut bytes));
         assert_eq!(bytes, [0x01, 0x01, 5, 9]);
     }
 }
@@ -628,10 +637,10 @@ mod said_inputs {
 mod some_arms_say {
     use super::codecs::codec_every_arm_says_near::CodecEveryArmSaysNearParts;
     use super::codecs::codec_some_arms_say::{
-        CodecSomeArmsSay, CodecSomeArmsSayParts, CodecSomeArmsSayPartsBody as Body,
+        CodecSomeArmsSayParts, CodecSomeArmsSayPartsBody as Body, CodecSomeArmsSayWire,
     };
     use super::codecs::codec_some_arms_say_parent::{
-        CodecSomeArmsSayParent, CodecSomeArmsSayParentParts,
+        CodecSomeArmsSayParentParts, CodecSomeArmsSayParentWire,
     };
     use super::codecs::codec_some_arms_say_plain::CodecSomeArmsSayPlainParts;
     use sce_forge_runtime::codec::{Bounded, CodecError, VecSink};
@@ -642,13 +651,14 @@ mod some_arms_say {
             body: value,
         };
         let mut bytes = Vec::new();
-        let answer = CodecSomeArmsSayParent::encode_source(&parent, &mut VecSink::new(&mut bytes));
+        let answer =
+            CodecSomeArmsSayParentWire::encode_source(&parent, &mut VecSink::new(&mut bytes));
         (answer, bytes)
     }
 
     #[test]
     fn the_input_is_the_arms_and_none_from_an_arm_that_does_not_read_it() {
-        let says = |body| CodecSomeArmsSay::input_n(&CodecSomeArmsSayParts { body });
+        let says = |body| CodecSomeArmsSayWire::input_n(&CodecSomeArmsSayParts { body });
         let with = CodecEveryArmSaysNearParts {
             id: 7,
             suffix: Some(Bounded::new(&b"a"[..]).expect("within the bound")),
@@ -696,12 +706,12 @@ mod some_arms_say {
 // binds to the input from it. The arms say it at opposite polarities.
 mod every_arm_says {
     use super::codecs::codec_every_arm_says::{
-        CodecEveryArmSays, CodecEveryArmSaysParts, CodecEveryArmSaysPartsBody,
+        CodecEveryArmSaysParts, CodecEveryArmSaysPartsBody, CodecEveryArmSaysWire,
     };
     use super::codecs::codec_every_arm_says_far::CodecEveryArmSaysFarParts;
     use super::codecs::codec_every_arm_says_near::CodecEveryArmSaysNearParts;
     use super::codecs::codec_every_arm_says_parent::{
-        CodecEveryArmSaysParent, CodecEveryArmSaysParentParts,
+        CodecEveryArmSaysParent, CodecEveryArmSaysParentParts, CodecEveryArmSaysParentWire,
     };
     use sce_forge_runtime::codec::{Bounded, SceCursor, VecSink};
 
@@ -722,13 +732,14 @@ mod every_arm_says {
             body: value,
         };
         let mut bytes = Vec::new();
-        let Ok(()) = CodecEveryArmSaysParent::encode_source(&parent, &mut VecSink::new(&mut bytes));
+        let Ok(()) =
+            CodecEveryArmSaysParentWire::encode_source(&parent, &mut VecSink::new(&mut bytes));
         bytes
     }
 
     #[test]
     fn the_input_is_the_one_the_arm_it_holds_says() {
-        let says = |body| CodecEveryArmSays::input_n(&CodecEveryArmSaysParts { body });
+        let says = |body| CodecEveryArmSaysWire::input_n(&CodecEveryArmSaysParts { body });
         let with = near(Some(b"a"));
         assert!(says(CodecEveryArmSaysPartsBody::CodecEveryArmSaysNear(
             &with
@@ -793,18 +804,18 @@ mod every_arm_says {
 // while its content is absent is held on the side where it is.
 mod groups {
     use super::codecs::codec_chain_flag_entry::{
-        CodecChainFlagEntry, CodecChainFlagEntryParts, CodecChainFlagEntryWide,
+        CodecChainFlagEntryParts, CodecChainFlagEntryWide, CodecChainFlagEntryWire,
     };
     use super::codecs::codec_init_syn_body::{
-        CodecInitSynBody, CodecInitSynBodyParts, CodecInitSynBodyS,
+        CodecInitSynBody, CodecInitSynBodyParts, CodecInitSynBodyS, CodecInitSynBodyWire,
     };
     use super::codecs::codec_present_if_length_ref::{
-        CodecPresentIfLengthRef, CodecPresentIfLengthRefFlagsHasPayload as HasPayload,
-        CodecPresentIfLengthRefParts,
+        CodecPresentIfLengthRefFlagsHasPayload as HasPayload, CodecPresentIfLengthRefParts,
+        CodecPresentIfLengthRefWire,
     };
     use super::codecs::codec_zenoh_value_slice::CodecZenohValueSliceParts;
     use super::codecs::codec_zenoh_value_zbuf::{
-        CodecZenohValueZbuf, CodecZenohValueZbufAfterShm as AfterShm, CodecZenohValueZbufParts,
+        CodecZenohValueZbufAfterShm as AfterShm, CodecZenohValueZbufParts, CodecZenohValueZbufWire,
     };
     use sce_forge_runtime::codec::{Bounded, SceCursor, VecSink};
 
@@ -815,10 +826,10 @@ mod groups {
             sn_res: 0x33,
             batch_size: 0xCAFE,
         }));
-        assert!(CodecInitSynBody::input_s(&with));
-        assert!(!CodecInitSynBody::input_s(&syn(None)));
+        assert!(CodecInitSynBodyWire::input_s(&with));
+        assert!(!CodecInitSynBodyWire::input_s(&syn(None)));
         let mut bytes = Vec::new();
-        let Ok(()) = CodecInitSynBody::encode_source(&with, &mut VecSink::new(&mut bytes));
+        let Ok(()) = CodecInitSynBodyWire::encode_source(&with, &mut VecSink::new(&mut bytes));
         assert_eq!(bytes, [1, 0x33, 0xCA, 0xFE]);
         let decoded = CodecInitSynBody::decode(&mut SceCursor::new(&bytes), 1).expect("a frame");
         assert_eq!(decoded.s, with.s);
@@ -829,10 +840,10 @@ mod groups {
     #[test]
     fn an_input_two_sides_decide_is_the_side_the_value_holds() {
         let entry = |wide| CodecChainFlagEntryParts { header: 0x01, wide };
-        assert!(CodecChainFlagEntry::input_wide(&entry(
+        assert!(CodecChainFlagEntryWire::input_wide(&entry(
             CodecChainFlagEntryWide::Wide { long_value: 0x1234 }
         )));
-        assert!(!CodecChainFlagEntry::input_wide(&entry(
+        assert!(!CodecChainFlagEntryWire::input_wide(&entry(
             CodecChainFlagEntryWide::NotWide { short_value: 0x12 }
         )));
     }
@@ -841,7 +852,7 @@ mod groups {
     fn a_stated_length_is_held_on_the_side_without_its_content() {
         let encode = |after_shm| {
             let mut bytes = Vec::new();
-            let Ok(()) = CodecZenohValueZbuf::encode_source(
+            let Ok(()) = CodecZenohValueZbufWire::encode_source(
                 &CodecZenohValueZbufParts { after_shm },
                 &mut VecSink::new(&mut bytes),
             );
@@ -855,7 +866,7 @@ mod groups {
             slices: none,
             value_len: 1026,
         };
-        assert!(CodecZenohValueZbuf::input_after_shm(
+        assert!(CodecZenohValueZbufWire::input_after_shm(
             &CodecZenohValueZbufParts { after_shm: sliced }
         ));
         assert_eq!(encode(sliced), [0x82, 0x08, 0x00, 0x00]);
@@ -863,7 +874,7 @@ mod groups {
         let plain = AfterShm::NotAfterShm {
             value: (&[1u8, 2, 3]).into(),
         };
-        assert!(!CodecZenohValueZbuf::input_after_shm(
+        assert!(!CodecZenohValueZbufWire::input_after_shm(
             &CodecZenohValueZbufParts { after_shm: plain }
         ));
         assert_eq!(encode(plain), [0x03, 1, 2, 3]);
@@ -876,13 +887,14 @@ mod groups {
     fn an_input_one_arm_reads_is_said_by_that_arm_alone() {
         use super::codecs::codec_zenoh_ext_unit::CodecZenohExtUnitParts;
         use super::codecs::codec_zenoh_value_entry::{
-            CodecZenohValueEntry, CodecZenohValueEntryParts, CodecZenohValueEntryPartsBody as Body,
+            CodecZenohValueEntryParts, CodecZenohValueEntryPartsBody as Body,
+            CodecZenohValueEntryWire,
         };
         let entry = |body| CodecZenohValueEntryParts { header: 0x00, body };
 
         let unit = CodecZenohExtUnitParts {};
         assert_eq!(
-            CodecZenohValueEntry::input_after_shm(&entry(Body::CodecZenohExtUnit(&unit))),
+            CodecZenohValueEntryWire::input_after_shm(&entry(Body::CodecZenohExtUnit(&unit))),
             None
         );
 
@@ -892,7 +904,7 @@ mod groups {
             },
         };
         assert_eq!(
-            CodecZenohValueEntry::input_after_shm(&entry(Body::CodecZenohValueZbuf(&plain))),
+            CodecZenohValueEntryWire::input_after_shm(&entry(Body::CodecZenohValueZbuf(&plain))),
             Some(false)
         );
 
@@ -906,13 +918,13 @@ mod groups {
             },
         };
         assert_eq!(
-            CodecZenohValueEntry::input_after_shm(&entry(Body::CodecZenohValueZbuf(&sliced))),
+            CodecZenohValueEntryWire::input_after_shm(&entry(Body::CodecZenohValueZbuf(&sliced))),
             Some(true)
         );
 
         // The encode takes no input: the arm's own layout decides the bytes.
         let mut bytes = Vec::new();
-        let Ok(()) = CodecZenohValueEntry::encode_source(
+        let Ok(()) = CodecZenohValueEntryWire::encode_source(
             &entry(Body::CodecZenohValueZbuf(&plain)),
             &mut VecSink::new(&mut bytes),
         );
@@ -926,11 +938,11 @@ mod groups {
     fn a_disjunction_is_held_as_the_assignment_of_its_flags() {
         use super::codecs::codec_present_if_disjunction::{
             CodecPresentIfDisjunction, CodecPresentIfDisjunctionFlagsWantsAOrWantsB as Wants,
-            CodecPresentIfDisjunctionParts,
+            CodecPresentIfDisjunctionParts, CodecPresentIfDisjunctionWire,
         };
         let encode = |held| {
             let mut bytes = Vec::new();
-            let Ok(()) = CodecPresentIfDisjunction::encode_source(
+            let Ok(()) = CodecPresentIfDisjunctionWire::encode_source(
                 &CodecPresentIfDisjunctionParts {
                     flags: 0x00,
                     flags_wants_a_or_wants_b: held,
@@ -960,7 +972,7 @@ mod groups {
     fn a_flag_of_the_codec_is_derived_from_the_side_the_value_holds() {
         let encode = |flags_has_payload| {
             let mut bytes = Vec::new();
-            CodecPresentIfLengthRef::encode_source(
+            CodecPresentIfLengthRefWire::encode_source(
                 &CodecPresentIfLengthRefParts {
                     flags: 0x00,
                     flags_has_payload,
@@ -1051,12 +1063,13 @@ mod unknown_tags {
 mod memberships {
     use super::codecs::codec_chain_has_marker::{
         CodecChainHasMarker, CodecChainHasMarkerExtensionsHas0x12 as Has0x12,
+        CodecChainHasMarkerWire,
     };
     use sce_forge_runtime::codec::{SceCursor, VecSink};
 
     fn encode(value: &CodecChainHasMarker<'_>) -> Vec<u8> {
         let mut bytes = Vec::new();
-        let Ok(()) = CodecChainHasMarker::encode_source(value, &mut VecSink::new(&mut bytes));
+        let Ok(()) = CodecChainHasMarkerWire::encode_source(value, &mut VecSink::new(&mut bytes));
         bytes
     }
 
@@ -1096,11 +1109,12 @@ mod memberships {
 
     use super::codecs::codec_chain_has_tagged::{
         CodecChainHasTagged, CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide as Tagged,
+        CodecChainHasTaggedWire,
     };
 
     fn encode_tagged(value: &CodecChainHasTagged) -> Vec<u8> {
         let mut bytes = Vec::new();
-        let Ok(()) = CodecChainHasTagged::encode_source(value, &mut VecSink::new(&mut bytes));
+        let Ok(()) = CodecChainHasTaggedWire::encode_source(value, &mut VecSink::new(&mut bytes));
         bytes
     }
 
@@ -1158,14 +1172,14 @@ mod shared_counts {
     use super::codecs::codec_repeat_elem::CodecRepeatElemParts;
     use super::codecs::codec_repeat_unconditional_count::{
         CodecRepeatUnconditionalCount, CodecRepeatUnconditionalCountOptionsH as Lists,
-        CodecRepeatUnconditionalCountParts,
+        CodecRepeatUnconditionalCountParts, CodecRepeatUnconditionalCountWire,
     };
     use sce_forge_runtime::codec::{Aligned, Bounded, SceCursor, VecSink};
 
     fn encode(value: &CodecRepeatUnconditionalCount) -> Vec<u8> {
         let mut bytes = Vec::new();
         let Ok(()) =
-            CodecRepeatUnconditionalCount::encode_source(value, &mut VecSink::new(&mut bytes));
+            CodecRepeatUnconditionalCountWire::encode_source(value, &mut VecSink::new(&mut bytes));
         bytes
     }
 
@@ -1214,7 +1228,7 @@ mod shared_counts {
         };
         let mut bytes = Vec::new();
         let Ok(()) =
-            CodecRepeatUnconditionalCount::encode_source(&parts, &mut VecSink::new(&mut bytes));
+            CodecRepeatUnconditionalCountWire::encode_source(&parts, &mut VecSink::new(&mut bytes));
         assert_eq!(bytes, [0x01, 0x02, 0, 1, 0, 2, 0, 1, 0, 2]);
     }
 }
@@ -1225,7 +1239,9 @@ mod shared_counts {
 mod chain_ends {
     use super::codecs::codec_chain_has_marker::CodecChainHasMarker;
     use super::codecs::codec_zenoh_ext_entry::CodecZenohExtEntryParts;
-    use super::codecs::codec_zenoh_ext_envelope::CodecZenohExtEnvelope;
+    use super::codecs::codec_zenoh_ext_envelope::{
+        CodecZenohExtEnvelope, CodecZenohExtEnvelopeWire,
+    };
     use sce_forge_runtime::codec::{Bounded, CodecError, SceCursor, VecSink};
 
     // The list of the chain is one entry or more where the value is made, so no
@@ -1238,7 +1254,8 @@ mod chain_ends {
         let value = CodecZenohExtEnvelope::default();
         assert_eq!(value.extensions.len(), 1);
         let mut bytes = Vec::new();
-        let Ok(()) = CodecZenohExtEnvelope::encode_source(&value, &mut VecSink::new(&mut bytes));
+        let Ok(()) =
+            CodecZenohExtEnvelopeWire::encode_source(&value, &mut VecSink::new(&mut bytes));
         // The header, and one entry: a unit extension of id 0, the last.
         assert_eq!(bytes, [0x00, 0x00]);
         let decoded = CodecZenohExtEnvelope::decode(&mut SceCursor::new(&bytes)).expect("a frame");

@@ -258,7 +258,6 @@
         "codec/present-if-refs-later-field",
         "codec/repeat-count-refs-later-field",
         "algorithm/test-vector-unsupported-kind",
-        "codec/tlv-chain-depth-unspecified",
         "codec/dma-alignment-unsatisfiable",
         "codec/peek-byte-flag-layout-mismatch",
         "link/framer-missing",

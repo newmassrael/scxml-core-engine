@@ -76,7 +76,7 @@ impl CodecRepeatElem {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecRepeatElem::encode_source(self, w)
+        CodecRepeatElemWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -136,10 +136,17 @@ impl CodecRepeatElemSource for CodecRepeatElem {
     }
 }
 
+/// The codec `CodecRepeatElem` itself: what writes a value read through
+/// [`CodecRepeatElemSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecRepeatElemWire;
+
 #[allow(dead_code)]
-impl CodecRepeatElem {
+impl CodecRepeatElemWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecRepeatElem::encode` writes for the value it holds, read through
     /// [`CodecRepeatElemSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -165,7 +172,7 @@ impl CodecRepeatElem {
     }
 }
 
-impl<S: CodecRepeatElemSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecRepeatElem {
+impl<S: CodecRepeatElemSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecRepeatElemWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -174,7 +181,7 @@ impl<S: CodecRepeatElemSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<
 }
 
 #[allow(dead_code)]
-impl CodecRepeatElem {
+impl CodecRepeatElemWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size

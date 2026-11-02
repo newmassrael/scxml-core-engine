@@ -38,7 +38,7 @@
 {% endif %}
 {% if context.has_tag %}
 // The tag is not given: it is a function of the element, which `publish` reads off it
-// (`{{ element_pascal }}::tag_of`) and stores, and the tag of an `Item`'s element is its own.
+// (`{{ element_pascal }}Wire::tag_of`) and stores, and the tag of an `Item`'s element is its own.
 {% endif %}
 {% if context.said_flags %}
 // A flag input the element's value says is not taken: `publish` reads it off the
@@ -186,7 +186,7 @@ pub enum {{ pascal }}Read {
     /// The entry `seq`, decoded, with what it was published under; the reader now holds
     /// `seq + 1`.
 {% if context.has_tag %}
-    /// The tag it was decoded under is the element's own (`{{ element_pascal }}::tag_of`).
+    /// The tag it was decoded under is the element's own (`{{ element_pascal }}Wire::tag_of`).
 {% endif %}
     Item {
         seq: u64,
@@ -231,7 +231,7 @@ pub enum {{ pascal }}Read {
 {% if context.has_tag %}
 ///
 /// The variant tag the element's decode takes is not a parameter: it is a function of
-/// `element`, `{{ element_pascal }}::tag_of(element)`, the tag of the arm it holds. It is stored
+/// `element`, `{{ element_pascal }}Wire::tag_of(element)`, the tag of the arm it holds. It is stored
 /// in the entry's context words, so that no entry is stored under a tag its bytes disagree
 /// with and every reader decodes the entry under the arm it was published as.
 {% endif %}
@@ -251,7 +251,7 @@ pub fn publish(
     let flags = {{ pascal }}Flags {
 {% for flag in context.flags %}
 {% if flag.said %}
-        {{ flag.snake }}: {{ element_pascal }}::input_{{ flag.snake }}(element),
+        {{ flag.snake }}: super::{{ element_snake }}::{{ element_pascal }}Wire::input_{{ flag.snake }}(element),
 {% else %}
         {{ flag.snake }}: given.{{ flag.snake }},
 {% endif %}
@@ -268,7 +268,7 @@ pub fn publish(
     entry[1 + {{ flag.word }}] |= {{ word_type }}::from(flags.{{ flag.snake }}) << {{ flag.shift }};
 {% endfor %}
 {% if context.has_tag %}
-    entry[1 + {{ context.tag_word }}] = {{ word_type }}::from({{ element_pascal }}::tag_of(element));
+    entry[1 + {{ context.tag_word }}] = {{ word_type }}::from(super::{{ element_snake }}::{{ element_pascal }}Wire::tag_of(element));
 {% endif %}
     for (index, byte) in bytes[..length].iter().enumerate() {
         entry[{{ context.payload_start }} + index / {{ word_bytes }}] |= {{ word_type }}::from(*byte) << (8 * (index % {{ word_bytes }}));

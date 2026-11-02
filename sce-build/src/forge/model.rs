@@ -2168,7 +2168,11 @@ pub enum BitSize {
     /// codec-content granularity, see RFC §synth-5-B "MCU-only codec
     /// sub-features").
     TlvChain {
-        max_depth: u32,
+        /// The most entries a frame's chain holds, where the protocol bounds
+        /// it; `None` where it states none (docs/adr/0077 §7). A walk reads
+        /// each entry's header, so a chain with no depth still moves.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_depth: Option<u32>,
         /// RFC §synth-5-B — termination strategy. Defaults to
         /// `ExhaustOrDepth` for backward-compat with trunk fixtures
         /// (cursor-exhaust + max_depth). `EntryFlag(flag_name)` reads
@@ -2732,7 +2736,7 @@ impl CodecField {
         match &self.bit_size {
             BitSize::Tail | BitSize::LengthRef => self.max_size.map(u64::from),
             BitSize::Repeat { .. } => self.max_count.map(u64::from),
-            BitSize::TlvChain { max_depth, .. } => Some(u64::from(*max_depth)),
+            BitSize::TlvChain { max_depth, .. } => max_depth.map(u64::from),
             BitSize::Fixed { .. } | BitSize::Vle { .. } | BitSize::Embed => None,
         }
     }
@@ -2749,11 +2753,14 @@ impl CodecField {
 
     /// How many entries a form that stores this list holds: a C11 array, an
     /// inline owned list, a list decoded eagerly. It is the capacity the
-    /// deployment gives the field, or its bound (docs/adr/0077 §7).
-    pub fn storage_entries(&self) -> u32 {
-        self.capacity.unwrap_or_else(|| match &self.bit_size {
+    /// deployment gives the field, or its bound (docs/adr/0077 §7). `None` for
+    /// a list with neither: no fixed container holds it, so it is stored only
+    /// by a profile whose list grows, and a backend that stores in arrays
+    /// refuses it, naming the field.
+    pub fn storage_entries(&self) -> Option<u32> {
+        self.capacity.or(match &self.bit_size {
             BitSize::TlvChain { max_depth, .. } => *max_depth,
-            _ => crate::forge::limits::resolve_max_count(self.max_count),
+            _ => self.max_count,
         })
     }
 
@@ -3463,7 +3470,9 @@ impl CodecModel {
                 } else {
                     return None;
                 };
-                Some(body_bytes(alias)?.saturating_mul(u64::from(f.storage_entries())))
+                // A list held by no number of entries has no largest frame.
+                let entries = f.storage_entries().map_or(u64::MAX, u64::from);
+                Some(body_bytes(alias)?.saturating_mul(entries))
             })
             .fold(own, u64::saturating_add)
     }

@@ -17,8 +17,6 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use super::codec_zenoh_timestamp::CodecZenohTimestamp;
-
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
@@ -152,7 +150,7 @@ impl<S: CodecZenohTimestampExtStorage> CodecZenohTimestampExtIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecZenohTimestampExt::encode_source(self, w)
+        CodecZenohTimestampExtWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -212,10 +210,17 @@ impl<S: CodecZenohTimestampExtStorage> CodecZenohTimestampExtSource for CodecZen
     }
 }
 
+/// The codec `CodecZenohTimestampExt` itself: what writes a value read through
+/// [`CodecZenohTimestampExtSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecZenohTimestampExtWire;
+
 #[allow(dead_code)]
-impl<'a> CodecZenohTimestampExt<'a> {
+impl CodecZenohTimestampExtWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecZenohTimestampExt::encode` writes for the value it holds, read through
     /// [`CodecZenohTimestampExtSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -228,11 +233,11 @@ impl<'a> CodecZenohTimestampExt<'a> {
     pub fn write_source<S: CodecZenohTimestampExtSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         let _s_ts: usize = {
             let _v = src.ts();
-            CodecZenohTimestamp::count_source(_v)
+            super::codec_zenoh_timestamp::CodecZenohTimestampWire::count_source(_v)
         };
         let _d_ext_size: u64 = ::sce_forge_runtime::codec::widen_usize(_s_ts);
         w.write_vle_u64(_d_ext_size)?;
-        CodecZenohTimestamp::write_source(src.ts(), w)?;
+        super::codec_zenoh_timestamp::CodecZenohTimestampWire::write_source(src.ts(), w)?;
         Ok(())
     }
 
@@ -246,7 +251,7 @@ impl<'a> CodecZenohTimestampExt<'a> {
     }
 }
 
-impl<'a, S: CodecZenohTimestampExtSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohTimestampExt<'a> {
+impl<S: CodecZenohTimestampExtSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohTimestampExtWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -255,7 +260,7 @@ impl<'a, S: CodecZenohTimestampExtSource + ?Sized> ::sce_forge_runtime::codec::S
 }
 
 #[allow(dead_code)]
-impl<'a> CodecZenohTimestampExt<'a> {
+impl CodecZenohTimestampExtWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -309,8 +314,11 @@ impl<'a> CodecZenohTimestampExt<'a> {
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecZenohTimestampExt<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecZenohTimestampExt<'a> {
+impl<'a, D> CodecZenohTimestampExtIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohTimestampExtStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohTimestampExtOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -344,8 +352,8 @@ impl<S: CodecZenohTimestampExtStorage> CodecZenohTimestampExtOwned<S> {
     /// borrowed view (the owned form is read-only), so an owned consumer
     /// reaches it via `as_borrowed` then `encode` / `encode_to_vec`.
     /// Each field is projected by reference — a cheap re-borrow, not a copy.
-    pub fn as_borrowed(&self) -> CodecZenohTimestampExt<'_> {
-        let mut _out = CodecZenohTimestampExt::default();
+    pub fn as_borrowed(&self) -> CodecZenohTimestampExtIn<::sce_forge_runtime::codec::Lent<'_, S>> {
+        let mut _out = Default::default();
         self.as_borrowed_into(&mut _out);
         _out
     }
@@ -360,7 +368,7 @@ impl<S: CodecZenohTimestampExtStorage> CodecZenohTimestampExtOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohTimestampExt<'o>) {
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohTimestampExtIn<::sce_forge_runtime::codec::Lent<'o, S>>) {
         _out.ext_size = self.ext_size;
         self.ts.as_borrowed_into(&mut _out.ts);
         

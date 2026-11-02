@@ -305,16 +305,13 @@ pub fn analyse(m: &CodecModel, imports: &mut dyn Imports) -> Totality {
 fn number_bound(m: &CodecModel, by: &Derivation) -> Option<u64> {
     match by {
         // A list is counted against its bound before its count is derived, so
-        // the count never exceeds the largest of the bounds it is shared by.
+        // the count never exceeds the largest of the bounds it is shared by. A
+        // list with no bound leaves the count unbounded.
         Derivation::CountOf { lists } => lists
             .iter()
-            .map(|id| {
-                m.fields
-                    .iter()
-                    .find(|f| &f.id == id)
-                    .map(list_bound)
-                    .unwrap_or(u64::MAX)
-            })
+            .map(|id| m.fields.iter().find(|f| &f.id == id).and_then(list_bound))
+            .collect::<Option<Vec<u64>>>()?
+            .into_iter()
             .max(),
         // An input is one bit (docs/adr/0065 §6 R4a).
         Derivation::BoundInput { .. } => Some(1),
@@ -377,12 +374,12 @@ pub fn byte_bound_args(field: &CodecField, fields: &[CodecField]) -> Option<Stri
     })
 }
 
-/// The number of entries the list `field` is held to.
-pub fn list_bound(field: &CodecField) -> u64 {
-    match &field.bit_size {
-        BitSize::TlvChain { max_depth, .. } => u64::from(*max_depth),
-        _ => u64::from(crate::forge::limits::resolve_max_count(field.max_count)),
-    }
+/// The number of entries the list `field` is held to: its `max-count` or
+/// `max-depth`, the protocol's bound, or `None` where the protocol states none
+/// (docs/adr/0077 §7). A list with none is refused past no count, and stored
+/// only at a capacity or by a profile whose list grows.
+pub fn list_bound(field: &CodecField) -> Option<u64> {
+    field.declared_bound()
 }
 
 /// The fewest entries the list `field` holds where it is present: one for a
@@ -403,8 +400,20 @@ pub fn list_least(field: &CodecField) -> u64 {
 /// none, which the types default to.
 pub fn list_bound_args(field: &CodecField) -> String {
     match list_least(field) {
-        0 => list_bound(field).to_string(),
-        least => format!("{}, {least}", list_bound(field)),
+        0 => list_bound_rust(field),
+        least => format!("{}, {least}", list_bound_rust(field)),
+    }
+}
+
+/// [`list_bound`] as a Rust `usize` const argument: the number, or
+/// `{ usize::MAX }` for a list the protocol states no bound of, which is how
+/// `Bounded`, `Chain` and `Placed` hold one with no second shape (docs/adr/0077
+/// §7). A number past what a 32-bit target's `usize` holds would not compile
+/// there, and `usize::MAX` is the largest list any target can have.
+pub fn list_bound_rust(field: &CodecField) -> String {
+    match list_bound(field) {
+        Some(bound) => bound.to_string(),
+        None => "{ usize::MAX }".to_string(),
     }
 }
 

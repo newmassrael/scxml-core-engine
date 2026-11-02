@@ -169,7 +169,7 @@ impl<S: CodecChainHasSliceStorage> CodecChainHasSliceIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecChainHasSlice::encode_source(self, w)
+        CodecChainHasSliceWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -242,10 +242,17 @@ impl<S: CodecChainHasSliceStorage> CodecChainHasSliceSource for CodecChainHasSli
     }
 }
 
+/// The codec `CodecChainHasSlice` itself: what writes a value read through
+/// [`CodecChainHasSliceSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecChainHasSliceWire;
+
 #[allow(dead_code)]
-impl<'a> CodecChainHasSlice<'a> {
+impl CodecChainHasSliceWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecChainHasSlice::encode` writes for the value it holds, read through
     /// [`CodecChainHasSliceSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -274,7 +281,7 @@ impl<'a> CodecChainHasSlice<'a> {
     }
 }
 
-impl<'a, S: CodecChainHasSliceSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecChainHasSlice<'a> {
+impl<S: CodecChainHasSliceSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecChainHasSliceWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -283,7 +290,7 @@ impl<'a, S: CodecChainHasSliceSource + ?Sized> ::sce_forge_runtime::codec::Sourc
 }
 
 #[allow(dead_code)]
-impl<'a> CodecChainHasSlice<'a> {
+impl CodecChainHasSliceWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -337,8 +344,11 @@ impl<'a> CodecChainHasSlice<'a> {
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecChainHasSlice<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecChainHasSlice<'a> {
+impl<'a, D> CodecChainHasSliceIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecChainHasSliceStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecChainHasSliceOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -373,8 +383,8 @@ impl<S: CodecChainHasSliceStorage> CodecChainHasSliceOwned<S> {
     /// borrowed view (the owned form is read-only), so an owned consumer
     /// reaches it via `as_borrowed` then `encode` / `encode_to_vec`.
     /// Each field is projected by reference — a cheap re-borrow, not a copy.
-    pub fn as_borrowed(&self) -> CodecChainHasSlice<'_> {
-        let mut _out = CodecChainHasSlice::default();
+    pub fn as_borrowed(&self) -> CodecChainHasSliceIn<::sce_forge_runtime::codec::Lent<'_, S>> {
+        let mut _out = Default::default();
         self.as_borrowed_into(&mut _out);
         _out
     }
@@ -389,7 +399,7 @@ impl<S: CodecChainHasSliceStorage> CodecChainHasSliceOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecChainHasSlice<'o>) {
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecChainHasSliceIn<::sce_forge_runtime::codec::Lent<'o, S>>) {
         _out.kind = self.kind;
         _out.len = self.len;
         _out.bytes = self.bytes.as_bytes();

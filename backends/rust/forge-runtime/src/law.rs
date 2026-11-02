@@ -481,11 +481,12 @@ fn law_broken() -> ! {
 /// keeping its bound, as [`crate::bounded::try_collect_bounded`] does, and its
 /// start. The projection keeps what each entry says, and the owned list is held
 /// to the law again.
-pub fn try_collect_lawful<L, T, U, A, const N: usize, const MAX: usize, const MIN: usize>(
-    src: Lawful<Bounded<heapless::Vec<T, N>, MAX, MIN>, A>,
+pub fn try_collect_lawful<K, L, T, U, A, const MAX: usize, const MIN: usize>(
+    src: Lawful<Bounded<K, MAX, MIN>, A>,
     f: impl FnMut(T) -> Result<U, CodecError>,
 ) -> Result<Lawful<Bounded<L, MAX, MIN>, A>, CodecError>
 where
+    K: IntoIterator<Item = T>,
     L: SceList<U> + Follows<A>,
     A: Law,
 {

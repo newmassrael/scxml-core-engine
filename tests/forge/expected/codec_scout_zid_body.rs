@@ -168,7 +168,7 @@ impl<S: CodecScoutZidBodyStorage> CodecScoutZidBodyIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecScoutZidBody::encode_source(self, w)
+        CodecScoutZidBodyWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -228,10 +228,17 @@ impl<S: CodecScoutZidBodyStorage> CodecScoutZidBodySource for CodecScoutZidBodyO
     }
 }
 
+/// The codec `CodecScoutZidBody` itself: what writes a value read through
+/// [`CodecScoutZidBodySource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecScoutZidBodyWire;
+
 #[allow(dead_code)]
-impl<'a> CodecScoutZidBody<'a> {
+impl CodecScoutZidBodyWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecScoutZidBody::encode` writes for the value it holds, read through
     /// [`CodecScoutZidBodySource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -259,7 +266,7 @@ impl<'a> CodecScoutZidBody<'a> {
     }
 }
 
-impl<'a, S: CodecScoutZidBodySource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecScoutZidBody<'a> {
+impl<S: CodecScoutZidBodySource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecScoutZidBodyWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -268,7 +275,7 @@ impl<'a, S: CodecScoutZidBodySource + ?Sized> ::sce_forge_runtime::codec::Source
 }
 
 #[allow(dead_code)]
-impl<'a> CodecScoutZidBody<'a> {
+impl CodecScoutZidBodyWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -322,8 +329,11 @@ impl<'a> CodecScoutZidBody<'a> {
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecScoutZidBody<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecScoutZidBody<'a> {
+impl<'a, D> CodecScoutZidBodyIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecScoutZidBodyStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecScoutZidBodyOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -357,8 +367,8 @@ impl<S: CodecScoutZidBodyStorage> CodecScoutZidBodyOwned<S> {
     /// borrowed view (the owned form is read-only), so an owned consumer
     /// reaches it via `as_borrowed` then `encode` / `encode_to_vec`.
     /// Each field is projected by reference — a cheap re-borrow, not a copy.
-    pub fn as_borrowed(&self) -> CodecScoutZidBody<'_> {
-        let mut _out = CodecScoutZidBody::default();
+    pub fn as_borrowed(&self) -> CodecScoutZidBodyIn<::sce_forge_runtime::codec::Lent<'_, S>> {
+        let mut _out = Default::default();
         self.as_borrowed_into(&mut _out);
         _out
     }
@@ -373,7 +383,7 @@ impl<S: CodecScoutZidBodyStorage> CodecScoutZidBodyOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecScoutZidBody<'o>) {
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecScoutZidBodyIn<::sce_forge_runtime::codec::Lent<'o, S>>) {
         _out.zid_len_m1 = self.zid_len_m1;
         _out.zid = self.zid.as_bytes();
         

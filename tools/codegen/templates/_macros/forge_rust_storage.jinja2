@@ -30,8 +30,15 @@ impl {{ runtime }}::Holds{{ field.kind }}<{{ tag }}> for {{ profile }} {
 #[allow(dead_code)]
 pub struct {{ field.tag }};
 
+{% if field.capacity is not none %}
 {{ holds(runtime, runtime ~ "::Inline", field.tag, field) }}
 
+{% else %}
+// `Inline` does not answer for `{{ field.id }}`: the protocol states no bound of
+// it, so it is held only by a profile whose container grows, or by a deployment
+// that gives it a capacity (docs/adr/0077 §7).
+
+{% endif %}
 {% endfor %}
 {% for child in gated %}
 {{ child.cfg }}

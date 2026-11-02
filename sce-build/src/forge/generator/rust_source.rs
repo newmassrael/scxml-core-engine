@@ -136,6 +136,13 @@ pub(super) fn render(input: &Input<'_>) -> Result<String, Unsupported> {
     Ok(text)
 }
 
+/// The type a codec named `name` is written through: `{name}Wire`, which holds
+/// no value and takes no profile, so its functions compile whatever profiles
+/// the codec's fields can be held by (docs/adr/0077 §7).
+pub(crate) fn wire_name(name: &str) -> String {
+    format!("{name}Wire")
+}
+
 /// The link from a codec's `write_source` to the counted-source witness
 /// (docs/adr/0061): `{Codec}::measure`, and the impl of `SourceWrite` that lets
 /// `Measured::write_into` run the codec's own skeleton into a window. It states
@@ -312,7 +319,8 @@ impl World {
 
 /// The imported codec a list or an embedded body holds.
 struct Child {
-    /// The codec's type, which the wire is written through (`Type::write_source`).
+    /// The type the codec's wire is written through, `{Codec}Wire`
+    /// (`Type::write_source`), by its path.
     type_name: String,
     /// The path of its source trait.
     trait_path: String,
@@ -579,7 +587,7 @@ pub(crate) fn chain_arm_type(
         return format!(
             "{RUNTIME_CODEC}::Placed<{list}, {}, {}>",
             key_type(codec, &field.id, held[0]),
-            codec_totality::list_bound(field)
+            codec_totality::list_bound_rust(field)
         );
     }
     let kinds = |keys: &[u64]| match keys {
@@ -786,7 +794,11 @@ impl<'a> Plan<'a> {
     fn child_of(&self, alias: &str) -> Option<Child> {
         let import = self.input.imports.iter().find(|i| i.alias == alias)?;
         Some(Child {
-            type_name: import.type_name.clone(),
+            type_name: format!(
+                "super::{}::{}",
+                import.namespace,
+                wire_name(&import.type_name)
+            ),
             trait_path: format!("super::{}::{}Source", import.namespace, import.type_name),
             overrides_path: format!("super::{}::{}Overrides", import.namespace, import.type_name),
             parts_type: format!(
@@ -2454,7 +2466,7 @@ impl<'a> Plan<'a> {
                 (true, Some(child)) => format!(
                     "{RUNTIME_CODEC}::BoundedIter<impl Iterator<Item = impl {}> + Clone, {}>",
                     child.trait_path,
-                    codec_totality::list_bound(f)
+                    codec_totality::list_bound_rust(f)
                 ),
                 _ => self.member_value_type(f),
             }
@@ -3385,8 +3397,8 @@ impl<'a> Plan<'a> {
             format!(
                 "\n{}",
                 measure_impl(
-                    self.name(),
-                    self.lt(),
+                    &wire_name(self.name()),
+                    "",
                     &self.trait_name,
                     self.input.inline_encode,
                     self.may_fail(),
@@ -3403,10 +3415,16 @@ impl<'a> Plan<'a> {
              \x20   /// only error is the sink's (docs/adr/0065).\n"
         };
         format!(
-            "#[allow(dead_code)]\n\
-             impl{lt} {name}{lt} {{\n\
+            "/// The codec `{name}` itself: what writes a value read through\n\
+             /// [`{trait_name}`], holding no value and naming no storage profile. Every\n\
+             /// form of the value, a parent and a view write through it, so a profile\n\
+             /// that cannot hold some field is never asked for here (docs/adr/0077 §7).\n\
+             #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\n\
+             pub struct {wire};\n\n\
+             #[allow(dead_code)]\n\
+             impl {wire} {{\n\
              \x20   /// Encode what `src` says into the caller-owned sink: the bytes\n\
-             \x20   /// [`Self::encode`] writes for the value it holds, read through\n\
+             \x20   /// `{name}::encode` writes for the value it holds, read through\n\
              \x20   /// [`{trait_name}`]. A length, a count or a gate flag is computed from what\n\
              {refused}\
              \x20   pub fn encode_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}) -> {result} {{\n\
@@ -3419,7 +3437,7 @@ impl<'a> Plan<'a> {
              {count}\
              }}\n\
              {measure}",
-            lt = self.lt(),
+            wire = wire_name(self.name()),
             name = self.name(),
             trait_name = self.trait_name,
             result = self.write_result("K"),

@@ -7235,12 +7235,15 @@ pub(crate) fn rust_storage_trait(codec: &str) -> String {
 }
 
 /// One variable field as the storage macro takes it: its tag, which of the
-/// profile's traits answers for it, and what `Inline` holds of it.
+/// profile's traits answers for it, and what `Inline` holds of it. A field with
+/// no capacity, neither bound nor deployment's, has no inline container: `Inline`
+/// does not answer for it, so it is held only by a profile whose container
+/// grows (docs/adr/0077 §7), and `capacity` is null.
 pub(crate) fn rust_storage_field(
     codec: &str,
     field: &str,
     kind: &str,
-    capacity: u32,
+    capacity: Option<u32>,
 ) -> serde_json::Value {
     serde_json::json!({
         "id": field,
@@ -7442,8 +7445,8 @@ pub(crate) fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
                 return None;
             } else {
                 match f.sce_type {
-                    SceType::String => ("Str", f.storage_bytes()),
-                    SceType::Bytes => ("Bytes", f.storage_bytes()),
+                    SceType::String => ("Str", Some(f.storage_bytes())),
+                    SceType::Bytes => ("Bytes", Some(f.storage_bytes())),
                     _ => return None,
                 }
             };
@@ -7940,7 +7943,7 @@ fn rust_group_storage(
         // tested say which, so no construction can fail.
         let chain_built = |f: &CodecField, arm: &GroupArm, view: bool| -> String {
             let local = codec_field_decode_local(&f.id, l.lang);
-            let bound = crate::forge::codec_totality::list_bound(f);
+            let bound = crate::forge::codec_totality::list_bound_rust(f);
             let list = if f.present_if.is_some() {
                 format!("{local}.expect(\"the gate found the chain\").into_inner()")
             } else {
@@ -8218,8 +8221,16 @@ fn rust_group_storage(
                 }
             };
         // A projection into a destination: each element built in a local of
-        // the destination's type, then the side made of them.
-        let into_dest = |lifetime: Option<(&str, &str)>,
+        // the destination's type, then the side made of them. `profile` is the
+        // profile the destination is at, which the field's type at the storage
+        // parameter is spelled at (docs/adr/0077 §7).
+        let at_profile = |f: &CodecField, profile: &str| -> String {
+            let stored = str_of(obj_of(f), "rs_owned_type")
+                .or_else(|| str_of(obj_of(f), "rs_type"))
+                .unwrap_or_default();
+            present(&rust_type_at_profile(&stored, profile))
+        };
+        let into_dest = |profile: &str,
                          stmt: &dyn Fn(&CodecField, &str, &str) -> Result<String, ForgeError>,
                          fill: &dyn Fn(&CodecField, &str) -> String|
          -> Result<String, ForgeError> {
@@ -8231,10 +8242,7 @@ fn rust_group_storage(
                 let mut body = String::new();
                 for f in fs {
                     let local = format!("_o_{}", acc(f));
-                    let mut t = present(&str_of(obj_of(f), "rs_type").unwrap_or_default());
-                    if let Some((from, to)) = lifetime {
-                        t = t.replace(from, to);
-                    }
+                    let t = at_profile(f, profile);
                     // The arm's field says what the chain's list is, so the local
                     // names no type (`clippy::type_complexity`).
                     if holds_chain(group, f) {
@@ -8254,10 +8262,7 @@ fn rust_group_storage(
                         stmt(f, &first_src, &local)?
                     ));
                     if let Some(second) = second {
-                        let mut t = present(&str_of(obj_of(second), "rs_type").unwrap_or_default());
-                        if let Some((from, to)) = lifetime {
-                            t = t.replace(from, to);
-                        }
+                        let t = at_profile(second, profile);
                         let local = format!("_o_{}", acc(second));
                         let src = format!("{}.second()", held_name(arm, f));
                         body.push_str(&format!(
@@ -8294,7 +8299,7 @@ fn rust_group_storage(
             ))
         };
         let as_borrowed = into_dest(
-            Some(("'a", "'o")),
+            &format!("{RUNTIME_CODEC}::Lent<'o, {STORAGE_PARAM}>"),
             &|f, src, dest| {
                 let mut value = f.clone();
                 value.present_if = None;
@@ -8323,19 +8328,12 @@ fn rust_group_storage(
         if emit_views {
             entry.insert("view_rs_type".into(), type_in("view_rs_type").into());
             let into_builder = into_dest(
-                None,
+                &format!("{RUNTIME_CODEC}::Lent<'a, D>"),
                 &|f, src, dest| {
-                    let entry_type = match crate::forge::codec_totality::child_alias(f) {
-                        Some(alias) if !f.is_embed() => {
-                            resolve_repeat_body_type(&m.name, alias, imports, l.lang)?
-                        }
-                        _ => String::new(),
-                    };
                     Ok(rust_view::into_builder_member(
                         f,
                         src,
                         dest,
-                        &entry_type,
                         !rust_source::list_laws(&roles, &f.id).is_empty(),
                     ))
                 },
@@ -8352,6 +8350,32 @@ fn rust_group_storage(
         stored.push(serde_json::Value::Object(entry));
     }
     Ok((stored, wire))
+}
+
+/// The field type `ty`, spelled at the storage parameter ([`STORAGE_PARAM`]),
+/// spelled at the profile `profile` instead: each place the parameter stands as
+/// a type of its own, which no identifier around it continues. The generator
+/// writes a field's stored type once, at the parameter, and a value at another
+/// profile (a lent value re-borrowed from an owned one, a view's builder) holds
+/// the same field at that profile (docs/adr/0077 §7).
+fn rust_type_at_profile(ty: &str, profile: &str) -> String {
+    let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut out = String::with_capacity(ty.len() + profile.len());
+    let mut word = String::new();
+    let flush = |word: &mut String, out: &mut String| {
+        out.push_str(if word == STORAGE_PARAM { profile } else { word });
+        word.clear();
+    };
+    for c in ty.chars() {
+        if is_ident(c) {
+            word.push(c);
+        } else {
+            flush(&mut word, &mut out);
+            out.push(c);
+        }
+    }
+    flush(&mut word, &mut out);
+    out
 }
 
 /// The list a `Bounded` type `ty` holds (`Bounded<L, MAX, MIN>`, spelled with
@@ -8644,6 +8668,28 @@ fn render_codec(
         views,
         inline_encode,
     } = forms;
+    if matches!(lang, crate::generator::Language::C11) {
+        c11_refuse_a_list_it_cannot_hold(m)?;
+    }
+    // A Rust decode past a profile's capacity judges the frame by the view, or
+    // by the codec's lent form where the tree has no views; the lent form holds
+    // a list as `Inline` does, at its bound, and a list the protocol bounds by
+    // nothing has no such container (docs/adr/0077 §7).
+    if matches!(lang, crate::generator::Language::Rust) && !views {
+        if let Some(f) = m
+            .fields
+            .iter()
+            .find(|f| (f.is_repeat() || f.is_tlv_chain()) && f.declared_bound().is_none())
+        {
+            return Err(GenerateError::unsupported(format!(
+                "codec '{}': the list `{}` states no bound, so a frame past a profile's capacity \
+                 is judged by the codec's view, and its tree is generated with views \
+                 (`generate --views`, `ForgeCompileOptions::views`)",
+                m.name, f.id
+            ))
+            .into());
+        }
+    }
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
     if m.encoding == CodecEncoding::Cbor {
@@ -9139,7 +9185,7 @@ fn render_codec(
                             // list that was on the wire and empty is a value.
                             crate::generator::Language::C11 => {
                                 obj.insert("c_gated_optional".into(), true.into());
-                                c11_gated_list_member(&body_type, max_count)
+                                c11_gated_list_member(&body_type, c11_held_entries(f))
                             }
                         }
                     } else {
@@ -9181,7 +9227,6 @@ fn render_codec(
                             "view_into_builder_stmt".into(),
                             rust_view::into_builder_list(
                                 &codec_field_decode_local(&f.id, lang),
-                                &body_type,
                                 f.present_if.is_some(),
                                 law.is_some(),
                             )
@@ -9343,7 +9388,7 @@ fn render_codec(
                         (crate::generator::Language::C11, false) => body_type.clone(),
                         (crate::generator::Language::C11, true) => {
                             obj.insert("c_gated_optional".into(), true.into());
-                            c11_gated_list_member(&body_type, held)
+                            c11_gated_list_member(&body_type, c11_held_entries(f))
                         }
                     };
                     obj.insert(type_key.into(), wrapped.into());
@@ -9412,7 +9457,6 @@ fn render_codec(
                             "view_into_builder_stmt".into(),
                             rust_view::into_builder_list(
                                 &codec_field_decode_local(&f.id, lang),
-                                &body_type,
                                 gated,
                                 law.is_some(),
                             )
@@ -9593,7 +9637,6 @@ fn render_codec(
                             "view_into_builder_stmt".into(),
                             rust_view::into_builder_embed(
                                 &codec_field_decode_local(&f.id, lang),
-                                &body_type,
                                 f.present_if.is_some(),
                             )
                             .into(),
@@ -11357,6 +11400,20 @@ fn render_codec(
     // `sce:max-size` is absent (RFC §bytesguard-3 B2).
 
     l.insert_imports(&mut ctx, imports);
+    // A Rust codec names a borrowed codec it holds by the forms that take a
+    // profile or none, `{Codec}Owned<S>`, `{Codec}View` and `{Codec}Wire`, and
+    // never as its lent form at `Inline`, which a codec with a list of no bound
+    // does not have (docs/adr/0077 §7). So the bare name is not imported.
+    if matches!(l.lang, crate::generator::Language::Rust) {
+        let named: Vec<&ImportContext> = imports
+            .iter()
+            .filter(|i| !(i.kind == "codec" && i.codec_is_borrowed))
+            .collect();
+        ctx.insert(
+            "all_imports".into(),
+            serde_json::to_value(&named).unwrap_or_default(),
+        );
+    }
 
     if matches!(
         l.lang,
@@ -11770,12 +11827,16 @@ fn render_codec(
             }
             .into(),
         );
+        // The value re-borrowed holds its lists as its own profile does, so a
+        // profile that holds a list `Inline` cannot is re-borrowed whole
+        // (docs/adr/0077 §7).
+        let lent = format!("{struct_name}In<{RUNTIME_CODEC}::Lent<'_, {STORAGE_PARAM}>>");
         ctx.insert(
             "as_borrowed_ret".into(),
             if struct_fallible {
-                format!("Result<{struct_name}<'_>, CodecError>")
+                format!("Result<{lent}, CodecError>")
             } else {
-                format!("{struct_name}<'_>")
+                lent
             }
             .into(),
         );
@@ -11848,12 +11909,21 @@ fn render_codec(
             }
             .into(),
         );
+        let variant_lent = if ctx
+            .get("variant_lifetime")
+            .and_then(|v| v.as_str())
+            .is_some_and(|lt| !lt.is_empty())
+        {
+            format!("{struct_name}VariantIn<{RUNTIME_CODEC}::Lent<'_, {STORAGE_PARAM}>>")
+        } else {
+            format!("{struct_name}Variant")
+        };
         ctx.insert(
             "variant_as_borrowed_ret".into(),
             if variant_fallible {
-                format!("Result<{struct_name}Variant<'_>, CodecError>")
+                format!("Result<{variant_lent}, CodecError>")
             } else {
-                format!("{struct_name}Variant<'_>")
+                variant_lent
             }
             .into(),
         );
@@ -15217,7 +15287,7 @@ struct TlvChainDecode<'a> {
     /// The flag-inputs the chain supplies entry by entry; `decode_arg` names
     /// their locals, and the loop declares and rewrites them.
     entry_binds: &'a ChainEntryBinds,
-    max_depth: u32,
+    max_depth: Option<u32>,
     terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
     /// The start a Rust chain held to its law is filled from
     /// ([`rust_law_start`]; docs/adr/0065 §6 R8), `None` for any other chain.
@@ -15321,6 +15391,39 @@ fn tlv_chain_more_decl(lang: crate::generator::Language) -> &'static str {
     }
 }
 
+/// The head of the loop that walks a chain's entries, in `lang`: counted to
+/// the chain's depth where the protocol states one, and otherwise a loop the
+/// chain's own end leaves (docs/adr/0077 §7). An entry reads its header, so a
+/// walk with no depth moves on every pass.
+fn chain_loop_head(lang: crate::generator::Language, max_depth: Option<u32>) -> String {
+    use crate::generator::Language;
+    match (lang, max_depth) {
+        (Language::Rust, Some(depth)) => format!("for _ in 0..{depth}u32 {{"),
+        (Language::Rust, None) => "loop {".to_string(),
+        (Language::C11, Some(depth)) => format!("for (size_t _i = 0; _i < {depth}; ++_i) {{"),
+        (Language::Cpp, Some(depth)) => {
+            format!("for (std::size_t _i = 0; _i < {depth}; ++_i) {{")
+        }
+        (Language::C11 | Language::Cpp, None) => "for (;;) {".to_string(),
+        (Language::Kotlin, Some(depth)) => format!("for (_i in 0 until {depth}) {{"),
+        (Language::Kotlin, None) => "while (true) {".to_string(),
+        (Language::Go, Some(depth)) => format!("for _i := 0; _i < int({depth}); _i++ {{"),
+        (Language::Go, None) => "for {".to_string(),
+        (Language::Python, Some(depth)) => format!("for _ in range({depth}):"),
+        (Language::Python, None) => "while True:".to_string(),
+        (Language::Swift, _) => no_swift_emitter("chain_loop_head"),
+    }
+}
+
+/// The capacity argument a Go chain's `make` reserves: its depth, or nothing
+/// where the protocol states none, since what a chain holds is then what its
+/// frame backs, read entry by entry (docs/adr/0077 §7).
+fn go_chain_capacity(max_depth: Option<u32>) -> String {
+    max_depth
+        .map(|depth| format!(", {depth}"))
+        .unwrap_or_default()
+}
+
 /// [`tlv_chain_more_decl`] as a full source line followed by `indent`, ready
 /// to prefix the loop it belongs to — or nothing when the chain does not
 /// terminate on an entry flag and so has no successor declaration to carry.
@@ -15355,7 +15458,16 @@ fn more_decl_line(
 ///   - the cursor is empty: the peer's frame ended mid-chain, a short frame.
 ///   - the cursor still holds bytes: the frame carries an entry past
 ///     `max-depth`, a count past its bound.
-fn tlv_chain_guard(lang: crate::generator::Language, entry_flag: bool, indent: &str) -> String {
+///
+/// A chain the protocol states no depth of has no entry past its depth: its
+/// loop runs until the chain ends, so only the short frame is left to refuse
+/// (docs/adr/0077 §7).
+fn tlv_chain_guard(
+    lang: crate::generator::Language,
+    entry_flag: bool,
+    max_depth: Option<u32>,
+    indent: &str,
+) -> String {
     use crate::forge::codec_failure::CodecFailure;
     // Both are positional failures, which every backend raises with a
     // statement (`codec_failure::tests::only_a_positional_failure_has_a_raise_statement`).
@@ -15364,6 +15476,22 @@ fn tlv_chain_guard(lang: crate::generator::Language, entry_flag: bool, indent: &
             .expect("a positional codec failure has a raise statement on every backend")
     };
     let past_depth = raise(CodecFailure::TooManyElements);
+    if max_depth.is_none() {
+        if !entry_flag {
+            return String::new();
+        }
+        let and = if matches!(lang, crate::generator::Language::Python) {
+            "and"
+        } else {
+            "&&"
+        };
+        return chain_guard_if(
+            lang,
+            indent,
+            &format!("_more {and} {}", chain_cursor_empty(lang)),
+            raise(CodecFailure::NeedMoreBytes),
+        );
+    }
     if !entry_flag {
         return chain_guard_if(lang, indent, chain_cursor_nonempty(lang), past_depth);
     }
@@ -15421,7 +15549,8 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // temporary, reads the flag accessor into `_more` BEFORE the push
         // (push moves the value), and breaks the loop when clear.
         Language::Rust => {
-            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "            ");
+            let overflow_check =
+                tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, "            ");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
@@ -15448,6 +15577,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                     chain_loop_body(indent, Some("            "), &lines)
                 }
             };
+            let loop_head = chain_loop_head(lang, max_depth);
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
             // The list is built in the destination field, not in a local that
             // is later moved into it: a `heapless::Vec` moves by copying its
@@ -15457,7 +15587,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             // it sits through its `refill` (docs/adr/0065 §6 R7).
             format!(
                 "{RUST_DECODE_OUT}.{id}.{refill}|_vec| {{\n            \
-                     {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
+                     {more_decl}{loop_head}\n{body}\
                      }}{overflow_check}\n            \
                      Ok(())\n        \
                  }})?;"
@@ -15471,7 +15601,8 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // when the bit is clear.
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "        ");
+            let overflow_check =
+                tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, "        ");
             // body_decoder shape: `<entry_struct>_decode`. Strip the
             // `_decode` suffix to recover the entry's struct snake
             // name (used as the accessor's free-function prefix per
@@ -15523,11 +15654,12 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                     chain_loop_body(indent, Some("        "), &lines)
                 }
             };
+            let loop_head = chain_loop_head(lang, max_depth);
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "        ");
             format!(
                 "{{\n        \
                      out->{id_snake}_len = 0;\n        \
-                     {more_decl}for (size_t _i = 0; _i < {max_depth}; ++_i) {{\n{body}\
+                     {more_decl}{loop_head}\n{body}\
                      }}{overflow_check}\n    \
                  }}"
             )
@@ -15540,7 +15672,8 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // first. Entry-
         // flag termination reads the optional's value method then push.
         Language::Cpp => {
-            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "        ");
+            let overflow_check =
+                tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, "        ");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "            if (cursor.remaining() == 0) break;\n            \
@@ -15569,11 +15702,16 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                     chain_loop_body(indent, Some("        "), &lines)
                 }
             };
+            let loop_head = chain_loop_head(lang, max_depth);
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "        ");
+            // A chain with no depth reserves nothing: what it holds is what
+            // the frame backs, read entry by entry (docs/adr/0077 §7).
+            let reserve = max_depth
+                .map(|depth| format!("{id}.reserve({depth});\n        "))
+                .unwrap_or_default();
             format!(
                 "std::vector<{body_type}> {id};\n        \
-                 {id}.reserve({max_depth});\n        \
-                 {more_decl}for (std::size_t _i = 0; _i < {max_depth}; ++_i) {{\n{body}\
+                 {reserve}{more_decl}{loop_head}\n{body}\
                  }}{overflow_check}"
             )
         }
@@ -15589,8 +15727,12 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             // The guard sits inside the `also` lambda, next to the loop it
             // judges — `also` is inline, so the non-local `return null` the
             // element decode already uses is equally available here.
-            let overflow_check =
-                tlv_chain_guard(lang, entry_flag_acc.is_some(), "                ");
+            let overflow_check = tlv_chain_guard(
+                lang,
+                entry_flag_acc.is_some(),
+                max_depth,
+                "                ",
+            );
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                    if (cursor.remaining() == 0) break\n                    \
@@ -15616,10 +15758,11 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                     chain_loop_body(indent, Some("                "), &lines)
                 }
             };
+            let loop_head = chain_loop_head(lang, max_depth);
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "                ");
             format!(
                 "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().also {{\n                \
-                     {more_decl}for (_i in 0 until {max_depth}) {{\n{body}\
+                     {more_decl}{loop_head}\n{body}\
                      }}{overflow_check}\n            \
                  }}"
             )
@@ -15631,7 +15774,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // reads the entry's PascalCase accessor and breaks when clear.
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "\t");
+            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, "\t");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "\t\tif cursor.Remaining() == 0 {{\n\t\t\t\
@@ -15667,11 +15810,13 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                     chain_loop_body(indent, Some("\t"), &lines)
                 }
             };
+            let loop_head = chain_loop_head(lang, max_depth);
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "\t");
             format!(
-                "{go_id} := make([]{body_type}, 0, {max_depth})\n\t\
-                 {more_decl}for _i := 0; _i < int({max_depth}); _i++ {{\n{body}\
-                 }}{overflow_check}"
+                "{go_id} := make([]{body_type}, 0{})\n\t\
+                 {more_decl}{loop_head}\n{body}\
+                 }}{overflow_check}",
+                go_chain_capacity(max_depth)
             )
         }
         // Python: build the list inside the surrounding `try:` block
@@ -15684,7 +15829,8 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // flag accessor pattern in py_codec template).
         Language::Python => {
             let py_id = id;
-            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "            ");
+            let overflow_check =
+                tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, "            ");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                if cursor.remaining() == 0:\n                    \
@@ -15717,10 +15863,11 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                     chain_loop_body(indent, None, &lines)
                 }
             };
+            let loop_head = chain_loop_head(lang, max_depth);
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
             format!(
                 "{py_id} = []\n            \
-                 {more_decl}for _ in range({max_depth}):\n{body}{overflow_check}"
+                 {more_decl}{loop_head}\n{body}{overflow_check}"
             )
         }
     }
@@ -15846,7 +15993,7 @@ struct TlvChainDecodeGated<'a> {
     decode_arg: &'a str,
     /// See [`TlvChainDecode::entry_binds`].
     entry_binds: &'a ChainEntryBinds,
-    max_depth: u32,
+    max_depth: Option<u32>,
     terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
     /// See [`TlvChainDecode::law_start`].
     law_start: Option<&'a str>,
@@ -15910,7 +16057,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             // if the guard were inside the loop. A chain closed by an entry
             // flag is filled inside its list's `refill`, one level deeper.
             let (block, inner) = ("                ", "                    ");
-            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), block);
+            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, block);
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
@@ -15933,12 +16080,13 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                     chain_loop_body(inner, Some(block), &lines)
                 }
             };
+            let loop_head = chain_loop_head(lang, max_depth);
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, block);
             // Built in the destination field; see the ungated emit above.
             format!(
                 "if {test} {{\n            \
                      {RUST_DECODE_OUT}.{id}.insert(Default::default()).{refill}|_vec| {{\n                \
-                         {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
+                         {more_decl}{loop_head}\n{body}\
                          }}{overflow_check}\n                \
                          Ok(())\n            \
                      }})?;\n        \
@@ -15948,7 +16096,8 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             )
         }
         Language::Cpp => {
-            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "            ");
+            let overflow_check =
+                tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, "            ");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                if (cursor.remaining() == 0) break;\n                \
@@ -15975,21 +16124,28 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                     chain_loop_body(indent, Some("            "), &lines)
                 }
             };
+            let loop_head = chain_loop_head(lang, max_depth);
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
+            let reserve = max_depth
+                .map(|depth| format!("_list.reserve({depth});\n            "))
+                .unwrap_or_default();
             format!(
                 "std::optional<std::vector<{body_type}>> {id};\n        \
                  if ({test}) {{\n            \
                      std::vector<{body_type}> _list;\n            \
-                     _list.reserve({max_depth});\n            \
-                     {more_decl}for (std::size_t _i = 0; _i < {max_depth}; ++_i) {{\n{body}\
+                     {reserve}{more_decl}{loop_head}\n{body}\
                      }}{overflow_check}\n            \
                      {id} = std::move(_list);\n        \
                  }}"
             )
         }
         Language::Kotlin => {
-            let overflow_check =
-                tlv_chain_guard(lang, entry_flag_acc.is_some(), "                ");
+            let overflow_check = tlv_chain_guard(
+                lang,
+                entry_flag_acc.is_some(),
+                max_depth,
+                "                ",
+            );
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                    if (cursor.remaining() == 0) break\n                    \
@@ -16013,11 +16169,12 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                     chain_loop_body(indent, Some("                "), &lines)
                 }
             };
+            let loop_head = chain_loop_head(lang, max_depth);
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "                ");
             format!(
                 "val {id}: MutableList<{body_type}>? = if ({test}) {{\n            \
                      mutableListOf<{body_type}>().also {{\n                \
-                         {more_decl}for (_i in 0 until {max_depth}) {{\n{body}\
+                         {more_decl}{loop_head}\n{body}\
                          }}{overflow_check}\n            \
                      }}\n        \
                  }} else {{\n            \
@@ -16027,7 +16184,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         }
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "\t\t");
+            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, "\t\t");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "\t\t\tif cursor.Remaining() == 0 {{\n\t\t\t\t\
@@ -16060,6 +16217,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                     chain_loop_body(indent, Some("\t\t"), &lines)
                 }
             };
+            let loop_head = chain_loop_head(lang, max_depth);
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "\t\t");
             // The chain is built in a local and handed over whole once the
             // loop and its guard have accepted it: a chain the guard refuses
@@ -16068,25 +16226,39 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             format!(
                 "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
-                     _list := make([]{body_type}, 0, {max_depth})\n\t\t\
-                     {more_decl}for _i := 0; _i < int({max_depth}); _i++ {{\n{body}\
+                     _list := make([]{body_type}, 0{})\n\t\t\
+                     {more_decl}{loop_head}\n{body}\
                      }}{overflow_check}\n\t\t\
                      {go_id} = optional.Some(_list)\n\t\
-                 }}"
+                 }}",
+                go_chain_capacity(max_depth)
             )
         }
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "            ");
+            let overflow_check =
+                tlv_chain_guard(lang, entry_flag_acc.is_some(), max_depth, "            ");
             let entry_struct_snake = body_decoder.strip_suffix("_decode").unwrap_or(body_decoder);
             // The member is the optional value of the chain: present under the
             // gate, holding the entries read (none, where the chain was on the
             // wire and empty), and the absent value, every byte zero, otherwise.
             let data = format!("out->{id_snake}.value.data");
             let len = format!("out->{id_snake}.value.len");
+            // The array holds the deployment's capacity, which may be fewer
+            // entries than the walk reads, as the ungated chain's does
+            // (docs/adr/0077 §7). Without this a frame past the capacity
+            // wrote past the array.
+            let room = field
+                .capacity
+                .map(|capacity| {
+                    format!(
+                        "if ({len} >= {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n                "
+                    )
+                })
+                .unwrap_or_default();
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
-                    "                if (sce_forge_cursor_remaining(cursor) == 0) break;\n                \
+                    "                if (sce_forge_cursor_remaining(cursor) == 0) break;\n                {room}\
                      sce_forge_codec_status_t _st = {body_decoder}(cursor, &{data}[{len}]{decode_arg});\n                \
                      if (_st != SCE_FORGE_CODEC_OK) return _st;\n                \
                      {len}++;\n            "
@@ -16098,6 +16270,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                         acc,
                         "if (sce_forge_cursor_remaining(cursor) == 0) break;",
                     );
+                    lines.extend((!room.is_empty()).then(|| room.trim_end().to_string()));
                     lines.extend([
                         format!(
                             "sce_forge_codec_status_t _st = {body_decoder}(cursor, &{data}[{len}]{decode_arg});"
@@ -16116,20 +16289,25 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                     chain_loop_body(indent, Some("            "), &lines)
                 }
             };
+            let loop_head = chain_loop_head(lang, max_depth);
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
             format!(
                 "memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n        \
                  if ({test}) {{\n            \
                      out->{id_snake}.present = true;\n            \
-                     {more_decl}for (size_t _i = 0; _i < {max_depth}; ++_i) {{\n{body}\
+                     {more_decl}{loop_head}\n{body}\
                      }}{overflow_check}\n        \
                  }}"
             )
         }
         Language::Python => {
             let py_id = id;
-            let overflow_check =
-                tlv_chain_guard(lang, entry_flag_acc.is_some(), "                ");
+            let overflow_check = tlv_chain_guard(
+                lang,
+                entry_flag_acc.is_some(),
+                max_depth,
+                "                ",
+            );
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                    if cursor.remaining() == 0:\n                        \
@@ -16160,11 +16338,12 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                     chain_loop_body(indent, None, &lines)
                 }
             };
+            let loop_head = chain_loop_head(lang, max_depth);
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "                ");
             format!(
                 "if {test}:\n                \
                      {py_id} = []\n                \
-                     {more_decl}for _ in range({max_depth}):\n{body}{overflow_check}\n            \
+                     {more_decl}{loop_head}\n{body}{overflow_check}\n            \
                  else:\n                \
                      {py_id} = None"
             )
@@ -17992,39 +18171,61 @@ fn repeat_room_guard(
         .full_stmt(lang, len, indent)
 }
 
+/// C11 holds every list in an array of its capacity, so a list the protocol
+/// states no bound of and the deployment gives no capacity has no array, and
+/// the codec is refused naming it (docs/adr/0077 §7). The other backends grow.
+fn c11_refuse_a_list_it_cannot_hold(m: &CodecModel) -> Result<(), ForgeError> {
+    match m
+        .fields
+        .iter()
+        .find(|f| (f.is_repeat() || f.is_tlv_chain()) && f.storage_entries().is_none())
+    {
+        Some(f) => Err(crate::forge::error::ValidationError::CodecCapacityInvalid {
+            codec: m.name.clone(),
+            field: f.id.clone(),
+            rule: "the protocol states no bound of this list, and C11 holds every list in an \
+                   array of its capacity, so the deployment gives it one"
+                .to_string(),
+        }
+        .into()),
+        None => Ok(()),
+    }
+}
+
+/// The entries C11's array holds of the list `f`, which
+/// [`c11_refuse_a_list_it_cannot_hold`] has seen to be some number.
+fn c11_held_entries(f: &CodecField) -> u32 {
+    f.storage_entries()
+        .expect("C11 refuses a list it holds no number of before it renders the codec")
+}
+
 /// C11's check that a list's count `n` fits the array that holds it, where
 /// the list's declared bound does not already prove it: the array holds
 /// exactly the declared `max-count`, which [`repeat_count_guard`] has checked.
 /// Followed by a newline and `indent`, or empty.
+///
+/// Without a capacity the array holds the declared bound, so the count guard
+/// has proved it; a list with neither is refused before the codec renders
+/// ([`c11_refuse_a_list_it_cannot_hold`]).
 fn c11_list_storage_check(field: &CodecField, n: &str, indent: &str) -> String {
-    if field.capacity.is_some() {
-        let capacity = field.storage_entries();
-        return format!(
-            "if ({n} > {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}"
-        );
+    match field.capacity {
+        Some(capacity) => {
+            format!("if ({n} > {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}")
+        }
+        None => String::new(),
     }
-    if field.declared_bound().is_some() {
-        return String::new();
-    }
-    let capacity = field.storage_entries();
-    format!("if ({n} > {capacity}) return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;\n{indent}")
 }
 
 /// [`repeat_room_guard`] for C11, which also needs room in the list's array:
-/// the declared bound is the array's, and an undeclared list's array is checked
-/// as it fills.
+/// the array is the deployment's capacity where it gives one, and otherwise the
+/// declared bound, which the room guard holds the list to.
 fn c11_list_room(field: &CodecField, fields: &[CodecField], len: &str, indent: &str) -> String {
-    if field.capacity.is_some() {
-        let capacity = field.storage_entries();
-        return format!(
-            "if ({len} >= {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}"
-        );
+    match field.capacity {
+        Some(capacity) => {
+            format!("if ({len} >= {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}")
+        }
+        None => repeat_room_guard(field, fields, len, crate::generator::Language::C11, indent),
     }
-    if field.declared_bound().is_some() {
-        return repeat_room_guard(field, fields, len, crate::generator::Language::C11, indent);
-    }
-    let capacity = field.storage_entries();
-    format!("if ({len} >= {capacity}) return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;\n{indent}")
 }
 
 /// [`positional_bound_guard`] for C11, whose positional decode reads a
@@ -20198,11 +20399,13 @@ fn encode_bound_guard_lines(
         let Some(kind) = BoundKind::of(field) else {
             continue;
         };
+        // The most is `None` for a list the protocol bounds by nothing, which
+        // no count refuses (docs/adr/0077 §7).
         let (least, most) = match kind {
             BoundKind::Length => match codec_totality::byte_bound(field, fields) {
                 Some(bound) => (
                     bound.min,
-                    bound.max.expect("a byte bound has a largest length"),
+                    Some(bound.max.expect("a byte bound has a largest length")),
                 ),
                 None => continue,
             },
@@ -20211,6 +20414,9 @@ fn encode_bound_guard_lines(
                 codec_totality::list_bound(field),
             ),
         };
+        if least == 0 && most.is_none() {
+            continue;
+        }
         let failure = CodecFailure::over_bound(kind);
         let refuse = failure
             .encode_refusal_stmt(lang)
@@ -20242,15 +20448,15 @@ fn encode_bound_guard_lines(
             Language::Rust | Language::C11 => bound_held_elsewhere(lang),
         };
         // A Kotlin size is an `Int`, which no larger bound can be passed by.
-        let checks_most = !(lang == Language::Kotlin && most > i32::MAX as u64);
+        let most = most.filter(|most| !(lang == Language::Kotlin && *most > i32::MAX as u64));
         let outside = |v: &str| {
             let n = size(v);
             let or = if lang == Language::Python { "or" } else { "||" };
-            match (least > 0, checks_most) {
-                (true, true) => format!("{n} < {least} {or} {n} > {most}"),
-                (true, false) => format!("{n} < {least}"),
-                (false, true) => format!("{n} > {most}"),
-                (false, false) => String::new(),
+            match (least > 0, most) {
+                (true, Some(most)) => format!("{n} < {least} {or} {n} > {most}"),
+                (true, None) => format!("{n} < {least}"),
+                (false, Some(most)) => format!("{n} > {most}"),
+                (false, None) => String::new(),
             }
         };
         let gated = field.present_if.is_some();
@@ -31230,7 +31436,7 @@ fn c11_gated_list_member(body_type: &str, max: u32) -> String {
 fn c11_over_bound_condition(id: &str, field: &CodecField) -> Option<String> {
     let bound = match &field.bit_size {
         BitSize::Tail | BitSize::LengthRef => field.storage_bytes(),
-        BitSize::Repeat { .. } | BitSize::TlvChain { .. } => field.storage_entries(),
+        BitSize::Repeat { .. } | BitSize::TlvChain { .. } => c11_held_entries(field),
         BitSize::Fixed { .. } | BitSize::Vle { .. } | BitSize::Embed => return None,
     };
     if field.present_if.is_some() {
@@ -42043,7 +42249,7 @@ mod tests {
     fn tlv_chain_guard_answers_each_termination() {
         use crate::generator::Language;
 
-        let guard = |entry_flag| tlv_chain_guard(Language::Rust, entry_flag, "    ");
+        let guard = |entry_flag| tlv_chain_guard(Language::Rust, entry_flag, Some(4), "    ");
 
         // Exhaust-or-depth: the chain owns the tail, so leftover bytes are
         // an entry past the depth.
@@ -42060,6 +42266,24 @@ mod tests {
         assert!(!flag.contains("cursor.remaining() > 0"), "{flag}");
     }
 
+    /// A chain the protocol states no depth of has no entry past its depth
+    /// (docs/adr/0077 §7): read to the end of the frame there is nothing to
+    /// refuse, and closed by a flag only the frame cut short is.
+    #[test]
+    fn a_chain_with_no_depth_refuses_only_a_frame_cut_short() {
+        use crate::generator::Language;
+
+        assert_eq!(tlv_chain_guard(Language::Rust, false, None, "    "), "");
+        let flag = tlv_chain_guard(Language::Rust, true, None, "    ");
+        assert!(flag.contains("NeedMoreBytes"), "{flag}");
+        assert!(!flag.contains("TooManyElements"), "{flag}");
+        assert_eq!(chain_loop_head(Language::Rust, None), "loop {");
+        assert_eq!(
+            chain_loop_head(Language::Rust, Some(4)),
+            "for _ in 0..4u32 {"
+        );
+    }
+
     /// A C++ or Kotlin refusal is two statements, the record and the return,
     /// so the guard braces them: unbraced, the return would run on every
     /// frame.
@@ -42068,7 +42292,7 @@ mod tests {
         use crate::generator::Language;
 
         for lang in [Language::Cpp, Language::Kotlin] {
-            let guard = tlv_chain_guard(lang, false, "    ");
+            let guard = tlv_chain_guard(lang, false, Some(4), "    ");
             assert!(guard.contains("{ cursor.refuse("), "{lang:?}: {guard}");
             assert!(guard.trim_end().ends_with('}'), "{lang:?}: {guard}");
         }

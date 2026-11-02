@@ -136,7 +136,7 @@ impl CodecVariantPeekBasic {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecVariantPeekBasic::encode_source(self, w)
+        CodecVariantPeekBasicWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -244,10 +244,17 @@ impl CodecVariantPeekBasicSource for CodecVariantPeekBasicView {
     }
 }
 
+/// The codec `CodecVariantPeekBasic` itself: what writes a value read through
+/// [`CodecVariantPeekBasicSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecVariantPeekBasicWire;
+
 #[allow(dead_code)]
-impl CodecVariantPeekBasic {
+impl CodecVariantPeekBasicWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecVariantPeekBasic::encode` writes for the value it holds, read through
     /// [`CodecVariantPeekBasicSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -264,8 +271,8 @@ impl CodecVariantPeekBasic {
     #[doc(hidden)]
     pub fn write_source<S: CodecVariantPeekBasicSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         match src.body() {
-            CodecVariantPeekBasicVariantSource::CodecPeekArmA(_b) => CodecPeekArmA::write_source(_b, w)?,
-            CodecVariantPeekBasicVariantSource::CodecPeekArmB(_b) => CodecPeekArmB::write_source(_b, w)?,
+            CodecVariantPeekBasicVariantSource::CodecPeekArmA(_b) => super::codec_peek_arm_a::CodecPeekArmAWire::write_source(_b, w)?,
+            CodecVariantPeekBasicVariantSource::CodecPeekArmB(_b) => super::codec_peek_arm_b::CodecPeekArmBWire::write_source(_b, w)?,
         }
         Ok(())
     }
@@ -280,7 +287,7 @@ impl CodecVariantPeekBasic {
     }
 }
 
-impl<S: CodecVariantPeekBasicSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecVariantPeekBasic {
+impl<S: CodecVariantPeekBasicSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecVariantPeekBasicWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -289,7 +296,7 @@ impl<S: CodecVariantPeekBasicSource + ?Sized> ::sce_forge_runtime::codec::Source
 }
 
 #[allow(dead_code)]
-impl CodecVariantPeekBasic {
+impl CodecVariantPeekBasicWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -408,13 +415,13 @@ impl CodecVariantPeekBasicView {
     pub fn into_builder(&self, _out: &mut CodecVariantPeekBasic) -> Result<(), CodecError> {
         match &self.body {
             CodecVariantPeekBasicViewVariant::CodecPeekArmA(_b) => {
-                _out.body = CodecVariantPeekBasicVariant::CodecPeekArmA(CodecPeekArmA::default());
+                _out.body = CodecVariantPeekBasicVariant::CodecPeekArmA(Default::default());
                 if let CodecVariantPeekBasicVariant::CodecPeekArmA(_o) = &mut _out.body {
                     _b.into_builder(_o)?;
                 }
             }
             CodecVariantPeekBasicViewVariant::CodecPeekArmB(_b) => {
-                _out.body = CodecVariantPeekBasicVariant::CodecPeekArmB(CodecPeekArmB::default());
+                _out.body = CodecVariantPeekBasicVariant::CodecPeekArmB(Default::default());
                 if let CodecVariantPeekBasicVariant::CodecPeekArmB(_o) = &mut _out.body {
                     _b.into_builder(_o)?;
                 }
@@ -434,7 +441,7 @@ impl CodecVariantPeekBasicView {
     /// from, so a frame `decode` accepted in a form that is not canonical is
     /// not passed on as it came.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
-        CodecVariantPeekBasic::encode_source(self, w)
+        CodecVariantPeekBasicWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade over [`Self::encode`], which refuses no

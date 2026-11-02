@@ -17,7 +17,6 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use super::codec_origin_leaf::CodecOriginLeaf;
 use super::codec_origin_scalar::CodecOriginScalar;
 
 /// A tag `CodecOriginChoice` names no arm for, which its default arm holds: a
@@ -246,7 +245,7 @@ impl<S: CodecOriginChoiceStorage> CodecOriginChoiceIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecOriginChoice::encode_source(self, w)
+        CodecOriginChoiceWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -351,10 +350,17 @@ impl<S: CodecOriginChoiceStorage> CodecOriginChoiceSource for CodecOriginChoiceO
     }
 }
 
+/// The codec `CodecOriginChoice` itself: what writes a value read through
+/// [`CodecOriginChoiceSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecOriginChoiceWire;
+
 #[allow(dead_code)]
-impl<'a> CodecOriginChoice<'a> {
+impl CodecOriginChoiceWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecOriginChoice::encode` writes for the value it holds, read through
     /// [`CodecOriginChoiceSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -373,9 +379,9 @@ impl<'a> CodecOriginChoice<'a> {
         let _d_tag: u8 = src.body().tag();
         w.write_u8(_d_tag)?;
         match src.body() {
-            CodecOriginChoiceVariantSource::CodecOriginLeaf(_b) => CodecOriginLeaf::write_source(_b, w)?,
-            CodecOriginChoiceVariantSource::CodecOriginScalar(_b) => CodecOriginScalar::write_source(_b, w)?,
-            CodecOriginChoiceVariantSource::Default { body: _b, .. } => CodecOriginScalar::write_source(_b, w)?,
+            CodecOriginChoiceVariantSource::CodecOriginLeaf(_b) => super::codec_origin_leaf::CodecOriginLeafWire::write_source(_b, w)?,
+            CodecOriginChoiceVariantSource::CodecOriginScalar(_b) => super::codec_origin_scalar::CodecOriginScalarWire::write_source(_b, w)?,
+            CodecOriginChoiceVariantSource::Default { body: _b, .. } => super::codec_origin_scalar::CodecOriginScalarWire::write_source(_b, w)?,
         }
         Ok(())
     }
@@ -390,7 +396,7 @@ impl<'a> CodecOriginChoice<'a> {
     }
 }
 
-impl<'a, S: CodecOriginChoiceSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecOriginChoice<'a> {
+impl<S: CodecOriginChoiceSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecOriginChoiceWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -399,7 +405,7 @@ impl<'a, S: CodecOriginChoiceSource + ?Sized> ::sce_forge_runtime::codec::Source
 }
 
 #[allow(dead_code)]
-impl<'a> CodecOriginChoice<'a> {
+impl CodecOriginChoiceWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -454,16 +460,16 @@ impl<'a> CodecOriginChoice<'a> {
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
 #[allow(dead_code)]
-impl<'a> CodecOriginChoiceVariant<'a> {
+impl<'a, D> CodecOriginChoiceVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginChoiceStorage {
     /// Deep-copy this borrowed variant body into its owned mirror at the
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
     /// enforces) — on the growable profile no check can fire.
     pub fn try_into_owned_in<S: CodecOriginChoiceFrom<'a>>(self) -> Result<CodecOriginChoiceOwnedVariant<S>, CodecError> {
         Ok(match self {
-            CodecOriginChoiceVariant::CodecOriginLeaf(_b) => CodecOriginChoiceOwnedVariant::CodecOriginLeaf(_b.try_into_owned_in::<S>()?),
-            CodecOriginChoiceVariant::CodecOriginScalar(_b) => CodecOriginChoiceOwnedVariant::CodecOriginScalar(_b),
-            CodecOriginChoiceVariant::Default { tag, body } => CodecOriginChoiceOwnedVariant::Default { tag, body },
+            Self::CodecOriginLeaf(_b) => CodecOriginChoiceOwnedVariant::CodecOriginLeaf(_b.try_into_owned_in::<S>()?),
+            Self::CodecOriginScalar(_b) => CodecOriginChoiceOwnedVariant::CodecOriginScalar(_b),
+            Self::Default { tag, body } => CodecOriginChoiceOwnedVariant::Default { tag, body },
         })
     }
 
@@ -479,8 +485,8 @@ impl<S: CodecOriginChoiceStorage> CodecOriginChoiceOwnedVariant<S> {
     /// the inverse of the projection above. Reuses the borrowed view's
     /// single `encode`; the owned form deliberately carries no encode of
     /// its own.
-    pub fn as_borrowed(&self) -> CodecOriginChoiceVariant<'_> {
-        let mut _out = CodecOriginChoiceVariant::default();
+    pub fn as_borrowed(&self) -> CodecOriginChoiceVariantIn<::sce_forge_runtime::codec::Lent<'_, S>> {
+        let mut _out = Default::default();
         self.as_borrowed_into(&mut _out);
         _out
     }
@@ -494,23 +500,23 @@ impl<S: CodecOriginChoiceStorage> CodecOriginChoiceOwnedVariant<S> {
     /// projection that returns one copies the declared maximum at every layer
     /// it passes through. A caller on a path where that shows projects into a
     /// destination it owns. On `Err`, `_out` holds what was projected so far.
-    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecOriginChoiceVariant<'o>) {
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecOriginChoiceVariantIn<::sce_forge_runtime::codec::Lent<'o, S>>) {
         match self {
             CodecOriginChoiceOwnedVariant::CodecOriginLeaf(_b) => {
-                *_out = CodecOriginChoiceVariant::CodecOriginLeaf(Default::default());
-                if let CodecOriginChoiceVariant::CodecOriginLeaf(_o) = _out {
+                *_out = CodecOriginChoiceVariantIn::CodecOriginLeaf(Default::default());
+                if let CodecOriginChoiceVariantIn::CodecOriginLeaf(_o) = _out {
                     _b.as_borrowed_into(_o);
                 }
             }
             CodecOriginChoiceOwnedVariant::CodecOriginScalar(_b) => {
-                *_out = CodecOriginChoiceVariant::CodecOriginScalar(Default::default());
-                if let CodecOriginChoiceVariant::CodecOriginScalar(_o) = _out {
+                *_out = CodecOriginChoiceVariantIn::CodecOriginScalar(Default::default());
+                if let CodecOriginChoiceVariantIn::CodecOriginScalar(_o) = _out {
                     *_o = _b.clone();
                 }
             }
             CodecOriginChoiceOwnedVariant::Default { tag, body } => {
-                *_out = CodecOriginChoiceVariant::Default { tag: *tag, body: Default::default() };
-                if let CodecOriginChoiceVariant::Default { body: _o, .. } = _out {
+                *_out = CodecOriginChoiceVariantIn::Default { tag: *tag, body: Default::default() };
+                if let CodecOriginChoiceVariantIn::Default { body: _o, .. } = _out {
                     *_o = body.clone();
                 }
             }
@@ -519,8 +525,11 @@ impl<S: CodecOriginChoiceStorage> CodecOriginChoiceOwnedVariant<S> {
     }
 }
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecOriginChoice<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecOriginChoice<'a> {
+impl<'a, D> CodecOriginChoiceIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginChoiceStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecOriginChoiceOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -554,8 +563,8 @@ impl<S: CodecOriginChoiceStorage> CodecOriginChoiceOwned<S> {
     /// borrowed view (the owned form is read-only), so an owned consumer
     /// reaches it via `as_borrowed` then `encode` / `encode_to_vec`.
     /// Each field is projected by reference — a cheap re-borrow, not a copy.
-    pub fn as_borrowed(&self) -> CodecOriginChoice<'_> {
-        let mut _out = CodecOriginChoice::default();
+    pub fn as_borrowed(&self) -> CodecOriginChoiceIn<::sce_forge_runtime::codec::Lent<'_, S>> {
+        let mut _out = Default::default();
         self.as_borrowed_into(&mut _out);
         _out
     }
@@ -570,7 +579,7 @@ impl<S: CodecOriginChoiceStorage> CodecOriginChoiceOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecOriginChoice<'o>) {
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecOriginChoiceIn<::sce_forge_runtime::codec::Lent<'o, S>>) {
         _out.tag = self.tag;
         self.body.as_borrowed_into(&mut _out.body);
         
@@ -590,20 +599,20 @@ impl<S: CodecOriginChoiceStorage> CodecOriginChoiceOwned<S> {
 }
 
 #[allow(dead_code)]
-impl<'a> CodecOriginChoiceVariant<'a> {
+impl<'a, D> CodecOriginChoiceVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginChoiceStorage {
     /// The projection above, with the profile's byte and text containers made
     /// from `origin` — what the decoded bytes were taken from.
     pub fn try_into_owned_in_origin<S: CodecOriginChoiceStorage + ::sce_forge_runtime::codec::OriginStorage>(self, origin: &<S as ::sce_forge_runtime::codec::OriginStorage>::Origin) -> Result<CodecOriginChoiceOwnedVariant<S>, CodecError> {
         Ok(match self {
-            CodecOriginChoiceVariant::CodecOriginLeaf(_b) => CodecOriginChoiceOwnedVariant::CodecOriginLeaf(_b.try_into_owned_in_origin::<S>(origin)?),
-            CodecOriginChoiceVariant::CodecOriginScalar(_b) => CodecOriginChoiceOwnedVariant::CodecOriginScalar(_b),
-            CodecOriginChoiceVariant::Default { tag, body } => CodecOriginChoiceOwnedVariant::Default { tag, body },
+            Self::CodecOriginLeaf(_b) => CodecOriginChoiceOwnedVariant::CodecOriginLeaf(_b.try_into_owned_in_origin::<S>(origin)?),
+            Self::CodecOriginScalar(_b) => CodecOriginChoiceOwnedVariant::CodecOriginScalar(_b),
+            Self::Default { tag, body } => CodecOriginChoiceOwnedVariant::Default { tag, body },
         })
     }
 }
 
 #[allow(dead_code)]
-impl<'a> CodecOriginChoice<'a> {
+impl<'a, D> CodecOriginChoiceIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginChoiceStorage {
     /// Project this borrowed view into an owned [`CodecOriginChoiceOwned`]
     /// whose byte and text containers are made by the profile's
     /// `OriginStorage` from each slice AND `origin`, the buffer the

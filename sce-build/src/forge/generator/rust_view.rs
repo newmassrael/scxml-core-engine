@@ -220,12 +220,20 @@ pub(super) fn repeat_decode_stmt(list: &ViewList) -> String {
         _ => unreachable!("a view repeat statement is made for a repeat field"),
     };
     let scan = |indent: &str, head: &str| {
+        // A list the protocol bounds by nothing has no entry past its bound
+        // (docs/adr/0077 §7).
+        let past = max_count
+            .map(|max_count| {
+                format!(
+                    "if _count == {max_count} {{\n{indent}        \
+                         return Err(CodecError::TooManyElements);\n{indent}    \
+                     }}\n{indent}    "
+                )
+            })
+            .unwrap_or_default();
         format!(
             "{head} {{\n{indent}    \
-                 if _count == {max_count} {{\n{indent}        \
-                     return Err(CodecError::TooManyElements);\n{indent}    \
-                 }}\n{indent}    \
-                 {entry}::decode(cursor{decode_arg})?;\n{indent}    \
+                 {past}{entry}::decode(cursor{decode_arg})?;\n{indent}    \
                  _count += 1;\n{indent}\
              }}"
         )
@@ -298,7 +306,8 @@ pub(super) fn repeat_decode_stmt(list: &ViewList) -> String {
 pub(super) struct ViewChain<'a> {
     /// The flag-inputs the chain supplies entry by entry.
     pub entry_binds: &'a ChainEntryBinds,
-    pub max_depth: u32,
+    /// The chain's depth, `None` where the protocol states none.
+    pub max_depth: Option<u32>,
     pub terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
 }
 
@@ -328,7 +337,8 @@ pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> Strin
         TlvTerminateStrategy::ExhaustOrDepth => None,
         TlvTerminateStrategy::EntryFlag { flag_name } => Some(flag_getter_name(flag_name, lang)),
     };
-    let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "            ");
+    let overflow_check =
+        tlv_chain_guard(lang, entry_flag_acc.is_some(), *max_depth, "            ");
     let indent = "                ";
     let mut lines =
         chain_end_of_frame_stop(&entry_flag_acc, "if cursor.remaining() == 0 { break; }");
@@ -352,10 +362,11 @@ pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> Strin
     }
     let body = chain_loop_body(indent, Some("            "), &lines);
     let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
+    let loop_head = chain_loop_head(lang, *max_depth);
     let value = list.value();
     let scan = format!(
         "{SCAN_OPEN}\n            \
-         {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
+         {more_decl}{loop_head}\n{body}\
          }}{overflow_check}\n            \
          _out.{id} = {value};"
     );
@@ -406,13 +417,13 @@ pub(super) fn into_builder_plain(id: &str) -> String {
 }
 
 /// `into_builder` of an embedded body: the body's view fills the body in the
-/// destination where it sits. `body` is the body's codec type, which a gated
-/// body is installed as before it is filled.
-pub(super) fn into_builder_embed(id: &str, body: &str, gated: bool) -> String {
+/// destination where it sits, a gated body installed as its default first, at
+/// whatever profile the destination holds it (docs/adr/0077 §7).
+pub(super) fn into_builder_embed(id: &str, gated: bool) -> String {
     if gated {
         format!(
             "match &self.{id} {{\n            \
-                 Some(_b) => _b.into_builder(_out.{id}.insert({body}::default()))?,\n            \
+                 Some(_b) => _b.into_builder(_out.{id}.insert(Default::default()))?,\n            \
                  None => _out.{id} = None,\n        \
              }}"
         )
@@ -431,8 +442,8 @@ pub(super) fn into_builder_embed(id: &str, body: &str, gated: bool) -> String {
 /// `refill`, which checks the count the walk leaves (docs/adr/0065 §6 R7). One
 /// held to its law (`lawful`) is filled from the start of the view's
 /// (docs/adr/0065 §6 R8).
-pub(super) fn into_builder_list(id: &str, entry: &str, gated: bool, lawful: bool) -> String {
-    let fill = |indent: &str, walk: &str| fill_list(indent, walk, entry);
+pub(super) fn into_builder_list(id: &str, gated: bool, lawful: bool) -> String {
+    let fill = |indent: &str, walk: &str| fill_list(indent, walk);
     let refill = |source: &str| refill_from(source, lawful);
     if gated {
         let body = fill("                    ", "_l");
@@ -469,12 +480,14 @@ fn refill_from(source: &str, lawful: bool) -> String {
 }
 
 /// `_vec`, which a `refill` hands over cleared, filled from the walk `walk`,
-/// each entry pushed as `entry`'s default and filled where it sits.
-fn fill_list(indent: &str, walk: &str, entry: &str) -> String {
+/// each entry pushed as its default and filled where it sits. The list is the
+/// destination profile's, so it is reached through the list traits and not as
+/// any one container (docs/adr/0077 §7).
+fn fill_list(indent: &str, walk: &str) -> String {
     format!(
         "for _e in {walk}.iter() {{\n{indent}    \
-             _vec.push({entry}::default()).map_err(|_| CodecError::CapacityExceeded)?;\n{indent}    \
-             if let Some(_slot) = _vec.last_mut() {{\n{indent}        \
+             {RUNTIME_CODEC}::SceList::try_push(_vec, Default::default())?;\n{indent}    \
+             if let Some(_slot) = {RUNTIME_CODEC}::SceList::last_mut(_vec) {{\n{indent}        \
                  _e.into_builder(_slot)?;\n{indent}    \
              }}\n{indent}\
          }}"
@@ -489,7 +502,6 @@ pub(super) fn into_builder_member(
     field: &CodecField,
     src: &str,
     dest: &str,
-    entry: &str,
     lawful: bool,
 ) -> String {
     if field.is_repeat() || field.is_tlv_chain() {
@@ -499,7 +511,7 @@ pub(super) fn into_builder_member(
                  Ok(())\n                \
              }})?;",
             refill_from(src, lawful),
-            fill_list("                    ", src, entry)
+            fill_list("                    ", src)
         )
     } else if field.is_embed() {
         format!("{src}.into_builder(&mut {dest})?;")

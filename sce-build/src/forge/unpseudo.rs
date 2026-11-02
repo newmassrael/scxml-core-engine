@@ -2262,7 +2262,19 @@ fn parse_bit_size(w: &[&str], line: usize) -> Result<BitSize, ParseError> {
             },
         },
         Some("tlv-chain") => BitSize::TlvChain {
-            max_depth: w.get(2).and_then(|v| v.parse().ok()).unwrap_or(0),
+            max_depth: match w.get(2).copied() {
+                Some("none") => None,
+                Some(depth) => Some(depth.parse().map_err(|_| ParseError {
+                    line,
+                    why: format!("`{depth}` is not a chain depth"),
+                })?),
+                None => {
+                    return Err(ParseError {
+                        line,
+                        why: "a TLV chain states its depth, or `none`".to_string(),
+                    })
+                }
+            },
             terminate_on: match w.get(4).copied() {
                 Some("exhaust-or-depth") => TlvTerminateStrategy::ExhaustOrDepth,
                 Some("entry-flag") => TlvTerminateStrategy::EntryFlag {

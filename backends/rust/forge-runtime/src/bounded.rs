@@ -628,18 +628,18 @@ impl<'s, T, const N: usize, const MAX: usize> From<&'s heapless::Vec<T, N>>
 /// capacity is below the decoded list's, which is
 /// [`crate::storage::try_collect_list`]'s error.
 ///
-/// The decoded list is a `heapless::Vec` where it may hold none, or a `Bounded`
-/// of one where it holds at least `MIN`; the projection keeps its count, so the
-/// owned list keeps both bounds.
-pub fn try_collect_bounded<L, T, U, const N: usize, const MAX: usize, const MIN: usize>(
-    src: impl Into<Bounded<heapless::Vec<T, N>, MAX, MIN>>,
+/// The decoded list is a `Bounded` of whatever list its profile holds it in, a
+/// growable one or an inline one (docs/adr/0077 §7); the projection keeps its
+/// count, so the owned list keeps both bounds.
+pub fn try_collect_bounded<K, L, T, U, const MAX: usize, const MIN: usize>(
+    src: Bounded<K, MAX, MIN>,
     f: impl FnMut(T) -> Result<U, crate::codec::CodecError>,
 ) -> Result<Bounded<L, MAX, MIN>, crate::codec::CodecError>
 where
+    K: IntoIterator<Item = T>,
     L: crate::storage::SceList<U>,
 {
-    const { assert!(N <= MAX, "the list's capacity is past the list's bound") };
-    crate::storage::try_collect_list(src.into().into_inner(), f).map(Bounded)
+    crate::storage::try_collect_list(src.into_inner(), f).map(Bounded)
 }
 
 impl<I, const MAX: usize, const MIN: usize> BoundedIter<I, MAX, MIN> {

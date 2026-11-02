@@ -17,8 +17,6 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use super::codec_zenoh_decl_ext_keyexpr_inner::CodecZenohDeclExtKeyexprInner;
-
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
@@ -207,7 +205,7 @@ impl<S: CodecZenohDeclExtKeyexprStorage> CodecZenohDeclExtKeyexprIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecZenohDeclExtKeyexpr::encode_source(self, w)
+        CodecZenohDeclExtKeyexprWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -307,10 +305,17 @@ impl<S: CodecZenohDeclExtKeyexprStorage> CodecZenohDeclExtKeyexprSource for Code
     }
 }
 
+/// The codec `CodecZenohDeclExtKeyexpr` itself: what writes a value read through
+/// [`CodecZenohDeclExtKeyexprSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecZenohDeclExtKeyexprWire;
+
 #[allow(dead_code)]
-impl<'a> CodecZenohDeclExtKeyexpr<'a> {
+impl CodecZenohDeclExtKeyexprWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecZenohDeclExtKeyexpr::encode` writes for the value it holds, read through
     /// [`CodecZenohDeclExtKeyexprSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -330,7 +335,7 @@ impl<'a> CodecZenohDeclExtKeyexpr<'a> {
     pub fn write_source_in<S: CodecZenohDeclExtKeyexprSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecZenohDeclExtKeyexprOverrides) -> Result<(), K::Error> {
         let _s_inner: usize = {
             let _v = src.inner();
-            CodecZenohDeclExtKeyexprInner::count_source(_v)
+            super::codec_zenoh_decl_ext_keyexpr_inner::CodecZenohDeclExtKeyexprInnerWire::count_source(_v)
         };
         let _d_total_length: u64 = ::sce_forge_runtime::codec::widen_usize(_s_inner);
         let mut _c_outer_header: u8 = src.outer_header();
@@ -342,7 +347,7 @@ impl<'a> CodecZenohDeclExtKeyexpr<'a> {
         }
         w.write_u8(_c_outer_header)?;
         w.write_vle_u64(_d_total_length)?;
-        CodecZenohDeclExtKeyexprInner::write_source(src.inner(), w)?;
+        super::codec_zenoh_decl_ext_keyexpr_inner::CodecZenohDeclExtKeyexprInnerWire::write_source(src.inner(), w)?;
         Ok(())
     }
 
@@ -356,7 +361,7 @@ impl<'a> CodecZenohDeclExtKeyexpr<'a> {
     }
 }
 
-impl<'a, S: CodecZenohDeclExtKeyexprSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohDeclExtKeyexpr<'a> {
+impl<S: CodecZenohDeclExtKeyexprSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohDeclExtKeyexprWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -365,7 +370,7 @@ impl<'a, S: CodecZenohDeclExtKeyexprSource + ?Sized> ::sce_forge_runtime::codec:
 }
 
 #[allow(dead_code)]
-impl<'a> CodecZenohDeclExtKeyexpr<'a> {
+impl CodecZenohDeclExtKeyexprWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -419,8 +424,11 @@ impl<'a> CodecZenohDeclExtKeyexpr<'a> {
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecZenohDeclExtKeyexpr<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecZenohDeclExtKeyexpr<'a> {
+impl<'a, D> CodecZenohDeclExtKeyexprIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohDeclExtKeyexprStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohDeclExtKeyexprOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -455,8 +463,8 @@ impl<S: CodecZenohDeclExtKeyexprStorage> CodecZenohDeclExtKeyexprOwned<S> {
     /// borrowed view (the owned form is read-only), so an owned consumer
     /// reaches it via `as_borrowed` then `encode` / `encode_to_vec`.
     /// Each field is projected by reference — a cheap re-borrow, not a copy.
-    pub fn as_borrowed(&self) -> CodecZenohDeclExtKeyexpr<'_> {
-        let mut _out = CodecZenohDeclExtKeyexpr::default();
+    pub fn as_borrowed(&self) -> CodecZenohDeclExtKeyexprIn<::sce_forge_runtime::codec::Lent<'_, S>> {
+        let mut _out = Default::default();
         self.as_borrowed_into(&mut _out);
         _out
     }
@@ -471,7 +479,7 @@ impl<S: CodecZenohDeclExtKeyexprStorage> CodecZenohDeclExtKeyexprOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohDeclExtKeyexpr<'o>) {
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohDeclExtKeyexprIn<::sce_forge_runtime::codec::Lent<'o, S>>) {
         _out.outer_header = self.outer_header;
         _out.total_length = self.total_length;
         self.inner.as_borrowed_into(&mut _out.inner);

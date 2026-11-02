@@ -68,6 +68,11 @@ pub struct Envelope<'a> {
     pub child_session_id: Option<::sce_forge_runtime::codec::Text<'a, 262144>>,
 }
 
+/// What the codec's wire is written through, as every codec has: a map's value
+/// stores nothing and takes no profile, so it is this type (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub type EnvelopeWire<'a> = Envelope<'a>;
+
 #[allow(dead_code)]
 impl<'a> Envelope<'a> {
     /// An instance with every entry at its type's [`Default`] and every

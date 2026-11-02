@@ -64,12 +64,12 @@ edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
 PY
 
 # The tag is written at the first context word, over the first word of flags. Killed by
-# the Rust test: `entry[1 + 1] = u64::from(EventRecord::tag_of(element));` is printed
-# `entry[1 + 0]`.
+# the Rust test: `entry[1 + 1] = u64::from(super::event_record::EventRecordWire::tag_of(element));`
+# is printed `entry[1 + 0]`.
 mutation_case "rust writes the tag at the first context word" <<'PY'
 edit("tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
-     r'''entry[1 + {{ context.tag_word }}] = {{ word_type }}::from({{ element_pascal }}::tag_of(element));''',
-     r'''entry[1 + 0] = {{ word_type }}::from({{ element_pascal }}::tag_of(element));''')
+     r'''entry[1 + {{ context.tag_word }}] = {{ word_type }}::from(super::{{ element_snake }}::{{ element_pascal }}Wire::tag_of(element));''',
+     r'''entry[1 + 0] = {{ word_type }}::from(super::{{ element_snake }}::{{ element_pascal }}Wire::tag_of(element));''')
 PY
 
 # The bytes are written from the first context word, over the flags. Killed by the Rust

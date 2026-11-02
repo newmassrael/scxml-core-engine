@@ -195,7 +195,7 @@ impl<S: CodecChainFlagCarrierStorage> CodecChainFlagCarrierIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecChainFlagCarrier::encode_source(self, w)
+        CodecChainFlagCarrierWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -236,7 +236,7 @@ pub struct CodecChainFlagCarrierEntriesWide;
 
 impl<E: super::codec_chain_flag_entry::CodecChainFlagEntrySource + ?Sized> ::sce_forge_runtime::codec::Says<E> for CodecChainFlagCarrierEntriesWide {
     fn says(entry: &E) -> Option<bool> {
-        Some(CodecChainFlagEntry::input_wide(entry))
+        Some(super::codec_chain_flag_entry::CodecChainFlagEntryWire::input_wide(entry))
     }
 }
 
@@ -290,10 +290,17 @@ impl<S: CodecChainFlagCarrierStorage> CodecChainFlagCarrierSource for CodecChain
     }
 }
 
+/// The codec `CodecChainFlagCarrier` itself: what writes a value read through
+/// [`CodecChainFlagCarrierSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecChainFlagCarrierWire;
+
 #[allow(dead_code)]
-impl<'a> CodecChainFlagCarrier<'a> {
+impl CodecChainFlagCarrierWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecChainFlagCarrier::encode` writes for the value it holds, read through
     /// [`CodecChainFlagCarrierSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -310,7 +317,7 @@ impl<'a> CodecChainFlagCarrier<'a> {
         let _c_head: u8 = (src.head() & !0x1) | _v_head_w;
         w.write_u8(_c_head)?;
         for (_i, _e) in src.entries().into_iter().enumerate() {
-            CodecChainFlagEntry::write_source_in(&_e, w, &super::codec_chain_flag_entry::CodecChainFlagEntryOverrides::header_z(_i + 1 < _k_entries))?;
+            super::codec_chain_flag_entry::CodecChainFlagEntryWire::write_source_in(&_e, w, &super::codec_chain_flag_entry::CodecChainFlagEntryOverrides::header_z(_i + 1 < _k_entries))?;
         }
         Ok(())
     }
@@ -325,7 +332,7 @@ impl<'a> CodecChainFlagCarrier<'a> {
     }
 }
 
-impl<'a, S: CodecChainFlagCarrierSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecChainFlagCarrier<'a> {
+impl<S: CodecChainFlagCarrierSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecChainFlagCarrierWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -334,7 +341,7 @@ impl<'a, S: CodecChainFlagCarrierSource + ?Sized> ::sce_forge_runtime::codec::So
 }
 
 #[allow(dead_code)]
-impl<'a> CodecChainFlagCarrier<'a> {
+impl CodecChainFlagCarrierWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -388,8 +395,11 @@ impl<'a> CodecChainFlagCarrier<'a> {
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecChainFlagCarrier<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecChainFlagCarrier<'a> {
+impl<'a, D> CodecChainFlagCarrierIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecChainFlagCarrierStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecChainFlagCarrierOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -427,8 +437,8 @@ impl<S: CodecChainFlagCarrierStorage> CodecChainFlagCarrierOwned<S> {
     /// more than its declared `N` raises `CodecError::TooManyElements` — the
     /// same bound decode enforces. Only a growable profile can hold such a
     /// list; on the inline profile the source is already within bounds.
-    pub fn try_as_borrowed(&self) -> Result<CodecChainFlagCarrier<'_>, CodecError> {
-        let mut _out = CodecChainFlagCarrier::default();
+    pub fn try_as_borrowed(&self) -> Result<CodecChainFlagCarrierIn<::sce_forge_runtime::codec::Lent<'_, S>>, CodecError> {
+        let mut _out = Default::default();
         self.try_as_borrowed_into(&mut _out)?;
         Ok(_out)
     }
@@ -443,7 +453,7 @@ impl<S: CodecChainFlagCarrierStorage> CodecChainFlagCarrierOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecChainFlagCarrier<'o>) -> Result<(), CodecError> {
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecChainFlagCarrierIn<::sce_forge_runtime::codec::Lent<'o, S>>) -> Result<(), CodecError> {
         _out.head = self.head;
         _out.entries.refill_from(self.entries.start(), |_d| ::sce_forge_runtime::codec::try_project_bounded_into(_d, self.entries.inner(), |_e| Ok(_e.clone())))?;
         Ok(())

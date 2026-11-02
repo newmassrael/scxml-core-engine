@@ -540,6 +540,7 @@ fn a_log_in_a_static_takes_its_publisher_on_the_callers_word() {
 
 use log_modules::broadcast_log_conformance_choice::{
     BroadcastLogConformanceChoice as Choice, BroadcastLogConformanceChoiceVariant as ChoiceArm,
+    BroadcastLogConformanceChoiceWire as ChoiceWire,
 };
 use log_modules::broadcast_log_conformance_choice_large::BroadcastLogConformanceChoiceLarge;
 use log_modules::broadcast_log_conformance_choice_small::BroadcastLogConformanceChoiceSmall;
@@ -680,7 +681,7 @@ fn a_reader_gets_back_the_element_as_the_arm_it_was_published_as() {
     }
     for (seq, (element, tag)) in sent.into_iter().enumerate() {
         assert_eq!(
-            Choice::tag_of(&element),
+            ChoiceWire::tag_of(&element),
             tag,
             "entry {seq} is an arm with this tag"
         );
@@ -693,7 +694,7 @@ fn a_reader_gets_back_the_element_as_the_arm_it_was_published_as() {
         };
         assert_eq!(got_seq, seq as u64);
         assert_eq!(
-            Choice::tag_of(&got),
+            ChoiceWire::tag_of(&got),
             tag,
             "entry {seq} comes back as the arm it was published as"
         );
@@ -708,7 +709,7 @@ fn an_entry_stores_in_its_context_word_the_tag_its_element_says() {
     let mut publisher = log.publisher().expect("the first publisher");
     let mut reader = log.reader_oldest();
 
-    // The entry is `[length, tag, bytes]`: the tag word is `Choice::tag_of(element)`
+    // The entry is `[length, tag, bytes]`: the tag word is `ChoiceWire::tag_of(element)`
     // for each arm, and the arm's own bytes follow it (the large arm's `uint16` is
     // little-endian, so 0x0102 is the word of its two bytes).
     for (element, words) in [
@@ -722,7 +723,7 @@ fn an_entry_stores_in_its_context_word_the_tag_its_element_says() {
             "the entry is whole"
         );
         assert_eq!(entry, words);
-        assert_eq!(entry[1], u64::from(Choice::tag_of(&element)));
+        assert_eq!(entry[1], u64::from(ChoiceWire::tag_of(&element)));
     }
 }
 

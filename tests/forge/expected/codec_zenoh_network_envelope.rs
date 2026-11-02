@@ -17,13 +17,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use super::codec_zenoh_interest::CodecZenohInterest;
-use super::codec_zenoh_response_final::CodecZenohResponseFinal;
-use super::codec_zenoh_response::CodecZenohResponse;
-use super::codec_zenoh_request::CodecZenohRequest;
 use super::codec_zenoh_push::CodecZenohPush;
-use super::codec_zenoh_declare::CodecZenohDeclare;
-use super::codec_zenoh_oam::CodecZenohOam;
 
 /// A tag `CodecZenohNetworkEnvelope` names no arm for, which its default arm holds: a
 /// value inside the 5 bits the tag is read from and outside
@@ -292,7 +286,7 @@ impl<S: CodecZenohNetworkEnvelopeStorage> CodecZenohNetworkEnvelopeIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecZenohNetworkEnvelope::encode_source(self, w)
+        CodecZenohNetworkEnvelopeWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -422,10 +416,17 @@ impl<S: CodecZenohNetworkEnvelopeStorage> CodecZenohNetworkEnvelopeSource for Co
     }
 }
 
+/// The codec `CodecZenohNetworkEnvelope` itself: what writes a value read through
+/// [`CodecZenohNetworkEnvelopeSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecZenohNetworkEnvelopeWire;
+
 #[allow(dead_code)]
-impl<'a> CodecZenohNetworkEnvelope<'a> {
+impl CodecZenohNetworkEnvelopeWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecZenohNetworkEnvelope::encode` writes for the value it holds, read through
     /// [`CodecZenohNetworkEnvelopeSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -442,14 +443,14 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
     #[doc(hidden)]
     pub fn write_source<S: CodecZenohNetworkEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         match src.body() {
-            CodecZenohNetworkEnvelopeVariantSource::CodecZenohInterest(_b) => CodecZenohInterest::write_source(_b, w)?,
-            CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponseFinal(_b) => CodecZenohResponseFinal::write_source(_b, w)?,
-            CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponse(_b) => CodecZenohResponse::write_source(_b, w)?,
-            CodecZenohNetworkEnvelopeVariantSource::CodecZenohRequest(_b) => CodecZenohRequest::write_source(_b, w)?,
-            CodecZenohNetworkEnvelopeVariantSource::CodecZenohPush(_b) => CodecZenohPush::write_source(_b, w)?,
-            CodecZenohNetworkEnvelopeVariantSource::CodecZenohDeclare(_b) => CodecZenohDeclare::write_source(_b, w)?,
-            CodecZenohNetworkEnvelopeVariantSource::CodecZenohOam(_b) => CodecZenohOam::write_source(_b, w)?,
-            CodecZenohNetworkEnvelopeVariantSource::Default { body: _b, .. } => CodecZenohOam::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohInterest(_b) => super::codec_zenoh_interest::CodecZenohInterestWire::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponseFinal(_b) => super::codec_zenoh_response_final::CodecZenohResponseFinalWire::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponse(_b) => super::codec_zenoh_response::CodecZenohResponseWire::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohRequest(_b) => super::codec_zenoh_request::CodecZenohRequestWire::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohPush(_b) => super::codec_zenoh_push::CodecZenohPushWire::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohDeclare(_b) => super::codec_zenoh_declare::CodecZenohDeclareWire::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohOam(_b) => super::codec_zenoh_oam::CodecZenohOamWire::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::Default { body: _b, .. } => super::codec_zenoh_oam::CodecZenohOamWire::write_source(_b, w)?,
         }
         Ok(())
     }
@@ -464,7 +465,7 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
     }
 }
 
-impl<'a, S: CodecZenohNetworkEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohNetworkEnvelope<'a> {
+impl<S: CodecZenohNetworkEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohNetworkEnvelopeWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -473,7 +474,7 @@ impl<'a, S: CodecZenohNetworkEnvelopeSource + ?Sized> ::sce_forge_runtime::codec
 }
 
 #[allow(dead_code)]
-impl<'a> CodecZenohNetworkEnvelope<'a> {
+impl CodecZenohNetworkEnvelopeWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -528,21 +529,21 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
 #[allow(dead_code)]
-impl<'a> CodecZenohNetworkEnvelopeVariant<'a> {
+impl<'a, D> CodecZenohNetworkEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohNetworkEnvelopeStorage {
     /// Deep-copy this borrowed variant body into its owned mirror at the
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
     /// enforces) — on the growable profile no check can fire.
     pub fn try_into_owned_in<S: CodecZenohNetworkEnvelopeFrom<'a>>(self) -> Result<CodecZenohNetworkEnvelopeOwnedVariant<S>, CodecError> {
         Ok(match self {
-            CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohInterest(_b.try_into_owned_in::<S>()?),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponseFinal(_b.try_into_owned_in::<S>()?),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponse(_b.try_into_owned_in::<S>()?),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohRequest(_b.try_into_owned_in::<S>()?),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohPush(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohPush(_b),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohDeclare(_b.try_into_owned_in::<S>()?),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohOam(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohOam(_b.try_into_owned_in::<S>()?),
-            CodecZenohNetworkEnvelopeVariant::Default { tag, body } => CodecZenohNetworkEnvelopeOwnedVariant::Default { tag, body: body.try_into_owned_in::<S>()? },
+            Self::CodecZenohInterest(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohInterest(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohResponseFinal(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponseFinal(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohResponse(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponse(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohRequest(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohRequest(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohPush(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohPush(_b),
+            Self::CodecZenohDeclare(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohDeclare(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohOam(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohOam(_b.try_into_owned_in::<S>()?),
+            Self::Default { tag, body } => CodecZenohNetworkEnvelopeOwnedVariant::Default { tag, body: body.try_into_owned_in::<S>()? },
         })
     }
 
@@ -558,8 +559,8 @@ impl<S: CodecZenohNetworkEnvelopeStorage> CodecZenohNetworkEnvelopeOwnedVariant<
     /// the inverse of the projection above. Reuses the borrowed view's
     /// single `encode`; the owned form deliberately carries no encode of
     /// its own.
-    pub fn try_as_borrowed(&self) -> Result<CodecZenohNetworkEnvelopeVariant<'_>, CodecError> {
-        let mut _out = CodecZenohNetworkEnvelopeVariant::default();
+    pub fn try_as_borrowed(&self) -> Result<CodecZenohNetworkEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'_, S>>, CodecError> {
+        let mut _out = Default::default();
         self.try_as_borrowed_into(&mut _out)?;
         Ok(_out)
     }
@@ -573,53 +574,53 @@ impl<S: CodecZenohNetworkEnvelopeStorage> CodecZenohNetworkEnvelopeOwnedVariant<
     /// projection that returns one copies the declared maximum at every layer
     /// it passes through. A caller on a path where that shows projects into a
     /// destination it owns. On `Err`, `_out` holds what was projected so far.
-    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohNetworkEnvelopeVariant<'o>) -> Result<(), CodecError> {
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohNetworkEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'o, S>>) -> Result<(), CodecError> {
         match self {
             CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohInterest(_b) => {
-                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(Default::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(_o) = _out {
+                *_out = CodecZenohNetworkEnvelopeVariantIn::CodecZenohInterest(Default::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohInterest(_o) = _out {
                     _b.try_as_borrowed_into(_o)?;
                 }
             }
             CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponseFinal(_b) => {
-                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(Default::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(_o) = _out {
+                *_out = CodecZenohNetworkEnvelopeVariantIn::CodecZenohResponseFinal(Default::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohResponseFinal(_o) = _out {
                     _b.try_as_borrowed_into(_o)?;
                 }
             }
             CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponse(_b) => {
-                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(Default::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(_o) = _out {
+                *_out = CodecZenohNetworkEnvelopeVariantIn::CodecZenohResponse(Default::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohResponse(_o) = _out {
                     _b.try_as_borrowed_into(_o)?;
                 }
             }
             CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohRequest(_b) => {
-                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(Default::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(_o) = _out {
+                *_out = CodecZenohNetworkEnvelopeVariantIn::CodecZenohRequest(Default::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohRequest(_o) = _out {
                     _b.try_as_borrowed_into(_o)?;
                 }
             }
             CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohPush(_b) => {
-                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohPush(Default::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohPush(_o) = _out {
+                *_out = CodecZenohNetworkEnvelopeVariantIn::CodecZenohPush(Default::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohPush(_o) = _out {
                     *_o = _b.clone();
                 }
             }
             CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohDeclare(_b) => {
-                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(Default::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(_o) = _out {
+                *_out = CodecZenohNetworkEnvelopeVariantIn::CodecZenohDeclare(Default::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohDeclare(_o) = _out {
                     _b.try_as_borrowed_into(_o)?;
                 }
             }
             CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohOam(_b) => {
-                *_out = CodecZenohNetworkEnvelopeVariant::CodecZenohOam(Default::default());
-                if let CodecZenohNetworkEnvelopeVariant::CodecZenohOam(_o) = _out {
+                *_out = CodecZenohNetworkEnvelopeVariantIn::CodecZenohOam(Default::default());
+                if let CodecZenohNetworkEnvelopeVariantIn::CodecZenohOam(_o) = _out {
                     _b.try_as_borrowed_into(_o)?;
                 }
             }
             CodecZenohNetworkEnvelopeOwnedVariant::Default { tag, body } => {
-                *_out = CodecZenohNetworkEnvelopeVariant::Default { tag: *tag, body: Default::default() };
-                if let CodecZenohNetworkEnvelopeVariant::Default { body: _o, .. } = _out {
+                *_out = CodecZenohNetworkEnvelopeVariantIn::Default { tag: *tag, body: Default::default() };
+                if let CodecZenohNetworkEnvelopeVariantIn::Default { body: _o, .. } = _out {
                     body.try_as_borrowed_into(_o)?;
                 }
             }
@@ -628,8 +629,11 @@ impl<S: CodecZenohNetworkEnvelopeStorage> CodecZenohNetworkEnvelopeOwnedVariant<
     }
 }
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecZenohNetworkEnvelope<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecZenohNetworkEnvelope<'a> {
+impl<'a, D> CodecZenohNetworkEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohNetworkEnvelopeStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohNetworkEnvelopeOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -666,8 +670,8 @@ impl<S: CodecZenohNetworkEnvelopeStorage> CodecZenohNetworkEnvelopeOwned<S> {
     /// more than its declared `N` raises `CodecError::TooManyElements` — the
     /// same bound decode enforces. Only a growable profile can hold such a
     /// list; on the inline profile the source is already within bounds.
-    pub fn try_as_borrowed(&self) -> Result<CodecZenohNetworkEnvelope<'_>, CodecError> {
-        let mut _out = CodecZenohNetworkEnvelope::default();
+    pub fn try_as_borrowed(&self) -> Result<CodecZenohNetworkEnvelopeIn<::sce_forge_runtime::codec::Lent<'_, S>>, CodecError> {
+        let mut _out = Default::default();
         self.try_as_borrowed_into(&mut _out)?;
         Ok(_out)
     }
@@ -682,7 +686,7 @@ impl<S: CodecZenohNetworkEnvelopeStorage> CodecZenohNetworkEnvelopeOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohNetworkEnvelope<'o>) -> Result<(), CodecError> {
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohNetworkEnvelopeIn<::sce_forge_runtime::codec::Lent<'o, S>>) -> Result<(), CodecError> {
         self.body.try_as_borrowed_into(&mut _out.body)?;
         Ok(())
     }

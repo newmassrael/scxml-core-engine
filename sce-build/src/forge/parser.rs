@@ -5007,18 +5007,10 @@ fn parse_codec_repeat_from_node(
         ("max-count", false),
         UnsignedInt::NonNegative,
     )?;
-    // A list holds as many entries as its sender wrote, so its bound is the
-    // codec's to state, as a variable-length field's is (docs/adr/0077 §5).
-    if max_count.is_none() {
-        return Err(located(
-            node,
-            doc_name,
-            ValidationError::MissingAttribute {
-                element: format!("<sce:repeat id='{id}'>"),
-                attr: "max-count".into(),
-            },
-        ));
-    }
+    // `max-count` is the protocol's bound on the list, stated only where the
+    // protocol states one (docs/adr/0077 §7). A list with none and an entry that
+    // can take no bytes has no frame that ends its walk, which is refused once
+    // the field list is assembled.
 
     // RFC §synth-5-B — present-if on `<sce:repeat>`.
     // Parses the optional `sce:present-if` attribute identically
@@ -5065,12 +5057,10 @@ fn parse_codec_repeat_from_node(
 /// sce:type="<imported_alias>" sce:byte="N" max-depth="N"
 /// [on-overflow="reject|truncate"]/>`.
 ///
-/// MCU-class. `max-depth` is required at parse time (RFC line 488 "MUST
-/// be specified for MCU targets" + B3 v1 only emits to MCU backends);
-/// missing → typed `codec/tlv-chain-depth-unspecified` so the author
-/// gets a precise repair hint. `on-overflow` defaults to `reject` (RFC
-/// line 488 lists `reject` first; matches the safer interpretation
-/// — silent drop requires explicit opt-in).
+/// `max-depth` is the protocol's bound and optional: a chain whose protocol
+/// states none has none, and what a node holds of it is its deployment's
+/// capacity (docs/adr/0077 §7). A depth of 0 is refused, since it decodes
+/// nothing.
 ///
 /// Wire shape mirrors `<sce:repeat until-eof="true">` — the chain
 /// iteratively decodes entries off the cursor; each entry's id+len+body
@@ -5136,44 +5126,39 @@ fn parse_codec_tlv_chain_from_node(
         )
     })?;
 
-    // `max-depth` is mandatory (RFC line 488). Missing → typed
-    // tlv-chain-depth-unspecified so the author sees the MCU-class
-    // contract explicitly rather than the generic missing-attribute
-    // diagnostic.
-    let max_depth_raw = node.attribute("max-depth").ok_or_else(|| {
-        located(
-            node,
-            doc_name,
-            ValidationError::CodecTlvChainDepthUnspecified {
-                codec: label.identifier.to_string(),
-                field: id.clone(),
-            },
-        )
-    })?;
-    let max_depth = parse_int(max_depth_raw).ok_or_else(|| {
-        located(
-            node,
-            doc_name,
-            ValidationError::NumericParse {
-                element: format!("<sce:tlv-chain id='{id}'>"),
-                attr: "max-depth".into(),
-                value: max_depth_raw.to_string(),
-                detail: "expected positive integer".into(),
-            },
-        )
-    })?;
-    if max_depth == 0 {
-        return Err(located(
-            node,
-            doc_name,
-            ValidationError::AttributeRuleViolated {
-                element: format!("<sce:tlv-chain id='{id}'>"),
-                attr: "max-depth".into(),
-                value: max_depth_raw.to_string(),
-                rule: "positive integer (max-depth=\"0\" decodes nothing)".into(),
-            },
-        ));
-    }
+    // `max-depth` is the protocol's bound on the chain, stated only where the
+    // protocol states one (docs/adr/0077 §7): a chain with none reads entries
+    // until it ends, and what a node holds of it is its deployment's capacity.
+    let max_depth = match node.attribute("max-depth") {
+        None => None,
+        Some(raw) => {
+            let depth = parse_int(raw).ok_or_else(|| {
+                located(
+                    node,
+                    doc_name,
+                    ValidationError::NumericParse {
+                        element: format!("<sce:tlv-chain id='{id}'>"),
+                        attr: "max-depth".into(),
+                        value: raw.to_string(),
+                        detail: "expected positive integer".into(),
+                    },
+                )
+            })?;
+            if depth == 0 {
+                return Err(located(
+                    node,
+                    doc_name,
+                    ValidationError::AttributeRuleViolated {
+                        element: format!("<sce:tlv-chain id='{id}'>"),
+                        attr: "max-depth".into(),
+                        value: raw.to_string(),
+                        rule: "positive integer (max-depth=\"0\" decodes nothing)".into(),
+                    },
+                ));
+            }
+            Some(depth)
+        }
+    };
 
     // RFC §synth-5-B — `sce:terminate-on` selects chain termination.
     // Default: cursor-exhaust + max_depth (B3 trunk shape — used when

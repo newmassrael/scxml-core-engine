@@ -563,3 +563,47 @@ Landing: the commit that adds this section.
 - A site that passed such a codec's `MAX_ENCODED_BYTES` as a reserve hint stops compiling. Size from the value or from
   your transport's frame size instead. A codec whose largest frame fits `u32` is generated as before.
 - `ImportContext::codec_max_bytes` and `LinkPoolSlotSmallerThanFramerMax::framer_max_bytes` are `u64`.
+
+## A list states its bound only where the protocol does (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- `max-count` on `<sce:repeat>` and `max-depth` on `<sce:tlv-chain>` are optional. Drop either where the protocol
+  bounds the list by nothing; keep it where it does. A list with none reads entries until its count, its end or its
+  frame's end, and no default stands in for the bound: the 16 entries a list once fell back to are gone.
+- `codec/tlv-chain-depth-unspecified` is gone. A chain without `max-depth` is a chain with no bound. A list with no
+  bound whose entry can take no bytes is still refused (`codec/list-cannot-move`), since no frame ends its walk.
+- Where it is stored is the deployment's to say:
+  - Rust: `Inline` does not answer for such a list, so `{Codec}<'a>` and `{Codec}Owned<Inline>` of a codec that holds
+    one do not compile. Name a profile that holds it, `{Codec}In<Lent<'a, Heap>>`, `{Codec}Owned<Heap>`, or a
+    deployment's, and give the list a capacity in each deployment's `codecs:` block; a deployment that gives none is
+    refused, naming the field. In a `no_std` build `DefaultStorage` is `Inline`, so name the deployment there.
+  - Rust: such a codec's tree is generated with views (`--views`, `ForgeCompileOptions::views`), and is refused,
+    naming the list, without them. A decode past a capacity judges the frame by the view, and the only other judge
+    holds lists at their bound.
+  - C11 holds every list in an array of its capacity: give the list one in the deploy input, or the codec is refused
+    (`codec/capacity-invalid`, naming the field).
+  - C++, Kotlin, Go and Python grow, and reserve nothing for a list with no bound.
+- In Rust such a list's bound is `{ usize::MAX }` in `Bounded`, `Chain`, `Placed` and `BoundedIter`: the type holds
+  the list with no second shape.
+- The pseudocode line of a chain with no depth reads `tlv-chain max-depth none terminate <strategy>`, and the forge AST
+  writes no `max_depth`.
+- A gated C11 chain now refuses an entry past its deployment's capacity with `SCE_FORGE_CODEC_CAPACITY_EXCEEDED`. It
+  wrote past its array before; the ungated chain already refused.
+- No generated Rust item stands on `{Codec}<'a>`, the lent form at `Inline`, any more, since a codec with a list of no
+  bound has none:
+  - A codec's wire functions are on `{Codec}Wire`, which every codec has. For a positional codec it is a unit type
+    that holds no value and takes no profile; for a CBOR or content-line codec, whose value takes no profile, it names
+    that value's type. `{Codec}Wire::encode_source`, `::measure`, `::write_window`, `::tag_of`, `::input_<flag>`, and
+    `SourceWrite` and `Measured<'_, {Codec}Wire, S>` of a positional codec. They were on `{Codec}<'a>`, or on `{Codec}`
+    for one that borrows nothing. Rename `{Codec}::encode_source(..)` to `{Codec}Wire::encode_source(..)`;
+    `value.encode(w)` is unchanged.
+  - `try_into_owned_in`, `try_into_owned` and the origin projection are on the lent form at every profile,
+    `{Codec}In<Lent<'a, D>>` with `D: {Codec}Storage`, and a view's `into_builder` fills one.
+  - `try_as_borrowed` and `try_as_borrowed_into` of `{Codec}Owned<S>` give `{Codec}In<Lent<'_, S>>`: the lists stay as
+    `S` holds them. They gave `{Codec}<'_>`, which copied each list into `Inline`'s and refused one longer than its
+    bound there. At `S = Inline` the two are one type; a binding that names `{Codec}<'_>` at another profile names
+    `{Codec}In<Lent<'_, S>>` or drops the annotation.
+  - A codec module no longer imports the bare name of a borrowed codec it holds: it names that codec only as
+    `{Child}Owned<S>`, `{Child}View`, `{Child}Wire` and `{Child}Parts`.
+  - `try_collect_bounded` and `try_collect_lawful` take the decoded list of any profile.

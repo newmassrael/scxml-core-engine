@@ -17,9 +17,6 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
-use super::codec_chain_has_marker_slice::CodecChainHasMarkerSlice;
-
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
@@ -284,7 +281,7 @@ impl<S: CodecChainHasMarkerStorage> CodecChainHasMarkerIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecChainHasMarker::encode_source(self, w)
+        CodecChainHasMarkerWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -411,10 +408,17 @@ impl<S: CodecChainHasMarkerStorage> CodecChainHasMarkerSource for CodecChainHasM
     }
 }
 
+/// The codec `CodecChainHasMarker` itself: what writes a value read through
+/// [`CodecChainHasMarkerSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecChainHasMarkerWire;
+
 #[allow(dead_code)]
-impl<'a> CodecChainHasMarker<'a> {
+impl CodecChainHasMarkerWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecChainHasMarker::encode` writes for the value it holds, read through
     /// [`CodecChainHasMarkerSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -446,10 +450,10 @@ impl<'a> CodecChainHasMarker<'a> {
             for (_i, _s) in _v.enumerate() {
                 match _s {
                     ::sce_forge_runtime::codec::Slot::Entry(_e) => {
-                        CodecZenohExtEntry::write_source_in(&_e, w, &super::codec_zenoh_ext_entry::CodecZenohExtEntryOverrides::header_z(_i + 1 < _k_extensions))?;
+                        super::codec_zenoh_ext_entry::CodecZenohExtEntryWire::write_source_in(&_e, w, &super::codec_zenoh_ext_entry::CodecZenohExtEntryOverrides::header_z(_i + 1 < _k_extensions))?;
                     }
                     ::sce_forge_runtime::codec::Slot::Named => {
-                        CodecZenohExtEntry::write_source_in(&CodecChainHasMarkerExtensionsHas0x12Key::named(), w, &super::codec_zenoh_ext_entry::CodecZenohExtEntryOverrides::header_z(_i + 1 < _k_extensions))?;
+                        super::codec_zenoh_ext_entry::CodecZenohExtEntryWire::write_source_in(&CodecChainHasMarkerExtensionsHas0x12Key::named(), w, &super::codec_zenoh_ext_entry::CodecZenohExtEntryOverrides::header_z(_i + 1 < _k_extensions))?;
                     }
                 }
             }
@@ -465,7 +469,7 @@ impl<'a> CodecChainHasMarker<'a> {
         }
         if let Some(_v) = _m_slices.clone() {
             for _e in _v {
-                CodecChainHasMarkerSlice::write_source(&_e, w)?;
+                super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceWire::write_source(&_e, w)?;
             }
         }
         Ok(())
@@ -481,7 +485,7 @@ impl<'a> CodecChainHasMarker<'a> {
     }
 }
 
-impl<'a, S: CodecChainHasMarkerSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecChainHasMarker<'a> {
+impl<S: CodecChainHasMarkerSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecChainHasMarkerWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -490,7 +494,7 @@ impl<'a, S: CodecChainHasMarkerSource + ?Sized> ::sce_forge_runtime::codec::Sour
 }
 
 #[allow(dead_code)]
-impl<'a> CodecChainHasMarker<'a> {
+impl CodecChainHasMarkerWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -544,8 +548,11 @@ impl<'a> CodecChainHasMarker<'a> {
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecChainHasMarker<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecChainHasMarker<'a> {
+impl<'a, D> CodecChainHasMarkerIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecChainHasMarkerStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecChainHasMarkerOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -585,8 +592,8 @@ impl<S: CodecChainHasMarkerStorage> CodecChainHasMarkerOwned<S> {
     /// more than its declared `N` raises `CodecError::TooManyElements` — the
     /// same bound decode enforces. Only a growable profile can hold such a
     /// list; on the inline profile the source is already within bounds.
-    pub fn try_as_borrowed(&self) -> Result<CodecChainHasMarker<'_>, CodecError> {
-        let mut _out = CodecChainHasMarker::default();
+    pub fn try_as_borrowed(&self) -> Result<CodecChainHasMarkerIn<::sce_forge_runtime::codec::Lent<'_, S>>, CodecError> {
+        let mut _out = Default::default();
         self.try_as_borrowed_into(&mut _out)?;
         Ok(_out)
     }
@@ -601,18 +608,18 @@ impl<S: CodecChainHasMarkerStorage> CodecChainHasMarkerOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecChainHasMarker<'o>) -> Result<(), CodecError> {
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecChainHasMarkerIn<::sce_forge_runtime::codec::Lent<'o, S>>) -> Result<(), CodecError> {
         _out.header = self.header;
         match &self.extensions_has_0x12 {
             CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions, slices } => {
                 let _o_extensions = ::sce_forge_runtime::codec::Placed::new({ let mut _v = ::sce_forge_runtime::codec::SceList::empty(); ::sce_forge_runtime::codec::try_project_bounded_into(&mut _v, extensions.rest(), |_e| Ok(_e.as_borrowed()))?; _v }, extensions.place()).expect("the projection keeps each entry's identifier");
-                let mut _o_slices: ::sce_forge_runtime::codec::Bounded<<::sce_forge_runtime::codec::Lent<'o> as ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerSlicesField>>::List<CodecChainHasMarkerSlice<'o>>, 4> = Default::default();
+                let mut _o_slices: ::sce_forge_runtime::codec::Bounded<<::sce_forge_runtime::codec::Lent<'o, S> as ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerSlicesField>>::List<CodecChainHasMarkerSliceOwned<::sce_forge_runtime::codec::Lent<'o, S>>>, 4> = Default::default();
                 _o_slices.refill(|_d| ::sce_forge_runtime::codec::try_project_bounded_into(_d, slices.inner(), |_e| Ok(_e.as_borrowed())))?;
                 _out.extensions_has_0x12 = CodecChainHasMarkerExtensionsHas0x12::Has0x12 { extensions: _o_extensions, slices: _o_slices };
             }
             CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions, payload } => {
                 let _o_extensions = match extensions { Some(_l) => Some(::sce_forge_runtime::codec::Chain::new({ let mut _v = ::sce_forge_runtime::codec::SceList::empty(); ::sce_forge_runtime::codec::try_project_bounded_into(&mut _v, _l.inner(), |_e| Ok(_e.as_borrowed()))?; _v }).expect("the projection keeps each entry's identifier")), None => None };
-                let mut _o_payload: ::sce_forge_runtime::codec::Bytes<'o, 256> = Default::default();
+                let mut _o_payload: ::sce_forge_runtime::codec::Bounded<<::sce_forge_runtime::codec::Lent<'o, S> as ::sce_forge_runtime::codec::HoldsBytes<CodecChainHasMarkerPayloadField>>::Bytes, 256> = Default::default();
                 _o_payload = payload.as_bytes();
                 _out.extensions_has_0x12 = CodecChainHasMarkerExtensionsHas0x12::NotHas0x12 { extensions: _o_extensions, payload: _o_payload };
             }

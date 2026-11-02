@@ -17,14 +17,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use super::codec_zenoh_decl_kexpr::CodecZenohDeclKexpr;
 use super::codec_zenoh_undecl_kexpr::CodecZenohUndeclKexpr;
-use super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriber;
-use super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriber;
-use super::codec_zenoh_decl_queryable::CodecZenohDeclQueryable;
-use super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryable;
-use super::codec_zenoh_decl_token::CodecZenohDeclToken;
-use super::codec_zenoh_undecl_token::CodecZenohUndeclToken;
 use super::codec_zenoh_decl_final::CodecZenohDeclFinal;
 
 /// A tag `CodecZenohDeclaration` names no arm for, which its default arm holds: a
@@ -359,7 +352,7 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecZenohDeclaration::encode_source(self, w)
+        CodecZenohDeclarationWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -531,10 +524,17 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationSource for CodecZenoh
     }
 }
 
+/// The codec `CodecZenohDeclaration` itself: what writes a value read through
+/// [`CodecZenohDeclarationSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecZenohDeclarationWire;
+
 #[allow(dead_code)]
-impl<'a> CodecZenohDeclaration<'a> {
+impl CodecZenohDeclarationWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecZenohDeclaration::encode` writes for the value it holds, read through
     /// [`CodecZenohDeclarationSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -559,18 +559,18 @@ impl<'a> CodecZenohDeclaration<'a> {
     pub fn write_source_in<S: CodecZenohDeclarationSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecZenohDeclarationOverrides) -> Result<(), K::Error> {
         let _d_header_mid: u8 = src.body().tag();
         let _o_d_header_n_arm: Option<usize> = match src.body() {
-            CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_b) => Some(usize::from(CodecZenohDeclKexpr::input_n(_b))),
-            CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_b) => Some(usize::from(CodecZenohDeclSubscriber::input_n(_b))),
-            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b) => Some(usize::from(CodecZenohDeclQueryable::input_n(_b))),
-            CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_b) => Some(usize::from(CodecZenohDeclToken::input_n(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_b) => Some(usize::from(super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprWire::input_n(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_b) => Some(usize::from(super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberWire::input_n(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b) => Some(usize::from(super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableWire::input_n(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_b) => Some(usize::from(super::codec_zenoh_decl_token::CodecZenohDeclTokenWire::input_n(_b))),
             _ => None,
         };
         let _f_d_header_n: Option<usize> = if _o_d_header_n_arm.is_some() { Some(_o_d_header_n_arm.unwrap_or(0)) } else { None };
         let _o_d_header_z_arm: Option<usize> = match src.body() {
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_b) => Some(usize::from(CodecZenohUndeclSubscriber::input_z(_b))),
-            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b) => Some(usize::from(CodecZenohDeclQueryable::input_z(_b))),
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_b) => Some(usize::from(CodecZenohUndeclQueryable::input_z(_b))),
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_b) => Some(usize::from(CodecZenohUndeclToken::input_z(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_b) => Some(usize::from(super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberWire::input_z(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b) => Some(usize::from(super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableWire::input_z(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_b) => Some(usize::from(super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableWire::input_z(_b))),
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_b) => Some(usize::from(super::codec_zenoh_undecl_token::CodecZenohUndeclTokenWire::input_z(_b))),
             _ => None,
         };
         let _f_d_header_z: Option<usize> = if _o_d_header_z_arm.is_some() { Some(_o_d_header_z_arm.unwrap_or(0)) } else { None };
@@ -586,16 +586,16 @@ impl<'a> CodecZenohDeclaration<'a> {
         }
         w.write_u8(_c_header)?;
         match src.body() {
-            CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_b) => CodecZenohDeclKexpr::write_source(_b, w)?,
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclKexpr(_b) => CodecZenohUndeclKexpr::write_source(_b, w)?,
-            CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_b) => CodecZenohDeclSubscriber::write_source(_b, w)?,
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_b) => CodecZenohUndeclSubscriber::write_source(_b, w)?,
-            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b) => CodecZenohDeclQueryable::write_source(_b, w)?,
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_b) => CodecZenohUndeclQueryable::write_source(_b, w)?,
-            CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_b) => CodecZenohDeclToken::write_source(_b, w)?,
-            CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_b) => CodecZenohUndeclToken::write_source(_b, w)?,
-            CodecZenohDeclarationVariantSource::CodecZenohDeclFinal(_b) => CodecZenohDeclFinal::write_source(_b, w)?,
-            CodecZenohDeclarationVariantSource::Default { body: _b, .. } => CodecZenohDeclFinal::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_b) => super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprWire::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclKexpr(_b) => super::codec_zenoh_undecl_kexpr::CodecZenohUndeclKexprWire::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_b) => super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberWire::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_b) => super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberWire::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b) => super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableWire::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_b) => super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableWire::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_b) => super::codec_zenoh_decl_token::CodecZenohDeclTokenWire::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_b) => super::codec_zenoh_undecl_token::CodecZenohUndeclTokenWire::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclFinal(_b) => super::codec_zenoh_decl_final::CodecZenohDeclFinalWire::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::Default { body: _b, .. } => super::codec_zenoh_decl_final::CodecZenohDeclFinalWire::write_source(_b, w)?,
         }
         Ok(())
     }
@@ -610,7 +610,7 @@ impl<'a> CodecZenohDeclaration<'a> {
     }
 }
 
-impl<'a, S: CodecZenohDeclarationSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohDeclaration<'a> {
+impl<S: CodecZenohDeclarationSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohDeclarationWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -619,7 +619,7 @@ impl<'a, S: CodecZenohDeclarationSource + ?Sized> ::sce_forge_runtime::codec::So
 }
 
 #[allow(dead_code)]
-impl<'a> CodecZenohDeclaration<'a> {
+impl CodecZenohDeclarationWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -674,23 +674,23 @@ impl<'a> CodecZenohDeclaration<'a> {
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
 #[allow(dead_code)]
-impl<'a> CodecZenohDeclarationVariant<'a> {
+impl<'a, D> CodecZenohDeclarationVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohDeclarationStorage {
     /// Deep-copy this borrowed variant body into its owned mirror at the
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
     /// enforces) — on the growable profile no check can fire.
     pub fn try_into_owned_in<S: CodecZenohDeclarationFrom<'a>>(self) -> Result<CodecZenohDeclarationOwnedVariant<S>, CodecError> {
         Ok(match self {
-            CodecZenohDeclarationVariant::CodecZenohDeclKexpr(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclKexpr(_b.try_into_owned_in::<S>()?),
-            CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohUndeclKexpr(_b),
-            CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclSubscriber(_b.try_into_owned_in::<S>()?),
-            CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohUndeclSubscriber(_b.try_into_owned_in::<S>()?),
-            CodecZenohDeclarationVariant::CodecZenohDeclQueryable(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclQueryable(_b.try_into_owned_in::<S>()?),
-            CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohUndeclQueryable(_b.try_into_owned_in::<S>()?),
-            CodecZenohDeclarationVariant::CodecZenohDeclToken(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclToken(_b.try_into_owned_in::<S>()?),
-            CodecZenohDeclarationVariant::CodecZenohUndeclToken(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohUndeclToken(_b.try_into_owned_in::<S>()?),
-            CodecZenohDeclarationVariant::CodecZenohDeclFinal(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclFinal(_b),
-            CodecZenohDeclarationVariant::Default { tag, body } => CodecZenohDeclarationOwnedVariant::Default { tag, body },
+            Self::CodecZenohDeclKexpr(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclKexpr(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohUndeclKexpr(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohUndeclKexpr(_b),
+            Self::CodecZenohDeclSubscriber(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclSubscriber(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohUndeclSubscriber(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohUndeclSubscriber(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohDeclQueryable(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclQueryable(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohUndeclQueryable(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohUndeclQueryable(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohDeclToken(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclToken(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohUndeclToken(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohUndeclToken(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohDeclFinal(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclFinal(_b),
+            Self::Default { tag, body } => CodecZenohDeclarationOwnedVariant::Default { tag, body },
         })
     }
 
@@ -706,8 +706,8 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationOwnedVariant<S> {
     /// the inverse of the projection above. Reuses the borrowed view's
     /// single `encode`; the owned form deliberately carries no encode of
     /// its own.
-    pub fn as_borrowed(&self) -> CodecZenohDeclarationVariant<'_> {
-        let mut _out = CodecZenohDeclarationVariant::default();
+    pub fn as_borrowed(&self) -> CodecZenohDeclarationVariantIn<::sce_forge_runtime::codec::Lent<'_, S>> {
+        let mut _out = Default::default();
         self.as_borrowed_into(&mut _out);
         _out
     }
@@ -721,65 +721,65 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationOwnedVariant<S> {
     /// projection that returns one copies the declared maximum at every layer
     /// it passes through. A caller on a path where that shows projects into a
     /// destination it owns. On `Err`, `_out` holds what was projected so far.
-    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohDeclarationVariant<'o>) {
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohDeclarationVariantIn<::sce_forge_runtime::codec::Lent<'o, S>>) {
         match self {
             CodecZenohDeclarationOwnedVariant::CodecZenohDeclKexpr(_b) => {
-                *_out = CodecZenohDeclarationVariant::CodecZenohDeclKexpr(Default::default());
-                if let CodecZenohDeclarationVariant::CodecZenohDeclKexpr(_o) = _out {
+                *_out = CodecZenohDeclarationVariantIn::CodecZenohDeclKexpr(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohDeclKexpr(_o) = _out {
                     _b.as_borrowed_into(_o);
                 }
             }
             CodecZenohDeclarationOwnedVariant::CodecZenohUndeclKexpr(_b) => {
-                *_out = CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(Default::default());
-                if let CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(_o) = _out {
+                *_out = CodecZenohDeclarationVariantIn::CodecZenohUndeclKexpr(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohUndeclKexpr(_o) = _out {
                     *_o = _b.clone();
                 }
             }
             CodecZenohDeclarationOwnedVariant::CodecZenohDeclSubscriber(_b) => {
-                *_out = CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(Default::default());
-                if let CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(_o) = _out {
+                *_out = CodecZenohDeclarationVariantIn::CodecZenohDeclSubscriber(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohDeclSubscriber(_o) = _out {
                     _b.as_borrowed_into(_o);
                 }
             }
             CodecZenohDeclarationOwnedVariant::CodecZenohUndeclSubscriber(_b) => {
-                *_out = CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(Default::default());
-                if let CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(_o) = _out {
+                *_out = CodecZenohDeclarationVariantIn::CodecZenohUndeclSubscriber(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohUndeclSubscriber(_o) = _out {
                     _b.as_borrowed_into(_o);
                 }
             }
             CodecZenohDeclarationOwnedVariant::CodecZenohDeclQueryable(_b) => {
-                *_out = CodecZenohDeclarationVariant::CodecZenohDeclQueryable(Default::default());
-                if let CodecZenohDeclarationVariant::CodecZenohDeclQueryable(_o) = _out {
+                *_out = CodecZenohDeclarationVariantIn::CodecZenohDeclQueryable(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohDeclQueryable(_o) = _out {
                     _b.as_borrowed_into(_o);
                 }
             }
             CodecZenohDeclarationOwnedVariant::CodecZenohUndeclQueryable(_b) => {
-                *_out = CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(Default::default());
-                if let CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(_o) = _out {
+                *_out = CodecZenohDeclarationVariantIn::CodecZenohUndeclQueryable(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohUndeclQueryable(_o) = _out {
                     _b.as_borrowed_into(_o);
                 }
             }
             CodecZenohDeclarationOwnedVariant::CodecZenohDeclToken(_b) => {
-                *_out = CodecZenohDeclarationVariant::CodecZenohDeclToken(Default::default());
-                if let CodecZenohDeclarationVariant::CodecZenohDeclToken(_o) = _out {
+                *_out = CodecZenohDeclarationVariantIn::CodecZenohDeclToken(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohDeclToken(_o) = _out {
                     _b.as_borrowed_into(_o);
                 }
             }
             CodecZenohDeclarationOwnedVariant::CodecZenohUndeclToken(_b) => {
-                *_out = CodecZenohDeclarationVariant::CodecZenohUndeclToken(Default::default());
-                if let CodecZenohDeclarationVariant::CodecZenohUndeclToken(_o) = _out {
+                *_out = CodecZenohDeclarationVariantIn::CodecZenohUndeclToken(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohUndeclToken(_o) = _out {
                     _b.as_borrowed_into(_o);
                 }
             }
             CodecZenohDeclarationOwnedVariant::CodecZenohDeclFinal(_b) => {
-                *_out = CodecZenohDeclarationVariant::CodecZenohDeclFinal(Default::default());
-                if let CodecZenohDeclarationVariant::CodecZenohDeclFinal(_o) = _out {
+                *_out = CodecZenohDeclarationVariantIn::CodecZenohDeclFinal(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohDeclFinal(_o) = _out {
                     *_o = _b.clone();
                 }
             }
             CodecZenohDeclarationOwnedVariant::Default { tag, body } => {
-                *_out = CodecZenohDeclarationVariant::Default { tag: *tag, body: Default::default() };
-                if let CodecZenohDeclarationVariant::Default { body: _o, .. } = _out {
+                *_out = CodecZenohDeclarationVariantIn::Default { tag: *tag, body: Default::default() };
+                if let CodecZenohDeclarationVariantIn::Default { body: _o, .. } = _out {
                     *_o = body.clone();
                 }
             }
@@ -788,8 +788,11 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationOwnedVariant<S> {
     }
 }
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecZenohDeclaration<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecZenohDeclaration<'a> {
+impl<'a, D> CodecZenohDeclarationIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohDeclarationStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohDeclarationOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -823,8 +826,8 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationOwned<S> {
     /// borrowed view (the owned form is read-only), so an owned consumer
     /// reaches it via `as_borrowed` then `encode` / `encode_to_vec`.
     /// Each field is projected by reference — a cheap re-borrow, not a copy.
-    pub fn as_borrowed(&self) -> CodecZenohDeclaration<'_> {
-        let mut _out = CodecZenohDeclaration::default();
+    pub fn as_borrowed(&self) -> CodecZenohDeclarationIn<::sce_forge_runtime::codec::Lent<'_, S>> {
+        let mut _out = Default::default();
         self.as_borrowed_into(&mut _out);
         _out
     }
@@ -839,7 +842,7 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohDeclaration<'o>) {
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohDeclarationIn<::sce_forge_runtime::codec::Lent<'o, S>>) {
         _out.header = self.header;
         self.body.as_borrowed_into(&mut _out.body);
         

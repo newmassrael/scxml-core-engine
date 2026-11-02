@@ -17,8 +17,6 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use super::codec_zenoh_value_slice::CodecZenohValueSlice;
-
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
@@ -216,7 +214,7 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecZenohValueZbuf::encode_source(self, w)
+        CodecZenohValueZbufWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -310,10 +308,17 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufSource for CodecZenohValu
     }
 }
 
+/// The codec `CodecZenohValueZbuf` itself: what writes a value read through
+/// [`CodecZenohValueZbufSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecZenohValueZbufWire;
+
 #[allow(dead_code)]
-impl<'a> CodecZenohValueZbuf<'a> {
+impl CodecZenohValueZbufWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecZenohValueZbuf::encode` writes for the value it holds, read through
     /// [`CodecZenohValueZbufSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -360,7 +365,7 @@ impl<'a> CodecZenohValueZbuf<'a> {
         }
         if let Some(_v) = _m_slices.clone() {
             for _e in _v {
-                CodecZenohValueSlice::write_source(&_e, w)?;
+                super::codec_zenoh_value_slice::CodecZenohValueSliceWire::write_source(&_e, w)?;
             }
         }
         Ok(())
@@ -376,7 +381,7 @@ impl<'a> CodecZenohValueZbuf<'a> {
     }
 }
 
-impl<'a, S: CodecZenohValueZbufSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohValueZbuf<'a> {
+impl<S: CodecZenohValueZbufSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohValueZbufWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -385,7 +390,7 @@ impl<'a, S: CodecZenohValueZbufSource + ?Sized> ::sce_forge_runtime::codec::Sour
 }
 
 #[allow(dead_code)]
-impl<'a> CodecZenohValueZbuf<'a> {
+impl CodecZenohValueZbufWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -439,8 +444,11 @@ impl<'a> CodecZenohValueZbuf<'a> {
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecZenohValueZbuf<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecZenohValueZbuf<'a> {
+impl<'a, D> CodecZenohValueZbufIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohValueZbufStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohValueZbufOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -478,8 +486,8 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufOwned<S> {
     /// more than its declared `N` raises `CodecError::TooManyElements` — the
     /// same bound decode enforces. Only a growable profile can hold such a
     /// list; on the inline profile the source is already within bounds.
-    pub fn try_as_borrowed(&self) -> Result<CodecZenohValueZbuf<'_>, CodecError> {
-        let mut _out = CodecZenohValueZbuf::default();
+    pub fn try_as_borrowed(&self) -> Result<CodecZenohValueZbufIn<::sce_forge_runtime::codec::Lent<'_, S>>, CodecError> {
+        let mut _out = Default::default();
         self.try_as_borrowed_into(&mut _out)?;
         Ok(_out)
     }
@@ -494,19 +502,19 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohValueZbuf<'o>) -> Result<(), CodecError> {
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohValueZbufIn<::sce_forge_runtime::codec::Lent<'o, S>>) -> Result<(), CodecError> {
         match &self.after_shm {
             CodecZenohValueZbufAfterShm::AfterShm { encoding, slices, value_len } => {
                 let mut _o_encoding: u64 = Default::default();
                 _o_encoding = *encoding;
-                let mut _o_slices: ::sce_forge_runtime::codec::Bounded<<::sce_forge_runtime::codec::Lent<'o> as ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField>>::List<CodecZenohValueSlice<'o>>, 4> = Default::default();
+                let mut _o_slices: ::sce_forge_runtime::codec::Bounded<<::sce_forge_runtime::codec::Lent<'o, S> as ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField>>::List<CodecZenohValueSliceOwned<::sce_forge_runtime::codec::Lent<'o, S>>>, 4> = Default::default();
                 _o_slices.refill(|_d| ::sce_forge_runtime::codec::try_project_bounded_into(_d, slices.inner(), |_e| Ok(_e.as_borrowed())))?;
                 let mut _o_value_len: u64 = Default::default();
                 _o_value_len = *value_len;
                 _out.after_shm = CodecZenohValueZbufAfterShm::AfterShm { encoding: _o_encoding, slices: _o_slices, value_len: _o_value_len };
             }
             CodecZenohValueZbufAfterShm::NotAfterShm { value } => {
-                let mut _o_value: ::sce_forge_runtime::codec::Bytes<'o, 32> = Default::default();
+                let mut _o_value: ::sce_forge_runtime::codec::Bounded<<::sce_forge_runtime::codec::Lent<'o, S> as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueZbufValueField>>::Bytes, 32> = Default::default();
                 _o_value = value.as_bytes();
                 _out.after_shm = CodecZenohValueZbufAfterShm::NotAfterShm { value: _o_value };
             }

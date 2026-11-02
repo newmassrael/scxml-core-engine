@@ -73,6 +73,11 @@ pub struct {{ struct_name }}{{ lifetime }} {
 {% endfor %}
 }
 
+/// What the codec's wire is written through, as every codec has: a map's value
+/// stores nothing and takes no profile, so it is this type (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub type {{ struct_name }}Wire{{ lifetime }} = {{ struct_name }}{{ lifetime }};
+
 #[allow(dead_code)]
 impl{{ lifetime }} {{ struct_name }}{{ lifetime }} {
     /// An instance with every entry at its type's [`Default`] and every

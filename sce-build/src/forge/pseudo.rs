@@ -3229,7 +3229,10 @@ fn bit_size_words(b: &BitSize) -> String {
                     format!("entry-flag {}", text(flag_name))
                 }
             };
-            format!("tlv-chain max-depth {max_depth} terminate {terminate}")
+            // The depth keeps its position whether the protocol states one:
+            // `none` where it does not (docs/adr/0077 §7).
+            let depth = max_depth.map_or_else(|| "none".to_string(), |d| d.to_string());
+            format!("tlv-chain max-depth {depth} terminate {terminate}")
         }
         BitSize::Embed => "embed".to_string(),
     }

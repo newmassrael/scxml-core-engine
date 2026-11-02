@@ -5541,51 +5541,231 @@ fn forge_python_codec_zenoh_push() {
 // alignment primitive stays MCU-only — its gate-rejection test
 // remains at `forge_codec_dma_aligned_basic_rejects_on_*`.
 
-/// RFC §synth-5-B B3: `<sce:tlv-chain>` without `max-depth` rejects with the
-/// dedicated `codec/tlv-chain-depth-unspecified` diagnostic so the
-/// MCU-class contract is explicit (the runtime decoder needs a build-
-/// time bound to size its working set; RFC line 488 + 533).
-#[test]
-fn forge_codec_tlv_chain_missing_depth_rejects() {
-    use sce_build::forge::error::{ForgeError, ValidationError};
-
-    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="missing_depth">
+/// A chain and a list whose protocol states no bound, as two documents beside
+/// the entry codecs they import (docs/adr/0077 §7).
+const OPEN_CHAIN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_open_chain">
   <sce:import src="codec_tlv_entry.scxml" kind="codec" as="codec_tlv_entry"/>
   <datamodel>
     <sce:field id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:tlv-chain id="extensions" type="codec_tlv_entry" sce:byte="1"/>
   </datamodel>
-</scxml>"#;
-    let result = sce_build::compile_forge_with_imports(
-        scxml,
-        sce_build::DocumentLabel::symmetric("missing_depth"),
-        sce_build::generator::Language::Rust,
-        &resource_dir(),
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let err = match result {
-        Ok(_) => panic!(
-            "<sce:tlv-chain> without max-depth must reject with \
-             codec/tlv-chain-depth-unspecified"
+</scxml>
+"#;
+const OPEN_LIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_open_list">
+  <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
+  <datamodel>
+    <sce:repeat id="frags" type="codec_repeat_elem" sce:byte="0" until-eof="true"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A directory holding [`OPEN_CHAIN`], [`OPEN_LIST`] and the entry codecs
+/// they import, and the documents of the set by file name.
+fn open_lists() -> (tempfile::TempDir, [&'static str; 4]) {
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for entry in ["codec_tlv_entry.scxml", "codec_repeat_elem.scxml"] {
+        std::fs::copy(resource_dir().join(entry), dir.path().join(entry)).expect("copy an entry");
+    }
+    std::fs::write(dir.path().join("codec_open_chain.scxml"), OPEN_CHAIN).expect("write");
+    std::fs::write(dir.path().join("codec_open_list.scxml"), OPEN_LIST).expect("write");
+    (
+        dir,
+        [
+            "codec_tlv_entry.scxml",
+            "codec_repeat_elem.scxml",
+            "codec_open_chain.scxml",
+            "codec_open_list.scxml",
+        ],
+    )
+}
+
+/// A list the protocol states no bound of has none (docs/adr/0077 §7): it reads
+/// as many entries as the frame holds, more than any default once stood in for
+/// the bound, on a profile whose list grows and in a view; a deployment holds it
+/// at the capacity it gives, and refuses past it with `CapacityExceeded`.
+#[test]
+fn a_list_with_no_bound_reads_what_its_frame_holds() {
+    const HARNESS: &str = r#"// Injected by a_list_with_no_bound_reads_what_its_frame_holds.
+#[cfg(test)]
+mod tests {
+    use crate::codec_open_chain::{CodecOpenChainIn, CodecOpenChainView};
+    use crate::codec_open_list::{CodecOpenListIn, CodecOpenListView};
+    use crate::narrow::Narrow;
+    use ::sce_forge_runtime::codec::{CodecError, Heap, Lent, SceCursor};
+
+    // Twenty entries of no body each, past the 16 a default once held a list
+    // with no bound to.
+    fn chain(entries: usize) -> Vec<u8> {
+        let mut frame = vec![0x01];
+        for _ in 0..entries {
+            frame.extend_from_slice(&[0x10, 0x00]);
+        }
+        frame
+    }
+    fn list(entries: usize) -> Vec<u8> {
+        (0..entries as u16).flat_map(|n| n.to_be_bytes()).collect()
+    }
+
+    #[test]
+    fn a_growing_profile_and_a_view_read_every_entry() {
+        let frame = chain(20);
+        let held = CodecOpenChainIn::<Heap>::decode(&mut SceCursor::new(&frame)).expect("chain");
+        assert_eq!(held.extensions.len(), 20);
+        let lent = CodecOpenChainIn::<Lent<'_, Heap>>::decode(&mut SceCursor::new(&frame))
+            .expect("lent chain");
+        assert_eq!(lent.extensions.len(), 20);
+        let view = CodecOpenChainView::decode(&mut SceCursor::new(&frame)).expect("view");
+        assert_eq!(view.extensions.len(), 20);
+        let frame = list(20);
+        let held = CodecOpenListIn::<Heap>::decode(&mut SceCursor::new(&frame)).expect("list");
+        assert_eq!(held.frags.len(), 20);
+        let view = CodecOpenListView::decode(&mut SceCursor::new(&frame)).expect("view");
+        assert_eq!(view.frags.len(), 20);
+    }
+
+    #[test]
+    fn a_deployment_holds_its_capacity_and_refuses_past_it() {
+        let held = CodecOpenChainIn::<Narrow>::decode(&mut SceCursor::new(&chain(2)))
+            .expect("two entries");
+        assert_eq!(held.extensions.len(), 2);
+        assert_eq!(
+            CodecOpenChainIn::<Narrow>::decode(&mut SceCursor::new(&chain(3))).err(),
+            Some(CodecError::CapacityExceeded)
+        );
+        assert_eq!(
+            CodecOpenListIn::<Narrow>::decode(&mut SceCursor::new(&list(3))).err(),
+            Some(CodecError::CapacityExceeded)
+        );
+    }
+
+    #[test]
+    fn a_value_with_more_entries_than_any_default_round_trips() {
+        let frame = chain(20);
+        let held = CodecOpenChainIn::<Heap>::decode(&mut SceCursor::new(&frame)).expect("chain");
+        assert_eq!(held.encode_to_vec(), frame);
+    }
+}
+"#;
+    use sce_build::generator::Language;
+    let (dir, set) = open_lists();
+    let mut opts = golden_options(Language::Rust);
+    opts.views = true;
+    let mut files = generate_files_for_codec_set_with(dir.path(), &set, Language::Rust, opts)
+        .expect("a codec set with lists of no bound generates");
+    let paths: Vec<std::path::PathBuf> = set.iter().map(|d| dir.path().join(d)).collect();
+    let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
+    let capacities = [
+        (
+            "codec_open_chain".to_string(),
+            [("extensions".to_string(), 2)].into(),
         ),
-        Err(e) => e,
+        (
+            "codec_open_list".to_string(),
+            [("frags".to_string(), 2)].into(),
+        ),
+    ]
+    .into();
+    let deployment = sce_build::forge::deployment::RustDeployment {
+        name: "Narrow".to_string(),
+        capacities,
+        gates: Default::default(),
+        source: "deploy.yaml".to_string(),
     };
-    assert!(
-        matches!(
-            &err.error,
-            ForgeError::Validation(boxed)
-                if matches!(
-                    boxed.as_ref(),
-                    ValidationError::CodecTlvChainDepthUnspecified { codec, field }
-                        if codec == "missing_depth" && field == "extensions"
-                )
-        ),
-        "must surface CodecTlvChainDepthUnspecified naming the codec + field; got: {:?}",
-        err.error
+    let output =
+        sce_build::compile_rust_deployment(&refs, &deployment, &golden_options(Language::Rust))
+            .expect("the deployment generates");
+    files.extend(output.files);
+    files.push(("open_lists.rs".to_string(), HARNESS.to_string()));
+    rustc_run_generated_set(files, "open_lists", "test", RustcProfile::Alloc)
+        .expect("a list with no bound reads what its frame holds");
+}
+
+/// What cannot hold a list the protocol states no bound of says so, naming the
+/// list (docs/adr/0077 §7): a Rust tree with no views, whose decode past a
+/// capacity would judge the frame by a form that holds lists at their bound; a
+/// C11 tree with no capacity for it, since C11 holds every list in an array;
+/// and a deployment that gives it none. The other backends grow, and read the
+/// list to its end.
+#[test]
+fn what_cannot_hold_a_list_with_no_bound_refuses_it() {
+    use sce_build::forge::diagnostic::SingleDiagnostic;
+    use sce_build::generator::Language;
+    let (dir, _) = open_lists();
+    let compile = |language: Language, opts: sce_build::ForgeCompileOptions| {
+        sce_build::compile_forge_with_imports(
+            OPEN_CHAIN,
+            sce_build::DocumentLabel::symmetric("codec_open_chain"),
+            language,
+            dir.path(),
+            &opts,
+        )
+    };
+    let refused = compile(Language::Rust, golden_options(Language::Rust))
+        .err()
+        .expect("a Rust tree with no views refuses a list with no bound");
+    assert!(refused.to_string().contains("`extensions`"), "{refused}");
+    assert!(refused.to_string().contains("--views"), "{refused}");
+
+    let refused = compile(Language::C11, golden_options(Language::C11))
+        .err()
+        .expect("C11 refuses a list it holds no number of");
+    assert_eq!(
+        refused.diagnostic_payload().code.as_str(),
+        "codec/capacity-invalid"
     );
+    assert!(
+        refused.to_string().contains("C11 holds every list"),
+        "{refused}"
+    );
+    let mut held = golden_options(Language::C11);
+    held.codec_capacities = [(
+        "codec_open_chain".to_string(),
+        [("extensions".to_string(), 4)].into(),
+    )]
+    .into();
+    let header = compile(Language::C11, held).expect("C11 holds a capacity it is given");
+    let header = &header.files[0].1;
+    assert!(header.contains("extensions[4];"), "{header}");
+    assert!(header.contains("for (;;) {"), "{header}");
+
+    let deployment = sce_build::forge::deployment::RustDeployment {
+        name: "Bare".to_string(),
+        source: "deploy.yaml".to_string(),
+        ..Default::default()
+    };
+    let path = dir.path().join("codec_open_chain.scxml");
+    match sce_build::compile_rust_deployment(
+        &[path.as_path()],
+        &deployment,
+        &golden_options(Language::Rust),
+    ) {
+        Err(sce_build::forge::deployment::RustDeploymentError::Refused(e)) => {
+            assert!(
+                e.to_string().contains("'codec_open_chain.extensions'"),
+                "{e}"
+            );
+            assert!(e.to_string().contains("needs a capacity"), "{e}");
+        }
+        Err(other) => panic!("a deployment with no capacity for an open list: {other}"),
+        Ok(_) => panic!("a deployment with no capacity for an open list is refused"),
+    }
+
+    for (language, head) in [
+        (Language::Cpp, "for (;;) {"),
+        (Language::Kotlin, "while (true) {"),
+        (Language::Go, "for {"),
+        (Language::Python, "while True:"),
+    ] {
+        let files = compile(language, golden_options(language))
+            .unwrap_or_else(|e| panic!("{language:?} grows a list with no bound: {e}"))
+            .files;
+        let text = &files[0].1;
+        assert!(text.contains(head), "{language:?}: {text}");
+    }
 }
 
 /// A field's place in the document is its place on the wire, whichever element
@@ -13525,11 +13705,11 @@ fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
     // handed nothing, and neither is the dispatcher: it says `N` by that arm,
     // and arm_b does not read it (docs/adr/0065 §6 R4e).
     assert!(
-        disp_rust.contains("B5nuChainArmA::write_source(_b, w)?"),
+        disp_rust.contains("B5nuChainArmAWire::write_source(_b, w)?"),
         "dispatcher encode must thread the sink alone to arm_a; got:\n{disp_rust}"
     );
     assert!(
-        disp_rust.contains("Some(B5nuChainArmA::input_n(_b))"),
+        disp_rust.contains("B5nuChainArmAWire::input_n(_b))"),
         "dispatcher must say `N` by the arm that reads it; got:\n{disp_rust}"
     );
     assert!(
@@ -17266,7 +17446,7 @@ fn entries_are_handed_the_flag_their_import_binds_in_rust() {
 #[cfg(test)]
 mod tests {
     use crate::codec_chain_flag_carrier::CodecChainFlagCarrier;
-    use crate::codec_chain_flag_forward::CodecChainFlagForward;
+    use crate::codec_chain_flag_forward::{CodecChainFlagForward, CodecChainFlagForwardWire};
     use crate::codec_repeat_flag_carrier::CodecRepeatFlagCarrier;
     use crate::codec_repeat_flag_gated::CodecRepeatFlagGated;
     use ::sce_forge_runtime::codec::SceCursor;
@@ -17337,12 +17517,12 @@ mod tests {
     fn the_flag_a_parent_is_given_reaches_every_entry_of_a_gated_chain() {
         let v = forward(&FWD_NARROW, 0);
         assert_eq!(shapes(v.entries.as_ref().expect("chain")), NARROW_ENTRIES.to_vec());
-        assert_eq!(CodecChainFlagForward::input_wide(&v), Some(false));
+        assert_eq!(CodecChainFlagForwardWire::input_wide(&v), Some(false));
         assert_eq!(v.encode_to_vec(), FWD_NARROW.to_vec());
 
         let v = forward(&WIDE, 1);
         assert_eq!(shapes(v.entries.as_ref().expect("chain")), WIDE_ENTRIES.to_vec());
-        assert_eq!(CodecChainFlagForward::input_wide(&v), Some(true));
+        assert_eq!(CodecChainFlagForwardWire::input_wide(&v), Some(true));
         assert_eq!(v.encode_to_vec(), WIDE.to_vec());
     }
 
@@ -17362,7 +17542,7 @@ mod tests {
         let v = forward(&FWD_ABSENT, 1);
         assert!(v.entries.is_none());
         // Nothing says the input while the chain is absent.
-        assert_eq!(CodecChainFlagForward::input_wide(&v), None);
+        assert_eq!(CodecChainFlagForwardWire::input_wide(&v), None);
         assert_eq!(v.encode_to_vec(), FWD_ABSENT.to_vec());
     }
 
@@ -21661,11 +21841,11 @@ fn flag_inversion_emits_typed_param_and_predicate_consumption() {
         "parent decode embed-site must extract `(header >> 5) & 0x1`\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("CodecAxis1BLeaf::input_has_suffix(src.body())"),
+        parent_rust.contains("CodecAxis1BLeafWire::input_has_suffix(src.body())"),
         "parent encode must derive `header.N` from the body\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("CodecAxis1BLeaf::write_source(src.body(), w)?"),
+        parent_rust.contains("CodecAxis1BLeafWire::write_source(src.body(), w)?"),
         "parent encode must hand the body no input\n{parent_rust}"
     );
 
@@ -21799,11 +21979,11 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
     // Encode site: the arm says `S` itself, so it is handed the sink alone,
     // and `header.S` is derived from the arm (docs/adr/0065 §6 R4a).
     assert!(
-        parent_rust.contains("CodecAxis1D1WithInput::write_source(_b, w)?"),
+        parent_rust.contains("CodecAxis1D1WithInputWire::write_source(_b, w)?"),
         "variant arm encode must hand the arm the sink alone:\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("CodecAxis1D1WithInput::input_s(_b)"),
+        parent_rust.contains("CodecAxis1D1WithInputWire::input_s(_b)"),
         "variant arm encode must derive `header.S` from the arm:\n{parent_rust}"
     );
 
@@ -22611,7 +22791,7 @@ fn axis1_inversion_multi_flag_input_order() {
     );
     for input in ["n", "m", "p"] {
         assert!(
-            dispatcher_body.contains(&format!("CodecMultiArmA::input_{input}(_b)")),
+            dispatcher_body.contains(&format!("CodecMultiArmAWire::input_{input}(_b)")),
             "dispatcher reads `{input}` off the arm that says it; got:\n{dispatcher_body}"
         );
     }

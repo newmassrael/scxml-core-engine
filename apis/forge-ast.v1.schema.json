@@ -947,9 +947,13 @@
               "description": "Which part of an entry identifies its kind. `None` for a chain no `sce:present-if` reads; required by the parser when one does (`<chain>.has(<value>)`). Absent from the serialized form when `None`, so a document that does not use it keeps its AST."
             },
             "max_depth": {
+              "description": "The most entries a frame's chain holds, where the protocol bounds it; `None` where it states none (docs/adr/0077 §7). A walk reads each entry's header, so a chain with no depth still moves.",
               "format": "uint32",
               "minimum": 0.0,
-              "type": "integer"
+              "type": [
+                "integer",
+                "null"
+              ]
             },
             "terminate_on": {
               "allOf": [
@@ -967,7 +971,6 @@
             }
           },
           "required": [
-            "max_depth",
             "type"
           ],
           "type": "object"

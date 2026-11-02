@@ -33,6 +33,6 @@ PY
 
 mutation_case "the guard lets one past the bound through" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''                (false, true) => format!("{n} > {most}"),''',
-     r'''                (false, true) => format!("{n} > {}", most + 1),''')
+     r'''                (false, Some(most)) => format!("{n} > {most}"),''',
+     r'''                (false, Some(most)) => format!("{n} > {}", most + 1),''')
 PY

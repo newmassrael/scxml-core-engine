@@ -218,6 +218,22 @@ pub(crate) fn context(
         if fields.is_empty() {
             continue;
         }
+        // A deployment holds every field inline, so a field the protocol bounds
+        // by nothing needs a capacity from it (docs/adr/0077 §7).
+        if let Some(unheld) = fields.iter().find(|f| f["capacity"].is_null()) {
+            return Err(Located::in_file(
+                ValidationError::CodecCapacityInvalid {
+                    codec: name.clone(),
+                    field: unheld["id"].as_str().unwrap_or_default().to_string(),
+                    rule: "the protocol states no bound of this field, and a deployment holds \
+                           every field inline, so it needs a capacity"
+                        .to_string(),
+                }
+                .into(),
+                deployment.source.clone(),
+            )
+            .into());
+        }
         codecs.push(serde_json::json!({
             "name": name,
             "module": format!("super::{}", filters::to_snake_case(name.clone())),

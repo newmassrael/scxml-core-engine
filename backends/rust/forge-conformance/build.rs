@@ -650,7 +650,7 @@ fn write_source_sweeps(out_dir: &str, modules: &[String], sweeps: &[SourceSweep]
             String::new()
         };
         text.push_str(&format!(
-            "sweep_codec!({name}, codecs::{name}::{ty}, &{pool:?}, vec![{seeds}], [{view}], [{owned}]);\n",
+            "sweep_codec!({name}, codecs::{name}::{ty}, codecs::{name}::{ty}Wire, &{pool:?}, vec![{seeds}], [{view}], [{owned}]);\n",
             name = sweep.name,
             seeds = seeds.join(", ")
         ));

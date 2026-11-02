@@ -17,13 +17,8 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use super::codec_zenoh_init_body::CodecZenohInitBody;
-use super::codec_zenoh_open_body::CodecZenohOpenBody;
 use super::codec_zenoh_close::CodecZenohClose;
 use super::codec_zenoh_keep_alive::CodecZenohKeepAlive;
-use super::codec_zenoh_frame::CodecZenohFrame;
-use super::codec_zenoh_fragment::CodecZenohFragment;
-use super::codec_zenoh_join::CodecZenohJoin;
 
 /// A tag `CodecTransportEnvelope` names no arm for, which its default arm holds: a
 /// value inside the 5 bits the tag is read from and outside
@@ -341,7 +336,7 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecTransportEnvelope::encode_source(self, w)
+        CodecTransportEnvelopeWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -503,10 +498,17 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeSource for CodecTra
     }
 }
 
+/// The codec `CodecTransportEnvelope` itself: what writes a value read through
+/// [`CodecTransportEnvelopeSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecTransportEnvelopeWire;
+
 #[allow(dead_code)]
-impl<'a> CodecTransportEnvelope<'a> {
+impl CodecTransportEnvelopeWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecTransportEnvelope::encode` writes for the value it holds, read through
     /// [`CodecTransportEnvelopeSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -531,14 +533,14 @@ impl<'a> CodecTransportEnvelope<'a> {
     pub fn write_source_in<S: CodecTransportEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecTransportEnvelopeOverrides) -> Result<(), K::Error> {
         let _d_header_mid: u8 = src.body().tag();
         let _o_d_header_a_arm: Option<usize> = match src.body() {
-            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => Some(usize::from(CodecZenohInitBody::input_a(_b))),
-            CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_b) => Some(usize::from(CodecZenohOpenBody::input_a(_b))),
+            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => Some(usize::from(super::codec_zenoh_init_body::CodecZenohInitBodyWire::input_a(_b))),
+            CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_b) => Some(usize::from(super::codec_zenoh_open_body::CodecZenohOpenBodyWire::input_a(_b))),
             _ => None,
         };
         let _f_d_header_a: Option<usize> = if _o_d_header_a_arm.is_some() { Some(_o_d_header_a_arm.unwrap_or(0)) } else { None };
         let _o_d_header_s_arm: Option<usize> = match src.body() {
-            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => Some(usize::from(CodecZenohInitBody::input_s(_b))),
-            CodecTransportEnvelopeVariantSource::CodecZenohJoin(_b) => Some(usize::from(CodecZenohJoin::input_s(_b))),
+            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => Some(usize::from(super::codec_zenoh_init_body::CodecZenohInitBodyWire::input_s(_b))),
+            CodecTransportEnvelopeVariantSource::CodecZenohJoin(_b) => Some(usize::from(super::codec_zenoh_join::CodecZenohJoinWire::input_s(_b))),
             _ => None,
         };
         let _f_d_header_s: Option<usize> = if _o_d_header_s_arm.is_some() { Some(_o_d_header_s_arm.unwrap_or(0)) } else { None };
@@ -554,14 +556,14 @@ impl<'a> CodecTransportEnvelope<'a> {
         }
         w.write_u8(_c_header)?;
         match src.body() {
-            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => CodecZenohInitBody::write_source(_b, w)?,
-            CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_b) => CodecZenohOpenBody::write_source(_b, w)?,
-            CodecTransportEnvelopeVariantSource::CodecZenohClose(_b) => CodecZenohClose::write_source(_b, w)?,
-            CodecTransportEnvelopeVariantSource::CodecZenohKeepAlive(_b) => CodecZenohKeepAlive::write_source(_b, w)?,
-            CodecTransportEnvelopeVariantSource::CodecZenohFrame(_b) => CodecZenohFrame::write_source(_b, w)?,
-            CodecTransportEnvelopeVariantSource::CodecZenohFragment(_b) => CodecZenohFragment::write_source(_b, w)?,
-            CodecTransportEnvelopeVariantSource::CodecZenohJoin(_b) => CodecZenohJoin::write_source(_b, w)?,
-            CodecTransportEnvelopeVariantSource::Default { body: _b, .. } => CodecZenohClose::write_source(_b, w)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => super::codec_zenoh_init_body::CodecZenohInitBodyWire::write_source(_b, w)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_b) => super::codec_zenoh_open_body::CodecZenohOpenBodyWire::write_source(_b, w)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohClose(_b) => super::codec_zenoh_close::CodecZenohCloseWire::write_source(_b, w)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohKeepAlive(_b) => super::codec_zenoh_keep_alive::CodecZenohKeepAliveWire::write_source(_b, w)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohFrame(_b) => super::codec_zenoh_frame::CodecZenohFrameWire::write_source(_b, w)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohFragment(_b) => super::codec_zenoh_fragment::CodecZenohFragmentWire::write_source(_b, w)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohJoin(_b) => super::codec_zenoh_join::CodecZenohJoinWire::write_source(_b, w)?,
+            CodecTransportEnvelopeVariantSource::Default { body: _b, .. } => super::codec_zenoh_close::CodecZenohCloseWire::write_source(_b, w)?,
         }
         Ok(())
     }
@@ -576,7 +578,7 @@ impl<'a> CodecTransportEnvelope<'a> {
     }
 }
 
-impl<'a, S: CodecTransportEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecTransportEnvelope<'a> {
+impl<S: CodecTransportEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecTransportEnvelopeWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -585,7 +587,7 @@ impl<'a, S: CodecTransportEnvelopeSource + ?Sized> ::sce_forge_runtime::codec::S
 }
 
 #[allow(dead_code)]
-impl<'a> CodecTransportEnvelope<'a> {
+impl CodecTransportEnvelopeWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -640,21 +642,21 @@ impl<'a> CodecTransportEnvelope<'a> {
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
 #[allow(dead_code)]
-impl<'a> CodecTransportEnvelopeVariant<'a> {
+impl<'a, D> CodecTransportEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecTransportEnvelopeStorage {
     /// Deep-copy this borrowed variant body into its owned mirror at the
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
     /// enforces) — on the growable profile no check can fire.
     pub fn try_into_owned_in<S: CodecTransportEnvelopeFrom<'a>>(self) -> Result<CodecTransportEnvelopeOwnedVariant<S>, CodecError> {
         Ok(match self {
-            CodecTransportEnvelopeVariant::CodecZenohInitBody(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohInitBody(_b.try_into_owned_in::<S>()?),
-            CodecTransportEnvelopeVariant::CodecZenohOpenBody(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohOpenBody(_b.try_into_owned_in::<S>()?),
-            CodecTransportEnvelopeVariant::CodecZenohClose(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohClose(_b),
-            CodecTransportEnvelopeVariant::CodecZenohKeepAlive(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohKeepAlive(_b),
-            CodecTransportEnvelopeVariant::CodecZenohFrame(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohFrame(_b.try_into_owned_in::<S>()?),
-            CodecTransportEnvelopeVariant::CodecZenohFragment(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohFragment(_b.try_into_owned_in::<S>()?),
-            CodecTransportEnvelopeVariant::CodecZenohJoin(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohJoin(_b.try_into_owned_in::<S>()?),
-            CodecTransportEnvelopeVariant::Default { tag, body } => CodecTransportEnvelopeOwnedVariant::Default { tag, body },
+            Self::CodecZenohInitBody(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohInitBody(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohOpenBody(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohOpenBody(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohClose(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohClose(_b),
+            Self::CodecZenohKeepAlive(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohKeepAlive(_b),
+            Self::CodecZenohFrame(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohFrame(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohFragment(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohFragment(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohJoin(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohJoin(_b.try_into_owned_in::<S>()?),
+            Self::Default { tag, body } => CodecTransportEnvelopeOwnedVariant::Default { tag, body },
         })
     }
 
@@ -670,8 +672,8 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeOwnedVariant<S> {
     /// the inverse of the projection above. Reuses the borrowed view's
     /// single `encode`; the owned form deliberately carries no encode of
     /// its own.
-    pub fn as_borrowed(&self) -> CodecTransportEnvelopeVariant<'_> {
-        let mut _out = CodecTransportEnvelopeVariant::default();
+    pub fn as_borrowed(&self) -> CodecTransportEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'_, S>> {
+        let mut _out = Default::default();
         self.as_borrowed_into(&mut _out);
         _out
     }
@@ -685,53 +687,53 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeOwnedVariant<S> {
     /// projection that returns one copies the declared maximum at every layer
     /// it passes through. A caller on a path where that shows projects into a
     /// destination it owns. On `Err`, `_out` holds what was projected so far.
-    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecTransportEnvelopeVariant<'o>) {
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecTransportEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'o, S>>) {
         match self {
             CodecTransportEnvelopeOwnedVariant::CodecZenohInitBody(_b) => {
-                *_out = CodecTransportEnvelopeVariant::CodecZenohInitBody(Default::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohInitBody(_o) = _out {
+                *_out = CodecTransportEnvelopeVariantIn::CodecZenohInitBody(Default::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohInitBody(_o) = _out {
                     _b.as_borrowed_into(_o);
                 }
             }
             CodecTransportEnvelopeOwnedVariant::CodecZenohOpenBody(_b) => {
-                *_out = CodecTransportEnvelopeVariant::CodecZenohOpenBody(Default::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohOpenBody(_o) = _out {
+                *_out = CodecTransportEnvelopeVariantIn::CodecZenohOpenBody(Default::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohOpenBody(_o) = _out {
                     _b.as_borrowed_into(_o);
                 }
             }
             CodecTransportEnvelopeOwnedVariant::CodecZenohClose(_b) => {
-                *_out = CodecTransportEnvelopeVariant::CodecZenohClose(Default::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohClose(_o) = _out {
+                *_out = CodecTransportEnvelopeVariantIn::CodecZenohClose(Default::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohClose(_o) = _out {
                     *_o = _b.clone();
                 }
             }
             CodecTransportEnvelopeOwnedVariant::CodecZenohKeepAlive(_b) => {
-                *_out = CodecTransportEnvelopeVariant::CodecZenohKeepAlive(Default::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohKeepAlive(_o) = _out {
+                *_out = CodecTransportEnvelopeVariantIn::CodecZenohKeepAlive(Default::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohKeepAlive(_o) = _out {
                     *_o = _b.clone();
                 }
             }
             CodecTransportEnvelopeOwnedVariant::CodecZenohFrame(_b) => {
-                *_out = CodecTransportEnvelopeVariant::CodecZenohFrame(Default::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohFrame(_o) = _out {
+                *_out = CodecTransportEnvelopeVariantIn::CodecZenohFrame(Default::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohFrame(_o) = _out {
                     _b.as_borrowed_into(_o);
                 }
             }
             CodecTransportEnvelopeOwnedVariant::CodecZenohFragment(_b) => {
-                *_out = CodecTransportEnvelopeVariant::CodecZenohFragment(Default::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohFragment(_o) = _out {
+                *_out = CodecTransportEnvelopeVariantIn::CodecZenohFragment(Default::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohFragment(_o) = _out {
                     _b.as_borrowed_into(_o);
                 }
             }
             CodecTransportEnvelopeOwnedVariant::CodecZenohJoin(_b) => {
-                *_out = CodecTransportEnvelopeVariant::CodecZenohJoin(Default::default());
-                if let CodecTransportEnvelopeVariant::CodecZenohJoin(_o) = _out {
+                *_out = CodecTransportEnvelopeVariantIn::CodecZenohJoin(Default::default());
+                if let CodecTransportEnvelopeVariantIn::CodecZenohJoin(_o) = _out {
                     _b.as_borrowed_into(_o);
                 }
             }
             CodecTransportEnvelopeOwnedVariant::Default { tag, body } => {
-                *_out = CodecTransportEnvelopeVariant::Default { tag: *tag, body: Default::default() };
-                if let CodecTransportEnvelopeVariant::Default { body: _o, .. } = _out {
+                *_out = CodecTransportEnvelopeVariantIn::Default { tag: *tag, body: Default::default() };
+                if let CodecTransportEnvelopeVariantIn::Default { body: _o, .. } = _out {
                     *_o = body.clone();
                 }
             }
@@ -740,8 +742,11 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeOwnedVariant<S> {
     }
 }
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecTransportEnvelope<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecTransportEnvelope<'a> {
+impl<'a, D> CodecTransportEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecTransportEnvelopeStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecTransportEnvelopeOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -775,8 +780,8 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeOwned<S> {
     /// borrowed view (the owned form is read-only), so an owned consumer
     /// reaches it via `as_borrowed` then `encode` / `encode_to_vec`.
     /// Each field is projected by reference — a cheap re-borrow, not a copy.
-    pub fn as_borrowed(&self) -> CodecTransportEnvelope<'_> {
-        let mut _out = CodecTransportEnvelope::default();
+    pub fn as_borrowed(&self) -> CodecTransportEnvelopeIn<::sce_forge_runtime::codec::Lent<'_, S>> {
+        let mut _out = Default::default();
         self.as_borrowed_into(&mut _out);
         _out
     }
@@ -791,7 +796,7 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecTransportEnvelope<'o>) {
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecTransportEnvelopeIn<::sce_forge_runtime::codec::Lent<'o, S>>) {
         _out.header = self.header;
         self.body.as_borrowed_into(&mut _out.body);
         

@@ -201,7 +201,7 @@ impl<S: CodecPresentIfLengthRefStorage> CodecPresentIfLengthRefIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecPresentIfLengthRef::encode_source(self, w)
+        CodecPresentIfLengthRefWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -304,10 +304,17 @@ impl<S: CodecPresentIfLengthRefStorage> CodecPresentIfLengthRefSource for CodecP
     }
 }
 
+/// The codec `CodecPresentIfLengthRef` itself: what writes a value read through
+/// [`CodecPresentIfLengthRefSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecPresentIfLengthRefWire;
+
 #[allow(dead_code)]
-impl<'a> CodecPresentIfLengthRef<'a> {
+impl CodecPresentIfLengthRefWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecPresentIfLengthRef::encode` writes for the value it holds, read through
     /// [`CodecPresentIfLengthRefSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -351,7 +358,7 @@ impl<'a> CodecPresentIfLengthRef<'a> {
     }
 }
 
-impl<'a, S: CodecPresentIfLengthRefSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecPresentIfLengthRef<'a> {
+impl<S: CodecPresentIfLengthRefSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecPresentIfLengthRefWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -360,7 +367,7 @@ impl<'a, S: CodecPresentIfLengthRefSource + ?Sized> ::sce_forge_runtime::codec::
 }
 
 #[allow(dead_code)]
-impl<'a> CodecPresentIfLengthRef<'a> {
+impl CodecPresentIfLengthRefWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -414,8 +421,11 @@ impl<'a> CodecPresentIfLengthRef<'a> {
 // site repeats a capacity. A capacity is not in this file at all except as
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecPresentIfLengthRef<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecPresentIfLengthRef<'a> {
+impl<'a, D> CodecPresentIfLengthRefIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecPresentIfLengthRefStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecPresentIfLengthRefOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -449,8 +459,8 @@ impl<S: CodecPresentIfLengthRefStorage> CodecPresentIfLengthRefOwned<S> {
     /// borrowed view (the owned form is read-only), so an owned consumer
     /// reaches it via `as_borrowed` then `encode` / `encode_to_vec`.
     /// Each field is projected by reference — a cheap re-borrow, not a copy.
-    pub fn as_borrowed(&self) -> CodecPresentIfLengthRef<'_> {
-        let mut _out = CodecPresentIfLengthRef::default();
+    pub fn as_borrowed(&self) -> CodecPresentIfLengthRefIn<::sce_forge_runtime::codec::Lent<'_, S>> {
+        let mut _out = Default::default();
         self.as_borrowed_into(&mut _out);
         _out
     }
@@ -465,11 +475,11 @@ impl<S: CodecPresentIfLengthRefStorage> CodecPresentIfLengthRefOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecPresentIfLengthRef<'o>) {
+    pub fn as_borrowed_into<'o>(&'o self, _out: &mut CodecPresentIfLengthRefIn<::sce_forge_runtime::codec::Lent<'o, S>>) {
         _out.flags = self.flags;
         match &self.flags_has_payload {
             CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload } => {
-                let mut _o_payload: ::sce_forge_runtime::codec::Bytes<'o, 32> = Default::default();
+                let mut _o_payload: ::sce_forge_runtime::codec::Bounded<<::sce_forge_runtime::codec::Lent<'o, S> as ::sce_forge_runtime::codec::HoldsBytes<CodecPresentIfLengthRefPayloadField>>::Bytes, 32> = Default::default();
                 _o_payload = payload.as_bytes();
                 _out.flags_has_payload = CodecPresentIfLengthRefFlagsHasPayload::HasPayload { payload: _o_payload };
             }

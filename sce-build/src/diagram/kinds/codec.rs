@@ -331,7 +331,10 @@ fn legend(m: &CodecModel, lexicon: &Lexicon) -> Result<Vec<(String, String)>, Re
                 });
             }
             BitSize::TlvChain { max_depth, .. } => {
-                parts.push(format!("tlv_chain, max_depth {max_depth}"));
+                parts.push(match max_depth {
+                    Some(depth) => format!("tlv_chain, max_depth {depth}"),
+                    None => "tlv_chain".to_string(),
+                });
             }
             // Another document's layout, read inline: the document's own
             // spelling and the codec it names, since where it ends is that

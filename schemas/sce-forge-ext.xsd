@@ -1196,14 +1196,12 @@
        `codegen/mcu-class-kind-on-non-mcu-language` (the existing
        kind-class diagnostic, repurposed at codec-content granularity).
 
-       `max-depth` is required (RFC line 488 "MUST be specified for
-       MCU targets"); missing → typed
-       `codec/tlv-chain-depth-unspecified`. What a node does past what it
-       holds is not in the document: a capacity is the deployment's
-       (docs/adr/0077 §7).
+       `max-depth` is the protocol's bound, stated only where the protocol
+       states one: a chain with none reads entries until it ends. What a
+       node does past what it holds is not in the document: a capacity is
+       the deployment's (docs/adr/0077 §7).
 
        Diagnostics:
-         - missing max-depth → codec/tlv-chain-depth-unspecified
          - max-depth=0 → validation/invalid-attribute
          - codec containing tlv-chain on a non-MCU language →
              codegen/mcu-class-kind-on-non-mcu-language
@@ -1239,13 +1237,8 @@
            `<sce:repeat type=...>` / `<sce:arm type=...>` shape. -->
       <xs:attribute name="type" type="xs:NCName" use="required"/>
       <xs:attribute ref="sce:byte" use="required"/>
-      <!-- max-depth is required by spec but kept XSD-optional so the
-           dedicated `codec/tlv-chain-depth-unspecified` diagnostic
-           fires (with the RFC-specific repair hint) rather than the
-           generic `xml/schema-validation` "attribute required" form.
-           sce-build/src/forge/parser.rs::parse_codec_tlv_chain_from_node
-           rejects when missing. Mirrors the `<sce:repeat>` pattern
-           where `count` / `until-eof` mutex is parser-enforced. -->
+      <!-- The protocol's bound on the chain, absent where it states none
+           (docs/adr/0077 §7). -->
       <xs:attribute name="max-depth" type="xs:positiveInteger"/>
       <!-- RFC §synth-5-B — termination strategy + flag-name attribute.
            Default `exhaust-or-depth` ends on cursor-exhaust +

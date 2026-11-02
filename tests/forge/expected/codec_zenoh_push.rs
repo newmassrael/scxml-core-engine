@@ -211,7 +211,7 @@ impl CodecZenohPush {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecZenohPush::encode_source(self, w)
+        CodecZenohPushWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -324,10 +324,17 @@ impl CodecZenohPushSource for CodecZenohPush {
     }
 }
 
+/// The codec `CodecZenohPush` itself: what writes a value read through
+/// [`CodecZenohPushSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecZenohPushWire;
+
 #[allow(dead_code)]
-impl CodecZenohPush {
+impl CodecZenohPushWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecZenohPush::encode` writes for the value it holds, read through
     /// [`CodecZenohPushSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -347,8 +354,8 @@ impl CodecZenohPush {
         let _c_header: u8 = (src.header() & !0x1F) | _d_header_mid;
         w.write_u8(_c_header)?;
         match src.body() {
-            CodecZenohPushVariantSource::CodecZenohPushBody(_b) => CodecZenohPushBody::write_source(_b, w)?,
-            CodecZenohPushVariantSource::Default { body: _b, .. } => CodecZenohPushBody::write_source(_b, w)?,
+            CodecZenohPushVariantSource::CodecZenohPushBody(_b) => super::codec_zenoh_push_body::CodecZenohPushBodyWire::write_source(_b, w)?,
+            CodecZenohPushVariantSource::Default { body: _b, .. } => super::codec_zenoh_push_body::CodecZenohPushBodyWire::write_source(_b, w)?,
         }
         Ok(())
     }
@@ -363,7 +370,7 @@ impl CodecZenohPush {
     }
 }
 
-impl<S: CodecZenohPushSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohPush {
+impl<S: CodecZenohPushSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohPushWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -372,7 +379,7 @@ impl<S: CodecZenohPushSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S
 }
 
 #[allow(dead_code)]
-impl CodecZenohPush {
+impl CodecZenohPushWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size

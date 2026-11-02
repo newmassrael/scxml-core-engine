@@ -17,12 +17,6 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
-use super::codec_zenoh_wireexpr::CodecZenohWireexpr;
-use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
-use super::codec_zenoh_msg_put::CodecZenohMsgPut;
-use super::codec_zenoh_msg_del::CodecZenohMsgDel;
-use super::codec_zenoh_query::CodecZenohQuery;
-
 /// A tag `CodecZenohRequest` names no arm for, which its default arm holds: a
 /// value inside the 5 bits the tag is read from and outside
 /// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
@@ -361,7 +355,7 @@ impl<S: CodecZenohRequestStorage> CodecZenohRequestIn<S> {
     /// has insufficient remaining capacity, and none from a sink that cannot
     /// refuse (`VecSink`, `CountSink`).
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
-        CodecZenohRequest::encode_source(self, w)
+        CodecZenohRequestWire::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -542,10 +536,17 @@ impl<S: CodecZenohRequestStorage> CodecZenohRequestSource for CodecZenohRequestO
     }
 }
 
+/// The codec `CodecZenohRequest` itself: what writes a value read through
+/// [`CodecZenohRequestSource`], holding no value and naming no storage profile. Every
+/// form of the value, a parent and a view write through it, so a profile
+/// that cannot hold some field is never asked for here (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecZenohRequestWire;
+
 #[allow(dead_code)]
-impl<'a> CodecZenohRequest<'a> {
+impl CodecZenohRequestWire {
     /// Encode what `src` says into the caller-owned sink: the bytes
-    /// [`Self::encode`] writes for the value it holds, read through
+    /// `CodecZenohRequest::encode` writes for the value it holds, read through
     /// [`CodecZenohRequestSource`]. A length, a count or a gate flag is computed from what
     /// `src` presents. Every value `src` can present has a frame, so the
     /// only error is the sink's (docs/adr/0065).
@@ -569,7 +570,7 @@ impl<'a> CodecZenohRequest<'a> {
     #[doc(hidden)]
     pub fn write_source_in<S: CodecZenohRequestSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecZenohRequestOverrides) -> Result<(), K::Error> {
         let _k_extensions: usize = src.extensions().map_or(0, |_l| _l.len());
-        let _n_d_header_n_0: usize = usize::from(CodecZenohWireexpr::input_n(src.keyexpr()));
+        let _n_d_header_n_0: usize = usize::from(super::codec_zenoh_wireexpr::CodecZenohWireexprWire::input_n(src.keyexpr()));
         let _p_header_z_0: bool = src.extensions().is_some();
         let _v_header_n: u8 = _n_d_header_n_0 as u8;
         let mut _c_header: u8 = (((src.header() & !0x20) | (_v_header_n << 5)) & !0x80) | (u8::from(_p_header_z_0) << 7);
@@ -578,17 +579,17 @@ impl<'a> CodecZenohRequest<'a> {
         }
         w.write_u8(_c_header)?;
         w.write_vle_u64(src.rid())?;
-        CodecZenohWireexpr::write_source(src.keyexpr(), w)?;
+        super::codec_zenoh_wireexpr::CodecZenohWireexprWire::write_source(src.keyexpr(), w)?;
         if let Some(_v) = src.extensions() {
             for (_i, _e) in _v.enumerate() {
-                CodecZenohExtEntry::write_source_in(&_e, w, &super::codec_zenoh_ext_entry::CodecZenohExtEntryOverrides::header_z(_i + 1 < _k_extensions))?;
+                super::codec_zenoh_ext_entry::CodecZenohExtEntryWire::write_source_in(&_e, w, &super::codec_zenoh_ext_entry::CodecZenohExtEntryOverrides::header_z(_i + 1 < _k_extensions))?;
             }
         }
         match src.body() {
-            CodecZenohRequestVariantSource::CodecZenohMsgPut(_b) => CodecZenohMsgPut::write_source(_b, w)?,
-            CodecZenohRequestVariantSource::CodecZenohMsgDel(_b) => CodecZenohMsgDel::write_source(_b, w)?,
-            CodecZenohRequestVariantSource::CodecZenohQuery(_b) => CodecZenohQuery::write_source(_b, w)?,
-            CodecZenohRequestVariantSource::Default { body: _b, .. } => CodecZenohQuery::write_source(_b, w)?,
+            CodecZenohRequestVariantSource::CodecZenohMsgPut(_b) => super::codec_zenoh_msg_put::CodecZenohMsgPutWire::write_source(_b, w)?,
+            CodecZenohRequestVariantSource::CodecZenohMsgDel(_b) => super::codec_zenoh_msg_del::CodecZenohMsgDelWire::write_source(_b, w)?,
+            CodecZenohRequestVariantSource::CodecZenohQuery(_b) => super::codec_zenoh_query::CodecZenohQueryWire::write_source(_b, w)?,
+            CodecZenohRequestVariantSource::Default { body: _b, .. } => super::codec_zenoh_query::CodecZenohQueryWire::write_source(_b, w)?,
         }
         Ok(())
     }
@@ -603,7 +604,7 @@ impl<'a> CodecZenohRequest<'a> {
     }
 }
 
-impl<'a, S: CodecZenohRequestSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohRequest<'a> {
+impl<S: CodecZenohRequestSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohRequestWire {
     type Error<E> = E;
 
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
@@ -612,7 +613,7 @@ impl<'a, S: CodecZenohRequestSource + ?Sized> ::sce_forge_runtime::codec::Source
 }
 
 #[allow(dead_code)]
-impl<'a> CodecZenohRequest<'a> {
+impl CodecZenohRequestWire {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
     /// with nothing written: the encode refuses no value, so neither does
     /// this. The result writes the frame into a window of exactly that size
@@ -667,17 +668,17 @@ impl<'a> CodecZenohRequest<'a> {
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
 #[allow(dead_code)]
-impl<'a> CodecZenohRequestVariant<'a> {
+impl<'a, D> CodecZenohRequestVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohRequestStorage {
     /// Deep-copy this borrowed variant body into its owned mirror at the
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
     /// enforces) — on the growable profile no check can fire.
     pub fn try_into_owned_in<S: CodecZenohRequestFrom<'a>>(self) -> Result<CodecZenohRequestOwnedVariant<S>, CodecError> {
         Ok(match self {
-            CodecZenohRequestVariant::CodecZenohMsgPut(_b) => CodecZenohRequestOwnedVariant::CodecZenohMsgPut(_b.try_into_owned_in::<S>()?),
-            CodecZenohRequestVariant::CodecZenohMsgDel(_b) => CodecZenohRequestOwnedVariant::CodecZenohMsgDel(_b.try_into_owned_in::<S>()?),
-            CodecZenohRequestVariant::CodecZenohQuery(_b) => CodecZenohRequestOwnedVariant::CodecZenohQuery(_b.try_into_owned_in::<S>()?),
-            CodecZenohRequestVariant::Default { tag, body } => CodecZenohRequestOwnedVariant::Default { tag, body: body.try_into_owned_in::<S>()? },
+            Self::CodecZenohMsgPut(_b) => CodecZenohRequestOwnedVariant::CodecZenohMsgPut(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohMsgDel(_b) => CodecZenohRequestOwnedVariant::CodecZenohMsgDel(_b.try_into_owned_in::<S>()?),
+            Self::CodecZenohQuery(_b) => CodecZenohRequestOwnedVariant::CodecZenohQuery(_b.try_into_owned_in::<S>()?),
+            Self::Default { tag, body } => CodecZenohRequestOwnedVariant::Default { tag, body: body.try_into_owned_in::<S>()? },
         })
     }
 
@@ -693,8 +694,8 @@ impl<S: CodecZenohRequestStorage> CodecZenohRequestOwnedVariant<S> {
     /// the inverse of the projection above. Reuses the borrowed view's
     /// single `encode`; the owned form deliberately carries no encode of
     /// its own.
-    pub fn try_as_borrowed(&self) -> Result<CodecZenohRequestVariant<'_>, CodecError> {
-        let mut _out = CodecZenohRequestVariant::default();
+    pub fn try_as_borrowed(&self) -> Result<CodecZenohRequestVariantIn<::sce_forge_runtime::codec::Lent<'_, S>>, CodecError> {
+        let mut _out = Default::default();
         self.try_as_borrowed_into(&mut _out)?;
         Ok(_out)
     }
@@ -708,29 +709,29 @@ impl<S: CodecZenohRequestStorage> CodecZenohRequestOwnedVariant<S> {
     /// projection that returns one copies the declared maximum at every layer
     /// it passes through. A caller on a path where that shows projects into a
     /// destination it owns. On `Err`, `_out` holds what was projected so far.
-    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohRequestVariant<'o>) -> Result<(), CodecError> {
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohRequestVariantIn<::sce_forge_runtime::codec::Lent<'o, S>>) -> Result<(), CodecError> {
         match self {
             CodecZenohRequestOwnedVariant::CodecZenohMsgPut(_b) => {
-                *_out = CodecZenohRequestVariant::CodecZenohMsgPut(Default::default());
-                if let CodecZenohRequestVariant::CodecZenohMsgPut(_o) = _out {
+                *_out = CodecZenohRequestVariantIn::CodecZenohMsgPut(Default::default());
+                if let CodecZenohRequestVariantIn::CodecZenohMsgPut(_o) = _out {
                     _b.try_as_borrowed_into(_o)?;
                 }
             }
             CodecZenohRequestOwnedVariant::CodecZenohMsgDel(_b) => {
-                *_out = CodecZenohRequestVariant::CodecZenohMsgDel(Default::default());
-                if let CodecZenohRequestVariant::CodecZenohMsgDel(_o) = _out {
+                *_out = CodecZenohRequestVariantIn::CodecZenohMsgDel(Default::default());
+                if let CodecZenohRequestVariantIn::CodecZenohMsgDel(_o) = _out {
                     _b.try_as_borrowed_into(_o)?;
                 }
             }
             CodecZenohRequestOwnedVariant::CodecZenohQuery(_b) => {
-                *_out = CodecZenohRequestVariant::CodecZenohQuery(Default::default());
-                if let CodecZenohRequestVariant::CodecZenohQuery(_o) = _out {
+                *_out = CodecZenohRequestVariantIn::CodecZenohQuery(Default::default());
+                if let CodecZenohRequestVariantIn::CodecZenohQuery(_o) = _out {
                     _b.try_as_borrowed_into(_o)?;
                 }
             }
             CodecZenohRequestOwnedVariant::Default { tag, body } => {
-                *_out = CodecZenohRequestVariant::Default { tag: *tag, body: Default::default() };
-                if let CodecZenohRequestVariant::Default { body: _o, .. } = _out {
+                *_out = CodecZenohRequestVariantIn::Default { tag: *tag, body: Default::default() };
+                if let CodecZenohRequestVariantIn::Default { body: _o, .. } = _out {
                     body.try_as_borrowed_into(_o)?;
                 }
             }
@@ -739,8 +740,11 @@ impl<S: CodecZenohRequestStorage> CodecZenohRequestOwnedVariant<S> {
     }
 }
 
+// The lent value at any profile `D` that holds its lists: what a decode of a
+// frame gives where bytes and text borrow it, `CodecZenohRequest<'a>` being it
+// at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a> CodecZenohRequest<'a> {
+impl<'a, D> CodecZenohRequestIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohRequestStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohRequestOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -781,8 +785,8 @@ impl<S: CodecZenohRequestStorage> CodecZenohRequestOwned<S> {
     /// more than its declared `N` raises `CodecError::TooManyElements` — the
     /// same bound decode enforces. Only a growable profile can hold such a
     /// list; on the inline profile the source is already within bounds.
-    pub fn try_as_borrowed(&self) -> Result<CodecZenohRequest<'_>, CodecError> {
-        let mut _out = CodecZenohRequest::default();
+    pub fn try_as_borrowed(&self) -> Result<CodecZenohRequestIn<::sce_forge_runtime::codec::Lent<'_, S>>, CodecError> {
+        let mut _out = Default::default();
         self.try_as_borrowed_into(&mut _out)?;
         Ok(_out)
     }
@@ -797,7 +801,7 @@ impl<S: CodecZenohRequestStorage> CodecZenohRequestOwned<S> {
     /// caller on a path where that shows projects into a destination it owns,
     /// then encodes from it. On `Err`, `_out` holds what was projected so far
     /// and is not to be read.
-    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohRequest<'o>) -> Result<(), CodecError> {
+    pub fn try_as_borrowed_into<'o>(&'o self, _out: &mut CodecZenohRequestIn<::sce_forge_runtime::codec::Lent<'o, S>>) -> Result<(), CodecError> {
         _out.header = self.header;
         _out.rid = self.rid;
         self.keyexpr.as_borrowed_into(&mut _out.keyexpr);

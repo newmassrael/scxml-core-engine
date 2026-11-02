@@ -761,7 +761,6 @@ references against a real document and drift silently.
 | `codec/peek-byte-flag-layout-mismatch` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/present-if-refs-later-field` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/repeat-count-refs-later-field` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
-| `codec/tlv-chain-depth-unspecified` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/undeclared-encode-refusal` | `validation` | no | SCE Forge §4.6 |
 | `codec/variant-arm-body-caller-tag-unsupported` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/variant-arm-inner-mid-undeclared` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
