@@ -5,7 +5,7 @@
 //!
 //! ```toml
 //! [listen]
-//! plain = ["127.0.0.1:8080"]     # ws://, behind a proxy that terminates TLS or on a private network
+//! plain = ["127.0.0.1:8780"]     # ws://, behind a proxy that terminates TLS or on a private network
 //! tls = ["0.0.0.0:443"]          # wss://, with the certificate below
 //!
 //! [tls]
@@ -443,7 +443,7 @@ impl Reader<'_> {
                 item,
                 format!(
                     "{name} is a list of addresses with their ports, like \
-                     [\"127.0.0.1:8080\", \"[::]:443\"]"
+                     [\"127.0.0.1:8780\", \"[::]:443\"]"
                 ),
             )
         };
@@ -477,7 +477,7 @@ mod tests {
     const WHOLE: &str = r#"
 # A relay behind a proxy, and on its own TLS port.
 [listen]
-plain = ["127.0.0.1:8080"]
+plain = ["127.0.0.1:8780"]
 tls = ["0.0.0.0:8443", "[::]:8443"]
 
 [tls]
@@ -506,7 +506,7 @@ max_request_bytes = 4096
     #[test]
     fn a_whole_file_is_read_with_its_paths_from_its_directory() {
         let config = read(WHOLE).unwrap().finish().unwrap();
-        assert_eq!(config.plain, vec![address("127.0.0.1:8080")]);
+        assert_eq!(config.plain, vec![address("127.0.0.1:8780")]);
         assert_eq!(
             config.tls,
             vec![address("0.0.0.0:8443"), address("[::]:8443")]
@@ -614,7 +614,7 @@ max_request_bytes = 4096
     #[test]
     fn a_configuration_that_does_not_hold_together_is_refused_and_says_why() {
         let base = || Settings {
-            plain: Some(vec!["127.0.0.1:8080".parse().unwrap()]),
+            plain: Some(vec!["127.0.0.1:8780".parse().unwrap()]),
             store: Some(PathBuf::from("s")),
             authority_key: Some(PathBuf::from("k")),
             ..Settings::default()
@@ -665,8 +665,8 @@ max_request_bytes = 4096
             (
                 Settings {
                     plain: Some(vec![
-                        "127.0.0.1:8080".parse().unwrap(),
-                        "127.0.0.1:8080".parse().unwrap(),
+                        "127.0.0.1:8780".parse().unwrap(),
+                        "127.0.0.1:8780".parse().unwrap(),
                     ]),
                     ..base()
                 },

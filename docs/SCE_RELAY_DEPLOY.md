@@ -134,13 +134,14 @@ A device dials `wss://relay.example/sce-relay/1`. Three ways to give the relay a
      -out chain.pem
    ```
 
-   A device must then believe that authority and no public one: in Rust, `WssLink::believing` with
-   `tls::Roots::Only(vec![ca_der])`. **Through the peer core's C ABI a phone believes only the public
-   authorities today**; a call that names a private authority is being added to the ABI. Until it is
-   there, a relay under a private authority is reachable from Rust hosts and tests, not from a phone
-   application.
+   A device must then believe that authority: in Rust, `WssLink::believing` with
+   `tls::Roots::Only(vec![ca_der])`; through the peer core's C ABI, `sce_peer_link_wss_believing` with
+   the authority's certificate as PEM or DER (`ca.pem`, shipped in the application) and
+   `SCE_PEER_ROOTS_ONLY`, or `SCE_PEER_ROOTS_AND_PUBLIC` for a deployment that will move its relays to
+   a public authority without stranding the applications it has shipped (`PeerLink.wssBelieving` in
+   the Kotlin binding).
 3. **A proxy that terminates TLS** (nginx, Caddy, a load balancer) in front of a relay that listens for
-   `ws://` on `127.0.0.1:8080` (`[listen] plain`, no `[tls]` section; drop `--tls-key`, the
+   `ws://` on `127.0.0.1:8780` (`[listen] plain`, no `[tls]` section; drop `--tls-key`, the
    `tls.key` credential and the two capability lines from the unit). The proxy must pass the
    WebSocket upgrade and the `Authorization` header through, and must not buffer. On a server of 1 GB,
    a second process costs memory the relay could use; prefer option 1 there.

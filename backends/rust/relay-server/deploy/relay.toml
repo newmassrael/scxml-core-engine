@@ -12,7 +12,7 @@
 tls = ["[::]:443"]
 # ws:// for a relay behind a proxy that terminates TLS, or on a private network: in place of `tls`
 # above, with no [tls] section.
-# plain = ["127.0.0.1:8080"]
+# plain = ["127.0.0.1:8780"]
 
 [tls]
 # The certificate the relay presents, its own first and then the intermediates, as PEM. The private

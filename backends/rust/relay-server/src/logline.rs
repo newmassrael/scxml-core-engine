@@ -139,7 +139,7 @@ mod tests {
 
     #[test]
     fn a_line_is_its_level_its_event_and_its_words() {
-        let address = "127.0.0.1:8080";
+        let address = "127.0.0.1:8780";
         let line = Log::plain().line(
             Level::Info,
             "listening",
@@ -147,7 +147,7 @@ mod tests {
         );
         assert_eq!(
             line,
-            "level=info event=listening transport=ws address=127.0.0.1:8080 open=3"
+            "level=info event=listening transport=ws address=127.0.0.1:8780 open=3"
         );
     }
 
