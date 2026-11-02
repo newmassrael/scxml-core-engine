@@ -177,8 +177,10 @@ scan_exclusions = [
     # What a host of a shared list keeps that its machines cannot (`sce-rust-trust`).
     # Measured 2026-10-17 over its 9 Rust sources: no citation of any ledger.
     "backends/rust/trust/",
-    # The relay of a shared list (`sce-rust-relay`): no citation of any ledger.
+    # The relay of a shared list (`sce-rust-relay`) and the transport contract its bindings
+    # implement (`sce-rust-relay-transport`): no citation of any ledger.
     "backends/rust/relay/",
+    "backends/rust/relay-transport/",
     # The group key agreement of a shared list (`sce-rust-mls`): no citation of any ledger.
     "backends/rust/mls/",
     "backends/rust/mls-capi/",

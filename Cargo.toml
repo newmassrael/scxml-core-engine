@@ -27,6 +27,7 @@ members = [
     "backends/rust/world",
     "backends/rust/trust",
     "backends/rust/relay",
+    "backends/rust/relay-transport",
     "backends/rust/mls",
     "backends/rust/mls-capi",
     "backends/rust/peer",

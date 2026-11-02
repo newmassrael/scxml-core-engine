@@ -37,11 +37,15 @@ required-features = ["serve"]
 
 [features]
 default = []
-# The WebSocket binding: a server that accepts links bound to a login token, and a client link for
-# a host's courier. Off by default: the core links no async runtime.
-serve = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
+# The client side of the WebSocket binding: the transport (`WssLink`) a device reaches the relay
+# through, which a peer core's native library links. Off by default: the core links no async runtime.
+wss = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
+# The WebSocket binding's server, which accepts connections bound to a login token, and its client.
+serve = ["wss"]
 
 [dependencies]
+# The contract every transport of the relay protocol implements, the WebSocket binding among them.
+sce-rust-relay-transport = { path = "../relay-transport" }
 sce-rust-trust = { path = "../trust" }
 # The seam a host that has no hub puts behind its machine (`Keep`).
 sce-rust-mesh = { path = "../mesh" }

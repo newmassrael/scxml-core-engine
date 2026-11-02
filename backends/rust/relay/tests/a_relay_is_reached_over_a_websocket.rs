@@ -2,15 +2,21 @@
 //
 // The relay over a socket. A device connects with the token its login earned and exchanges request
 // and response texts; a connection with no token, or one the relay did not issue, is refused at the
-// upgrade; a token that expires while the connection stays open stops being answered; and two hosts
-// that never meet carry a write from one to the other through the relay by their couriers.
+// upgrade, which a courier reads as the relay's refusal of the token; a token that expires while the
+// connection stays open stops being answered; and two hosts that never meet carry a write from one
+// to the other through the relay by their couriers. The client is the reference transport: it tells
+// its host when it connected and why it gave a connection up, dials again when the network changed,
+// and an exchange that waits on a relay that does not answer ends when it is cancelled, when its
+// deadline passes and when the network changes.
 
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use sce_rust_mesh::endpoint::Sealer;
 use sce_rust_relay::serve::{serve, WssLink};
 use sce_rust_relay::{
-    Authority, Code, Courier, Limits, Link, MemoryStore, Relay, Request, Response,
+    Authority, Code, Courier, Limits, Link, MemoryStore, Notice, Relay, Request, Response, Signal,
+    Transport, TransportError,
 };
 use sce_rust_trust::membership::{Body, Log, Profile};
 use sce_rust_trust::{Identity, Trust};
@@ -95,15 +101,25 @@ fn a_connection_needs_a_token_the_relay_issued_and_asks_again_when_it_expires() 
     let running = start();
     let _keep = &running.runtime;
 
+    // Refused at the upgrade, and read as the relay's refusal of the token, which is what it says
+    // to one that expires on a connection that stays open (below).
+    let refused = |token: &str| {
+        let answer = WssLink::new(&running.base, token)
+            .unwrap()
+            .call(&Request::Heads);
+        matches!(
+            answer,
+            Ok(Response::Refused {
+                code: Code::Unauthorized,
+                ..
+            })
+        )
+    };
     for bad in ["", "nonsense"] {
-        let mut link = WssLink::new(&running.base, bad).unwrap();
-        assert!(link.call(&Request::Heads).is_err(), "{bad:?}");
+        assert!(refused(bad), "{bad:?}");
     }
     let other = Authority::new([4; 32], "another-relay").issue(LIST, 1, u64::MAX);
-    assert!(WssLink::new(&running.base, &other)
-        .unwrap()
-        .call(&Request::Heads)
-        .is_err());
+    assert!(refused(&other));
 
     // A token that is good is answered, and the relay says what it is not told yet.
     let token = running.authority.issue(LIST, 1, 1_000);
@@ -171,5 +187,124 @@ fn two_hosts_that_never_meet_carry_a_write_through_the_relay_over_a_socket() {
             .filter(|(event, _)| event == "record_list.write")
             .count(),
         1
+    );
+}
+
+#[test]
+fn the_transport_tells_its_host_of_its_connection_and_dials_again_when_the_network_changed() {
+    let running = start();
+    let _keep = &running.runtime;
+    let none = Signal::new();
+    let request = Request::Entries { from: 0 }.to_json();
+
+    assert!(
+        WssLink::new("http://127.0.0.1:1", "token").is_err(),
+        "an address that is no WebSocket's"
+    );
+    let mut stranger = WssLink::new(&running.base, "nonsense").unwrap();
+    assert!(
+        matches!(
+            stranger.exchange(&request, None, &none),
+            Err(TransportError::Unauthorized(_))
+        ),
+        "the transport says the token was refused, and carries nothing"
+    );
+    assert!(stranger.take_notices().is_empty(), "it never connected");
+
+    let token = running.authority.issue(LIST, 1, u64::MAX);
+    let mut link = WssLink::new(&running.base, &token).unwrap();
+    let answer = link.exchange(&request, None, &none).unwrap();
+    assert_eq!(
+        Response::from_json(&answer),
+        Ok(Response::Entries {
+            entries: Vec::new(),
+            len: 0
+        }),
+        "the response text, as the relay wrote it"
+    );
+    assert_eq!(link.take_notices(), vec![Notice::Connected]);
+    link.exchange(&request, None, &none).unwrap();
+    assert!(link.take_notices().is_empty(), "the connection was kept");
+
+    link.network().raise();
+    link.exchange(&request, None, &none).unwrap();
+    assert_eq!(
+        link.take_notices(),
+        vec![
+            Notice::Lost("the network changed".to_string()),
+            Notice::Connected
+        ]
+    );
+}
+
+/// A listener that takes connections into its backlog and never answers one: a relay that does not
+/// answer, so that an exchange waits.
+fn silent() -> (std::net::TcpListener, String) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("ws://{}", listener.local_addr().unwrap());
+    (listener, base)
+}
+
+/// Raise `signal` from another thread after `after`.
+fn raise_later(signal: Signal, after: Duration) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        std::thread::sleep(after);
+        signal.raise();
+    })
+}
+
+#[test]
+fn an_exchange_that_waits_ends_when_cancelled_when_its_deadline_passes_and_when_the_network_changes(
+) {
+    let (_listener, base) = silent();
+    let request = Request::Heads.to_json();
+    let mut link = WssLink::new(&base, "token").unwrap();
+
+    let cancel = Signal::new();
+    let raiser = raise_later(cancel.clone(), Duration::from_millis(200));
+    let began = Instant::now();
+    let answer = link.exchange(&request, Some(began + Duration::from_secs(60)), &cancel);
+    raiser.join().unwrap();
+    assert_eq!(answer, Err(TransportError::Cancelled));
+    assert!(
+        began.elapsed() < Duration::from_secs(20),
+        "it ended at the cancellation, not the deadline: {:?}",
+        began.elapsed()
+    );
+    assert_eq!(
+        link.exchange(&request, None, &cancel),
+        Err(TransportError::Cancelled),
+        "a cancellation stays raised"
+    );
+
+    let began = Instant::now();
+    let answer = link.exchange(
+        &request,
+        Some(began + Duration::from_millis(300)),
+        &Signal::new(),
+    );
+    let waited = began.elapsed();
+    assert_eq!(answer, Err(TransportError::Deadline));
+    assert!(
+        waited >= Duration::from_millis(200) && waited < Duration::from_secs(20),
+        "{waited:?}"
+    );
+
+    let raiser = raise_later(link.network(), Duration::from_millis(200));
+    let began = Instant::now();
+    let answer = link.exchange(
+        &request,
+        Some(began + Duration::from_secs(60)),
+        &Signal::new(),
+    );
+    raiser.join().unwrap();
+    assert_eq!(
+        answer,
+        Err(TransportError::Link("the network changed".to_string()))
+    );
+    assert!(
+        began.elapsed() < Duration::from_secs(20),
+        "{:?}",
+        began.elapsed()
     );
 }

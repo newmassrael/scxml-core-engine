@@ -226,9 +226,11 @@ scan_exclusions = [
     # sources: not one carries a `§` citation, so excluding them swallows no section from
     # this gate.
     "backends/rust/trust/",
-    # The relay of a shared list (`sce-rust-relay`): it implements no clause of the Recommendation
-    # and carries no `§` citation.
+    # The relay of a shared list (`sce-rust-relay`) and the transport contract its bindings implement
+    # (`sce-rust-relay-transport`): they implement no clause of the Recommendation and carry no `§`
+    # citation.
     "backends/rust/relay/",
+    "backends/rust/relay-transport/",
     # The group key agreement of a shared list (`sce-rust-mls`): it implements no clause of the
     # Recommendation and carries no `§` citation.
     "backends/rust/mls/",

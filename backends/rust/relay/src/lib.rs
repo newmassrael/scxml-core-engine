@@ -16,7 +16,16 @@
 //! * [`store`] - the append-only record a relay starts from, checked again as it is read.
 //! * [`client`] - a host's courier to a relay, the round it makes as a state machine that does no
 //!   I/O itself, the link it speaks over, and the sealer for a host that has no hub.
-//! * `serve` (feature) - the WebSocket binding that carries the request and response texts.
+//! * [`driver`] - the one loop that carries an exchange (a round, or the peer core's) over a link,
+//!   with a deadline and a cancellation.
+//! * `wss` (feature) - the WebSocket binding's client: the reference [`Transport`] a device reaches
+//!   a relay through.
+//! * `serve` (feature) - the WebSocket binding's server, which carries the request and response
+//!   texts to a relay.
+//!
+//! What carries the texts is a [`Transport`], whose contract is the crate `sce-rust-relay-transport`
+//! (re-exported here): a binding written elsewhere, the deployment transport's adapter among them,
+//! implements it there and depends on nothing of this crate.
 //!
 //! A relay is generic over where it keeps its records and over how it is reached, and is specific
 //! to the events whose rules `sce-rust-trust` knows: the writes and notes of the standard shared
@@ -25,12 +34,16 @@
 #![forbid(unsafe_code)]
 
 pub mod client;
+pub mod driver;
 pub mod hub;
 pub mod limits;
 pub mod protocol;
 pub mod relay;
 pub mod store;
 pub mod token;
+
+#[cfg(feature = "wss")]
+pub mod wss;
 
 #[cfg(feature = "serve")]
 pub mod serve;
@@ -39,9 +52,13 @@ pub use client::{
     Courier, CourierError, CourierState, DirectLink, Keep, Kept, Link, LinkError, Publication,
     Round, RoundKind, RoundMachine, Step,
 };
+pub use driver::{drive, Driven, Exchange};
 pub use hub::{slot_of, Hub, Shards};
 pub use limits::Limits;
 pub use protocol::{Code, Record, Request, Response};
 pub use relay::Relay;
+pub use sce_rust_relay_transport::{
+    Notice, Notices, Signal, Transport, TransportError, Watch, NOTICES_KEPT,
+};
 pub use store::{FileStore, MemoryStore, Store};
 pub use token::{Authority, Session, TokenError};

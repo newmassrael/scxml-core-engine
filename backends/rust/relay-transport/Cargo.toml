@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-relay-transport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "What carries a shared list's relay protocol between a device and its relay: a request text out, its response text back, what the relay pushes and the state of the connection, and nothing of what the texts mean"
+publish = false
+
+# The transport contract of ADR 0079 section 5. A binding of the relay's protocol to a medium
+# implements `Transport` here: the WebSocket binding of `sce-rust-relay` (feature `wss`), a host's
+# own through the peer core's C ABI, and the deployment transport's adapter, which lives in that
+# transport's repository. It is a crate of its own, with no dependency beyond the standard library,
+# so that an adapter written elsewhere depends on the contract and on nothing of the relay, the
+# trust layer or the Mesh, and so that the contract changes only when it changes.
+
+[lints]
+workspace = true

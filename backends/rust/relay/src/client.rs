@@ -15,10 +15,11 @@
 //!
 //! A round is a [`RoundMachine`]: a state machine that says which request it wants put to the relay
 //! and is given the answer, and that reads no clock, opens nothing and waits on nothing. A
-//! `Courier` is that machine driven over a synchronous link, for a Rust host that has one; a host
-//! whose transport or operating system decides when it may run drives the machine itself, and the
-//! state a courier keeps between rounds ([`CourierState`]) is changed only where a step of a round
-//! was completed, so that a round that does not end costs nothing but the round.
+//! `Courier` is that machine driven over a synchronous link by the one driver ([`drive`]), for a
+//! Rust host that has one; a host whose operating system decides when it may run drives the machine
+//! itself, or drives it over a [`Transport`] with a deadline and a cancellation, and the state a
+//! courier keeps between rounds ([`CourierState`]) is changed only where a step of a round was
+//! completed, so that a round that does not end costs nothing but the round.
 //!
 //! A host connected to several relays has one `Trust` and a courier for each: what one relay did
 //! not pass on, another gives. A host that has no hub puts [`Keep`] behind its machine, so that what
@@ -26,32 +27,79 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use sce_rust_mesh::endpoint::Sealer;
+use sce_rust_relay_transport::{Notice, Signal, Transport, TransportError};
 use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{Body, Entry, LogError};
 use sce_rust_trust::message;
 use sce_rust_trust::{Checkpoint, CheckpointError, Head, TakeError, Trust};
 use serde_json::{json, Value};
 
+use crate::driver::drive;
 use crate::protocol::{Code, Record, Request, Response};
 use crate::relay::Relay;
 use crate::store::Store;
 
-/// A way to put a request to one relay and read its answer.
+/// A way to put a request to one relay and read its answer, as the protocol's values: the view of a
+/// [`Transport`] a Rust host and a test speak, and what a [`Courier`] and [`drive`] carry an
+/// exchange over. Every transport is a link (the texts written and read here); a link a test
+/// writes over another, to change what a relay seems to answer, is one too.
 pub trait Link {
     fn call(&mut self, request: &Request) -> Result<Response, LinkError>;
+
+    /// [`Self::call`], by `deadline` and giving up once `cancel` is raised. A link that does not
+    /// block (a relay in this process, a test's) keeps this default, which calls; a transport
+    /// honours both ([`Transport::exchange`]).
+    fn call_within(
+        &mut self,
+        request: &Request,
+        deadline: Option<Instant>,
+        cancel: &Signal,
+    ) -> Result<Response, LinkError> {
+        let _ = (deadline, cancel);
+        self.call(request)
+    }
+}
+
+/// A transport is a link: the request is written as the protocol's text and the response read
+/// from it, and a text that is no response of the protocol is a failure of the link, as the peer
+/// core takes one. The relay's endpoint refusing the device's token before it carried the request
+/// is the relay's refusal of the token, the answer it gives one that expires on a connection that
+/// stays open, so that a host renews its token on one sign whichever way it was refused.
+impl<T: Transport + ?Sized> Link for T {
+    fn call(&mut self, request: &Request) -> Result<Response, LinkError> {
+        self.call_within(request, None, &Signal::new())
+    }
+
+    fn call_within(
+        &mut self,
+        request: &Request,
+        deadline: Option<Instant>,
+        cancel: &Signal,
+    ) -> Result<Response, LinkError> {
+        match self.exchange(&request.to_json(), deadline, cancel) {
+            Ok(text) => Response::from_json(&text).map_err(LinkError),
+            Err(TransportError::Unauthorized(reason)) => {
+                Ok(Response::refused(Code::Unauthorized, reason))
+            }
+            Err(error) => Err(LinkError(error.to_string())),
+        }
+    }
 }
 
 /// The link did not carry the request or the answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkError(pub String);
 
-/// A link to a relay in this process: the tests', and a host that runs its relay beside it.
+/// A transport to a relay in this process: the tests', and a host that runs its relay beside it.
+/// It never blocks, holds no connection, and has nothing to tell its host.
 pub struct DirectLink<S: Store> {
     relay: Arc<Mutex<Relay<S>>>,
     token: String,
     clock: Arc<dyn Fn() -> u64 + Send + Sync>,
+    network: Signal,
 }
 
 impl<S: Store> DirectLink<S> {
@@ -64,19 +112,35 @@ impl<S: Store> DirectLink<S> {
             relay,
             token,
             clock,
+            network: Signal::new(),
         }
     }
 }
 
-impl<S: Store> Link for DirectLink<S> {
-    fn call(&mut self, request: &Request) -> Result<Response, LinkError> {
+impl<S: Store + Send> Transport for DirectLink<S> {
+    fn exchange(
+        &mut self,
+        request: &str,
+        _deadline: Option<Instant>,
+        cancel: &Signal,
+    ) -> Result<String, TransportError> {
+        if cancel.is_raised() {
+            return Err(TransportError::Cancelled);
+        }
         let now = (self.clock)();
-        let text = self
+        Ok(self
             .relay
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .handle(&self.token, &request.to_json(), now);
-        Response::from_json(&text).map_err(LinkError)
+            .handle(&self.token, request, now))
+    }
+
+    fn take_notices(&mut self) -> Vec<Notice> {
+        Vec::new()
+    }
+
+    fn network(&self) -> Signal {
+        self.network.clone()
     }
 }
 
@@ -1488,16 +1552,16 @@ impl<L: Link> Courier<L> {
         self.run(machine)
     }
 
-    /// Drive `machine` over the link to its end, and keep the state it leaves.
+    /// Drive `machine` over the link to its end, with no deadline and no cancellation, and keep
+    /// the state it leaves.
     fn run(&mut self, mut machine: RoundMachine) -> Result<Round, CourierError> {
-        let outcome = loop {
-            match machine.poll() {
-                Step::Request(request) => {
-                    let answer = self.link.call(&request);
-                    machine.respond(answer);
-                }
-                Step::Done(outcome) => break outcome,
-            }
+        drive(&mut machine, &mut self.link, None, &Signal::new());
+        let outcome = match machine.poll() {
+            Step::Done(outcome) => outcome,
+            // `drive` returns once the machine asks nothing more.
+            Step::Request(_) => Err(CourierError::Unexpected(
+                "the round asked again after it was driven to its end".to_string(),
+            )),
         };
         self.state = machine.into_state();
         outcome

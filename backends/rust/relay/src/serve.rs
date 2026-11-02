@@ -10,7 +10,7 @@
 //! connection that stays open stops being answered and the device reconnects with a new one. A
 //! binary message, or a text one longer than the relay takes, closes the connection. TLS is the
 //! deployer's: [`serve_connection`] runs on any stream the host hands it, one its TLS acceptor
-//! already wrapped included, and the client dials `ws://` or `wss://`.
+//! already wrapped included, and the client ([`WssLink`], `crate::wss`) dials `ws://` or `wss://`.
 //!
 //! The relay's work is short and takes a lock, so it runs on a blocking thread and never holds up
 //! the connections that are waiting. What answers is a [`Hub`]: a relay behind one lock, or
@@ -26,14 +26,11 @@ use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, 
 use tokio_tungstenite::tungstenite::http;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
-use crate::client::{Link, LinkError};
 use crate::hub::Hub;
-use crate::protocol::{Request as RelayRequest, Response as RelayResponse};
-
-/// The path a device connects to.
-pub const PATH: &str = "/sce-relay/1";
+// The path a device connects to, and the client that connects there: the binding's two halves are
+// named from either module.
+pub use crate::wss::{WssLink, PATH};
 
 /// Why a connection did not run.
 #[derive(Debug)]
@@ -131,83 +128,5 @@ where
         tokio::spawn(async move {
             let _ = serve_connection(stream, hub, clock, max_message).await;
         });
-    }
-}
-
-/// A link to a relay over a WebSocket, for a host that calls from a thread of its own (it owns a
-/// small runtime, and so it is not called from inside another). A call that fails drops the
-/// connection, and the next call dials again with the same token: a courier's next round is the
-/// retry.
-pub struct WssLink {
-    runtime: tokio::runtime::Runtime,
-    url: String,
-    token: String,
-    socket: Option<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-}
-
-impl WssLink {
-    /// A link to the relay at `base` (`ws://host:port`) with `token`.
-    pub fn new(base: &str, token: &str) -> std::io::Result<Self> {
-        Ok(Self {
-            runtime: tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?,
-            url: format!("{}{PATH}", base.trim_end_matches('/')),
-            token: token.to_string(),
-            socket: None,
-        })
-    }
-
-    async fn exchange(
-        socket: &mut Option<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-        url: &str,
-        token: &str,
-        request: &RelayRequest,
-    ) -> Result<RelayResponse, String> {
-        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-
-        if socket.is_none() {
-            let mut upgrade = url
-                .into_client_request()
-                .map_err(|error| error.to_string())?;
-            let value = http::HeaderValue::from_str(&format!("Bearer {token}"))
-                .map_err(|_| "the token is not a header value".to_string())?;
-            upgrade
-                .headers_mut()
-                .insert(http::header::AUTHORIZATION, value);
-            let (connected, _) = tokio_tungstenite::connect_async(upgrade)
-                .await
-                .map_err(|error| error.to_string())?;
-            *socket = Some(connected);
-        }
-        let ws = socket.as_mut().ok_or("the link is not open")?;
-        ws.send(Message::Text(request.to_json().into()))
-            .await
-            .map_err(|error| error.to_string())?;
-        loop {
-            match ws.next().await {
-                Some(Ok(Message::Text(text))) => return RelayResponse::from_json(&text),
-                Some(Ok(Message::Ping(_) | Message::Pong(_))) => continue,
-                Some(Ok(_)) | Some(Err(_)) | None => {
-                    return Err("the relay closed the link".to_string())
-                }
-            }
-        }
-    }
-}
-
-impl Link for WssLink {
-    fn call(&mut self, request: &RelayRequest) -> Result<RelayResponse, LinkError> {
-        let Self {
-            runtime,
-            url,
-            token,
-            socket,
-        } = self;
-        let result = runtime.block_on(Self::exchange(socket, url, token, request));
-        if result.is_err() {
-            *socket = None;
-        }
-        result.map_err(LinkError)
     }
 }

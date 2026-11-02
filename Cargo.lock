@@ -3831,12 +3831,17 @@ dependencies = [
  "futures-util",
  "getrandom 0.2.17",
  "sce-rust-mesh",
+ "sce-rust-relay-transport",
  "sce-rust-trust",
  "serde_json",
  "sha2 0.10.9",
  "tokio",
  "tokio-tungstenite",
 ]
+
+[[package]]
+name = "sce-rust-relay-transport"
+version = "0.1.0"
 
 [[package]]
 name = "sce-rust-runtime"
