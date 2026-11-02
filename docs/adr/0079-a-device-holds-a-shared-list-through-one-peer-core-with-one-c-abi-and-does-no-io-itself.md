@@ -216,6 +216,15 @@ when it is called production.
   a resync. They are now kept in the courier's state and handed over first by the next round (a resync drops them,
   since it reads everything again). A round that follows no failure makes the same requests, in the same order,
   with the same result as before.
+- **Step 3** landed 2026-11-02. A write or note the device already sealed comes back as the operation it holds
+  (`Trust::seal_sent`, `Kept::Held`): same number, same signature, nothing new for the relay. Another content at the
+  same register and stamp is refused before anything is sealed or signed. A device whose state came back from a
+  store (`Peer::restore`, or a host that calls `Trust::await_own_chain`) signs nothing new until a round has read
+  back from the relay any of its own chain the relay holds beyond its own (`heads`, then `operations`): before this,
+  a device restored from an older save signed its next write at a number it had already used, and froze itself on
+  every host that saw both. What this rests on is the relay's word on how far a chain goes, which is ADR 0034's limit
+  for a relay that withholds. Not done here: handing a rebuilt machine the other devices' operations from the core
+  alone; a resync round from the relay tells it the list.
 - Not yet saved by `Peer::save`: the device's secrets (identity, epoch keys, MLS group state), which the host gives
   again before `restore`; section 6 (step 7) seals them.
 
