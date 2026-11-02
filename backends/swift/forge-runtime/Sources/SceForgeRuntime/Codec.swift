@@ -26,6 +26,11 @@ public enum CodecError: Error, Equatable, Sendable {
     /// says, judged before the frame's own length so that such a frame is refused and never waited
     /// on; on an encode, the length of the value, refused before the first byte is written.
     case lengthOutOfRange
+    /// A list's count is past the bound its field declares (`sce:max-count`): on a decode, the
+    /// count the frame says, or an entry past it in a list read to the end of the frame, refused
+    /// before that entry is read; on an encode, the entries of the value, refused before the
+    /// first byte is written.
+    case tooManyElements
 }
 
 /// The byte order of one field on the wire.

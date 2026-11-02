@@ -21,8 +21,8 @@ use std::path::Path;
 use crate::forge::error::{ForgeError, ImportError, Located};
 use crate::forge::generator::StatelessFunction;
 use crate::forge::model::{
-    AlgorithmModel, AlgorithmValueType, EnumRef, FieldType, ForgeDocument, ForgeField, ForgeImport,
-    ForgeKind, ListElemType, OptionalElemType, OutOfBounds, ParsedForge, SceType,
+    AlgorithmModel, AlgorithmValueType, CodecModel, EnumRef, FieldType, ForgeDocument, ForgeField,
+    ForgeImport, ForgeKind, ListElemType, OptionalElemType, OutOfBounds, ParsedForge, SceType,
 };
 use crate::forge::type_ctx::{CalleeKind, StaticCallee, StaticSlot, StaticValueSignature};
 use crate::forge::types::{CallReading, RecordId};
@@ -217,6 +217,43 @@ fn swift_callee_unlowered_at(
         &|imp| swift_imported_algorithm_unlowered(imp, base_dir, depth + 1),
     )
     .map(|construct| format!("holds {construct}"))
+}
+
+/// What of the codec `codec` (whose own imports are `imports`, written relative to `base_dir`)
+/// the Swift backend does not write, as the construct a caller's refusal names it by, or `None`
+/// when it writes all of it. The codec is read through the codecs its lists hold entries of, each
+/// of which is a unit the Swift backend must write for the list to name its type.
+pub(crate) fn swift_codec_through_imports(
+    codec: &CodecModel,
+    imports: &[ForgeImport],
+    base_dir: &Path,
+) -> Option<String> {
+    swift_codec_through_imports_at(codec, imports, base_dir, 0)
+}
+
+fn swift_codec_through_imports_at(
+    codec: &CodecModel,
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    depth: usize,
+) -> Option<String> {
+    if depth >= CALLEE_DEPTH {
+        return Some("lists nested too deeply to read".to_string());
+    }
+    crate::forge::generator::swift_codec_unlowered(codec, &|alias| {
+        // An entry codec that cannot be read is one the resolution of the import has already
+        // refused.
+        let import = imports
+            .iter()
+            .find(|i| i.alias == alias && i.kind == ForgeKind::Codec)?;
+        let source = crate::forge::import_source::ImportSource::read(base_dir, import).ok()?;
+        let parsed = source.parse().ok()??;
+        let ForgeDocument::Codec(entry) = &parsed.document else {
+            return None;
+        };
+        let entry_base = source.path.parent().unwrap_or(base_dir);
+        swift_codec_through_imports_at(entry, &parsed.imports, entry_base, depth + 1)
+    })
 }
 
 /// [`swift_callee_unlowered`] of the algorithm or enum `import` names, found relative

@@ -212,7 +212,7 @@ impl CodecFailure {
                 Language::Kotlin => "cursor.refuse(CodecError.TooManyElements); return null",
                 Language::Go => "return nil, codec.ErrTooManyElements",
                 Language::Python => "raise TooManyElements()",
-                Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("raise_stmt"),
+                Language::Swift => "throw CodecError.tooManyElements",
             }),
             CodecFailure::CborMalformed
             | CodecFailure::CborRequiredKeyMissing
@@ -254,16 +254,10 @@ impl CodecFailure {
                 "return codec.ErrTooManyElements",
             ),
             Language::Python => ("raise LengthOutOfRange()", "raise TooManyElements()"),
-            // A Swift codec holds no list yet, so no encode refuses a count.
-            Language::Swift => {
-                return match self {
-                    CodecFailure::LengthOutOfRange => Some("throw CodecError.lengthOutOfRange"),
-                    CodecFailure::TooManyElements => {
-                        crate::forge::codegen_matrix::no_swift_emitter("encode_refusal_stmt")
-                    }
-                    _ => None,
-                }
-            }
+            Language::Swift => (
+                "throw CodecError.lengthOutOfRange",
+                "throw CodecError.tooManyElements",
+            ),
             Language::Rust => return None,
         };
         match self {

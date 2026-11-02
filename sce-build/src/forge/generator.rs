@@ -13397,7 +13397,9 @@ fn resolve_repeat_body_type(
         ));
     }
     Ok(match lang {
-        crate::generator::Language::Swift => no_swift_emitter("resolve_repeat_body_type"),
+        // The unit of an imported codec is a struct of the module the importer is in,
+        // named as the document is (`forge_import_identity`).
+        crate::generator::Language::Swift => imp.type_name.clone(),
         crate::generator::Language::Rust => imp.type_name.clone(),
         crate::generator::Language::Cpp => imp.member_type.clone(),
         // Kotlin: each imported codec lives in its own sibling
@@ -27393,9 +27395,15 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Validator(m) => {
             swift_validator_unlowered(imports).map(|c| swift_validator_refusal(m, &c))
         }
-        ForgeDocument::Codec(m) => {
-            swift_codec::unlowered(m).map(|construct| swift_codec::refusal(m, &construct))
-        }
+        // The unit of an entry codec of a list, read where the import is resolved, through
+        // the lists it holds in turn.
+        ForgeDocument::Codec(m) => swift_codec::unlowered(m, &|alias| {
+            imports
+                .iter()
+                .find(|import| import.alias == alias)
+                .and_then(|import| import.swift_unlowered.clone())
+        })
+        .map(|construct| swift_codec::refusal(m, &construct)),
         // A timer is a period, a fire event and two optional hooks over the runtime's
         // clock, none of which depends on a type Swift has yet to spell.
         ForgeDocument::Timer(_) => None,
@@ -27769,8 +27777,15 @@ pub(crate) fn swift_lookup_unlowered(m: &LookupModel) -> Option<String> {
 /// What of the codec `m` the Swift backend does not lower yet, described for a refusal by name
 /// (`generate/unsupported-feature`); `None` for a codec it writes. A validator that imports a
 /// codec is refused for it, since the unit its member names is not written.
-pub(crate) fn swift_codec_unlowered(m: &CodecModel) -> Option<String> {
-    swift_codec::unlowered(m)
+///
+/// `element` answers for the alias a list of the codec names its entry codec by what of that codec
+/// is not written ([`crate::forge::static_imports::swift_codec_through_imports`] reads it from the
+/// imports).
+pub(crate) fn swift_codec_unlowered(
+    m: &CodecModel,
+    element: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    swift_codec::unlowered(m, element)
 }
 
 /// The refusal of the codec `m` for the Swift construct `construct` it holds

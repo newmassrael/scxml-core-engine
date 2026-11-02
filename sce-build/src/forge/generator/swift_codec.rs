@@ -38,7 +38,14 @@ fn integer(sce_type: &SceType) -> Option<(&'static str, u32)> {
 /// Swift lowers a positional codec of fields that are integers of a native width, each at a byte
 /// offset and in a byte order the document names. Each construct past that is named here until its
 /// spelling is written.
-pub(super) fn unlowered(m: &CodecModel) -> Option<String> {
+///
+/// `element` answers, for the alias a `<sce:repeat>` names its entries by, what of that codec the
+/// Swift backend does not write (`None` for one it does): a list of entries whose unit is not
+/// written names a type that is not there.
+pub(super) fn unlowered(
+    m: &CodecModel,
+    element: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
     match m.encoding {
         CodecEncoding::Positional => {}
         CodecEncoding::Cbor => return Some("a `sce:encoding=\"cbor\"` codec".to_string()),
@@ -56,7 +63,7 @@ pub(super) fn unlowered(m: &CodecModel) -> Option<String> {
     // carries (`codec_zenoh_keep_alive`).
     m.fields
         .iter()
-        .find_map(|f| field_unlowered(m, f))
+        .find_map(|f| field_unlowered(m, f, element))
         .or_else(|| flags_unlowered(m))
 }
 
@@ -102,7 +109,11 @@ fn flags_unlowered(m: &CodecModel) -> Option<String> {
 }
 
 /// What of the field `f` of `m` the Swift codec does not lower yet.
-fn field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
+fn field_unlowered(
+    m: &CodecModel,
+    f: &CodecField,
+    element: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
     let what = |text: &str| Some(format!("field '{}': {text}", f.id));
     if let Some(predicate) = &f.present_if {
         if let Some(reason) = present_if_unlowered(predicate) {
@@ -112,8 +123,8 @@ fn field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
             return what("a flags carrier that is present only on a condition");
         }
     }
-    if f.is_repeat() {
-        return what("a repeat");
+    if let BitSize::Repeat { count_ref } = &f.bit_size {
+        return repeat_unlowered(m, f, count_ref, element);
     }
     if f.is_tlv_chain() {
         return what("a TLV chain");
@@ -159,6 +170,45 @@ fn field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
     }
 }
 
+/// What of the list `f` (a `<sce:repeat>`) of `m` the Swift codec does not lower yet; `None` for one
+/// it does.
+///
+/// It is an `Array` of the struct the entry codec is written as, read from the frame until the count
+/// an earlier field states is reached, or to the end of the frame. The entries' unit must be
+/// written (`element`), and a count is read from an unsigned field: a signed one can be negative,
+/// which no range of entries is. A gated list may have a gated count (validation holds the two to
+/// one predicate) or an ungated one.
+fn repeat_unlowered(
+    m: &CodecModel,
+    f: &CodecField,
+    count_ref: &CountRef,
+    element: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    let what = |text: &str| Some(format!("field '{}': {text}", f.id));
+    let Some(alias) = f.repeat_body_alias.as_deref() else {
+        return what("a list with no entry codec");
+    };
+    if let Some(why) = element(alias) {
+        return what(&format!(
+            "a list of '{alias}', which has no Swift lowering ({why})"
+        ));
+    }
+    if let CountRef::LengthField(name) = count_ref {
+        let unsigned = m.fields.iter().find(|g| g.id == *name).map(|g| {
+            matches!(
+                g.sce_type,
+                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64
+            )
+        });
+        if unsigned != Some(true) {
+            return what(&format!(
+                "a count held in `{name}`, which is not an unsigned integer"
+            ));
+        }
+    }
+    None
+}
+
 /// Whether `f` runs to the end of the frame or for the length an earlier field states.
 fn is_variable(f: &CodecField) -> bool {
     matches!(f.bit_size, BitSize::Tail | BitSize::LengthRef)
@@ -174,7 +224,7 @@ fn is_variable(f: &CodecField) -> bool {
 fn is_sequential(m: &CodecModel) -> bool {
     m.fields
         .iter()
-        .any(|f| f.is_vle() || is_variable(f) || f.present_if.is_some())
+        .any(|f| f.is_vle() || is_variable(f) || f.is_repeat() || f.present_if.is_some())
 }
 
 /// What of the predicate `predicate` the Swift codec does not lower yet: a clause on a flag input
@@ -347,6 +397,17 @@ pub(super) fn render(
     // read field by field the fewest bytes it can have, which is each integer at its width, each
     // variable-length integer at one byte, and the bytes of a variable-length field at none.
     let mut frame_length = 0;
+    // The struct each list's entries are, by the alias the list names its entry codec by: the
+    // unit of an imported codec is a type of the same module, named as the document is.
+    let mut element_types = std::collections::HashMap::new();
+    for f in m.fields.iter().filter(|f| f.is_repeat()) {
+        if let Some(alias) = f.repeat_body_alias.as_deref() {
+            element_types.insert(
+                f.id.clone(),
+                resolve_repeat_body_type(&m.name, alias, imports, Language::Swift)?,
+            );
+        }
+    }
     let fields: Vec<serde_json::Value> = m
         .fields
         .iter()
@@ -361,6 +422,59 @@ pub(super) fn render(
                 })
             });
             let optional = if present.is_some() { "?" } else { "" };
+            if let BitSize::Repeat { count_ref } = &f.bit_size {
+                let element = element_types
+                    .get(&f.id)
+                    .expect("a list this renderer is given names an entry codec")
+                    .clone();
+                // The list is read into a local and set when it is whole, so a gated list, an
+                // optional on the frame, is not appended to through the optional.
+                let items = format!("{}_items", f.id);
+                let pad = if present.is_some() { 4 } else { 0 };
+                let at = |extra: usize| " ".repeat(8 + pad + extra);
+                let list = match count_ref {
+                    CountRef::LengthField(name) => {
+                        // A count that is on the wire only on a condition is an optional; it is
+                        // read inside the gate that holds the list to the same predicate, where
+                        // it is present.
+                        let count = if m.fields.iter().any(|g| g.id == *name && g.present_if.is_some()) {
+                            format!("(frame.{name} ?? 0)")
+                        } else {
+                            format!("frame.{name}")
+                        };
+                        serde_json::json!({
+                            "kind": "count",
+                            "count_field": name,
+                            "element": element,
+                            "items": items,
+                            "count": count,
+                            "guard": repeat_count_guard(f, &m.fields, &count, Language::Swift, &at(0)),
+                        })
+                    }
+                    CountRef::UntilEof => serde_json::json!({
+                        "kind": "until_eof",
+                        "element": element,
+                        "items": items,
+                        "room": repeat_room_guard(
+                            f,
+                            &m.fields,
+                            &format!("{items}.count"),
+                            Language::Swift,
+                            &at(4),
+                        ),
+                    }),
+                };
+                return serde_json::json!({
+                    "id": f.id,
+                    "swift_type": format!("[{element}]{optional}"),
+                    "offset": f.byte_offset,
+                    "default": if present.is_some() { "nil" } else { "[]" },
+                    "flags": Vec::<serde_json::Value>::new(),
+                    "bits": serde_json::Value::Null,
+                    "present": present,
+                    "list": list,
+                });
+            }
             if is_variable(f) {
                 let kind = match f.bit_size {
                     BitSize::Tail => "tail",

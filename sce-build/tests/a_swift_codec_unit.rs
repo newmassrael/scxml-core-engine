@@ -541,11 +541,7 @@ fn a_gated_variable_length_field_is_an_optional_that_reads_and_writes_as_an_unga
 
 #[test]
 fn a_gate_on_a_flag_input_or_a_chain_is_refused_by_name() {
-    for document in [
-        "codec_chain_flag_entry",
-        "codec_tlv_chain_present_if_basic",
-        "codec_repeat_present_if_basic",
-    ] {
+    for document in ["codec_chain_flag_entry", "codec_tlv_chain_present_if_basic"] {
         let refusal = swift_of(&format!("tests/forge/resources/{document}.scxml"))
             .expect_err(&format!("{document} must be refused, not written"));
         assert!(
@@ -553,6 +549,70 @@ fn a_gate_on_a_flag_input_or_a_chain_is_refused_by_name() {
             "{document}: {refusal}"
         );
     }
+}
+
+#[test]
+fn a_list_is_an_array_of_the_struct_its_entry_codec_is_written_as() {
+    let code = swift_of("tests/forge/resources/codec_repeat_unconditional_count.scxml")
+        .expect("a list is written");
+    assert!(
+        code.contains("public var links: [CodecRepeatElem] = []"),
+        "{code}"
+    );
+    assert!(
+        code.contains("public var weights: [CodecRepeatElem]? = nil"),
+        "a gated list is optional: {code}"
+    );
+    assert!(
+        code.contains(
+            "for _ in 0..<Int(clamping: frame.links_len) {\n            links_items.append(try CodecRepeatElem.decode(&reader))\n        }\n        frame.links = links_items"
+        ),
+        "a decode reads as many entries as the count says, into a local set when whole: {code}"
+    );
+    assert!(
+        code.contains(
+            "for entry in self.links {\n            var piece = BytesSink()\n            try entry.encode(into: &piece)\n            frame += piece.bytes\n        }"
+        ),
+        "an encode writes each entry in turn: {code}"
+    );
+    assert!(
+        code.contains("public static let frameLength = 2"),
+        "a list adds nothing to the fewest bytes: {code}"
+    );
+}
+
+#[test]
+fn a_list_to_the_end_of_the_frame_is_read_while_bytes_are_left() {
+    let code = swift_of("tests/forge/resources/codec_until_eof_basic.scxml")
+        .expect("a list to the end is written");
+    assert!(
+        code.contains("while reader.remaining > 0 {\n            if msgs_items.count > 63 {\n                throw CodecError.tooManyElements\n            }\n            msgs_items.append(try CodecRepeatElem.decode(&reader))"),
+        "an entry past the bound is refused before it is read: {code}"
+    );
+}
+
+#[test]
+fn a_list_is_held_to_its_declared_count_on_decode_and_on_encode() {
+    let code = swift_of("tests/forge/resources/codec_repeat_present_if_basic.scxml")
+        .expect("a gated list is written");
+    assert!(
+        code.contains("if (frame.num_elems ?? 0) > 32 {\n                throw CodecError.tooManyElements\n            }\n            var elems_items"),
+        "the count is judged before an entry is read, from the count a gate may leave absent: {code}"
+    );
+    assert!(
+        code.contains("if let value = self.elems, value.count > 32 {\n            throw CodecError.tooManyElements\n        }"),
+        "an encode refuses a list past the bound before its first byte: {code}"
+    );
+}
+
+#[test]
+fn a_list_of_an_entry_codec_swift_does_not_write_is_refused_by_name() {
+    let refusal = swift_of("tests/forge/resources/codec_repeat_flag_carrier.scxml")
+        .expect_err("a list of entries that take a flag input is not written");
+    assert!(
+        refusal.contains("a list of 'codec_chain_flag_entry', which has no Swift lowering"),
+        "{refusal}"
+    );
 }
 
 #[test]

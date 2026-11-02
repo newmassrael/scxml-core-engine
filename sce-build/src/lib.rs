@@ -6511,7 +6511,13 @@ fn validate_and_enrich_imports(
                         ctx.swift_unlowered = forge::generator::swift_transform_unlowered(tm);
                     }
                     forge::model::ForgeDocument::Codec(cm) => {
-                        ctx.swift_unlowered = forge::generator::swift_codec_unlowered(cm);
+                        // Read through the codecs its lists hold entries of, each of
+                        // which is a unit Swift must write for the list to name its type.
+                        ctx.swift_unlowered = forge::static_imports::swift_codec_through_imports(
+                            cm,
+                            &parsed.imports,
+                            source.path.parent().unwrap_or(base_dir),
+                        );
                     }
                     forge::model::ForgeDocument::Lookup(lm) => {
                         // The unit of a table of names is written (it answers a case of
@@ -7275,6 +7281,8 @@ struct BroadcastLogElement {
 /// in hand and judged per language where the log is rendered.
 fn broadcast_log_element_facts(
     codec: &forge::model::CodecModel,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
     said_flag_inputs: Vec<String>,
 ) -> BroadcastLogElementFacts {
     BroadcastLogElementFacts {
@@ -7297,8 +7305,10 @@ fn broadcast_log_element_facts(
             }),
         cbor_entry_unbounded: codec.encoding == forge::model::CodecEncoding::Cbor
             && forge::cbor_codec::has_unbounded_text_or_bytes(codec),
-        swift_unlowered: forge::generator::swift_codec_unlowered(codec)
-            .map(|construct| forge::generator::swift_codec_refusal(codec, &construct)),
+        swift_unlowered: forge::static_imports::swift_codec_through_imports(
+            codec, imports, base_dir,
+        )
+        .map(|construct| forge::generator::swift_codec_refusal(codec, &construct)),
     }
 }
 
@@ -7986,6 +7996,8 @@ fn validate_broadcast_log_cross_refs(
                     // caller's: a log stores a flag for every element.
                     broadcast_log_element_facts(
                         codec,
+                        imports,
+                        base_dir,
                         codec_says_inputs_by_extent(codec, imports, base_dir, &mut HashSet::new())
                             .0,
                     ),

@@ -4673,6 +4673,22 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(returned == expected, "weekday_from_days")
     }}
 
+// MARK: - codec: codec_declared_bounds
+
+@Test func codecDeclaredBoundsMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecDeclaredBounds.frameLength
+}
+
+// MARK: - codec: codec_declared_bounds_to_end
+
+@Test func codecDeclaredBoundsToEndMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecDeclaredBoundsToEnd.frameLength
+}
+
 // MARK: - codec: codec_origin_leaf
 
 @Test func codecOriginLeafMatchesReference() throws {
@@ -4817,12 +4833,36 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecPresentIfVle.frameLength
 }
 
+// MARK: - codec: codec_repeat_basic
+
+@Test func codecRepeatBasicMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecRepeatBasic.frameLength
+}
+
 // MARK: - codec: codec_repeat_elem
 
 @Test func codecRepeatElemMatchesReference() throws {
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatElem.frameLength
+}
+
+// MARK: - codec: codec_repeat_unconditional_count
+
+@Test func codecRepeatUnconditionalCountMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecRepeatUnconditionalCount.frameLength
+}
+
+// MARK: - codec: codec_repeat_present_if_basic
+
+@Test func codecRepeatPresentIfBasicMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecRepeatPresentIfBasic.frameLength
 }
 
 // MARK: - codec: codec_scout_zid_body
@@ -4839,6 +4879,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecTlvEntry.frameLength
+}
+
+// MARK: - codec: codec_until_eof_basic
+
+@Test func codecUntilEofBasicMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecUntilEofBasic.frameLength
 }
 
 // MARK: - codec: codec_variant_session_close

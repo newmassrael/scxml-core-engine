@@ -26,7 +26,15 @@ public struct {{ struct_name }}: Equatable, Sendable {
     /// On the wire only when `{{ f.present.encode | replace("self.", "") }}`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
 {% endif %}
-{% if f.variable and f.variable.kind == "tail" %}
+{% if f.list and f.list.kind == "count" %}
+    /// As many entries as `{{ f.list.count_field }}` says, each a `{{ f.list.element }}`, as many as the document's
+    /// `max-count` admits: a frame that says more is refused with `tooManyElements`, as is a value
+    /// with more at its encode.
+{% elif f.list %}
+    /// The entries to the end of the frame, each a `{{ f.list.element }}`, as many as the document's
+    /// `max-count` admits: a frame with more is refused with `tooManyElements`, as is a value with
+    /// more at its encode.
+{% elif f.variable and f.variable.kind == "tail" %}
     /// The bytes to the end of the frame, as many as the document's `max-size` admits: a frame
     /// with more is refused with `lengthOutOfRange`, as is a value with more at its encode.
 {% elif f.variable %}
@@ -98,6 +106,18 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = Array(try reader.readSlice(reader.remaining))
 {% elif f.variable %}
 {{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = Array(try reader.readSlice(Int(clamping: frame.{{ f.variable.length_field }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}))
+{% elif f.list and f.list.kind == "count" %}
+{{ pad }}        {{ f.list.guard }}var {{ f.list.items }}: [{{ f.list.element }}] = []
+{{ pad }}        for _ in 0..<Int(clamping: {{ f.list.count }}) {
+{{ pad }}            {{ f.list.items }}.append(try {{ f.list.element }}.decode(&reader))
+{{ pad }}        }
+{{ pad }}        frame.{{ f.id }} = {{ f.list.items }}
+{% elif f.list %}
+{{ pad }}        var {{ f.list.items }}: [{{ f.list.element }}] = []
+{{ pad }}        while reader.remaining > 0 {
+{{ pad }}            {{ f.list.room }}{{ f.list.items }}.append(try {{ f.list.element }}.decode(&reader))
+{{ pad }}        }
+{{ pad }}        frame.{{ f.id }} = {{ f.list.items }}
 {% elif f.vle %}
 {{ pad }}        frame.{{ f.id }} = try reader.readVle({{ f.value_type }}.self)
 {% else %}
@@ -144,6 +164,12 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% endif %}
 {% if f.variable %}
 {{ pad }}        frame += {{ src }}
+{% elif f.list %}
+{{ pad }}        for entry in {{ src }} {
+{{ pad }}            var piece = BytesSink()
+{{ pad }}            try entry.encode(into: &piece)
+{{ pad }}            frame += piece.bytes
+{{ pad }}        }
 {% elif f.vle %}
 {{ pad }}        appendVle({{ src }}, to: &frame)
 {% elif sequential %}
