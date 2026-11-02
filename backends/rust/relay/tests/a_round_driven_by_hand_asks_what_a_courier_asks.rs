@@ -374,6 +374,59 @@ fn a_publication_says_what_the_relay_answered() {
     ));
 }
 
+/// What a host that composes rounds holds back from one is handed over by the next round, first;
+/// a resync drops the events and messages it reads again, and never what the machine is to be
+/// rebuilt by.
+#[test]
+fn what_a_host_holds_back_from_a_round_the_next_round_hands_over() {
+    let u = universe(Limits::default());
+    let (_, outcome, mut state) = drive(
+        RoundMachine::start(RoundKind::Sync, CourierState::default(), u.bob.clone()),
+        |request| answer(&u.relay, BOB, false, request),
+    );
+    assert!(outcome.is_ok());
+    let held_event = (WRITE.to_string(), write(ALICE, 1000, 1));
+    let held_message = Record::KeyPackage {
+        node: BOB,
+        data: "AA".to_string(),
+    };
+    state.hold(Round {
+        events: vec![held_event.clone()],
+        messages: vec![held_message.clone()],
+        evicted: vec![(ALICE, 9)],
+        restored: vec![(ALICE, 8)],
+        ..Round::default()
+    });
+    assert_eq!(state.untold(), 1);
+    let read_back = CourierState::from_text(&state.to_text());
+    assert_eq!(read_back.as_ref(), Some(&state), "{}", state.to_text());
+
+    let (_, outcome, after_sync) = drive(
+        RoundMachine::start(RoundKind::Sync, state.clone(), u.bob.clone()),
+        |request| answer(&u.relay, BOB, false, request),
+    );
+    let next = outcome.unwrap();
+    assert_eq!(next.events, vec![held_event], "nothing else was new");
+    assert_eq!(next.messages, vec![held_message]);
+    assert_eq!(next.evicted, vec![(ALICE, 9)]);
+    assert_eq!(next.restored, vec![(ALICE, 8)]);
+    assert_eq!(after_sync.untold(), 0);
+
+    let (_, outcome, _) = drive(
+        RoundMachine::start(RoundKind::Resync, state, u.bob.clone()),
+        |request| answer(&u.relay, BOB, false, request),
+    );
+    let resync = outcome.unwrap();
+    assert!(resync.messages.is_empty());
+    assert_eq!(
+        named(&resync, WRITE).len(),
+        2,
+        "the relay's two writes, once"
+    );
+    assert_eq!(resync.evicted, vec![(ALICE, 9)]);
+    assert_eq!(resync.restored, vec![(ALICE, 8)]);
+}
+
 /// The relay gives two records a batch, so a round has taken alice's writes in when it asks for the
 /// batch that holds her note. That answer never comes (the host abandons the round), or the link
 /// fails on it; either way the state the round leaves, saved and read back, starts a round that

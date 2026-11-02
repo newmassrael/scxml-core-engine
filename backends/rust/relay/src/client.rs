@@ -143,9 +143,11 @@ pub struct Round {
 ///   and a round that stops in that reading leaves the cursor where it stopped, so the next round
 ///   goes on with it;
 /// - what a round took in and did not hand over, because it did not end, is kept here: the events
-///   for the machine and the group's messages it read. The next round hands them over first, after
-///   the roster. A [`RoundKind::Resync`] reads everything again and drops them, and a
-///   [`RoundKind::Reread`] drops the messages, which it reads again.
+///   for the machine and the group's messages it read, and (from a host that composes rounds,
+///   [`Self::hold`]) what the machine is to be rebuilt without or with. The next round hands them
+///   over first, the events after the roster. A [`RoundKind::Resync`] reads everything again and
+///   drops the events and messages, and a [`RoundKind::Reread`] drops the messages, which it reads
+///   again; what the machine is to be rebuilt by is never dropped.
 ///
 /// What a round took into the [`Trust`] stays there whether the round ends or not: the trust
 /// holds what verified, and a record given again is taken as one held already.
@@ -168,21 +170,34 @@ pub struct CourierState {
     untold: Vec<(String, String)>,
     /// The group's messages that a round read and did not hand over, in the order read.
     unread: Vec<Record>,
+    /// Operations (device, number) a round found the machine is to be rebuilt without, and did not
+    /// hand over ([`Round::evicted`]).
+    evicted: Vec<(u64, u64)>,
+    /// Operations a round found the machine is to be rebuilt with, and did not hand over
+    /// ([`Round::restored`]).
+    restored: Vec<(u64, u64)>,
 }
 
 impl CourierState {
-    /// Keep `events` to be handed over by the next round, before what is kept already: what a host
-    /// that composes rounds of its own took from a round and did not hand over.
-    pub fn hold_events(&mut self, mut events: Vec<(String, String)>) {
+    /// Keep what `round` hands over (its events, the group's messages, and what the machine is to
+    /// be rebuilt without or with) for the next round to hand over, before what is kept already:
+    /// what a host that composes rounds of its own took from a round and did not hand over.
+    pub fn hold(&mut self, round: Round) {
+        let Round {
+            mut events,
+            mut messages,
+            mut evicted,
+            mut restored,
+            ..
+        } = round;
         events.append(&mut self.untold);
         self.untold = events;
-    }
-
-    /// Keep the group's `messages` to be handed over by the next round, before what is kept
-    /// already.
-    pub fn hold_messages(&mut self, mut messages: Vec<Record>) {
         messages.append(&mut self.unread);
         self.unread = messages;
+        evicted.append(&mut self.evicted);
+        self.evicted = evicted;
+        restored.append(&mut self.restored);
+        self.restored = restored;
     }
 
     /// How many events for the machine are kept for the next round to hand over.
@@ -198,6 +213,12 @@ impl CourierState {
                 .map(|(event, data)| json!([event, data]))
                 .collect::<Vec<_>>()
         };
+        let operations = |operations: &[(u64, u64)]| {
+            operations
+                .iter()
+                .map(|(node, seq)| json!([node.to_string(), seq.to_string()]))
+                .collect::<Vec<_>>()
+        };
         json!({
             "cursor": self.cursor.to_string(),
             "rosterLen": self.roster_len.to_string(),
@@ -207,6 +228,8 @@ impl CourierState {
             "evidenceSent": self.evidence_sent.iter().collect::<Vec<_>>(),
             "untold": pairs(&self.untold),
             "unread": self.unread.iter().map(Record::to_value).collect::<Vec<_>>(),
+            "evicted": operations(&self.evicted),
+            "restored": operations(&self.restored),
         })
         .to_string()
     }
@@ -224,6 +247,21 @@ impl CourierState {
                     match pair.as_array()?.as_slice() {
                         [event, data] => {
                             Some((event.as_str()?.to_string(), data.as_str()?.to_string()))
+                        }
+                        _ => None,
+                    }
+                })
+                .collect()
+        };
+        let operations = |name: &str| -> Option<Vec<(u64, u64)>> {
+            value
+                .get(name)?
+                .as_array()?
+                .iter()
+                .map(|pair| -> Option<(u64, u64)> {
+                    match pair.as_array()?.as_slice() {
+                        [node, seq] => {
+                            Some((node.as_str()?.parse().ok()?, seq.as_str()?.parse().ok()?))
                         }
                         _ => None,
                     }
@@ -249,6 +287,8 @@ impl CourierState {
                 .iter()
                 .map(Record::from_value)
                 .collect::<Option<Vec<Record>>>()?,
+            evicted: operations("evicted")?,
+            restored: operations("restored")?,
         })
     }
 
@@ -281,6 +321,8 @@ impl CourierState {
     fn keep_untold(&mut self, round: &mut Round) {
         self.untold.append(&mut round.events);
         self.unread.append(&mut round.messages);
+        self.evicted.append(&mut round.evicted);
+        self.restored.append(&mut round.restored);
     }
 }
 
@@ -541,6 +583,8 @@ impl RoundMachine {
         let round = Round {
             events: std::mem::take(&mut state.untold),
             messages: std::mem::take(&mut state.unread),
+            evicted: std::mem::take(&mut state.evicted),
+            restored: std::mem::take(&mut state.restored),
             ..Round::default()
         };
         Self {
@@ -648,8 +692,7 @@ impl RoundMachine {
     pub fn abandoned_state(&self) -> CourierState {
         let mut state = self.state.clone();
         if self.outcome.is_none() {
-            state.untold.extend(self.round.events.iter().cloned());
-            state.unread.extend(self.round.messages.iter().cloned());
+            state.keep_untold(&mut self.round.clone());
         }
         state
     }
@@ -674,13 +717,14 @@ impl RoundMachine {
         Phase::Over
     }
 
-    /// The round sums up: what the trust stopped holding or holds again, and the roster at the
-    /// front of the events when the log moved or every operation is told again.
+    /// The round sums up: what the trust stopped holding or holds again (after what an earlier
+    /// round left to hand over), and the roster at the front of the events when the log moved or
+    /// every operation is told again.
     fn finish(&mut self) -> Phase {
         let mut round = std::mem::take(&mut self.round);
         if let Mode::Round { redeliver } = self.mode {
-            round.evicted = self.trust.take_evicted();
-            round.restored = self.trust.take_restored();
+            round.evicted.extend(self.trust.take_evicted());
+            round.restored.extend(self.trust.take_restored());
             let len = self.trust.log_len();
             if len != self.state.roster_len || redeliver {
                 self.state.roster_len = len;
