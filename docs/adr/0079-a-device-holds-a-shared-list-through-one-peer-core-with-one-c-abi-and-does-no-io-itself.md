@@ -1,8 +1,8 @@
 # ADR 0079 — A device holds a shared list through one peer core with one C ABI, and the core does no I/O itself
 
-- Status: Proposed (2026-11-02). Written at the owner's order of that day, under the rule of 2026-10-26 and
-  2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored. Accepted when the
-  owner accepts it; the order of work below starts with ADR 0042's own steps, which this ADR does not change.
+- Status: Accepted (2026-11-02). Written and accepted at the owner's order of that day, under the rule of
+  2026-10-26 and 2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored. The
+  order of work below starts with ADR 0042's own steps, which this ADR does not change.
 - Date: 2026-11-02
 - Related:
   - ADR 0034 (a shared list is held by its members, and the hub only relays), whose section 6 already rules that
