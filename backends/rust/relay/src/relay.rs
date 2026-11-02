@@ -31,7 +31,7 @@ use sha2::{Digest, Sha256};
 
 use crate::limits::{Allowances, Limits};
 use crate::login::{self, Asked, Doorway, Opened};
-use crate::protocol::{Code, Login, Record, Request, Response};
+use crate::protocol::{Code, Join, Joined, Login, Record, Request, Response};
 use crate::store::Store;
 use crate::token::{Authority, Session, TokenError};
 
@@ -49,6 +49,9 @@ struct ListState {
     commits: BTreeSet<u32>,
     welcomes: BTreeSet<(u32, u64, [u8; 32])>,
     key_packages: BTreeMap<u64, BTreeSet<[u8; 32]>>,
+    /// The nodes a key package was kept for under an invitation, each with when its invitation
+    /// expires: the record of the invitation's use (ADR 0080 section 4).
+    joins: BTreeMap<u64, u64>,
 }
 
 impl ListState {
@@ -59,7 +62,19 @@ impl ListState {
             commits: BTreeSet::new(),
             welcomes: BTreeSet::new(),
             key_packages: BTreeMap::new(),
+            joins: BTreeMap::new(),
         }
+    }
+
+    /// How many joins wait for an administrator at `now_ms`: their invitation has not expired, and
+    /// the log has not granted their node.
+    fn outstanding_joins(&self, now_ms: u64) -> usize {
+        self.joins
+            .iter()
+            .filter(|(node, expires_at_ms)| {
+                **expires_at_ms > now_ms && !self.trust.has_granted(**node)
+            })
+            .count()
     }
 
     /// Remember an MLS message that was kept, so that the same one is not kept twice.
@@ -73,9 +88,14 @@ impl ListState {
                     self.welcomes.insert((*epoch, *node, hash));
                 }
             }
-            Record::KeyPackage { node, data } => {
-                if let Some(hash) = digest_of(data) {
-                    self.key_packages.entry(*node).or_default().insert(hash);
+            Record::KeyPackage { node, data, join } => {
+                if !data.is_empty() {
+                    if let Some(hash) = digest_of(data) {
+                        self.key_packages.entry(*node).or_default().insert(hash);
+                    }
+                }
+                if let Some(join) = join {
+                    self.joins.insert(*node, join.invitation.expires_at_ms);
                 }
             }
             Record::Entry(_) | Record::Operation { .. } | Record::Checkpoint(_) => {}
@@ -186,8 +206,78 @@ impl<S: Store> Relay<S> {
                     (Ok(()), Some(doorway)) => doorway.redeem(&checked, &self.authority, now_ms),
                 }
             }
+            Ok(Asked::Join(checked)) => {
+                let spent = match self.doorway.as_mut() {
+                    None => Err(login::not_offered(request)),
+                    Some(doorway) => doorway
+                        .spend_join(&checked, now_ms)
+                        .map(|()| doorway.policy().joins_outstanding_per_list),
+                };
+                match spent {
+                    Err(refused) => refused,
+                    Ok(outstanding) => {
+                        let audience = self.authority.audience().to_string();
+                        self.take_join(checked.into_join(), &audience, outstanding, now_ms)
+                    }
+                }
+            }
         };
         response.to_json()
+    }
+
+    /// Keep the key package a device leaves under an administrator's invitation (ADR 0080 section
+    /// 4), at `now_ms`, at the relay named `audience`, when the list holds no more than
+    /// `outstanding` joins waiting for an administrator: the invitation is for this relay and this
+    /// list's genesis, an administrator the log names signed it, it has not expired, its node was
+    /// never granted and has no key package kept under an invitation (the record of its use), and the
+    /// proof holds under the invitation's key for the device's identity key and key package. The
+    /// answer is `accepted`; no token is issued.
+    pub(crate) fn take_join(
+        &mut self,
+        join: Box<Join>,
+        audience: &str,
+        outstanding: usize,
+        now_ms: u64,
+    ) -> Response {
+        if let Some(reason) = &self.failed {
+            return Response::refused(Code::Unavailable, reason.clone());
+        }
+        let Join {
+            invitation,
+            proof,
+            key_package,
+        } = *join;
+        let list = invitation.list.clone();
+        if invitation.audience != audience {
+            return Response::refused(Code::Unauthorized, "the invitation is for another relay");
+        }
+        let Some(state) = self.lists.get(&list) else {
+            return Response::refused(Code::Behind, "the relay holds no log of this list");
+        };
+        if now_ms >= invitation.expires_at_ms {
+            return Response::refused(Code::Unauthorized, "the invitation has expired");
+        }
+        if state.outstanding_joins(now_ms) >= outstanding {
+            return Response::refused(
+                Code::TooLarge,
+                "this list holds as many joins waiting for an administrator as the relay keeps",
+            );
+        }
+        if let Err(full) = self.room(&list) {
+            return full;
+        }
+        let record = Record::KeyPackage {
+            node: invitation.node,
+            data: key_package.unwrap_or_default(),
+            join: Some(Box::new(Joined { invitation, proof })),
+        };
+        if let Err((code, reason)) = check_group_record(state, &record, &self.limits) {
+            return Response::refused(code, reason);
+        }
+        match self.keep(&list, record) {
+            Ok(cursor) => Response::Accepted { new: true, cursor },
+            Err(response) => response,
+        }
     }
 
     /// Whether the relay holds a log of `list`.
@@ -314,7 +404,7 @@ impl<S: Store> Relay<S> {
             | Request::Checkpoint { .. }
             | Request::PublishCommit { .. }
             | Request::PublishWelcome { .. } => WRITER,
-            Request::Challenge { .. } | Request::Login(_) => 0,
+            Request::Challenge { .. } | Request::Login(_) | Request::Join(_) => 0,
             Request::Feed { .. } | Request::Operations { .. } | Request::Heads => READER,
         };
         if role < needs {
@@ -342,6 +432,7 @@ impl<S: Store> Relay<S> {
                 Record::KeyPackage {
                     node: session.node,
                     data,
+                    join: None,
                 },
             ),
             Request::PublishCommit { epoch, data } => {
@@ -355,11 +446,11 @@ impl<S: Store> Relay<S> {
                 self.operations(&session.list, node, from, to)
             }
             Request::Heads => self.heads(&session.list),
-            // A session's token names its list and node already: a challenge and a login are
-            // answered on a connection with no token (`Self::anonymous`), as a hub routes them.
-            Request::Challenge { .. } | Request::Login(_) => Response::refused(
+            // A session's token names its list and node already: a challenge, a login and a join
+            // are answered on a connection with no token (`Self::anonymous`), as a hub routes them.
+            Request::Challenge { .. } | Request::Login(_) | Request::Join(_) => Response::refused(
                 Code::Invalid,
-                "a challenge and a login are not a session's requests",
+                "a challenge, a login and a join are not a session's requests",
             ),
         }
     }
@@ -627,7 +718,20 @@ fn check_group_record(
         Ok(bytes)
     };
     match record {
-        Record::KeyPackage { node, data } => {
+        Record::KeyPackage {
+            node,
+            data,
+            join: Some(join),
+        } => {
+            let package = if data.is_empty() {
+                Vec::new()
+            } else {
+                bytes_of(data)?
+            };
+            check_join(state, *node, &package, join)?;
+            Ok(true)
+        }
+        Record::KeyPackage { node, data, .. } => {
             let hash: [u8; 32] = Sha256::digest(bytes_of(data)?).into();
             let held = state.key_packages.get(node);
             if held.is_some_and(|held| held.contains(&hash)) {
@@ -670,6 +774,58 @@ fn check_group_record(
         }
         _ => Err((Code::Invalid, "it is not an MLS message".to_string())),
     }
+}
+
+/// Whether a key package of the device of `node` (`package`, empty for none) left under the
+/// invitation and proof of `join` holds against what the list has before it: the invitation is
+/// for this node of this list and its genesis, an administrator the log names now signed it, the
+/// log has never granted the node, no key package was kept for it under an invitation, and the
+/// proof holds under the invitation's key. What depends on the time and on the relay it reached
+/// (its expiry, its audience) is judged as it arrives (`Relay::take_join`), not when the relay
+/// reads its store again.
+fn check_join(
+    state: &ListState,
+    node: u64,
+    package: &[u8],
+    join: &Joined,
+) -> Result<(), (Code, String)> {
+    let unauthorized = |why: &str| Err((Code::Unauthorized, why.to_string()));
+    let invitation = &join.invitation;
+    if invitation.node != node || invitation.list != state.trust.list() {
+        return Err((
+            Code::Invalid,
+            "the invitation is for another node or list".to_string(),
+        ));
+    }
+    if state.trust.genesis() != Some(invitation.genesis) {
+        return unauthorized("the invitation is not for this list's genesis");
+    }
+    if !state
+        .trust
+        .administrators()
+        .contains(&invitation.administrator)
+    {
+        return unauthorized("the invitation is not signed by an administrator the log names");
+    }
+    if !invitation.is_signed() {
+        return unauthorized("the invitation's signature does not hold");
+    }
+    if state.trust.has_granted(node) {
+        return Err((
+            Code::Forbidden,
+            format!("node {node} was granted already: an invitation is for a node never granted"),
+        ));
+    }
+    if state.joins.contains_key(&node) {
+        return Err((
+            Code::Forbidden,
+            format!("the invitation of node {node} was used"),
+        ));
+    }
+    if !join.proof.holds(invitation, package) {
+        return unauthorized("the proof does not hold under the invitation's key");
+    }
+    Ok(())
 }
 
 pub(crate) fn token_reason(error: TokenError) -> &'static str {

@@ -28,8 +28,17 @@
 //! minute; per node of a list, logins an hour, charged when the signature held, so that a stranger
 //! spends no member's allowance. The tables forget a key a window after it last spent, and hold a
 //! bounded number of keys ([`crate::limits`]). What a connection may ask besides is refused:
-//! `create` and `join` (ADR 0080 sections 3 and 4) as requests this relay does not offer
-//! (`invalid`), and every request of a session as `unauthorized`.
+//! `create` (ADR 0080 section 3) as a request this relay does not offer (`invalid`), and every
+//! request of a session as `unauthorized`.
+//!
+//! **A join (ADR 0080 section 4).** A device that is not in the log yet asks a challenge for the
+//! node an administrator's invitation names, and joins against it with the invitation, its identity
+//! key, its key package (none on a list its administrator admits by a grant) and a proof signed by
+//! the key the invitation's secret makes (`sce_rust_trust::invitation`). The doorway checks the
+//! challenge as for a login and spends its nonce; the list's side checks the invitation and the
+//! proof (`Relay::take_join`) and keeps the key package with them. Per source, so many joins a
+//! minute; per list, so many joins waiting for an administrator at once. The device's side is the
+//! [`JoinMachine`].
 //!
 //! **The device's side, the [`LoginMachine`].** It asks for a challenge for its person's node, stops
 //! when the relay names itself by another audience than the one the device was configured with,
@@ -39,13 +48,14 @@
 use std::collections::BTreeSet;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 
+use sce_rust_trust::invitation::{Proof, Ticket};
 use sce_rust_trust::{encoding, PublicKey, Trust};
 use serde_json::Value;
 
 use crate::client::{CourierError, LinkError};
 use crate::driver::Exchange;
 use crate::limits::Windows;
-use crate::protocol::{Code, Login, Request, Response};
+use crate::protocol::{Code, Join, Login, Request, Response};
 use crate::token::{equal, hmac_sha256, Authority};
 
 /// How long a challenge holds, by the relay's clock.
@@ -73,6 +83,11 @@ pub struct LoginPolicy {
     pub logins_per_minute: u32,
     /// Logins of one node of one list whose signature held, each hour.
     pub logins_per_node_per_hour: u32,
+    /// Joins under an invitation a source makes, each minute (ADR 0080 sections 4 and 5).
+    pub joins_per_minute: u32,
+    /// The most joins of one list the relay keeps waiting for an administrator at once: those whose
+    /// invitation has not expired and whose node the log has not granted yet.
+    pub joins_outstanding_per_list: usize,
     /// The most nonces kept as used at once; past it, a login waits until the oldest expires.
     pub used_nonces: usize,
     /// The most sources, and nodes, each table of allowances holds at once.
@@ -87,6 +102,8 @@ impl Default for LoginPolicy {
             challenges_per_minute: 30,
             logins_per_minute: 30,
             logins_per_node_per_hour: 60,
+            joins_per_minute: 30,
+            joins_outstanding_per_list: 32,
             used_nonces: 100_000,
             sources: 65_536,
         }
@@ -180,6 +197,25 @@ pub(crate) fn not_offered(request: &str) -> Response {
 pub(crate) enum Asked {
     Challenge { list: String, node: u64 },
     Login(Checked),
+    Join(CheckedJoin),
+}
+
+/// A join whose challenge is the relay's, for the invitation's list and node, has not expired and
+/// was not used; the invitation and the proof are checked by the list's side
+/// (`Relay::take_join`).
+pub(crate) struct CheckedJoin {
+    join: Box<Join>,
+    nonce: [u8; 32],
+}
+
+impl CheckedJoin {
+    pub(crate) fn join(&self) -> &Join {
+        &self.join
+    }
+
+    pub(crate) fn into_join(self) -> Box<Join> {
+        self.join
+    }
 }
 
 /// A login whose challenge is the relay's, has not expired and was not used; what it signed is
@@ -222,6 +258,7 @@ pub struct Doorway {
     challenges: Windows<Option<IpAddr>>,
     logins: Windows<Option<IpAddr>>,
     nodes: Windows<(String, u64)>,
+    joins: Windows<Option<IpAddr>>,
 }
 
 impl Doorway {
@@ -245,6 +282,7 @@ impl Doorway {
             challenges: Windows::new(policy.sources),
             logins: Windows::new(policy.sources),
             nodes: Windows::new(policy.sources),
+            joins: Windows::new(policy.sources),
         }
     }
 
@@ -288,7 +326,6 @@ impl Doorway {
                      authority"
                         .to_string()
                 }
-                Some("join") => "this relay does not offer `join`".to_string(),
                 _ => reason,
             };
             Response::refused(Code::Invalid, reason)
@@ -316,10 +353,23 @@ impl Doorway {
                     .map_err(limited)?;
                 self.check(login, now_ms).map(Asked::Login)
             }
+            Request::Join(join) => {
+                self.joins
+                    .take(source, self.policy.joins_per_minute, MINUTE_MS, now_ms)
+                    .map_err(limited)?;
+                let nonce = self.challenge_holds(
+                    &join.invitation.list,
+                    join.invitation.node,
+                    &join.proof.nonce,
+                    join.proof.expires_at_ms,
+                    now_ms,
+                )?;
+                Ok(Asked::Join(CheckedJoin { join, nonce }))
+            }
             _ => Err(Response::refused(
                 Code::Unauthorized,
-                "a connection with no token the relay takes asks for a challenge and logs in, \
-                 and nothing else",
+                "a connection with no token the relay takes asks for a challenge, logs in or \
+                 joins, and nothing else",
             )),
         }
     }
@@ -369,22 +419,10 @@ impl Doorway {
     /// not used.
     fn check(&mut self, login: Login, now_ms: u64) -> Result<Checked, Response> {
         let unauthorized = |why: &str| Response::refused(Code::Unauthorized, why);
-        let nonce: [u8; 32] = encoding::decode(&login.nonce)
-            .and_then(|bytes| bytes.try_into().ok())
+        let nonce = encoding::decode(&login.nonce)
             .ok_or_else(|| unauthorized("the nonce is not one this relay gives"))?;
-        let tag = self.tag(&login.list, login.node, login.expires_at_ms, &nonce[..16]);
-        if !equal(&tag, &nonce[16..]) {
-            return Err(unauthorized(
-                "the challenge is not one this relay made for this list and node",
-            ));
-        }
-        if now_ms >= login.expires_at_ms {
-            return Err(unauthorized("the challenge has expired"));
-        }
-        self.forget_used(now_ms);
-        if self.used.contains(&nonce) {
-            return Err(unauthorized("the challenge was used already"));
-        }
+        let nonce =
+            self.challenge_holds(&login.list, login.node, &nonce, login.expires_at_ms, now_ms)?;
         let signature: [u8; 64] = encoding::decode(&login.signature)
             .and_then(|bytes| bytes.try_into().ok())
             .ok_or_else(|| unauthorized("the signature is not one"))?;
@@ -393,6 +431,79 @@ impl Doorway {
             nonce,
             signature,
         })
+    }
+
+    /// The nonce `nonce`, when it is one this relay made for the device of `node` of `list`, that
+    /// expires at `expires_at_ms`, which has not passed, and was not used.
+    fn challenge_holds(
+        &mut self,
+        list: &str,
+        node: u64,
+        nonce: &[u8],
+        expires_at_ms: u64,
+        now_ms: u64,
+    ) -> Result<[u8; 32], Response> {
+        let unauthorized = |why: &str| Response::refused(Code::Unauthorized, why);
+        let nonce: [u8; 32] = nonce
+            .try_into()
+            .map_err(|_| unauthorized("the nonce is not one this relay gives"))?;
+        let tag = self.tag(list, node, expires_at_ms, &nonce[..16]);
+        if !equal(&tag, &nonce[16..]) {
+            return Err(unauthorized(
+                "the challenge is not one this relay made for this list and node",
+            ));
+        }
+        if now_ms >= expires_at_ms {
+            return Err(unauthorized("the challenge has expired"));
+        }
+        self.forget_used(now_ms);
+        if self.used.contains(&nonce) {
+            return Err(unauthorized("the challenge was used already"));
+        }
+        Ok(nonce)
+    }
+
+    /// Whether `nonce` may still be used at `now_ms`: it was not, and the relay has room to keep
+    /// one more as used.
+    fn nonce_free(&mut self, nonce: &[u8; 32], now_ms: u64) -> Result<(), Response> {
+        self.forget_used(now_ms);
+        if self.used.contains(nonce) {
+            return Err(Response::refused(
+                Code::Unauthorized,
+                "the challenge was used already",
+            ));
+        }
+        if self.used.len() >= self.policy.used_nonces {
+            let retry_after_ms = self
+                .expiring
+                .first()
+                .map_or(CHALLENGE_MS, |(expires_at_ms, _)| {
+                    expires_at_ms.saturating_sub(now_ms)
+                });
+            return Err(Response::refused(
+                Code::RateLimited { retry_after_ms },
+                "the relay holds as many used challenges as it keeps",
+            ));
+        }
+        Ok(())
+    }
+
+    /// `nonce`, which expires at `expires_at_ms`, is used from now on.
+    fn use_nonce(&mut self, nonce: [u8; 32], expires_at_ms: u64) {
+        self.used.insert(nonce);
+        self.expiring.insert((expires_at_ms, nonce));
+    }
+
+    /// The nonce of a join that holds its challenge is used from now on, before the list's side
+    /// judges the invitation and the proof: a join refused there asks for another challenge.
+    pub(crate) fn spend_join(
+        &mut self,
+        checked: &CheckedJoin,
+        now_ms: u64,
+    ) -> Result<(), Response> {
+        self.nonce_free(&checked.nonce, now_ms)?;
+        self.use_nonce(checked.nonce, checked.join.proof.expires_at_ms);
+        Ok(())
     }
 
     fn forget_used(&mut self, now_ms: u64) {
@@ -414,21 +525,8 @@ impl Doorway {
         now_ms: u64,
     ) -> Response {
         let login = &checked.login;
-        self.forget_used(now_ms);
-        if self.used.contains(&checked.nonce) {
-            return Response::refused(Code::Unauthorized, "the challenge was used already");
-        }
-        if self.used.len() >= self.policy.used_nonces {
-            let retry_after_ms = self
-                .expiring
-                .first()
-                .map_or(CHALLENGE_MS, |(expires_at_ms, _)| {
-                    expires_at_ms.saturating_sub(now_ms)
-                });
-            return Response::refused(
-                Code::RateLimited { retry_after_ms },
-                "the relay holds as many used challenges as it keeps",
-            );
+        if let Err(refused) = self.nonce_free(&checked.nonce, now_ms) {
+            return refused;
         }
         if let Err(retry_after_ms) = self.nodes.take(
             (login.list.clone(), login.node),
@@ -441,8 +539,7 @@ impl Doorway {
                 "this node has logged in as often as it may this hour",
             );
         }
-        self.used.insert(checked.nonce);
-        self.expiring.insert((login.expires_at_ms, checked.nonce));
+        self.use_nonce(checked.nonce, login.expires_at_ms);
         let expires_at_ms = now_ms.saturating_add(self.policy.token_seconds.saturating_mul(1000));
         Response::Token {
             token: authority.issue(&login.list, login.node, expires_at_ms),
@@ -475,7 +572,8 @@ pub enum LoginStep {
 
 enum Phase {
     Challenge,
-    Login(Request),
+    /// The signed request (a login, a join) made against the challenge.
+    Signed(Request),
     Over,
 }
 
@@ -524,7 +622,7 @@ impl LoginMachine {
                 list: self.trust.list(),
                 node: self.trust.person().map_or(0, |(node, _)| node),
             },
-            Phase::Login(request) => request.clone(),
+            Phase::Signed(request) => request.clone(),
             Phase::Over => {
                 return LoginStep::Done(Err(CourierError::Unexpected(
                     "the login ended with no outcome".to_string(),
@@ -562,13 +660,13 @@ impl LoginMachine {
                 }),
             ) => match self.login(&audience, &nonce, expires_at_ms) {
                 Ok(request) => {
-                    self.phase = Phase::Login(request);
+                    self.phase = Phase::Signed(request);
                     return;
                 }
                 Err(error) => Err(error),
             },
             (
-                Phase::Login(_),
+                Phase::Signed(_),
                 Ok(Response::Token {
                     token,
                     expires_at_ms,
@@ -629,6 +727,159 @@ impl Exchange for LoginMachine {
         match self.poll() {
             LoginStep::Request(request) => Some(request),
             LoginStep::Done(_) => None,
+        }
+    }
+
+    fn answer(&mut self, answer: Result<Response, LinkError>) {
+        self.respond(answer);
+    }
+}
+
+/// What a [`JoinMachine`] wants next.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JoinStep {
+    /// Put this request to the relay, and give the machine the answer.
+    Request(Request),
+    /// The join is over: the relay kept the key package under the invitation, or why not.
+    Done(Result<(), CourierError>),
+}
+
+/// The device's side of a join under an administrator's invitation (ADR 0080 section 4), with no
+/// link: it asks for a challenge for the invitation's list and node, stops when the relay names
+/// itself by another audience than the one the invitation carried, proves with the key the
+/// invitation's secret makes that it signs with `key` and leaves `key_package`, and ends when the
+/// relay kept it. No token is issued: the device has nothing more to ask until it is a member, and
+/// then it logs in ([`LoginMachine`]).
+pub struct JoinMachine {
+    ticket: Ticket,
+    key: PublicKey,
+    key_package: Vec<u8>,
+    phase: Phase,
+    asked: Option<Request>,
+    outcome: Option<Result<(), CourierError>>,
+}
+
+impl JoinMachine {
+    /// The join under `ticket` of the device that signs with `key`, leaving `key_package`, empty
+    /// for a device that leaves none (a list its administrator admits by a grant).
+    pub fn start(ticket: Ticket, key: PublicKey, key_package: Vec<u8>) -> Self {
+        Self {
+            ticket,
+            key,
+            key_package,
+            phase: Phase::Challenge,
+            asked: None,
+            outcome: None,
+        }
+    }
+
+    /// The request to put to the relay next, or the join's end. Asked again before it is
+    /// answered, it is the same request.
+    pub fn poll(&mut self) -> JoinStep {
+        if let Some(outcome) = &self.outcome {
+            return JoinStep::Done(outcome.clone());
+        }
+        if let Some(request) = &self.asked {
+            return JoinStep::Request(request.clone());
+        }
+        let request = match &self.phase {
+            Phase::Challenge => Request::Challenge {
+                list: self.ticket.invitation.list.clone(),
+                node: self.ticket.invitation.node,
+            },
+            Phase::Signed(request) => request.clone(),
+            Phase::Over => {
+                return JoinStep::Done(Err(CourierError::Unexpected(
+                    "the join ended with no outcome".to_string(),
+                )))
+            }
+        };
+        self.asked = Some(request.clone());
+        JoinStep::Request(request)
+    }
+
+    /// Whether a request was given and waits for its answer.
+    pub fn is_asking(&self) -> bool {
+        self.asked.is_some() && self.outcome.is_none()
+    }
+
+    /// The answer to the request [`Self::poll`] gave, or why the link did not carry it. An answer
+    /// when no request waits for one is not taken.
+    pub fn respond(&mut self, answer: Result<Response, LinkError>) {
+        if self.outcome.is_some() || self.asked.take().is_none() {
+            return;
+        }
+        let phase = std::mem::replace(&mut self.phase, Phase::Over);
+        let outcome = match (phase, answer) {
+            (_, Err(error)) => Err(error.into()),
+            (_, Ok(Response::Refused { code, reason })) => {
+                Err(CourierError::Relay { code, reason })
+            }
+            (
+                Phase::Challenge,
+                Ok(Response::Challenge {
+                    audience,
+                    nonce,
+                    expires_at_ms,
+                    ..
+                }),
+            ) => match self.join(&audience, &nonce, expires_at_ms) {
+                Ok(request) => {
+                    self.phase = Phase::Signed(request);
+                    return;
+                }
+                Err(error) => Err(error),
+            },
+            (Phase::Signed(_), Ok(Response::Accepted { .. })) => Ok(()),
+            (_, Ok(other)) => Err(CourierError::Unexpected(format!("{other:?}"))),
+        };
+        self.outcome = Some(outcome);
+    }
+
+    /// The join request for a challenge the relay named `audience` gave.
+    fn join(
+        &self,
+        audience: &str,
+        nonce: &str,
+        expires_at_ms: u64,
+    ) -> Result<Request, CourierError> {
+        let invitation = &self.ticket.invitation;
+        if audience != invitation.audience {
+            return Err(CourierError::Unexpected(format!(
+                "the relay says it is `{audience}`, and the invitation is for `{}` alone",
+                invitation.audience
+            )));
+        }
+        let bytes = encoding::decode(nonce).ok_or_else(|| {
+            CourierError::Unexpected("the challenge's nonce is not in the URL alphabet".to_string())
+        })?;
+        let proof = Proof::make(
+            &self.ticket.secret,
+            invitation,
+            &bytes,
+            expires_at_ms,
+            self.key,
+            &self.key_package,
+        );
+        Ok(Request::Join(Box::new(Join {
+            invitation: invitation.clone(),
+            proof,
+            key_package: (!self.key_package.is_empty())
+                .then(|| encoding::encode(&self.key_package)),
+        })))
+    }
+
+    /// What the join came to, once it is over.
+    pub fn outcome(&self) -> Option<&Result<(), CourierError>> {
+        self.outcome.as_ref()
+    }
+}
+
+impl Exchange for JoinMachine {
+    fn request(&mut self) -> Option<Request> {
+        match self.poll() {
+            JoinStep::Request(request) => Some(request),
+            JoinStep::Done(_) => None,
         }
     }
 

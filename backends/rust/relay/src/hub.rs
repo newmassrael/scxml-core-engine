@@ -229,6 +229,29 @@ impl<S: Store + Send + 'static> Hub for Shards<S> {
                     Ok(()) => held(doorway).redeem(&checked, &self.authority, now_ms),
                 }
             }
+            // The nonce is spent under the doorway's lock, and the invitation judged and the key
+            // package kept under the list's alone, so that two joins of one node on two
+            // connections are told apart by the record the first left.
+            Ok(Asked::Join(checked)) => {
+                let spent = {
+                    let mut doorway = held(doorway);
+                    doorway
+                        .spend_join(&checked, now_ms)
+                        .map(|()| doorway.policy().joins_outstanding_per_list)
+                };
+                match spent {
+                    Err(refused) => refused,
+                    Ok(outstanding) => {
+                        let list = checked.join().invitation.list.clone();
+                        held(self.slot(&list)).take_join(
+                            checked.into_join(),
+                            self.authority.audience(),
+                            outstanding,
+                            now_ms,
+                        )
+                    }
+                }
+            }
         };
         response.to_json()
     }

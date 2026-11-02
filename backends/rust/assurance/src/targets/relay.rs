@@ -127,6 +127,7 @@ pub fn responses() -> Target {
                 Record::KeyPackage {
                     node: 3,
                     data: "k".to_string(),
+                    join: None,
                 },
                 Record::Commit {
                     epoch: 2,

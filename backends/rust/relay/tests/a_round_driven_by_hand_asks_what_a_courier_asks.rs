@@ -389,6 +389,7 @@ fn what_a_host_holds_back_from_a_round_the_next_round_hands_over() {
     let held_message = Record::KeyPackage {
         node: BOB,
         data: "AA".to_string(),
+        join: None,
     };
     // What became of two sends that waited: one signed, one refused for good.
     let taken = (WRITE.to_string(), write(BOB, 2000, 2));

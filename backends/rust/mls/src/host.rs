@@ -264,8 +264,10 @@ impl Member {
     pub fn absorb(&mut self, records: &[Record]) {
         for record in records {
             match record {
-                Record::KeyPackage { node, data } => {
-                    if let Some(bytes) = encoding::decode(data) {
+                // A device that joined under an invitation and leaves no key package (a list its
+                // administrator admits by a grant) gives nothing to keep.
+                Record::KeyPackage { node, data, .. } => {
+                    if let Some(bytes) = encoding::decode(data).filter(|bytes| !bytes.is_empty()) {
                         let held = self.packages.entry(*node).or_default();
                         if !held.contains(&bytes) {
                             held.push(bytes);
@@ -688,6 +690,7 @@ mod tests {
             Record::KeyPackage {
                 node: 5,
                 data: data(&[5, 5]),
+                join: None,
             },
             Record::Commit {
                 epoch: 3,
@@ -734,6 +737,7 @@ mod tests {
         held.absorb(&[Record::KeyPackage {
             node: 5,
             data: data(&[5]),
+            join: None,
         }]);
         let kept = held.held_to_bytes();
         let mut longer = kept.clone();
@@ -745,6 +749,7 @@ mod tests {
             again.absorb(&[Record::KeyPackage {
                 node: 6,
                 data: data(&[6]),
+                join: None,
             }]);
             assert!(again.take_held(bytes).is_err(), "{bytes:?}");
             assert_eq!(again.key_packages_of(6), [vec![6u8]].as_slice());

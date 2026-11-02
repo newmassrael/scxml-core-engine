@@ -12,7 +12,8 @@
 use serde_json::{json, Value};
 
 use sce_rust_trust::encoding;
-use sce_rust_trust::Head;
+use sce_rust_trust::invitation::{Invitation, Proof};
+use sce_rust_trust::{Head, PublicKey};
 
 /// The version of this protocol, written into every request and response.
 pub const VERSION: u64 = 1;
@@ -27,8 +28,15 @@ pub enum Record {
     /// A member's checkpoint (`Checkpoint::to_json`).
     Checkpoint(String),
     /// An MLS key package a device published for an administrator to add it with (`data` in the URL
-    /// alphabet). The relay does not read it.
-    KeyPackage { node: u64, data: String },
+    /// alphabet). The relay does not read it. One a device left under an administrator's invitation
+    /// (ADR 0080 section 4) holds the invitation and the device's proof (`join`), and is the record
+    /// that the invitation was used; its `data` is empty when the device leaves no key package (a
+    /// list its administrator admits by a grant).
+    KeyPackage {
+        node: u64,
+        data: String,
+        join: Option<Box<Joined>>,
+    },
     /// The MLS commit that begins `epoch`, which the membership log names by its hash: the relay
     /// keeps only the one the log names.
     Commit { epoch: u32, data: String },
@@ -43,8 +51,12 @@ impl Record {
             Record::Entry(entry) => json!({"k": "entry", "d": entry}),
             Record::Operation { event, data } => json!({"k": "op", "e": event, "d": data}),
             Record::Checkpoint(checkpoint) => json!({"k": "cp", "d": checkpoint}),
-            Record::KeyPackage { node, data } => {
-                json!({"k": "kp", "n": node.to_string(), "d": data})
+            Record::KeyPackage { node, data, join } => {
+                let mut value = json!({"k": "kp", "n": node.to_string(), "d": data});
+                if let Some(join) = join {
+                    value["j"] = join.to_value();
+                }
+                value
             }
             Record::Commit { epoch, data } => json!({"k": "commit", "p": epoch, "d": data}),
             Record::Welcome { epoch, node, data } => {
@@ -67,6 +79,10 @@ impl Record {
             "kp" => Some(Record::KeyPackage {
                 node: node()?,
                 data: text("d")?,
+                join: match value.get("j") {
+                    None => None,
+                    Some(join) => Some(Box::new(Joined::from_value(join)?)),
+                },
             }),
             "commit" => Some(Record::Commit {
                 epoch: epoch()?,
@@ -117,6 +133,64 @@ pub enum Request {
     /// and `entries` of the log for the relay to append first, as `Append` would, so that a device
     /// brings a grant the relay was not given yet.
     Login(Login),
+    /// A device that is not in the log yet leaves its key package under an administrator's
+    /// invitation (ADR 0080 section 4): asked on a connection that presents no token the relay
+    /// takes, against a challenge for the invitation's list and node.
+    Join(Box<Join>),
+}
+
+/// What a device joins with (`Request::Join`): the invitation, its proof, and its key package in
+/// the URL alphabet, none for a device that leaves none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Join {
+    pub invitation: Invitation,
+    pub proof: Proof,
+    pub key_package: Option<String>,
+}
+
+/// What a key package left under an invitation holds beside it: the invitation and the device's
+/// proof, which an administrator's device checks under the key it made for the invitation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Joined {
+    pub invitation: Invitation,
+    pub proof: Proof,
+}
+
+impl Joined {
+    /// As a record writes it: the invitation, and the proof's identity key, nonce, expiry and
+    /// signature.
+    pub fn to_value(&self) -> Value {
+        let mut value = json!({"invitation": self.invitation.to_value()});
+        write_proof(&mut value, &self.proof);
+        value
+    }
+
+    pub fn from_value(value: &Value) -> Option<Self> {
+        Some(Self {
+            invitation: Invitation::from_value(value.get("invitation")?)?,
+            proof: read_proof(value)?,
+        })
+    }
+}
+
+/// The members a proof is written as, into `value`: `key`, `nonce` and `proof` in the URL alphabet
+/// and `expires_at_ms` as text.
+fn write_proof(value: &mut Value, proof: &Proof) {
+    value["key"] = json!(proof.key.to_text());
+    value["nonce"] = json!(encoding::encode(&proof.nonce));
+    value["expires_at_ms"] = json!(proof.expires_at_ms.to_string());
+    value["proof"] = json!(encoding::encode(&proof.signature));
+}
+
+/// The proof [`write_proof`] wrote into `value`.
+fn read_proof(value: &Value) -> Option<Proof> {
+    let text = |name: &str| value.get(name)?.as_str();
+    Some(Proof {
+        key: PublicKey::from_text(text("key")?)?,
+        nonce: encoding::decode(text("nonce")?)?,
+        expires_at_ms: text("expires_at_ms")?.parse().ok()?,
+        signature: encoding::decode(text("proof")?)?.try_into().ok()?,
+    })
 }
 
 /// What a device logs in with (`Request::Login`).
@@ -190,6 +264,17 @@ impl Request {
                 });
                 if !login.entries.is_empty() {
                     value["entries"] = json!(login.entries);
+                }
+                value
+            }
+            Request::Join(join) => {
+                let mut value = json!({
+                    "op": "join",
+                    "invitation": join.invitation.to_value(),
+                });
+                write_proof(&mut value, &join.proof);
+                if let Some(key_package) = &join.key_package {
+                    value["key_package"] = json!(key_package);
                 }
                 value
             }
@@ -285,6 +370,17 @@ impl Request {
                         .ok_or("an entry is not text")?,
                 },
             })),
+            Some("join") => Ok(Request::Join(Box::new(Join {
+                invitation: value
+                    .get("invitation")
+                    .and_then(Invitation::from_value)
+                    .ok_or("its `invitation` is not one")?,
+                proof: read_proof(&value).ok_or("its proof is not one")?,
+                key_package: match value.get("key_package") {
+                    None => None,
+                    Some(_) => Some(text_of("key_package")?),
+                },
+            }))),
             _ => Err("it is not a request the relay knows".to_string()),
         }
     }
@@ -643,9 +739,60 @@ mod tests {
                 signature: "BBBB".to_string(),
                 entries: vec!["{\"x\":1}".to_string()],
             }),
+            Request::Join(Box::new(Join {
+                invitation: invitation(),
+                proof: proof(),
+                key_package: Some("AAAA".to_string()),
+            })),
+            Request::Join(Box::new(Join {
+                invitation: invitation(),
+                proof: proof(),
+                key_package: None,
+            })),
         ] {
             assert_eq!(Request::from_json(&request.to_json()), Ok(request));
         }
+    }
+
+    fn invitation() -> Invitation {
+        Invitation::sign(
+            &sce_rust_trust::Identity::from_seed([9; 32]),
+            "relay.example",
+            "home",
+            [1; 32],
+            2,
+            86_400_000,
+            sce_rust_trust::invitation::key_of(&[4; 32]).public(),
+        )
+    }
+
+    fn proof() -> Proof {
+        Proof::make(
+            &[4; 32],
+            &invitation(),
+            &[6; 32],
+            60_000,
+            sce_rust_trust::Identity::from_seed([2; 32]).public(),
+            b"package",
+        )
+    }
+
+    /// The join of ADR 0080 section 4, as a relay in another language reads it: the invitation as
+    /// an object, the proof's parts beside it, and no `key_package` for a device that leaves none.
+    #[test]
+    fn a_join_is_the_text_the_decision_gives() {
+        let text = Request::Join(Box::new(Join {
+            invitation: invitation(),
+            proof: proof(),
+            key_package: None,
+        }))
+        .to_json();
+        let value: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["op"], "join");
+        assert_eq!(value["invitation"]["node"], "2", "a 64-bit number is text");
+        assert_eq!(value["expires_at_ms"], "60000");
+        assert!(value["proof"].is_string() && value["key"].is_string());
+        assert!(value.get("key_package").is_none(), "{text}");
     }
 
     /// The texts of ADR 0080 section 2, as a relay in another language reads and writes them.
@@ -714,6 +861,15 @@ mod tests {
                     Record::KeyPackage {
                         node: 3,
                         data: "k".to_string(),
+                        join: None,
+                    },
+                    Record::KeyPackage {
+                        node: 2,
+                        data: String::new(),
+                        join: Some(Box::new(Joined {
+                            invitation: invitation(),
+                            proof: proof(),
+                        })),
                     },
                     Record::Commit {
                         epoch: 2,

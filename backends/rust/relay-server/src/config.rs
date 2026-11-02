@@ -38,6 +38,8 @@
 //! challenges_per_minute = 30
 //! logins_per_minute = 30
 //! logins_per_node_per_hour = 60
+//! joins_per_minute = 30          # a device joins under an administrator's invitation
+//! joins_outstanding_per_list = 32
 //! ```
 //!
 //! A file holds paths and numbers and never a secret: the keys are files of their own
@@ -129,6 +131,8 @@ pub struct Settings {
     pub challenges_per_minute: Option<u64>,
     pub logins_per_minute: Option<u64>,
     pub logins_per_node_per_hour: Option<u64>,
+    pub joins_per_minute: Option<u64>,
+    pub joins_outstanding_per_list: Option<u64>,
 }
 
 /// The limits a configuration may set, by the names of [`Limits`]' fields.
@@ -162,6 +166,9 @@ const DEFAULT_IDLE_SECONDS: u64 = 300;
 const DEFAULT_GRACE_SECONDS: u64 = 10;
 /// The most a rate of the login's allowances is set to, a minute or an hour.
 const MOST_RATE: u64 = 1_000_000;
+
+/// The most joins of one list a configuration may let wait for an administrator at once.
+const MOST_OUTSTANDING_JOINS: u64 = 10_000;
 
 impl Settings {
     /// What the configuration file `file`, whose text is `text`, says.
@@ -245,6 +252,12 @@ impl Settings {
                     ("login", "logins_per_node_per_hour") => {
                         settings.logins_per_node_per_hour = Some(reader.number(value, &name)?)
                     }
+                    ("login", "joins_per_minute") => {
+                        settings.joins_per_minute = Some(reader.number(value, &name)?)
+                    }
+                    ("login", "joins_outstanding_per_list") => {
+                        settings.joins_outstanding_per_list = Some(reader.number(value, &name)?)
+                    }
                     ("limits", limit) if LIMIT_NAMES.contains(&limit) => settings
                         .limits
                         .push((limit.to_string(), reader.number(value, &name)?)),
@@ -288,6 +301,10 @@ impl Settings {
             logins_per_node_per_hour: over
                 .logins_per_node_per_hour
                 .or(self.logins_per_node_per_hour),
+            joins_per_minute: over.joins_per_minute.or(self.joins_per_minute),
+            joins_outstanding_per_list: over
+                .joins_outstanding_per_list
+                .or(self.joins_outstanding_per_list),
         }
     }
 
@@ -424,6 +441,18 @@ impl Settings {
                     self.logins_per_node_per_hour,
                     policy.logins_per_node_per_hour,
                 )?,
+                joins_per_minute: rate(
+                    "[login] joins_per_minute",
+                    self.joins_per_minute,
+                    policy.joins_per_minute,
+                )?,
+                joins_outstanding_per_list: between(
+                    "[login] joins_outstanding_per_list",
+                    self.joins_outstanding_per_list
+                        .unwrap_or(policy.joins_outstanding_per_list as u64),
+                    1,
+                    MOST_OUTSTANDING_JOINS,
+                )? as usize,
                 ..policy
             })
         } else {
@@ -662,6 +691,8 @@ connections_per_minute = 6
 challenges_per_minute = 7
 logins_per_minute = 8
 logins_per_node_per_hour = 9
+joins_per_minute = 10
+joins_outstanding_per_list = 11
 "#;
 
     #[test]
@@ -721,6 +752,8 @@ logins_per_node_per_hour = 9
                 challenges_per_minute: 7,
                 logins_per_minute: 8,
                 logins_per_node_per_hour: 9,
+                joins_per_minute: 10,
+                joins_outstanding_per_list: 11,
                 ..LoginPolicy::default()
             })
         );

@@ -539,10 +539,11 @@ fn a_connection_with_no_token_asks_for_a_challenge_and_logs_in_and_nothing_else(
     let (code, reason) = refused(&refused_create);
     assert_eq!(code, Code::Invalid);
     assert!(reason.contains("`create`"), "{reason}");
+    // A join is offered (ADR 0080 section 4), and one that carries no invitation is no join.
     let join = r#"{"v":1,"op":"join"}"#;
     let (code, reason) = refused(&Response::from_json(&relay.anonymous(None, join, NOW)).unwrap());
     assert_eq!(code, Code::Invalid);
-    assert!(reason.contains("`join`"), "{reason}");
+    assert!(reason.contains("`invitation`"), "{reason}");
 
     // A session's token names its list already: a login is not a session's request.
     let token = authority().issue(LIST, 2, u64::MAX);
