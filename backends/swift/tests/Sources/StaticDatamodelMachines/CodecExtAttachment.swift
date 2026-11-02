@@ -18,8 +18,8 @@ public struct CodecExtAttachment: Equatable, Sendable {
     /// The field at byte 0, big-endian.
     public var length: UInt8 = 0
 
-    /// As many bytes as `length` says. The size the document bounds them to is not
-    /// held here, as it is not by the other managed backends.
+    /// As many bytes as `length` says, as many as the document's `max-size` admits: a frame that says
+    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var body: [UInt8] = []
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
@@ -41,6 +41,9 @@ public struct CodecExtAttachment: Equatable, Sendable {
         var reader = cursor
         var frame = CodecExtAttachment()
         frame.length = try reader.readInteger(UInt8.self, .big)
+        if frame.length > 64 {
+            throw CodecError.lengthOutOfRange
+        }
         frame.body = Array(try reader.readSlice(Int(clamping: frame.length)))
         cursor = reader
         return frame
@@ -49,6 +52,9 @@ public struct CodecExtAttachment: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        if self.body.count > 64 {
+            throw CodecError.lengthOutOfRange
+        }
         var frame: [UInt8] = []
         appendInteger(self.length, to: &frame, .big)
         frame += self.body

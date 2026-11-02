@@ -23,8 +23,8 @@ public struct CodecZenohTimestamp: Equatable, Sendable {
     /// bytes as its type needs.
     public var zid_len: UInt64 = 0
 
-    /// As many bytes as `zid_len` says. The size the document bounds them to is not
-    /// held here, as it is not by the other managed backends.
+    /// As many bytes as `zid_len` says, as many as the document's `max-size` admits: a frame that says
+    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var zid: [UInt8] = []
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
@@ -48,6 +48,9 @@ public struct CodecZenohTimestamp: Equatable, Sendable {
         var frame = CodecZenohTimestamp()
         frame.time = try reader.readVle(UInt64.self)
         frame.zid_len = try reader.readVle(UInt64.self)
+        if frame.zid_len > 16 {
+            throw CodecError.lengthOutOfRange
+        }
         frame.zid = Array(try reader.readSlice(Int(clamping: frame.zid_len)))
         cursor = reader
         return frame
@@ -56,6 +59,9 @@ public struct CodecZenohTimestamp: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        if self.zid.count > 16 {
+            throw CodecError.lengthOutOfRange
+        }
         var frame: [UInt8] = []
         appendVle(self.time, to: &frame)
         appendVle(self.zid_len, to: &frame)

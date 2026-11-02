@@ -26,8 +26,8 @@ public struct CodecPresentIfTail: Equatable, Sendable {
 
     /// On the wire only when `(flags & 0x1) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
-    /// The bytes to the end of the frame. The size the document bounds them to is not held here,
-    /// as it is not by the other managed backends.
+    /// The bytes to the end of the frame, as many as the document's `max-size` admits: a frame
+    /// with more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var payload: [UInt8]? = nil
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
@@ -50,6 +50,9 @@ public struct CodecPresentIfTail: Equatable, Sendable {
         var frame = CodecPresentIfTail()
         frame.flags = try reader.readInteger(UInt8.self, .big)
         if (frame.flags & 0x1) != 0 {
+            if reader.remaining > 64 {
+                throw CodecError.lengthOutOfRange
+            }
             frame.payload = Array(try reader.readSlice(reader.remaining))
         }
         cursor = reader
@@ -59,6 +62,9 @@ public struct CodecPresentIfTail: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        if let value = self.payload, value.count > 64 {
+            throw CodecError.lengthOutOfRange
+        }
         var frame: [UInt8] = []
         appendInteger(self.flags, to: &frame, .big)
         if let payload = self.payload {

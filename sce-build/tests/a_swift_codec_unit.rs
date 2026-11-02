@@ -362,6 +362,45 @@ fn a_length_ref_takes_its_count_from_an_unsigned_field_and_its_arithmetic() {
 }
 
 #[test]
+fn a_byte_string_is_held_to_the_bound_its_document_declares() {
+    let tail = swift_of_datamodel(
+        r#"<sce:field id="body" sce:type="bytes" sce:byte="0" sce:bit-size="tail" sce:max-size="8"/>"#,
+    )
+    .expect("a bounded tail is written");
+    assert!(
+        tail.contains("if reader.remaining > 8 {\n            throw CodecError.lengthOutOfRange\n        }\n        frame.body = Array(try reader.readSlice(reader.remaining))"),
+        "a decode refuses the bytes that are left before it cuts them: {tail}"
+    );
+    assert!(
+        tail.contains("if self.body.count > 8 {\n            throw CodecError.lengthOutOfRange\n        }\n        var frame: [UInt8] = []"),
+        "an encode refuses a value past the bound before its first byte: {tail}"
+    );
+    let counted = swift_of_datamodel(
+        r#"<sce:field id="tag_len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+           <sce:field id="tag" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref" sce:length-field="tag_len" sce:length-arith="-1" sce:max-size="4"/>"#,
+    )
+    .expect("a bounded length-ref is written");
+    assert!(
+        counted.contains("if frame.tag_len < 1 || frame.tag_len > 5 {"),
+        "the carried value is judged in its own type, with the arithmetic folded into the bound, so a carried 0 that says -1 is refused and not wrapped: {counted}"
+    );
+}
+
+#[test]
+fn a_gated_byte_string_is_checked_where_it_is_given() {
+    let code = swift_of("tests/forge/resources/codec_present_if_tail.scxml")
+        .expect("a gated tail is written");
+    assert!(
+        code.contains("if let value = self.payload, value.count > "),
+        "an encode checks a gated field only when it is given: {code}"
+    );
+    assert!(
+        code.contains("            if reader.remaining > "),
+        "a decode checks it inside the gate: {code}"
+    );
+}
+
+#[test]
 fn what_a_variable_length_field_cannot_be_is_refused_by_name() {
     for (field, what) in [
         (

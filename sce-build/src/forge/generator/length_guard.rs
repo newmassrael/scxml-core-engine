@@ -95,8 +95,8 @@ impl Guard {
                 | Language::Cpp
                 | Language::Rust
                 | Language::Go
-                | Language::Python => n.to_string(),
-                Language::Swift => no_swift(),
+                | Language::Python
+                | Language::Swift => n.to_string(),
             }
         };
         // Rust spells a check with both ends as the range it accepts (its
@@ -120,10 +120,8 @@ impl Guard {
                     | Language::Cpp
                     | Language::C11
                     | Language::Kotlin
-                    | Language::Go => " || ",
-                    Language::Swift => {
-                        crate::forge::codegen_matrix::no_swift_emitter("Guard::condition")
-                    }
+                    | Language::Go
+                    | Language::Swift => " || ",
                 };
                 Some(format!("{b}{or}{a}"))
             }
@@ -159,13 +157,12 @@ impl Guard {
         let refusal = self.refusal(lang);
         match lang {
             Language::Python => format!("if {cond}:\n{inner}{refusal}\n{indent}"),
-            Language::Rust | Language::Go => {
+            Language::Rust | Language::Go | Language::Swift => {
                 format!("if {cond} {{\n{inner}{refusal}\n{indent}}}\n{indent}")
             }
             Language::Cpp | Language::C11 | Language::Kotlin => {
                 format!("if ({cond}) {{\n{inner}{refusal}\n{indent}}}\n{indent}")
             }
-            Language::Swift => no_swift(),
         }
     }
 }
@@ -207,10 +204,6 @@ impl Guard {
             }
         }
     }
-}
-
-fn no_swift() -> String {
-    crate::forge::codegen_matrix::no_swift_emitter("Guard::stmt")
 }
 
 /// How a host holds a codec integer field's value of the type `ty`.

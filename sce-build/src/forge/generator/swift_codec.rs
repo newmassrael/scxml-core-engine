@@ -14,6 +14,7 @@
 //! shrinks as the shapes land, and the codec moves to the shared renderer when nothing is left.
 
 use super::*;
+use crate::generator::Language;
 
 /// The Swift spelling of a native-width integer type, and its width in bits: the one set of types a
 /// field may have.
@@ -365,6 +366,25 @@ pub(super) fn render(
                     BitSize::Tail => "tail",
                     _ => "length_ref",
                 };
+                // The check of the length the frame says against the bound the document
+                // declares, made before the bytes are cut so a frame that says too many is
+                // refused and never waited on (docs/adr/0077 §2). A `tail` says its length by
+                // the bytes that are left.
+                let (carried, held) = match &f.length_field {
+                    Some(name) => (
+                        format!("frame.{name}"),
+                        length_guard::carried_held(name, &m.fields, Language::Swift),
+                    ),
+                    None => ("reader.remaining".to_string(), length_guard::Held::HostInt),
+                };
+                let indent = if present.is_some() {
+                    "            "
+                } else {
+                    "        "
+                };
+                let guard = length_guard::Guard::of(f, &m.fields)
+                    .map(|g| g.stmt(Language::Swift, &carried, held, indent))
+                    .unwrap_or_default();
                 return serde_json::json!({
                     "id": f.id,
                     "swift_type": format!("[UInt8]{optional}"),
@@ -377,6 +397,7 @@ pub(super) fn render(
                         "kind": kind,
                         "length_field": f.length_field.clone().unwrap_or_default(),
                         "arith": f.length_arith.unwrap_or(0),
+                        "guard": guard,
                     },
                 });
             }
@@ -426,6 +447,9 @@ pub(super) fn render(
         .collect();
     let mut ctx = l.base_context(&m.name);
     ctx.insert("fields".into(), fields.into());
+    // The refusals an encode makes before its first byte, of a value outside its bound.
+    let (bound_checks, _) = encode_bound_guard_lines(&m.fields, Language::Swift);
+    ctx.insert("bound_checks".into(), bound_checks.into());
     ctx.insert("frame_length".into(), frame_length.into());
     // Whether the frame is read and written field by field (`is_sequential`), each field beginning
     // where the last one ended, and not at the byte its field names.

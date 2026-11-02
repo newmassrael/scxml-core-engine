@@ -49,11 +49,51 @@ final class CodecVariableUnitTests: XCTestCase {
         XCTAssertEqual(cursor.remaining, 4)
     }
 
-    func testAHugeLengthIsRefusedAndNotATrap() {
+    // The field is bounded by `sce:max-size="32"`. A length past the bound is not a frame of the
+    // document, so it is refused for that and not waited on as a frame that is still arriving.
+    func testALengthPastTheBoundIsRefusedForItAndNotWaitedOn() {
         var cursor = SceCursor([1, 255, 10])
         XCTAssertThrowsError(try CodecLengthRef.decode(&cursor)) { error in
-            XCTAssertEqual(error as? CodecError, .needMoreBytes)
+            XCTAssertEqual(error as? CodecError, .lengthOutOfRange)
         }
+        XCTAssertEqual(cursor.remaining, 3, "a refused frame leaves the cursor where it was")
+    }
+
+    func testALengthAtTheBoundIsTaken() throws {
+        var cursor = SceCursor([1, 32] + [UInt8](repeating: 7, count: 32))
+        XCTAssertEqual(try CodecLengthRef.decode(&cursor).payload.count, 32)
+        XCTAssertEqual(cursor.remaining, 0)
+    }
+
+    func testATailPastTheBoundIsRefusedAndConsumesNothing() {
+        var cursor = SceCursor([1, 2] + [UInt8](repeating: 7, count: 33))
+        XCTAssertThrowsError(try CodecTail.decode(&cursor)) { error in
+            XCTAssertEqual(error as? CodecError, .lengthOutOfRange)
+        }
+        XCTAssertEqual(cursor.remaining, 35)
+        var atTheBound = SceCursor([1, 2] + [UInt8](repeating: 7, count: 32))
+        XCTAssertEqual(try CodecTail.decode(&atTheBound).payload.count, 32)
+    }
+
+    // The bound is on the length the document derives: `zid_len_m1 + 1`, at most 16, so a carried
+    // 16 says 17.
+    func testTheBoundIsJudgedAfterTheArithmeticOfTheLength() throws {
+        var past = SceCursor([16] + [UInt8](repeating: 1, count: 17))
+        XCTAssertThrowsError(try CodecScoutZidBody.decode(&past)) { error in
+            XCTAssertEqual(error as? CodecError, .lengthOutOfRange)
+        }
+        var atTheBound = SceCursor([15] + [UInt8](repeating: 1, count: 16))
+        XCTAssertEqual(try CodecScoutZidBody.decode(&atTheBound).zid.count, 16)
+    }
+
+    func testAnEncodeOfAValuePastTheBoundWritesNothing() {
+        var frame = CodecTail()
+        frame.payload = [UInt8](repeating: 7, count: 33)
+        var sink = BytesSink()
+        XCTAssertThrowsError(try frame.encode(into: &sink)) { error in
+            XCTAssertEqual(error as? CodecError, .lengthOutOfRange)
+        }
+        XCTAssertEqual(sink.bytes, [])
     }
 
     // `zid_len_m1` states the length less one, and the document adds it back (`length-arith="+1"`).

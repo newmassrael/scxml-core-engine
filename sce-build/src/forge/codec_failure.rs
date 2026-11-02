@@ -186,7 +186,7 @@ impl CodecFailure {
                 Language::Kotlin => "return null",
                 Language::Go => "return nil, codec.ErrNeedMoreBytes",
                 Language::Python => "raise NeedMoreBytes()",
-                Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("raise_stmt"),
+                Language::Swift => "throw CodecError.needMoreBytes",
             }),
             // A bound's refusal is not a frame short of bytes, so C++ and
             // Kotlin record it on the cursor before they return their one
@@ -201,7 +201,7 @@ impl CodecFailure {
                 Language::Kotlin => "cursor.refuse(CodecError.LengthOutOfRange); return null",
                 Language::Go => "return nil, codec.ErrLengthOutOfRange",
                 Language::Python => "raise LengthOutOfRange()",
-                Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("raise_stmt"),
+                Language::Swift => "throw CodecError.lengthOutOfRange",
             }),
             CodecFailure::TooManyElements => Some(match lang {
                 Language::Rust => "return Err(CodecError::TooManyElements);",
@@ -254,7 +254,17 @@ impl CodecFailure {
                 "return codec.ErrTooManyElements",
             ),
             Language::Python => ("raise LengthOutOfRange()", "raise TooManyElements()"),
-            Language::Rust | Language::Swift => return None,
+            // A Swift codec holds no list yet, so no encode refuses a count.
+            Language::Swift => {
+                return match self {
+                    CodecFailure::LengthOutOfRange => Some("throw CodecError.lengthOutOfRange"),
+                    CodecFailure::TooManyElements => {
+                        crate::forge::codegen_matrix::no_swift_emitter("encode_refusal_stmt")
+                    }
+                    _ => None,
+                }
+            }
+            Language::Rust => return None,
         };
         match self {
             CodecFailure::LengthOutOfRange => Some(length),

@@ -21,8 +21,8 @@ public struct CodecTail: Equatable, Sendable {
     /// The field at byte 1, big-endian.
     public var status: UInt8 = 0
 
-    /// The bytes to the end of the frame. The size the document bounds them to is not held here,
-    /// as it is not by the other managed backends.
+    /// The bytes to the end of the frame, as many as the document's `max-size` admits: a frame
+    /// with more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var payload: [UInt8] = []
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
@@ -46,6 +46,9 @@ public struct CodecTail: Equatable, Sendable {
         var frame = CodecTail()
         frame.msgId = try reader.readInteger(UInt8.self, .big)
         frame.status = try reader.readInteger(UInt8.self, .big)
+        if reader.remaining > 32 {
+            throw CodecError.lengthOutOfRange
+        }
         frame.payload = Array(try reader.readSlice(reader.remaining))
         cursor = reader
         return frame
@@ -54,6 +57,9 @@ public struct CodecTail: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        if self.payload.count > 32 {
+            throw CodecError.lengthOutOfRange
+        }
         var frame: [UInt8] = []
         appendInteger(self.msgId, to: &frame, .big)
         appendInteger(self.status, to: &frame, .big)

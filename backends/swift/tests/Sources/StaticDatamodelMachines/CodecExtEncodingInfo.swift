@@ -30,8 +30,8 @@ public struct CodecExtEncodingInfo: Equatable, Sendable {
 
     /// On the wire only when `(combined_id & 0x1) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
-    /// As many bytes as `schema_size` says. The size the document bounds them to is not
-    /// held here, as it is not by the other managed backends.
+    /// As many bytes as `schema_size` says, as many as the document's `max-size` admits: a frame that says
+    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var schema: [UInt8]? = nil
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
@@ -56,6 +56,9 @@ public struct CodecExtEncodingInfo: Equatable, Sendable {
         frame.combined_id = try reader.readVle(UInt32.self)
         frame.schema_size = try reader.readInteger(UInt8.self, .big)
         if (frame.combined_id & 0x1) != 0 {
+            if frame.schema_size > 64 {
+                throw CodecError.lengthOutOfRange
+            }
             frame.schema = Array(try reader.readSlice(Int(clamping: frame.schema_size)))
         }
         cursor = reader
@@ -65,6 +68,9 @@ public struct CodecExtEncodingInfo: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        if let value = self.schema, value.count > 64 {
+            throw CodecError.lengthOutOfRange
+        }
         var frame: [UInt8] = []
         appendVle(self.combined_id, to: &frame)
         appendInteger(self.schema_size, to: &frame, .big)

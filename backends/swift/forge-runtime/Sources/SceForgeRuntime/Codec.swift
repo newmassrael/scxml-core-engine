@@ -21,6 +21,11 @@ public enum CodecError: Error, Equatable, Sendable {
     /// A variable-length integer's continuation chain names a value wider than the type that holds
     /// it (`codec/vle-width-overflow`).
     case vleWidthOverflow
+    /// A byte string's length is outside the bound its field declares (`sce:max-size`, and what
+    /// its length field can say after its `sce:length-arith`): on a decode, the length the frame
+    /// says, judged before the frame's own length so that such a frame is refused and never waited
+    /// on; on an encode, the length of the value, refused before the first byte is written.
+    case lengthOutOfRange
 }
 
 /// The byte order of one field on the wire.

@@ -27,11 +27,11 @@ public struct {{ struct_name }}: Equatable, Sendable {
     /// writes it when it is not `nil`.
 {% endif %}
 {% if f.variable and f.variable.kind == "tail" %}
-    /// The bytes to the end of the frame. The size the document bounds them to is not held here,
-    /// as it is not by the other managed backends.
+    /// The bytes to the end of the frame, as many as the document's `max-size` admits: a frame
+    /// with more is refused with `lengthOutOfRange`, as is a value with more at its encode.
 {% elif f.variable %}
-    /// As many bytes as `{{ f.variable.length_field }}` says{% if f.variable.arith %}, plus {{ f.variable.arith }}{% endif %}. The size the document bounds them to is not
-    /// held here, as it is not by the other managed backends.
+    /// As many bytes as `{{ f.variable.length_field }}` says{% if f.variable.arith %}, plus {{ f.variable.arith }}{% endif %}, as many as the document's `max-size` admits: a frame that says
+    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
 {% elif f.vle %}
     /// A variable-length integer: base-128, the least significant group first, at most as many
     /// bytes as its type needs.
@@ -95,9 +95,9 @@ public struct {{ struct_name }}: Equatable, Sendable {
         if {{ f.present.decode }} {
 {% endif %}
 {% if f.variable and f.variable.kind == "tail" %}
-{{ pad }}        frame.{{ f.id }} = Array(try reader.readSlice(reader.remaining))
+{{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = Array(try reader.readSlice(reader.remaining))
 {% elif f.variable %}
-{{ pad }}        frame.{{ f.id }} = Array(try reader.readSlice(Int(clamping: frame.{{ f.variable.length_field }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}))
+{{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = Array(try reader.readSlice(Int(clamping: frame.{{ f.variable.length_field }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}))
 {% elif f.vle %}
 {{ pad }}        frame.{{ f.id }} = try reader.readVle({{ f.value_type }}.self)
 {% else %}
@@ -128,6 +128,9 @@ public struct {{ struct_name }}: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+{% for check in bound_checks %}
+        {{ check }}
+{% endfor %}
 {% if sequential %}
         var frame: [UInt8] = []
 {% else %}

@@ -19,8 +19,8 @@ public struct CodecZenohExtZbuf: Equatable, Sendable {
     /// bytes as its type needs.
     public var value_len: UInt64 = 0
 
-    /// As many bytes as `value_len` says. The size the document bounds them to is not
-    /// held here, as it is not by the other managed backends.
+    /// As many bytes as `value_len` says, as many as the document's `max-size` admits: a frame that says
+    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var value: [UInt8] = []
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
@@ -42,6 +42,9 @@ public struct CodecZenohExtZbuf: Equatable, Sendable {
         var reader = cursor
         var frame = CodecZenohExtZbuf()
         frame.value_len = try reader.readVle(UInt64.self)
+        if frame.value_len > 32 {
+            throw CodecError.lengthOutOfRange
+        }
         frame.value = Array(try reader.readSlice(Int(clamping: frame.value_len)))
         cursor = reader
         return frame
@@ -50,6 +53,9 @@ public struct CodecZenohExtZbuf: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        if self.value.count > 32 {
+            throw CodecError.lengthOutOfRange
+        }
         var frame: [UInt8] = []
         appendVle(self.value_len, to: &frame)
         frame += self.value

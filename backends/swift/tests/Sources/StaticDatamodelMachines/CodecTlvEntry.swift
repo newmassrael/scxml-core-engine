@@ -21,8 +21,8 @@ public struct CodecTlvEntry: Equatable, Sendable {
     /// The field at byte 1, big-endian.
     public var entry_len: UInt8 = 0
 
-    /// As many bytes as `entry_len` says. The size the document bounds them to is not
-    /// held here, as it is not by the other managed backends.
+    /// As many bytes as `entry_len` says, as many as the document's `max-size` admits: a frame that says
+    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var entry_body: [UInt8] = []
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
@@ -46,6 +46,9 @@ public struct CodecTlvEntry: Equatable, Sendable {
         var frame = CodecTlvEntry()
         frame.entry_type = try reader.readInteger(UInt8.self, .big)
         frame.entry_len = try reader.readInteger(UInt8.self, .big)
+        if frame.entry_len > 32 {
+            throw CodecError.lengthOutOfRange
+        }
         frame.entry_body = Array(try reader.readSlice(Int(clamping: frame.entry_len)))
         cursor = reader
         return frame
@@ -54,6 +57,9 @@ public struct CodecTlvEntry: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        if self.entry_body.count > 32 {
+            throw CodecError.lengthOutOfRange
+        }
         var frame: [UInt8] = []
         appendInteger(self.entry_type, to: &frame, .big)
         appendInteger(self.entry_len, to: &frame, .big)

@@ -20168,7 +20168,7 @@ fn present_if_chain_encode_prologue(
     (text, true)
 }
 
-/// The refusals at the top of a C++, Kotlin, Go or Python encode of a value
+/// The refusals at the top of a C++, Kotlin, Go, Python or Swift encode of a value
 /// whose byte string, text, list or chain lies outside its bound, each before
 /// the first byte is written (docs/adr/0077 §3), and the failures they raise.
 ///
@@ -20188,7 +20188,7 @@ fn encode_bound_guard_lines(
     use crate::generator::Language;
     if !matches!(
         lang,
-        Language::Cpp | Language::Kotlin | Language::Go | Language::Python
+        Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::Swift
     ) {
         return (Vec::new(), Vec::new());
     }
@@ -20219,7 +20219,17 @@ fn encode_bound_guard_lines(
             failures.push(failure);
         }
         let text = kind == BoundKind::Length && matches!(field.sce_type, SceType::String);
-        let id = codec_field_local_name(&field.id, lang);
+        // A Swift codec names its fields as the author wrote them, and has no
+        // text of variable length (`swift_codec::variable_field_unlowered`).
+        let id = match lang {
+            Language::Swift => field.id.clone(),
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11 => codec_field_local_name(&field.id, lang),
+        };
         // The size of the value `v`, in what the wire counts.
         let size = |v: &str| match lang {
             Language::Cpp => format!("{v}.size()"),
@@ -20228,7 +20238,8 @@ fn encode_bound_guard_lines(
             Language::Go => format!("len({v})"),
             Language::Python if text => format!("len({v}.encode(\"utf-8\"))"),
             Language::Python => format!("len({v})"),
-            Language::Rust | Language::C11 | Language::Swift => bound_held_elsewhere(lang),
+            Language::Swift => format!("{v}.count"),
+            Language::Rust | Language::C11 => bound_held_elsewhere(lang),
         };
         // A Kotlin size is an `Int`, which no larger bound can be passed by.
         let checks_most = !(lang == Language::Kotlin && most > i32::MAX as u64);
@@ -20264,7 +20275,10 @@ fn encode_bound_guard_lines(
                     outside(&format!("self.{id}"))
                 )
             }
-            (Language::Rust | Language::C11 | Language::Swift, _) => bound_held_elsewhere(lang),
+            // A gated field is an optional, bound to `value` where it is given.
+            (Language::Swift, false) => outside(&format!("self.{id}")),
+            (Language::Swift, true) => format!("let value = self.{id}, {}", outside("value")),
+            (Language::Rust | Language::C11, _) => bound_held_elsewhere(lang),
         };
         if outside("v").is_empty() {
             continue;
@@ -20284,7 +20298,12 @@ fn encode_bound_guard_lines(
                 lines.push(format!("if {condition}:"));
                 lines.push(format!("    {refuse}"));
             }
-            Language::Rust | Language::C11 | Language::Swift => bound_held_elsewhere(lang),
+            Language::Swift => {
+                lines.push(format!("if {condition} {{"));
+                lines.push(format!("    {refuse}"));
+                lines.push("}".to_string());
+            }
+            Language::Rust | Language::C11 => bound_held_elsewhere(lang),
         }
     }
     (lines, failures)

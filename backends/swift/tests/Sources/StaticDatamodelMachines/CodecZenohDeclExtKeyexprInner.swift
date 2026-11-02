@@ -36,8 +36,8 @@ public struct CodecZenohDeclExtKeyexprInner: Equatable, Sendable {
 
     /// On the wire only when `(inner_header & 0x1) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
-    /// The bytes to the end of the frame. The size the document bounds them to is not held here,
-    /// as it is not by the other managed backends.
+    /// The bytes to the end of the frame, as many as the document's `max-size` admits: a frame
+    /// with more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var suffix: [UInt8]? = nil
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
@@ -62,6 +62,9 @@ public struct CodecZenohDeclExtKeyexprInner: Equatable, Sendable {
         frame.inner_header = try reader.readInteger(UInt8.self, .big)
         frame.id = try reader.readVle(UInt64.self)
         if (frame.inner_header & 0x1) != 0 {
+            if reader.remaining > 128 {
+                throw CodecError.lengthOutOfRange
+            }
             frame.suffix = Array(try reader.readSlice(reader.remaining))
         }
         cursor = reader
@@ -71,6 +74,9 @@ public struct CodecZenohDeclExtKeyexprInner: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        if let value = self.suffix, value.count > 128 {
+            throw CodecError.lengthOutOfRange
+        }
         var frame: [UInt8] = []
         appendInteger(self.inner_header, to: &frame, .big)
         appendVle(self.id, to: &frame)
