@@ -28,6 +28,7 @@ pub mod declared_names;
 pub mod deployment;
 pub mod diagnostic;
 pub mod drift;
+pub mod encode_plan;
 pub mod enum_naming;
 pub mod error;
 pub mod event_schema_check;

@@ -2490,34 +2490,9 @@ pub fn codec_roles_file(
     options: &ForgeCompileOptions,
 ) -> Result<Option<forge::codec_roles::CodecRoles>, forge::error::Located<forge::error::ForgeError>>
 {
-    use forge::error::Located;
-
-    let loaded = load_forge_source(path, include_dirs)?;
-    let path_text = path.to_string_lossy();
-    let label = DocumentLabel::for_input_path(&path_text);
-    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
-    // A statechart is no forge document and no codec: it has no roles.
-    let Some(parsed) = forge::parser::parse_forge_with_imports(loaded.text(), label)
-        .map_err(|err| loaded.positions.authored(err))?
-    else {
-        return Ok(None);
-    };
-    let forge::model::ForgeDocument::Codec(model) = &parsed.document else {
-        return Ok(None);
-    };
-    let language = generator::Language::Rust;
-    let mut import_ctx = forge::generator::resolve_imports(&parsed.imports, &language, options)
-        .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
-    validate_and_enrich_imports(
-        &mut import_ctx,
-        &parsed.imports,
-        base_dir,
-        &language,
-        options,
-        label.diagnostic_label,
-    )
-    .map_err(|err| loaded.positions.authored(err))?;
-    Ok(Some(forge::codec_roles::classify(model, &import_ctx)))
+    read_codec_file(path, include_dirs, options, |model, imports| {
+        forge::codec_roles::classify(&model, imports)
+    })
 }
 
 /// The codec at `path` and where its encode can refuse a value
@@ -2532,6 +2507,37 @@ pub fn codec_totality_file(
     Option<(forge::model::CodecModel, forge::codec_totality::Totality)>,
     forge::error::Located<forge::error::ForgeError>,
 > {
+    read_codec_file(path, include_dirs, options, |model, imports| {
+        let totality =
+            forge::codec_totality::analyse(&model, &mut forge::codec_totality::Resolved(imports));
+        (model, totality)
+    })
+}
+
+/// What `read` answers of the encode plan of the codec at `path`
+/// (docs/adr/0081 §1), read as `compile_forge_file` reads it. `None` for a
+/// document that is not a codec.
+pub fn encode_plan_file<R>(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+    read: impl FnOnce(&forge::encode_plan::EncodePlan<'_>) -> R,
+) -> Result<Option<R>, forge::error::Located<forge::error::ForgeError>> {
+    read_codec_file(path, include_dirs, options, |model, imports| {
+        read(&forge::encode_plan::EncodePlan::of(&model, imports))
+    })
+}
+
+/// What `read` answers of the codec at `path` and its imports, read as
+/// `compile_forge_file` reads it: expanded, parsed, its imports resolved and
+/// enriched, which is what a codec it holds is judged by. `None` for a document
+/// that is not a codec: a statechart is no forge document and no codec.
+fn read_codec_file<R>(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+    read: impl FnOnce(forge::model::CodecModel, &[forge::generator::ImportContext]) -> R,
+) -> Result<Option<R>, forge::error::Located<forge::error::ForgeError>> {
     use forge::error::Located;
 
     let loaded = load_forge_source(path, include_dirs)?;
@@ -2558,9 +2564,7 @@ pub fn codec_totality_file(
         label.diagnostic_label,
     )
     .map_err(|err| loaded.positions.authored(err))?;
-    let totality =
-        forge::codec_totality::analyse(&model, &mut forge::codec_totality::Resolved(&import_ctx));
-    Ok(Some((model, totality)))
+    Ok(Some(read(model, &import_ctx)))
 }
 
 /// Compile a forge (non-statechart) SCXML from already-read content.

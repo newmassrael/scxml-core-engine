@@ -375,32 +375,6 @@ pub fn held_to_offset(field: &CodecField, fields: &[CodecField], arith: i32) -> 
     arith > 0 && byte_bound(field, fields).is_some_and(|b| b.min >= u64::from(arith.unsigned_abs()))
 }
 
-/// The bounds of the `bytes` or `string` field `field` as the const arguments
-/// of `Bytes` or `Text` after the lifetime: the most bytes, and the fewest where
-/// that is not none, which the types default to; the most is `{ usize::MAX }`
-/// for a field with no bound. `None` for a field that holds no length
-/// ([`byte_bound`]).
-pub fn byte_bound_args(field: &CodecField, fields: &[CodecField]) -> Option<String> {
-    let bound = byte_bound(field, fields)?;
-    let max = usize_bound(bound.max);
-    Some(match bound.min {
-        0 => max,
-        least => format!("{max}, {least}"),
-    })
-}
-
-/// A bound as a Rust `usize` const argument: the number, or `{ usize::MAX }`
-/// for none, which is how `Bounded`, `Chain` and `Placed` hold a field the
-/// language states no bound of with no second shape (docs/adr/0077 §7). A
-/// bound is at most `u32::MAX` ([`CodecField::bound`]), which every target's
-/// `usize` holds, and `usize::MAX` is the largest value any target can have.
-fn usize_bound(bound: Option<u64>) -> String {
-    match bound {
-        Some(bound) => bound.to_string(),
-        None => "{ usize::MAX }".to_string(),
-    }
-}
-
 /// The number of entries the list `field` is held to: its bound
 /// ([`CodecField::bound`]), what its `max-count` or `max-depth` states met with
 /// what the field that carries its count can say, or `None` where the protocol
@@ -422,21 +396,6 @@ pub fn list_least(field: &CodecField) -> u64 {
         } => 1,
         _ => 0,
     }
-}
-
-/// The bounds of the list `field` as the const arguments of a runtime list
-/// type after the list: the most entries, and the fewest where that is not
-/// none, which the types default to.
-pub fn list_bound_args(field: &CodecField, fields: &[CodecField]) -> String {
-    match list_least(field) {
-        0 => list_bound_rust(field, fields),
-        least => format!("{}, {least}", list_bound_rust(field, fields)),
-    }
-}
-
-/// [`list_bound`] as a Rust `usize` const argument ([`usize_bound`]).
-pub fn list_bound_rust(field: &CodecField, fields: &[CodecField]) -> String {
-    usize_bound(list_bound(field, fields))
 }
 
 /// The width in bits of an unsigned integer type, or `None` for another type.

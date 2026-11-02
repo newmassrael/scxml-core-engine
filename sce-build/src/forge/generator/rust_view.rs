@@ -40,7 +40,7 @@ pub(super) fn view_lifetime(borrowed: bool) -> &'static str {
 /// The type of a list field of a view: a [`ListView`](sce_forge_runtime::view::ListView) read by
 /// the marker type `walk` ([`walk_item`]), `K` being how many flag inputs an entry's decode
 /// takes, held as a list inside the bounds of list field `field` of the codec
-/// whose fields are `fields` (`codec_totality::list_bound_args`; docs/adr/0065
+/// whose fields are `fields` (`rust_list_bound_args`; docs/adr/0065
 /// §6 R2, R7).
 ///
 /// A list of one entry or more that is always present is held as its first
@@ -56,7 +56,7 @@ pub(super) fn list_type(
     // (`rust_source::law_type`; docs/adr/0065 §6 R8).
     law: Option<&str>,
 ) -> String {
-    let bounds = crate::forge::codec_totality::list_bound_args(field, fields);
+    let bounds = super::rust_list_bound_args(field, fields);
     let gated = field.present_if.is_some();
     let list = if !gated && crate::forge::codec_totality::list_least(field) > 0 {
         format!("Bounded<{RUNTIME_CODEC}::NonEmptyListView<'a, {walk}, {inputs}>, {bounds}>")

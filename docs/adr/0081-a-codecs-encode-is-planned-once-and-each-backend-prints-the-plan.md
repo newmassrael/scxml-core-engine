@@ -162,6 +162,10 @@ old encode, the old encode and its templates are removed in the same landing.
    landing: the interface, the refinements, the derivations, the checks and inputs, the program. Each landing
    regenerates the tree and changes no generated file. That unchanged regeneration is the proof that the plan holds
    what the Rust encode decided.
+   *The interface landed 2026-11-03* (`sce-build/src/forge/encode_plan.rs`): the elements a value presents alone,
+   each with its abstract type, its bound (R1, R2, R7) and its law (R8), and whether it may be absent. The Rust
+   printer spells them, and the bounds' Rust spelling left `codec_totality` for the printer. The regeneration
+   changed no file. `sce-build/tests/encode_plan.rs` pins what the plan says of each shape.
 3. The oracle's byte cases for every shape (§5), held first by Rust.
 4. C++, then Go, Kotlin, Python and C11, each by §6, with its runtime's counting sink, refinements and walk. C++ comes
    first because it is the engine's own language and its type system carries a refinement as a type, as Rust's

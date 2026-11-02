@@ -25,7 +25,8 @@ use crate::forge::codec_roles::{
     self, BindSite, Binder, CodecRoles, Derivation, ElementId, GateGroup, GateVar, GroupArm,
     InputCheck, InputSource, InputValue, Role,
 };
-use crate::forge::codec_totality::{self, child_alias, RefusalKind, Totality};
+use crate::forge::codec_totality::{self, child_alias, RefusalKind};
+use crate::forge::encode_plan::{self, Automaton, EncodePlan, Law, Value};
 use std::collections::BTreeSet;
 
 pub(super) mod cbor;
@@ -132,7 +133,7 @@ pub(super) fn write_attribute(inline_encode: bool) -> &'static str {
 pub(super) fn render(input: &Input<'_>) -> Result<String, Unsupported> {
     let plan = Plan::of(input)?;
     let text = plan.text();
-    plan.totality.assert_all_written(&input.m.name);
+    plan.encode.totality.assert_all_written(&input.m.name);
     Ok(text)
 }
 
@@ -332,15 +333,16 @@ struct Child {
     parts_type: String,
 }
 
-/// How one field is read and written.
+/// The Rust printer of a codec's encode plan (docs/adr/0081 §2): the plan, and
+/// what the printer spells it with.
 struct Plan<'a> {
     input: &'a Input<'a>,
-    roles: CodecRoles,
+    /// The encode plan, which decides what every backend's encode shares: the
+    /// roles, the totality (every refusal written here must be in it) and the
+    /// interface.
+    encode: EncodePlan<'a>,
     /// `{Struct}Source`.
     trait_name: String,
-    /// Where the encode can refuse a value (docs/adr/0065): the one statement
-    /// of it, which every refusal written here must be in.
-    totality: Totality,
 }
 
 /// Whether `m` has a source interface, given whether each codec it imports has
@@ -479,24 +481,36 @@ pub(crate) fn says_type(codec: &str, list: &str, input: &str) -> String {
 /// `{Codec}{List}Law`, which the codec defines as [`law_definition`] says. Every
 /// form names the law by it.
 pub(crate) fn law_type(roles: &CodecRoles, codec: &str, field: &str) -> Option<String> {
-    law_definition(roles, codec, field).map(|_| format!("{codec}{}Law", pascal_words(field)))
+    law_name(codec, field, &encode_plan::list_law(roles, field))
+}
+
+/// The name of `law`, the law of the list `field` of the codec `codec`
+/// ([`law_type`]).
+fn law_name(codec: &str, field: &str, law: &Law) -> Option<String> {
+    (!law.is_none()).then(|| format!("{codec}{}Law", pascal_words(field)))
 }
 
 /// What the law of the list `field` of the codec `codec` is, or `None` where it
-/// has none: one automaton for each input, several run together as a tuple.
+/// has none ([`law_text`]).
 pub(crate) fn law_definition(roles: &CodecRoles, codec: &str, field: &str) -> Option<String> {
-    let laws: Vec<String> = list_laws(roles, field)
+    law_text(codec, field, &encode_plan::list_law(roles, field))
+}
+
+/// `law`, the law of the list `field` of the codec `codec`, as the runtime's
+/// automata: one for each input, several run together as a tuple; `None` where
+/// it has none.
+fn law_text(codec: &str, field: &str, law: &Law) -> Option<String> {
+    let laws: Vec<String> = law
+        .inputs
         .iter()
-        .map(|law| {
-            let says = says_type(codec, field, &law.binder.input);
-            match &law.against {
-                InputValue::PreviousEntry { id } => format!(
+        .map(|input| {
+            let says = says_type(codec, field, &input.input);
+            match input.automaton {
+                Automaton::AfterKey { id } => format!(
                     "{RUNTIME_CODEC}::AfterKey<{says}, {}>",
-                    key_type(codec, field, *id)
+                    key_type(codec, field, id)
                 ),
-                InputValue::Carrier { .. } | InputValue::Input { .. } => {
-                    format!("{RUNTIME_CODEC}::Uniform<{says}>")
-                }
+                Automaton::Uniform => format!("{RUNTIME_CODEC}::Uniform<{says}>"),
             }
         })
         .collect();
@@ -510,7 +524,13 @@ pub(crate) fn law_definition(roles: &CodecRoles, codec: &str, field: &str) -> Op
 /// `list`, the type a form holds the list `field` of the codec `codec` in,
 /// held to the list's law where it has one (docs/adr/0065 §6 R8).
 pub(crate) fn lawful_list(roles: &CodecRoles, codec: &str, field: &str, list: String) -> String {
-    match law_type(roles, codec, field) {
+    lawful(codec, field, &encode_plan::list_law(roles, field), list)
+}
+
+/// `list` held to `law`, the law of the list `field` of the codec `codec`,
+/// where it has one ([`lawful_list`]).
+fn lawful(codec: &str, field: &str, law: &Law, list: String) -> String {
+    match law_name(codec, field, law) {
         Some(law) => format!("{RUNTIME_CODEC}::Lawful<{list}, {law}>"),
         None => list,
     }
@@ -589,7 +609,7 @@ pub(crate) fn chain_arm_type(
         return format!(
             "{RUNTIME_CODEC}::Placed<{list}, {}, {}>",
             key_type(codec, &field.id, held[0]),
-            codec_totality::list_bound_rust(field, fields)
+            super::rust_bound_most(codec_totality::list_bound(field, fields))
         );
     }
     let kinds = |keys: &[u64]| match keys {
@@ -607,7 +627,7 @@ pub(crate) fn chain_arm_type(
         "{RUNTIME_CODEC}::Chain<{list}, {}, {}, {}>",
         kinds(&held),
         kinds(&not),
-        codec_totality::list_bound_args(field, fields)
+        super::rust_list_bound_args(field, fields)
     );
     if chain_optional_in(group, field, arm) {
         format!("Option<{chain}>")
@@ -729,7 +749,6 @@ fn child_aliases(m: &CodecModel) -> Vec<&str> {
 
 impl<'a> Plan<'a> {
     fn of(input: &'a Input<'a>) -> Result<Self, Unsupported> {
-        let roles = codec_roles::classify(input.m, input.imports);
         let has_source = |alias: &str| {
             input
                 .imports
@@ -739,12 +758,8 @@ impl<'a> Plan<'a> {
         check(input.m, &has_source)?;
         Ok(Plan {
             input,
-            roles,
+            encode: EncodePlan::of(input.m, input.imports),
             trait_name: format!("{}Source", input.struct_name),
-            totality: codec_totality::analyse(
-                input.m,
-                &mut codec_totality::Resolved(input.imports),
-            ),
         })
     }
 
@@ -752,13 +767,13 @@ impl<'a> Plan<'a> {
     /// `CodecError`, which the sink's error joins, and otherwise the sink's
     /// error alone.
     fn may_fail(&self) -> bool {
-        !self.totality.is_total()
+        !self.encode.totality.is_total()
     }
 
     /// The error the encode returns where it refuses at `element` with `kind`,
     /// which the totality analysis must name ([`codec_totality::Totality::require`]).
     fn refuse(&self, kind: RefusalKind, element: &str) -> String {
-        self.totality.require(kind, element)
+        self.encode.totality.require(kind, element)
     }
 
     /// Whether the codec imported as `alias` can refuse a value.
@@ -831,7 +846,8 @@ impl<'a> Plan<'a> {
                     field: carrier.id.clone(),
                     flag: def.name.clone(),
                 };
-                if def.width == 1 && matches!(self.roles.role_of(&id), Some(Role::Presented)) {
+                if def.width == 1 && matches!(self.encode.roles.role_of(&id), Some(Role::Presented))
+                {
                     out.push((carrier, def));
                 }
             }
@@ -947,7 +963,7 @@ impl<'a> Plan<'a> {
         self.m()
             .flag_inputs
             .iter()
-            .filter(|input| !self.roles.says_input(&input.name))
+            .filter(|input| !self.encode.roles.says_input(&input.name))
     }
 
     /// `, n: u8` for each flag-input the encode takes from its parent: a bit of
@@ -969,7 +985,7 @@ impl<'a> Plan<'a> {
     /// The truth of the flag-input `name` the value says, as an expression
     /// over `value` (a reference to a source of this codec).
     fn said_input(&self, name: &str, value: &str) -> String {
-        match &self.roles.inputs[name] {
+        match &self.encode.roles.inputs[name] {
             InputSource::Gate { field, when_clear } => {
                 let field = self
                     .m()
@@ -1013,6 +1029,7 @@ impl<'a> Plan<'a> {
             }
             InputSource::Group => {
                 let group = self
+                    .encode
                     .roles
                     .group_of_gate(&GateVar::Input(name.to_string()))
                     .expect("an input a group says has its group");
@@ -1088,10 +1105,10 @@ impl<'a> Plan<'a> {
                 if *partly {
                     format!(
                         "{read}.map(|_l| {})",
-                        law_start(&self.roles, list, input, "_l")
+                        law_start(&self.encode.roles, list, input, "_l")
                     )
                 } else {
-                    law_start(&self.roles, list, input, &read)
+                    law_start(&self.encode.roles, list, input, &read)
                 }
             }
         }
@@ -1100,7 +1117,7 @@ impl<'a> Plan<'a> {
     /// Whether the list `field` is held to the law of its entries' inputs
     /// (docs/adr/0065 §6 R8).
     fn lawful(&self, field: &CodecField) -> bool {
-        !list_laws(&self.roles, &field.id).is_empty()
+        !list_laws(&self.encode.roles, &field.id).is_empty()
     }
 
     /// The call a source makes on the list `field` it holds for the walk it
@@ -1122,7 +1139,7 @@ impl<'a> Plan<'a> {
     fn law_definitions(&self) -> String {
         let mut out = String::new();
         let mut named: BTreeSet<&str> = BTreeSet::new();
-        for law in &self.roles.list_laws {
+        for law in &self.encode.roles.list_laws {
             let BindSite::List { field } = &law.binder.site else {
                 continue;
             };
@@ -1130,8 +1147,8 @@ impl<'a> Plan<'a> {
                 continue;
             }
             let (Some(name), Some(definition)) = (
-                law_type(&self.roles, self.name(), field),
-                law_definition(&self.roles, self.name(), field),
+                law_type(&self.encode.roles, self.name(), field),
+                law_definition(&self.encode.roles, self.name(), field),
             ) else {
                 continue;
             };
@@ -1149,7 +1166,7 @@ impl<'a> Plan<'a> {
                 .expect("a list law names a list of the codec");
             out.push_str(
                 &super::rust_lawful_list_definition(
-                    &self.roles,
+                    &self.encode.roles,
                     self.m(),
                     list,
                     self.input.imports,
@@ -1160,7 +1177,7 @@ impl<'a> Plan<'a> {
             );
         }
         let mut keys: BTreeSet<String> = BTreeSet::new();
-        for law in &self.roles.list_laws {
+        for law in &self.encode.roles.list_laws {
             let BindSite::List { field } = &law.binder.site else {
                 continue;
             };
@@ -1254,10 +1271,10 @@ impl<'a> Plan<'a> {
     fn input_functions(&self) -> String {
         let mut out = String::new();
         for input in &self.m().flag_inputs {
-            if !self.roles.says_input(&input.name) {
+            if !self.encode.roles.says_input(&input.name) {
                 continue;
             }
-            let by = match &self.roles.inputs[&input.name] {
+            let by = match &self.encode.roles.inputs[&input.name] {
                 InputSource::Gate {
                     field,
                     when_clear: false,
@@ -1290,7 +1307,7 @@ impl<'a> Plan<'a> {
                     }
                 }
             };
-            let answer = if self.roles.says_input_partly(&input.name) {
+            let answer = if self.encode.roles.says_input_partly(&input.name) {
                 "Option<bool>"
             } else {
                 "bool"
@@ -1330,6 +1347,7 @@ impl<'a> Plan<'a> {
         });
         gated
             || self
+                .encode
                 .roles
                 .input_checks
                 .iter()
@@ -1647,6 +1665,7 @@ impl<'a> Plan<'a> {
         // walked as slots, whose named entry has the group's key; one with
         // content is walked as the chain it is, its entries read as any chain's.
         let membership = self
+            .encode
             .roles
             .group_of(&chain.id)
             .filter(|group| holds_chain(group, chain));
@@ -1682,10 +1701,10 @@ impl<'a> Plan<'a> {
     /// the field is present exactly when the gate says, or the value is not one
     /// frame can carry. Made in the prologue, so nothing is written first.
     fn gate_checks(&self, derived: &Derived, lines: &mut Vec<String>) {
-        for check in &self.roles.input_checks {
+        for check in &self.encode.roles.input_checks {
             self.input_check(&check.binder, &check.against, derived, lines);
         }
-        for check in self.roles.source_checks() {
+        for check in self.encode.roles.source_checks() {
             let Some(field) = self.m().fields.iter().find(|f| f.id == check.field) else {
                 continue;
             };
@@ -1727,7 +1746,7 @@ impl<'a> Plan<'a> {
     /// it to from the group, which is `None` on the side the value does not
     /// hold. A list is an iterator, so each read takes a copy of it.
     fn read_src(&self, field: &CodecField) -> String {
-        if self.roles.group_of(&field.id).is_some() {
+        if self.encode.roles.group_of(&field.id).is_some() {
             let local = self.member_local(field);
             if field.is_repeat() || field.is_tlv_chain() {
                 format!("{local}.clone()")
@@ -1906,7 +1925,7 @@ impl<'a> Plan<'a> {
     /// The definition of each group's type.
     fn group_definitions(&self) -> String {
         let mut out = String::new();
-        for group in &self.roles.groups {
+        for group in &self.encode.roles.groups {
             let members: Vec<&CodecField> = self.group_members(group);
             let params: Vec<String> = members
                 .iter()
@@ -2117,7 +2136,7 @@ impl<'a> Plan<'a> {
         let list = Self::member_param(chain);
         let bounded = format!(
             "{RUNTIME_CODEC}::Bounded<{list}, {}>",
-            codec_totality::list_bound_args(chain, &self.m().fields)
+            super::rust_list_bound_args(chain, &self.m().fields)
         );
         let keys: Vec<String> = group
             .members()
@@ -2462,7 +2481,7 @@ impl<'a> Plan<'a> {
                 (true, Some(child)) => format!(
                     "{RUNTIME_CODEC}::BoundedIter<impl Iterator<Item = impl {}> + Clone, {}>",
                     child.trait_path,
-                    codec_totality::list_bound_rust(f, &self.m().fields)
+                    super::rust_bound_most(codec_totality::list_bound(f, &self.m().fields))
                 ),
                 _ => self.member_value_type(f),
             }
@@ -2473,7 +2492,7 @@ impl<'a> Plan<'a> {
     /// the side the value holds says: `Some` on that side, `None` on the
     /// other.
     fn group_bindings(&self, lines: &mut Vec<String>) {
-        for group in &self.roles.groups {
+        for group in &self.encode.roles.groups {
             let accessor = self.group_accessor(group);
             let all: Vec<&CodecField> = self.group_members(group);
             // A group whose every arm holds every element (a disjunction's)
@@ -2594,6 +2613,7 @@ impl<'a> Plan<'a> {
             unreachable!("a disjunction's gate is a flag of a carrier");
         };
         let group = self
+            .encode
             .roles
             .groups
             .iter()
@@ -2644,19 +2664,19 @@ impl<'a> Plan<'a> {
     /// Whether a source presents `field`: it is not derived whole
     /// ([`codec_totality::presented`]).
     fn presented(&self, field: &CodecField) -> bool {
-        codec_totality::presented(&self.roles, field)
+        codec_totality::presented(&self.encode.roles, field)
     }
 
     /// The fields whose size the element `id` is derived from, when it is a
     /// length or a count ([`codec_totality::measured`]).
     fn measured(&self, id: &ElementId) -> Vec<&CodecField> {
-        codec_totality::measured(self.m(), &self.roles, id)
+        codec_totality::measured(self.m(), &self.encode.roles, id)
     }
 
     /// Whether a source states `field` when its content is absent: derived only
     /// while the fields it measures are there ([`codec_totality::stated`]).
     fn stated(&self, field: &CodecField) -> bool {
-        codec_totality::stated(self.m(), &self.roles, field)
+        codec_totality::stated(self.m(), &self.encode.roles, field)
     }
 
     /// The condition, in a form that holds its fields as members, under which all
@@ -2672,41 +2692,42 @@ impl<'a> Plan<'a> {
     /// The type an accessor returns for the value of `field` when it is
     /// present: a scalar by value, bytes and text by reference.
     fn value_type(&self, field: &CodecField) -> String {
-        if let Some(child) = self.child(field) {
-            // An embedded body is read by reference, a list as the entries it
-            // holds in order, with their count, no more than its bound
-            // (docs/adr/0065 §6 R2): any iterator over values that say an entry.
-            return if field.is_embed() {
-                format!("&impl {}", child.trait_path)
-            } else {
-                // Held to its law where its entries say an input it hands them
-                // (docs/adr/0065 §6 R8).
-                lawful_list(
-                    &self.roles,
-                    self.name(),
-                    &field.id,
-                    format!(
-                        "{RUNTIME_CODEC}::BoundedIter<impl Iterator<Item = impl {}> + Clone, {}>",
-                        child.trait_path,
-                        codec_totality::list_bound_args(field, &self.m().fields)
-                    ),
-                )
-            };
-        }
-        match &field.sce_type {
+        match self.encode.value(field) {
+            // An embedded body is read by reference.
+            Value::Body { codec } => format!("&impl {}", self.child_of_plan(codec).trait_path),
+            // A list as the entries it holds in order, with their count, within
+            // its bound (docs/adr/0065 §6 R2): any iterator over values that say
+            // an entry, held to its law where its entries say an input it hands
+            // them (§6 R8).
+            Value::List { codec, bound, law } => lawful(
+                self.name(),
+                &field.id,
+                &law,
+                format!(
+                    "{RUNTIME_CODEC}::BoundedIter<impl Iterator<Item = impl {}> + Clone, {}>",
+                    self.child_of_plan(codec).trait_path,
+                    super::rust_bound_args(bound)
+                ),
+            ),
             // Within the field's bound (docs/adr/0077 §3).
-            SceType::Bytes | SceType::String => {
-                super::rust_borrowed_text_type(field, &self.m().fields, "'_")
-            }
-            other => self.l().type_name(other).to_string(),
+            Value::Bytes(bound) => super::rust_bounded_text_type(false, bound, "'_"),
+            Value::Text(bound) => super::rust_bounded_text_type(true, bound, "'_"),
+            Value::Scalar(ty) => self.l().type_name(ty).to_string(),
         }
+    }
+
+    /// The imported codec the plan names by `alias`, which the codec holds: the
+    /// check of [`Plan::of`] found every codec a list or body names.
+    fn child_of_plan(&self, alias: &str) -> Child {
+        self.child_of(alias)
+            .expect("the plan names a codec the codec imports")
     }
 
     fn accessor_type(&self, field: &CodecField) -> String {
         let value = self.value_type(field);
         // A gated field may be absent; an element stated only while its content
         // is absent is absent the rest of the time.
-        if field.present_if.is_some() || self.stated(field) {
+        if self.encode.presence(field).optional() {
             format!("Option<{value}>")
         } else {
             value
@@ -2973,13 +2994,13 @@ impl<'a> Plan<'a> {
                 format!("&'a {}", child.parts_type)
             } else {
                 lawful_list(
-                    &self.roles,
+                    &self.encode.roles,
                     self.name(),
                     &field.id,
                     format!(
                         "{RUNTIME_CODEC}::Bounded<&'a [{}], {}>",
                         child.parts_type,
-                        codec_totality::list_bound_args(field, &self.m().fields)
+                        super::rust_list_bound_args(field, &self.m().fields)
                     ),
                 )
             };
@@ -3022,7 +3043,7 @@ impl<'a> Plan<'a> {
                 ty = self.parts_field_type(field),
             ));
         }
-        for group in &self.roles.groups {
+        for group in &self.encode.roles.groups {
             members.push_str(&format!(
                 "    /// The fields `{gate}` decides, held together (docs/adr/0065 §6 R4).\n    pub {accessor}: {ty},\n",
                 gate = gates_label(group),
@@ -3087,7 +3108,7 @@ impl<'a> Plan<'a> {
 
     fn parts_impl(&self) -> String {
         let mut items = String::new();
-        for group in &self.roles.groups {
+        for group in &self.encode.roles.groups {
             items.push_str(&format!(
                 "    fn {accessor}(&self) -> {ty} {{\n        {read}\n    }}\n",
                 accessor = self.group_accessor(group),
@@ -3164,15 +3185,13 @@ impl<'a> Plan<'a> {
     /// Whether the source presents `field` by an accessor of its own: it is
     /// presented or stated, and no group holds it.
     fn has_accessor(&self, field: &CodecField) -> bool {
-        (self.presented(field) || self.stated(field)) && self.roles.group_of(&field.id).is_none()
+        self.encode.presents_alone(field)
     }
 
     fn trait_definition(&self) -> String {
         let mut items = String::new();
-        for field in &self.m().fields {
-            if !self.has_accessor(field) {
-                continue;
-            }
+        for element in &self.encode.elements {
+            let field = element.field;
             items.push_str(&format!(
                 "    /// The `{id}` field.\n    fn {accessor}(&self) -> {ty};\n",
                 id = field.id,
@@ -3180,7 +3199,7 @@ impl<'a> Plan<'a> {
                 ty = self.accessor_type(field),
             ));
         }
-        for group in &self.roles.groups {
+        for group in &self.encode.roles.groups {
             items.push_str(&format!(
                 "    /// The fields `{gate}` decides, held together (docs/adr/0065 §6 R4).\n    fn {accessor}(&self) -> {ty};\n",
                 gate = gates_label(group),
@@ -3218,7 +3237,7 @@ impl<'a> Plan<'a> {
                 ty = self.accessor_type(field),
             ));
         }
-        for group in &self.roles.groups {
+        for group in &self.encode.roles.groups {
             let accessor = self.group_accessor(group);
             items.push_str(&format!(
                 "    fn {accessor}(&self) -> {ty} {{\n        (**self).{accessor}()\n    }}\n",
@@ -3256,7 +3275,7 @@ impl<'a> Plan<'a> {
     fn impl_for(&self, form: Form) -> String {
         let storage = "::sce_forge_runtime::codec";
         let mut items = String::new();
-        for group in &self.roles.groups {
+        for group in &self.encode.roles.groups {
             items.push_str(&format!(
                 "    fn {accessor}(&self) -> {ty} {{\n        {read}\n    }}\n",
                 accessor = self.group_accessor(group),
@@ -3489,7 +3508,7 @@ impl<'a> Plan<'a> {
         // it by; a codec that does not test it has nothing to read
         // (docs/adr/0065 §6 R4a).
         for input in &self.m().flag_inputs {
-            if self.roles.says_input(&input.name) && self.gates_read_input(&input.name) {
+            if self.encode.roles.says_input(&input.name) && self.gates_read_input(&input.name) {
                 lines.push(format!(
                     "let {}: u8 = u8::from({});",
                     Self::input_name(input),
@@ -3665,7 +3684,7 @@ impl<'a> Plan<'a> {
             derived.flags.entry(carrier.id.clone()).or_default();
         }
         self.count_lists(lines);
-        for (id, by) in self.roles.derived() {
+        for (id, by) in self.encode.roles.derived() {
             for derivation in by {
                 match derivation {
                     Derivation::LengthOf { contents } => {
@@ -3785,7 +3804,8 @@ impl<'a> Plan<'a> {
             let read = self.read_src(field);
             // A group's element is read from the arm the value holds, where it
             // may be absent whether or not it is itself gated (`read_src`).
-            let optional = field.present_if.is_some() || self.roles.group_of(&field.id).is_some();
+            let optional =
+                field.present_if.is_some() || self.encode.roles.group_of(&field.id).is_some();
             let count = if optional {
                 format!("{read}.map_or(0, |_l| _l.len())")
             } else {
@@ -3808,7 +3828,7 @@ impl<'a> Plan<'a> {
         // one held with another is of its count already (docs/adr/0065 §6 R5).
         let numbers: Vec<Measure> = lists
             .iter()
-            .filter(|list| !self.roles.counted_with_another(list))
+            .filter(|list| !self.encode.roles.counted_with_another(list))
             .filter_map(|list| self.m().fields.iter().find(|f| &f.id == list))
             .map(|field| Measure {
                 number: self.count_local(field),
@@ -3880,6 +3900,7 @@ impl<'a> Plan<'a> {
     fn narrow_number(&self, element: &str, ty: &SceType, n: &str) -> String {
         let rust = self.l().type_name(ty);
         if self
+            .encode
             .totality
             .refuses(RefusalKind::LengthOutOfRange, element)
         {
@@ -3983,7 +4004,7 @@ impl<'a> Plan<'a> {
                     // Derived while there is content, and what the group holds
                     // on the side where there is not (docs/adr/0065 §6 R4b):
                     // the two sides are apart, so it is never said twice.
-                    Some(one) if self.roles.group_of(&field.id).is_some() => {
+                    Some(one) if self.encode.roles.group_of(&field.id).is_some() => {
                         lines.push(format!(
                             "let {local}: {ty} = match {one} {{\n    Some(_n) => {},\n    None => {}.unwrap_or_default(),\n}};",
                             narrow("_n"),
@@ -4099,7 +4120,7 @@ impl<'a> Plan<'a> {
                     let start = |l: &str| {
                         format!(
                             "usize::from({})",
-                            law_start(&self.roles, field, &binder.input, l)
+                            law_start(&self.encode.roles, field, &binder.input, l)
                         )
                     };
                     if list.present_if.is_some() {
@@ -4192,7 +4213,7 @@ impl<'a> Plan<'a> {
         // the first says the flag and the rest cannot disagree with it.
         let one_group = gated
             .first()
-            .and_then(|g| self.roles.group_of(&g.field))
+            .and_then(|g| self.encode.roles.group_of(&g.field))
             .is_some_and(|group| gated.iter().all(|g| group.contains(&g.field)));
         if one_group {
             presences.truncate(1);
@@ -4325,10 +4346,12 @@ impl<'a> Plan<'a> {
         // (docs/adr/0065 §6 R6a), and so is the list a count is shared with,
         // which every arm holds (R5).
         let membership = self
+            .encode
             .roles
             .group_of(&field.id)
             .filter(|group| holds_chain(group, field));
         let aligned = self
+            .encode
             .roles
             .group_of(&field.id)
             .is_some_and(|group| group.aligned.as_ref().is_some_and(|(f, _)| *f == field.id));
@@ -4472,11 +4495,12 @@ impl<'a> Plan<'a> {
                             let count = self.count_local(field);
                             // A list held to its law is walked through it, which
                             // holds each entry to the law again (docs/adr/0065 §6 R8).
-                            let walk = if law_type(&self.roles, self.name(), &field.id).is_some() {
-                                format!("{value}.into_iter()")
-                            } else {
-                                value.clone()
-                            };
+                            let walk =
+                                if law_type(&self.encode.roles, self.name(), &field.id).is_some() {
+                                    format!("{value}.into_iter()")
+                                } else {
+                                    value.clone()
+                                };
                             body.push(format!("for (_i, _e) in {walk}.enumerate() {{"));
                             body.push(format!(
                             "    {}::write_source_in(&_e, w{args}, &{}::{member}(_i + 1 < {count})){pass};",
@@ -4637,6 +4661,7 @@ impl Derived {
                         // count held to its list's bound), there is nothing to
                         // check.
                         if plan
+                            .encode
                             .totality
                             .refuses(RefusalKind::LengthOutOfRange, &element)
                         {
@@ -4702,6 +4727,7 @@ impl Derived {
                 // Within the bit-range, so within the carrier's type.
                 let placed = shl(&format!("(_n as {ty})"), def.bit);
                 let check = if plan
+                    .encode
                     .totality
                     .refuses(RefusalKind::LengthOutOfRange, &element)
                 {

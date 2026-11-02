@@ -29,6 +29,6 @@ PY
 
 mutation_case "the encode writes the flag without reading the list's start" <<'PY'
 edit("sce-build/src/forge/generator/rust_source.rs",
-     r'''                            law_start(&self.roles, field, &binder.input, l)''',
+     r'''                            law_start(&self.encode.roles, field, &binder.input, l)''',
      r'''                            { let _ = (l, field); String::from("false") }''')
 PY

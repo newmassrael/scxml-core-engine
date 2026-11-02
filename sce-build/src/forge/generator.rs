@@ -7051,13 +7051,61 @@ pub(crate) fn rust_borrowed_text_type(
     fields: &[CodecField],
     lifetime: &str,
 ) -> String {
-    let text = matches!(f.sce_type, SceType::String);
-    let bounds = crate::forge::codec_totality::byte_bound_args(f, fields)
-        .expect("a codec's byte string or text is a tail or length-ref field, which has bounds");
-    format!(
-        "{RUNTIME_CODEC}::{}<{lifetime}, {bounds}>",
-        if text { "Text" } else { "Bytes" }
+    rust_bounded_text_type(
+        matches!(f.sce_type, SceType::String),
+        crate::forge::encode_plan::byte_bound(f, fields),
+        lifetime,
     )
+}
+
+/// The Rust `Text` (where `text`) or `Bytes` borrowed for `lifetime` and held
+/// to `bound` (docs/adr/0077 §3, docs/adr/0065 §6 R1).
+pub(crate) fn rust_bounded_text_type(
+    text: bool,
+    bound: crate::forge::encode_plan::Bound,
+    lifetime: &str,
+) -> String {
+    format!(
+        "{RUNTIME_CODEC}::{}<{lifetime}, {}>",
+        if text { "Text" } else { "Bytes" },
+        rust_bound_args(bound)
+    )
+}
+
+/// `bound` as the const arguments of a Rust runtime type that holds a count of
+/// bytes or entries (`Bytes`, `Text`, `Bounded`, `Chain`): the most, and the
+/// fewest where that is not none, which the types default to.
+pub(crate) fn rust_bound_args(bound: crate::forge::encode_plan::Bound) -> String {
+    let most = rust_bound_most(bound.most);
+    match bound.least {
+        0 => most,
+        least => format!("{most}, {least}"),
+    }
+}
+
+/// The most of a bound as a Rust `usize` const argument: the number, or
+/// `{ usize::MAX }` for none, which is how `Bounded`, `Chain` and `Placed` hold
+/// a field the language states no bound of with no second shape
+/// (docs/adr/0077 §7). A bound is at most `u32::MAX` ([`CodecField::bound`]),
+/// which every target's `usize` holds, and `usize::MAX` is the largest value
+/// any target can have.
+pub(crate) fn rust_bound_most(most: Option<u64>) -> String {
+    match most {
+        Some(most) => most.to_string(),
+        None => "{ usize::MAX }".to_string(),
+    }
+}
+
+/// The bound of the list `f` as the const arguments of a Rust runtime list
+/// type after the list ([`rust_bound_args`]).
+pub(crate) fn rust_list_bound_args(f: &CodecField, fields: &[CodecField]) -> String {
+    rust_bound_args(crate::forge::encode_plan::list_bound(f, fields))
+}
+
+/// The bound of the `bytes` or `string` field `f` as the const arguments of
+/// `Bytes` or `Text` after the lifetime ([`rust_bound_args`]).
+pub(crate) fn rust_byte_bound_args(f: &CodecField, fields: &[CodecField]) -> String {
+    rust_bound_args(crate::forge::encode_plan::byte_bound(f, fields))
 }
 
 /// The statement that makes the decoded local of a `bytes` or `string` field
@@ -7299,7 +7347,7 @@ fn rust_lawful_list_definition(
         id = f.id,
         alias = rust_lawful_list_alias(m, f),
         list = rust_owned_list(m, f, &entry),
-        bounds = crate::forge::codec_totality::list_bound_args(f, &m.fields),
+        bounds = rust_list_bound_args(f, &m.fields),
     )))
 }
 
@@ -7420,7 +7468,7 @@ fn rust_lent_list(roles: &CodecRoles, m: &CodecModel, f: &CodecField, entry: &st
     format!(
         "{RUNTIME_CODEC}::Bounded<<{RUNTIME_CODEC}::Lent<'a> as {RUNTIME_CODEC}::HoldsList<{}>>::List<{entry}>, {}>",
         rust_storage_tag(&m.name, &f.id),
-        crate::forge::codec_totality::list_bound_args(f, &m.fields)
+        rust_list_bound_args(f, &m.fields)
     )
 }
 
@@ -7531,7 +7579,7 @@ fn rust_owned_field_keys(
         // holds as a fact (docs/adr/0065 §6 R2): a growable profile's container
         // is not bounded by its capacity. A chain closed by an entry flag is
         // one entry or more (R7).
-        let bounds = crate::forge::codec_totality::list_bound_args(f, &m.fields);
+        let bounds = rust_list_bound_args(f, &m.fields);
         let (entry, elem) = rust_owned_list_entry(f, &m.name, imports, l, origin)?;
         // A list held to its law is named by its alias, which says the same
         // type (docs/adr/0065 §6 R8).
@@ -7597,9 +7645,7 @@ fn rust_owned_field_keys(
                     "<{STORAGE_PARAM} as {RUNTIME_CODEC}::OriginStorage>::{}::<{tag}>",
                     if text { "str_from" } else { "bytes_from" }
                 );
-                let bounds = crate::forge::codec_totality::byte_bound_args(f, &m.fields).expect(
-                    "a codec's byte string or text is a tail or length-ref field, which has bounds",
-                );
+                let bounds = rust_byte_bound_args(f, &m.fields);
                 let ty = format!("{RUNTIME_CODEC}::Bounded<{container}, {bounds}>");
                 let built = if text {
                     "from_built_text"
@@ -7940,7 +7986,7 @@ fn rust_group_storage(
         // tested say which, so no construction can fail.
         let chain_built = |f: &CodecField, arm: &GroupArm, view: bool| -> String {
             let local = codec_field_decode_local(&f.id, l.lang);
-            let bound = crate::forge::codec_totality::list_bound_rust(f, &m.fields);
+            let bound = rust_bound_most(crate::forge::codec_totality::list_bound(f, &m.fields));
             let list = if f.present_if.is_some() {
                 format!("{local}.expect(\"the gate found the chain\").into_inner()")
             } else {
