@@ -55,7 +55,7 @@ func DecodeCodecZenohQueryValue(cursor *codec.SceCursor) (*CodecZenohQueryValue,
 		return nil, codec.ErrNeedMoreBytes
 	}
 	if _more {
-		return nil, codec.ErrTlvChainOverflow
+		return nil, codec.ErrTooManyElements
 	}
 	return &CodecZenohQueryValue{
 		Exts: Exts,
@@ -68,7 +68,7 @@ func DecodeCodecZenohQueryValue(cursor *codec.SceCursor) (*CodecZenohQueryValue,
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohQueryValue) Encode(w codec.SceSink) error {
 	if len(s.Exts) < 1 || len(s.Exts) > 4 {
-		return codec.ErrTlvChainOverflow
+		return codec.ErrTooManyElements
 	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
 	// Mirrors the streaming decode: every field appends its own bytes in
@@ -96,9 +96,8 @@ func (s *CodecZenohQueryValue) Encode(w codec.SceSink) error {
 // error Encode refuses the value with before its first byte: a field's
 // presence disagrees with the `sce:present-if` that gates it
 // (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements,
-// codec.ErrTlvChainOverflow). Callers targeting zero-alloc hot paths
-// should call Encode directly against a caller-owned sink (e.g.
+// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
+// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecZenohQueryValue) EncodeToBytes() ([]byte, error) {
 	_dst := make([]byte, 0, 656)

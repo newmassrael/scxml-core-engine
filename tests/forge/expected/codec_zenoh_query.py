@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink, TlvChainOverflow
+from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink, TooManyElements
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
 
 from dataclasses import dataclass, field
@@ -80,7 +80,7 @@ class CodecZenohQuery:
                         return None
                     f_extensions.append(_elem)
                 if cursor.remaining() > 0:
-                    raise TlvChainOverflow()
+                    raise TooManyElements()
             else:
                 f_extensions = None
         except CodecError:
@@ -147,7 +147,7 @@ class CodecZenohQuery:
         if self.parameters is not None and (len(self.parameters) > 256):
             raise LengthOutOfRange()
         if self.extensions is not None and (len(self.extensions) > 8):
-            raise TlvChainOverflow()
+            raise TooManyElements()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes
         # in declaration order through the per-field encode blocks, so a

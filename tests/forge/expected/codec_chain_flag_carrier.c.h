@@ -20,7 +20,7 @@
 
 typedef struct {
     uint8_t head;
-    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_chain_flag_entry_t entries (max-depth 4, on-overflow=reject) */
+    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_chain_flag_entry_t entries (max-depth 4) */
     codec_chain_flag_entry_t entries[4];
     size_t  entries_len;
 } codec_chain_flag_carrier_t;
@@ -60,8 +60,8 @@ static inline sce_forge_codec_status_t codec_chain_flag_carrier_decode(sce_forge
             _more = codec_chain_flag_entry_z(&out->entries[_just]);
             if (!_more) break;
         }
-        if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        if (_more) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        if (_more && sce_forge_cursor_remaining(cursor) == 0) { return SCE_FORGE_CODEC_NEED_MORE_BYTES; }
+        if (_more) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -77,7 +77,7 @@ static inline sce_forge_codec_status_t codec_chain_flag_carrier_encode(const cod
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (!sce_forge_length_within_bound(self->entries_len, 4)) {
-        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

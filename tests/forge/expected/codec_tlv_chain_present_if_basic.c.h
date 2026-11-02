@@ -58,7 +58,7 @@ static inline sce_forge_codec_status_t codec_tlv_chain_present_if_basic_decode(s
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
                 out->entries.value.len++;
             }
-            if (sce_forge_cursor_remaining(cursor) > 0) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+            if (sce_forge_cursor_remaining(cursor) > 0) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
         }
     return SCE_FORGE_CODEC_OK;
 }
@@ -74,7 +74,7 @@ static inline sce_forge_codec_status_t codec_tlv_chain_present_if_basic_encode(c
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (self->entries.present && !sce_forge_length_within_bound(self->entries.value.len, 4)) {
-        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

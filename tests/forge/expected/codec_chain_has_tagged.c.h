@@ -21,7 +21,7 @@
 
 typedef struct {
     uint8_t header;
-    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_chain_has_tagged_entry_t entries (max-depth 3, on-overflow=reject) */
+    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_chain_has_tagged_entry_t entries (max-depth 3) */
     codec_chain_has_tagged_entry_t entries[3];
     size_t  entries_len;
     /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
@@ -65,8 +65,8 @@ static inline sce_forge_codec_status_t codec_chain_has_tagged_decode(sce_forge_c
             _more = codec_chain_has_tagged_entry_more(&out->entries[_just]);
             if (!_more) break;
         }
-        if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        if (_more) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        if (_more && sce_forge_cursor_remaining(cursor) == 0) { return SCE_FORGE_CODEC_NEED_MORE_BYTES; }
+        if (_more) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
     }
     bool _has_entries_7 = false;
     for (size_t _i = 0; _i < out->entries_len; ++_i) {
@@ -132,7 +132,7 @@ static inline sce_forge_codec_status_t codec_chain_has_tagged_encode(const codec
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (!sce_forge_length_within_bound(self->entries_len, 3)) {
-        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

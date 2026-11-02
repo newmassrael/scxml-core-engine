@@ -17,8 +17,7 @@
       <sce:flag name="wide" bit="0"/>
     </sce:flags>
     <sce:tlv-chain id="entries" type="codec_chain_has_tagged_entry" sce:byte="1"
-                   max-depth="3" on-overflow="reject"
-                   terminate-on="entry-flag" entry-flag-name="more"
+                   max-depth="3"                   terminate-on="entry-flag" entry-flag-name="more"
                    entry-id="entry_type"/>
     <sce:field id="priority" sce:type="uint8" sce:byte="2" sce:bit-size="8"
                sce:present-if="entries.has(7) || header.wide"/>

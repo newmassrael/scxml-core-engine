@@ -25,8 +25,8 @@ use sce_build::forge::model::{
     PresentIfPredicate, PresentIfScope, ProcedureAssign, ProcedureDoneParam, ProcedureHelper,
     ProcedureModel, ProcedureSendAction, ProcedureState, ProcedureTransition, RangeRule,
     RateOfChangeRule, ReassemblyConfig, SceType, TestVector, TestVectorValue, ThresholdMonitor,
-    TimerModel, TlvEntryFlagBind, TlvEntryId, TlvOverflowPolicy, TlvTerminateStrategy,
-    TransformModel, ValidatorModel, ValidatorRules, VariantArm, WorkerModel,
+    TimerModel, TlvEntryFlagBind, TlvEntryId, TlvTerminateStrategy, TransformModel, ValidatorModel,
+    ValidatorRules, VariantArm, WorkerModel,
 };
 use sce_build::forge::pseudo::{render, Unsupported};
 use sce_build::provenance::RequirementId;
@@ -936,7 +936,6 @@ fn a_codec_renders_every_field_it_can_carry() {
         bit_offset: Some(2),
         bit_size: BitSize::TlvChain {
             max_depth: 3,
-            on_overflow: TlvOverflowPolicy::Truncate,
             terminate_on: TlvTerminateStrategy::EntryFlag {
                 flag_name: "more".to_string(),
             },
@@ -1086,7 +1085,7 @@ fn a_codec_renders_every_field_it_can_carry() {
     let expected = "\
 codec env endian big input-length 32
   flag-input hdr width 8
-  field payload: bytes at byte 4 bit 2 size tlv-chain max-depth 3 on-overflow truncate \
+  field payload: bytes at byte 4 bit 2 size tlv-chain max-depth 3 \
 terminate entry-flag more
     endian little
     max-size 64
@@ -1128,7 +1127,6 @@ fn a_chain_identifier_that_leaves_flags_out_renders_one_line_per_flag() {
         bit_offset: None,
         bit_size: BitSize::TlvChain {
             max_depth: 4,
-            on_overflow: TlvOverflowPolicy::Reject,
             terminate_on: TlvTerminateStrategy::EntryFlag {
                 flag_name: "Z".to_string(),
             },
@@ -1172,7 +1170,7 @@ fn a_chain_identifier_that_leaves_flags_out_renders_one_line_per_flag() {
         render(&ForgeDocument::Codec(m)).unwrap(),
         "\
 codec env endian big
-  field ext: bytes at byte 1 size tlv-chain max-depth 4 on-overflow reject \
+  field ext: bytes at byte 1 size tlv-chain max-depth 4 \
 terminate entry-flag Z
     tlv-body entry
     entry-id header

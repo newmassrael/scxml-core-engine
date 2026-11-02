@@ -123,7 +123,7 @@ data class CodecChainPrevTailGated(
                     _prev_entries_after_marker = if (((_entry.header).toULong() and 127UL) == 4UL) 1.toUByte() else 0.toUByte()
                     it.add(_entry)
                 }
-                if (cursor.remaining() > 0) return null
+                if (cursor.remaining() > 0) { cursor.refuse(CodecError.TooManyElements); return null }
             }
         } else {
             null

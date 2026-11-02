@@ -105,8 +105,8 @@ static inline sce_forge_codec_status_t codec_zenoh_oam_decode(sce_forge_cursor_t
                 _more = codec_zenoh_ext_entry_z(&out->extensions.value.data[_just]);
                 if (!_more) break;
             }
-            if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-            if (_more) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+            if (_more && sce_forge_cursor_remaining(cursor) == 0) { return SCE_FORGE_CODEC_NEED_MORE_BYTES; }
+            if (_more) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
         }
     /* Dispatch on the tag field; each arm decodes its body codec from
      * the cursor. The default arm (when declared) carries the runtime
@@ -150,7 +150,7 @@ static inline sce_forge_codec_status_t codec_zenoh_oam_encode(const codec_zenoh_
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (self->extensions.present && !sce_forge_length_within_bound(self->extensions.value.len, 4)) {
-        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* RFC §synth-5-B peek-byte / streaming-prefix:
      * streaming prefix encode. Peek-byte mode: arm body's encode

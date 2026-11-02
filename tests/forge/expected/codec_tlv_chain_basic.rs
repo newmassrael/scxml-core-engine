@@ -100,7 +100,7 @@ impl<'a> CodecTlvChainBasic<'a> {
                     .map_err(|_| CodecError::CapacityExceeded)?;
             }
             if cursor.remaining() > 0 {
-                return Err(CodecError::TlvChainOverflow);
+                return Err(CodecError::TooManyElements);
             }
         }
         _out.header_flags = header_flags;

@@ -110,7 +110,7 @@ data class CodecChainPrevTail(
                     _prev_entries_after_marker = if ((_entry.extId()).toULong() == 4UL) 1.toUByte() else 0.toUByte()
                     it.add(_entry)
                 }
-                if (cursor.remaining() > 0) return null
+                if (cursor.remaining() > 0) { cursor.refuse(CodecError.TooManyElements); return null }
             }
             return CodecChainPrevTail(
                 head = head,

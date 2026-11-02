@@ -44,15 +44,6 @@ pub enum CodecError {
     /// than the declared type. Either the wire is corrupt or the
     /// author chose a too-narrow type. RFC §synth-5-B `codec/vle-width-overflow`.
     VleWidthOverflow,
-    /// RFC §synth-5-B TLV chain primitive: the wire carried more entries
-    /// than the codec author declared (`max-depth=N` exhausted while
-    /// the cursor still had bytes) AND the codec declared
-    /// `on-overflow="reject"`. Truncate-mode codecs never raise this
-    /// — they silently drop the post-cap bytes. MCU-class symbol; the
-    /// other 4 backends never construct it (their codec emit is
-    /// rejected upfront by the codec-content MCU gate, RFC §synth-5-B "MCU-
-    /// only codec sub-features").
-    TlvChainOverflow,
     /// RFC §synth-5-B string primitive: a `sce:type="string"` length-prefixed
     /// field's payload bytes were not valid UTF-8. Forge-fail-fast
     /// contract — zenoh-pico itself aliases the bytes without
@@ -1296,7 +1287,6 @@ mod tests {
         let e = CodecError::InvalidUtf8;
         assert_ne!(e, CodecError::NeedMoreBytes);
         assert_ne!(e, CodecError::VleWidthOverflow);
-        assert_ne!(e, CodecError::TlvChainOverflow);
     }
 
     // ── BufferOverflow variant pin ───────────────────────────────
@@ -1306,7 +1296,6 @@ mod tests {
         let e = CodecError::BufferOverflow;
         assert_ne!(e, CodecError::NeedMoreBytes);
         assert_ne!(e, CodecError::VleWidthOverflow);
-        assert_ne!(e, CodecError::TlvChainOverflow);
         assert_ne!(e, CodecError::InvalidUtf8);
     }
 

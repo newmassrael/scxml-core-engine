@@ -67,7 +67,6 @@
                sce:length-field="parameters_len" sce:max-size="256"
                sce:present-if="header.P"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="4"
-                   max-depth="8" on-overflow="reject"
-                   sce:present-if="header.Z"/>
+                   max-depth="8"                   sce:present-if="header.Z"/>
   </datamodel>
 </scxml>

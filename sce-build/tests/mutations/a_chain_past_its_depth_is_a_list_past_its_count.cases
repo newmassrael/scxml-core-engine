@@ -1,0 +1,38 @@
+# Mutation cases for "a chain past its depth is a list past its count".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_chain_past_its_depth_is_a_list_past_its_count.cases`.
+#
+# A chain's `max-depth` is a bound of the language, so a frame past it is
+# malformed, `TooManyElements`, and a document states no policy for what a node
+# does past what it holds (docs/adr/0077 §7). The first case has an entry past
+# the depth read as a short frame, which a caller could resume by appending
+# bytes; the second unbraces the guard, so the return of a C++ or Kotlin refusal
+# runs on every frame; the third has the grammar take `on-overflow` again, so a
+# document saying `truncate` compiles to a chain that refuses.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test forge_conformance
+mutation_targets sce-build/src/forge/generator.rs schemas/sce-forge-ext.xsd
+mutation_oracles sce-build/src/forge/generator.rs sce-build/tests/forge_conformance.rs
+
+mutation_case "an entry past the depth is called a short frame" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''    let past_depth = raise(CodecFailure::TooManyElements);''',
+     r'''    let past_depth = raise(CodecFailure::NeedMoreBytes);''')
+PY
+
+mutation_case "a refusal of two statements is not one branch" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''            format!("\n{indent}if ({cond}) {{ {bail} }}")''',
+     r'''            format!("\n{indent}if ({cond}) {bail}")''')
+PY
+
+mutation_case "a chain states a policy the grammar takes and nothing reads" <<'PY'
+edit("schemas/sce-forge-ext.xsd",
+     r'''      <xs:attribute name="max-depth" type="xs:positiveInteger"/>''',
+     r'''      <xs:attribute name="max-depth" type="xs:positiveInteger"/>
+      <xs:attribute name="on-overflow" type="xs:string"/>''')
+PY

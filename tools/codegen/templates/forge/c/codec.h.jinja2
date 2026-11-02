@@ -149,7 +149,7 @@ typedef struct {
     size_t  {{ field.id }}_len;
 {% endif %}
 {% elif field.is_tlv_chain %}
-    /* RFC §synth-5-B B3 tlv-chain: fixed array of {{ field.tlv_chain_body_type }} entries (max-depth {{ field.max_depth }}, on-overflow={{ field.on_overflow }}) */
+    /* RFC §synth-5-B B3 tlv-chain: fixed array of {{ field.tlv_chain_body_type }} entries (max-depth {{ field.max_depth }}) */
     {{ field.tlv_chain_body_type }} {{ field.id }}[{{ field.max_depth }}];
 {% if field.c_emit_len_member %}
     size_t  {{ field.id }}_len;

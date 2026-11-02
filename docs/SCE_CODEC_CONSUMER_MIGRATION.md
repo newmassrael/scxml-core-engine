@@ -221,9 +221,8 @@ Landing: the commit that adds this section.
 - A test that offered an over-bound value to an encode and expected the refusal makes the value instead and
   expects `None` (or `LengthOutOfRange` from `from_slice`): the value has no frame, so it cannot be made.
 - C++, Go, Kotlin and Python encode a value whose byte string, text, list or chain is outside its bound by
-  refusing it before the first byte, with the error a decode of that frame gives: `LengthOutOfRange`,
-  `TooManyElements`, and on Go and Python `TlvChainOverflow` for a chain (C++ and Kotlin answer
-  `TooManyElements`). They wrote such a value before, and a frame no decoder accepts came out. The convenience
+  refusing it before the first byte, with the error a decode of that frame gives: `LengthOutOfRange` or
+  `TooManyElements`. They wrote such a value before, and a frame no decoder accepts came out. The convenience
   facade of every codec with such a field is fallible: C++ `encode_to_vec` returns
   `std::optional<std::vector<std::uint8_t>>`, Go `EncodeToBytes` returns `([]byte, error)` and Kotlin
   `encodeToByteArray` returns `ByteArray?`. Python's `encode` raises the error. A broadcast log's `publish`
@@ -361,3 +360,22 @@ Landing: the commit that adds this section.
   at least, so only a frame that was going to fail reserves less, and a list grows past a short reservation as it did.
 - Nothing else changes for a document: every list still has its `max-count`. This is what lets a later landing admit a
   list with none.
+
+## A chain states no overflow policy, and past its depth it is a list past its count (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- `<sce:tlv-chain>` no longer takes `on-overflow`. The grammar refuses a document that states it, whatever the value, so
+  delete the attribute. What a node does past what it holds is the node's, and it refuses.
+- `truncate` is gone, and so is `codec/tlv-chain-truncate-under-entry-flag`. It dropped entries silently, so a re-encode
+  differed from its frame. No shipped document used it. A document that did now refuses such a frame.
+- `CodecError::TlvChainOverflow` is gone, with `SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW`, Go's `ErrTlvChainOverflow` and
+  Python's `TlvChainOverflow`. A chain past a stated `max-depth` is `TooManyElements`, as a list past its `max-count` is:
+  the frame is malformed. Replace a match on the old name with `TooManyElements`. C11's status 3 stays unassigned.
+- A chain past a deployment's capacity stays `CapacityExceeded`. If the depth a document states is what your node holds
+  and not what the protocol says, it is calling a valid frame malformed: state the capacity in the deployment instead.
+  The next landing lets the document drop `max-depth`.
+- C++ and Kotlin record a chain past its depth on the cursor, where they returned the bare sentinel, so `last_refusal`
+  reads `TooManyElements`. An encode's refusal was already that on both.
+- A conformance reject vector that named `tlv-chain-overflow` names `too-many-elements`. The pseudocode line reads
+  `tlv-chain max-depth <n> terminate <s>`.

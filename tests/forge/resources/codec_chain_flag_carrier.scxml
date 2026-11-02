@@ -21,7 +21,6 @@
       <sce:flag name="W" bit="0"/>
     </sce:flags>
     <sce:tlv-chain id="entries" type="codec_chain_flag_entry" sce:byte="1"
-                   max-depth="4" on-overflow="reject"
-                   terminate-on="entry-flag" entry-flag-name="Z"/>
+                   max-depth="4"                   terminate-on="entry-flag" entry-flag-name="Z"/>
   </datamodel>
 </scxml>

@@ -8739,7 +8739,7 @@ fn render_codec(
                     use crate::forge::codec_failure::{BoundKind, CodecFailure};
                     let c11 = crate::generator::Language::C11;
                     let status = BoundKind::of(f)
-                        .map(|kind| CodecFailure::over_bound(kind, c11))
+                        .map(CodecFailure::over_bound)
                         .and_then(|failure| failure.observable_symbol(c11))
                         .expect("a field held in an array has a bound C11 names");
                     obj.insert("c_over_bound_status".into(), status.into());
@@ -8976,14 +8976,14 @@ fn render_codec(
                         };
                         obj.insert("kt_default".into(), kt_default.into());
                     }
-                } else if let BitSize::TlvChain { max_depth, on_overflow, terminate_on, .. } = &f.bit_size {
+                } else if let BitSize::TlvChain { max_depth, terminate_on, .. } = &f.bit_size {
                     // RFC §synth-5-B B3 TLV chain primitive — populate the
                     // per-field decode/encode statements + host-language
                     // list type. Reuses the repeat machinery for body
                     // type / decoder / encoder resolution (entry codec
                     // is an imported alias same as repeat). The TLV
-                    // chain helpers add the bounded-iteration loop +
-                    // on-overflow check.
+                    // chain helpers add the bounded-iteration loop + the
+                    // check after it.
                     //
                     // MCU-class — render_codec rejects this codec on
                     // cpp/kotlin/go/python at the top of the function,
@@ -8995,14 +8995,6 @@ fn render_codec(
                     // of the frame does not read (docs/adr/0077 §7).
                     let held = f.storage_entries();
                     obj.insert("max_depth".into(), held.into());
-                    obj.insert(
-                        "on_overflow".into(),
-                        match on_overflow {
-                            crate::forge::model::TlvOverflowPolicy::Reject => "reject",
-                            crate::forge::model::TlvOverflowPolicy::Truncate => "truncate",
-                        }
-                        .into(),
-                    );
                     let alias = f
                         .tlv_chain_body_alias
                         .as_deref()
@@ -9102,7 +9094,6 @@ fn render_codec(
                             decode_arg: &entry_thread.decode_arg,
                             entry_binds: &entry_binds,
                             max_depth: *max_depth,
-                            on_overflow: *on_overflow,
                             terminate_on,
                             lang,
                         })
@@ -9114,7 +9105,6 @@ fn render_codec(
                             decode_arg: &entry_thread.decode_arg,
                             entry_binds: &entry_binds,
                             max_depth: *max_depth,
-                            on_overflow: *on_overflow,
                             terminate_on,
                             lang,
                         })
@@ -9170,8 +9160,7 @@ fn render_codec(
                             &rust_view::ViewChain {
                                 entry_binds: &entry_binds,
                                 max_depth: *max_depth,
-                                on_overflow: *on_overflow,
-                                terminate_on,
+                                    terminate_on,
                             },
                         );
                         obj.insert(
@@ -10267,7 +10256,6 @@ fn render_codec(
         for (key, failure) in [
             ("encode_refuses_length", CodecFailure::LengthOutOfRange),
             ("encode_refuses_count", CodecFailure::TooManyElements),
-            ("encode_refuses_depth", CodecFailure::TlvChainOverflow),
         ] {
             ctx.insert(key.into(), bound_failures.contains(&failure).into());
         }
@@ -14897,17 +14885,8 @@ fn repeat_streaming_encode_block_gated(
 
 /// RFC §synth-5-B B3 TLV chain primitive — pre-rendered streaming decode
 /// statement for one tlv-chain field. Iteratively decodes entries off
-/// the cursor up to `max_depth`; residual bytes after the cap are
-/// handled per [`TlvOverflowPolicy`]:
-///   - [`TlvOverflowPolicy::Reject`]   → typed overflow signal per language
-///     (Rust `CodecError::TlvChainOverflow`,
-///     C11 `SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW`,
-///     Go `codec.ErrTlvChainOverflow`,
-///     Python `TlvChainOverflow` exception;
-///     Cpp / Kotlin collapse to the truncation sentinel
-///     `std::nullopt` / `null`, matching the existing
-///     VleWidthOverflow declaration-only convention)
-///   - [`TlvOverflowPolicy::Truncate`] → silently drop the post-cap bytes
+/// the cursor up to `max_depth`; an entry past it is the count past its
+/// bound it is, `TooManyElements` on every backend (docs/adr/0077 §4, §7).
 ///
 /// Loop bound is the literal `max_depth` (no max-iter helper needed —
 /// the for-loop is the max-iter contract). RFC §synth-5-B all-backend closures land
@@ -14935,7 +14914,6 @@ struct TlvChainDecode<'a> {
     /// their locals, and the loop declares and rewrites them.
     entry_binds: &'a ChainEntryBinds,
     max_depth: u32,
-    on_overflow: crate::forge::model::TlvOverflowPolicy,
     terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
     lang: crate::generator::Language,
 }
@@ -15008,8 +14986,11 @@ fn chain_guard_if(
 ) -> String {
     use crate::generator::Language;
     match lang {
-        // Single-statement style, matching the surrounding codec emit.
-        Language::C11 | Language::Cpp | Language::Kotlin => format!("\n{indent}if ({cond}) {bail}"),
+        // Braced: a bail of C++ or Kotlin records its refusal on the cursor
+        // before it returns, so it can be two statements.
+        Language::C11 | Language::Cpp | Language::Kotlin => {
+            format!("\n{indent}if ({cond}) {{ {bail} }}")
+        }
         Language::Rust => format!("\n{indent}if {cond} {{\n{indent}    {bail}\n{indent}}}"),
         Language::Go => format!("\n{indent}if {cond} {{\n{indent}\t{bail}\n{indent}}}"),
         Language::Python => format!("\n{indent}if {cond}:\n{indent}    {bail}"),
@@ -15056,74 +15037,44 @@ fn more_decl_line(
 /// all six backends.
 ///
 /// Under **exhaust-or-depth** termination the chain owns the codec's
-/// remaining wire, so bytes left after the loop are themselves the overflow
-/// signal.
+/// remaining wire, so bytes left after the loop are themselves an entry past
+/// the depth.
 ///
 /// Under **entry-flag** termination the chain is followed by other fields,
 /// so leftover bytes prove nothing; what proves an unfinished chain is
 /// `_more` — the last entry decoded declared a successor the loop did not
 /// take. Two disjoint reasons produce that state, and they are not the same
 /// failure:
-///   - the cursor is empty: the peer's frame ended mid-chain. A truncation,
-///     raised whatever `on-overflow` says, because no policy asks a decoder
-///     to invent the entry the wire promised.
-///   - the cursor still holds bytes: `max-depth` refused an entry the peer
-///     did send. This is precisely what `on-overflow` governs — `reject`
-///     raises, `truncate` keeps its declared silence.
-///
-/// That last combination — `truncate` under entry-flag — cannot arrive from
-/// SCXML: the parser refuses it with
-/// `codec/tlv-chain-truncate-under-entry-flag`, because keeping the silence
-/// there means leaving the dropped entry's bytes where the next field reads
-/// them. The arm stays because this function answers for any IR, not only
-/// parser-built IR, and the short-frame guard it emits is correct either way.
-fn tlv_chain_guard(
-    lang: crate::generator::Language,
-    on_overflow: crate::forge::model::TlvOverflowPolicy,
-    entry_flag: bool,
-    indent: &str,
-) -> String {
+///   - the cursor is empty: the peer's frame ended mid-chain, a short frame.
+///   - the cursor still holds bytes: the frame carries an entry past
+///     `max-depth`, a count past its bound.
+fn tlv_chain_guard(lang: crate::generator::Language, entry_flag: bool, indent: &str) -> String {
     use crate::forge::codec_failure::CodecFailure;
-    use crate::forge::model::TlvOverflowPolicy;
-    let reject = matches!(on_overflow, TlvOverflowPolicy::Reject);
     // Both are positional failures, which every backend raises with a
     // statement (`codec_failure::tests::only_a_positional_failure_has_a_raise_statement`).
     let raise = |f: CodecFailure| {
         f.raise_stmt(lang)
             .expect("a positional codec failure has a raise statement on every backend")
     };
+    let past_depth = raise(CodecFailure::TooManyElements);
     if !entry_flag {
-        return if reject {
-            chain_guard_if(
-                lang,
-                indent,
-                chain_cursor_nonempty(lang),
-                raise(CodecFailure::TlvChainOverflow),
-            )
-        } else {
-            String::new()
-        };
+        return chain_guard_if(lang, indent, chain_cursor_nonempty(lang), past_depth);
     }
-    let truncated = raise(CodecFailure::NeedMoreBytes);
-    let overflow = raise(CodecFailure::TlvChainOverflow);
     let and = if matches!(lang, crate::generator::Language::Python) {
         "and"
     } else {
         "&&"
     };
     let short_frame = format!("_more {and} {}", chain_cursor_empty(lang));
-    if !reject {
-        return chain_guard_if(lang, indent, &short_frame, truncated);
-    }
-    if truncated == overflow {
-        // Cpp / Kotlin: one sentinel answers both reasons, so `_more` alone
-        // decides and splitting the test would emit an unreachable arm.
-        return chain_guard_if(lang, indent, "_more", truncated);
-    }
     format!(
         "{}{}",
-        chain_guard_if(lang, indent, &short_frame, truncated),
-        chain_guard_if(lang, indent, "_more", overflow),
+        chain_guard_if(
+            lang,
+            indent,
+            &short_frame,
+            raise(CodecFailure::NeedMoreBytes)
+        ),
+        chain_guard_if(lang, indent, "_more", past_depth),
     )
 }
 
@@ -15137,7 +15088,6 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         decode_arg,
         entry_binds,
         max_depth,
-        on_overflow,
         terminate_on,
         lang,
     } = ctx;
@@ -15162,8 +15112,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // temporary, reads the flag accessor into `_more` BEFORE the push
         // (push moves the value), and breaks the loop when clear.
         Language::Rust => {
-            let overflow_check =
-                tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "            ");
+            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "            ");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
@@ -15220,17 +15169,13 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         }
         // C11: same shape as repeat (fixed-array `T elems[max_depth]`
         // paired with `size_t elems_len`) but bounded by max_depth and
-        // with the on-overflow tail check. The post-loop reject path
-        // returns SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW; truncate skips
-        // it (peer's residual bytes stay in cursor for the caller to
-        // observe via sce_forge_cursor_remaining). Entry-flag
+        // with the check after the loop. Entry-flag
         // termination calls the body codec's `<entry_struct>_<flag>(&...)`
         // free function on the just-decoded entry slot and breaks
         // when the bit is clear.
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let overflow_check =
-                tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "        ");
+            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "        ");
             // body_decoder shape: `<entry_struct>_decode`. Strip the
             // `_decode` suffix to recover the entry's struct snake
             // name (used as the accessor's free-function prefix per
@@ -15295,13 +15240,11 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // early-break on cursor exhaustion. Element decode returns
         // `std::optional<T>`; truncation propagates via `return std::nullopt`
         // from the parent codec's decode (mirrors the repeat / variant arm
-        // shape). On Reject we collapse residual-bytes overflow to
-        // std::nullopt (cpp doesn't construct a typed CodecError variant
-        // at runtime — same convention as VleWidthOverflow). Entry-
+        // shape). A chain past its depth records its refusal on the cursor
+        // first. Entry-
         // flag termination reads the optional's value method then push.
         Language::Cpp => {
-            let overflow_check =
-                tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "        ");
+            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "        ");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "            if (cursor.remaining() == 0) break;\n            \
@@ -15342,21 +15285,16 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // mirrors repeat. `for (_i in 0 until max_depth)` is the bounded
         // count loop (avoids `repeat()` which doesn't allow `break`).
         // Element decode returns `T?`; `?: return null` unwinds the
-        // partial frame. On Reject, post-loop residual cursor bytes
-        // collapse to `return null` (matches the cpp convention; Kotlin
-        // doesn't construct a typed CodecError variant at runtime).
+        // partial frame. A chain past its depth records its refusal on the
+        // cursor first, as C++ does.
         // Entry-flag termination reads the entry accessor (camelCase)
         // before adding to the list and breaks when clear.
         Language::Kotlin => {
             // The guard sits inside the `also` lambda, next to the loop it
             // judges — `also` is inline, so the non-local `return null` the
             // element decode already uses is equally available here.
-            let overflow_check = tlv_chain_guard(
-                lang,
-                on_overflow,
-                entry_flag_acc.is_some(),
-                "                ",
-            );
+            let overflow_check =
+                tlv_chain_guard(lang, entry_flag_acc.is_some(), "                ");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                    if (cursor.remaining() == 0) break\n                    \
@@ -15393,13 +15331,11 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // Go: PascalCase field id; `make([]T, 0, max_depth)` reserves
         // capacity. `int(max_depth)` coerces the loop bound. Element
         // decoder returns `(*T, error)`; truncation propagates via
-        // `return nil, err`. On Reject, post-loop residual cursor bytes
-        // surface `codec.ErrTlvChainOverflow` (Go uses sentinel-error
-        // rather than typed enum variant). Entry-flag termination
+        // `return nil, err`. Entry-flag termination
         // reads the entry's PascalCase accessor and breaks when clear.
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let overflow_check = tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "\t");
+            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "\t");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "\t\tif cursor.Remaining() == 0 {{\n\t\t\t\
@@ -15445,16 +15381,14 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // Python: build the list inside the surrounding `try:` block
         // (mirrors repeat shape). `for _ in range(max_depth)` is the
         // bounded count loop. Element decode returns `Optional[T]`;
-        // `None` propagates via early `return None`. On Reject, post-
-        // loop residual cursor bytes raise `TlvChainOverflow`. 12-space
+        // `None` propagates via early `return None`. 12-space
         // indent context (class + method + try); body lines at 16.
         // Entry-flag termination reads the entry's snake_case
         // accessor as a method (the codec_zenoh_ext_entry codec's
         // flag accessor pattern in py_codec template).
         Language::Python => {
             let py_id = id;
-            let overflow_check =
-                tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "            ");
+            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "            ");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                if cursor.remaining() == 0:\n                    \
@@ -15620,7 +15554,6 @@ struct TlvChainDecodeGated<'a> {
     /// See [`TlvChainDecode::entry_binds`].
     entry_binds: &'a ChainEntryBinds,
     max_depth: u32,
-    on_overflow: crate::forge::model::TlvOverflowPolicy,
     terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
     lang: crate::generator::Language,
 }
@@ -15655,7 +15588,6 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         decode_arg,
         entry_binds,
         max_depth,
-        on_overflow,
         terminate_on,
         lang,
     } = ctx;
@@ -15686,8 +15618,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             } else {
                 ("            ", "                ")
             };
-            let overflow_check =
-                tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), block);
+            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), block);
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
@@ -15737,8 +15668,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             )
         }
         Language::Cpp => {
-            let overflow_check =
-                tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "            ");
+            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "            ");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                if (cursor.remaining() == 0) break;\n                \
@@ -15778,12 +15708,8 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             )
         }
         Language::Kotlin => {
-            let overflow_check = tlv_chain_guard(
-                lang,
-                on_overflow,
-                entry_flag_acc.is_some(),
-                "                ",
-            );
+            let overflow_check =
+                tlv_chain_guard(lang, entry_flag_acc.is_some(), "                ");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                    if (cursor.remaining() == 0) break\n                    \
@@ -15821,8 +15747,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         }
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let overflow_check =
-                tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "\t\t");
+            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "\t\t");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "\t\t\tif cursor.Remaining() == 0 {{\n\t\t\t\t\
@@ -15872,8 +15797,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         }
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let overflow_check =
-                tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "            ");
+            let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "            ");
             let entry_struct_snake = body_decoder.strip_suffix("_decode").unwrap_or(body_decoder);
             // The member is the optional value of the chain: present under the
             // gate, holding the entries read (none, where the chain was on the
@@ -15924,12 +15848,8 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         }
         Language::Python => {
             let py_id = id;
-            let overflow_check = tlv_chain_guard(
-                lang,
-                on_overflow,
-                entry_flag_acc.is_some(),
-                "                ",
-            );
+            let overflow_check =
+                tlv_chain_guard(lang, entry_flag_acc.is_some(), "                ");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                    if cursor.remaining() == 0:\n                        \
@@ -19997,12 +19917,12 @@ fn encode_bound_guard_lines(
                 ),
                 None => continue,
             },
-            BoundKind::Count | BoundKind::Depth => (
+            BoundKind::Count => (
                 codec_totality::list_least(field),
                 codec_totality::list_bound(field),
             ),
         };
-        let failure = CodecFailure::over_bound(kind, lang);
+        let failure = CodecFailure::over_bound(kind);
         let refuse = failure
             .encode_refusal_stmt(lang)
             .expect("each of these backends refuses a value outside its bound");
@@ -41785,56 +41705,41 @@ mod tests {
         assert!(has);
     }
 
-    /// RFC synth-5-B — the four answers [`tlv_chain_guard`] gives, one per
-    /// (termination, policy) pair.
-    ///
-    /// The `truncate` + entry-flag pair is unreachable from SCXML — the
-    /// parser refuses it with `codec/tlv-chain-truncate-under-entry-flag` —
-    /// so this is the only place that says what the emit does when an IR
-    /// arrives carrying it anyway: the short-frame guard, which is correct
-    /// regardless of policy, and no overflow guard, which is the silence
-    /// `truncate` asks for.
+    /// RFC synth-5-B — the two answers [`tlv_chain_guard`] gives, one per
+    /// termination.
     #[test]
-    fn tlv_chain_guard_answers_each_termination_and_policy_pair() {
-        use crate::forge::model::TlvOverflowPolicy;
+    fn tlv_chain_guard_answers_each_termination() {
         use crate::generator::Language;
 
-        let guard =
-            |entry_flag, policy| tlv_chain_guard(Language::Rust, policy, entry_flag, "    ");
+        let guard = |entry_flag| tlv_chain_guard(Language::Rust, entry_flag, "    ");
 
         // Exhaust-or-depth: the chain owns the tail, so leftover bytes are
-        // the overflow signal, and `truncate` has nothing to say.
-        let exhaust_reject = guard(false, TlvOverflowPolicy::Reject);
-        assert!(
-            exhaust_reject.contains("cursor.remaining() > 0"),
-            "{exhaust_reject}"
-        );
-        assert!(
-            exhaust_reject.contains("TlvChainOverflow"),
-            "{exhaust_reject}"
-        );
-        assert!(!exhaust_reject.contains("_more"), "{exhaust_reject}");
-        assert_eq!(guard(false, TlvOverflowPolicy::Truncate), "");
+        // an entry past the depth.
+        let exhaust = guard(false);
+        assert!(exhaust.contains("cursor.remaining() > 0"), "{exhaust}");
+        assert!(exhaust.contains("TooManyElements"), "{exhaust}");
+        assert!(!exhaust.contains("_more"), "{exhaust}");
 
         // Entry-flag: the flag is the evidence, and the cursor decides which
         // of the two failures it was.
-        let flag_reject = guard(true, TlvOverflowPolicy::Reject);
-        assert!(flag_reject.contains("NeedMoreBytes"), "{flag_reject}");
-        assert!(flag_reject.contains("TlvChainOverflow"), "{flag_reject}");
-        assert!(
-            !flag_reject.contains("cursor.remaining() > 0"),
-            "{flag_reject}"
-        );
+        let flag = guard(true);
+        assert!(flag.contains("NeedMoreBytes"), "{flag}");
+        assert!(flag.contains("TooManyElements"), "{flag}");
+        assert!(!flag.contains("cursor.remaining() > 0"), "{flag}");
+    }
 
-        // Entry-flag + truncate: the short frame still refuses (no policy
-        // asks a decoder to invent the entry the wire promised); the
-        // depth-cap case keeps the declared silence.
-        let flag_truncate = guard(true, TlvOverflowPolicy::Truncate);
-        assert!(flag_truncate.contains("NeedMoreBytes"), "{flag_truncate}");
-        assert!(
-            !flag_truncate.contains("TlvChainOverflow"),
-            "{flag_truncate}"
-        );
+    /// A C++ or Kotlin refusal is two statements, the record and the return,
+    /// so the guard braces them: unbraced, the return would run on every
+    /// frame.
+    #[test]
+    fn a_chain_guard_of_two_statements_is_one_branch() {
+        use crate::generator::Language;
+
+        for lang in [Language::Cpp, Language::Kotlin] {
+            let guard = tlv_chain_guard(lang, false, "    ");
+            assert!(guard.contains("{ cursor.refuse("), "{lang:?}: {guard}");
+            assert!(guard.trim_end().ends_with('}'), "{lang:?}: {guard}");
+        }
     }
 
     /// The rule that decides whether a generated module needs its encoding

@@ -20,7 +20,7 @@
 
 typedef struct {
     uint8_t header_flags;
-    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_tlv_entry_t entries (max-depth 8, on-overflow=reject) */
+    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_tlv_entry_t entries (max-depth 8) */
     codec_tlv_entry_t extensions[8];
     size_t  extensions_len;
 } codec_tlv_chain_basic_t;
@@ -57,7 +57,7 @@ static inline sce_forge_codec_status_t codec_tlv_chain_basic_decode(sce_forge_cu
             if (_st != SCE_FORGE_CODEC_OK) return _st;
             out->extensions_len++;
         }
-        if (sce_forge_cursor_remaining(cursor) > 0) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        if (sce_forge_cursor_remaining(cursor) > 0) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -73,7 +73,7 @@ static inline sce_forge_codec_status_t codec_tlv_chain_basic_encode(const codec_
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (!sce_forge_length_within_bound(self->extensions_len, 8)) {
-        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

@@ -103,7 +103,7 @@ impl<'a> CodecTlvChainBasic<'a> {
                     .map_err(|_| CodecError::CapacityExceeded)?;
             }
             if cursor.remaining() > 0 {
-                return Err(CodecError::TlvChainOverflow);
+                return Err(CodecError::TooManyElements);
             }
         }
         _out.header_flags = header_flags;
@@ -353,9 +353,9 @@ impl<'a> CodecTlvChainBasicView<'a> {
                 _count += 1;
             }
             if cursor.remaining() > 0 {
-                return Err(CodecError::TlvChainOverflow);
+                return Err(CodecError::TooManyElements);
             }
-            _out.extensions = Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TlvChainOverflow)?;
+            _out.extensions = Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements)?;
         }
         _out.header_flags = header_flags;
         Ok(())

@@ -725,7 +725,7 @@ mod tests {
             r#"<sce:import src="entry.scxml" kind="codec" as="entry"/>"#,
             r#"<sce:field id="header_flags" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:tlv-chain id="extensions" type="entry" sce:byte="1"
-                   max-depth="8" on-overflow="reject"/>"#,
+                   max-depth="8"/>"#,
         );
         assert_eq!(
             largest_encoded_bytes(&sized(&xml, vec![("entry", entry)])),

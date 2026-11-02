@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink, TlvChainOverflow, TooManyElements
+from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink, TooManyElements
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
 from .codec_chain_has_slice import CodecChainHasSlice
 
@@ -63,7 +63,7 @@ class CodecChainHasEnvelope:
                 if _more and cursor.remaining() == 0:
                     raise NeedMoreBytes()
                 if _more:
-                    raise TlvChainOverflow()
+                    raise TooManyElements()
             else:
                 f_extensions = None
             _has_extensions_2 = f_extensions is not None and any(_e.ext_id() == 2 for _e in f_extensions)
@@ -155,7 +155,7 @@ class CodecChainHasEnvelope:
         elif self.slices is not None:
             raise PresentIfMismatch("slices")
         if self.extensions is not None and (len(self.extensions) < 1 or len(self.extensions) > 4):
-            raise TlvChainOverflow()
+            raise TooManyElements()
         if self.payload is not None and (len(self.payload) > 256):
             raise LengthOutOfRange()
         if self.slices is not None and (len(self.slices) > 4):

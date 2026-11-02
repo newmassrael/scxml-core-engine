@@ -89,8 +89,8 @@ static inline sce_forge_codec_status_t codec_zenoh_declare_decode(sce_forge_curs
                 _more = codec_zenoh_ext_entry_z(&out->extensions.value.data[_just]);
                 if (!_more) break;
             }
-            if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-            if (_more) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+            if (_more && sce_forge_cursor_remaining(cursor) == 0) { return SCE_FORGE_CODEC_NEED_MORE_BYTES; }
+            if (_more) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
         }
     {
         sce_forge_codec_status_t _st = codec_zenoh_declaration_decode(cursor, &out->declaration);
@@ -110,7 +110,7 @@ static inline sce_forge_codec_status_t codec_zenoh_declare_encode(const codec_ze
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (self->extensions.present && !sce_forge_length_within_bound(self->extensions.value.len, 4)) {
-        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

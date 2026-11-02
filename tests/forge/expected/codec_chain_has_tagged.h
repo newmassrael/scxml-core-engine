@@ -59,7 +59,8 @@ struct CodecChainHasTagged {
             entries.push_back(*_elem);
             if (!_more) break;
         }
-        if (_more) return std::nullopt;
+        if (_more && cursor.remaining() == 0) { return std::nullopt; }
+        if (_more) { cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt; }
         bool _has_entries_7 = false;
         for (const auto& _e : entries) {
             if (static_cast<std::uint64_t>(_e.entry_type) == 7ULL) {

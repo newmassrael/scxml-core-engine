@@ -40,16 +40,6 @@ var ErrVLEWidthOverflow = errors.New("sce/codec: vle width overflow")
 // (mirrors the VleWidthOverflow declaration-only convention there).
 var ErrInvalidUTF8 = errors.New("sce/codec: invalid utf-8")
 
-// ErrTlvChainOverflow is returned by Decode when a `<sce:tlv-chain
-// on-overflow="reject">` field has residual cursor bytes after
-// `max_depth` entries have been consumed (RFC §synth-5-B). Truncate
-// policy silently drops the residual bytes and never raises this
-// sentinel; the on-overflow attribute is parser-mandatory so the codec
-// emit always picks one of the two policies. Cpp + Kotlin runtimes
-// collapse this to their truncation sentinel (mirrors VleWidthOverflow
-// declaration-only convention).
-var ErrTlvChainOverflow = errors.New("sce/codec: tlv chain overflow")
-
 // ErrBufferOverflow is returned by Encode when a write would exceed
 // the destination sink's remaining capacity (RFC §synth-5-B). Only
 // bounded sinks (BoundedSink wrapping a caller-owned `[]byte` +

@@ -61,7 +61,8 @@ struct CodecChainPrevGated {
                 _list.push_back(*_elem);
                 if (!_more) break;
             }
-            if (_more) return std::nullopt;
+            if (_more && cursor.remaining() == 0) { return std::nullopt; }
+            if (_more) { cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt; }
             entries = std::move(_list);
         }
         return CodecChainPrevGated{

@@ -36,7 +36,7 @@
       <sce:flag name="E"    bit="7"/>
     </sce:flags>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="1"
-                   max-depth="4" on-overflow="reject" sce:present-if="header.E"
+                   max-depth="4" sce:present-if="header.E"
                    terminate-on="entry-flag" entry-flag-name="Z"
                    entry-id="header" entry-id-except="header.Z"/>
     <sce:field id="payload_len" sce:type="uint64" sce:byte="2" sce:bit-size="vle"

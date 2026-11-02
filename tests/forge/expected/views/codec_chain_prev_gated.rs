@@ -109,7 +109,7 @@ impl CodecChainPrevGated {
                     return Err(CodecError::NeedMoreBytes);
                 }
                 if _more {
-                    return Err(CodecError::TlvChainOverflow);
+                    return Err(CodecError::TooManyElements);
                 }
                 Ok(())
             })?;
@@ -440,9 +440,9 @@ impl<'a> CodecChainPrevGatedView<'a> {
                 return Err(CodecError::NeedMoreBytes);
             }
             if _more {
-                return Err(CodecError::TlvChainOverflow);
+                return Err(CodecError::TooManyElements);
             }
-            _out.entries = Some(Bounded::new(ListView::new(_rest, _count, [0, head & 0x1])).ok_or(CodecError::TlvChainOverflow)?);
+            _out.entries = Some(Bounded::new(ListView::new(_rest, _count, [0, head & 0x1])).ok_or(CodecError::TooManyElements)?);
         } else {
             _out.entries = None;
         }

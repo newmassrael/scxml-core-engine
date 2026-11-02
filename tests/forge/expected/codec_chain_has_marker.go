@@ -70,7 +70,7 @@ func DecodeCodecChainHasMarker(cursor *codec.SceCursor) (*CodecChainHasMarker, e
 			return nil, codec.ErrNeedMoreBytes
 		}
 		if _more {
-			return nil, codec.ErrTlvChainOverflow
+			return nil, codec.ErrTooManyElements
 		}
 		Extensions = optional.Some(_list)
 	}
@@ -194,7 +194,7 @@ func (s *CodecChainHasMarker) Encode(w codec.SceSink) error {
 		return codec.ErrPresentIfMismatch
 	}
 	if s.Extensions.IsPresent() && (len(s.Extensions.Proven()) < 1 || len(s.Extensions.Proven()) > 4) {
-		return codec.ErrTlvChainOverflow
+		return codec.ErrTooManyElements
 	}
 	if s.Payload.IsPresent() && (len(s.Payload.Proven()) > 256) {
 		return codec.ErrLengthOutOfRange
@@ -254,9 +254,8 @@ func (s *CodecChainHasMarker) Encode(w codec.SceSink) error {
 // error Encode refuses the value with before its first byte: a field's
 // presence disagrees with the `sce:present-if` that gates it
 // (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements,
-// codec.ErrTlvChainOverflow). Callers targeting zero-alloc hot paths
-// should call Encode directly against a caller-owned sink (e.g.
+// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
+// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecChainHasMarker) EncodeToBytes() ([]byte, error) {
 	_dst := make([]byte, 0, 1511)

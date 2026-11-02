@@ -47,11 +47,8 @@ typedef enum {
     /* A vle_u<N> field's continuation chain implies a value wider than
      * the declared type. RFC §synth-5-B `codec/vle-width-overflow`. */
     SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW = 2,
-    /* RFC §synth-5-B TLV chain primitive: the wire carried more entries
-     * than the codec author declared (max-depth=N exhausted while the
-     * cursor still had bytes) AND the codec declared
-     * on-overflow="reject". Truncate-mode codecs never raise this. */
-    SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW = 3,
+    /* 3 is retired: a chain past its depth is TOO_MANY_ELEMENTS and a chain
+     * past its capacity CAPACITY_EXCEEDED (docs/adr/0077 §7). */
     /* RFC §synth-5-B string primitive: the byte slice declared
      * `sce:type="string"` was not well-formed UTF-8. Mirrors the typed
      * `CodecError::InvalidUtf8` (Rust / Go / Python) — the C11 enum

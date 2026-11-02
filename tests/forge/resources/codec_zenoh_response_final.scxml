@@ -49,8 +49,7 @@
     </sce:flags>
     <sce:field id="request_id" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="2"
-                   max-depth="4" on-overflow="reject"
-                   sce:present-if="header.Z"
+                   max-depth="4"                   sce:present-if="header.Z"
                    terminate-on="entry-flag" entry-flag-name="Z"/>
   </datamodel>
 </scxml>

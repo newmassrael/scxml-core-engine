@@ -133,7 +133,7 @@ static inline sce_forge_codec_status_t codec_zenoh_query_decode(sce_forge_cursor
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
                 out->extensions.value.len++;
             }
-            if (sce_forge_cursor_remaining(cursor) > 0) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+            if (sce_forge_cursor_remaining(cursor) > 0) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
         }
     return SCE_FORGE_CODEC_OK;
 }
@@ -152,7 +152,7 @@ static inline sce_forge_codec_status_t codec_zenoh_query_encode(const codec_zeno
         return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
     }
     if (self->extensions.present && !sce_forge_length_within_bound(self->extensions.value.len, 8)) {
-        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

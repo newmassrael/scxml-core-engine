@@ -200,8 +200,7 @@ const SHAPES: &[Shape] = &[
         encode_may_fail: false,
         datamodel: r#"
     <sce:tlv-chain id="NAME" type="codec_zenoh_ext_entry" sce:byte="0"
-                   max-depth="4" on-overflow="reject"
-                   terminate-on="entry-flag" entry-flag-name="Z"/>
+                   max-depth="4"                   terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:field id="z" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>"#,
         frames: &[&[0x03, 9], &[0x83, 0x04, 9]],
         check: "len({v}) == 1",

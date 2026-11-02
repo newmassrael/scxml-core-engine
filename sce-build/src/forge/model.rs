@@ -1995,30 +1995,9 @@ pub enum CountRef {
     UntilEof,
 }
 
-/// RFC §synth-5-B B3 TLV chain on-overflow policy. Names what the decoder does
-/// when the cursor still has bytes after `max_depth` entries have been
-/// consumed (i.e. the wire carries more entries than the codec author
-/// declared).
-///
-/// v1 ships `Reject` + `Truncate`. `DiagnosticEvent` (RFC line 488) is
-/// deferred until §synth-5-A diagnostic-event runtime infrastructure surfaces a
-/// reachable consumer — adding it now would be built-but-unconsumed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-#[serde(rename_all = "kebab-case")]
-pub enum TlvOverflowPolicy {
-    /// Return [`crate::forge::limits`]-sized `TlvChainOverflow` typed
-    /// error. Caller treats the frame as corrupt.
-    Reject,
-    /// Silently drop the post-cap bytes from the decoded list. Cursor
-    /// is left advanced past whatever was consumed; the caller may
-    /// inspect `cursor.remaining()` for the residual.
-    Truncate,
-}
-
 /// RFC §synth-5-B — TLV chain termination strategy. Names how the chain
-/// decoder decides where the chain ends; pairs with the existing
-/// `max_depth` safety bound + `on_overflow` policy. v1 has two shapes:
+/// decoder decides where the chain ends; pairs with the `max_depth` bound.
+/// v1 has two shapes:
 ///
 ///   - [`TlvTerminateStrategy::ExhaustOrDepth`] (trunk default): the
 ///     chain consumes entries until the cursor exhausts or `max_depth`
@@ -2041,24 +2020,20 @@ pub enum TlvOverflowPolicy {
 ///     carrier with that flag — codegen reads `entry.<flag_name>()`
 ///     after each decode.
 ///
-/// `max_depth` and `on_overflow` apply uniformly across both
-/// strategies — they bound the worst case where the wire stream lies
-/// about chain length. What differs is the evidence each strategy has
-/// that the wire lied:
+/// `max_depth` applies uniformly across both strategies. A chain past it is
+/// a list past its count, `TooManyElements` (docs/adr/0077 §4, §7). What
+/// differs is the evidence each strategy has that the frame is past it:
 ///
 ///   - under `ExhaustOrDepth` the chain owns the codec's remaining wire,
-///     so bytes left after the loop are themselves the overflow;
+///     so bytes left after the loop are themselves the excess;
 ///
 ///   - under `EntryFlag` other fields follow the chain, so leftover bytes
 ///     prove nothing and the evidence is the flag: the last entry
 ///     decoded declared a successor the loop did not take. That happens
 ///     for two disjoint reasons and they are different failures — with
-///     bytes still on the cursor the depth cap refused an entry the peer
-///     sent, which is the overflow `on_overflow` governs; with the
-///     cursor empty the peer's frame simply ended mid-chain, which is a
-///     short frame and is reported as such whatever `on_overflow` says,
-///     because no policy asks a decoder to invent the entry the wire
-///     promised.
+///     bytes still on the cursor the frame carries an entry past the
+///     depth; with the cursor empty the peer's frame simply ended
+///     mid-chain, which is a short frame.
 ///
 /// Neither is inferable from a downstream field's failure: whether the
 /// next field's read happens to fail on a refused entry's bytes is a
@@ -2183,8 +2158,8 @@ pub enum BitSize {
     Repeat { count_ref: CountRef },
     /// RFC §synth-5-B B3 TLV chain primitive — bounded extension list
     /// (Type-Length-Value). Iteratively decodes entries up to
-    /// `max_depth` (RFC: "iterative, never recursive"); residual bytes
-    /// after the cap are handled per [`TlvOverflowPolicy`]. Entry body
+    /// `max_depth` (RFC: "iterative, never recursive"); an entry past it
+    /// is refused as `TooManyElements`. Entry body
     /// codec is resolved via [`CodecField::tlv_chain_body_alias`]
     /// (mirrors `repeat_body_alias`). MCU-class — emits only on Rust +
     /// C11; cpp/kotlin/go/python codecs containing this field type are
@@ -2194,7 +2169,6 @@ pub enum BitSize {
     /// sub-features").
     TlvChain {
         max_depth: u32,
-        on_overflow: TlvOverflowPolicy,
         /// RFC §synth-5-B — termination strategy. Defaults to
         /// `ExhaustOrDepth` for backward-compat with trunk fixtures
         /// (cursor-exhaust + max_depth). `EntryFlag(flag_name)` reads
@@ -2701,7 +2675,7 @@ impl CodecField {
     /// Whether this field is a TLV chain (RFC §synth-5-B B3). The host
     /// language emits `Vec<T>` (Rust) / fixed-array + len pair (C11)
     /// and the streaming codec iterates element decode/encode up to
-    /// `max_depth` then applies the [`TlvOverflowPolicy`]. MCU-class
+    /// `max_depth`. MCU-class
     /// — codecs containing this field type emit only on Rust + C11.
     pub fn is_tlv_chain(&self) -> bool {
         matches!(self.bit_size, BitSize::TlvChain { .. })

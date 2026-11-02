@@ -112,7 +112,8 @@ data class CodecChainPrevCarrier(
                     it.add(_entry)
                     if (!_more) break
                 }
-                if (_more) return null
+                if (_more && cursor.remaining() == 0) { return null }
+                if (_more) { cursor.refuse(CodecError.TooManyElements); return null }
             }
             return CodecChainPrevCarrier(
                 head = head,

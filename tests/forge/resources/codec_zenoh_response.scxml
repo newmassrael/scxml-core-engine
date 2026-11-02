@@ -93,8 +93,7 @@
                sce:length-field="suffix_len" sce:max-size="256"
                sce:present-if="header.N"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="5"
-                   max-depth="4" on-overflow="reject"
-                   sce:present-if="header.Z"
+                   max-depth="4"                   sce:present-if="header.Z"
                    terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:variant tag="peek.mid">
       <sce:peek-byte id="peek" sce:type="uint8">

@@ -149,7 +149,7 @@ impl<'a> CodecZenohQuery<'a> {
                     .map_err(|_| CodecError::CapacityExceeded)?;
             }
             if cursor.remaining() > 0 {
-                return Err(CodecError::TlvChainOverflow);
+                return Err(CodecError::TooManyElements);
             }
         } else {
             _out.extensions = None;

@@ -2952,7 +2952,7 @@ pub struct RenderedHarness {
 ///   {
 ///     "why": "the chain saturates max-depth with the entry flag still set",
 ///     "encoded": [0, 129, 130, 3],
-///     "error": "tlv-chain-overflow"
+///     "error": "too-many-elements"
 ///   }
 /// ]
 /// ```

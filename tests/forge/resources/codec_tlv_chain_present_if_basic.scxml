@@ -43,7 +43,6 @@
       <sce:flag name="has_chain" bit="0"/>
     </sce:flags>
     <sce:tlv-chain id="entries" type="codec_tlv_entry" sce:byte="1"
-                   max-depth="4" on-overflow="reject"
-                   sce:present-if="carrier.has_chain"/>
+                   max-depth="4"                   sce:present-if="carrier.has_chain"/>
   </datamodel>
 </scxml>

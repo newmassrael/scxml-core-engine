@@ -79,8 +79,7 @@
     <sce:embed id="encoding" type="codec_zenoh_encoding" sce:byte="2"
                sce:present-if="header.E"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="3"
-                   max-depth="8" on-overflow="reject"
-                   sce:present-if="header.Z"
+                   max-depth="8"                   sce:present-if="header.Z"
                    terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:field id="payload_len" sce:type="uint64" sce:byte="4" sce:bit-size="vle"/>
     <sce:field id="payload" sce:type="bytes" sce:byte="5" sce:bit-size="length-ref"

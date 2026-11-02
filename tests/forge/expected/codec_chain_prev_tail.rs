@@ -102,7 +102,7 @@ impl CodecChainPrevTail {
                 _vec.push(_entry).map_err(|_| CodecError::CapacityExceeded)?;
             }
             if cursor.remaining() > 0 {
-                return Err(CodecError::TlvChainOverflow);
+                return Err(CodecError::TooManyElements);
             }
         }
         _out.head = head;

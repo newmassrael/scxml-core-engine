@@ -68,8 +68,7 @@
     </sce:flags>
     <sce:field id="id" sce:type="uint16" sce:byte="1" sce:bit-size="vle"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="2"
-                   max-depth="4" on-overflow="reject"
-                   sce:present-if="header.Z"
+                   max-depth="4"                   sce:present-if="header.Z"
                    terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:variant tag="header.enc">
       <sce:arm value="0x00" type="codec_zenoh_ext_unit" default="true"/>

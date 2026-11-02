@@ -93,8 +93,8 @@ static inline sce_forge_codec_status_t codec_chain_has_marker_decode(sce_forge_c
                 _more = codec_zenoh_ext_entry_z(&out->extensions.value.data[_just]);
                 if (!_more) break;
             }
-            if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-            if (_more) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+            if (_more && sce_forge_cursor_remaining(cursor) == 0) { return SCE_FORGE_CODEC_NEED_MORE_BYTES; }
+            if (_more) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
         }
     bool _has_extensions_18 = false;
     for (size_t _i = 0; _i < out->extensions.value.len; ++_i) {
@@ -180,7 +180,7 @@ static inline sce_forge_codec_status_t codec_chain_has_marker_encode(const codec
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (self->extensions.present && !sce_forge_length_within_bound(self->extensions.value.len, 4)) {
-        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     if (self->payload.present && !sce_forge_length_within_bound(self->payload.value.len, 256)) {
         return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;

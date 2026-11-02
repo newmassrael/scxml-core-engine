@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TlvChainOverflow
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
 from .codec_chain_flag_entry import CodecChainFlagEntry
 
 from dataclasses import dataclass, field
@@ -57,7 +57,7 @@ class CodecChainFlagCarrier:
             if _more and cursor.remaining() == 0:
                 raise NeedMoreBytes()
             if _more:
-                raise TlvChainOverflow()
+                raise TooManyElements()
         except CodecError:
             return None
         return cls(
@@ -91,7 +91,7 @@ class CodecChainFlagCarrier:
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with."""
         if len(self.entries) < 1 or len(self.entries) > 4:
-            raise TlvChainOverflow()
+            raise TooManyElements()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes
         # in declaration order through the per-field encode blocks, so a

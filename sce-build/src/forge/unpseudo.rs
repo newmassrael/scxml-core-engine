@@ -45,8 +45,7 @@ use crate::forge::model::{
     DecodedField, DecodedFieldValue, DecodedValue, Endian, FlagDef, FlagInput, FoldBody,
     PeekByteSpec, PresentIfPredicate, PresentIfScope, ProcedureAssign, ProcedureDoneParam,
     ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState, ProcedureTransition,
-    TestVector, TestVectorValue, TlvEntryFlagBind, TlvEntryId, TlvOverflowPolicy,
-    TlvTerminateStrategy, VariantArm,
+    TestVector, TestVectorValue, TlvEntryFlagBind, TlvEntryId, TlvTerminateStrategy, VariantArm,
 };
 use crate::forge::model::{
     CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
@@ -2264,20 +2263,10 @@ fn parse_bit_size(w: &[&str], line: usize) -> Result<BitSize, ParseError> {
         },
         Some("tlv-chain") => BitSize::TlvChain {
             max_depth: w.get(2).and_then(|v| v.parse().ok()).unwrap_or(0),
-            on_overflow: match w.get(4).copied() {
-                Some("reject") => TlvOverflowPolicy::Reject,
-                Some("truncate") => TlvOverflowPolicy::Truncate,
-                other => {
-                    return Err(ParseError {
-                        line,
-                        why: format!("`{}` is not a TLV overflow policy", other.unwrap_or("")),
-                    })
-                }
-            },
-            terminate_on: match w.get(6).copied() {
+            terminate_on: match w.get(4).copied() {
                 Some("exhaust-or-depth") => TlvTerminateStrategy::ExhaustOrDepth,
                 Some("entry-flag") => TlvTerminateStrategy::EntryFlag {
-                    flag_name: undo(w.get(7).copied().unwrap_or(""), line)?,
+                    flag_name: undo(w.get(5).copied().unwrap_or(""), line)?,
                 },
                 other => {
                     return Err(ParseError {

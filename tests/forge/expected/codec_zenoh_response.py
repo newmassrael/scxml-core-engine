@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, InvalidUtf8, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink, TlvChainOverflow
+from sce_forge_runtime.codec import BytearraySink, CodecError, InvalidUtf8, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink, TooManyElements
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
 from .codec_zenoh_reply import CodecZenohReply
 from .codec_zenoh_err import CodecZenohErr
@@ -99,7 +99,7 @@ class CodecZenohResponse:
                 if _more and cursor.remaining() == 0:
                     raise NeedMoreBytes()
                 if _more:
-                    raise TlvChainOverflow()
+                    raise TooManyElements()
             else:
                 f_extensions = None
             _peek = cursor.peek_slice(1)[0]
@@ -193,7 +193,7 @@ class CodecZenohResponse:
         if self.suffix is not None and (len(self.suffix.encode("utf-8")) > 256):
             raise LengthOutOfRange()
         if self.extensions is not None and (len(self.extensions) < 1 or len(self.extensions) > 4):
-            raise TlvChainOverflow()
+            raise TooManyElements()
         # RFC §synth-5-B peek-byte / streaming-prefix:
         # streaming prefix encode.
         w.write_u8(self.header & 0xFF)

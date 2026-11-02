@@ -125,7 +125,8 @@ data class CodecChainHasTagged(
                     it.add(_entry)
                     if (!_more) break
                 }
-                if (_more) return null
+                if (_more && cursor.remaining() == 0) { return null }
+                if (_more) { cursor.refuse(CodecError.TooManyElements); return null }
             }
             val _has_entries_7: Boolean = entries.any { _e -> (_e.entry_type).toULong() == 7UL }
             val _has_entries_9: Boolean = entries.any { _e -> (_e.entry_type).toULong() == 9UL }

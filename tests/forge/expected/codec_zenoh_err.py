@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink, TlvChainOverflow
+from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink, TooManyElements
 from .codec_zenoh_encoding import CodecZenohEncoding
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
 
@@ -68,7 +68,7 @@ class CodecZenohErr:
                 if _more and cursor.remaining() == 0:
                     raise NeedMoreBytes()
                 if _more:
-                    raise TlvChainOverflow()
+                    raise TooManyElements()
             else:
                 f_extensions = None
             f_payload_len = cursor.read_vle_u64()
@@ -141,7 +141,7 @@ class CodecZenohErr:
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with."""
         if self.extensions is not None and (len(self.extensions) < 1 or len(self.extensions) > 4):
-            raise TlvChainOverflow()
+            raise TooManyElements()
         if len(self.payload) > 256:
             raise LengthOutOfRange()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).

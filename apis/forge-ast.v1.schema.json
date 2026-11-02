@@ -926,7 +926,7 @@
           "type": "object"
         },
         {
-          "description": "RFC §synth-5-B B3 TLV chain primitive — bounded extension list (Type-Length-Value). Iteratively decodes entries up to `max_depth` (RFC: \"iterative, never recursive\"); residual bytes after the cap are handled per [`TlvOverflowPolicy`]. Entry body codec is resolved via [`CodecField::tlv_chain_body_alias`] (mirrors `repeat_body_alias`). MCU-class — emits only on Rust + C11; cpp/kotlin/go/python codecs containing this field type are rejected at codegen via `codegen/mcu-class-kind-on-non-mcu-language` (the existing kind-class diagnostic is repurposed at the codec-content granularity, see RFC §synth-5-B \"MCU-only codec sub-features\").",
+          "description": "RFC §synth-5-B B3 TLV chain primitive — bounded extension list (Type-Length-Value). Iteratively decodes entries up to `max_depth` (RFC: \"iterative, never recursive\"); an entry past it is refused as `TooManyElements`. Entry body codec is resolved via [`CodecField::tlv_chain_body_alias`] (mirrors `repeat_body_alias`). MCU-class — emits only on Rust + C11; cpp/kotlin/go/python codecs containing this field type are rejected at codegen via `codegen/mcu-class-kind-on-non-mcu-language` (the existing kind-class diagnostic is repurposed at the codec-content granularity, see RFC §synth-5-B \"MCU-only codec sub-features\").",
           "properties": {
             "entry_binds": {
               "description": "The entry codec's flag-inputs this chain supplies entry by entry ([`TlvEntryFlagBind`]), in the order the author wrote them. Needs `entry_id`, which is what each value is read from. Absent from the serialized form when empty, so a document that does not use it keeps its AST.",
@@ -951,9 +951,6 @@
               "minimum": 0.0,
               "type": "integer"
             },
-            "on_overflow": {
-              "$ref": "#/definitions/TlvOverflowPolicy"
-            },
             "terminate_on": {
               "allOf": [
                 {
@@ -971,7 +968,6 @@
           },
           "required": [
             "max_depth",
-            "on_overflow",
             "type"
           ],
           "type": "object"
@@ -6883,27 +6879,8 @@
       ],
       "type": "object"
     },
-    "TlvOverflowPolicy": {
-      "description": "RFC §synth-5-B B3 TLV chain on-overflow policy. Names what the decoder does when the cursor still has bytes after `max_depth` entries have been consumed (i.e. the wire carries more entries than the codec author declared).\n\nv1 ships `Reject` + `Truncate`. `DiagnosticEvent` (RFC line 488) is deferred until §synth-5-A diagnostic-event runtime infrastructure surfaces a reachable consumer — adding it now would be built-but-unconsumed.",
-      "oneOf": [
-        {
-          "description": "Return [`crate::forge::limits`]-sized `TlvChainOverflow` typed error. Caller treats the frame as corrupt.",
-          "enum": [
-            "reject"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Silently drop the post-cap bytes from the decoded list. Cursor is left advanced past whatever was consumed; the caller may inspect `cursor.remaining()` for the residual.",
-          "enum": [
-            "truncate"
-          ],
-          "type": "string"
-        }
-      ]
-    },
     "TlvTerminateStrategy": {
-      "description": "RFC §synth-5-B — TLV chain termination strategy. Names how the chain decoder decides where the chain ends; pairs with the existing `max_depth` safety bound + `on_overflow` policy. v1 has two shapes:\n\n- [`TlvTerminateStrategy::ExhaustOrDepth`] (trunk default): the chain consumes entries until the cursor exhausts or `max_depth` is reached. Used by `codec_tlv_chain_basic` + the `codec_zenoh_ext_envelope` demo. Acceptable when nothing follows the chain on the wire — the trailing cursor IS the chain's tail.\n\n- [`TlvTerminateStrategy::EntryFlag`]: each entry's outer header carries a \"next-entry follows\" boolean flag (zenoh-pico `_Z_FLAG_Z_Z = 0x80` at bit 7 in every ext_msg header). The chain decoder reads the flag *after* each entry and stops the loop when it's clear, leaving the cursor at the start of whatever follows the chain on the wire (e.g. zenoh-pico request body's query/put/del variant after the ext chain). Mirrors `_z_msg_ext_decode_iter` (ext.c:226-238) verbatim. `flag_name` references a flag declared on the entry codec's flags carrier (typically the entry's outer header byte). The codec author guarantees the entry codec exposes a flags-bearing carrier with that flag — codegen reads `entry.<flag_name>()` after each decode.\n\n`max_depth` and `on_overflow` apply uniformly across both strategies — they bound the worst case where the wire stream lies about chain length. What differs is the evidence each strategy has that the wire lied:\n\n- under `ExhaustOrDepth` the chain owns the codec's remaining wire, so bytes left after the loop are themselves the overflow;\n\n- under `EntryFlag` other fields follow the chain, so leftover bytes prove nothing and the evidence is the flag: the last entry decoded declared a successor the loop did not take. That happens for two disjoint reasons and they are different failures — with bytes still on the cursor the depth cap refused an entry the peer sent, which is the overflow `on_overflow` governs; with the cursor empty the peer's frame simply ended mid-chain, which is a short frame and is reported as such whatever `on_overflow` says, because no policy asks a decoder to invent the entry the wire promised.\n\nNeither is inferable from a downstream field's failure: whether the next field's read happens to fail on a refused entry's bytes is a property of the peer's wire, not of the codec.",
+      "description": "RFC §synth-5-B — TLV chain termination strategy. Names how the chain decoder decides where the chain ends; pairs with the `max_depth` bound. v1 has two shapes:\n\n- [`TlvTerminateStrategy::ExhaustOrDepth`] (trunk default): the chain consumes entries until the cursor exhausts or `max_depth` is reached. Used by `codec_tlv_chain_basic` + the `codec_zenoh_ext_envelope` demo. Acceptable when nothing follows the chain on the wire — the trailing cursor IS the chain's tail.\n\n- [`TlvTerminateStrategy::EntryFlag`]: each entry's outer header carries a \"next-entry follows\" boolean flag (zenoh-pico `_Z_FLAG_Z_Z = 0x80` at bit 7 in every ext_msg header). The chain decoder reads the flag *after* each entry and stops the loop when it's clear, leaving the cursor at the start of whatever follows the chain on the wire (e.g. zenoh-pico request body's query/put/del variant after the ext chain). Mirrors `_z_msg_ext_decode_iter` (ext.c:226-238) verbatim. `flag_name` references a flag declared on the entry codec's flags carrier (typically the entry's outer header byte). The codec author guarantees the entry codec exposes a flags-bearing carrier with that flag — codegen reads `entry.<flag_name>()` after each decode.\n\n`max_depth` applies uniformly across both strategies. A chain past it is a list past its count, `TooManyElements` (docs/adr/0077 §4, §7). What differs is the evidence each strategy has that the frame is past it:\n\n- under `ExhaustOrDepth` the chain owns the codec's remaining wire, so bytes left after the loop are themselves the excess;\n\n- under `EntryFlag` other fields follow the chain, so leftover bytes prove nothing and the evidence is the flag: the last entry decoded declared a successor the loop did not take. That happens for two disjoint reasons and they are different failures — with bytes still on the cursor the frame carries an entry past the depth; with the cursor empty the peer's frame simply ended mid-chain, which is a short frame.\n\nNeither is inferable from a downstream field's failure: whether the next field's read happens to fail on a refused entry's bytes is a property of the peer's wire, not of the codec.",
       "oneOf": [
         {
           "description": "Trunk default: chain ends on cursor exhaustion or `max_depth`.",

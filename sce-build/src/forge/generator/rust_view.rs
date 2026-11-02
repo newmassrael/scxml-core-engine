@@ -147,11 +147,6 @@ impl ViewList<'_> {
             .map(|i| if i.from_chain { "0" } else { i.expr.as_str() })
             .collect::<Vec<_>>()
             .join(", ");
-        let refusal = if self.field.is_tlv_chain() {
-            "TlvChainOverflow"
-        } else {
-            "TooManyElements"
-        };
         let list = format!("ListView::new(_rest, _count, [{args}])");
         // An always-present list of one entry or more is its first entry and
         // the list after it (`list_type`); the scan has read that first entry.
@@ -164,7 +159,7 @@ impl ViewList<'_> {
         } else {
             list
         };
-        format!("Bounded::new({list}).ok_or(CodecError::{refusal})?")
+        format!("Bounded::new({list}).ok_or(CodecError::TooManyElements)?")
     }
 
     /// The field's value, from `build`, as the field holds it.
@@ -282,7 +277,6 @@ pub(super) struct ViewChain<'a> {
     /// The flag-inputs the chain supplies entry by entry.
     pub entry_binds: &'a ChainEntryBinds,
     pub max_depth: u32,
-    pub on_overflow: crate::forge::model::TlvOverflowPolicy,
     pub terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
 }
 
@@ -306,15 +300,13 @@ pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> Strin
     let ViewChain {
         entry_binds,
         max_depth,
-        on_overflow,
         terminate_on,
     } = chain;
     let entry_flag_acc = match terminate_on {
         TlvTerminateStrategy::ExhaustOrDepth => None,
         TlvTerminateStrategy::EntryFlag { flag_name } => Some(flag_getter_name(flag_name, lang)),
     };
-    let overflow_check =
-        tlv_chain_guard(lang, *on_overflow, entry_flag_acc.is_some(), "            ");
+    let overflow_check = tlv_chain_guard(lang, entry_flag_acc.is_some(), "            ");
     let indent = "                ";
     let mut lines =
         chain_end_of_frame_stop(&entry_flag_acc, "if cursor.remaining() == 0 { break; }");

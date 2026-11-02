@@ -107,7 +107,7 @@ impl CodecChainHasTagged {
                 return Err(CodecError::NeedMoreBytes);
             }
             if _more {
-                return Err(CodecError::TlvChainOverflow);
+                return Err(CodecError::TooManyElements);
             }
             Ok(())
         })?;
@@ -550,9 +550,9 @@ impl<'a> CodecChainHasTaggedView<'a> {
                 return Err(CodecError::NeedMoreBytes);
             }
             if _more {
-                return Err(CodecError::TlvChainOverflow);
+                return Err(CodecError::TooManyElements);
             }
-            entries = Bounded::new(::sce_forge_runtime::codec::NonEmptyListView::from_scan(ListView::new(_rest, _count, [])).ok_or(CodecError::NeedMoreBytes)?).ok_or(CodecError::TlvChainOverflow)?;
+            entries = Bounded::new(::sce_forge_runtime::codec::NonEmptyListView::from_scan(ListView::new(_rest, _count, [])).ok_or(CodecError::NeedMoreBytes)?).ok_or(CodecError::TooManyElements)?;
         }
         let _has_entries_7 = entries.iter().any(|_e| u64::from(_e.entry_type) == 7u64);
         let _has_entries_9 = entries.iter().any(|_e| u64::from(_e.entry_type) == 9u64);

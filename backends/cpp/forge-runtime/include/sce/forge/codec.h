@@ -36,12 +36,9 @@ namespace SCE::Forge {
 ///
 /// The TLV chain primitive emits on cpp
 /// (it was originally MCU-only as a conservative scope choice; Zenoh
-/// extension envelopes need server-class peers too). On reject-policy
-/// overflow cpp collapses the failure to the truncation sentinel
-/// `std::nullopt` — same convention as `VleWidthOverflow` (see also
-/// the matching Kotlin runtime). The typed `TlvChainOverflow` enum
-/// variant lives only on Rust / C11 / Go / Python runtimes that
-/// construct it at the call site.
+/// extension envelopes need server-class peers too). A chain past its
+/// depth is refused as `TooManyElements` and recorded on the cursor,
+/// as a list past its count is.
 enum class CodecError : std::uint8_t {
     NeedMoreBytes = 1,
     /// A `vle_u<N>` field's continuation chain implies a value wider

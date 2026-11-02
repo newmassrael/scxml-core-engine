@@ -1182,14 +1182,13 @@
 
        Bounded extension list, each entry has id+len+body shape (the
        entry shape lives inside the imported entry codec, not enforced
-       here). Iteratively decoded up to `max-depth`; residual bytes
-       handled per `on-overflow`:
+       here). Iteratively decoded up to `max-depth`; an entry past it is
+       refused as TooManyElements:
 
          <sce:tlv-chain id="extensions"
                         sce:type="TlvEntry"
                         sce:byte="2"
-                        max-depth="8"
-                        on-overflow="reject"/>
+                        max-depth="8"/>
 
        MCU-class — codecs containing this element emit only on
        `(rust, *)` and `(c11, bare_metal)` per the §synth-5-J-4 matrix; on
@@ -1199,16 +1198,13 @@
 
        `max-depth` is required (RFC line 488 "MUST be specified for
        MCU targets"); missing → typed
-       `codec/tlv-chain-depth-unspecified`. `on-overflow` defaults to
-       `reject`; `truncate` is the silent-drop opt-in. v1 rejects
-       `diagnostic-event` (defers to a later B-stage when §synth-5-A
-       diagnostic-event runtime infrastructure ships).
+       `codec/tlv-chain-depth-unspecified`. What a node does past what it
+       holds is not in the document: a capacity is the deployment's
+       (docs/adr/0077 §7).
 
        Diagnostics:
          - missing max-depth → codec/tlv-chain-depth-unspecified
          - max-depth=0 → validation/invalid-attribute
-         - on-overflow="diagnostic-event" / unknown value →
-             validation/invalid-attribute
          - codec containing tlv-chain on a non-MCU language →
              codegen/mcu-class-kind-on-non-mcu-language
        ═══════════════════════════════════════════════════════════════ -->
@@ -1251,7 +1247,6 @@
            rejects when missing. Mirrors the `<sce:repeat>` pattern
            where `count` / `until-eof` mutex is parser-enforced. -->
       <xs:attribute name="max-depth" type="xs:positiveInteger"/>
-      <xs:attribute name="on-overflow" type="xs:string"/>
       <!-- RFC §synth-5-B — termination strategy + flag-name attribute.
            Default `exhaust-or-depth` ends on cursor-exhaust +
            max-depth (the item B3 tlv-chain shape). `entry-flag` reads `entry-flag-name`

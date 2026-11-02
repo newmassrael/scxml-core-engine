@@ -65,8 +65,7 @@ const GATED_REQUEST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     <sce:field id="rid" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
     <sce:embed id="keyexpr" type="codec_zenoh_wireexpr" sce:byte="2"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="3"
-                   max-depth="4" on-overflow="reject"
-                   sce:present-if="header.Z"
+                   max-depth="4"                   sce:present-if="header.Z"
                    terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:variant tag="peek.mid">
       <sce:peek-byte id="peek" sce:type="uint8">

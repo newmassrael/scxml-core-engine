@@ -108,7 +108,7 @@ impl<'a> CodecChainHasMarker<'a> {
                     return Err(CodecError::NeedMoreBytes);
                 }
                 if _more {
-                    return Err(CodecError::TlvChainOverflow);
+                    return Err(CodecError::TooManyElements);
                 }
                 Ok(())
             })?;

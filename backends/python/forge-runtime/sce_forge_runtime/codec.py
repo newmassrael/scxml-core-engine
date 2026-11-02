@@ -50,17 +50,6 @@ class InvalidUtf8(CodecError):
     VleWidthOverflow declaration-only convention there."""
 
 
-class TlvChainOverflow(CodecError):
-    """Raised when a ``<sce:tlv-chain on-overflow="reject">`` field has
-    residual cursor bytes after ``max_depth`` entries have been
-    consumed (RFC §5.B). Truncate policy silently drops the
-    residual bytes and never raises this exception; the on-overflow
-    attribute is parser-mandatory so the codec emit always picks one
-    of the two policies. The Cpp + Kotlin runtimes collapse this to
-    their truncation sentinel (mirrors VleWidthOverflow declaration-
-    only convention)."""
-
-
 class BufferOverflow(CodecError):
     """RFC §5.B encode-side counterpart to :class:`NeedMoreBytes`:
     raised when an encode write would exceed the destination sink's

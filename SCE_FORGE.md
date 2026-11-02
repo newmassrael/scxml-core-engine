@@ -1246,7 +1246,7 @@ header saying which. `sce:present-if` reads the chain directly:
 
 ```xml
 <sce:tlv-chain id="extensions" type="entry" sce:byte="1" max-depth="4"
-               on-overflow="reject" terminate-on="entry-flag"
+               terminate-on="entry-flag"
                entry-flag-name="more" entry-id="header.kind"/>
 <sce:field id="payload_len" sce:type="uint64" sce:byte="2" sce:bit-size="vle"
            sce:present-if="!extensions.has(0x2)"/>
@@ -1279,7 +1279,7 @@ not include:
 
 ```xml
 <sce:tlv-chain id="extensions" type="entry" sce:byte="1" max-depth="4"
-               on-overflow="reject" terminate-on="entry-flag"
+               terminate-on="entry-flag"
                entry-flag-name="Z"
                entry-id="header" entry-id-except="header.Z"/>
 <sce:field id="payload_len" sce:type="uint64" sce:byte="2" sce:bit-size="vle"
@@ -1353,7 +1353,7 @@ imports the codec:
   <sce:flag name="W" bit="0"/>
 </sce:flags>
 <sce:tlv-chain id="entries" type="entry" sce:byte="1" max-depth="4"
-               on-overflow="reject" terminate-on="entry-flag"
+               terminate-on="entry-flag"
                entry-flag-name="Z"/>
 ```
 
@@ -1378,7 +1378,7 @@ supplies such an input itself, with a child element:
 
 ```xml
 <sce:tlv-chain id="entries" type="entry" sce:byte="1" max-depth="4"
-               on-overflow="reject" terminate-on="entry-flag"
+               terminate-on="entry-flag"
                entry-flag-name="Z" entry-id="header.ext_id">
   <sce:entry-flag-bind input="after_marker" previous-entry-id="0x4"/>
 </sce:tlv-chain>

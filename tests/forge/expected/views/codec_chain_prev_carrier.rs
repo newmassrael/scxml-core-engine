@@ -108,7 +108,7 @@ impl CodecChainPrevCarrier {
                 return Err(CodecError::NeedMoreBytes);
             }
             if _more {
-                return Err(CodecError::TlvChainOverflow);
+                return Err(CodecError::TooManyElements);
             }
             Ok(())
         })?;
@@ -421,9 +421,9 @@ impl<'a> CodecChainPrevCarrierView<'a> {
                 return Err(CodecError::NeedMoreBytes);
             }
             if _more {
-                return Err(CodecError::TlvChainOverflow);
+                return Err(CodecError::TooManyElements);
             }
-            _out.entries = Bounded::new(::sce_forge_runtime::codec::NonEmptyListView::from_scan(ListView::new(_rest, _count, [0, head & 0x1])).ok_or(CodecError::NeedMoreBytes)?).ok_or(CodecError::TlvChainOverflow)?;
+            _out.entries = Bounded::new(::sce_forge_runtime::codec::NonEmptyListView::from_scan(ListView::new(_rest, _count, [0, head & 0x1])).ok_or(CodecError::NeedMoreBytes)?).ok_or(CodecError::TooManyElements)?;
         }
         _out.head = head;
         Ok(())

@@ -57,7 +57,7 @@ struct CodecTlvChainPresentIfBasic {
                 if (!_elem.has_value()) return std::nullopt;
                 _list.push_back(*_elem);
             }
-            if (cursor.remaining() > 0) return std::nullopt;
+            if (cursor.remaining() > 0) { cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt; }
             entries = std::move(_list);
         }
         return CodecTlvChainPresentIfBasic{

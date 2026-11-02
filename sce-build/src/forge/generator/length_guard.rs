@@ -244,10 +244,9 @@ pub(super) fn carried_held(name: &str, fields: &[CodecField], lang: Language) ->
 }
 
 /// Which errors a codec's decode can refuse a frame with on account of a
-/// bound: a byte or text length (`LengthOutOfRange`) and a list's count
-/// (`TooManyElements`). A host that names each error it raises (Python's
-/// imports) asks this. A TLV chain's depth is refused as `TlvChainOverflow`,
-/// which the chain's own decode names.
+/// bound: a byte or text length (`LengthOutOfRange`) and a list's or a chain's
+/// count (`TooManyElements`). A host that names each error it raises (Python's
+/// imports) asks this.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct DecodeRefusals {
     pub length: bool,
@@ -264,8 +263,9 @@ pub(super) fn decode_refusals(fields: &[CodecField]) -> DecodeRefusals {
         let refuses = guard.lo.is_some() || guard.hi.is_some();
         match (guard.excess, &field.bit_size) {
             (Excess::Length, _) => out.length |= refuses,
-            (Excess::Count, BitSize::Repeat { .. }) => out.count |= refuses,
-            (Excess::Count, _) => {}
+            // A chain's frame says no count: the guard after its walk refuses.
+            (Excess::Count, BitSize::TlvChain { .. }) => out.count = true,
+            (Excess::Count, _) => out.count |= refuses,
         }
     }
     out

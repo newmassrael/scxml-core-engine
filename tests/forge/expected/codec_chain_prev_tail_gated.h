@@ -59,7 +59,7 @@ struct CodecChainPrevTailGated {
                 _prev_entries_after_marker = static_cast<std::uint8_t>((static_cast<std::uint64_t>((*_elem).header) & 127ULL) == 4ULL);
                 _list.push_back(*_elem);
             }
-            if (cursor.remaining() > 0) return std::nullopt;
+            if (cursor.remaining() > 0) { cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt; }
             entries = std::move(_list);
         }
         return CodecChainPrevTailGated{

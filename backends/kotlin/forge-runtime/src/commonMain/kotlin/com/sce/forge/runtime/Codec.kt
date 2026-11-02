@@ -21,12 +21,8 @@ package com.sce.forge.runtime
 ///
 /// The TLV chain primitive emits on Kotlin like every other backend
 /// (Zenoh extension envelopes need server-class peers, not only the
-/// MCU). On reject-
-/// policy overflow Kotlin collapses the failure to the truncation
-/// sentinel `null` returned from `decode()` — same convention as
-/// VleWidthOverflow (see also the matching Cpp runtime). The typed
-/// TlvChainOverflow enum variant lives only on Rust / C11 / Go /
-/// Python runtimes that construct it at the call site.
+/// MCU). A chain past its depth is refused as `TooManyElements` and
+/// recorded on the cursor, as a list past its count is.
 sealed class CodecError {
     object NeedMoreBytes : CodecError()
     /// A `vle_u<N>` field's continuation chain implies a value wider

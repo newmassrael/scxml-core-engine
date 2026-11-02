@@ -180,7 +180,7 @@ data class CodecZenohQuery(
                     if (cursor.remaining() == 0) break
                     it.add(CodecZenohExtEntry.decode(cursor) ?: return null)
                 }
-                if (cursor.remaining() > 0) return null
+                if (cursor.remaining() > 0) { cursor.refuse(CodecError.TooManyElements); return null }
             }
         } else {
             null

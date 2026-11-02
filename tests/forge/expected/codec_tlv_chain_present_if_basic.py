@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TlvChainOverflow
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
 from .codec_tlv_entry import CodecTlvEntry
 
 from dataclasses import dataclass, field
@@ -54,7 +54,7 @@ class CodecTlvChainPresentIfBasic:
                         return None
                     f_entries.append(_elem)
                 if cursor.remaining() > 0:
-                    raise TlvChainOverflow()
+                    raise TooManyElements()
             else:
                 f_entries = None
         except CodecError:
@@ -90,7 +90,7 @@ class CodecTlvChainPresentIfBasic:
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with."""
         if self.entries is not None and (len(self.entries) > 4):
-            raise TlvChainOverflow()
+            raise TooManyElements()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes
         # in declaration order through the per-field encode blocks, so a

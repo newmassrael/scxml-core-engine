@@ -28,10 +28,8 @@ use crate::generator::Language;
 pub enum BoundKind {
     /// The bytes of a `bytes` or `string` field.
     Length,
-    /// The entries of a `<sce:repeat>`.
+    /// The entries of a `<sce:repeat>` or a `<sce:tlv-chain>`.
     Count,
-    /// The entries of a `<sce:tlv-chain>`, held to its `max-depth`.
-    Depth,
 }
 
 impl BoundKind {
@@ -41,8 +39,7 @@ impl BoundKind {
         use crate::forge::model::BitSize;
         Some(match field.bit_size {
             BitSize::Tail | BitSize::LengthRef => BoundKind::Length,
-            BitSize::Repeat { .. } => BoundKind::Count,
-            BitSize::TlvChain { .. } => BoundKind::Depth,
+            BitSize::Repeat { .. } | BitSize::TlvChain { .. } => BoundKind::Count,
             BitSize::Fixed { .. } | BitSize::Vle { .. } | BitSize::Embed => return None,
         })
     }
@@ -55,16 +52,14 @@ pub enum CodecFailure {
     /// complete. Under `terminate-on="entry-flag"` this includes a chain
     /// whose last entry declared a successor the wire never carried.
     NeedMoreBytes,
-    /// A `<sce:tlv-chain>` carried more entries than `max-depth` admits,
-    /// under `on-overflow="reject"`.
-    TlvChainOverflow,
     /// A byte string's or a text's length outside its bound, the declared
     /// `sce:max-size` intersected with what its length field can say after
     /// its `sce:length-arith` (docs/adr/0077 §1), judged before the frame's
     /// own length.
     LengthOutOfRange,
-    /// A list's count past its declared `max-count`, or an entry past it in a
-    /// list read to the end of the frame (docs/adr/0077 §2).
+    /// A list's count past its declared `max-count`, an entry past it in a
+    /// list read to the end of the frame (docs/adr/0077 §2), or a chain's
+    /// entry past its declared `max-depth`.
     TooManyElements,
     /// An `sce:encoding="cbor"` map is not one the codec reads
     /// (SCE_FORGE.md §4.6.1): not a definite-length map, a key given twice,
@@ -100,9 +95,8 @@ pub enum CodecFailure {
 
 impl CodecFailure {
     /// Every failure, in declaration order — the set `parse` accepts.
-    pub const ALL: [CodecFailure; 14] = [
+    pub const ALL: [CodecFailure; 13] = [
         CodecFailure::NeedMoreBytes,
-        CodecFailure::TlvChainOverflow,
         CodecFailure::LengthOutOfRange,
         CodecFailure::TooManyElements,
         CodecFailure::CborMalformed,
@@ -122,7 +116,6 @@ impl CodecFailure {
     pub fn wire_name(self) -> &'static str {
         match self {
             CodecFailure::NeedMoreBytes => "need-more-bytes",
-            CodecFailure::TlvChainOverflow => "tlv-chain-overflow",
             CodecFailure::LengthOutOfRange => "length-out-of-range",
             CodecFailure::TooManyElements => "too-many-elements",
             CodecFailure::CborMalformed => "cbor-malformed",
@@ -185,19 +178,14 @@ impl CodecFailure {
     /// codec templates of those encodings return it as a value
     /// (SCE_FORGE.md §4.6.1, §4.6.4).
     pub fn raise_stmt(self, lang: Language) -> Option<&'static str> {
-        let truncated = matches!(self, CodecFailure::NeedMoreBytes);
         match self {
-            CodecFailure::NeedMoreBytes | CodecFailure::TlvChainOverflow => Some(match lang {
-                Language::Rust if truncated => "return Err(CodecError::NeedMoreBytes);",
-                Language::Rust => "return Err(CodecError::TlvChainOverflow);",
-                Language::C11 if truncated => "return SCE_FORGE_CODEC_NEED_MORE_BYTES;",
-                Language::C11 => "return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;",
+            CodecFailure::NeedMoreBytes => Some(match lang {
+                Language::Rust => "return Err(CodecError::NeedMoreBytes);",
+                Language::C11 => "return SCE_FORGE_CODEC_NEED_MORE_BYTES;",
                 Language::Cpp => "return std::nullopt;",
                 Language::Kotlin => "return null",
-                Language::Go if truncated => "return nil, codec.ErrNeedMoreBytes",
-                Language::Go => "return nil, codec.ErrTlvChainOverflow",
-                Language::Python if truncated => "raise NeedMoreBytes()",
-                Language::Python => "raise TlvChainOverflow()",
+                Language::Go => "return nil, codec.ErrNeedMoreBytes",
+                Language::Python => "raise NeedMoreBytes()",
                 Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("raise_stmt"),
             }),
             // A bound's refusal is not a frame short of bytes, so C++ and
@@ -246,59 +234,42 @@ impl CodecFailure {
     /// for Rust, whose source cannot present such a value.
     ///
     /// The error is the one a decode of that frame gives (docs/adr/0058 law
-    /// 3). C++ and Kotlin name no chain overflow: their decode answers one
-    /// sentinel for a chain past its depth, so their encode refuses it as the
-    /// count past its bound it is ([`Self::over_bound`]).
+    /// 3).
     pub fn encode_refusal_stmt(self, lang: Language) -> Option<&'static str> {
-        let (length, count, chain) = match lang {
+        let (length, count) = match lang {
             Language::C11 => (
                 "return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;",
                 "return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;",
-                Some("return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;"),
             ),
             Language::Cpp => (
                 "return ::SCE::Forge::CodecError::LengthOutOfRange;",
                 "return ::SCE::Forge::CodecError::TooManyElements;",
-                None,
             ),
             Language::Kotlin => (
                 "return CodecError.LengthOutOfRange",
                 "return CodecError.TooManyElements",
-                None,
             ),
             Language::Go => (
                 "return codec.ErrLengthOutOfRange",
                 "return codec.ErrTooManyElements",
-                Some("return codec.ErrTlvChainOverflow"),
             ),
-            Language::Python => (
-                "raise LengthOutOfRange()",
-                "raise TooManyElements()",
-                Some("raise TlvChainOverflow()"),
-            ),
+            Language::Python => ("raise LengthOutOfRange()", "raise TooManyElements()"),
             Language::Rust | Language::Swift => return None,
         };
         match self {
             CodecFailure::LengthOutOfRange => Some(length),
             CodecFailure::TooManyElements => Some(count),
-            CodecFailure::TlvChainOverflow => chain,
             _ => None,
         }
     }
 
-    /// The failure a value outside a field's bound is refused with on `lang`:
-    /// a byte or text length `LengthOutOfRange`, a list's count
-    /// `TooManyElements`, a chain past its depth `TlvChainOverflow` where the
-    /// backend names it and `TooManyElements` where it does not
-    /// (docs/adr/0077 §4).
-    pub fn over_bound(kind: BoundKind, lang: Language) -> Self {
+    /// The failure a value outside a field's bound is refused with: a byte or
+    /// text length `LengthOutOfRange`, a list's or a chain's count
+    /// `TooManyElements` (docs/adr/0077 §4).
+    pub fn over_bound(kind: BoundKind) -> Self {
         match kind {
             BoundKind::Length => CodecFailure::LengthOutOfRange,
             BoundKind::Count => CodecFailure::TooManyElements,
-            BoundKind::Depth if matches!(lang, Language::Cpp | Language::Kotlin) => {
-                CodecFailure::TooManyElements
-            }
-            BoundKind::Depth => CodecFailure::TlvChainOverflow,
         }
     }
 
@@ -342,15 +313,8 @@ impl CodecFailure {
     pub fn observable_symbol(self, lang: Language) -> Option<&'static str> {
         match (lang, self) {
             (Language::Rust, CodecFailure::NeedMoreBytes) => Some("CodecError::NeedMoreBytes"),
-            (Language::Rust, CodecFailure::TlvChainOverflow) => {
-                Some("CodecError::TlvChainOverflow")
-            }
             (Language::C11, CodecFailure::NeedMoreBytes) => Some("SCE_FORGE_CODEC_NEED_MORE_BYTES"),
-            (Language::C11, CodecFailure::TlvChainOverflow) => {
-                Some("SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW")
-            }
             (Language::Go, CodecFailure::NeedMoreBytes) => Some("codec.ErrNeedMoreBytes"),
-            (Language::Go, CodecFailure::TlvChainOverflow) => Some("codec.ErrTlvChainOverflow"),
             // A bound's refusal (docs/adr/0077 §4) is named on the same three.
             (Language::Rust, CodecFailure::LengthOutOfRange) => {
                 Some("CodecError::LengthOutOfRange")
@@ -452,8 +416,8 @@ mod tests {
 
     #[test]
     fn an_unknown_failure_name_is_refused_by_name() {
-        let err = CodecFailure::parse("tlv-chain-overflow ").expect_err("trailing space is not it");
-        assert!(err.contains("tlv-chain-overflow"), "{err}");
+        let err = CodecFailure::parse("too-many-elements ").expect_err("trailing space is not it");
+        assert!(err.contains("too-many-elements"), "{err}");
     }
 
     /// A backend that can name the failure must raise it by that same name —

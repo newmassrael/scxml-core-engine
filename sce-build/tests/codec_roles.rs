@@ -680,8 +680,7 @@ fn more_gates_on_a_chain_than_a_value_says_stay_checks() {
                  <sce:import src="codec_chain_has_tagged_entry.scxml" kind="codec" as="codec_chain_has_tagged_entry"/>
                  <datamodel>
                    <sce:tlv-chain id="entries" type="codec_chain_has_tagged_entry" sce:byte="0"
-                                  max-depth="3" on-overflow="reject"
-                                  terminate-on="entry-flag" entry-flag-name="more"
+                                  max-depth="3"                                  terminate-on="entry-flag" entry-flag-name="more"
                                   entry-id="entry_type"/>
                    {fields}
                  </datamodel>

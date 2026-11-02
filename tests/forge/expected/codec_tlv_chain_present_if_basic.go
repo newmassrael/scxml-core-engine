@@ -60,7 +60,7 @@ func DecodeCodecTlvChainPresentIfBasic(cursor *codec.SceCursor) (*CodecTlvChainP
 			_list = append(_list, *_elem)
 		}
 		if cursor.Remaining() > 0 {
-			return nil, codec.ErrTlvChainOverflow
+			return nil, codec.ErrTooManyElements
 		}
 		Entries = optional.Some(_list)
 	}
@@ -94,7 +94,7 @@ func (s *CodecTlvChainPresentIfBasic) SetHasChain(v bool) {
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecTlvChainPresentIfBasic) Encode(w codec.SceSink) error {
 	if s.Entries.IsPresent() && (len(s.Entries.Proven()) > 4) {
-		return codec.ErrTlvChainOverflow
+		return codec.ErrTooManyElements
 	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
 	// Mirrors the streaming decode: every field appends its own bytes in
@@ -123,9 +123,8 @@ func (s *CodecTlvChainPresentIfBasic) Encode(w codec.SceSink) error {
 // error Encode refuses the value with before its first byte: a field's
 // presence disagrees with the `sce:present-if` that gates it
 // (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements,
-// codec.ErrTlvChainOverflow). Callers targeting zero-alloc hot paths
-// should call Encode directly against a caller-owned sink (e.g.
+// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
+// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecTlvChainPresentIfBasic) EncodeToBytes() ([]byte, error) {
 	_dst := make([]byte, 0, 137)

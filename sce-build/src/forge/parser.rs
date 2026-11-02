@@ -5166,37 +5166,6 @@ fn parse_codec_tlv_chain_from_node(
         ));
     }
 
-    let on_overflow = match node.attribute("on-overflow") {
-        None | Some("reject") => TlvOverflowPolicy::Reject,
-        Some("truncate") => TlvOverflowPolicy::Truncate,
-        Some("diagnostic-event") => {
-            return Err(located(
-                node,
-                doc_name,
-                // `diagnostic-event` waits on the runtime that would carry
-                // it; until then the set is the two policies that exist.
-                ValidationError::InvalidAttribute {
-                    element: format!("<sce:tlv-chain id='{id}'>"),
-                    attr: "on-overflow".into(),
-                    value: "diagnostic-event".into(),
-                    allowed: vec!["reject".into(), "truncate".into()],
-                },
-            ));
-        }
-        Some(other) => {
-            return Err(located(
-                node,
-                doc_name,
-                ValidationError::InvalidAttribute {
-                    element: format!("<sce:tlv-chain id='{id}'>"),
-                    attr: "on-overflow".into(),
-                    value: other.to_string(),
-                    allowed: vec!["reject".into(), "truncate".into()],
-                },
-            ));
-        }
-    };
-
     // RFC §synth-5-B — `sce:terminate-on` selects chain termination.
     // Default: cursor-exhaust + max_depth (B3 trunk shape — used when
     // nothing follows the chain on the wire). `entry-flag` reads a
@@ -5235,26 +5204,6 @@ fn parse_codec_tlv_chain_from_node(
             ));
         }
     };
-
-    // RFC §synth-5-B — `truncate` and `entry-flag` contradict each other,
-    // and the contradiction is decidable from the two attributes alone.
-    // `entry-flag` says the wire after the chain is not the chain's;
-    // `truncate` says post-cap entries may be dropped. A dropped entry's
-    // bytes are not consumed, so they are what the next field reads. See
-    // `CodecTlvChainTruncateUnderEntryFlag` for why consuming them
-    // instead is not available under the RFC's bounded-parse contract.
-    if matches!(on_overflow, TlvOverflowPolicy::Truncate)
-        && matches!(terminate_on, TlvTerminateStrategy::EntryFlag { .. })
-    {
-        return Err(located(
-            node,
-            doc_name,
-            ValidationError::CodecTlvChainTruncateUnderEntryFlag {
-                codec: label.identifier.to_string(),
-                field: id.clone(),
-            },
-        ));
-    }
 
     // RFC §synth-5-B gated tlv-chain — `<sce:tlv-chain sce:present-if="P">`
     // gates the entire chain field on a flag predicate, mirroring
@@ -5448,7 +5397,6 @@ fn parse_codec_tlv_chain_from_node(
         bit_offset: None,
         bit_size: BitSize::TlvChain {
             max_depth,
-            on_overflow,
             terminate_on,
             entry_id,
             entry_binds,

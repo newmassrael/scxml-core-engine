@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink, TlvChainOverflow
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink, TooManyElements
 from .codec_chain_has_tagged_entry import CodecChainHasTaggedEntry
 
 from dataclasses import dataclass, field
@@ -59,7 +59,7 @@ class CodecChainHasTagged:
             if _more and cursor.remaining() == 0:
                 raise NeedMoreBytes()
             if _more:
-                raise TlvChainOverflow()
+                raise TooManyElements()
             _has_entries_7 = any(_e.entry_type == 7 for _e in f_entries)
             _has_entries_9 = any(_e.entry_type == 9 for _e in f_entries)
             if _has_entries_7 or (f_header & 0x01) != 0:
@@ -123,7 +123,7 @@ class CodecChainHasTagged:
         elif self.checksum is not None:
             raise PresentIfMismatch("checksum")
         if len(self.entries) < 1 or len(self.entries) > 3:
-            raise TlvChainOverflow()
+            raise TooManyElements()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes
         # in declaration order through the per-field encode blocks, so a

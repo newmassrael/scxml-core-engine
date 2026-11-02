@@ -315,7 +315,12 @@ refusal, not as a malformed frame. So:
   and reads at most its frame, so an unbounded chain costs a view no more than a bounded one.
 - A list with no bound is `MAX = usize::MAX`, so `Bounded`, `Chain` and `Aligned` hold it with no second shape.
 - `on-overflow` leaves the document with the capacity: what a node does past what it holds is the node's. It defaults
-  to refusing, and `TlvChainOverflow` is `CapacityExceeded`.
+  to refusing.
+- `TlvChainOverflow` goes. *Amended while landing:* the first text called it `CapacityExceeded`, which holds for a
+  depth that was a node's limit and not for one the document states. A chain past a stated `max-depth` is a frame past
+  its bound, and a view, which stores nothing, refuses it as well, so it is the count past its bound it is:
+  `TooManyElements` on every backend, recorded on the cursor on C++ and Kotlin. A chain past a deployment's capacity is
+  `CapacityExceeded`, as a list's is.
 - `truncate` is removed. It drops entries silently, so a re-encode differs from its frame, and dropping a mandatory
   extension breaks the protocol. No document in the tree uses it; one test does.
 - The width of a length field stays a bound of the language by §1. Upstream bounds a locator and an encoding schema to

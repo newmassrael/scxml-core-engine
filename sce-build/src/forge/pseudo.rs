@@ -287,7 +287,7 @@
 //!
 //! A `<bit-size>` is `fixed <n>`, `tail`, `length-ref`, `vle <n>`,
 //! `repeat (length-field <f>|until-eof)`, `embed`, or
-//! `tlv-chain max-depth <n> on-overflow <p> terminate <s>`.
+//! `tlv-chain max-depth <n> terminate <s>`.
 //!
 //! A `<field>` is `(in|out|internal) <id>: <type> <field-clause>...`,
 //! the direction printed as the keyword rather than inferred from which
@@ -333,8 +333,8 @@ use crate::forge::model::{
     LinkClass, LinkModel, LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy,
     PresentIfPredicate, PresentIfScope, ProcedureHelper, ProcedureModel, ProcedureState,
     ProcedureTransition, QueueCardinality, QueueModel, QueueProgress, QueueStorage, SceType,
-    TestVector, TestVectorValue, TimerModel, TlvOverflowPolicy, TlvTerminateStrategy,
-    TransformModel, ValidatorModel, WorkerModel,
+    TestVector, TestVectorValue, TimerModel, TlvTerminateStrategy, TransformModel, ValidatorModel,
+    WorkerModel,
 };
 use crate::forge::page::{Indent, Node, Part, Shape, Word, EN};
 use crate::model::BlockRole;
@@ -3219,22 +3219,17 @@ fn bit_size_words(b: &BitSize) -> String {
         // in the middle would make every later one ambiguous.
         BitSize::TlvChain {
             max_depth,
-            on_overflow,
             terminate_on,
             entry_id: _,
             entry_binds: _,
         } => {
-            let overflow = match on_overflow {
-                TlvOverflowPolicy::Reject => "reject",
-                TlvOverflowPolicy::Truncate => "truncate",
-            };
             let terminate = match terminate_on {
                 TlvTerminateStrategy::ExhaustOrDepth => "exhaust-or-depth".to_string(),
                 TlvTerminateStrategy::EntryFlag { flag_name } => {
                     format!("entry-flag {}", text(flag_name))
                 }
             };
-            format!("tlv-chain max-depth {max_depth} on-overflow {overflow} terminate {terminate}")
+            format!("tlv-chain max-depth {max_depth} terminate {terminate}")
         }
         BitSize::Embed => "embed".to_string(),
     }

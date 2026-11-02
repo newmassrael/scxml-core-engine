@@ -2116,8 +2116,8 @@ fn forge_codec_zenoh_timestamp_ext_cpp() {
 }
 
 // ── RFC §synth-5-B B3 TLV chain primitive (Cpp/Rust trunk) ────────
-// `codec_tlv_chain_basic` declares a TLV chain bounded at max-depth=8
-// with on-overflow="reject". MCU-class — Cpp/Kotlin/Go/Python all
+// `codec_tlv_chain_basic` declares a TLV chain bounded at max-depth=8.
+// MCU-class — Cpp/Kotlin/Go/Python all
 // typed-reject with codegen/mcu-class-kind-on-non-mcu-language.
 // The trunk's "Cpp/Rust trunk" naming is consistent with the other
 // primitives: "trunk" = first emit pair to land. For item B3 the pair is
@@ -3243,7 +3243,7 @@ fn an_entry_flag_that_cannot_be_supplied_is_refused_where_the_document_is() {
         (
             "a carrier declared after the chain that reads it",
             r#"<sce:tlv-chain id="entries" type="codec_chain_flag_entry" sce:byte="0"
-                   max-depth="4" on-overflow="reject"
+                   max-depth="4"
                    terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:flags id="head" sce:type="uint8" sce:byte="1" sce:bit-size="8">
       <sce:flag name="W" bit="0"/>
@@ -3266,7 +3266,7 @@ fn an_entry_flag_that_cannot_be_supplied_is_refused_where_the_document_is() {
       <sce:flag name="V" bit="0"/>
     </sce:flags>
     <sce:tlv-chain id="entries" type="codec_chain_flag_entry" sce:byte="1"
-                   max-depth="4" on-overflow="reject"
+                   max-depth="4"
                    terminate-on="entry-flag" entry-flag-name="Z"/>"#,
             "'W'",
         ),
@@ -3424,7 +3424,7 @@ fn an_entry_flag_bind_that_cannot_hold_is_refused_with_its_reason() {
       <sce:flag name="T" bit="0"/>
     </sce:flags>
     <sce:tlv-chain id="entries" type="codec_chain_prev_entry" sce:byte="1"
-                   max-depth="4" on-overflow="reject"
+                   max-depth="4"
                    terminate-on="entry-flag" entry-flag-name="Z" {id_attrs}>
       {children}
     </sce:tlv-chain>
@@ -4120,7 +4120,7 @@ fn a_chain_membership_predicate_or_entry_id_that_is_wrong_is_refused_with_its_re
   <datamodel>
     <sce:field id="lead" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:tlv-chain id="ext" type="codec_zenoh_ext_entry" sce:byte="1"
-                   max-depth="4" on-overflow="reject" {chain_attrs}/>
+                   max-depth="4" {chain_attrs}/>
     <sce:field id="after" sce:type="uint8" sce:byte="2" sce:bit-size="8"
                sce:present-if="{predicate}"/>
   </datamodel>
@@ -4154,7 +4154,7 @@ fn a_chain_membership_predicate_or_entry_id_that_is_wrong_is_refused_with_its_re
     <sce:field id="after" sce:type="uint8" sce:byte="0" sce:bit-size="8"
                sce:present-if="ext.has(1)"/>
     <sce:tlv-chain id="ext" type="codec_zenoh_ext_entry" sce:byte="1"
-                   max-depth="4" on-overflow="reject"
+                   max-depth="4"
                    terminate-on="entry-flag" entry-flag-name="Z"
                    entry-id="header.ext_id"/>
   </datamodel>
@@ -4188,7 +4188,7 @@ fn a_plain_integer_identifier_has_no_flags_to_leave_out() {
   <sce:import src="codec_chain_has_tagged_entry.scxml" kind="codec" as="codec_chain_has_tagged_entry"/>
   <datamodel>
     <sce:tlv-chain id="entries" type="codec_chain_has_tagged_entry" sce:byte="0"
-                   max-depth="3" on-overflow="reject"
+                   max-depth="3"
                    terminate-on="entry-flag" entry-flag-name="more"
                    entry-id="entry_type" entry-id-except="entry_type.x"/>
     <sce:field id="after" sce:type="uint8" sce:byte="1" sce:bit-size="8"
@@ -4229,7 +4229,7 @@ fn a_negated_group_is_refused_as_what_the_author_wrote() {
   <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
   <datamodel>
     <sce:tlv-chain id="ext" type="codec_zenoh_ext_entry" sce:byte="0"
-                   max-depth="4" on-overflow="reject"
+                   max-depth="4"
                    terminate-on="entry-flag" entry-flag-name="Z"
                    entry-id="header.ext_id"/>
     <sce:field id="after" sce:type="uint8" sce:byte="1" sce:bit-size="8"
@@ -5566,142 +5566,43 @@ fn forge_codec_tlv_chain_missing_depth_rejects() {
     );
 }
 
-/// RFC §synth-5-B B3: v1 rejects `on-overflow="diagnostic-event"` until the
-/// §synth-5-A diagnostic-event runtime infrastructure ships a reachable
-/// consumer. `reject` and `truncate` are the v1 accept-set; anything
-/// else surfaces the generic `validation/invalid-attribute`.
+/// What a node does past what it holds is the deployment's (docs/adr/0077 §7),
+/// so a chain's document states no policy for it. The grammar refuses a
+/// document that still does, whatever the policy says: ignoring `truncate`
+/// would give its author a chain that refuses where they asked it to drop.
 #[test]
-fn forge_codec_tlv_chain_diagnostic_event_overflow_rejects() {
-    use sce_build::forge::error::{ForgeError, ValidationError};
-
-    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+fn a_chain_states_no_policy_for_what_a_node_cannot_hold() {
+    for policy in ["reject", "truncate", "diagnostic-event"] {
+        let scxml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="diag_event_overflow">
+       sce:kind="codec" sce:default-endian="big" name="stated_policy">
   <sce:import src="codec_tlv_entry.scxml" kind="codec" as="codec_tlv_entry"/>
   <datamodel>
     <sce:field id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:tlv-chain id="extensions" type="codec_tlv_entry" sce:byte="1"
-                   max-depth="4" on-overflow="diagnostic-event"/>
+                   max-depth="4" on-overflow="{policy}"/>
   </datamodel>
-</scxml>"#;
-    let result = sce_build::compile_forge_with_imports(
-        scxml,
-        sce_build::DocumentLabel::symmetric("diag_event_overflow"),
-        sce_build::generator::Language::Rust,
-        &resource_dir(),
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let err = match result {
-        Ok(_) => panic!(
-            "on-overflow=\"diagnostic-event\" must reject with \
-             validation/invalid-attribute in v1"
-        ),
-        Err(e) => e,
-    };
-    assert!(
-        matches!(
-            &err.error,
-            ForgeError::Validation(boxed)
-                if matches!(
-                    boxed.as_ref(),
-                    ValidationError::InvalidAttribute { attr, value, .. }
-                        if attr == "on-overflow" && value == "diagnostic-event"
-                )
-        ),
-        "must surface ValidationError::InvalidAttribute naming on-overflow + diagnostic-event; got: {:?}",
-        err.error
-    );
-}
-
-/// RFC §synth-5-B B3: `on-overflow="truncate"` under
-/// `terminate-on="entry-flag"` rejects at declaration time.
-///
-/// The two attributes contradict each other. `entry-flag` termination is
-/// the author saying the wire after this chain is not the chain's — that
-/// is the whole reason to pick it over `exhaust-or-depth`. `truncate` is
-/// the author saying entries past `max-depth` may be dropped silently.
-/// Dropping them does not consume their bytes, so what the next field
-/// reads is the middle of the chain, and the decode returns `Ok` with
-/// fields built from another field's bytes.
-///
-/// Consuming them instead is not available: the number of entries to skip
-/// is whatever the peer sent, so the skip loop has no bound derivable
-/// from the declaration — which is exactly what `max-depth` lowering to a
-/// `max-iter` (RFC line 533) and the `max-depth × per-entry-WCET` budget
-/// (line 647) exist to forbid.
-#[test]
-fn forge_codec_tlv_chain_truncate_under_entry_flag_rejects() {
-    use sce_build::forge::error::{ForgeError, ValidationError};
-
-    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="truncate_entry_flag">
-  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
-  <datamodel>
-    <sce:field id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="1"
-                   max-depth="4" on-overflow="truncate"
-                   terminate-on="entry-flag" entry-flag-name="Z"/>
-    <sce:field id="trailer" sce:type="uint8" sce:byte="2" sce:bit-size="8"/>
-  </datamodel>
-</scxml>"#;
-    let result = sce_build::compile_forge_with_imports(
-        scxml,
-        sce_build::DocumentLabel::symmetric("truncate_entry_flag"),
-        sce_build::generator::Language::Rust,
-        &resource_dir(),
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let err = match result {
-        Ok(_) => panic!(
-            "on-overflow=\"truncate\" with terminate-on=\"entry-flag\" must reject with \
-             codec/tlv-chain-truncate-under-entry-flag"
-        ),
-        Err(e) => e,
-    };
-    assert!(
-        matches!(
-            &err.error,
-            ForgeError::Validation(boxed)
-                if matches!(
-                    boxed.as_ref(),
-                    ValidationError::CodecTlvChainTruncateUnderEntryFlag { codec, field }
-                        if codec == "truncate_entry_flag" && field == "extensions"
-                )
-        ),
-        "must surface CodecTlvChainTruncateUnderEntryFlag naming the codec + field; got: {:?}",
-        err.error
-    );
-}
-
-/// The other side of the rule above: `truncate` stays legal under
-/// `exhaust-or-depth`, where the chain owns the codec's remaining wire and
-/// the post-cap bytes belong to nobody else. Without this case the
-/// rejection could be widened to all of `truncate` and no test would say
-/// so.
-#[test]
-fn forge_codec_tlv_chain_truncate_under_exhaust_or_depth_compiles() {
-    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="truncate_exhaust">
-  <sce:import src="codec_tlv_entry.scxml" kind="codec" as="codec_tlv_entry"/>
-  <datamodel>
-    <sce:field id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-    <sce:tlv-chain id="extensions" type="codec_tlv_entry" sce:byte="1"
-                   max-depth="4" on-overflow="truncate"/>
-  </datamodel>
-</scxml>"#;
-    sce_build::compile_forge_with_imports(
-        scxml,
-        sce_build::DocumentLabel::symmetric("truncate_exhaust"),
-        sce_build::generator::Language::Rust,
-        &resource_dir(),
-        &sce_build::ForgeCompileOptions::default(),
-    )
-    .expect("truncate under exhaust-or-depth stays legal");
+</scxml>"#
+        );
+        let result = sce_build::compile_forge_with_imports(
+            &scxml,
+            sce_build::DocumentLabel::symmetric("stated_policy"),
+            sce_build::generator::Language::Rust,
+            &resource_dir(),
+            &sce_build::ForgeCompileOptions::default(),
+        );
+        let err = match result {
+            Ok(_) => panic!("a chain stating on-overflow=\"{policy}\" compiled"),
+            Err(e) => e,
+        };
+        assert!(
+            err.error.to_string().contains("on-overflow"),
+            "the refusal must name the attribute; got: {:?}",
+            err.error
+        );
+    }
 }
 
 // ── RFC §synth-5-B B3 DMA alignment primitive (Cpp/Rust trunk) ────
@@ -10107,7 +10008,7 @@ fn forge_c11_codec_zenoh_timestamp_ext() {
 
 // ── RFC §synth-5-B B3 TLV chain primitive (C11, trunk) ────────────
 // `codec_tlv_chain_basic` declares a uint8 header_flags then a TLV
-// chain bounded at max-depth=8 with on-overflow="reject". Each entry
+// chain bounded at max-depth=8. Each entry
 // is `codec_tlv_entry` (id+len+value, RFC line 488). MCU-class —
 // only Rust + C11 emit; cpp/kotlin/go/python typed-reject in
 // render_codec via the codec-content MCU gate. The entry body codec

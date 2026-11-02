@@ -63,8 +63,8 @@ static inline sce_forge_codec_status_t codec_chain_prev_gated_decode(sce_forge_c
                 _prev_entries_after_marker = (uint8_t)((((uint64_t)(out->entries.value.data[_just].header) & 127ULL) == 4ULL) ? 1 : 0);
                 if (!_more) break;
             }
-            if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-            if (_more) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+            if (_more && sce_forge_cursor_remaining(cursor) == 0) { return SCE_FORGE_CODEC_NEED_MORE_BYTES; }
+            if (_more) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
         }
     return SCE_FORGE_CODEC_OK;
 }
@@ -80,7 +80,7 @@ static inline sce_forge_codec_status_t codec_chain_prev_gated_encode(const codec
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (self->entries.present && !sce_forge_length_within_bound(self->entries.value.len, 4)) {
-        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

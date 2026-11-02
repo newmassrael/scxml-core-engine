@@ -69,7 +69,8 @@ struct CodecZenohDeclare {
                 _list.push_back(*_elem);
                 if (!_more) break;
             }
-            if (_more) return std::nullopt;
+            if (_more && cursor.remaining() == 0) { return std::nullopt; }
+            if (_more) { cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt; }
             extensions = std::move(_list);
         }
         auto _emb_declaration = ::SCE::Generated::CodecZenohDeclaration::CodecZenohDeclaration::decode(cursor);

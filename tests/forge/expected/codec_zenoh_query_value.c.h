@@ -19,7 +19,7 @@
 #define CODEC_ZENOH_QUERY_VALUE_MAX_BYTES 656
 
 typedef struct {
-    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_zenoh_value_entry_t entries (max-depth 4, on-overflow=reject) */
+    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_zenoh_value_entry_t entries (max-depth 4) */
     codec_zenoh_value_entry_t exts[4];
     size_t  exts_len;
 } codec_zenoh_query_value_t;
@@ -55,8 +55,8 @@ static inline sce_forge_codec_status_t codec_zenoh_query_value_decode(sce_forge_
             _prev_exts_after_shm = (uint8_t)(((uint64_t)(codec_zenoh_value_entry_ext_id(&out->exts[_just])) == 4ULL) ? 1 : 0);
             if (!_more) break;
         }
-        if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        if (_more) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        if (_more && sce_forge_cursor_remaining(cursor) == 0) { return SCE_FORGE_CODEC_NEED_MORE_BYTES; }
+        if (_more) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -72,7 +72,7 @@ static inline sce_forge_codec_status_t codec_zenoh_query_value_encode(const code
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
     if (!sce_forge_length_within_bound(self->exts_len, 4)) {
-        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
+        return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in

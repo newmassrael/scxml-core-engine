@@ -65,7 +65,7 @@ func DecodeCodecChainFlagForward(cursor *codec.SceCursor, wide byte) (*CodecChai
 			return nil, codec.ErrNeedMoreBytes
 		}
 		if _more {
-			return nil, codec.ErrTlvChainOverflow
+			return nil, codec.ErrTooManyElements
 		}
 		Entries = optional.Some(_list)
 	}
@@ -99,7 +99,7 @@ func (s *CodecChainFlagForward) SetE(v bool) {
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecChainFlagForward) Encode(w codec.SceSink, wide byte) error {
 	if s.Entries.IsPresent() && (len(s.Entries.Proven()) < 1 || len(s.Entries.Proven()) > 4) {
-		return codec.ErrTlvChainOverflow
+		return codec.ErrTooManyElements
 	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
 	// Mirrors the streaming decode: every field appends its own bytes in
@@ -128,9 +128,8 @@ func (s *CodecChainFlagForward) Encode(w codec.SceSink, wide byte) error {
 // error Encode refuses the value with before its first byte: a field's
 // presence disagrees with the `sce:present-if` that gates it
 // (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements,
-// codec.ErrTlvChainOverflow). Callers targeting zero-alloc hot paths
-// should call Encode directly against a caller-owned sink (e.g.
+// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
+// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecChainFlagForward) EncodeToBytes(wide byte) ([]byte, error) {
 	_dst := make([]byte, 0, 17)
