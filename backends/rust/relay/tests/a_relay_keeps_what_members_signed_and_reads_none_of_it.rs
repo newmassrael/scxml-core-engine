@@ -489,6 +489,7 @@ fn a_feed_gives_the_records_in_the_order_they_arrived_by_cursor() {
         heads,
         log_len,
         cursor,
+        ..
     } = ask(&mut relay, 2, Request::Heads, 0)
     else {
         panic!("heads");

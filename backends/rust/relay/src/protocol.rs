@@ -494,10 +494,15 @@ pub enum Response {
     Operations {
         operations: Vec<(String, String)>,
     },
+    /// What the relay holds of each device's chain, how long its log is and how many records it
+    /// holds; and, for a list a device created with no token, the instant its history at this
+    /// relay began (`since`), which changes when the list lapsed and was created again, and tells a
+    /// courier to read the relay from its start (ADR 0080 section 3).
     Heads {
         heads: Vec<Head>,
         log_len: u64,
         cursor: u64,
+        since: Option<u64>,
     },
     /// A challenge to log in against: the relay's name, the nonce (in the URL alphabet) and the
     /// instant it expires at by the relay's clock, whether the relay holds the list, and the
@@ -557,14 +562,21 @@ impl Response {
                 heads,
                 log_len,
                 cursor,
-            } => json!({
-                "ok": "heads",
-                "heads": heads.iter()
-                    .map(|h| json!([h.node.to_string(), h.seq.to_string(), encoding::encode(&h.id)]))
-                    .collect::<Vec<_>>(),
-                "log_len": log_len.to_string(),
-                "cursor": cursor.to_string(),
-            }),
+                since,
+            } => {
+                let mut value = json!({
+                    "ok": "heads",
+                    "heads": heads.iter()
+                        .map(|h| json!([h.node.to_string(), h.seq.to_string(), encoding::encode(&h.id)]))
+                        .collect::<Vec<_>>(),
+                    "log_len": log_len.to_string(),
+                    "cursor": cursor.to_string(),
+                });
+                if let Some(since) = since {
+                    value["since"] = json!(since.to_string());
+                }
+                value
+            }
             Response::Challenge {
                 audience,
                 nonce,
@@ -703,6 +715,10 @@ impl Response {
                     .ok_or("a head is not a node, a number and an id")?,
                 log_len: number("log_len")?,
                 cursor: number("cursor")?,
+                since: match value.get("since") {
+                    None => None,
+                    Some(_) => Some(number("since")?),
+                },
             }),
             Some("challenge") => Ok(Response::Challenge {
                 audience: text_of("audience")?,
@@ -983,6 +999,13 @@ mod tests {
                 }],
                 log_len: 5,
                 cursor: 6,
+                since: None,
+            },
+            Response::Heads {
+                heads: Vec::new(),
+                log_len: 2,
+                cursor: 2,
+                since: Some(1_800_000_000_000),
             },
             Response::Challenge {
                 audience: "relay.example".to_string(),

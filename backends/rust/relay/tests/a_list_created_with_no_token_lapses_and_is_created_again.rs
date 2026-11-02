@@ -17,10 +17,11 @@ use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use sce_rust_relay::client::{keep, CourierState};
 use sce_rust_relay::{
-    drive, Authority, Code, Courier, CourierError, Create, CreationPolicy, DirectLink, Doorway,
-    FileStore, Hub, Limits, Login, LoginMachine, LoginPolicy, MemoryStore, Openly, Relay, Request,
-    Response, Shards, Signal, Store, Token, TOUCH_STEP_MS,
+    drive, Authority, Code, CourierError, Create, CreationPolicy, DirectLink, Doorway, FileStore,
+    Hub, Kept, Limits, Login, LoginMachine, LoginPolicy, MemoryStore, Openly, Relay, Request,
+    Response, Round, RoundKind, RoundMachine, Shards, Signal, Step, Store, Token, TOUCH_STEP_MS,
 };
 use sce_rust_trust::creation;
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
@@ -591,19 +592,35 @@ fn a_login_keeps_a_list_alive_across_a_restart() {
 }
 
 #[test]
-fn a_device_that_holds_a_list_that_lapsed_creates_it_again_and_gives_back_what_it_holds() {
+fn a_device_that_holds_a_list_that_lapsed_creates_it_again_and_every_device_reads_it_anew() {
     let relay = Arc::new(Mutex::new(relay()));
-    // A round of the device `trust` at `now` with `token`, from the relay's start.
-    let round_of = |trust: Trust, token: &str, now: u64| {
-        let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(move || now);
-        let link = DirectLink::new(relay.clone(), token.to_string(), clock);
-        let mut courier = Courier::new(trust, link);
-        courier.sync().expect("a round")
+    let (alice, bob) = (device(1), device(2));
+    let write = |trust: &Trust, id: u32, node: u64| {
+        let data = format!(
+            "{{\"id\":{id},\"field\":3,\"value\":\"1\",\"text\":\"\",\"wallTime\":\"{}\",\
+             \"counter\":0,\"nodeId\":\"{node}\"}}",
+            1000 * id
+        );
+        assert!(matches!(
+            keep(trust, "record_list.write", &data),
+            Kept::Taken
+        ));
     };
-    // Alice's device creates the list, and its first round gives the relay the rest of the log.
-    let alice = log_in(&relay, device(1), NOW).0.unwrap();
-    round_of(device(1), &alice.token, NOW);
-    assert_eq!(relay.lock().unwrap().records(&list()), 4);
+
+    // Alice's device creates the list and writes; bob's logs in and reads it.
+    let token_a = log_in(&relay, alice.clone(), NOW).0.unwrap().token;
+    write(&alice, 1, 1);
+    let (round, alice_state) = round_from(&relay, CourierState::default(), &alice, &token_a, NOW);
+    round.unwrap();
+    let token_b = log_in(&relay, bob.clone(), NOW).0.unwrap().token;
+    let (round, bob_state) = round_from(&relay, CourierState::default(), &bob, &token_b, NOW);
+    round.unwrap();
+    assert_eq!(bob.last_seq(1), 1);
+    // Alice writes again, which bob does not read before the list lapses.
+    write(&alice, 2, 1);
+    let (round, alice_state) = round_from(&relay, alice_state, &alice, &token_a, NOW);
+    round.unwrap();
+    assert_eq!(relay.lock().unwrap().records(&list()), 6);
 
     let due = NOW + IDLE_MS + TOUCH_STEP_MS;
     assert_eq!(relay.lock().unwrap().lapse(IDLE_MS, due).removed, 1);
@@ -611,19 +628,56 @@ fn a_device_that_holds_a_list_that_lapsed_creates_it_again_and_gives_back_what_i
 
     // Bob's device still holds the list: its login creates it again, with the same genesis and
     // name, as far as his own grant.
-    let (token, created) = log_in(&relay, device(2), due);
-    let token = token.expect("bob's login created the list again");
+    let (token, created) = log_in(&relay, bob.clone(), due);
+    let token_b = token.expect("bob's login created the list again").token;
     assert!(created);
     assert!(relay.lock().unwrap().is_created_openly(&list()));
     assert_eq!(relay.lock().unwrap().records(&list()), 3);
-    // His first round, read from the relay's start, gives it what it lacks: carol's grant.
-    let round = round_of(device(2), &token.token, due);
+    // He writes, and his round gives the relay what it lacks of what he holds: carol's grant,
+    // alice's first write and his own.
+    write(&bob, 3, 2);
+    let (round, _) = round_from(&relay, bob_state, &bob, &token_b, due);
+    let round = round.unwrap();
     assert!(round.refused.is_empty(), "{:?}", round.refused);
-    assert_eq!(round.pushed, 1);
+    assert_eq!(round.pushed, 3);
+    assert_eq!(relay.lock().unwrap().records(&list()), 6);
+
+    // Alice's state read six records of the history before; the relay's heads say its history
+    // began again, so her round reads it from its start, takes bob's write, which a read from her
+    // old place would have passed, and gives back her second write.
+    let (token, created) = log_in(&relay, alice.clone(), due);
+    let token_a = token.expect("alice logs in").token;
+    assert!(!created);
+    let (round, _) = round_from(&relay, alice_state, &alice, &token_a, due);
+    let round = round.unwrap();
+    assert!(round.refused.is_empty(), "{:?}", round.refused);
+    assert_eq!(alice.last_seq(2), 1, "bob's write was read");
+    assert_eq!(round.pushed, 1, "her second write was given back");
+    assert_eq!(relay.lock().unwrap().records(&list()), 7);
     assert_eq!(
         held_log(&mut *relay.lock().unwrap()),
         entries().iter().map(Entry::to_json).collect::<Vec<_>>()
     );
+}
+
+/// A round of the device `trust` at `now` with `token`, from the state `state` it kept, as a host
+/// that keeps its courier's state between rounds makes it: what it came to, and the state it keeps.
+fn round_from(
+    relay: &Arc<Mutex<Relay<MemoryStore>>>,
+    state: CourierState,
+    trust: &Trust,
+    token: &str,
+    now: u64,
+) -> (Result<Round, CourierError>, CourierState) {
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(move || now);
+    let mut link = DirectLink::new(relay.clone(), token.to_string(), clock);
+    let mut machine = RoundMachine::start(RoundKind::Sync, state, trust.clone());
+    drive(&mut machine, &mut link, None, &Signal::new());
+    let outcome = match machine.poll() {
+        Step::Done(outcome) => outcome,
+        Step::Request(request) => panic!("the round still asks {request:?}"),
+    };
+    (outcome, machine.into_state())
 }
 
 #[test]

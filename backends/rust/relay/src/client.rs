@@ -262,6 +262,9 @@ pub struct CourierState {
     /// Sends that waited, which a round refused for good and did not say so of
     /// ([`Round::dropped`]).
     dropped: Vec<(String, String, String)>,
+    /// The instant the relay's history of the list began, as its heads last said: set for a list a
+    /// device created with no token, which lapses and is created again with a new one.
+    since: Option<u64>,
 }
 
 impl CourierState {
@@ -312,7 +315,7 @@ impl CourierState {
                 .map(|(node, seq)| json!([node.to_string(), seq.to_string()]))
                 .collect::<Vec<_>>()
         };
-        json!({
+        let mut value = json!({
             "cursor": self.cursor.to_string(),
             "rosterLen": self.roster_len.to_string(),
             "hub": self.hub,
@@ -329,8 +332,13 @@ impl CourierState {
                 .iter()
                 .map(|(event, data, why)| json!([event, data, why]))
                 .collect::<Vec<_>>(),
-        })
-        .to_string()
+        });
+        // Written only for a list whose history at the relay has a beginning, so that the text of
+        // every other list is the one it was.
+        if let Some(since) = self.since {
+            value["since"] = json!(since.to_string());
+        }
+        value.to_string()
     }
 
     /// Read back what [`Self::to_text`] wrote; `None` when the text is not that. A text written
@@ -417,6 +425,11 @@ impl CourierState {
             } else {
                 triples("dropped")?
             },
+            since: if absent("since") {
+                None
+            } else {
+                Some(number("since")?)
+            },
         })
     }
 
@@ -438,6 +451,16 @@ impl CourierState {
 
     pub fn set_cursor(&mut self, cursor: u64) {
         self.cursor = cursor;
+    }
+
+    /// The relay holds a history of the list that began again, as its heads say (a list that
+    /// lapsed there and that a device created again, `LoginMachine::created`, which holds the log
+    /// as far as that device's grant and nothing more): the round reads the relay from its start,
+    /// and gives it again the proof of a conflict as everything else it lacks; what the machine was
+    /// told, and what waits to be handed over, stays as it was.
+    fn begin_again(&mut self) {
+        self.cursor = 0;
+        self.evidence_sent.clear();
     }
 
     /// How many operations this courier holds back for want of the key of their epoch.
@@ -1244,10 +1267,19 @@ impl RoundMachine {
         let Push { stage, then } = push;
         match stage {
             PushStage::Heads => match response {
-                Response::Heads { heads, .. } => Phase::Push(Push {
-                    stage: PushStage::Own { heads, after: None },
-                    then,
-                }),
+                Response::Heads { heads, since, .. } => {
+                    // The relay's history of the list began again since this courier last read
+                    // it (the list lapsed there and a device created it again): what the relay
+                    // holds is read from its start, and it is given again what it lacks.
+                    if since != self.state.since {
+                        self.state.begin_again();
+                        self.state.since = since;
+                    }
+                    Phase::Push(Push {
+                        stage: PushStage::Own { heads, after: None },
+                        then,
+                    })
+                }
                 // The relay will not let this device read yet (it is not a member), in which case
                 // there is nothing to read either.
                 Response::Refused {
@@ -1870,7 +1902,33 @@ impl Sealer for Keep {
 mod tests {
     use serde_json::json;
 
-    use super::Publication;
+    use super::{CourierState, Publication};
+
+    /// A list whose history began again at a relay is read from its start, and the proof of a
+    /// conflict given it again; what the machine was told and what waits to be handed over is kept.
+    #[test]
+    fn a_state_that_begins_again_reads_from_the_start_and_keeps_what_waits() {
+        let mut state = CourierState::default().for_a_hub();
+        state.set_cursor(40);
+        state.evidence_sent.insert("proof".to_string());
+        state
+            .untold
+            .push(("record_list.write".to_string(), "{}".to_string()));
+        state.roster_len = 3;
+        state.begin_again();
+        assert_eq!(state.cursor(), 0);
+        assert!(state.evidence_sent.is_empty());
+        assert_eq!(state.untold(), 1);
+        assert_eq!(state.roster_len, 3);
+        assert!(state.is_for_a_hub());
+
+        // The instant a relay's history began is kept with the rest, and written only when known,
+        // so that the text of a list that has none is the one it was.
+        assert!(!state.to_text().contains("since"));
+        state.since = Some(1_800_000_000_000);
+        assert!(state.to_text().contains("\"since\":\"1800000000000\""));
+        assert_eq!(CourierState::from_text(&state.to_text()), Some(state));
+    }
 
     #[test]
     fn every_publication_reads_back_as_it_was_written() {

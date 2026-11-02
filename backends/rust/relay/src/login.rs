@@ -783,8 +783,8 @@ impl LoginMachine {
 
     /// Whether the login created the list at the relay and came to a token: the relay held none of
     /// it (a list that lapsed there, or one no device had given it yet) and now holds its log as far
-    /// as the device's grant, and nothing else. A host's next round starts reading the relay from
-    /// its start, and gives it everything it lacks (`CourierState::begin_again`).
+    /// as the device's grant, and nothing else. The relay's heads say its history began anew, and
+    /// the next round of each device reads it from its start and gives it what it lacks.
     pub fn created(&self) -> bool {
         self.creating && matches!(self.outcome, Some(Ok(_)))
     }

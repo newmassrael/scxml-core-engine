@@ -906,6 +906,7 @@ impl<S: Store> Relay<S> {
             heads: state.trust.heads(),
             log_len: state.trust.log_len(),
             cursor: state.records.len() as u64,
+            since: state.openly.map(|mark| mark.created_at_ms),
         }
     }
 }
