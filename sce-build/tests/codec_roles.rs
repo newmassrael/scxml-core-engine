@@ -310,7 +310,8 @@ fn says_input_in_xml(path: &Path, input: &str) -> bool {
 
 /// The carrier flags bound to an input that a body or an arm says, read out of the
 /// XML: derived from it, as a parent tag is (docs/adr/0065 §6 R4a). A flag bound to
-/// a list's entries is checked and not derived.
+/// the entries of a list that say it is derived too, as the list's start (§6 R8a),
+/// unless the list is a chain a gate reads the membership of, whose flag is checked.
 fn bound_to_a_said_input_in_xml(path: &Path) -> BTreeSet<ElementId> {
     let text = std::fs::read_to_string(path).expect("the document");
     let doc = roxmltree::Document::parse(&text).expect("well-formed XML");
@@ -334,7 +335,20 @@ fn bound_to_a_said_input_in_xml(path: &Path) -> BTreeSet<ElementId> {
                 && n.attribute("type") == Some(alias)
                 && (is_sce(&n, "embed") || is_sce(&n, "arm") || is_sce(&n, "default"))
         });
-        if held_by_a_body_or_an_arm
+        // A gate that reads a chain's membership names it as `{chain}.has(`.
+        let a_lawful_list_holds_it = doc.descendants().any(|n| {
+            n.is_element()
+                && n.attribute("type") == Some(alias)
+                && (is_sce(&n, "repeat") || is_sce(&n, "tlv-chain"))
+                && n.attribute("id").is_some_and(|list| {
+                    let member = format!("{list}.has(");
+                    !doc.descendants().any(|g| {
+                        g.attribute((SCE_NS, "present-if"))
+                            .is_some_and(|gate| gate.contains(&member))
+                    })
+                })
+        });
+        if (held_by_a_body_or_an_arm || a_lawful_list_holds_it)
             && says_input_in_xml(&path.parent().expect("a directory").join(src), input)
         {
             bound.insert(ElementId::Flag {
