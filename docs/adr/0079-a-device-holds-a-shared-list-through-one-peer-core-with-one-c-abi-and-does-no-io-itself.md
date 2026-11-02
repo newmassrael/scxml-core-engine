@@ -91,9 +91,11 @@ Before the core is built, the trust layer is bound to the standard part:
    ADR orders; a device's core does not wait for it (ADR 0042, "The order of steps 2 and 3", the owner's order of
    2026-11-02).
 
-The signed bytes keep their domain separation and layout rules (`sce-trust/event/1`, length-prefixed parts, the
-list's name and the event's name first); the event names in them change, which is a new domain version, since a
-signature must not verify under two meanings.
+The signed bytes keep their domain separation and layout rules (length-prefixed parts, the list's name and the
+event's name first); the event names in them change, which is a new domain version (`sce-trust/event/2` in place
+of `sce-trust/event/1`), since a signature must not verify under two meanings. The fields the list's second
+revision added to a write and a supersede (`parts`, `atWallTime`, `atCounter`) are signed, and a field an event
+leaves out is signed as its schema default (ADR 0046, "The trust layer").
 
 ### 3. The core is sans-I/O
 

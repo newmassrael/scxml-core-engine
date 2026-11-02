@@ -21,7 +21,9 @@ include!(concat!(env!("OUT_DIR"), "/machines.rs"));
 
 /// The standard shared record list, as the scenarios replay it: the document the trust layer
 /// secures.
-pub use sce_rust_scenarios::integration::static_datamodel::record_list_sm::RecordListPolicy as RecordList;
+pub use sce_rust_scenarios::integration::static_datamodel::record_list_sm::{
+    RecordListPersist, RecordListPolicy as RecordList,
+};
 pub use sheet_peer::{SheetPeerPersist, SheetPeerPolicy as Peer};
 pub use todo_peer::{TodoPeerPersist, TodoPeerPolicy as TodoPeer};
 
