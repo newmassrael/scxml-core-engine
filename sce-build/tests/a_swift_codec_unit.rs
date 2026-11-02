@@ -616,6 +616,50 @@ fn a_list_of_an_entry_codec_swift_does_not_write_is_refused_by_name() {
 }
 
 #[test]
+fn an_embedded_codec_swift_does_not_write_is_refused_by_name() {
+    // The locator holds a string of variable length, which the Swift codec does not write yet, so
+    // the codec that embeds it names a type that is not there.
+    let refusal = swift_of("tests/forge/resources/codec_embed_basic.scxml")
+        .expect_err("an embedded codec Swift does not write is not written");
+    assert!(
+        refusal.contains("an embedded 'codec_zenoh_locator', which has no Swift lowering"),
+        "{refusal}"
+    );
+}
+
+#[test]
+fn an_embedded_codec_is_laid_in_place_and_adds_its_own_length() {
+    let code = swift_of("tests/forge/resources/codec_zenoh_timestamp_ext.scxml")
+        .expect("a length-bounded embedded codec is written");
+    assert!(
+        code.contains("public var ts: CodecZenohTimestamp = CodecZenohTimestamp()"),
+        "{code}"
+    );
+    assert!(
+        code.contains(
+            "do {\n            var piece = BytesSink()\n            try self.ts.encode(into: &piece)\n            frame += piece.bytes\n        }"
+        ),
+        "an encode writes its bytes where the field stands: {code}"
+    );
+    assert!(
+        code.contains("public static let frameLength = 1 + CodecZenohTimestamp.frameLength"),
+        "the fewest bytes are the field's own and the embedded codec's: {code}"
+    );
+}
+
+#[test]
+fn an_embedded_codec_bounded_by_a_length_is_read_from_those_bytes_alone() {
+    let code = swift_of("tests/forge/resources/codec_zenoh_timestamp_ext.scxml")
+        .expect("a length-bounded embedded codec is written");
+    assert!(
+        code.contains(
+            "let ts_inner_length = Int(clamping: frame.ext_size)\n        var ts_inner = SceCursor(Array(try reader.peekSlice(ts_inner_length)))\n        frame.ts = try CodecZenohTimestamp.decode(&ts_inner)\n        try reader.advance(ts_inner_length)"
+        ),
+        "it is decoded from a cursor over the bytes the length gives, and the frame's own cursor moves past them: {code}"
+    );
+}
+
+#[test]
 fn what_the_swift_codec_does_not_write_is_refused_by_name() {
     for (document, what) in [
         ("codec_cbor_map", "cbor"),
@@ -623,7 +667,6 @@ fn what_the_swift_codec_does_not_write_is_refused_by_name() {
         ("codec_chain_flag_carrier", "field '"),
         ("codec_chain_flag_entry", "a flag input"),
         ("codec_chain_has_envelope", "field '"),
-        ("codec_embed_basic", "field '"),
     ] {
         let refusal = swift_of(&format!("tests/forge/resources/{document}.scxml"))
             .expect_err(&format!("{document} must be refused, not written"));

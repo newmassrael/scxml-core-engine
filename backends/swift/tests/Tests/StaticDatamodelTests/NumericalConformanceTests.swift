@@ -4905,6 +4905,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecVariantSessionOpen.frameLength
 }
 
+// MARK: - codec: codec_zenoh_decl_ext_keyexpr
+
+@Test func codecZenohDeclExtKeyexprMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohDeclExtKeyexpr.frameLength
+}
+
 // MARK: - codec: codec_zenoh_decl_ext_keyexpr_inner
 
 @Test func codecZenohDeclExtKeyexprInnerMatchesReference() throws {
@@ -4943,6 +4951,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohTimestamp.frameLength
+}
+
+// MARK: - codec: codec_zenoh_timestamp_ext
+
+@Test func codecZenohTimestampExtMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohTimestampExt.frameLength
 }
 
 // MARK: - codec: codec_zenoh_undecl_kexpr

@@ -130,7 +130,7 @@ fn field_unlowered(
         return what("a TLV chain");
     }
     if f.is_embed() {
-        return what("an embedded codec");
+        return embed_unlowered(m, f, element);
     }
     if f.dma_burst_align.is_some() {
         return what("a DMA alignment");
@@ -209,6 +209,45 @@ fn repeat_unlowered(
     None
 }
 
+/// What of the embedded codec `f` (a `<sce:embed>`) of `m` the Swift codec does not lower yet;
+/// `None` for one it does.
+///
+/// It is a field of the struct the entry codec is written as, read in place from the frame with no
+/// bytes of its own, optional when gated. The unit of the embedded codec must be written
+/// (`element`), which a codec that takes a flag input or dispatches on a tag is not. When the
+/// embedded codec is bounded by the length an earlier field states (`sce:length-from`), that field
+/// must be an unsigned integer: validation holds it to one every frame carries, and a signed one
+/// can be negative, which no number of bytes is.
+fn embed_unlowered(
+    m: &CodecModel,
+    f: &CodecField,
+    element: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    let what = |text: &str| Some(format!("field '{}': {text}", f.id));
+    let Some(alias) = f.embed_body_alias.as_deref() else {
+        return what("an embedded codec with no codec");
+    };
+    if let Some(why) = element(alias) {
+        return what(&format!(
+            "an embedded '{alias}', which has no Swift lowering ({why})"
+        ));
+    }
+    if let Some(name) = f.embed_length_from.as_deref() {
+        let unsigned = m.fields.iter().find(|g| g.id == name).map(|g| {
+            matches!(
+                g.sce_type,
+                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64
+            )
+        });
+        if unsigned != Some(true) {
+            return what(&format!(
+                "a length held in `{name}`, which is not an unsigned integer"
+            ));
+        }
+    }
+    None
+}
+
 /// Whether `f` runs to the end of the frame or for the length an earlier field states.
 fn is_variable(f: &CodecField) -> bool {
     matches!(f.bit_size, BitSize::Tail | BitSize::LengthRef)
@@ -222,9 +261,9 @@ fn is_variable(f: &CodecField) -> bool {
 /// the fields after it, so it is read from the cursor in the order of the document, and each field
 /// begins where the last one ended; the `sce:byte` of a field is then its place in that order.
 fn is_sequential(m: &CodecModel) -> bool {
-    m.fields
-        .iter()
-        .any(|f| f.is_vle() || is_variable(f) || f.is_repeat() || f.present_if.is_some())
+    m.fields.iter().any(|f| {
+        f.is_vle() || is_variable(f) || f.is_repeat() || f.is_embed() || f.present_if.is_some()
+    })
 }
 
 /// What of the predicate `predicate` the Swift codec does not lower yet: a clause on a flag input
@@ -397,11 +436,17 @@ pub(super) fn render(
     // read field by field the fewest bytes it can have, which is each integer at its width, each
     // variable-length integer at one byte, and the bytes of a variable-length field at none.
     let mut frame_length = 0;
-    // The struct each list's entries are, by the alias the list names its entry codec by: the
-    // unit of an imported codec is a type of the same module, named as the document is.
+    // The fewest bytes of each codec embedded where it is always on the wire: its own `frameLength`.
+    let mut embedded_lengths: Vec<String> = Vec::new();
+    // The struct each list's entries or embedded codec are, by the alias the field names its codec
+    // by: the unit of an imported codec is a type of the same module, named as the document is.
     let mut element_types = std::collections::HashMap::new();
-    for f in m.fields.iter().filter(|f| f.is_repeat()) {
-        if let Some(alias) = f.repeat_body_alias.as_deref() {
+    for f in m.fields.iter().filter(|f| f.is_repeat() || f.is_embed()) {
+        if let Some(alias) = f
+            .repeat_body_alias
+            .as_deref()
+            .or(f.embed_body_alias.as_deref())
+        {
             element_types.insert(
                 f.id.clone(),
                 resolve_repeat_body_type(&m.name, alias, imports, Language::Swift)?,
@@ -422,6 +467,35 @@ pub(super) fn render(
                 })
             });
             let optional = if present.is_some() { "?" } else { "" };
+            if f.is_embed() {
+                let element = element_types
+                    .get(&f.id)
+                    .expect("an embedded codec this renderer is given names a codec")
+                    .clone();
+                if present.is_none() {
+                    embedded_lengths.push(format!("{element}.frameLength"));
+                }
+                // The embedded codec is read from the bytes an earlier field says, when the
+                // document bounds it so, and from the frame's own cursor otherwise.
+                let length = f
+                    .embed_length_from
+                    .as_deref()
+                    .map(|name| format!("Int(clamping: frame.{name})"));
+                return serde_json::json!({
+                    "id": f.id,
+                    "swift_type": format!("{element}{optional}"),
+                    "offset": f.byte_offset,
+                    "default": if present.is_some() { "nil".to_string() } else { format!("{element}()") },
+                    "flags": Vec::<serde_json::Value>::new(),
+                    "bits": serde_json::Value::Null,
+                    "present": present,
+                    "embed": {
+                        "element": element,
+                        "length": length,
+                        "inner": format!("{}_inner", f.id),
+                    },
+                });
+            }
             if let BitSize::Repeat { count_ref } = &f.bit_size {
                 let element = element_types
                     .get(&f.id)
@@ -564,6 +638,12 @@ pub(super) fn render(
     // The refusals an encode makes before its first byte, of a value outside its bound.
     let (bound_checks, _) = encode_bound_guard_lines(&m.fields, Language::Swift);
     ctx.insert("bound_checks".into(), bound_checks.into());
+    // A number of bytes and each embedded codec's own, summed: a constant of the codec's unit.
+    let frame_length = match (frame_length, embedded_lengths.is_empty()) {
+        (n, true) => n.to_string(),
+        (0, false) => embedded_lengths.join(" + "),
+        (n, false) => format!("{n} + {}", embedded_lengths.join(" + ")),
+    };
     ctx.insert("frame_length".into(), frame_length.into());
     // Whether the frame is read and written field by field (`is_sequential`), each field beginning
     // where the last one ended, and not at the byte its field names.

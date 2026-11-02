@@ -26,7 +26,10 @@ public struct {{ struct_name }}: Equatable, Sendable {
     /// On the wire only when `{{ f.present.encode | replace("self.", "") }}`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
 {% endif %}
-{% if f.list and f.list.kind == "count" %}
+{% if f.embed %}
+    /// A `{{ f.embed.element }}` laid in place: it has no bytes of its own, the frame holds its fields
+    /// where this field stands{% if f.embed.length %}, read from as many bytes as the document says an earlier field gives it, of which it need not take all{% endif %}.
+{% elif f.list and f.list.kind == "count" %}
     /// As many entries as `{{ f.list.count_field }}` says, each a `{{ f.list.element }}`, as many as the document's
     /// `max-count` admits: a frame that says more is refused with `tooManyElements`, as is a value
     /// with more at its encode.
@@ -106,6 +109,13 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = Array(try reader.readSlice(reader.remaining))
 {% elif f.variable %}
 {{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = Array(try reader.readSlice(Int(clamping: frame.{{ f.variable.length_field }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}))
+{% elif f.embed and f.embed.length %}
+{{ pad }}        let {{ f.embed.inner }}_length = {{ f.embed.length }}
+{{ pad }}        var {{ f.embed.inner }} = SceCursor(Array(try reader.peekSlice({{ f.embed.inner }}_length)))
+{{ pad }}        frame.{{ f.id }} = try {{ f.embed.element }}.decode(&{{ f.embed.inner }})
+{{ pad }}        try reader.advance({{ f.embed.inner }}_length)
+{% elif f.embed %}
+{{ pad }}        frame.{{ f.id }} = try {{ f.embed.element }}.decode(&reader)
 {% elif f.list and f.list.kind == "count" %}
 {{ pad }}        {{ f.list.guard }}var {{ f.list.items }}: [{{ f.list.element }}] = []
 {{ pad }}        for _ in 0..<Int(clamping: {{ f.list.count }}) {
@@ -164,6 +174,12 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% endif %}
 {% if f.variable %}
 {{ pad }}        frame += {{ src }}
+{% elif f.embed %}
+{{ pad }}        do {
+{{ pad }}            var piece = BytesSink()
+{{ pad }}            try {{ src }}.encode(into: &piece)
+{{ pad }}            frame += piece.bytes
+{{ pad }}        }
 {% elif f.list %}
 {{ pad }}        for entry in {{ src }} {
 {{ pad }}            var piece = BytesSink()
