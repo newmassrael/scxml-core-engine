@@ -2,9 +2,12 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{%- import '_macros/forge_rust_storage.jinja2' as storage %}
 {#- The read of one property's value, as the statement that stores it. The
     line grammar — unfolding, TEXT escapes, quoting — is the runtime's
-    (`sce_forge_runtime::content_line`); this spells none of it. #}
+    (`sce_forge_runtime::content_line`); this spells none of it. A text is read
+    into what the storage profile holds it in, and a profile that cannot hold it
+    is noted and the frame read on (docs/adr/0077 §7). #}
 {#- The enum variant a text on a line names, as an expression: the text names a
     carrier and the enum's own conversion takes it to a variant, so a closed and
     an open enum are read by one rule (docs/adr/0015). A closed enum answers
@@ -12,35 +15,47 @@
 {% macro enum_of(x, call) -%}
 {{ x.enum_from }}({{ x.carrier_type }}::try_from({{ call }}?).map_err(|_| CodecError::LineBadValue)?){% if not x.enum_is_open %}.ok_or(CodecError::LineBadValue)?{% endif %}
 {%- endmacro %}
+{#- A text the value of the line holds, as an expression of the type `ty`. #}
+{% macro read_text(ty, e) -%}
+{ let mut _v: {{ ty }} = Default::default(); note_capacity(line.read_string_into({{ "true" if e.text else "false" }}, {{ e.max_size_arg }}, &mut _v), &mut _over)?; _v }
+{%- endmacro %}
+{#- The values of the line cut at the entry's separator, as an expression of the list type `ty`. #}
+{% macro read_texts(ty, e) -%}
+{ let mut _v: {{ ty }} = Default::default(); note_capacity(line.read_strings_into(b'{{ e.separator }}', {{ "true" if e.text else "false" }}, {{ e.max_size_arg }}, {{ e.max_values_arg }}, &mut _v), &mut _over)?; _v }
+{%- endmacro %}
 {#- The read of one parameter's value, as the expression bound to it. #}
 {% macro read_param(p) -%}
 {%- if p.kind == "enum" -%}
 {{ enum_of(p, "line.read_param_enum::<" ~ p.enum_cap ~ ">(TEXTS_" ~ (p.enum_alias | upper) ~ ")") }}
 {%- else -%}
-line.read_param_string::<{{ p.max_size }}>()?
+{ let mut _v: {{ p.str_type }} = Default::default(); note_capacity(line.read_param_string_into({{ p.max_size_arg }}, &mut _v), &mut _over)?; _v }
 {%- endif -%}
 {%- endmacro %}
 {#- The read of a record's value, as the expression bound to it. #}
 {% macro read_record_value(e) -%}
-{%- if e.kind == "enum" -%}
+{%- if e.separator -%}
+{{ read_texts(e.value_field_type, e) }}
+{%- elif e.kind == "enum" -%}
 {{ enum_of(e, "line.read_enum::<" ~ e.enum_cap ~ ">(TEXTS_" ~ (e.enum_alias | upper) ~ ")") }}
 {%- else -%}
-line.read_string::<{{ e.max_size }}>({{ "true" if e.text else "false" }})?
+{{ read_text(e.value_str_type, e) }}
 {%- endif -%}
+{%- endmacro %}
+{#- One more line of the list `e`, noted past what the profile holds; the count
+    the protocol states is judged on the line before anything of it is read. #}
+{% macro push_line(e, value) -%}
+                {{ e.local }}_count += 1;
+                note_capacity(SceList::try_push(&mut {{ e.local }}, {{ value }}), &mut _over)?;
 {%- endmacro %}
 {% macro store_value(e) -%}
 {%- if e.separator -%}
-{{ e.local }} = Some(line.read_strings::<{{ e.max_size }}, {{ e.max_values }}>(b'{{ e.separator }}', {{ "true" if e.text else "false" }})?);
+{{ e.local }} = Some({{ read_texts(e.field_type, e) }});
 {%- elif e.kind == "string" and e.is_list -%}
-{{ e.local }}
-                .push(line.read_string::<{{ e.max_size }}>({{ "true" if e.text else "false" }})?)
-                .map_err(|_| CodecError::LineTooMany)?;
+{{ push_line(e, read_text(e.str_type, e)) }}
 {%- elif e.kind == "string" -%}
-{{ e.local }} = Some(line.read_string::<{{ e.max_size }}>({{ "true" if e.text else "false" }})?);
+{{ e.local }} = Some({{ read_text(e.str_type, e) }});
 {%- elif e.kind == "enum" and e.is_list -%}
-{{ e.local }}
-                .push({{ enum_of(e, "line.read_enum::<" ~ e.enum_cap ~ ">(TEXTS_" ~ (e.enum_alias | upper) ~ ")") }})
-                .map_err(|_| CodecError::LineTooMany)?;
+{{ push_line(e, enum_of(e, "line.read_enum::<" ~ e.enum_cap ~ ">(TEXTS_" ~ (e.enum_alias | upper) ~ ")")) }}
 {%- elif e.kind == "enum" -%}
 {{ e.local }} = Some({{ enum_of(e, "line.read_enum::<" ~ e.enum_cap ~ ">(TEXTS_" ~ (e.enum_alias | upper) ~ ")") }});
 {%- elif e.kind == "bool" -%}
@@ -61,12 +76,11 @@ line.read_string::<{{ e.max_size }}>({{ "true" if e.text else "false" }})?
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-use sce_forge_runtime::content_line::{ContentLineReader, ContentLineWriter};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceList, SceSink};
+use sce_forge_runtime::content_line::{note_capacity, ContentLineReader, ContentLineWriter};
 {% if enum_tables %}
 use sce_forge_runtime::content_line::EnumTexts;
 {% endif %}
-use sce_forge_runtime::heapless;
 // `VecSink` and the heap-backed `encode_to_vec` facade are gated on the
 // runtime's `alloc` feature, as they are for a positional codec.
 #[cfg(feature = "alloc")]
@@ -93,38 +107,57 @@ const TEXTS_{{ t.alias | upper }}: EnumTexts = &[
 ];
 {% endfor %}
 
+{{ storage.declare(struct_name, runtime_codec, storage_fields, storage_gated, storage_bound, storage_lent_bound, storage_from_bound) }}
+
 {% for e in entries if e.is_records %}
-/// One line of `{{ e.property }}` (docs/adr/0014): the parameters it carries and
-/// its {% if e.separator %}list of values, cut at `{{ e.separator }}`{% else %}value{% endif %}. A parameter that may be absent is `None`.
+/// One line of `{{ e.property }}` (docs/adr/0014), at the storage profile `S`:
+/// the parameters it carries and its {% if e.separator %}list of values, cut at `{{ e.separator }}`{% else %}value{% endif %}. A parameter that may be absent is `None`.
 #[allow(dead_code)]
 {{ codec_struct_derives_attr }}
-pub struct {{ e.record_type }} {
+pub struct {{ e.record_type }}In<S: {{ storage_trait }}> {
 {% for p in e.params %}
     /// Parameter `{{ p.param }}`{% if p.required %}, required{% endif %}.
     pub {{ p.name }}: {{ p.field_type }},
 {% endfor %}
 {% if e.separator %}
-    /// The values of the line, at most {{ e.max_values }}.
+    /// The values of the line{% if e.max_values is not none %}, at most {{ e.max_values }}{% endif %}.
 {% else %}
     /// The value of the line.
 {% endif %}
     pub {{ e.value_member }}: {{ e.value_field_type }},
 }
 
+impl<S: {{ storage_trait }}> Default for {{ e.record_type }}In<S> {
+    fn default() -> Self {
+        Self {
+{% for p in e.params %}
+            {{ p.name }}: Default::default(),
 {% endfor %}
-/// One `{{ component }}` component of content lines (SCE_FORGE.md §4.6.4).
-/// Decode reads the properties this codec declares in any order and skips the
-/// rest; encode writes the entries present in declaration order, folded at 75
-/// octets. A value lives in the bounded storage its `sce:max-size` names, so
-/// neither direction allocates. A repeated property that declares a parameter,
-/// or whose line holds a list of values, is a list of line records.
+            {{ e.value_member }}: Default::default(),
+        }
+    }
+}
+{% if default_profile_holds %}
+
+/// [`{{ e.record_type }}In`] at the build's default storage profile.
+#[allow(dead_code)]
+pub type {{ e.record_type }} = {{ e.record_type }}In<{{ runtime_codec }}::DefaultStorage>;
+{% endif %}
+
+{% endfor %}
+/// One `{{ component }}` component of content lines (SCE_FORGE.md §4.6.4), at
+/// the storage profile `S`, which holds each text and list in what it answers
+/// for its tag (docs/adr/0077 §7). Decode reads the properties this codec
+/// declares in any order and skips the rest; encode writes the entries present
+/// in declaration order, folded at 75 octets. A repeated property that declares
+/// a parameter, or whose line holds a list of values, is a list of line records.
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec), so an unused field is not dead code.
 #[allow(dead_code)]
 {{ codec_struct_derives_attr }}
-pub struct {{ struct_name }} {
+pub struct {{ struct_name }}In<S: {{ storage_trait }}> {
 {% for e in entries %}
-    /// Property `{{ e.property }}`{% if e.is_records %}, up to {{ e.max_count }} lines, each a record{% elif e.is_list %}, up to {{ e.max_count }} lines{% elif e.is_values %}, a list of at most {{ e.max_values }} values{% endif %}{% if e.required %}, required{% endif %}.
+    /// Property `{{ e.property }}`{% if e.is_records %}, {% if e.max_count is not none %}up to {{ e.max_count }} lines{% else %}any number of lines{% endif %}, each a record{% elif e.is_list %}, {% if e.max_count is not none %}up to {{ e.max_count }} lines{% else %}any number of lines{% endif %}{% elif e.is_values %}, a list of {% if e.max_values is not none %}at most {{ e.max_values }}{% else %}any number of{% endif %} values{% endif %}{% if e.required %}, required{% endif %}.
     pub {{ e.name }}: {{ e.field_type }},
 {% if not e.is_records %}
 {% for p in e.params %}
@@ -135,13 +168,41 @@ pub struct {{ struct_name }} {
 {% endfor %}
 }
 
-/// What the codec's wire is written through, as every codec has: this value
-/// takes no profile, so it is this type (docs/adr/0077 §7).
+impl<S: {{ storage_trait }}> Default for {{ struct_name }}In<S> {
+    fn default() -> Self {
+        Self {
+{% for e in entries %}
+            {{ e.name }}: Default::default(),
+{% if not e.is_records %}
+{% for p in e.params %}
+            {{ p.name }}: Default::default(),
+{% endfor %}
+{% endif %}
+{% endfor %}
+        }
+    }
+}
+{% if default_profile_holds %}
+
+/// [`{{ struct_name }}In`] at the build's default storage profile — growable
+/// where an allocator exists, inline on the heap-free tier.
 #[allow(dead_code)]
-pub type {{ struct_name }}Wire = {{ struct_name }};
+pub type {{ struct_name }} = {{ struct_name }}In<{{ runtime_codec }}::DefaultStorage>;
+{% else %}
+
+// No value at the build's default profile: on the heap-free tier that is
+// `Inline`, which holds no text or list whose protocol states no bound
+// (docs/adr/0077 §7). Name the profile, `{{ struct_name }}In<S>`.
+{% endif %}
+
+/// What the codec's wire is written through, as every codec has: a type of its
+/// own that takes no profile (docs/adr/0077 §7).
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct {{ struct_name }}Wire;
 
 #[allow(dead_code)]
-impl {{ struct_name }} {
+impl<S: {{ storage_trait }}> {{ struct_name }}In<S> {
     /// An instance with every value at its type's [`Default`] and every
     /// optional entry absent — the infallible constructor every codec offers,
     /// as a positional one does.
@@ -149,13 +210,58 @@ impl {{ struct_name }} {
         Self::default()
     }
 
+{% if encode_may_fail %}
+    /// Encode this component into `w`. A value past its declared bound, or one
+    /// a line could not carry, is refused (SCE_FORGE.md §4.6.4).
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+        {{ struct_name }}Wire::encode_source(self, w)
+    }
+
+    /// [`encode`](Self::encode) into a new `Vec`.
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+        let mut out: Vec<u8> = Vec::new();
+        self.encode(&mut VecSink::new(&mut out))?;
+        Ok(out)
+    }
+{% else %}
+    /// Encode this component into `w`. No value is one a line refuses
+    /// (docs/adr/0065), so the only error is the sink's own.
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
+        {{ struct_name }}Wire::encode_source(self, w)
+    }
+
+    /// [`encode`](Self::encode) into a new `Vec`, which refuses no value.
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut out: Vec<u8> = Vec::new();
+        let Ok(()) = self.encode(&mut VecSink::new(&mut out));
+        out
+    }
+{% endif %}
+}
+
+#[allow(dead_code)]
+impl<S: {{ storage_trait }}> {{ struct_name }}In<S>
+{% if text_bounds %}
+where
+    {{ text_bounds }},
+{% endif %}
+{
     /// Decode one component from `cursor`. On success the cursor advances past
-    /// its `END:` line; on any refusal it is left untouched.
+    /// its `END:` line; on any refusal it is left untouched. A text or a list
+    /// inside its bound and past what `S` holds is read on, and the component
+    /// is refused with `CapacityExceeded` only once it has parsed whole
+    /// (docs/adr/0077 §7).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
         let mut reader =
             ContentLineReader::begin(cursor.peek_slice(cursor.remaining())?, "{{ component }}")?;
+        let mut _over = false;
 {% for e in entries %}
         let mut {{ e.local }}: {{ e.local_type }} = {{ e.local_init }};
+{% if e.is_list or e.is_records %}
+        let mut {{ e.local }}_count: usize = 0;
+{% endif %}
 {% if not e.is_records %}
 {% for p in e.params %}
         let mut {{ p.local }}: Option<{{ p.value_type }}> = None;
@@ -166,9 +272,12 @@ impl {{ struct_name }} {
 {% for e in entries %}
             {% if not loop.first %}else {% endif %}if line.is("{{ e.property }}") {
 {% if e.is_list or e.is_records %}
-                if {{ e.local }}.is_full() {
+{% if e.max_count is not none %}
+                // The count is judged on the line before its parameters are read.
+                if {{ e.local }}_count == {{ e.max_count }} {
                     return Err(CodecError::LineTooMany);
                 }
+{% endif %}
 {% else %}
                 if {{ e.local }}.is_some() {
                     return Err(CodecError::LineTooMany);
@@ -194,22 +303,17 @@ impl {{ struct_name }} {
                 }
 {% endif %}
 {% if e.is_records %}
-                {{ e.local }}
-                    .push({{ e.record_type }} {
+                let _record = {{ e.record_type }}In::<S> {
 {% for p in e.params %}
 {% if p.required %}
-                        {{ p.name }}: {{ p.local }}.ok_or(CodecError::LineRequiredMissing)?,
+                    {{ p.name }}: {{ p.local }}.ok_or(CodecError::LineRequiredMissing)?,
 {% else %}
-                        {{ p.name }}: {{ p.local }},
+                    {{ p.name }}: {{ p.local }},
 {% endif %}
 {% endfor %}
-{% if e.separator %}
-                        {{ e.value_member }}: line.read_strings::<{{ e.max_size }}, {{ e.max_values }}>(b'{{ e.separator }}', {{ "true" if e.text else "false" }})?,
-{% else %}
-                        {{ e.value_member }}: {{ read_record_value(e) }},
-{% endif %}
-                    })
-                    .map_err(|_| CodecError::LineTooMany)?;
+                    {{ e.value_member }}: {{ read_record_value(e) }},
+                };
+{{ push_line(e, "_record") }}
 {% else %}
                 {{ store_value(e) }}
 {% endif %}
@@ -218,7 +322,7 @@ impl {{ struct_name }} {
         }
 {% for e in entries if e.required and (e.is_list or e.is_records) %}
         // A required list needs a line.
-        if {{ e.local }}.is_empty() {
+        if {{ e.local }}_count == 0 {
             return Err(CodecError::LineRequiredMissing);
         }
 {% endfor %}
@@ -244,6 +348,11 @@ impl {{ struct_name }} {
 {% endif %}
 {% endfor %}
         };
+        // The component parsed whole: past what the profile holds is this
+        // node's refusal, after every refusal of the frame's own.
+        if _over {
+            return Err(CodecError::CapacityExceeded);
+        }
         // Only a component that decoded whole moves the cursor.
         cursor.advance(reader.consumed())?;
         Ok(value)
@@ -257,34 +366,4 @@ impl {{ struct_name }} {
         *_out = Self::decode(cursor)?;
         Ok(())
     }
-
-{% if encode_may_fail %}
-    /// Encode this component into `w`. A value past its declared bound, or one
-    /// a line could not carry, is refused (SCE_FORGE.md §4.6.4).
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> where CodecError: From<S::Error> {
-        Self::encode_source(self, w)
-    }
-
-    /// [`encode`](Self::encode) into a new `Vec`.
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
-        let mut out: Vec<u8> = Vec::new();
-        self.encode(&mut VecSink::new(&mut out))?;
-        Ok(out)
-    }
-{% else %}
-    /// Encode this component into `w`. No value is one a line refuses
-    /// (docs/adr/0065), so the only error is the sink's own.
-    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
-        Self::encode_source(self, w)
-    }
-
-    /// [`encode`](Self::encode) into a new `Vec`, which refuses no value.
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut out: Vec<u8> = Vec::new();
-        let Ok(()) = self.encode(&mut VecSink::new(&mut out));
-        out
-    }
-{% endif %}
 }

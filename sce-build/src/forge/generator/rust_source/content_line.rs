@@ -23,6 +23,9 @@ use super::super::*;
 use crate::forge::codec_totality::{self, RefusalKind, Totality};
 use crate::forge::model::{ContentLineEntry, ContentLineModel};
 
+/// The runtime's codec module, as the generated text spells it.
+const RT: &str = "::sce_forge_runtime::codec";
+
 /// What the interface of one codec is made from.
 pub(in super::super) struct Input<'a> {
     pub(in super::super) m: &'a CodecModel,
@@ -81,20 +84,26 @@ impl Plan<'_> {
         }
     }
 
-    /// Where a value of `e` is held in the builder, as the reading of it.
+    /// Where a value of `e` is held in the value, as the reading of it: a text
+    /// through what its profile holds it in (docs/adr/0077 §7).
     fn read_scalar(&self, e: &ContentLineEntry, field: &str, optional: bool) -> String {
         match (e.present_type(), optional) {
-            (SceType::String, false) => format!("self.{field}.as_str()"),
-            (SceType::String, true) => format!("self.{field}.as_deref()"),
+            (SceType::String, false) => format!("{RT}::HeldStr::held_str(&self.{field})"),
+            (SceType::String, true) => {
+                format!("self.{field}.as_ref().map({RT}::HeldStr::held_str)")
+            }
             _ => format!("self.{field}"),
         }
     }
 
-    /// The items of a list of values of `e`, read from the builder.
+    /// The items of a list of values of `e`, read from the list its profile
+    /// holds them in.
     fn read_items(&self, e: &ContentLineEntry, field: &str) -> String {
         match e.present_type() {
-            SceType::String => format!("self.{field}.iter().map(|s| s.as_str())"),
-            _ => format!("self.{field}.iter().copied()"),
+            SceType::String => format!(
+                "{RT}::SceList::as_slice(&self.{field}).iter().map({RT}::HeldStr::held_str)"
+            ),
+            _ => format!("{RT}::SceList::as_slice(&self.{field}).iter().copied()"),
         }
     }
 
@@ -244,8 +253,9 @@ impl Plan<'_> {
                 "/// What one line of `{property}` says: its parameters and its value.\n\
                  pub trait {record}Source {{\n{items}}}\n\n\
                  impl<T: {record}Source + ?Sized> {record}Source for &T {{\n{ref_items}}}\n\n\
-                 impl {record}Source for {record} {{\n{builder_items}}}\n\n",
+                 impl<S: {name}Storage> {record}Source for {record}In<S> {{\n{builder_items}}}\n\n",
                 property = e.property,
+                name = self.name(),
             ));
         }
         out
@@ -373,7 +383,7 @@ impl Plan<'_> {
                 "    fn {acc}(&self) -> {ty} {{\n        (**self).{acc}()\n    }}\n"
             ));
             let read = if self.model.reads_records(e) {
-                format!("self.{acc}.iter()")
+                format!("{RT}::SceList::as_slice(&self.{acc}).iter()")
             } else if self.model.reads_values(e) || e.repeated {
                 self.read_items(e, &acc)
             } else {
@@ -433,9 +443,9 @@ impl Plan<'_> {
              /// What a value of `{name}` says: its properties and their parameters.\n\
              pub trait {trait_name} {{\n{items}}}\n\n\
              impl<T: {trait_name} + ?Sized> {trait_name} for &T {{\n{ref_items}}}\n\n\
-             impl {trait_name} for {name} {{\n{builder_items}}}\n\n\
+             impl<S: {name}Storage> {trait_name} for {name}In<S> {{\n{builder_items}}}\n\n\
              #[allow(dead_code)]\n\
-             impl {name} {{\n\
+             impl {name}Wire {{\n\
              \x20   /// Encode what `src` says as one component into `w`: the properties\n\
              \x20   /// present in declaration order, folded at 75 octets. A value the lines\n\
              {doc}\
@@ -455,7 +465,13 @@ impl Plan<'_> {
             count = super::count_function(&trait_name, "", "", may_fail),
             records = self.record_traits(),
             inline = super::write_attribute(self.input.inline_encode),
-            measure = super::measure_impl(name, "", &trait_name, self.input.inline_encode, may_fail),
+            measure = super::measure_impl(
+                &format!("{name}Wire"),
+                "",
+                &trait_name,
+                self.input.inline_encode,
+                may_fail
+            ),
         )
     }
 }

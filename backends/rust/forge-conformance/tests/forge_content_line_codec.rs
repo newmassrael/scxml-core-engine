@@ -13,12 +13,15 @@ mod codec_content_line_event {
     include!(concat!(env!("OUT_DIR"), "/codec_content_line_event.rs"));
 }
 
-use codec_content_line_event::CodecContentLineEvent;
-use sce_forge_runtime::codec::{CodecError, SceCursor, SliceSink};
-use sce_forge_runtime::heapless::String as Text;
+use codec_content_line_event::CodecContentLineEventIn;
+use sce_forge_runtime::codec::{CodecError, Inline, SceCursor, SceList, SceStr, SliceSink};
 
-fn text<const N: usize>(value: &str) -> Text<N> {
-    Text::try_from(value).expect("fits its bound")
+/// The codec at the profile that holds every text and list inline, at its
+/// bound: no heap on either side (docs/adr/0077 §7).
+type CodecContentLineEvent = CodecContentLineEventIn<Inline>;
+
+fn text<T: SceStr>(value: &str) -> T {
+    T::from_view(value).expect("fits its bound")
 }
 
 fn value() -> CodecContentLineEvent {
@@ -129,7 +132,7 @@ fn what_is_written_is_read_back_with_every_entry_present() {
     v.organizer_cn = Some(text("Kim, Lee"));
     v.rrule = Some(text("FREQ=WEEKLY;BYDAY=MO,WE"));
     for d in ["20261015T090000", "20261022T090000", "20261029T090000"] {
-        v.exdate.push(text(d)).expect("room for three");
+        SceList::try_push(&mut v.exdate, text(d)).expect("room for three");
     }
     v.sequence = Some(65535);
     v.priority = Some(i32::MIN);

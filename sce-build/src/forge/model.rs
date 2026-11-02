@@ -3690,6 +3690,14 @@ impl CodecModel {
                 !matches!(e.present_type(), SceType::String | SceType::Bytes)
                     || e.storage_bytes().is_some()
             })
+        } else if let Some(lines) = &self.content_line {
+            // Each text has its size, each repeated property its count, and
+            // each line of values its count of values.
+            lines.entries.iter().all(|e| {
+                (e.present_type() != &SceType::String || e.max_size.is_some())
+                    && (!e.repeated || e.max_count.is_some())
+                    && (e.separator.is_none() || e.max_values.is_some())
+            })
         } else {
             self.fields
                 .iter()

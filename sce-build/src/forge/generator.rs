@@ -7461,6 +7461,9 @@ pub(crate) fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
     if m.encoding == CodecEncoding::Cbor {
         return crate::forge::cbor_codec::rust_storage_fields(m);
     }
+    if m.encoding == CodecEncoding::ContentLine {
+        return crate::forge::content_line_codec::rust_storage(m).fields;
+    }
     m.fields
         .iter()
         .filter_map(|f| {

@@ -591,8 +591,13 @@ fn rust_generates_the_codec_and_it_reads_and_writes_through_the_runtime_alone() 
     for needle in [
         "ContentLineReader::begin(",
         "ContentLineWriter::begin(",
-        "heapless::String<256>",
-        "heapless::Vec<heapless::String<32>, 64>",
+        // The value is held at a storage profile, and `Inline` holds each text
+        // and list at its bound (docs/adr/0077 §7).
+        "pub struct ProbeEventIn<S: ProbeEventStorage> {",
+        "type Str = ::sce_forge_runtime::codec::InlineStr<256>;",
+        "type Str = ::sce_forge_runtime::codec::InlineStr<32>;",
+        "heapless::Vec<T, 64>",
+        "pub type ProbeEvent = ProbeEventIn<::sce_forge_runtime::codec::DefaultStorage>;",
         "Option<u32>",
         "Option<bool>",
         "CodecError::LineRequiredMissing",

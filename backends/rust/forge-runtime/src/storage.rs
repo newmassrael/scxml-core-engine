@@ -200,11 +200,12 @@ pub trait HoldsStr<Tag> {
     type Str: HeldStr + crate::bounded::Fewest + Default + core::fmt::Debug + Clone + PartialEq;
 }
 
-/// What a profile holds the `bytes` field `Tag` in, as [`HoldsStr`] is for a
-/// `string` field.
+/// What a profile holds the `bytes` field `Tag` in. A profile may hold bytes in
+/// a container of its own, a view of the frame it shares, with no empty value
+/// to start from; no reader builds bytes in place.
 pub trait HoldsBytes<Tag> {
     /// The bytes.
-    type Bytes: HeldBytes + crate::bounded::Fewest + Default + core::fmt::Debug + Clone + PartialEq;
+    type Bytes: HeldBytes + crate::bounded::Fewest + core::fmt::Debug + Clone + PartialEq;
 }
 
 /// How a profile holds the `bytes` field `Tag` when it reads a frame of the

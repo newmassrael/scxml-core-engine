@@ -3,9 +3,11 @@
 
 {# Content-line codec kind (SCE_FORGE.md §4.6.4) — { decoded, encoded } cases
    and reject vectors, as the generic codec fragment has them, with what a
-   content-line component adds: a value lives in bounded storage and not in a
-   borrow of the input, so the struct is filled by assignment from the oracle
-   (the bound is the field's own type, `heapless::String::try_from` infers it);
+   content-line component adds: a value lives in what its storage profile holds
+   it in and not in a borrow of the input, so the struct is filled by assignment
+   from the oracle (a text through `SceStr::from_view` and a line through
+   `SceList::try_push`, the container the field's own type at the default
+   profile, docs/adr/0077 §7);
    an entry can be absent, and a property can be a list; and a case marked
    `decode_only` is an input the codec reads and does not write, so only its
    decode is held. The encode goes into a caller-owned buffer, the way a target
@@ -162,9 +164,9 @@ fixtures::{{ m.enum_document | to_snake_case }}::{{ m.enum_document | to_pascal_
                 .as_array()
                 .expect("{{ field.name }} must be an array")
             {
-                value
-                    .{{ field.name | to_snake_case }}
-                    .push(fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line {
+                ::sce_forge_runtime::codec::SceList::try_push(
+                    &mut value.{{ field.name | to_snake_case }},
+                    fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line {
 {% for m in field.members %}
 {% if m.enum_document and m.optional %}
                         {{ m.name | to_snake_case }}: if r["{{ m.name }}"].is_null() {
@@ -180,7 +182,7 @@ fixtures::{{ m.enum_document | to_snake_case }}::{{ m.enum_document | to_pascal_
                             .expect("a record's values are an array")
                             .iter()
                             .map(|s| {
-                                ::sce_forge_runtime::heapless::String::try_from(
+                                ::sce_forge_runtime::codec::SceStr::from_view(
                                     s.as_str().expect("a list value is a string"),
                                 )
                                 .expect("a case value fits its bound")
@@ -188,28 +190,30 @@ fixtures::{{ m.enum_document | to_snake_case }}::{{ m.enum_document | to_pascal_
                             .collect(),
 {% elif m.optional %}
                         {{ m.name | to_snake_case }}: r["{{ m.name }}"].as_str().map(|s| {
-                            ::sce_forge_runtime::heapless::String::try_from(s)
+                            ::sce_forge_runtime::codec::SceStr::from_view(s)
                                 .expect("a case value fits its bound")
                         }),
 {% else %}
-                        {{ m.name | to_snake_case }}: ::sce_forge_runtime::heapless::String::try_from(
+                        {{ m.name | to_snake_case }}: ::sce_forge_runtime::codec::SceStr::from_view(
                             r["{{ m.name }}"].as_str().expect("a record's member is a string"),
                         )
                         .expect("a case value fits its bound"),
 {% endif %}
 {% endfor %}
-                    })
-                    .expect("a case list fits its bound");
+                    },
+                )
+                .expect("a case list fits its bound");
             }
 {% elif field.list and field.enum_document %}
             for v in decoded["{{ field.name }}"]
                 .as_array()
                 .expect("{{ field.name }} must be an array")
             {
-                value
-                    .{{ field.name | to_snake_case }}
-                    .push({{ lift(field, "v") }})
-                    .expect("a case list fits its bound");
+                ::sce_forge_runtime::codec::SceList::try_push(
+                    &mut value.{{ field.name | to_snake_case }},
+                    {{ lift(field, "v") }},
+                )
+                .expect("a case list fits its bound");
             }
 {% elif field.enum_document and field.optional %}
             if !decoded["{{ field.name }}"].is_null() {
@@ -222,25 +226,24 @@ fixtures::{{ m.enum_document | to_snake_case }}::{{ m.enum_document | to_pascal_
                 .as_array()
                 .expect("{{ field.name }} must be an array")
             {
-                value
-                    .{{ field.name | to_snake_case }}
-                    .push(
-                        ::sce_forge_runtime::heapless::String::try_from(
-                            v.as_str().expect("a list value is a string"),
-                        )
-                        .expect("a case value fits its bound"),
+                ::sce_forge_runtime::codec::SceList::try_push(
+                    &mut value.{{ field.name | to_snake_case }},
+                    ::sce_forge_runtime::codec::SceStr::from_view(
+                        v.as_str().expect("a list value is a string"),
                     )
-                    .expect("a case list fits its bound");
+                    .expect("a case value fits its bound"),
+                )
+                .expect("a case list fits its bound");
             }
 {% elif field.type == "string" and field.optional %}
             if let Some(s) = decoded["{{ field.name }}"].as_str() {
                 value.{{ field.name | to_snake_case }} = Some(
-                    ::sce_forge_runtime::heapless::String::try_from(s)
+                    ::sce_forge_runtime::codec::SceStr::from_view(s)
                         .expect("a case value fits its bound"),
                 );
             }
 {% elif field.type == "string" %}
-            value.{{ field.name | to_snake_case }} = ::sce_forge_runtime::heapless::String::try_from(
+            value.{{ field.name | to_snake_case }} = ::sce_forge_runtime::codec::SceStr::from_view(
                 decoded["{{ field.name }}"].as_str().expect("{{ field.name }} must be a string"),
             )
             .expect("a case value fits its bound");

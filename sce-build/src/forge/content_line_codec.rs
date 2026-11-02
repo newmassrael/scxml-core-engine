@@ -725,95 +725,229 @@ pub(crate) fn max_encoded_bytes_with(m: &CodecModel, longest_text: &dyn Fn(&str)
     total
 }
 
+/// The runtime's codec module, as a generated Rust codec spells it.
+const RUST_RUNTIME: &str = "::sce_forge_runtime::codec";
+
+/// What a storage profile holds of a content-line codec (docs/adr/0077 §7): a
+/// tag for each text and each list, as the storage macro takes them
+/// ([`crate::forge::generator::rust_storage_field`]), each held by `Inline` at
+/// its bound, and the tags of the texts, which a decode builds into.
+pub(crate) struct RustStorage {
+    pub(crate) fields: Vec<serde_json::Value>,
+    /// The tag of each text, the type a decode asks to be a `SceStr`.
+    pub(crate) text_tags: Vec<String>,
+}
+
+/// The field id the tag of one value of the list `e` is named by: a text in a
+/// list has a tag of its own, apart from the list's.
+fn value_id(e: &ContentLineEntry) -> String {
+    format!("{}_value", e.id)
+}
+
+/// The field id the tag of a line record's list of values is named by.
+fn values_id(e: &ContentLineEntry) -> String {
+    format!("{}_values", e.id)
+}
+
+/// The tags of the content-line codec `m` ([`RustStorage`]). A text is held at
+/// its `sce:max-size`, a list of lines at its `sce:max-count` and a line of values
+/// at its `sce:max-values`.
+pub(crate) fn rust_storage(m: &CodecModel) -> RustStorage {
+    use crate::forge::generator::{rust_storage_field, rust_storage_tag};
+    let mut storage = RustStorage {
+        fields: Vec::new(),
+        text_tags: Vec::new(),
+    };
+    let Some(model) = m.content_line.as_ref() else {
+        return storage;
+    };
+    let text = |storage: &mut RustStorage, id: &str, size: Option<u32>| {
+        storage
+            .fields
+            .push(rust_storage_field(&m.name, id, "Str", size));
+        storage.text_tags.push(rust_storage_tag(&m.name, id));
+    };
+    for e in &model.entries {
+        let is_text = e.present_type() == &SceType::String;
+        if e.param.is_some() {
+            if is_text {
+                text(&mut storage, &e.id, e.max_size);
+            }
+            continue;
+        }
+        if model.reads_records(e) {
+            storage
+                .fields
+                .push(rust_storage_field(&m.name, &e.id, "List", e.max_count));
+            if e.separator.is_some() {
+                storage.fields.push(rust_storage_field(
+                    &m.name,
+                    &values_id(e),
+                    "List",
+                    e.max_values,
+                ));
+            }
+            if is_text {
+                text(&mut storage, &value_id(e), e.max_size);
+            }
+        } else if model.reads_values(e) {
+            storage
+                .fields
+                .push(rust_storage_field(&m.name, &e.id, "List", e.max_values));
+            text(&mut storage, &value_id(e), e.max_size);
+        } else if e.repeated {
+            storage
+                .fields
+                .push(rust_storage_field(&m.name, &e.id, "List", e.max_count));
+            if is_text {
+                text(&mut storage, &value_id(e), e.max_size);
+            }
+        } else if is_text {
+            text(&mut storage, &e.id, e.max_size);
+        }
+    }
+    storage
+}
+
+/// A bound as the `Option<usize>` a content-line reader takes.
+fn rust_bound_arg(bound: Option<u32>) -> String {
+    bound.map_or_else(|| "None".to_string(), |n| format!("Some({n})"))
+}
+
 fn render_rust(
     env: &minijinja::Environment,
     m: &CodecModel,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    use crate::forge::generator::rust_storage_tag;
     let l = LangCtx::new(Language::Rust, imports);
     let mut ctx = l.base_context(&m.name);
     l.insert_imports(&mut ctx, imports);
+    let model = m
+        .content_line
+        .as_ref()
+        .expect("a content-line codec carries its entries");
     // docs/adr/0065: whether the encode can refuse a value, which decides what
     // `encode` and `encode_to_vec` return.
     ctx.insert(
         "encode_may_fail".into(),
         crate::forge::codec_totality::may_fail(m, imports).into(),
     );
-    // A value lives in the bounded storage its `sce:max-size` names, so neither
-    // direction allocates and the struct borrows nothing from its input.
-    let mut entries = entries_context(&l, m, |n| format!("heapless::String<{n}>"), |_| None);
-    for entry in &mut entries {
-        let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
-        let required = entry["required"].as_bool() == Some(true);
-        let max_count = entry["max_count"].as_u64().unwrap_or(0);
-        // The values of one line, when it holds a list (docs/adr/0014).
-        let values_type = format!(
-            "heapless::Vec<{value_type}, {}>",
-            entry["max_values"].as_u64().unwrap_or(0)
-        );
-        let (field_type, local_type, local_init) = if entry["is_records"].as_bool() == Some(true) {
-            // A line record is a struct of its own, and the field a bounded list of
+    // A value is held at a storage profile, each text and list in what the
+    // profile answers for its tag (docs/adr/0077 §7). A content line is
+    // unescaped and unfolded as it is read, so nothing borrows the frame.
+    let str_ty = |id: &str| {
+        format!(
+            "<S as {RUST_RUNTIME}::HoldsStr<{}>>::Str",
+            rust_storage_tag(&m.name, id)
+        )
+    };
+    let list_ty = |id: &str, entry: &str| {
+        format!(
+            "<S as {RUST_RUNTIME}::HoldsList<{}>>::List<{entry}>",
+            rust_storage_tag(&m.name, id)
+        )
+    };
+    let mut entries = entries_context(&l, m, |_| String::new(), |_| None);
+    let values = model.entries.iter().filter(|e| e.param.is_none());
+    for (entry, e) in entries.iter_mut().zip(values) {
+        let is_text = e.present_type() == &SceType::String;
+        let plain = l.type_name(e.present_type()).into_owned();
+        let required = e.is_required();
+        // The type of one value of the entry, where it is one of a list.
+        let one = if is_text {
+            str_ty(&value_id(e))
+        } else {
+            plain.clone()
+        };
+        entry["max_size_arg"] = rust_bound_arg(e.max_size).into();
+        entry["max_values_arg"] = rust_bound_arg(e.max_values).into();
+        // The type a text read for this entry is built in: one of the list, or
+        // the entry's own where it holds one value.
+        entry["str_type"] = one.clone().into();
+        let (field_type, local_type, local_init) = if model.reads_records(e) {
+            // A line record is a struct of its own, and the field a list of
             // them. What its value member holds is one value, or the list a
             // separator makes.
-            let record_type = entry["record_type"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string();
-            entry["value_field_type"] = if entry["separator"].is_string() {
-                values_type.clone().into()
+            let record = format!("{}In<S>", entry["record_type"].as_str().unwrap_or_default());
+            entry["value_field_type"] = if e.separator.is_some() {
+                list_ty(&values_id(e), &one)
             } else {
-                value_type.clone().into()
-            };
-            let list = format!("heapless::Vec<{record_type}, {max_count}>");
-            (list.clone(), list, "heapless::Vec::new()".to_string())
-        } else if entry["is_values"].as_bool() == Some(true) {
+                one.clone()
+            }
+            .into();
+            entry["value_str_type"] = one.clone().into();
+            let list = list_ty(&e.id, &record);
+            (list.clone(), list, "Default::default()".to_string())
+        } else if model.reads_values(e) {
             // One line holding a list: the field is the list, and its local an
             // option, so a second line of the property is told from the first.
-            (
-                values_type.clone(),
-                l.codec_optional_of(&values_type),
-                "None".to_string(),
-            )
-        } else if entry["is_list"].as_bool() == Some(true) {
-            let list = format!("heapless::Vec<{value_type}, {max_count}>");
-            (list.clone(), list, "heapless::Vec::new()".to_string())
-        } else if required {
-            (
-                value_type.clone(),
-                l.codec_optional_of(&value_type),
-                "None".to_string(),
-            )
+            let list = list_ty(&e.id, &one);
+            (list.clone(), l.codec_optional_of(&list), "None".to_string())
+        } else if e.repeated {
+            let list = list_ty(&e.id, &one);
+            (list.clone(), list, "Default::default()".to_string())
         } else {
-            let optional = l.codec_optional_of(&value_type);
-            (optional.clone(), optional, "None".to_string())
+            let value = if is_text { str_ty(&e.id) } else { plain };
+            entry["str_type"] = value.clone().into();
+            let optional = l.codec_optional_of(&value);
+            if required {
+                (value, optional, "None".to_string())
+            } else {
+                (optional.clone(), optional, "None".to_string())
+            }
         };
         entry["field_type"] = field_type.into();
         entry["local_type"] = local_type.into();
         entry["local_init"] = local_init.into();
-        if let Some(serde_json::Value::Array(params)) = entry.get_mut("params") {
-            for param in params {
-                let value_type = param["value_type"].as_str().unwrap_or_default().to_string();
-                param["field_type"] = if param["required"].as_bool() == Some(true) {
-                    value_type
+        let params = model.parameters_of(e);
+        if let Some(serde_json::Value::Array(rows)) = entry.get_mut("params") {
+            for (param, p) in rows.iter_mut().zip(params) {
+                let value = if p.present_type() == &SceType::String {
+                    str_ty(&p.id)
                 } else {
-                    l.codec_optional_of(&value_type)
+                    l.type_name(p.present_type()).into_owned()
+                };
+                param["str_type"] = value.clone().into();
+                param["value_type"] = value.clone().into();
+                param["max_size_arg"] = rust_bound_arg(p.max_size).into();
+                param["field_type"] = if p.is_required() {
+                    value
+                } else {
+                    l.codec_optional_of(&value)
                 }
                 .into();
             }
         }
     }
+    let storage = rust_storage(m);
+    let name = crate::filters::to_pascal_case(m.name.clone());
+    ctx.insert(
+        "text_bounds".into(),
+        storage
+            .text_tags
+            .iter()
+            .map(|tag| {
+                format!("<S as {RUST_RUNTIME}::HoldsStr<{tag}>>::Str: {RUST_RUNTIME}::SceStr")
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+            .into(),
+    );
+    crate::forge::generator::insert_rust_storage(&mut ctx, &m.name, storage.fields, &[]);
+    ctx.insert(
+        "default_profile_holds".into(),
+        crate::forge::generator::codec_inline_holds(m, imports).into(),
+    );
+    ctx.insert("storage_trait".into(), format!("{name}Storage").into());
     insert_component(&mut ctx, m);
     insert_enum_tables(&mut ctx, &l, m);
     ctx.insert("entries".into(), entries.into());
     ctx.insert(
         "codec_struct_derives_attr".into(),
-        format!(
-            "#[derive(Default, {})]",
-            crate::rust_derive_policy::RustDeriveCategory::CodecStruct
-                .derives()
-                .join(", ")
-        )
-        .into(),
+        crate::rust_derive_policy::RustDeriveCategory::CodecStruct
+            .derives_attr()
+            .into(),
     );
     l.render(env, "codec_content_line", ctx)
 }

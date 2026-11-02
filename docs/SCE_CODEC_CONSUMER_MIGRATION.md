@@ -677,3 +677,23 @@ Landing: the commit that adds this section.
   `sce:separator` are; a content-line list or text with no bound is the next landing.
 - The pseudocode line of a repeated entry reads `repeated max-count N`.
 
+## A content-line value is held at a storage profile (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- The Rust value of a content-line codec is `{Codec}In<S>`, generic over the storage profile `S` as a positional
+  codec's is, and `{Codec}` is `{Codec}In<DefaultStorage>`, so `{Codec}::decode` and `{Codec}::new()` read as before.
+  Each text, list of lines, line of values and line record is held in what `S` answers for its tag; a line record is
+  `{Codec}{Field}LineIn<S>`, with `{Codec}{Field}Line` at the default profile. A content line is unescaped as it is
+  read, so the value has no lent form.
+- A field is no longer a `heapless::String<N>` or a `heapless::Vec<_, N>`. Build a text with `SceStr::from_view` and
+  push a line with `SceList::try_push`; read a text with `as_str()`. At `Inline` the containers are `InlineStr<N>` and
+  `heapless::Vec<_, N>` at the bounds as before, and at `Heap` they grow: name `{Codec}In<Inline>` where a target has
+  no heap.
+- A decode at a profile whose capacity is below a bound reads the frame on and answers `CapacityExceeded` once it
+  has parsed whole; a line past its protocol's bound is still `LineTooLong` or `LineTooMany`.
+- The static functions (`encode_source`, `write_source`, `count_source`, `measure`) are on `{Codec}Wire`, a unit type,
+  where they were on `{Codec}`; `value.encode(w)` is unchanged.
+- `HoldsStr::Str` asks for `Default`, the empty text, which every text container in the runtime has; a profile of
+  your own that holds a text in a type of its own gives it one.
+
