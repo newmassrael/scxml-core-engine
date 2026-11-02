@@ -46,12 +46,41 @@ pub fn lowers(lang: Language) -> bool {
 /// (docs/adr/0014) and an entry that is an enum, written and read by the text of
 /// its variants (docs/adr/0015), each against the same conformance vectors, so
 /// none of those shapes is a ground for refusing one.
+///
+/// Beyond the language: C11 holds every text and list in an array the size of
+/// its bound, so an entry the protocol states no bound of has no C11 storage
+/// (docs/adr/0077 §7) — every other backend's text and list grow — and a
+/// deployment's capacity of a content-line entry is one C11 does not hold it
+/// at.
 pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
     if !lowers(lang) {
         return Some(format!(
             "codec '{}' is sce:encoding=\"content-line\", which has no {lang:?} generation yet",
             m.name
         ));
+    }
+    if lang == Language::C11 {
+        let lines = m.content_line.as_ref()?;
+        for slot in lines.slots() {
+            let e = &lines.entries[slot.entry];
+            if e.bound(slot.held).is_none() {
+                return Some(format!(
+                    "codec '{}': content-line entry '{}' declares no {}, and C11 holds what \
+                     an entry holds in a fixed array of its bound",
+                    m.name,
+                    e.id,
+                    slot.held.declaration()
+                ));
+            }
+            if e.capacity.of(slot.held).is_some() {
+                return Some(format!(
+                    "codec '{}': the deployment gives content-line container '{}' a capacity, \
+                     and C11 holds a content-line entry in an array of its bound, not of a \
+                     capacity",
+                    m.name, slot.id
+                ));
+            }
+        }
     }
     None
 }
@@ -192,6 +221,27 @@ fn int_range(ty: &SceType) -> Option<(i64, u64)> {
     })
 }
 
+/// A bound as the language's reader and writer take it: the number, or the
+/// runtime's name for no bound where the protocol states none (docs/adr/0077
+/// §7). C11 holds every text and list in an array of its capacity and takes
+/// no such name; a codec it holds no number for is refused before it renders.
+pub(crate) fn bound_literal(lang: Language, bound: Option<u32>) -> String {
+    match bound {
+        Some(n) => n.to_string(),
+        None => match lang {
+            Language::Go => "codec.Unbounded",
+            Language::Cpp => "::SCE::Forge::ContentLine::kUnbounded",
+            Language::Kotlin => "ContentLine.UNBOUNDED",
+            Language::Python => "content_line.UNBOUNDED",
+            Language::Rust => "usize::MAX",
+            Language::C11 | Language::Swift => {
+                unreachable!("a backend that holds no unbounded text renders no literal for one")
+            }
+        }
+        .to_string(),
+    }
+}
+
 /// The value entries of `m` in declaration order, each with the parameters
 /// declared for its property, as the context the templates read. `value_type`
 /// is this backend's type for one value of an entry (`string_type` spells a
@@ -210,6 +260,14 @@ fn entries_context(
     let value_type = |e: &ContentLineEntry| match e.present_type() {
         SceType::String => string_type(e.max_size.unwrap_or(0)),
         other => l.type_name(other).into_owned(),
+    };
+    // A bound as this language's reader and writer take it; C11 holds a number
+    // of its own for each array and reads none of these.
+    let literal = |bound: Option<u32>| -> Option<String> {
+        match (l.language(), bound) {
+            (Language::C11 | Language::Swift, None) => None,
+            (lang, bound) => Some(bound_literal(lang, bound)),
+        }
     };
     let struct_name = l
         .base_context(&m.name)
@@ -237,6 +295,7 @@ fn entries_context(
                         // (docs/adr/0055, section 8).
                         "required": p.is_required(),
                         "max_size": p.max_size,
+                        "max_size_lit": literal(p.max_size),
                         "value_type": value_type(p),
                         "default": default_of(p.present_type()),
                     });
@@ -258,6 +317,7 @@ fn entries_context(
                 "text": e.text,
                 "required": e.is_required(),
                 "max_size": e.max_size,
+                "max_size_lit": literal(e.max_size),
                 "max_count": e.max_count,
                 // One value a line, on several lines.
                 "is_list": e.repeated && !is_records,
@@ -269,6 +329,7 @@ fn entries_context(
                 "is_records": is_records,
                 "separator": e.separator,
                 "max_values": e.max_values,
+                "max_values_lit": literal(e.max_values),
                 "record_type": is_records.then(|| format!(
                     "{struct_name}{}Line",
                     crate::filters::to_pascal_case(e.id.clone())
@@ -558,9 +619,9 @@ fn render_c(
     // length, and a list an array of them beside a count. An entry or parameter
     // that may be absent is the struct `sce/forge/optional.h` declares for its
     // element (docs/adr/0055, section 5), the one a statechart's variable of the
-    // same type is held in: no allocation, as the rest of the C11 runtime. Every
-    // string has its bound (`sce:max-size` is required of one), so C11 refuses
-    // nothing the other backends admit.
+    // same type is held in: no allocation, as the rest of the C11 runtime. An
+    // entry with no bound is refused before this renders ([`refusal`]), so
+    // every array here has one.
     let mut entries = entries_context(&l, m, |_| "char".to_string(), |_| None);
     let codec_snake = crate::filters::to_snake_case(m.name.clone());
     let content = m
@@ -645,17 +706,15 @@ fn render_c(
         .map_or(0, |longest| longest + 1);
     ctx.insert("enum_word_cap".into(), word_cap.into());
     ctx.insert("entries".into(), entries.into());
-    ctx.insert(
-        "max_encoded_bytes".into(),
-        max_encoded_bytes_with(m, &|alias: &str| {
-            l.enum_texts(alias)
-                .iter()
-                .map(|row| row.text.len() as u64)
-                .max()
-                .unwrap_or(0)
-        })
-        .into(),
-    );
+    let max_encoded_bytes = max_encoded_bytes_with(m, &|alias: &str| {
+        l.enum_texts(alias)
+            .iter()
+            .map(|row| row.text.len() as u64)
+            .max()
+            .unwrap_or(0)
+    })
+    .expect("C11 refuses a content-line entry with no bound before it renders");
+    ctx.insert("max_encoded_bytes".into(), max_encoded_bytes.into());
     l.render(env, "codec_content_line", ctx)
 }
 
@@ -666,11 +725,12 @@ fn render_c(
 /// small for it, which `…_MAX_BYTES` promises never happens.
 ///
 /// `longest_text` answers, for the alias of an enum the codec imports, the
-/// length in bytes of the longest text of its variants.
-fn value_width(longest_text: &dyn Fn(&str) -> u64, entry: &ContentLineEntry) -> u64 {
+/// length in bytes of the longest text of its variants. `None` for a string
+/// the protocol states no `sce:max-size` of.
+fn value_width(longest_text: &dyn Fn(&str) -> u64, entry: &ContentLineEntry) -> Option<u64> {
     match entry.present_type() {
-        SceType::Enum(r) => longest_text(&r.alias),
-        _ => u64::from(entry.max_size.unwrap_or(0)),
+        SceType::Enum(r) => Some(longest_text(&r.alias)),
+        _ => entry.max_size.map(u64::from),
     }
 }
 
@@ -686,9 +746,16 @@ fn value_width(longest_text: &dyn Fn(&str) -> u64, entry: &ContentLineEntry) -> 
 /// not over a language's import table. The C11 renderer and the build-wide
 /// pass that judges a broadcast log's element
 /// ([`crate::forge::codec_size`]) both read this one function.
-pub(crate) fn max_encoded_bytes_with(m: &CodecModel, longest_text: &dyn Fn(&str) -> u64) -> u64 {
+///
+/// `None` where an entry has no bound of something it holds a variable number
+/// of ([`ContentLineEntry::unbounded`]): the protocol states no largest
+/// encoding, and a caller that needs one refuses the codec by that entry.
+pub(crate) fn max_encoded_bytes_with(
+    m: &CodecModel,
+    longest_text: &dyn Fn(&str) -> u64,
+) -> Option<u64> {
     let Some(model) = m.content_line.as_ref() else {
-        return 0;
+        return Some(0);
     };
     let component = model.component.len() as u64;
     // `BEGIN:` + component + CRLF, `END:` + component + CRLF.
@@ -702,17 +769,21 @@ pub(crate) fn max_encoded_bytes_with(m: &CodecModel, longest_text: &dyn Fn(&str)
         {
             // `;` + name + `=` + the quotes + the value.
             let name = param.param.as_deref().map_or(0, str::len) as u64;
-            logical += 1 + name + 1 + 2 + value_width(longest_text, param);
+            logical += 1 + name + 1 + 2 + value_width(longest_text, param)?;
         }
         let value = match entry.present_type() {
             // An enum's text is letters, digits and hyphens: nothing is escaped.
-            SceType::Enum(_) => value_width(longest_text, entry),
+            SceType::Enum(_) => value_width(longest_text, entry)?,
             SceType::String => {
                 // A line that holds a list carries every value at its bound and a
                 // separator between each (docs/adr/0014); the separator is not
                 // escaped, so it counts as one octet.
-                let values = u64::from(entry.max_values.unwrap_or(1));
-                u64::from(entry.max_size.unwrap_or(0)) * if entry.text { 2 } else { 1 } * values
+                let values = if entry.separator.is_some() {
+                    u64::from(entry.max_values?)
+                } else {
+                    1
+                };
+                value_width(longest_text, entry)? * if entry.text { 2 } else { 1 } * values
                     + (values - 1)
             }
             SceType::Bool => 5,
@@ -720,9 +791,14 @@ pub(crate) fn max_encoded_bytes_with(m: &CodecModel, longest_text: &dyn Fn(&str)
         };
         logical += 1 + value;
         let physical = logical + 2 + 3 * (logical / 70 + 1);
-        total += physical * u64::from(entry.max_count.unwrap_or(1));
+        let lines = if entry.repeated {
+            u64::from(entry.max_count?)
+        } else {
+            1
+        };
+        total += physical * lines;
     }
-    total
+    Some(total)
 }
 
 /// The runtime's codec module, as a generated Rust codec spells it.
@@ -741,19 +817,22 @@ pub(crate) struct RustStorage {
 /// The field id the tag of one value of the list `e` is named by: a text in a
 /// list has a tag of its own, apart from the list's.
 fn value_id(e: &ContentLineEntry) -> String {
-    format!("{}_value", e.id)
+    e.value_slot_id()
 }
 
 /// The field id the tag of a line record's list of values is named by.
 fn values_id(e: &ContentLineEntry) -> String {
-    format!("{}_values", e.id)
+    e.values_slot_id()
 }
 
-/// The tags of the content-line codec `m` ([`RustStorage`]). A text is held at
-/// its `sce:max-size`, a list of lines at its `sce:max-count` and a line of values
-/// at its `sce:max-values`.
+/// The tags of the content-line codec `m` ([`RustStorage`]), one for each
+/// container its storing form holds
+/// ([`crate::forge::model::ContentLineModel::slots`]), each held at
+/// the deployment's capacity or the bound: a text's `sce:max-size`, a list of
+/// lines' `sce:max-count`, a line of values' `sce:max-values`.
 pub(crate) fn rust_storage(m: &CodecModel) -> RustStorage {
     use crate::forge::generator::{rust_storage_field, rust_storage_tag};
+    use crate::forge::model::LineHeld;
     let mut storage = RustStorage {
         fields: Vec::new(),
         text_tags: Vec::new(),
@@ -761,50 +840,17 @@ pub(crate) fn rust_storage(m: &CodecModel) -> RustStorage {
     let Some(model) = m.content_line.as_ref() else {
         return storage;
     };
-    let text = |storage: &mut RustStorage, id: &str, size: Option<u32>| {
+    for slot in model.slots() {
+        let held = model.entries[slot.entry].storage(slot.held);
+        let kind = if slot.held == LineHeld::Text {
+            storage.text_tags.push(rust_storage_tag(&m.name, &slot.id));
+            "Str"
+        } else {
+            "List"
+        };
         storage
             .fields
-            .push(rust_storage_field(&m.name, id, "Str", size));
-        storage.text_tags.push(rust_storage_tag(&m.name, id));
-    };
-    for e in &model.entries {
-        let is_text = e.present_type() == &SceType::String;
-        if e.param.is_some() {
-            if is_text {
-                text(&mut storage, &e.id, e.max_size);
-            }
-            continue;
-        }
-        if model.reads_records(e) {
-            storage
-                .fields
-                .push(rust_storage_field(&m.name, &e.id, "List", e.max_count));
-            if e.separator.is_some() {
-                storage.fields.push(rust_storage_field(
-                    &m.name,
-                    &values_id(e),
-                    "List",
-                    e.max_values,
-                ));
-            }
-            if is_text {
-                text(&mut storage, &value_id(e), e.max_size);
-            }
-        } else if model.reads_values(e) {
-            storage
-                .fields
-                .push(rust_storage_field(&m.name, &e.id, "List", e.max_values));
-            text(&mut storage, &value_id(e), e.max_size);
-        } else if e.repeated {
-            storage
-                .fields
-                .push(rust_storage_field(&m.name, &e.id, "List", e.max_count));
-            if is_text {
-                text(&mut storage, &value_id(e), e.max_size);
-            }
-        } else if is_text {
-            text(&mut storage, &e.id, e.max_size);
-        }
+            .push(rust_storage_field(&m.name, &slot.id, kind, held));
     }
     storage
 }
@@ -862,6 +908,10 @@ fn render_rust(
         };
         entry["max_size_arg"] = rust_bound_arg(e.max_size).into();
         entry["max_values_arg"] = rust_bound_arg(e.max_values).into();
+        // A decode counts the lines of a repeated property where a count is
+        // judged: past its `sce:max-count`, or none where it is required. The
+        // list may hold fewer than were read, past a profile's capacity.
+        entry["counts_lines"] = (e.repeated && (e.max_count.is_some() || e.is_required())).into();
         // The type a text read for this entry is built in: one of the list, or
         // the entry's own where it holds one value.
         entry["str_type"] = one.clone().into();

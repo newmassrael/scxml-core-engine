@@ -3297,9 +3297,121 @@ pub struct ContentLineEntry {
     /// has a [`Self::separator`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_values: Option<u32>,
+    /// What a form that stores this entry holds, as the deployment gives it
+    /// (docs/adr/0077 §7). It is no fact of the document, so the parser leaves
+    /// it empty and the document's AST does not carry it;
+    /// [`CodecModel::take_capacities`] reads it from the deploy input.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub capacity: LineCapacity,
+}
+
+/// What a content-line entry holds a variable number of, each bounded by a
+/// declaration of its own and each sized by a capacity of its own
+/// (docs/adr/0077 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineHeld {
+    /// The bytes of a text, after unescaping: `sce:max-size`.
+    Text,
+    /// The values of one line cut at a separator: `sce:max-values`.
+    Values,
+    /// The lines of a repeated property: `sce:max-count`.
+    Lines,
+}
+
+impl LineHeld {
+    /// The declaration that bounds it.
+    pub fn declaration(self) -> &'static str {
+        match self {
+            LineHeld::Text => "sce:max-size",
+            LineHeld::Values => "sce:max-values",
+            LineHeld::Lines => "sce:max-count",
+        }
+    }
+}
+
+/// What a deployment gives a content-line entry: a capacity of each
+/// [`LineHeld`], `None` where it gives none and a storing form holds the bound.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LineCapacity {
+    pub text: Option<u32>,
+    pub values: Option<u32>,
+    pub lines: Option<u32>,
+}
+
+impl LineCapacity {
+    /// The capacity given of `held`.
+    pub fn of(&self, held: LineHeld) -> Option<u32> {
+        match held {
+            LineHeld::Text => self.text,
+            LineHeld::Values => self.values,
+            LineHeld::Lines => self.lines,
+        }
+    }
+
+    fn set(&mut self, held: LineHeld, capacity: u32) {
+        let at = match held {
+            LineHeld::Text => &mut self.text,
+            LineHeld::Values => &mut self.values,
+            LineHeld::Lines => &mut self.lines,
+        };
+        *at = Some(capacity);
+    }
+}
+
+/// One container a storing form of a content-line codec holds: what it holds of
+/// which entry, and the id that names it, by which a storage profile's tag and
+/// a deployment's capacity name it (docs/adr/0077 §7).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineSlot {
+    /// The entry's id where the container is the entry's own: its text, its
+    /// lines, or the values of its one line. `<id>_value` for the text of one
+    /// value of a list, and `<id>_values` for the values of one line record.
+    pub id: String,
+    /// The entry, by its index in [`ContentLineModel::entries`].
+    pub entry: usize,
+    pub held: LineHeld,
 }
 
 impl ContentLineEntry {
+    /// What the entry holds a variable number of: a text's bytes, the values
+    /// of a line cut at a separator, a repeated property's lines.
+    pub fn held(&self) -> impl Iterator<Item = LineHeld> {
+        let text = self.present_type() == &SceType::String;
+        [
+            (text, LineHeld::Text),
+            (self.separator.is_some(), LineHeld::Values),
+            (self.param.is_none() && self.repeated, LineHeld::Lines),
+        ]
+        .into_iter()
+        .filter_map(|(holds, held)| holds.then_some(held))
+    }
+
+    /// The bound the protocol states of `held`, or `None` where it states none.
+    pub fn bound(&self, held: LineHeld) -> Option<u32> {
+        match held {
+            LineHeld::Text => self.max_size,
+            LineHeld::Values => self.max_values,
+            LineHeld::Lines => self.max_count,
+        }
+    }
+
+    /// What a form that stores the entry holds of `held`: the deployment's
+    /// capacity, or the bound where it gives none. `None` for neither: no
+    /// container of a fixed size holds it.
+    pub fn storage(&self, held: LineHeld) -> Option<u32> {
+        self.capacity.of(held).or(self.bound(held))
+    }
+
+    /// The id of the container of the text of one value of this entry's list.
+    pub fn value_slot_id(&self) -> String {
+        format!("{}_value", self.id)
+    }
+
+    /// The id of the container of the values of one line record of this entry.
+    pub fn values_slot_id(&self) -> String {
+        format!("{}_values", self.id)
+    }
     /// Whether a decode of a component without this entry is refused: the entry
     /// is of a bare type (docs/adr/0055, section 8). An `optional<T>` entry may
     /// be absent, in every language; for a parameter of a repeated property, of
@@ -3314,6 +3426,18 @@ impl ContentLineEntry {
     /// [`Self::sce_type`] instead.
     pub fn present_type(&self) -> &SceType {
         self.sce_type.present_type()
+    }
+
+    /// The declaration the protocol leaves out of this entry, where it states no
+    /// bound of something the entry holds a variable number of (docs/adr/0077
+    /// §7): `sce:max-size` of a text, `sce:max-values` of a line cut at a
+    /// separator, `sce:max-count` of a repeated property. `None` where every
+    /// such thing has its bound. The largest size a codec encodes to, and a
+    /// broadcast log's element, read this.
+    pub fn unbounded(&self) -> Option<&'static str> {
+        self.held()
+            .find(|held| self.bound(*held).is_none())
+            .map(LineHeld::declaration)
     }
 }
 
@@ -3356,6 +3480,46 @@ impl ContentLineModel {
         entry.param.is_none() && !entry.repeated && entry.separator.is_some()
     }
 
+    /// Every container a storing form of the codec holds, in declaration order
+    /// ([`LineSlot`]): what a storage profile has a tag for and a deployment
+    /// gives a capacity of. A list of lines or of values holds the text of each
+    /// value in a container of its own, apart from the list's.
+    pub fn slots(&self) -> Vec<LineSlot> {
+        let mut slots = Vec::new();
+        for (at, e) in self.entries.iter().enumerate() {
+            let slot = |id: String, held: LineHeld| LineSlot {
+                id,
+                entry: at,
+                held,
+            };
+            let text = e.present_type() == &SceType::String;
+            if e.param.is_some() {
+                if text {
+                    slots.push(slot(e.id.clone(), LineHeld::Text));
+                }
+            } else if self.reads_records(e) {
+                slots.push(slot(e.id.clone(), LineHeld::Lines));
+                if e.separator.is_some() {
+                    slots.push(slot(e.values_slot_id(), LineHeld::Values));
+                }
+                if text {
+                    slots.push(slot(e.value_slot_id(), LineHeld::Text));
+                }
+            } else if self.reads_values(e) {
+                slots.push(slot(e.id.clone(), LineHeld::Values));
+                slots.push(slot(e.value_slot_id(), LineHeld::Text));
+            } else if e.repeated {
+                slots.push(slot(e.id.clone(), LineHeld::Lines));
+                if text {
+                    slots.push(slot(e.value_slot_id(), LineHeld::Text));
+                }
+            } else if text {
+                slots.push(slot(e.id.clone(), LineHeld::Text));
+            }
+        }
+        slots
+    }
+
     /// The parameter entries declared for `entry`'s property, in declaration order.
     pub fn parameters_of<'a>(
         &'a self,
@@ -3373,11 +3537,12 @@ pub type CodecCapacities =
     std::collections::BTreeMap<String, std::collections::BTreeMap<String, u32>>;
 
 /// Where a codec holds what a capacity sizes: a positional field or a CBOR map
-/// entry, by its index.
+/// entry, by its index, or what a content-line entry holds of one kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HeldAt {
     Field(usize),
     Entry(usize),
+    Line(usize, LineHeld),
 }
 
 impl CodecModel {
@@ -3394,6 +3559,11 @@ impl CodecModel {
             match at {
                 HeldAt::Field(at) => self.fields[at].capacity = Some(capacity),
                 HeldAt::Entry(at) => self.cbor_entries[at].capacity = Some(capacity),
+                HeldAt::Line(at, held) => {
+                    if let Some(lines) = self.content_line.as_mut() {
+                        lines.entries[at].capacity.set(held, capacity);
+                    }
+                }
             }
         }
         Ok(())
@@ -3433,7 +3603,21 @@ impl CodecModel {
         for (id, capacity) in declared {
             // Where the field is held, whether a form stores a variable length
             // of it, and the most the language lets a frame say of it.
-            let (at, varies, bound) = if self.encoding == CodecEncoding::Cbor {
+            let (at, varies, bound) = if let Some(lines) = &self.content_line {
+                // A content-line entry is sized by what it holds of each kind,
+                // each named as a storage profile names its container.
+                let Some(slot) = lines.slots().into_iter().find(|s| &s.id == id) else {
+                    return Err(invalid(
+                        id,
+                        "the codec holds no text or list of this name".to_string(),
+                    ));
+                };
+                (
+                    HeldAt::Line(slot.entry, slot.held),
+                    true,
+                    lines.entries[slot.entry].bound(slot.held).map(u64::from),
+                )
+            } else if self.encoding == CodecEncoding::Cbor {
                 let Some(at) = self.cbor_entries.iter().position(|e| &e.id == id) else {
                     return Err(invalid(id, "the codec has no such entry".to_string()));
                 };
@@ -3693,11 +3877,10 @@ impl CodecModel {
         } else if let Some(lines) = &self.content_line {
             // Each text has its size, each repeated property its count, and
             // each line of values its count of values.
-            lines.entries.iter().all(|e| {
-                (e.present_type() != &SceType::String || e.max_size.is_some())
-                    && (!e.repeated || e.max_count.is_some())
-                    && (e.separator.is_none() || e.max_values.is_some())
-            })
+            lines
+                .slots()
+                .iter()
+                .all(|s| lines.entries[s.entry].storage(s.held).is_some())
         } else {
             self.fields
                 .iter()

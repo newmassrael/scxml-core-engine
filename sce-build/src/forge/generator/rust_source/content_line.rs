@@ -21,7 +21,9 @@
 
 use super::super::*;
 use crate::forge::codec_totality::{self, RefusalKind, Totality};
+use crate::forge::content_line_codec::bound_literal;
 use crate::forge::model::{ContentLineEntry, ContentLineModel};
+use crate::generator::Language;
 
 /// The runtime's codec module, as the generated text spells it.
 const RT: &str = "::sce_forge_runtime::codec";
@@ -110,13 +112,13 @@ impl Plan<'_> {
     /// The statements that write the value `v` of `e` on the line.
     fn write_value(&self, e: &ContentLineEntry) -> String {
         let text = e.text;
-        let max_size = e.max_size.unwrap_or(0);
+        let max_size = bound_literal(Language::Rust, e.max_size);
         // A value the line writer can refuse: recorded where it is written.
         if e.separator.is_some() || matches!(e.present_type(), SceType::String | SceType::Enum(_)) {
             self.totality.require(RefusalKind::LineBadValue, &e.id);
         }
         if let Some(separator) = &e.separator {
-            let max_values = e.max_values.unwrap_or(0);
+            let max_values = bound_literal(Language::Rust, e.max_values);
             return format!(
                 "out.strings_of(v, b'{separator}', {text}, {max_size}, {max_values})?;"
             );
@@ -140,7 +142,7 @@ impl Plan<'_> {
     fn write_param(&self, p: &ContentLineEntry, holder: &str) -> Vec<String> {
         let accessor = self.member(&p.id);
         let param = p.param.as_deref().unwrap_or_default();
-        let max_size = p.max_size.unwrap_or(0);
+        let max_size = bound_literal(Language::Rust, p.max_size);
         // Every parameter's value is one the line writer can refuse.
         self.totality.require(RefusalKind::LineBadValue, &p.id);
         let call = |value: &str| match p.present_type() {
@@ -261,17 +263,31 @@ impl Plan<'_> {
         out
     }
 
+    /// The judgement of a repeated property's lines before any is written: none
+    /// where one is required, and no more than its `sce:max-count`, where the
+    /// protocol states one. A source's list is not held to the bound, so the
+    /// encode holds it there, as every backend does.
+    fn judge_lines(&self, e: &ContentLineEntry, accessor: &str, body: &mut Vec<String>) {
+        if e.is_required() {
+            body.push(format!(
+                "if src.{accessor}().next().is_none() {{\n    {}\n}}",
+                self.required_missing(e)
+            ));
+        }
+        if let Some(max_count) = e.max_count {
+            body.push(format!(
+                "if src.{accessor}().count() > {max_count} {{\n    return Err({});\n}}",
+                self.totality.require(RefusalKind::LineTooMany, &e.id)
+            ));
+        }
+    }
+
     fn write_entry(&self, e: &ContentLineEntry, body: &mut Vec<String>) {
         let accessor = self.member(&e.id);
         let property = &e.property;
         let params: Vec<&ContentLineEntry> = self.model.parameters_of(e).collect();
         if self.model.reads_records(e) {
-            if e.is_required() {
-                body.push(format!(
-                    "if src.{accessor}().next().is_none() {{\n    {}\n}}",
-                    self.required_missing(e)
-                ));
-            }
+            self.judge_lines(e, &accessor, body);
             body.push(format!("for record in src.{accessor}() {{"));
             let value = self.member(if e.separator.is_some() {
                 "values"
@@ -290,12 +306,7 @@ impl Plan<'_> {
             body.push(format!("    {}", self.write_value(e)));
             body.push("}".to_string());
         } else if e.repeated {
-            if e.is_required() {
-                body.push(format!(
-                    "if src.{accessor}().next().is_none() {{\n    {}\n}}",
-                    self.required_missing(e)
-                ));
-            }
+            self.judge_lines(e, &accessor, body);
             body.push(format!("for v in src.{accessor}() {{"));
             body.push(format!("    out.property(\"{property}\")?;"));
             body.push(format!("    {}", self.write_value(e)));

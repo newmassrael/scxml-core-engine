@@ -2408,9 +2408,9 @@ fn parse_content_line_entry(
     let max_size = positive("max-size")?;
     let max_count = positive("max-count")?;
     let max_values = positive("max-values")?;
-    // `sce:separator` makes the value of one line a list (docs/adr/0014). The
-    // two attributes stand together: a list with no bound has no storage a backend
-    // can size, and a bound with no separator has nothing to bound.
+    // `sce:separator` makes the value of one line a list (docs/adr/0014), and
+    // `sce:max-values` bounds it where the protocol does (docs/adr/0077 §7): a
+    // bound with no separator has nothing to bound.
     let separator = match sce_attr(node, "separator").as_deref() {
         None => None,
         Some(one @ ("," | ";")) => Some(one.to_string()),
@@ -2435,12 +2435,6 @@ fn parse_content_line_entry(
         }));
     }
     match (&separator, max_values) {
-        (Some(_), None) => {
-            return Err(refuse(ValidationError::MissingAttribute {
-                element,
-                attr: "sce:max-values".into(),
-            }))
-        }
         (None, Some(count)) => {
             return Err(refuse(ValidationError::AttributeRuleViolated {
                 element,
@@ -2471,15 +2465,9 @@ fn parse_content_line_entry(
                 .into(),
         }));
     }
-    // A text is as long as its sender wrote it, so the bound is the codec's to
-    // state: every backend then holds a value in storage it can size, as a CBOR
-    // string of a C11 codec must.
-    if max_size.is_none() && sce_type == SceType::String {
-        return Err(refuse(ValidationError::MissingAttribute {
-            element,
-            attr: "sce:max-size".into(),
-        }));
-    }
+    // A text with no `sce:max-size` is one the protocol bounds by nothing
+    // (docs/adr/0077 §7): a backend whose text grows holds it, and one that holds
+    // texts in arrays of their bound refuses the codec by name.
     // `sce:repeated="true"` says the property may occur on several lines, and
     // `sce:max-count` bounds how many where the protocol bounds it: the mark of
     // a list and its bound are two things, as `sce:separator` and
@@ -2515,15 +2503,6 @@ fn parse_content_line_entry(
                 rule: "a bound on the lines of a repeated property, which needs \
                        sce:repeated=\"true\" to say the property repeats"
                     .into(),
-            }));
-        }
-        (true, None) => {
-            // A repeated property the protocol bounds by nothing is admitted
-            // once every backend holds a list of no bound; until then the bound
-            // is required (docs/adr/0077 §7).
-            return Err(refuse(ValidationError::MissingAttribute {
-                element,
-                attr: "sce:max-count".into(),
             }));
         }
         (true, Some(count)) if count < 2 => {
@@ -2595,6 +2574,7 @@ fn parse_content_line_entry(
     }
 
     Ok(ContentLineEntry {
+        capacity: Default::default(),
         id,
         line: Some(row_of(node)),
         property,

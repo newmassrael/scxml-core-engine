@@ -61,6 +61,9 @@ pub enum RefusalKind {
     LineBadValue,
     /// A content-line list or property a line requires, absent.
     LineRequiredMissing,
+    /// A repeated content-line property of more lines than its
+    /// `sce:max-count`.
+    LineTooMany,
     /// A codec this one holds refuses.
     Child,
 }
@@ -77,6 +80,7 @@ impl RefusalKind {
             RefusalKind::CborWrongLength => "CborWrongLength",
             RefusalKind::LineBadValue => "LineBadValue",
             RefusalKind::LineRequiredMissing => "LineRequiredMissing",
+            RefusalKind::LineTooMany => "LineTooMany",
             RefusalKind::Child => return None,
         })
     }
@@ -971,12 +975,11 @@ fn content_line(model: &ContentLineModel, out: &mut Vec<Refusal>) {
     for e in &model.entries {
         let is_param = e.param.is_some();
         if !is_param {
-            let required_list =
-                (model.reads_records(e) || e.max_count.is_some()) && e.is_required();
-            let optional_with_params = !model.reads_records(e)
-                && e.max_count.is_none()
-                && !e.is_required()
-                && model.parameters_of(e).next().is_some();
+            // `sce:repeated` marks a list, which `sce:max-count` only bounds
+            // where the protocol does (docs/adr/0077 §7).
+            let required_list = e.repeated && e.is_required();
+            let optional_with_params =
+                !e.repeated && !e.is_required() && model.parameters_of(e).next().is_some();
             if required_list || optional_with_params {
                 push(
                     RefusalKind::LineRequiredMissing,
@@ -995,6 +998,13 @@ fn content_line(model: &ContentLineModel, out: &mut Vec<Refusal>) {
                 e,
                 "the value may hold what its line cannot carry: past its size, a control \
                  character, a variant with no text",
+            );
+        }
+        if !is_param && e.repeated && e.max_count.is_some() {
+            push(
+                RefusalKind::LineTooMany,
+                e,
+                "the list may hold more lines than its sce:max-count",
             );
         }
     }

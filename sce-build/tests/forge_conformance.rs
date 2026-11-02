@@ -6051,7 +6051,8 @@ const OPEN_MAP: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 "#;
 
 /// The deployment of the documents with no bound: two entries of each list, four
-/// bytes of the payload and eight of the map's text.
+/// bytes of the payload, eight of the map's text, and of the content-line
+/// component eight bytes of the description, two attendees and two categories.
 fn narrow_deployment() -> sce_build::forge::deployment::RustDeployment {
     let capacities = [
         (
@@ -6069,6 +6070,15 @@ fn narrow_deployment() -> sce_build::forge::deployment::RustDeployment {
         (
             "codec_open_map".to_string(),
             [("note".to_string(), 8)].into(),
+        ),
+        (
+            "codec_open_line".to_string(),
+            [
+                ("description".to_string(), 8),
+                ("attendee".to_string(), 2),
+                ("categories".to_string(), 2),
+            ]
+            .into(),
         ),
     ]
     .into();
@@ -6159,6 +6169,222 @@ mod tests {
         .expect("a CBOR text with no bound reads what its frame holds");
 }
 
+/// A content-line codec whose text, repeated property and line of values the
+/// protocol bounds by nothing (docs/adr/0077 §7): an iCalendar `DESCRIPTION` is
+/// as long, and an `ATTENDEE` repeats as often, as its sender writes it. The
+/// attendees are required, so a list with no bound still needs a line; the
+/// resources have a bound, held on both sides.
+const OPEN_LINE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="content-line" sce:codec-format="2" sce:component="VEVENT"
+       sce:encode-may-fail="true" name="codec_open_line" version="1.0">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="description" sce:type="string" sce:property="DESCRIPTION" sce:value="text"/>
+    <data id="attendee" sce:type="string" sce:property="ATTENDEE" sce:repeated="true" sce:max-size="64"/>
+    <data id="categories" sce:type="optional&lt;string&gt;" sce:property="CATEGORIES" sce:separator="," sce:max-size="16"/>
+    <data id="resources" sce:type="optional&lt;string&gt;" sce:property="RESOURCES" sce:repeated="true" sce:max-count="3" sce:max-size="16"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// The deployment of [`OPEN_LINE`] alone: eight bytes of the description, two
+/// attendees, two categories.
+fn open_line_deployment() -> sce_build::forge::deployment::RustDeployment {
+    let mut deployment = narrow_deployment();
+    deployment
+        .capacities
+        .retain(|codec, _| codec == "codec_open_line");
+    deployment
+}
+
+/// A content-line text and lists the protocol states no bound of have none: a
+/// growing profile reads what the component holds, past any number a default
+/// once stood in for, and writes it back; a deployment holds each at the
+/// capacity it gives and refuses past it with `CapacityExceeded`, while a line
+/// past a bound the protocol does state is still the line's own error, on
+/// decode and on encode (docs/adr/0077 §7).
+#[test]
+fn a_content_line_text_and_list_with_no_bound_read_what_the_component_holds() {
+    const HARNESS: &str = r#"// Injected by a_content_line_text_and_list_with_no_bound_read_what_the_component_holds.
+#[cfg(test)]
+mod tests {
+    use crate::codec_open_line::CodecOpenLineIn;
+    use crate::narrow::Narrow;
+    use ::sce_forge_runtime::codec::{CodecError, Heap, SceCursor, SceList, SceStr};
+
+    // A component with a description of `len` bytes, `attendees` attendees and
+    // `categories` categories on one line.
+    fn component(len: usize, attendees: usize, categories: usize) -> String {
+        let mut out = String::from("BEGIN:VEVENT\r\n");
+        let description = "d".repeat(len);
+        let mut line = format!("DESCRIPTION:{description}");
+        // A content line is folded at 75 octets: a CRLF and a space.
+        while line.len() > 75 {
+            let rest = line.split_off(75);
+            out.push_str(&line);
+            out.push_str("\r\n");
+            line = format!(" {rest}");
+        }
+        out.push_str(&line);
+        out.push_str("\r\n");
+        for n in 0..attendees {
+            out.push_str(&format!("ATTENDEE:mailto:a{n}@example.org\r\n"));
+        }
+        if categories > 0 {
+            let all: Vec<String> = (0..categories).map(|n| format!("c{n}")).collect();
+            out.push_str(&format!("CATEGORIES:{}\r\n", all.join(",")));
+        }
+        out.push_str("END:VEVENT\r\n");
+        out
+    }
+
+    #[test]
+    fn a_growing_profile_holds_every_byte_line_and_value() {
+        let wire = component(300, 40, 30);
+        let v = CodecOpenLineIn::<Heap>::decode(&mut SceCursor::new(wire.as_bytes()))
+            .expect("a growing profile holds it");
+        assert_eq!(v.description.as_str().len(), 300);
+        assert_eq!(v.attendee.as_slice().len(), 40);
+        assert_eq!(v.categories.as_slice().len(), 30);
+        let again = v.encode_to_vec().expect("encodes");
+        let back = CodecOpenLineIn::<Heap>::decode(&mut SceCursor::new(&again)).expect("reads back");
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn a_deployment_holds_its_capacity_and_refuses_past_it() {
+        let wire = component(8, 2, 2);
+        let v = CodecOpenLineIn::<Narrow>::decode(&mut SceCursor::new(wire.as_bytes()))
+            .expect("within every capacity");
+        assert_eq!(v.description.as_str().len(), 8);
+        for wire in [component(9, 2, 2), component(8, 3, 2), component(8, 2, 3)] {
+            assert_eq!(
+                CodecOpenLineIn::<Narrow>::decode(&mut SceCursor::new(wire.as_bytes())),
+                Err(CodecError::CapacityExceeded),
+                "{wire}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bound_the_protocol_states_is_held_on_both_sides() {
+        let wire = "BEGIN:VEVENT\r\nDESCRIPTION:d\r\nRESOURCES:a\r\nRESOURCES:b\r\n\
+                    RESOURCES:c\r\nRESOURCES:d\r\nEND:VEVENT\r\n";
+        assert_eq!(
+            CodecOpenLineIn::<Heap>::decode(&mut SceCursor::new(wire.as_bytes())),
+            Err(CodecError::LineTooMany)
+        );
+        // The attendees are required, and any number of them is in the bound.
+        let mut v = CodecOpenLineIn::<Heap>::new();
+        assert_eq!(v.encode_to_vec(), Err(CodecError::LineRequiredMissing));
+        v.attendee
+            .try_push(SceStr::from_view("mailto:a@example.org").expect("a text"))
+            .expect("a growing list");
+        for _ in 0..4 {
+            v.resources
+                .try_push(SceStr::from_view("r").expect("a text"))
+                .expect("a growing list");
+        }
+        assert_eq!(v.encode_to_vec(), Err(CodecError::LineTooMany));
+    }
+}
+"#;
+    use sce_build::generator::Language;
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let path = dir.path().join("codec_open_line.scxml");
+    std::fs::write(&path, OPEN_LINE).expect("write");
+    let mut files = generate_files_for_codec_set_with(
+        dir.path(),
+        &["codec_open_line.scxml"],
+        Language::Rust,
+        golden_options(Language::Rust),
+    )
+    .expect("a content-line codec with no bound generates");
+    let output = sce_build::compile_rust_deployment(
+        &[path.as_path()],
+        &open_line_deployment(),
+        &golden_options(Language::Rust),
+    )
+    .expect("the deployment generates");
+    files.extend(output.files);
+    files.push(("open_line.rs".to_string(), HARNESS.to_string()));
+    rustc_run_generated_set(files, "open_line", "test", RustcProfile::Alloc)
+        .expect("a content-line text with no bound reads what its component holds");
+}
+
+/// What cannot hold a content-line text or list the protocol states no bound
+/// of says so, naming it (docs/adr/0077 §7): C11, which holds each in an array
+/// of its bound, and a deployment that gives it no capacity. A capacity that
+/// names no container of the codec, or is past a bound, is refused.
+#[test]
+fn what_cannot_hold_a_content_line_text_with_no_bound_refuses_it() {
+    use sce_build::generator::Language;
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let path = dir.path().join("codec_open_line.scxml");
+    std::fs::write(&path, OPEN_LINE).expect("write");
+    let refused = sce_build::compile_forge_with_imports(
+        OPEN_LINE,
+        sce_build::DocumentLabel::symmetric("codec_open_line"),
+        Language::C11,
+        dir.path(),
+        &golden_options(Language::C11),
+    )
+    .err()
+    .expect("C11 refuses a text it holds no number of");
+    assert!(
+        refused.to_string().contains("'description'")
+            && refused.to_string().contains("sce:max-size"),
+        "{refused}"
+    );
+
+    let refused_with = |capacities: &[(&str, u32)]| {
+        let mut deployment = open_line_deployment();
+        deployment.capacities = [(
+            "codec_open_line".to_string(),
+            capacities
+                .iter()
+                .map(|(id, n)| (id.to_string(), *n))
+                .collect(),
+        )]
+        .into();
+        match sce_build::compile_rust_deployment(
+            &[path.as_path()],
+            &deployment,
+            &golden_options(Language::Rust),
+        ) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("{capacities:?} is refused"),
+        }
+    };
+    // The attendees and the categories have no bound, and none is given here.
+    let why = refused_with(&[("description", 8)]);
+    assert!(
+        why.contains("attendee") && why.contains("needs a capacity"),
+        "{why}"
+    );
+    let why = refused_with(&[("description", 8), ("attendee", 2), ("nothing", 2)]);
+    assert!(
+        why.contains("nothing") && why.contains("no text or list"),
+        "{why}"
+    );
+    // The text of one attendee is bounded at 64 bytes, and three resources.
+    let why = refused_with(&[
+        ("description", 8),
+        ("attendee", 2),
+        ("categories", 2),
+        ("attendee_value", 65),
+    ]);
+    assert!(why.contains("past the field's bound 64"), "{why}");
+    let why = refused_with(&[
+        ("description", 8),
+        ("attendee", 2),
+        ("categories", 2),
+        ("resources", 4),
+    ]);
+    assert!(why.contains("past the field's bound 3"), "{why}");
+}
+
 /// What cannot hold a map's text the protocol states no bound of says so,
 /// naming the entry (docs/adr/0077 §7): C11 with no capacity for it, and a
 /// deployment that gives it none. C11 given a capacity holds the text in an
@@ -6193,6 +6419,12 @@ fn what_cannot_hold_a_cbor_text_with_no_bound_refuses_it() {
     let header = compile(Language::C11, held).expect("C11 holds a capacity it is given");
     let header = &header.files[0].1;
     assert!(header.contains("char note[8];"), "{header}");
+    // The largest frame this node writes holds the text at its capacity: the
+    // map head, the key, and a text of eight bytes behind its one-byte head.
+    assert!(
+        header.contains("#define CODEC_OPEN_MAP_MAX_BYTES 11U"),
+        "{header}"
+    );
     assert!(
         header.contains("sce_forge_cbor_read_text(&c, SIZE_MAX, 8, v->note, &v->note_len);"),
         "{header}"
@@ -6228,6 +6460,7 @@ fn what_has_no_bound_compiles_on_the_heap_free_tier() {
 use crate::codec_open_bytes::{CodecOpenBytes, CodecOpenBytesIn};
 use crate::codec_open_chain::CodecOpenChainIn;
 use crate::codec_open_list::CodecOpenListIn;
+use crate::codec_open_line::CodecOpenLineIn;
 use crate::codec_open_map::{CodecOpenMap, CodecOpenMapOwned};
 use crate::narrow::Narrow;
 use ::sce_forge_runtime::codec::SceCursor;
@@ -6245,17 +6478,24 @@ pub fn probe(frame: &[u8]) -> usize {
         .ok()
         .and_then(|v| v.try_into_owned_in::<Narrow>().ok())
         .map_or(0, |v: CodecOpenMapOwned<Narrow>| v.note.as_text().len());
-    lent + held + chain + list + map
+    let line = CodecOpenLineIn::<Narrow>::decode(&mut SceCursor::new(frame))
+        .map_or(0, |v| v.description.as_str().len() + v.attendee.as_slice().len());
+    lent + held + chain + list + map + line
 }
 "#;
     use sce_build::generator::Language;
     let (dir, lists) = open_lists();
     std::fs::write(dir.path().join("codec_open_bytes.scxml"), OPEN_BYTES).expect("write");
     std::fs::write(dir.path().join("codec_open_map.scxml"), OPEN_MAP).expect("write");
+    std::fs::write(dir.path().join("codec_open_line.scxml"), OPEN_LINE).expect("write");
     let set: Vec<&str> = lists
         .iter()
         .copied()
-        .chain(["codec_open_bytes.scxml", "codec_open_map.scxml"])
+        .chain([
+            "codec_open_bytes.scxml",
+            "codec_open_map.scxml",
+            "codec_open_line.scxml",
+        ])
         .collect();
     let mut opts = golden_options(Language::Rust);
     opts.views = true;

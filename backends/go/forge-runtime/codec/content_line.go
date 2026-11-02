@@ -15,9 +15,15 @@ package codec
 
 import (
 	"errors"
+	"math"
 	"strconv"
 	"unicode/utf8"
 )
+
+// Unbounded is the bound a reader or a writer is handed for a text or a list
+// the protocol states no bound of (docs/adr/0077 §7): the largest int, past
+// which no frame this runtime reads has a length.
+const Unbounded = math.MaxInt
 
 // ErrLineMalformed: a line, a parameter or an `END:` the grammar does not
 // admit.

@@ -524,19 +524,36 @@ fn render_c(
         }
     }
     ctx.insert("optional_declarations".into(), declarations.into());
-    ctx.insert("max_encoded_bytes".into(), max_encoded_bytes(m).into());
+    // What this node's encode writes at most: each string at what it holds,
+    // the deployment's capacity where it gives one.
+    let max_encoded_bytes = max_encoded_bytes(m, Measured::Held)
+        .expect("C11 refuses a CBOR string it holds no number of before it renders");
+    ctx.insert("max_encoded_bytes".into(), max_encoded_bytes.into());
     render_in_key_order(&l, env, ctx)
 }
 
+/// What [`max_encoded_bytes`] measures a CBOR text or byte string at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Measured {
+    /// The protocol's bound, `sce:length` or `sce:max-size`: the largest frame
+    /// of the language, on every node (docs/adr/0077 §7).
+    Bound,
+    /// What this node's storing form holds, [`CborEntry::storage_bytes`]: the
+    /// deployment's capacity or the bound. A node's encode writes no more than
+    /// it holds.
+    Held,
+}
+
 /// The most bytes `m` encodes to: its map head and, for every entry, its key
-/// and the longest value its declaration admits — a bound C11 callers size
-/// an `encode_to_buf` buffer by.
+/// and the longest value it admits, measured as `measured` says — at the
+/// bound, the largest frame of the language; held, a size C11 callers size an
+/// `encode_to_buf` buffer by.
 ///
-/// A string or byte string with neither `sce:length` nor `sce:max-size` counts
-/// as empty here; the build-wide pass that judges a broadcast log's element
-/// ([`crate::forge::codec_size`]) refuses such an entry before it asks, so the
-/// bound it reports is never taken over a missing declaration.
-pub(crate) fn max_encoded_bytes(m: &CodecModel) -> u64 {
+/// `None` where a string or byte string has nothing to measure it at: no bound
+/// and, held, no capacity. The build-wide pass that judges a broadcast log's
+/// element ([`crate::forge::codec_size`]) refuses such an entry by name before it
+/// asks, and C11 refuses it before it renders.
+pub(crate) fn max_encoded_bytes(m: &CodecModel, measured: Measured) -> Option<u64> {
     // The length of a head carrying `value`, in its shortest form.
     fn head(value: u64) -> u64 {
         match value {
@@ -547,23 +564,23 @@ pub(crate) fn max_encoded_bytes(m: &CodecModel) -> u64 {
             _ => 9,
         }
     }
-    let entries = head(m.cbor_entries.len() as u64);
-    entries
-        + m.cbor_entries
-            .iter()
-            .map(|e| {
-                let key = head(u64::from(e.key));
-                let value = match e.present_type() {
-                    SceType::Bool => 1,
-                    SceType::String | SceType::Bytes => {
-                        let n = u64::from(e.length.or(e.max_size).unwrap_or(0));
-                        head(n) + n
-                    }
-                    _ => 9,
-                };
-                key + value
-            })
-            .sum::<u64>()
+    let mut total = head(m.cbor_entries.len() as u64);
+    for e in &m.cbor_entries {
+        let key = head(u64::from(e.key));
+        let value = match e.present_type() {
+            SceType::Bool => 1,
+            SceType::String | SceType::Bytes => {
+                let n = u64::from(match measured {
+                    Measured::Bound => e.length.or(e.max_size),
+                    Measured::Held => e.storage_bytes(),
+                }?);
+                head(n) + n
+            }
+            _ => 9,
+        };
+        total += key + value;
+    }
+    Some(total)
 }
 
 fn render_python(

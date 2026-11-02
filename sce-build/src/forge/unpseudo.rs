@@ -2433,6 +2433,7 @@ fn parse_content_line_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<Codec
             .ok_or_else(|| fail("`property` needs a name".to_string()))?
             .to_string();
         let mut entry = ContentLineEntry {
+            capacity: Default::default(),
             id: undo(id, line.number)?,
             line: None,
             property,

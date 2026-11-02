@@ -31566,6 +31566,11 @@ pub(crate) struct LangCtx {
 }
 
 impl LangCtx {
+    /// The language this context spells types in.
+    pub(crate) fn language(&self) -> crate::generator::Language {
+        self.lang
+    }
+
     /// A context for a render that meets a document's field types.
     ///
     /// Every enum import is resolved here, once, so every type question

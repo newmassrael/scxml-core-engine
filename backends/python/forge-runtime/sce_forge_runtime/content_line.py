@@ -16,9 +16,15 @@ convention, and a generated ``encode`` lets through.
 
 from __future__ import annotations
 
+import sys
 from typing import Callable, List, Optional, Tuple
 
 from .codec import CodecError, NeedMoreBytes, SceSink
+
+#: The bound a reader or a writer is handed for a text or a list the protocol
+#: states no bound of (docs/adr/0077 §7): the largest index, past which no frame
+#: this runtime reads has a length.
+UNBOUNDED = sys.maxsize
 
 
 class LineMalformed(CodecError):

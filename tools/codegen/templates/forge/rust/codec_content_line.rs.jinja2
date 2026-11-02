@@ -44,8 +44,8 @@
 {#- One more line of the list `e`, noted past what the profile holds; the count
     the protocol states is judged on the line before anything of it is read. #}
 {% macro push_line(e, value) -%}
-                {{ e.local }}_count += 1;
-                note_capacity(SceList::try_push(&mut {{ e.local }}, {{ value }}), &mut _over)?;
+{% if e.counts_lines %}{{ e.local }}_count += 1;
+                {% endif %}note_capacity(SceList::try_push(&mut {{ e.local }}, {{ value }}), &mut _over)?;
 {%- endmacro %}
 {% macro store_value(e) -%}
 {%- if e.separator -%}
@@ -259,7 +259,7 @@ where
         let mut _over = false;
 {% for e in entries %}
         let mut {{ e.local }}: {{ e.local_type }} = {{ e.local_init }};
-{% if e.is_list or e.is_records %}
+{% if e.counts_lines %}
         let mut {{ e.local }}_count: usize = 0;
 {% endif %}
 {% if not e.is_records %}

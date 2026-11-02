@@ -22,6 +22,13 @@ object ContentLine {
     const val FOLD_WIDTH = 75
 
     /**
+     * The bound a reader or a writer is handed for a text or a list the protocol
+     * states no bound of (docs/adr/0077 §7): the largest `Int`, past which no
+     * frame this runtime reads has a length.
+     */
+    const val UNBOUNDED = Int.MAX_VALUE
+
+    /**
      * Why the last read or write answered a failure. Diagnostic only — a
      * decode's contract is its `null` — and read by single-threaded tests that
      * pin which rule refused; it is not synchronised, so concurrent codecs

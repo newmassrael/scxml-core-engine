@@ -697,3 +697,32 @@ Landing: the commit that adds this section.
 - `HoldsStr::Str` asks for `Default`, the empty text, which every text container in the runtime has; a profile of
   your own that holds a text in a type of its own gives it one.
 
+## A content-line text or list states its bound only where the protocol does (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- `sce:max-size` on a content-line `string`, `sce:max-values` beside `sce:separator` and `sce:max-count` beside
+  `sce:repeated="true"` are optional. Without one the protocol states no bound: the text is as long, and the list as
+  long, as the sender writes it. A document that writes them reads as before.
+- Rust: a codec with such an entry has no default profile, as a positional or CBOR codec with a field of no bound has
+  none, so `{Codec}` is not generated for it. Name `{Codec}In<Heap>`, or a deployment's profile that gives the entry a
+  capacity. The line writer takes `usize::MAX` for no bound.
+- A deployment's `codecs:` block now sizes a content-line codec, by the id each container's tag is named by: the
+  entry's id for its text, its lines or the values of its one line, `<id>_value` for the text of one value of a list,
+  and `<id>_values` for the values of one line record. A capacity past the bound, or naming no text or list of the
+  codec, is refused.
+- Rust: the encode of a repeated property refuses more lines than its `sce:max-count` with `LineTooMany`, as every
+  other backend's does. It wrote them before, a frame the decode then refused; a list at `Inline` cannot hold more,
+  so only a growing profile or a source of your own reaches it.
+- Go, C++, Kotlin and Python: the generated code passes the runtime's named "no bound" (`codec.Unbounded`,
+  `SCE::Forge::ContentLine::kUnbounded`, `ContentLine.UNBOUNDED`, `content_line.UNBOUNDED`) where the protocol states
+  no number, and checks a count only where there is one. A runtime caller of the line reader or writer can pass the
+  same name.
+- C11 refuses a content-line codec with such an entry at generation (`codegen/unsupported`), naming the entry and the
+  declaration it lacks: it holds each text and list in an array of its bound. It refuses a deployment's capacity of a
+  content-line container too, naming it, rather than hold the entry at its bound; taking one is the next landing.
+- C11 CBOR: `{CODEC}_MAX_BYTES` counts a string the deployment gives a capacity at that capacity. It counted one with
+  no bound as empty, so a buffer of that size overflowed on a map holding the text.
+- A broadcast log whose element is such a codec is refused (`broadcast-log/element-size-unbounded`), naming the entry
+  and the declaration it lacks, as one with a positional or CBOR field of no bound is.
+

@@ -18,7 +18,7 @@ out.{{ e.name }}.push_back({{ expr }});
     (`SCE::Forge::ContentLine`); this spells none of it. #}
 {% macro read_value(e) %}
 {% if e.separator %}
-                auto v = line->read_strings('{{ e.separator }}', {{ e.max_values }}, {{ e.max_size }}, {{ "true" if e.text else "false" }});
+                auto v = line->read_strings('{{ e.separator }}', {{ e.max_values_lit }}, {{ e.max_size_lit }}, {{ "true" if e.text else "false" }});
                 if (!v) return std::nullopt;
 {% if e.is_records %}
                 rec.{{ e.value_member }} = std::move(*v);
@@ -26,7 +26,7 @@ out.{{ e.name }}.push_back({{ expr }});
                 {{ store(e, "std::move(*v)") }}
 {% endif %}
 {% elif e.kind == "string" %}
-                auto v = line->read_string({{ e.max_size }}, {{ "true" if e.text else "false" }});
+                auto v = line->read_string({{ e.max_size_lit }}, {{ "true" if e.text else "false" }});
                 if (!v) return std::nullopt;
 {% if e.is_records %}
                 rec.{{ e.value_member }} = std::move(*v);
@@ -67,9 +67,9 @@ out.{{ e.name }}.push_back({{ expr }});
     written. #}
 {% macro write_value(e) %}
 {% if e.separator %}
-            if (auto e = out.strings(v, '{{ e.separator }}', {{ "true" if e.text else "false" }}, {{ e.max_size }}, {{ e.max_values }})) return e;
+            if (auto e = out.strings(v, '{{ e.separator }}', {{ "true" if e.text else "false" }}, {{ e.max_size_lit }}, {{ e.max_values_lit }})) return e;
 {% elif e.kind == "string" %}
-            if (auto e = out.string(v, {{ "true" if e.text else "false" }}, {{ e.max_size }})) return e;
+            if (auto e = out.string(v, {{ "true" if e.text else "false" }}, {{ e.max_size_lit }})) return e;
 {% elif e.kind == "bool" %}
             if (auto e = out.boolean(v)) return e;
 {% elif e.kind == "enum" %}
@@ -99,10 +99,10 @@ out.{{ e.name }}.push_back({{ expr }});
             }
 {% endif %}
 {% elif p.required %}
-            if (auto e = out.param("{{ p.param }}", {{ holder }}{{ p.name }}, {{ p.max_size }})) return e;
+            if (auto e = out.param("{{ p.param }}", {{ holder }}{{ p.name }}, {{ p.max_size_lit }})) return e;
 {% else %}
             if ({{ holder }}{{ p.name }}.has_value()) {
-                if (auto e = out.param("{{ p.param }}", *{{ holder }}{{ p.name }}, {{ p.max_size }})) return e;
+                if (auto e = out.param("{{ p.param }}", *{{ holder }}{{ p.name }}, {{ p.max_size_lit }})) return e;
             }
 {% endif %}
 {% endfor %}
@@ -155,7 +155,7 @@ struct {{ e.record_type }} {
     {{ p.field_type }} {{ p.name }}{{ "{" ~ p.enum_default ~ "}" if p.kind == "enum" and p.required else "{}" }};
 {% endfor %}
 {% if e.separator %}
-    /// The values of the line, at most {{ e.max_values }}.
+    /// The values of the line, at most {{ e.max_values_lit }}.
     std::vector<std::string> {{ e.value_member }}{};
 {% else %}
     /// The value of the line.
@@ -173,7 +173,7 @@ struct {{ e.record_type }} {
 /// list of values, is a list of line records.
 struct {{ struct_name }} {
 {% for e in entries %}
-    /// Property `{{ e.property }}`{% if e.is_records %}, up to {{ e.max_count }} lines, each a record{% elif e.is_list %}, up to {{ e.max_count }} lines{% elif e.is_values %}, a list of at most {{ e.max_values }} values{% endif %}{% if e.required %}, required{% endif %}.
+    /// Property `{{ e.property }}`{% if e.is_records %}, {% if e.max_count is not none %}up to {{ e.max_count }}{% else %}any number of{% endif %} lines, each a record{% elif e.is_list %}, {% if e.max_count is not none %}up to {{ e.max_count }}{% else %}any number of{% endif %} lines{% elif e.is_values %}, a list of {% if e.max_values is not none %}at most {{ e.max_values }}{% else %}any number of{% endif %} values{% endif %}{% if e.required %}, required{% endif %}.
     {{ e.field_type }} {{ e.name }}{{ "{" ~ e.enum_default ~ "}" if e.kind == "enum" and e.required and not (e.is_list or e.is_records) else "{}" }};
 {% if not e.is_records %}
 {% for p in e.params %}
@@ -204,7 +204,9 @@ struct {{ struct_name }} {
         if (auto e = out.begin()) return e;
 {% for e in entries %}
 {% if e.is_records %}
+{% if e.max_count is not none %}
         if ({{ e.name }}.size() > {{ e.max_count }}) return ::SCE::Forge::CodecError::LineTooMany;
+{% endif %}
 {% if e.required %}
         if ({{ e.name }}.empty()) return ::SCE::Forge::CodecError::LineRequiredMissing;
 {% endif %}
@@ -213,7 +215,9 @@ struct {{ struct_name }} {
             if (auto e = out.property("{{ e.property }}")) return e;
 {{ write_params(e, "rec.") }}{{ write_value(e) }}        }
 {% elif e.is_list %}
+{% if e.max_count is not none %}
         if ({{ e.name }}.size() > {{ e.max_count }}) return ::SCE::Forge::CodecError::LineTooMany;
+{% endif %}
 {% if e.required %}
         if ({{ e.name }}.empty()) return ::SCE::Forge::CodecError::LineRequiredMissing;
 {% endif %}
@@ -274,7 +278,9 @@ private:
 {% for e in entries %}
             {% if not loop.first %}else {% endif %}if (line->is("{{ e.property }}")) {
 {% if e.is_list or e.is_records %}
+{% if e.max_count is not none %}
                 if (out.{{ e.name }}.size() >= {{ e.max_count }}) return std::nullopt;
+{% endif %}
 {% else %}
                 if ({{ e.name }}_present) return std::nullopt;
 {% endif %}
@@ -304,7 +310,7 @@ private:
                         {{ p.name }}_present = true;
                         {{ "rec" if e.is_records else "out" }}.{{ p.name }} = {{ "pe" if p.enum_is_open else "*pe" }};
 {% else %}
-                        auto pv = line->read_param_string({{ p.max_size }});
+                        auto pv = line->read_param_string({{ p.max_size_lit }});
                         if (!pv) return std::nullopt;
                         {{ p.name }}_present = true;
                         {{ "rec" if e.is_records else "out" }}.{{ p.name }} = std::move(*pv);

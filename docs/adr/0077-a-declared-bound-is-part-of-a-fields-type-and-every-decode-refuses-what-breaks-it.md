@@ -432,6 +432,13 @@ are one value held two ways. So:
     with the line's own error and past the capacity with `CapacityExceeded`.
   - *The other backends* take "no bound" in their readers, and C11 takes a deployment's capacity for a content-line
     entry as it does for a CBOR one, and refuses an entry with neither.
+  - *Landed so far:* the parser takes a text, a line of values and a repeated property with no bound. Each runtime
+    names "no bound" once (`codec.Unbounded`, `SCE::Forge::ContentLine::kUnbounded`, `ContentLine.UNBOUNDED`,
+    `content_line.UNBOUNDED`, and `usize::MAX` to the Rust writer, `None` to its reader), the generator writes that
+    name where the protocol states no number, and a count is checked only where there is one.
+    `ContentLineEntry::unbounded` is the one answer of which declaration an entry lacks: C11 refuses the codec by it,
+    the largest encoded size is `None` by it, and a broadcast log's element is refused by it. C11's deployment
+    capacity for a content-line entry is the landing after.
 - **No generated item stands on the lent form at `Inline`.** The first run of a list with no bound found every static
   of a borrowed codec, and its lent projections, on `{Codec}<'a>`, which is `Lent<'a, Inline>`: such a codec did not
   compile anywhere, an MCU build with a deployment included. A codec's wire functions are on `{Codec}Wire`, a unit

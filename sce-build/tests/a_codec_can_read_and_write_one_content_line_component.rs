@@ -331,13 +331,6 @@ fn a_required_parameter_needs_a_required_property() {
 
 #[test]
 fn a_bound_and_a_text_mark_are_held_to_the_kind_they_qualify() {
-    // A string names its bound.
-    let why = refusal(&document(
-        "",
-        r#"    <data id="s" sce:type="string" sce:property="S"/>"#,
-    ));
-    assert!(why.contains("sce:max-size"), "{why}");
-
     let why = refusal(&document(
         "",
         r#"    <data id="n" sce:type="uint8" sce:property="N" sce:max-size="4"/>"#,
@@ -379,6 +372,61 @@ fn a_bound_and_a_text_mark_are_held_to_the_kind_they_qualify() {
     ));
     assert!(
         why.contains("sce:max-count") && why.contains("sce:repeated"),
+        "{why}"
+    );
+}
+
+/// A text, a list of values and a repeated property the protocol bounds by
+/// nothing (docs/adr/0077 §7): an iCalendar `ATTENDEE` repeats as often as its
+/// sender writes it, and a `DESCRIPTION` is as long.
+const OPEN: &str = r#"    <data id="description" sce:type="string" sce:property="DESCRIPTION" sce:value="text"/>
+    <data id="attendee" sce:type="optional&lt;string&gt;" sce:property="ATTENDEE" sce:repeated="true"/>
+    <data id="attendeeCn" sce:type="optional&lt;string&gt;" sce:property="ATTENDEE" sce:param="CN"/>
+    <data id="categories" sce:type="optional&lt;string&gt;" sce:property="CATEGORIES" sce:separator="," sce:max-size="32"/>"#;
+
+#[test]
+fn what_the_protocol_bounds_by_nothing_is_read_with_no_bound() {
+    let m = codec(&document("", OPEN));
+    let content = m.content_line.as_ref().expect("a content-line codec");
+    let entry = |id: &str| content.entries.iter().find(|e| e.id == id).unwrap();
+    assert_eq!(entry("description").max_size, None);
+    assert_eq!(entry("description").unbounded(), Some("sce:max-size"));
+    assert!(entry("attendee").repeated);
+    assert_eq!(entry("attendee").max_count, None);
+    assert_eq!(entry("attendee").unbounded(), Some("sce:max-size"));
+    assert_eq!(entry("attendeeCn").max_size, None);
+    assert_eq!(entry("categories").max_values, None);
+    assert_eq!(entry("categories").unbounded(), Some("sce:max-values"));
+}
+
+/// Every backend whose texts and lists grow generates a codec with no bound,
+/// and C11, which holds each in an array of its bound, refuses it naming the
+/// entry and the declaration it lacks.
+#[test]
+fn a_codec_with_no_bound_generates_where_storage_grows_and_c11_refuses_it_by_name() {
+    let m = codec(&document("", OPEN));
+    for lang in emitting(ForgeKind::Codec) {
+        let refusal = content_line_codec::refusal(lang, &m);
+        if lang == Language::C11 {
+            let why = refusal.expect("C11 holds no text of no bound");
+            assert!(
+                why.contains("'description'") && why.contains("sce:max-size"),
+                "{why}"
+            );
+        } else {
+            assert_eq!(refusal, None, "{lang:?}");
+        }
+    }
+    // A repeated property with no `sce:max-count` is refused by that name, once
+    // its text has a bound.
+    let m = codec(&document(
+        "",
+        r#"    <data id="attendee" sce:type="optional&lt;string&gt;" sce:property="ATTENDEE" sce:repeated="true" sce:max-size="64"/>"#,
+    ));
+    let why =
+        content_line_codec::refusal(Language::C11, &m).expect("C11 holds no list of no bound");
+    assert!(
+        why.contains("'attendee'") && why.contains("sce:max-count"),
         "{why}"
     );
 }
@@ -482,8 +530,7 @@ fn a_separator_and_its_bound_are_held_to_the_entry_they_qualify() {
         one(r#" sce:separator=":" sce:max-values="4""#).contains("sce:separator"),
         "a colon ends the property name"
     );
-    // The two stand together.
-    assert!(one(r#" sce:separator="," "#).contains("sce:max-values"));
+    // A bound needs the separator it bounds the values of.
     assert!(one(r#" sce:max-values="4""#).contains("sce:separator"));
     // A list has two members at least.
     assert!(one(r#" sce:separator="," sce:max-values="1""#).contains("at least 2"));

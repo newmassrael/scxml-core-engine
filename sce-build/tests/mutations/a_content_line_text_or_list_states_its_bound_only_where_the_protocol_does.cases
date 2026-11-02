@@ -1,0 +1,100 @@
+# Mutation cases for "a content-line text or list states its bound only where
+# the protocol does".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_content_line_text_or_list_states_its_bound_only_where_the_protocol_does.cases`.
+#
+# A content-line text with no `sce:max-size`, a line of values with no
+# `sce:max-values` and a repeated property with no `sce:max-count` have no bound
+# (docs/adr/0077 §7): a growing profile holds what the component holds, a
+# deployment gives each container a capacity by the id its tag is named by, a
+# bound the protocol does state is held on decode and on encode, and C11, which
+# holds each in an array of its bound, refuses the codec by name. A defect here
+# is a text cut at a number nobody stated, a capacity that sizes nothing or
+# passes the bound, a frame the encode writes and the decode refuses, a C11
+# array of no size, or a buffer `..._MAX_BYTES` promises and is too small.
+#
+# The oracles are `sce-build/tests/forge_conformance.rs` (a component of 300
+# bytes, 40 attendees and 30 categories on a growing profile and at a deployment,
+# the refusals of what cannot hold it, the C11 largest size of a map held at a
+# capacity, and a no-allocator build) and
+# `sce-build/tests/a_codec_can_read_and_write_one_content_line_component.rs`
+# (what the parser reads and which backend refuses it).
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test forge_conformance --test a_codec_can_read_and_write_one_content_line_component
+mutation_targets sce-build/src/forge/content_line_codec.rs sce-build/src/forge/generator/rust_source/content_line.rs sce-build/src/forge/model.rs sce-build/src/forge/codec_totality.rs sce-build/src/forge/cbor_codec.rs
+mutation_oracles sce-build/tests/forge_conformance.rs sce-build/tests/a_codec_can_read_and_write_one_content_line_component.rs
+
+# C11 given an entry with no bound sizes an array by nothing. Killed by
+# `a_codec_with_no_bound_generates_where_storage_grows_and_c11_refuses_it_by_name`
+# and `what_cannot_hold_a_content_line_text_with_no_bound_refuses_it`.
+mutation_case "C11 takes a content-line entry with no bound" <<'PY'
+edit("sce-build/src/forge/content_line_codec.rs",
+     r'''            if e.bound(slot.held).is_none() {''',
+     r'''            if false {''')
+PY
+
+# A Heap value or a source past `sce:max-count` is written as a frame the
+# decode refuses. Killed by
+# `a_content_line_text_and_list_with_no_bound_read_what_the_component_holds`
+# (four resources encoded) and by every content-line codec the totality
+# analysis names `LineTooMany` of.
+mutation_case "the Rust encode holds no count to sce:max-count" <<'PY'
+edit("sce-build/src/forge/generator/rust_source/content_line.rs",
+     r'''        if let Some(max_count) = e.max_count {''',
+     r'''        if let Some(max_count) = None::<u32> {''')
+PY
+
+# A capacity the deployment gives a content-line container sizes nothing, and
+# the deployment holds the entry at its bound or not at all. Killed by
+# `a_content_line_text_and_list_with_no_bound_read_what_the_component_holds`
+# (the deployment refused for want of a capacity).
+mutation_case "a content-line capacity is dropped" <<'PY'
+edit("sce-build/src/forge/model.rs",
+     r'''                HeldAt::Line(at, held) => {
+                    if let Some(lines) = self.content_line.as_mut() {
+                        lines.entries[at].capacity.set(held, capacity);
+                    }
+                }''',
+     r'''                HeldAt::Line(..) => {}''')
+PY
+
+# A capacity past the bound is room for what the language does not hold.
+# Killed by `what_cannot_hold_a_content_line_text_with_no_bound_refuses_it`
+# (`attendee_value` at 65 and `resources` at 4).
+mutation_case "a content-line capacity is not held to its bound" <<'PY'
+edit("sce-build/src/forge/model.rs",
+     r'''                    lines.entries[slot.entry].bound(slot.held).map(u64::from),''',
+     r'''                    None,''')
+PY
+
+# A required repeated property with no bound read as no list: its encode
+# refuses an empty one where the analysis names no refusal. Killed by
+# `a_content_line_text_and_list_with_no_bound_read_what_the_component_holds`
+# (the generator's totality assertion, then `LineRequiredMissing`).
+mutation_case "a repeated property is a list only where it has a count" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''            let required_list = e.repeated && e.is_required();''',
+     r'''            let required_list = e.max_count.is_some() && e.is_required();''')
+PY
+
+# A decode counts the lines of a list whose count nothing judges, and the
+# generated code does not build under `-D warnings`. Killed by
+# `a_content_line_text_and_list_with_no_bound_read_what_the_component_holds`.
+mutation_case "every repeated property counts its lines" <<'PY'
+edit("sce-build/src/forge/content_line_codec.rs",
+     r'''        entry["counts_lines"] = (e.repeated && (e.max_count.is_some() || e.is_required())).into();''',
+     r'''        entry["counts_lines"] = e.repeated.into();''')
+PY
+
+# A C11 map whose text is held at a capacity reports a largest frame that does
+# not hold it, so a buffer of `..._MAX_BYTES` overflows. Killed by
+# `what_cannot_hold_a_cbor_text_with_no_bound_refuses_it` (`MAX_BYTES 11U`).
+mutation_case "a C11 map is measured at its bound and not at what it holds" <<'PY'
+edit("sce-build/src/forge/cbor_codec.rs",
+     r'''                    Measured::Held => e.storage_bytes(),''',
+     r'''                    Measured::Held => e.length.or(e.max_size).or(Some(0)),''')
+PY

@@ -154,14 +154,16 @@ fn cbor_codec(m: &CodecModel) -> Result<u64, Unbounded> {
             });
         }
     }
-    Ok(crate::forge::cbor_codec::max_encoded_bytes(m))
+    Ok(
+        crate::forge::cbor_codec::max_encoded_bytes(m, crate::forge::cbor_codec::Measured::Bound)
+            .expect("every string entry was found to have its bound above"),
+    )
 }
 
 /// A content-line component: the arithmetic of the C11 renderer, over the
-/// longest text of each enum the codec imports. The parser already holds every
-/// string entry to a `sce:max-size` and every list of values to a
-/// `sce:max-values`, so what can still be missing here is an enum whose
-/// document did not resolve.
+/// longest text of each enum the codec imports, once every entry has the bounds
+/// that arithmetic takes ([`crate::forge::model::ContentLineEntry::unbounded`])
+/// and every enum it imports resolves.
 fn content_line_codec(codec: &SizedCodec) -> Result<u64, Unbounded> {
     let Some(component) = codec.model.content_line.as_ref() else {
         return Err(Unbounded::NoWireForm(
@@ -169,35 +171,32 @@ fn content_line_codec(codec: &SizedCodec) -> Result<u64, Unbounded> {
         ));
     };
     for entry in &component.entries {
-        match entry.present_type() {
-            SceType::Enum(reference) => {
-                if !matches!(
-                    codec.imports.get(&reference.alias),
-                    Some(SizedImport::Enum { .. })
-                ) {
-                    return Err(Unbounded::Unresolved {
-                        site: format!("entry '{}'", entry.id),
-                        alias: reference.alias.clone(),
-                    });
-                }
-            }
-            SceType::String if entry.max_size.is_none() => {
-                return Err(Unbounded::Missing {
-                    subject: format!("entry '{}' (a string entry)", entry.id),
-                    declaration: "sce:max-size",
+        if let SceType::Enum(reference) = entry.present_type() {
+            if !matches!(
+                codec.imports.get(&reference.alias),
+                Some(SizedImport::Enum { .. })
+            ) {
+                return Err(Unbounded::Unresolved {
+                    site: format!("entry '{}'", entry.id),
+                    alias: reference.alias.clone(),
                 });
             }
-            _ => {}
+        }
+        if let Some(declaration) = entry.unbounded() {
+            return Err(Unbounded::Missing {
+                subject: format!("entry '{}'", entry.id),
+                declaration,
+            });
         }
     }
     let longest_text = |alias: &str| match codec.imports.get(alias) {
         Some(SizedImport::Enum { longest_text }) => *longest_text,
         _ => 0,
     };
-    Ok(crate::forge::content_line_codec::max_encoded_bytes_with(
-        &codec.model,
-        &longest_text,
-    ))
+    Ok(
+        crate::forge::content_line_codec::max_encoded_bytes_with(&codec.model, &longest_text)
+            .expect("every entry was found to have its bounds above"),
+    )
 }
 
 /// A codec of byte-positioned fields: the fields in wire order, then the arm a
@@ -783,8 +782,11 @@ mod tests {
         let codec = sized(&xml, Vec::new());
         assert_eq!(largest_encoded_bytes(&codec), Ok(368));
         assert_eq!(
-            crate::forge::cbor_codec::max_encoded_bytes(&codec.model),
-            368
+            crate::forge::cbor_codec::max_encoded_bytes(
+                &codec.model,
+                crate::forge::cbor_codec::Measured::Bound
+            ),
+            Some(368)
         );
     }
 

@@ -33,6 +33,11 @@ namespace SCE::Forge::ContentLine {
 /// The most octets of one physical line (SCE_FORGE.md §4.6.4, *Folding*).
 inline constexpr std::size_t kFoldWidth = 75;
 
+/// The bound a reader or a writer is handed for a text or a list the protocol
+/// states no bound of (docs/adr/0077 §7): the largest `std::size_t`, past which
+/// no frame this runtime reads has a length.
+inline constexpr std::size_t kUnbounded = SIZE_MAX;
+
 /// One variant of an enum a content-line entry is read and written by
 /// (docs/adr/0015): the text the enum document gives it and the carrier value it
 /// stands for. A generated codec holds the variants of an enum, in declaration

@@ -22,12 +22,12 @@
 {% endmacro %}
 {% macro read_value(e) %}
 {% if e.separator %}
-			v, err := line.ReadStrings('{{ e.separator }}', {{ e.max_values }}, {{ e.max_size }}, {{ "true" if e.text else "false" }})
+			v, err := line.ReadStrings('{{ e.separator }}', {{ e.max_values_lit }}, {{ e.max_size_lit }}, {{ "true" if e.text else "false" }})
 			if err != nil {
 				return nil, err
 			}
 {% elif e.kind == "string" %}
-			v, err := line.ReadString({{ e.max_size }}, {{ "true" if e.text else "false" }})
+			v, err := line.ReadString({{ e.max_size_lit }}, {{ "true" if e.text else "false" }})
 			if err != nil {
 				return nil, err
 			}
@@ -80,11 +80,11 @@
     written. #}
 {% macro write_value(e) %}
 {% if e.separator %}
-		if err := out.Strings(v, '{{ e.separator }}', {{ "true" if e.text else "false" }}, {{ e.max_size }}, {{ e.max_values }}); err != nil {
+		if err := out.Strings(v, '{{ e.separator }}', {{ "true" if e.text else "false" }}, {{ e.max_size_lit }}, {{ e.max_values_lit }}); err != nil {
 			return err
 		}
 {% elif e.kind == "string" %}
-		if err := out.String(v, {{ "true" if e.text else "false" }}, {{ e.max_size }}); err != nil {
+		if err := out.String(v, {{ "true" if e.text else "false" }}, {{ e.max_size_lit }}); err != nil {
 			return err
 		}
 {% elif e.kind == "bool" %}
@@ -128,12 +128,12 @@
 		}
 {% endif %}
 {% elif p.required %}
-		if err := out.Param("{{ p.param }}", {{ holder }}.{{ p.name }}, {{ p.max_size }}); err != nil {
+		if err := out.Param("{{ p.param }}", {{ holder }}.{{ p.name }}, {{ p.max_size_lit }}); err != nil {
 			return err
 		}
 {% else %}
 		if {{ holder }}.{{ p.name }}.IsPresent() {
-			if err := out.Param("{{ p.param }}", {{ holder }}.{{ p.name }}.Proven(), {{ p.max_size }}); err != nil {
+			if err := out.Param("{{ p.param }}", {{ holder }}.{{ p.name }}.Proven(), {{ p.max_size_lit }}); err != nil {
 				return err
 			}
 		}
@@ -188,7 +188,7 @@ type {{ e.record_type }} struct {
 	{{ p.name }} {{ p.field_type }}
 {% endfor %}
 {% if e.separator %}
-	// {{ e.value_member }} are the values of the line, at most {{ e.max_values }}.
+	// {{ e.value_member }} are the values of the line, at most {{ e.max_values_lit }}.
 	{{ e.value_member }} []string
 {% else %}
 	// {{ e.value_member }} is the value of the line.
@@ -205,7 +205,7 @@ type {{ e.record_type }} struct {
 // values, is a list of line records.
 type {{ struct_name }} struct {
 {% for e in entries %}
-	// {{ e.name }} is property `{{ e.property }}`{% if e.is_records %}, up to {{ e.max_count }} lines, each a record{% elif e.is_list %}, up to {{ e.max_count }} lines{% elif e.is_values %}, a list of at most {{ e.max_values }} values{% endif %}{% if e.required %}, required{% endif %}.
+	// {{ e.name }} is property `{{ e.property }}`{% if e.is_records %}, {% if e.max_count is not none %}up to {{ e.max_count }}{% else %}any number of{% endif %} lines, each a record{% elif e.is_list %}, {% if e.max_count is not none %}up to {{ e.max_count }}{% else %}any number of{% endif %} lines{% elif e.is_values %}, a list of {% if e.max_values is not none %}at most {{ e.max_values }}{% else %}any number of{% endif %} values{% endif %}{% if e.required %}, required{% endif %}.
 	{{ e.name }} {{ e.field_type }}
 {% if not e.is_records %}
 {% for p in e.params %}
@@ -280,9 +280,11 @@ func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
 {% for e in entries %}
 		case line.Is("{{ e.property }}"):
 {% if e.is_list or e.is_records %}
+{% if e.max_count is not none %}
 			if len(out.{{ e.name }}) >= {{ e.max_count }} {
 				return nil, codec.ErrLineTooMany
 			}
+{% endif %}
 {% else %}
 			if {{ e.name | lower }}Seen {
 				return nil, codec.ErrLineTooMany
@@ -318,7 +320,7 @@ func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
 					}
 {{ enum_of(p, "raw", "\t\t\t\t\t") }}
 {% else %}
-					pv, err := line.ReadParamString({{ p.max_size }})
+					pv, err := line.ReadParamString({{ p.max_size_lit }})
 					if err != nil {
 						return nil, err
 					}
@@ -378,9 +380,11 @@ func (s *{{ struct_name }}) Encode(w codec.SceSink) error {
 	}
 {% for e in entries %}
 {% if e.is_records %}
+{% if e.max_count is not none %}
 	if len(s.{{ e.name }}) > {{ e.max_count }} {
 		return codec.ErrLineTooMany
 	}
+{% endif %}
 {% if e.required %}
 	if len(s.{{ e.name }}) == 0 {
 		return codec.ErrLineRequiredMissing
@@ -393,9 +397,11 @@ func (s *{{ struct_name }}) Encode(w codec.SceSink) error {
 {{ write_params(e, "rec") }}		v := rec.{{ e.value_member }}
 {{ write_value(e) }}	}
 {% elif e.is_list %}
+{% if e.max_count is not none %}
 	if len(s.{{ e.name }}) > {{ e.max_count }} {
 		return codec.ErrLineTooMany
 	}
+{% endif %}
 {% if e.required %}
 	if len(s.{{ e.name }}) == 0 {
 		return codec.ErrLineRequiredMissing

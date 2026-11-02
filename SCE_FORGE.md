@@ -1432,11 +1432,18 @@ of its `<datamodel>` that names a property:
 | `sce:property` | The property the entry reads and writes. Matched case-insensitively on decode, written as declared. Letters, digits and hyphens. |
 | `sce:type` | `string`, an integer (`uint8`–`uint64`, `int8`–`int64`), `bool` (`TRUE`/`FALSE`) or `enum:<alias>`, or `optional<T>` over one of them. A parameter is a `string` or an `enum:<alias>`, or `optional<T>` of one. A bare type is an entry a decode of a component without the property, or whose property lacks the parameter, refuses; `optional<T>` is an entry that may be absent, in every language, and for a parameter of a repeated property, absent from each line that exists (docs/adr/0055, section 8). A parameter of a bare type belongs to a property of a bare type, except on a repeated property, where it is required of each line that exists. An enum entry is written and read by the text its variant declares (`docs/adr/0015`; below), and takes none of a string's `sce:max-size`, `sce:value="text"`, `sce:separator` and `sce:max-values`. |
 | `sce:value="text"` | On a `string` value: an RFC 5545 TEXT, so `\\`, `\;`, `\,` and `\n` are escapes on both sides. Without it the value is carried as written — a date-time, an `RRULE` and a URI are not TEXT. |
-| `sce:param` | The entry is the named parameter of the property `sce:property` names, not its value. It follows the entry of that property. On a property with `sce:max-count` it is a field of the record each line becomes, optional or required per line (`docs/adr/0014`). |
-| `sce:max-size` | Required on every `string`: the most bytes it holds, after unescaping. |
-| `sce:max-count` | On a `string` value, at least 2: the most lines of the property a component holds. The entry is then a bounded list of values in line order, or of line records when the property declares a parameter (`docs/adr/0014`). |
-| `sce:separator` | On a `string` value: `,` or `;`, the character that cuts the value of one line into a list of values. Requires `sce:max-values`. Not on a parameter, an integer or a `bool`. (`docs/adr/0014`) |
-| `sce:max-values` | With `sce:separator`, at least 2: the most values one line holds. `sce:max-count` counts lines and this counts the values of one; neither stands for the other. |
+| `sce:param` | The entry is the named parameter of the property `sce:property` names, not its value. It follows the entry of that property. On a repeated property it is a field of the record each line becomes, optional or required per line (`docs/adr/0014`). |
+| `sce:max-size` | On a `string`: the most bytes it holds, after unescaping, where the protocol states one. Without it the text is as long as its sender writes it (docs/adr/0077 §7). |
+| `sce:repeated="true"` | On a `string` or enum value: the property may occur on several lines of a component, and the entry is a list of them in line order, or of line records when the property declares a parameter or a separator (`docs/adr/0014`). |
+| `sce:max-count` | Beside `sce:repeated="true"`, at least 2: the most lines of the property a component holds, where the protocol states one. Written alone it is refused, naming `sce:repeated`. |
+| `sce:separator` | On a `string` value: `,` or `;`, the character that cuts the value of one line into a list of values. Not on a parameter, an integer or a `bool`. (`docs/adr/0014`) |
+| `sce:max-values` | With `sce:separator`, at least 2: the most values one line holds, where the protocol states one. `sce:max-count` counts lines and this counts the values of one; neither stands for the other. |
+
+A bound the protocol states is the language: past it a line is refused on every
+backend (`line-too-long`, `line-too-many`). Where it states none, a backend whose
+texts and lists grow holds what the sender wrote, and C11, which holds each in
+an array of its bound, refuses the codec at generation, naming the entry and the
+declaration it lacks.
 
 **Wire rules.** These are written once, here, and every backend's runtime
 implements exactly them; the conformance corpus holds each to the same bytes.
@@ -1555,14 +1562,19 @@ encoding: `sce:byte`, `sce:bit-offset`, `sce:bit-size`, `sce:endian`,
 `<sce:flags>`, `<sce:repeat>`, `<sce:tlv-chain>`, `<sce:embed>`, `<sce:variant>`,
 `<sce:flag-inputs>` and `<sce:test-vector>` elements. Two entries of one property,
 two parameters of one name on a property, a parameter with no entry of its property
-before it, a `sce:separator` other than `,` or `;`, one without `sce:max-values`
-or `sce:max-values` without it, a `sce:max-values` below 2, and a `sce:separator`
-on a parameter, an integer or a `bool`.
+before it, a `sce:separator` other than `,` or `;`, `sce:max-values` without a
+separator, a `sce:max-values` below 2, `sce:max-count` without
+`sce:repeated="true"`, and a `sce:separator` on a parameter, an integer or a
+`bool`.
 
-**Generation.** Rust generates a content-line codec: a struct whose string values
-are `heapless::String<N>` of their `sce:max-size`, whose optional entries are
-`Option`, and whose lists are `heapless::Vec<_, M>` of their `sce:max-count`, so
-neither direction allocates and the struct borrows nothing from its input. Decode
+**Generation.** Rust generates a content-line codec as `{Codec}In<S>`, generic over
+the storage profile `S` (docs/adr/0077 §7): each text, list of lines, line of
+values and line record is held in what `S` answers for its tag, and optional
+entries are `Option`. `{Codec}` is `{Codec}In<DefaultStorage>` where `Inline`
+holds every entry, that is where each has its bound; at `Inline` a text is held
+at its `sce:max-size` and a list at its `sce:max-count` or `sce:max-values`, so
+neither direction allocates, and at `Heap` they grow. A value is unescaped as it
+is read, so the struct borrows nothing from its input. Decode
 and encode call the runtime's `sce_forge_runtime::content_line` (the reader, the
 writer and every rule of the section above) and spell none of the grammar.
 
