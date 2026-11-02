@@ -10,7 +10,10 @@
  * what the device keeps between runs as one text. An administrator's device opens a list and grants,
  * admits and takes off devices; any device reads what it stands at in the list as one JSON text.
  * The core does no I/O: the lane carries each request
- * to the relay and gives the response back, and it reads no clock and starts no thread. The shapes of
+ * to the relay and gives the response back, and it reads no clock and starts no thread. A lane that
+ * does not carry the texts itself runs an exchange over a link the library holds (the relay's WebSocket
+ * binding, or a transport the lane writes as one function), on a thread of its own, by a deadline and
+ * until a cancellation. The shapes of
  * the texts are in docs/SCE_SHARED_LIST_PEER_ABI.md; no structure is laid out here a second time.
  *
  * Every function that does something returns SCE_PEER_OK (0) or a status, and the text of what went
@@ -51,6 +54,15 @@ extern "C" {
 #define SCE_PEER_ERR_BAD_TEXT 21
 #define SCE_PEER_ERR_PANIC 22
 #define SCE_PEER_ERR_BAD_ARGUMENT 23
+#define SCE_PEER_ERR_CANCELLED 24
+#define SCE_PEER_ERR_DEADLINE 25
+
+/* What a host's transport says of one exchange (ScePeerExchangeFn). */
+#define SCE_PEER_TRANSPORT_ANSWERED 0
+#define SCE_PEER_TRANSPORT_LINK 1
+#define SCE_PEER_TRANSPORT_UNAUTHORIZED 2
+#define SCE_PEER_TRANSPORT_DEADLINE 3
+#define SCE_PEER_TRANSPORT_CANCELLED 4
 
 /* What the core did with a send (sce_peer_outbound). */
 #define SCE_PEER_KEPT_TAKEN 0
@@ -133,6 +145,45 @@ int32_t sce_peer_floor_event(ScePeer *peer, int64_t before, uint32_t digest, Sce
  * signs nothing new until a round has read its own chain back from the relay. */
 int32_t sce_peer_save(ScePeer *peer, ScePeerBuf *out);
 int32_t sce_peer_restore(ScePeer *peer, const char *saved, uint64_t *kept);
+
+/* A link to the relay that the library holds, and a run of an exchange over it.
+ *
+ * sce_peer_run runs the exchange begun on a core (sce_peer_start, a publication) to its end over a
+ * link, on the calling thread (a background worker's), and returns SCE_PEER_OK when it ended, or
+ * SCE_PEER_ERR_CANCELLED or SCE_PEER_ERR_DEADLINE when it stopped within_ms milliseconds from the
+ * call (UINT64_MAX: no deadline) or once cancel (may be NULL) was raised; the outcome is then taken
+ * with sce_peer_take_outcome.
+ * The core and the link are used by that thread alone while it runs, but that any thread may raise the
+ * run's cancellation and tell the link the network changed.
+ *
+ * A link is the relay's WebSocket binding (base "ws://host:port" or "wss://host:port", and the token
+ * the device's login earned), or a transport the host carries itself: exchange is called on the thread
+ * that runs, one call at a time, with the request (len bytes of UTF-8, not NUL-terminated), the time
+ * it may take (UINT64_MAX when there is no deadline) and a reply; it gives the response, or the reason
+ * it has none, with sce_peer_reply, and returns SCE_PEER_TRANSPORT_*. It calls nothing else of the
+ * library on that link or core. release (may be NULL) is called once with context when the link is
+ * freed. A link's notices are one JSON array: what became of its connection, and what the relay
+ * pushed. */
+typedef struct ScePeerLink ScePeerLink;
+typedef struct ScePeerCancel ScePeerCancel;
+typedef struct ScePeerReply ScePeerReply;
+
+typedef int32_t (*ScePeerExchangeFn)(void *context, const uint8_t *request, size_t len, uint64_t timeout_ms,
+                                     ScePeerReply *reply);
+typedef void (*ScePeerReleaseFn)(void *context);
+
+ScePeerLink *sce_peer_link_wss(const char *base, const char *token);
+ScePeerLink *sce_peer_link_host(ScePeerExchangeFn exchange, ScePeerReleaseFn release, void *context);
+void sce_peer_link_free(ScePeerLink *link);
+int32_t sce_peer_link_network_changed(const ScePeerLink *link);
+int32_t sce_peer_link_take_notices(ScePeerLink *link, ScePeerBuf *out);
+int32_t sce_peer_reply(ScePeerReply *reply, const uint8_t *text, size_t len);
+
+ScePeerCancel *sce_peer_cancel_new(void);
+int32_t sce_peer_cancel_raise(const ScePeerCancel *cancel);
+void sce_peer_cancel_free(ScePeerCancel *cancel);
+
+int32_t sce_peer_run(ScePeer *peer, ScePeerLink *link, uint64_t within_ms, const ScePeerCancel *cancel);
 
 #ifdef __cplusplus
 }

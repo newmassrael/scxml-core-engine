@@ -3822,6 +3822,7 @@ dependencies = [
  "sce-rust-relay",
  "sce-rust-trust",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

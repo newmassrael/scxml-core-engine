@@ -14,6 +14,14 @@
 //! the list as one JSON text ([`sce_peer_standing`]). No structure is laid out twice in C: the shapes
 //! are the texts, written down in `docs/SCE_SHARED_LIST_PEER_ABI.md`.
 //!
+//! A lane that does not carry the texts itself runs an exchange over a link the library holds
+//! ([`ScePeerLink`]): the relay's WebSocket binding ([`sce_peer_link_wss`]), or a transport the host
+//! writes as one function the library calls ([`sce_peer_link_host`]). [`sce_peer_run`] runs the
+//! exchange to its end on the calling thread, a background worker's, by a deadline and until a
+//! cancellation another thread raises ([`ScePeerCancel`]); the host tells the link when the network
+//! changed ([`sce_peer_link_network_changed`]), from any thread. The loop is the relay's one driver,
+//! so framing, authentication and reconnection are written once, in Rust.
+//!
 //! Every function that does something returns 0 for success and a nonzero status otherwise, and
 //! says why in [`sce_peer_last_error`] (per thread). Buffers the library returns ([`ScePeerBuf`])
 //! are the library's and are given back with [`sce_peer_buf_free`]; an empty buffer (a null pointer
@@ -27,15 +35,17 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use std::cell::RefCell;
-use std::ffi::{c_char, CStr, CString};
+use std::cell::{RefCell, UnsafeCell};
+use std::ffi::{c_char, c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::time::{Duration, Instant};
 
 use sce_rust_peer::{
-    CourierError, Device, GroupStep, Kept, Outcome, Peer, PeerError, Profile, Publication, Round,
-    RoundKind, Standing,
+    drive, CourierError, Device, Driven, GroupStep, Kept, Outcome, Peer, PeerError, Profile,
+    Publication, Round, RoundKind, Signal, Standing, Transport, TransportError,
 };
-use sce_rust_relay::Code;
+use sce_rust_relay::wss::WssLink;
+use sce_rust_relay::{Code, Notice};
 use sce_rust_trust::{encoding, Identity, PublicKey};
 use serde_json::{json, Value};
 
@@ -63,6 +73,18 @@ pub const SCE_PEER_ERR_NULL_ARGUMENT: i32 = 20;
 pub const SCE_PEER_ERR_BAD_TEXT: i32 = 21;
 pub const SCE_PEER_ERR_PANIC: i32 = 22;
 pub const SCE_PEER_ERR_BAD_ARGUMENT: i32 = 23;
+/// [`sce_peer_run`] stopped because its cancellation was raised, or because its deadline passed:
+/// the exchange ended as a failure of the link, and its outcome waits.
+pub const SCE_PEER_ERR_CANCELLED: i32 = 24;
+pub const SCE_PEER_ERR_DEADLINE: i32 = 25;
+
+/// What a host's transport says of one exchange ([`ScePeerExchangeFn`]): the response was given,
+/// or why it was not ([`TransportError`]).
+pub const SCE_PEER_TRANSPORT_ANSWERED: i32 = 0;
+pub const SCE_PEER_TRANSPORT_LINK: i32 = 1;
+pub const SCE_PEER_TRANSPORT_UNAUTHORIZED: i32 = 2;
+pub const SCE_PEER_TRANSPORT_DEADLINE: i32 = 3;
+pub const SCE_PEER_TRANSPORT_CANCELLED: i32 = 4;
 
 /// What [`sce_peer_outbound`] says the core did with a send ([`Kept`]).
 pub const SCE_PEER_KEPT_TAKEN: i32 = 0;
@@ -220,6 +242,16 @@ unsafe fn handle<'a, T>(ptr: *mut T) -> Result<&'a mut T, i32> {
     unsafe { ptr.as_mut() }.ok_or_else(|| fail(SCE_PEER_ERR_NULL_ARGUMENT, "a handle is null"))
 }
 
+/// The object a handle names, shared: what another thread may reach while one uses it (a link's
+/// network signal, a cancellation), and nothing it holds is changed through it but by a lock.
+///
+/// # Safety
+/// `ptr` is null or a live handle made by this library.
+unsafe fn shared<'a, T>(ptr: *const T) -> Result<&'a T, i32> {
+    // SAFETY: the caller's promise.
+    unsafe { ptr.as_ref() }.ok_or_else(|| fail(SCE_PEER_ERR_NULL_ARGUMENT, "a handle is null"))
+}
+
 /// Put `value` where the caller said, when it said.
 ///
 /// # Safety
@@ -241,9 +273,9 @@ fn required<T>(out: *mut T) -> Result<(), i32> {
     }
 }
 
-/// Make a core and hand it out as a handle; null when `make` fails, and why is in
-/// [`sce_peer_last_error`].
-fn made(make: impl FnOnce() -> Result<ScePeer, i32>) -> *mut ScePeer {
+/// Make an object (a core, a link, a cancellation) and hand it out as a handle; null when `make`
+/// fails, and why is in [`sce_peer_last_error`].
+fn made<T>(make: impl FnOnce() -> Result<T, i32>) -> *mut T {
     let mut pointer = std::ptr::null_mut();
     guard(|| {
         pointer = Box::into_raw(Box::new(make()?));
@@ -896,5 +928,379 @@ pub unsafe extern "C" fn sce_peer_restore(
         // SAFETY: `kept` is null or valid for a write.
         unsafe { put(kept, count as u64) };
         Ok(())
+    })
+}
+
+/// A link to a relay: the transport the library holds for it, and the signal the host raises when
+/// the device's network changed.
+///
+/// The transport is used by the one thread that runs over the link ([`sce_peer_run`],
+/// [`sce_peer_link_take_notices`]); the network's signal, which is outside the cell, by any thread
+/// at any time ([`sce_peer_link_network_changed`]). So a function on a link makes no `&mut` of the
+/// link itself, and reaches into the cell only on the thread that runs.
+pub struct ScePeerLink {
+    transport: UnsafeCell<Box<dyn Transport>>,
+    network: Signal,
+}
+
+impl ScePeerLink {
+    fn over(transport: Box<dyn Transport>) -> Self {
+        Self {
+            network: transport.network(),
+            transport: UnsafeCell::new(transport),
+        }
+    }
+}
+
+/// The cancellation of a run ([`sce_peer_run`]): raised from any thread, once, and it stays raised.
+/// A host makes one for each run it may want to stop.
+pub struct ScePeerCancel {
+    signal: Signal,
+}
+
+/// Where a host's transport puts the text of one exchange ([`sce_peer_reply`]): the response, or
+/// why there is none. The library's, alive for the one call of the host's function it is given to.
+pub struct ScePeerReply {
+    text: Option<Vec<u8>>,
+}
+
+/// A host's transport: carry the `len` bytes of `request` (UTF-8, not NUL-terminated, valid for the
+/// call) to the relay, give the response text with [`sce_peer_reply`] on `reply`, and return
+/// `SCE_PEER_TRANSPORT_ANSWERED`; or return why it was not carried (`SCE_PEER_TRANSPORT_*`), with the
+/// reason given the same way when there is one. It may block for at most `timeout_ms` milliseconds
+/// (`u64::MAX` when the run has no deadline). It is called on the thread that runs, one call at a
+/// time, and calls no function of the library on that link or its core but [`sce_peer_reply`].
+pub type ScePeerExchangeFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    request: *const u8,
+    len: usize,
+    timeout_ms: u64,
+    reply: *mut ScePeerReply,
+) -> i32;
+
+/// Called once with the host's context when the link that holds it is freed.
+pub type ScePeerReleaseFn = unsafe extern "C" fn(context: *mut c_void);
+
+/// A transport the host carries itself, through the function it gave.
+struct HostTransport {
+    exchange: ScePeerExchangeFn,
+    release: Option<ScePeerReleaseFn>,
+    context: *mut c_void,
+    network: Signal,
+}
+
+// SAFETY: by the contract of `sce_peer_link_host`, the host's functions and its context may be used
+// from whichever thread runs over the link, and a link is used by one thread at a time; the library
+// never calls them from two threads at once.
+unsafe impl Send for HostTransport {}
+
+impl Transport for HostTransport {
+    fn exchange(
+        &mut self,
+        request: &str,
+        deadline: Option<Instant>,
+        cancel: &Signal,
+    ) -> Result<String, TransportError> {
+        if cancel.is_raised() {
+            return Err(TransportError::Cancelled);
+        }
+        let timeout_ms = deadline.map_or(u64::MAX, |deadline| {
+            let left = deadline
+                .saturating_duration_since(Instant::now())
+                .as_millis();
+            u64::try_from(left).unwrap_or(u64::MAX).min(u64::MAX - 1)
+        });
+        let mut reply = ScePeerReply { text: None };
+        // SAFETY: the host's function, given the context it gave with it, a request valid for its
+        // length for the call, and a reply valid for writes for the call (`sce_peer_link_host`).
+        let status = unsafe {
+            (self.exchange)(
+                self.context,
+                request.as_ptr(),
+                request.len(),
+                timeout_ms,
+                &mut reply,
+            )
+        };
+        let given = match reply.text {
+            None => None,
+            Some(bytes) => Some(String::from_utf8(bytes).map_err(|_| {
+                TransportError::Link(
+                    "the host's transport gave a text that is not UTF-8".to_string(),
+                )
+            })?),
+        };
+        match status {
+            SCE_PEER_TRANSPORT_ANSWERED => given.ok_or_else(|| {
+                TransportError::Link(
+                    "the host's transport answered and gave no response".to_string(),
+                )
+            }),
+            SCE_PEER_TRANSPORT_LINK => {
+                Err(TransportError::Link(given.unwrap_or_else(|| {
+                    "the host's transport did not carry the exchange".to_string()
+                })))
+            }
+            SCE_PEER_TRANSPORT_UNAUTHORIZED => {
+                Err(TransportError::Unauthorized(given.unwrap_or_default()))
+            }
+            SCE_PEER_TRANSPORT_DEADLINE => Err(TransportError::Deadline),
+            SCE_PEER_TRANSPORT_CANCELLED => Err(TransportError::Cancelled),
+            other => Err(TransportError::Link(format!(
+                "the host's transport said {other}, which is no status of a transport"
+            ))),
+        }
+    }
+
+    fn take_notices(&mut self) -> Vec<Notice> {
+        // The host carries the texts and knows what became of its connection.
+        Vec::new()
+    }
+
+    fn network(&self) -> Signal {
+        self.network.clone()
+    }
+}
+
+impl Drop for HostTransport {
+    fn drop(&mut self) {
+        if let Some(release) = self.release {
+            // SAFETY: the host's function, given its context once, as the link that held it goes.
+            unsafe { release(self.context) };
+        }
+    }
+}
+
+/// A notice of a transport as the JSON object [`sce_peer_link_take_notices`] gives.
+fn notice_value(notice: &Notice) -> Value {
+    match notice {
+        Notice::Connected => json!({"notice": "connected"}),
+        Notice::Lost(reason) => json!({"notice": "lost", "reason": reason}),
+        Notice::Pushed(text) => json!({"notice": "pushed", "text": text}),
+    }
+}
+
+/// A link to the relay at `base` (`ws://host:port` or `wss://host:port`, NUL-terminated) over its
+/// WebSocket binding, presenting `token` (NUL-terminated), the token the device's login earned. It
+/// dials on the first run and again whenever it must. Null when it fails: an address that is not a
+/// WebSocket's.
+///
+/// # Safety
+/// `base` and `token` are NUL-terminated strings.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_link_wss(
+    base: *const c_char,
+    token: *const c_char,
+) -> *mut ScePeerLink {
+    made(|| {
+        // SAFETY: the promises in the function's contract.
+        let (base, token) = unsafe { (text(base)?, text(token)?) };
+        let link = WssLink::new(base, token).map_err(|error| {
+            fail(
+                SCE_PEER_ERR_BAD_ARGUMENT,
+                format!("no link to the relay: {error}"),
+            )
+        })?;
+        Ok(ScePeerLink::over(Box::new(link)))
+    })
+}
+
+/// A link whose transport the host carries itself: `exchange` is called for each request of a run
+/// ([`ScePeerExchangeFn`]) with `context`, and `release` (which may be null) once with `context`
+/// when the link is freed. Null when `exchange` is null, and then `release` is not called.
+///
+/// # Safety
+/// `exchange` and `release` are functions as [`ScePeerExchangeFn`] and [`ScePeerReleaseFn`] say,
+/// and they and `context` may be used from whichever thread runs over the link until `release` is
+/// called.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_link_host(
+    exchange: Option<ScePeerExchangeFn>,
+    release: Option<ScePeerReleaseFn>,
+    context: *mut c_void,
+) -> *mut ScePeerLink {
+    made(|| {
+        let exchange = exchange.ok_or_else(|| {
+            fail(
+                SCE_PEER_ERR_NULL_ARGUMENT,
+                "a host's transport has no exchange function",
+            )
+        })?;
+        Ok(ScePeerLink::over(Box::new(HostTransport {
+            exchange,
+            release,
+            context,
+            network: Signal::new(),
+        })))
+    })
+}
+
+/// Free a link; a host's transport is released. Not while a run uses it.
+///
+/// # Safety
+/// `link` is null or a handle from this library not freed yet, and no run uses it.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_link_free(link: *mut ScePeerLink) {
+    if !link.is_null() {
+        // SAFETY: made by `Box::into_raw` in this library.
+        drop(unsafe { Box::from_raw(link) });
+    }
+}
+
+/// The device's network changed: an interface came or went, or the operating system said the path
+/// is another. The link gives its connection up and dials again on its next exchange, and an
+/// exchange that waits when it is told fails as the link's failure. Any thread may call it, at any
+/// time, a run on the link included.
+///
+/// # Safety
+/// `link` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_link_network_changed(link: *const ScePeerLink) -> i32 {
+    guard(|| {
+        // SAFETY: the promise in the function's contract; the network's signal is shared.
+        let link = unsafe { shared(link)? };
+        link.network.raise();
+        Ok(())
+    })
+}
+
+/// What became of the link's connection and what the relay pushed since this was last asked, as one
+/// JSON array in `out`, oldest first: `{"notice": "connected"}`, `{"notice": "lost", "reason": text}`,
+/// `{"notice": "pushed", "text": text}`. An empty buffer when there is none. A host's transport gives
+/// none.
+///
+/// # Safety
+/// `link` is a live handle no run uses meanwhile; `out` is valid for a write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_link_take_notices(
+    link: *mut ScePeerLink,
+    out: *mut ScePeerBuf,
+) -> i32 {
+    guard(|| {
+        required(out)?;
+        // SAFETY: the promises in the function's contract.
+        let link = unsafe {
+            put(out, ScePeerBuf::EMPTY);
+            shared(link.cast_const())?
+        };
+        // SAFETY: this thread is the one that uses the link's transport now.
+        let notices = unsafe { &mut **link.transport.get() }.take_notices();
+        if !notices.is_empty() {
+            let text =
+                Value::from(notices.iter().map(notice_value).collect::<Vec<_>>()).to_string();
+            // SAFETY: `out` is valid for a write.
+            unsafe { put(out, ScePeerBuf::of(text.into_bytes())) };
+        }
+        Ok(())
+    })
+}
+
+/// Give the text of one exchange of a host's transport: the response, or why there is none. Called
+/// by the host's [`ScePeerExchangeFn`] on the `reply` it was given, before it returns; a second call
+/// replaces the first. The text is copied.
+///
+/// # Safety
+/// `reply` is the one the host's function was given, during that call; `text` points at `len`
+/// readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_reply(
+    reply: *mut ScePeerReply,
+    text: *const u8,
+    len: usize,
+) -> i32 {
+    guard(|| {
+        // SAFETY: the promises in the function's contract.
+        let (reply, text) = unsafe { (handle(reply)?, bytes(text, len)?) };
+        reply.text = Some(text.to_vec());
+        Ok(())
+    })
+}
+
+/// A cancellation for a run, not raised. Null when it fails.
+#[no_mangle]
+pub extern "C" fn sce_peer_cancel_new() -> *mut ScePeerCancel {
+    made(|| {
+        Ok(ScePeerCancel {
+            signal: Signal::new(),
+        })
+    })
+}
+
+/// Raise a cancellation: the run that was given it ends as soon as its transport gives up the
+/// exchange that is out, and a run given it later carries nothing. Any thread may call it, at any
+/// time, while the run goes on included.
+///
+/// # Safety
+/// `cancel` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_cancel_raise(cancel: *const ScePeerCancel) -> i32 {
+    guard(|| {
+        // SAFETY: the promise in the function's contract; the signal is shared.
+        let cancel = unsafe { shared(cancel)? };
+        cancel.signal.raise();
+        Ok(())
+    })
+}
+
+/// Free a cancellation. Not while a run uses it.
+///
+/// # Safety
+/// `cancel` is null or a handle from this library not freed yet, and no run uses it.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_cancel_free(cancel: *mut ScePeerCancel) {
+    if !cancel.is_null() {
+        // SAFETY: made by `Box::into_raw` in this library.
+        drop(unsafe { Box::from_raw(cancel) });
+    }
+}
+
+/// Run the exchange begun on `peer` ([`sce_peer_start`], a publication) over `link` until it ends,
+/// blocking the calling thread: each request the core gives is carried by the link's transport and
+/// the response, or the transport's failure, given back, by the one driver every transport is run
+/// by. It stops `within_ms` milliseconds from the call (`u64::MAX`, or a time too large for the
+/// clock, is no deadline) or once `cancel` (which may be null) is raised, and the transport gives up
+/// the exchange that is
+/// out. The outcome is then taken with [`sce_peer_take_outcome`], as after an exchange carried by
+/// hand; a run that stopped leaves an outcome of a failure of the link, and what the exchange took
+/// in is handed over by the next round. `SCE_PEER_OK` when the exchange ended (whatever it came to,
+/// and at once when none runs), `SCE_PEER_ERR_CANCELLED` or `SCE_PEER_ERR_DEADLINE` when the run
+/// stopped.
+///
+/// # Safety
+/// `peer` and `link` are live handles no other thread uses meanwhile, but to raise the link's
+/// network signal; `cancel` is null or a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_run(
+    peer: *mut ScePeer,
+    link: *mut ScePeerLink,
+    within_ms: u64,
+    cancel: *const ScePeerCancel,
+) -> i32 {
+    guard(|| {
+        // SAFETY: the promises in the function's contract.
+        let (held, link, cancel) =
+            unsafe { (handle(peer)?, shared(link.cast_const())?, cancel.as_ref()) };
+        let never = Signal::new();
+        let cancel = cancel.map_or(&never, |cancel| &cancel.signal);
+        let deadline = match within_ms {
+            u64::MAX => None,
+            within_ms => Instant::now().checked_add(Duration::from_millis(within_ms)),
+        };
+        // SAFETY: this run is the one user of the link's transport; other threads reach only the
+        // network's signal, which is outside the cell.
+        let transport = unsafe { &mut **link.transport.get() };
+        match drive(&mut held.peer, transport, deadline, cancel) {
+            Driven::Ended => Ok(()),
+            Driven::Cancelled => Err(fail(
+                SCE_PEER_ERR_CANCELLED,
+                "the run was cancelled: the exchange ended as a failure of the link, and its \
+                 outcome waits",
+            )),
+            Driven::DeadlinePassed => Err(fail(
+                SCE_PEER_ERR_DEADLINE,
+                "the deadline passed: the exchange ended as a failure of the link, and its \
+                 outcome waits",
+            )),
+        }
     })
 }
