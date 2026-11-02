@@ -452,6 +452,10 @@ fn a_round_whose_transport_waits_ends_when_cancelled_and_when_its_deadline_passe
     // Nothing was lost by the rounds that did not end: the next one gives the relay all of it.
     let outcome = run(&mut alice, &mut link, RoundKind::Sync);
     assert_eq!(outcome.round.pushed, 4 + 1, "the log and the write");
+    assert!(
+        !taken(&carried).is_empty(),
+        "the round carried its requests"
+    );
 
     // With no exchange running, a drive asks nothing.
     assert_eq!(
