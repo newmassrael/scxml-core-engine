@@ -18,6 +18,11 @@
 // in one round and for its end to reach the parent in the next, since the engine reports
 // no point at which it has settled.
 //
+// A copy of a shared list may be a device that holds the list through the peer core: its
+// core is made beside the machine on request, and the requests that drive it (`peer_*`)
+// are answered by `HostedDevice` (Device.kt). The machine's sends still go to the world,
+// whose host of the device gives them to the core.
+//
 // The protocol is documented where it is defined for the other side, in the module
 // documentation of `sce_rust_world::external`; this file implements it.
 
@@ -86,17 +91,33 @@ fun <M : StateMachineEngine<*, *>> hosting(
 class ProtocolError(message: String) : Exception(message)
 
 /**
- * The server for the machine called [machineName], built by [create].
+ * The lines of the protocol: what this server says, and the next request it hears (`null` at
+ * the end of its input). The main loop says the reply to each request it hears; a request
+ * whose answer needs the world's word first (a round of the device's core, whose every
+ * exchange the world carries, `HostedDevice`) says and hears in the middle of it, still one
+ * line for one line.
+ */
+interface Lines {
+    fun say(line: String)
+
+    fun hear(): String?
+}
+
+/**
+ * The server for the machine called [machineName], built by [create], with the core of the
+ * device it is a copy on when it is asked to make one ([HostedDevice]).
  *
  * [handle] is the whole protocol: it takes the text of one request and returns the text
  * of its reply. [stopped] says a `shutdown` was answered, after which nothing is read.
  */
 class StepServer(
     private val machineName: String,
+    lines: Lines,
     private val create: () -> HostedMachine,
 ) {
     private var hosted: HostedMachine? = null
     private val sends = mutableListOf<StateMachineEngine.HostSendRequest>()
+    private val device = HostedDevice(lines)
 
     var stopped: Boolean = false
         private set
@@ -113,8 +134,14 @@ class StepServer(
             refusal(failure.stackTraceToString())
         }
 
-    /** Release the machine, if one is running. */
+    /** Release the machine, if one is running, and the device's core, if one was made. */
     fun close() {
+        closeMachine()
+        device.close()
+    }
+
+    /** Release the machine, if one is running; the device's core outlives it. */
+    private fun closeMachine() {
         hosted?.engine?.cleanup()
         hosted = null
     }
@@ -172,7 +199,12 @@ class StepServer(
                 stopped = true
                 buildJsonObject { put("ok", true) }
             }
-            else -> throw ProtocolError("unknown op `$op`")
+            else ->
+                if (HostedDevice.serves(op)) {
+                    device.reply(op, request)
+                } else {
+                    throw ProtocolError("unknown op `$op`")
+                }
         }
 
     /**
@@ -181,7 +213,7 @@ class StepServer(
      * registered before either, so what a start sends is recorded too.
      */
     private fun begin(atMs: Long, restoring: SavedState?) {
-        close()
+        closeMachine()
         sends.clear()
         val machine = create()
         val engine = machine.engine
@@ -242,20 +274,19 @@ class StepServer(
             put("data", request.eventData)
             put("invoke_id", request.invokeId)
         }
-
-    private fun field(request: JsonObject, name: String): JsonElement =
-        request[name] ?: throw ProtocolError("the request has no `$name`")
-
-    private fun text(request: JsonObject, name: String): String {
-        val value = field(request, name).jsonPrimitive
-        if (!value.isString) throw ProtocolError("`$name` is not a string")
-        return value.content
-    }
-
-    private fun number(request: JsonObject, name: String): Long =
-        try {
-            field(request, name).jsonPrimitive.long
-        } catch (failure: NumberFormatException) {
-            throw ProtocolError("`$name` is not a whole number: ${failure.message}")
-        }
 }
+
+internal fun field(request: JsonObject, name: String): JsonElement = request[name] ?: throw ProtocolError("the request has no `$name`")
+
+internal fun text(request: JsonObject, name: String): String {
+    val value = field(request, name).jsonPrimitive
+    if (!value.isString) throw ProtocolError("`$name` is not a string")
+    return value.content
+}
+
+internal fun number(request: JsonObject, name: String): Long =
+    try {
+        field(request, name).jsonPrimitive.long
+    } catch (failure: NumberFormatException) {
+        throw ProtocolError("`$name` is not a whole number: ${failure.message}")
+    }

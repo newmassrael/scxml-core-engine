@@ -29,16 +29,24 @@ fun main(args: Array<String>) {
     val protocol = PrintStream(FileOutputStream(FileDescriptor.out), false, Charsets.UTF_8)
     System.setOut(System.err)
     val input = BufferedReader(InputStreamReader(System.`in`, Charsets.UTF_8))
+    val lines =
+        object : Lines {
+            override fun say(line: String) {
+                protocol.print(line)
+                protocol.print('\n')
+                protocol.flush()
+            }
+
+            override fun hear(): String? = input.readLine()
+        }
 
     val sessionId = sessionId(args)
-    val server = StepServer(name) { create(sessionId) }
+    val server = StepServer(name, lines) { create(sessionId) }
     try {
         while (!server.stopped) {
             // The end of stdin is the world going away without a word: leave quietly.
-            val line = input.readLine() ?: break
-            protocol.print(server.handle(line))
-            protocol.print('\n')
-            protocol.flush()
+            val line = lines.hear() ?: break
+            lines.say(server.handle(line))
         }
     } finally {
         server.close()

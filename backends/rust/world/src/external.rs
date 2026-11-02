@@ -68,6 +68,33 @@
 //! thing to the world: a failed run, reported with the child's stderr
 //! ([`ExternalFailure`]).
 //!
+//! # The device a copy is on
+//!
+//! A copy of a shared list may hold the list through the peer core of its device
+//! (`sce-rust-peer`, ADR 0079), which a host in the child's language reaches through the
+//! core's C ABI. The child then runs the core beside the machine, and a test asks it of the
+//! core with requests the world itself never makes ([`ExternalMachine::ask`]); the
+//! machine's sends still come back as `sent` and go to the endpoint, where the test's host
+//! of the device gives them to the core. A child that hosts no device refuses these.
+//!
+//! | request | other members | reply |
+//! |---|---|---|
+//! | `peer_make` | `library` (the core's shared library), `list`, `node` (a number), `seed` (hex), `genesis` (hex or null: the hash a device is invited with), `administrator` (hex or null), `group` (bool) | `ok` |
+//! | `peer_outbound` | `event`, `data` | `ok`, `kept` (`taken`, `held`, `not_signed`, `refused`), `reason` (text or null) |
+//! | `peer_round` | `begin` (`sync`, `resync`, `reread`, `key_package`) | an exchange, or the end of the run |
+//! | `peer_carried` | `response` (text), or `failed` (`link`, `deadline`, `cancelled`) and `reason` | an exchange, or the end of the run |
+//! | `peer_standing` | | `ok`, `standing` (the ABI's text) |
+//!
+//! A round is run by the core's own driver (`sce_peer_run`) over a transport whose every
+//! exchange the world carries, so a `peer_round` is answered with
+//! `{"ok":true,"exchange":<request text>}` for each request the core puts to the relay, and
+//! the world's next line is the `peer_carried` that says what became of it; the round's
+//! last reply is `{"ok":true,"ran":<status of the run>,"outcome":<outcome text>}`. A
+//! `failed` of `cancelled` is the job's time ending: the child raises the run's
+//! cancellation and its transport gives the exchange up, so the run stops with the ABI's
+//! `SCE_PEER_ERR_CANCELLED`. Still one line for one line, and still a function of the
+//! requests.
+//!
 //! # Not carried yet
 //!
 //! The end of a Mesh request (`<invoke type="sce:mesh-rpc">`) is not an event of the
@@ -516,6 +543,20 @@ impl ExternalMachine {
         self.lock().machine.clone()
     }
 
+    /// A request of the device the child's copy is on (the `peer_*` requests of the module
+    /// documentation), sent as it is, and its reply when it says `ok`. The world asks none
+    /// of these itself: they are the host of the device's, which a test is.
+    ///
+    /// # Errors
+    ///
+    /// As any request: a refusal, a child that exits, or one that does not answer within
+    /// the step's time.
+    pub fn ask(&self, request: &Value) -> Result<Value, ExternalFailure> {
+        let mut process = self.lock();
+        let timeout = process.step_timeout;
+        process.call(request, timeout)
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, Process> {
         self.process
             .lock()
@@ -822,6 +863,25 @@ mod tests {
         assert_eq!(send.event_data, r#"{"id":1}"#);
         assert_eq!(send.params["id"], ["1"]);
         assert_eq!(send.send_id, "s1");
+    }
+
+    #[test]
+    fn a_request_of_the_device_is_sent_as_it_is_and_its_reply_given_back() {
+        // The child answers the request only when it is the one asked, so a request that
+        // was changed on its way, or a reply not given back as it came, fails here.
+        let machine = ExternalMachine::spawn(&ExternalCommand::new("sh").args([
+            "-c",
+            concat!(
+                r#"read line; echo '{"ok":true,"protocol":1,"machine":"x"}'; read line; "#,
+                r#"case "$line" in *'"op":"peer_standing"'*) echo '{"ok":true,"standing":"{}"}';; "#,
+                r#"*) echo '{"ok":false,"error":"not what was asked"}';; esac"#
+            ),
+        ]))
+        .expect("it greets");
+        let reply = machine
+            .ask(&json!({ "op": "peer_standing" }))
+            .expect("the child answers what it was asked");
+        assert_eq!(reply["standing"], "{}");
     }
 
     #[test]

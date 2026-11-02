@@ -7,6 +7,7 @@
 
 package com.sce.world
 
+import com.sce.integration.record_list.RecordListStateMachine
 import com.sce.integration.todo_peer.TodoPeerStateMachine
 
 /**
@@ -23,6 +24,14 @@ val hostableMachines: Map<String, (sessionId: String?) -> HostedMachine> =
         "todo_peer" to
             hosting(
                 create = { sessionId -> TodoPeerStateMachine(sessionId = sessionId) },
+                save = { it.save(AT_WALL_MS) },
+                restore = { machine, saved -> machine.restore(saved, AT_WALL_MS) },
+            ),
+        // The standard shared record list (sce:std/shared/record_list.scxml), the copy a device
+        // holds through the peer core.
+        "record_list" to
+            hosting(
+                create = { sessionId -> RecordListStateMachine(sessionId = sessionId) },
                 save = { it.save(AT_WALL_MS) },
                 restore = { machine, saved -> machine.restore(saved, AT_WALL_MS) },
             ),

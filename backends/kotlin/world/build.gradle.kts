@@ -14,6 +14,10 @@
 // copied: a machine regenerated there is the machine this module hosts, and there is no
 // second tree to drift.
 //
+// A copy of the standard shared record list may be a device that holds the list through the
+// peer core (ADR 0079): the server then runs the core beside the machine, through the Kotlin
+// binding of its C ABI, and loads the core's shared library from the path the world gives.
+//
 // Built with `./gradlew :sce-kotlin-world:installDist`; the world tests read the
 // distribution's `lib/` directory.
 
@@ -32,12 +36,15 @@ dependencies {
     implementation(project(":sce-forge-runtime-kotlin"))
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
+    // The peer core a device holds a shared list through, reached through its C ABI with the
+    // binding every Kotlin host of the core shares (`HostedDevice`, Device.kt).
+    implementation(project(":sce-kotlin-peer"))
 }
 
 // The machines this server can host, by the directory their generated source has under
 // `com/sce/integration`. Each needs a row in `Machines.kt`, so a name listed here and not
 // there is code nothing reaches, and a row there with no name here does not compile.
-val hostedMachines = listOf("todo_peer")
+val hostedMachines = listOf("todo_peer", "record_list")
 
 val generatedTree = rootProject.file("backends/kotlin/tests/src/main/kotlin/com/sce")
 
