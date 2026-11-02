@@ -3865,10 +3865,14 @@ name = "sce-rust-relay-server"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "futures-util",
+ "rcgen",
  "rustls-pki-types",
  "sce-rust-relay",
  "sce-rust-trust",
  "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
  "toml_edit",
 ]
 

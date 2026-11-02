@@ -58,6 +58,7 @@ binary.
 | `sce-relay check --config FILE [flags]` | reads the configuration, the keys, the certificate and the whole store as `serve` does, and exits | 0 when all of it holds |
 | `sce-relay keygen --out FILE --audience NAME` | makes the authority's key, mode 0600, never over a file that is there | 0 |
 | `sce-relay token issue --key FILE --list NAME --node N [--valid-for SECONDS]` | prints a token for one device of one list (section 6) | 0 |
+| `sce-relay probe URL (--key FILE \| --token-file FILE) [--ca FILE] [--timeout SECONDS]` | makes one real exchange with a running relay and prints one line: what it came to and how long each stage took (section 11) | 0, or the status of the stage that failed (section 11) |
 
 `serve` and `check` take the configuration file and, over it, `--listen`, `--listen-tls`,
 `--tls-chain`, `--tls-key`, `--store`, `--authority-key`, `--max-connections` and `--limit NAME=VALUE`
@@ -284,10 +285,53 @@ relay verified, and the relay verifies each again when it starts.
 
 ## 11. Health
 
-The relay answers on its port once systemd shows it `active (running)`; a probe that wants to know it
-answers requests issues a token for a list of its own (`sce-relay token issue --list probe --node 1`)
-and asks `entries` of it. The relay does not use systemd's watchdog: the answer of a request is the
-liveness worth checking, and a ping from a thread of the process says nothing of it.
+The relay answers on its port once systemd shows it `active (running)`. Whether it answers a device is
+another question, which `sce-relay probe` asks from anywhere a device could be: it makes the exchange a
+device makes, stage by stage, and prints one line.
+
+```sh
+# On the server, from the authority's key: the probe issues itself a token for five minutes.
+sudo sce-relay probe wss://relay.example --key /etc/sce-relay/authority.key
+# From a monitoring host, which holds a token and not the key: the token is made on the server into
+# a file only its owner reads (the probe refuses one others may read, as it refuses such a key), and
+# the file is copied to the monitor with its mode kept.
+(umask 077; sudo sce-relay token issue --key /etc/sce-relay/authority.key \
+  --list sce-relay-probe --node 1 --valid-for 31536000 > probe.token)
+sce-relay probe wss://relay.example --token-file probe.token [--ca ca.pem] [--timeout 10]
+```
+
+```
+outcome=ok relay=wss://relay.example/sce-relay/1 asked=write_read list=held resolve_ms=1.2 connect_ms=21.4 tls_ms=44.0 upgrade_ms=22.1 exchange_ms=23.0 total_ms=112.0
+outcome=tls_refused relay=wss://relay.example/sce-relay/1 asked=write_read stage=tls resolve_ms=1.1 connect_ms=20.9 total_ms=40.3 reason="the TLS handshake failed: invalid peer certificate: Expired"
+```
+
+The stages are `resolve` (the name), `connect`, `tls` (a `wss://` relay, believing the public
+authorities, or with `--ca` the one in that file alone), `upgrade` (the WebSocket upgrade with the token,
+which the relay judges) and `exchange`. What it asks depends on the token. A token for the probe list,
+`sce-relay-probe` (the one `--key` issues, or one issued for that list as above), lets it write: it gives
+the relay that list's first entry, the same entry every time, which the first probe makes the relay keep
+(`list=created`) and every later one finds held (`list=held`), and reads the log back to check it. The
+store is written once and the list never grows. A relay that says `list=created` again after the first
+probe has lost its store. A token for any other list is used only to read that list's log
+(`asked=read`): a probe never writes to an application's list. The line never holds the token.
+
+| Status | `outcome=` | What failed |
+|---|---|---|
+| 0 | `ok` | nothing: every request was answered as the protocol says, and what was written read back |
+| 69 | `unreachable` | the name did not resolve, or nothing took the connection in time |
+| 79 | `tls_refused` | the TLS handshake: an authority the probe does not believe, another name, an expired certificate, or no TLS at the address (`sysexits.h` has no number for it: 79 is the first past its last) |
+| 77 | `token_refused` | the relay refused the token, at the upgrade or as `unauthorized`: another relay's, expired, or the key changed |
+| 75 | `busy` | the relay took the connection and did not finish a stage within `--timeout`, closed it before it answered (it holds as many connections as it takes, or it is stopping), or answered `rate_limited` |
+| 74 | `store_failed` | the relay answered `unavailable`: its store did not take a record, and it takes nothing until its operator has looked (`journalctl -u sce-relay`) |
+| 76 | `protocol_error` | the relay answered, but not as the protocol says: the upgrade refused for another reason (a proxy that does not pass it), a text that is not a response, or a read back that is not what was written |
+| 78 | none | the probe's own inputs: the key, the token file or the `--ca` file cannot be read, or another user may read the key or the token |
+| 2 | none | the command line: no token and no key, both, no time, or an address that is not `ws://` or `wss://` |
+
+A probe's write spends its node's allowance like a device's (a write and a read each run); a probe every
+minute is far inside the defaults. The probe list is one of the relay's lists (`max_lists`).
+
+The relay does not use systemd's watchdog: the answer of a request is the liveness worth checking, and a
+ping from a thread of the process says nothing of it.
 
 ## 12. Open decisions for the owner
 

@@ -14,6 +14,9 @@
 //!   nothing of it.
 //! * `sce-relay token issue` issues a token for one device of one list from that key, as the
 //!   service that logs a person in issues one.
+//! * `sce-relay probe` makes one real exchange with a running relay, as a device makes it, and
+//!   prints one line: what it came to and how long each stage took
+//!   (`sce_rust_relay_server::probe`). Its exit status says which stage failed.
 //!
 //! The exit status is one of `sce_rust_relay_server::exit`'s; what happened is one line on stderr
 //! for each thing (`sce_rust_relay_server::logline`).
@@ -26,18 +29,19 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Parser, Subcommand};
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use sce_rust_relay::serve::Server;
-use sce_rust_relay::tls::{self, ServerConfig};
+use sce_rust_relay::tls::{self, Roots, ServerConfig};
 use sce_rust_relay::{Authority, FileStore, Shards};
 use sce_rust_relay_server::config::{self, Config, Settings, TlsFiles};
 use sce_rust_relay_server::exit;
 use sce_rust_relay_server::logline::Log;
 use sce_rust_relay_server::notify::notify;
+use sce_rust_relay_server::probe::{self, Target, TargetError};
 use sce_rust_relay_server::secret::{self, SecretError, SecretErrorKind};
 use sce_rust_relay_server::slots::{self, StoreErrorKind};
 use tokio::net::TcpListener;
@@ -64,6 +68,8 @@ enum Command {
         #[command(subcommand)]
         command: TokenCommand,
     },
+    /// Make one real exchange with a running relay and print what it came to, with its latency.
+    Probe(ProbeArgs),
 }
 
 #[derive(Subcommand)]
@@ -147,6 +153,34 @@ struct IssueArgs {
     valid_for: u64,
 }
 
+/// What `probe` is given: the relay, what to believe of its certificate, and a token or the key to
+/// issue one from. No secret is given here, only the paths of the files that hold them.
+#[derive(Args)]
+struct ProbeArgs {
+    /// The relay's address, as a device is given it: ws://HOST[:PORT] or wss://HOST[:PORT].
+    #[arg(value_name = "URL")]
+    url: String,
+    /// The certificate of the authority the relay's certificate is under (PEM or DER), believed
+    /// alone; without it, the public authorities are believed.
+    #[arg(long, value_name = "FILE")]
+    ca: Option<PathBuf>,
+    /// A file that holds the token to present, readable by its owner alone. With a token for the
+    /// probe list (sce-relay-probe) the probe writes and reads back; with any other it only reads.
+    #[arg(
+        long,
+        value_name = "FILE",
+        conflicts_with = "key",
+        required_unless_present = "key"
+    )]
+    token_file: Option<PathBuf>,
+    /// The authority's key, from which the probe issues itself a token for the probe list.
+    #[arg(long, value_name = "FILE")]
+    key: Option<PathBuf>,
+    /// How long the whole probe may take, in seconds.
+    #[arg(long, value_name = "SECONDS", default_value_t = 10)]
+    timeout: u64,
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let log = Log::from_environment();
@@ -157,6 +191,10 @@ fn main() -> ExitCode {
         Command::Token {
             command: TokenCommand::Issue(args),
         } => issue(&log, &args),
+        Command::Probe(args) => match run_probe(&args) {
+            Ok(status) => status,
+            Err(refusal) => refused(&log, refusal),
+        },
     };
     ExitCode::from(status)
 }
@@ -591,4 +629,88 @@ fn issue(log: &Log, args: &IssueArgs) -> u8 {
         ],
     );
     exit::OK
+}
+
+/// Probe the relay: the status its outcome says, once the line is printed. What the probe was
+/// given that is wrong is a refusal, said on stderr, before anything is dialled.
+fn run_probe(args: &ProbeArgs) -> Result<u8, Refusal> {
+    if args.timeout == 0 {
+        return Err(Refusal::new(exit::USAGE, "a probe is given some time"));
+    }
+    let roots = match &args.ca {
+        Some(path) => Roots::Only(read_authorities(path)?),
+        None => Roots::Public,
+    };
+    let token = match (&args.token_file, &args.key) {
+        (Some(path), _) => read_token(path)?,
+        (None, Some(path)) => probe::own_token(&read_authority(path)?, now_ms()),
+        (None, None) => {
+            return Err(Refusal::new(
+                exit::USAGE,
+                "a probe is given a token file or the authority's key",
+            ))
+        }
+    };
+    let target = Target::new(&args.url, &roots, &token).map_err(|error| match error {
+        TargetError::Address(why) => Refusal::new(exit::USAGE, why),
+        TargetError::Unusable(why) => Refusal::new(exit::CONFIG, why),
+    })?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|why| {
+            Refusal::new(
+                exit::SOFTWARE,
+                format!("the runtime could not start: {why}"),
+            )
+        })?;
+    let report = runtime.block_on(probe::probe(&target, Duration::from_secs(args.timeout)));
+    if writeln!(std::io::stdout().lock(), "{}", report.line()).is_err() {
+        return Err(Refusal::new(
+            exit::IO_ERROR,
+            "the probe's report could not be written out",
+        ));
+    }
+    Ok(report.outcome.status())
+}
+
+/// The certificates of the authorities in the file at `path` (PEM or DER): what a probe believes
+/// alone. They are no secret.
+fn read_authorities(path: &Path) -> Result<Vec<Vec<u8>>, Refusal> {
+    let bytes = fs::read(path).map_err(|why| {
+        Refusal::new(
+            exit::CONFIG,
+            format!(
+                "the authority's certificate at {} cannot be read: {why}",
+                path.display()
+            ),
+        )
+    })?;
+    tls::authorities(&bytes).map_err(|why| {
+        Refusal::new(
+            exit::CONFIG,
+            format!(
+                "the file at {} holds no authority's certificate: {why}",
+                path.display()
+            ),
+        )
+    })
+}
+
+/// The token in the file at `path`, which only its owner may read, as `sce-relay token issue`
+/// writes it (one line).
+fn read_token(path: &Path) -> Result<String, Refusal> {
+    let bytes =
+        secret::read(path, "the token", credentials().as_deref()).map_err(secret_refusal)?;
+    let token = String::from_utf8(bytes)
+        .ok()
+        .map(|text| text.trim().to_string())
+        .filter(|token| !token.is_empty())
+        .ok_or_else(|| {
+            Refusal::new(
+                exit::CONFIG,
+                format!("the file at {} holds no token", path.display()),
+            )
+        })?;
+    Ok(token)
 }

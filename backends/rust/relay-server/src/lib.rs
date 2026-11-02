@@ -15,6 +15,8 @@
 //! * [`logline`] - one line on stderr for each thing that happened: `key=value` words, never a
 //!   secret and never what a list holds.
 //! * [`exit`] - what the process's exit status says.
+//! * [`probe`] - one real exchange with a relay, as a device makes it, timed stage by stage
+//!   (`sce-relay probe`).
 
 #![forbid(unsafe_code)]
 
@@ -22,5 +24,6 @@ pub mod config;
 pub mod exit;
 pub mod logline;
 pub mod notify;
+pub mod probe;
 pub mod secret;
 pub mod slots;
