@@ -1,7 +1,10 @@
 # Trust in a shared list
 
-A shared list (the to-do fixture `todo_peer`) has copies on its members' devices and a hub that
-relays between them. This document says what each party can be trusted with, and what the
+A shared list has copies on its members' devices and a hub that relays between them. The list
+this document secures is the standard shared record list, `sce:std/shared/record_list.scxml`
+(docs/adr/0042), and only it: an application that builds its list on that part is secured without
+the trust layer learning the application, and no other document's events are signed, admitted or
+relayed. This document says what each party can be trusted with, and what the
 host of each copy does to hold to it. The code is `backends/rust/trust` (`sce-rust-trust`) and
 the two seams it sits behind in Mesh, `Admission` and `Sealer` (`backends/rust/mesh`,
 `Endpoint::set_admission` / `set_sealer`), with `Endpoint::forbid_events_from` for what a link
@@ -22,7 +25,7 @@ Two modes follow from who runs the hub:
 
 | Hub is | What the hosts of the members do |
 |---|---|
-| Trusted | Roles only: the hub's machine drops a write whose author is not a writer on its roster (`todo.role`), and a person's copy refuses its own member's edit when the member is a reader. |
+| Trusted | Roles only: the hub's machine drops a write whose author is not a writer on its roster (`record_list.role`), and a person's copy refuses its own member's edit when the member is a reader. |
 | Not trusted | The hosts of the members hold the membership log and check everything: signatures, the log's entries, settled instants and, optionally, keep the content from the hub. |
 
 The two are one mechanism with different settings, and **which one a list is in is a fact of
@@ -156,6 +159,28 @@ log it was made under (`mh`, and that entry's hash `mhh`), and the device's sign
 it (`message::operation_bytes`). Nothing in it is a time the device claims: what decides whether
 it holds is the entry it names and the number it has.
 
+**What an event is signed as** is written from the fields it carries and not from the text of
+its data: the domain `sce-trust/event/2`, the list's name, the event's name, then each field as
+the text of its value, every part with its length. The events and their fields, in order, are the
+standard record list's event schemas, which `message::SIGNED` states and a test of the world crate
+(`the_trust_layer_signs_what_the_record_list_declares`) holds to the schemas:
+
+| Event | Signed by | Fields, in order |
+|---|---|---|
+| `record_list.write` (`record_write`, revision 2) | `nodeId` | `id`, `field`, `value`, `text`, `wallTime`, `counter`, `nodeId`, `parts` |
+| `record_list.supersede` (`record_supersede`, revision 2) | `by` | `id`, `field`, `wallTime`, `counter`, `nodeId`, `by`, `parts`, `atWallTime`, `atCounter` |
+
+`parts`, `atWallTime` and `atCounter` are what a change of more than one operation travels with
+(docs/adr/0046, section 3), and they are signed: a relay that changed them could hold a change
+back from being whole, or make one part look like a change of its own. An event that leaves one
+out, as a change of one operation does, is signed as the default its schema gives (1, 0 and 0),
+so the two are one set of bytes; every field of the first revision is one every event carries.
+What a host keeps a write and a note by is what it is about (its register, its stamp and, for a
+write, its content), not the change it travelled in, so a copy that shares an operation alone on
+a resync sends on the operation its author signed as a part. The domain was `sce-trust/event/1`
+while the layer secured a test fixture's events by other names; a signature does not verify under
+two meanings, and there is no path that takes the first.
+
 A host admits an operation when the entry it names is the one the host holds, its author was a
 writer under that entry, the number is not past the end the log set for the device, the signature
 is true under the key of that entry, and it stands consistently among the device's operations the
@@ -179,13 +204,13 @@ nothing back to wait for a predecessor):
   later one is sealed under an epoch that entry has begun, or it is refused;
 - an operation that names an entry the host has not reached is refused until it has.
 
-- **A write** (`todo.write`) is an operation of the node that stamped it. A hub relays it as the
-  operation the member made (`Wire`), with its number and its signature; it cannot make one.
-- **A note that a write was written over** (`todo.supersede`) is an operation of whoever wrote
+- **A write** (`record_list.write`) is an operation of the node that stamped it. A hub relays it as
+  the operation the member made (`Wire`), with its number and its signature; it cannot make one.
+- **A note that a write was written over** (`record_list.supersede`) is an operation of whoever wrote
   over it, numbered in the same chain as the writes and cut with them. The host keeps who wrote
   over what, and when a machine sends the tombstone again as itself (a resync), the host puts
   back the operation of the person who really did.
-- **A settled instant** (`todo.floor`) is the word on which every copy forgets the tombstones
+- **A settled instant** (`record_list.floor`) is the word on which every copy forgets the tombstones
   up to an instant. It is accepted only with the members' settlement (below), because a hub that
   could settle an instant its copies have not could bring back, with an old signed write, what
   was deleted. A host that trusts its hub allows it without (`Trust::allow_unsigned`).
@@ -203,7 +228,7 @@ cannot make or change one, and one it keeps back only delays the settlement.
 
 **The settlement** of an instant is the checkpoints of every device that was a writer under one
 entry of the log, all for that instant and that digest (`Trust::settlement`). The hub's host
-sends its `todo.floor` on with it (`cert`), and every other host checks it alone: each checkpoint
+sends its `record_list.floor` on with it (`cert`), and every other host checks it alone: each checkpoint
 holds, they are for this instant and this hash, they speak under one entry the host holds, they
 are from exactly the writers under it (none missing, none twice, no reader), and the heads they
 name agree with each other and with the operations the host holds. No administrator is asked, and
@@ -248,13 +273,13 @@ text a person types (what is sealed is the number, the length, the text and zero
 so the size a relay sees says nothing of whether a write holds a number, a word or a line), which
 is why a write's `text` holds 96 (a person still types 32, held by the machine's `typed`).
 
-What the hub holds and relays is the **stamp** of each write (which to-do, which field, when, by
+What the hub holds and relays is the **stamp** of each write (which row, which field, when, by
 whom) and the tombstones: it orders, merges, forgets and compares digests by them. It learns
 that a member changed a field at a time, and not to what. Its own agenda computation is
 meaningless over sealed values; the members' copies compute theirs.
 
 A host that holds keys takes no write that is not sealed, and none sealed under an epoch it
-holds no key of (it says which; after it is given the key, a `todo.resync` brings the write).
+holds no key of (it says which; after it is given the key, a `record_list.resync` brings the write).
 
 ### Keys
 
@@ -344,7 +369,7 @@ stops the log there, a changed or removed operation is listed or leaves a gap th
 
 ## 6. What is not here
 
-- The hub sees stamps: which to-do, which field, when, by whom. Hiding them is another design
+- The hub sees stamps: which row, which field, when, by whom. Hiding them is another design
   (a hub that does not run the machine).
 - A reader receives everything that is replicated: a read-only role stops writes, not reading.
   Content a member may not read goes in another list, or under a key that member is not given.

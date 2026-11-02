@@ -23,8 +23,11 @@ writes, a device that was taken off past its last number, a change to what a mem
 plaintext in a list that is sealed. It cannot tell a useful write from a useless one by a member, and
 it does not try; it bounds how much any one device asks.
 
-The relay is specific to the events whose rules `sce-rust-trust` knows (the to-do list's writes and
-notes). It is generic over where it keeps records (`Store`) and how it is reached (`Link`).
+The relay is specific to the events whose rules `sce-rust-trust` knows: the writes and notes of the
+standard shared record list, `sce:std/shared/record_list.scxml` (`record_list.write`,
+`record_list.supersede`, docs/adr/0042), which is the one document it carries; anything else
+submitted as an operation is `invalid`. It is generic over where it keeps records (`Store`) and how
+it is reached (`Link`).
 
 ## 2. Sessions: login-bound tokens
 
@@ -102,8 +105,8 @@ things:
 
 `Courier::resync` reads from the start and tells the machine every operation, for a machine that lost
 its state. `publish_checkpoint(before, digest)` signs what the machine froze for an instant
-(`todo.propose` of the machine, which a hub would send) and gives it to the relay;
-`floor_event(before, digest)` is the word `todo.floor` for the machine once the checkpoints the host
+(`record_list.propose` of the machine, which a hub would send) and gives it to the relay;
+`floor_event(before, digest)` is the word `record_list.floor` for the machine once the checkpoints the host
 holds make a settlement. No machine of a hub and no administrator takes part.
 
 A host connected to several relays has one `Trust` and a courier for each: a relay that withholds an
@@ -121,7 +124,7 @@ of a member. The same relay serves both (`a_shared_list_runs_through_a_relay_wit
 ## 8. What the relay learns, and what is not built
 
 The relay sees the list's name, each device's node number in that list (a number the log gave it, not
-an account), the stamp of each write (which to-do, which field, when, by whom), each operation's size
+an account), the stamp of each write (which row, which field, when, by whom), each operation's size
 (constant for a text a person types) and the membership log. It does not see what was written, or what
 was settled and forgotten. It does not record arrival times, and it does not batch.
 
@@ -133,4 +136,5 @@ Not built, and not claimed:
 - **TLS.** The binding runs on any stream the host hands it, one its TLS acceptor wrapped included;
   the deployer provides the certificate.
 - **Login.** Who a person is, and when to issue them a token, is the application's.
-- **Other lists' rules.** The relay verifies the to-do list's events.
+- **Other lists' rules.** The relay verifies the standard record list's events, and no other
+  document's: an application builds its list on that part.
