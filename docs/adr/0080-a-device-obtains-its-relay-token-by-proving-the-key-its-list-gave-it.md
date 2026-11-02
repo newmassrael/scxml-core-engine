@@ -1,7 +1,7 @@
 # ADR 0080 — A device obtains its relay token by proving the key its list gave it, and the relay issues it
 
 - Status: Accepted (2026-11-02), as proposed and with the proposed answers to its open questions (see the end).
-  Being built in its order of work.
+  Being built in its order of work: steps 1 to 3 landed.
 - Date: 2026-11-02
 - Related:
   - ADR 0034 (a shared list is held by its members, and the hub only relays), sections 8 and 9 and its threat
@@ -270,6 +270,54 @@ left open:
   a token of the authority, as a relay whose creation is `closed` takes it.
 - **Not built in these steps:** a probe that logs in (step 5), invitations and the join (step 3),
   lapse and open creation (step 4).
+
+**Step 3 landed (2026-11-03).** What was built, and where the build chose what the decision left
+open:
+
+- **The bytes** (`sce_rust_trust::invitation`). The invitation's parts are signed as section 4 lists
+  them, the genesis's hash and `P_s` in the URL alphabet and the node and the expiry in decimal, in
+  the trust layer's framing; the key pair is Ed25519 from the seed HKDF-SHA256 of `s` with no salt and
+  the info of section 4. The proof's parts are section 4's, the key package's hash in the URL alphabet.
+- **The text for the QR code** is `SCEI1.` and, in the URL alphabet, each part its length as two bytes
+  big-endian and then its bytes: the relay's address, the audience, the list, the genesis, the node,
+  the expiry, the administrator's key, the signature and `s`. `P_s` is not carried, being made from
+  `s`. A binary form under a versioned prefix, rather than the JSON text section 7's table named,
+  because it is half the size in a QR code and no lane reads it: `sce_peer_invitation_read` gives
+  what it says as JSON, and `sce_peer_invited_by` makes the invited device's core from it.
+- **The fingerprint** is twenty decimal digits in five groups, from SHA-256 of `sce-relay/fingerprint/1`,
+  the list, the node, `P_s` and the identity key (`docs/SCE_SHARED_LIST_PEER_ABI.md` section 12, with a
+  known answer): about 66 bits, so that a relay and a person who photographed the code cannot find a
+  key of their own that shows the same digits.
+- **The relay** answers `join` on an anonymous connection: the doorway checks the challenge, spends
+  its nonce and holds a source to `joins_per_minute` (30); the list's side (`Relay::take_join`) checks
+  the audience, the genesis, an administrator the log names and the signature, the expiry, a node
+  never granted, no key package kept for the node under an invitation, and the proof, and refuses a
+  join past `joins_outstanding_per_list` (32) unexpired joins of nodes not granted yet. The record
+  of use is per node: a node whose invitation was used is invited again under another node. The key
+  package record gains `"j"`: the invitation and the proof's key, nonce, expiry and signature, the
+  nonce and the expiry because the administrator's device checks the proof again and cannot without
+  them. A record read back from the store is checked again, but for its expiry and audience. Both are
+  `[login]` keys of `sce-relay`.
+- **A list no group keys** is admitted by a grant, and its device has no key package to leave: its
+  join carries none (the proof signs the hash of no bytes), and `Peer::grant` of a node the core
+  invited takes only the key a join proved, as `Peer::add_member` takes only the key package of the
+  join that proved the key given. This is what lets the recorded scenario, whose list no group keys
+  since MLS draws randomness, invite its second device by the text and replay it in every lane.
+- **The core and the ABI.** `sce_peer_invite(peer, relay, audience, node, now_ms, valid_ms, out)` takes
+  the relay's address and name, which section 7's table left out (a core is a list's, not a relay's,
+  as for the login), refuses a lifetime past a day, and keeps the node, `P_s` and the expiry in the
+  sealed state, now the core's version 5; `sce_peer_invite_under` takes a secret the host gives, for a
+  recording. `sce_peer_join(peer, invitation, len, fingerprint)` gives the fingerprint the invited
+  device shows, where the table gave none; `sce_peer_joined(peer, node, out)` gives each device that
+  joined with its fingerprint, all of them, so that two joins of one invitation (a relay that took two,
+  a person who raced the device) are shown and the people's comparison chooses. `add_member` and
+  `grant` of an invited node take the key the host gives only when a join proved it
+  (`SCE_PEER_ERR_NOT_JOINED`), and the core forgets the node's invitations once it is admitted, and
+  those that expired a day before a later invitation with no join read. Functions added alone, with
+  statuses appended (16 to 18), and the ABI stays 5.
+- **The recorded scenario** invites bob's device by the text, makes it from the text, joins, shows one
+  fingerprint on both devices and grants the key the proof names.
+- **Not built in this step:** lapse and open creation (step 4), a probe that logs in (step 5).
 
 ## The owner's answers (2026-11-02)
 

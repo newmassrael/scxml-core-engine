@@ -86,6 +86,32 @@ list: a login creates no list), `rate_limited` (section 4). The domain is no oth
 login signature is no operation, entry, checkpoint or link, and the audience binds it to one relay.
 The device's side is `LoginMachine`, an exchange as a round is, run by the one driver.
 
+**A device an administrator invited leaves its key package under the invitation (ADR 0080 section
+4).** An administrator's device signs an invitation of a node the log never granted, at this relay's
+audience, until an instant, under the public key `P_s` an invitation's secret makes
+(`sce_rust_trust::invitation`; the bytes, the text a QR code holds and the fingerprint are
+`docs/SCE_SHARED_LIST_PEER_ABI.md` section 12). The invited device asks a challenge for the
+invitation's list and node on an anonymous connection and sends `join`: the invitation, its identity
+key, its key package (none on a list no group keys) and a proof signed with the key the secret makes
+over the domain `sce-relay/join/1`, the audience, the list, the node, the nonce, its expiry, the key
+and the SHA-256 of the key package. The doorway checks the challenge as for a login and spends its
+nonce; the list's side (`Relay::take_join`) checks that the invitation is for this audience, that the
+relay holds the list and the invitation names its genesis, that an administrator the log names now
+signed it, that it has not expired by the relay's clock, that the log never granted the node, that no
+key package is kept for the node under an invitation (that record is the invitation's use, so an
+invitation is used once, and a relay read again from its store holds it used), and that the proof
+holds under `P_s`. It keeps the key package record with the invitation and the proof (`"j"` beside
+`"n"` and `"d"`; `"d"` is empty for a device that left no key package) and answers `accepted`; no
+token is issued. Refusals: `unauthorized` (another relay's invitation, another genesis, no
+administrator's signature, an expired invitation, a proof that does not hold), `forbidden` (a node
+granted, an invitation used), `behind` (no log of the list), `too_large` (a list holds so many joins
+waiting for an administrator, `LoginPolicy::joins_outstanding_per_list`, 32 by default: unexpired and
+not granted). A source makes so many joins a minute (`joins_per_minute`, 30). Read back from the store,
+a join is checked again as it was taken, but for its expiry and audience, which were judged when it
+arrived. The relay cannot make a proof for a key package of its own, since it holds `P_s` and not the
+secret; an administrator's device admits only a key a proof under its own `P_s` names. The device's
+side is `JoinMachine`.
+
 ## 3. Requests
 
 A request and its response are JSON texts with a version, every 64-bit number written as text. A
@@ -103,11 +129,12 @@ in process, a host's own through the peer core's C ABI, or the deployment transp
 | `heads` | the head of each chain the relay holds in full, the log's length and the number of records |
 | `challenge list node` | a challenge to log in against (section 2): the relay's audience, a nonce, its expiry, whether the relay holds the list; asked on any connection |
 | `login list node nonce expires_at_ms signature entries?` | the token of the device of `node`, when its login holds (section 2); asked on any connection |
+| `join invitation nonce expires_at_ms key key_package? proof` | `accepted`, when the invitation and the proof hold, and the key package kept with them (section 2); asked on any connection |
 
-On a connection that presents no token the relay takes, `challenge` and `login` are answered and
-every other request is refused `unauthorized`; `create` and `join` (ADR 0080 sections 3 and 4) are
-refused `invalid` with a reason that names them, as by a relay that does not offer them, and a relay
-that offers no login refuses `challenge` and `login` `invalid` the same way.
+On a connection that presents no token the relay takes, `challenge`, `login` and `join` are answered
+and every other request is refused `unauthorized`; `create` (ADR 0080 section 3) is refused `invalid`
+with a reason that names it, as by a relay that does not offer it, and a relay that offers no login
+refuses `challenge`, `login` and `join` `invalid` the same way.
 
 A refusal says why: `unauthorized`, `forbidden`, `rate_limited` (with when to ask again),
 `too_large`, `invalid`, `behind` (it names an entry of the log the relay has not been given yet: send
@@ -123,9 +150,10 @@ set number of lists. The defaults suit a household list and an operator sets the
 
 A connection with no token is held to its own bounds (ADR 0080 section 5, `LoginPolicy` and the
 server's `Bounds`): per source (an IPv4 address, an IPv6 /64, and one source for a transport that
-names no address) so many anonymous connections, challenges and logins a minute (30 each by default),
-per node of a list so many logins an hour (60), charged only once the signature held, so that a
-stranger spends no member's allowance; a few requests (8) and a short idle time (30 s) on one
+names no address) so many anonymous connections, challenges, logins and joins a minute (30 each by
+default), per node of a list so many logins an hour (60), charged only once the signature held, so that a
+stranger spends no member's allowance, per list so many joins waiting for an administrator (32); a few
+requests (8) and a short idle time (30 s) on one
 connection. Each table forgets a key a window after it last spent, and holds a bounded number of
 keys. A source behind a proxy is the address its `X-Forwarded-For` names, only on a connection from
 a proxy the server is told to trust (`Server::trusting`).
@@ -288,11 +316,10 @@ Not built, and not claimed:
   the library or the ones a deployment names (section 9), not the device's store: an authority a user
   or an enterprise installed on the device is not believed, and a root the system distrusts after the
   library was built is distrusted only by a new build of it.
-- **Admission of a device that is not a member yet.** A member logs in and the relay issues its
-  token (section 2, ADR 0080 steps 1 and 2). An administrator's signed invitation under which a
-  device that is not in the log leaves its key package, and the creation of a list by a device with no
-  token of the authority, are not built (ADR 0080 steps 3 and 4): today a list is created with a
-  token of the authority, and a device being invited leaves its key package with one.
+- **Creation of a list by a device with no token of the authority.** A member logs in and the relay
+  issues its token, and a device an administrator invited leaves its key package under the
+  invitation (section 2, ADR 0080 steps 1 to 3). Open creation and the lapse of a list are not built
+  (ADR 0080 step 4): today a list is created with a token of the authority.
 - **Other lists' rules.** The relay verifies the standard record list's events, and no other
   document's: an application builds its list on that part.
 

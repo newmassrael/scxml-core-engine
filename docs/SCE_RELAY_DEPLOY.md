@@ -208,19 +208,24 @@ connections_per_minute = 30     # per source: an IPv4 address, or an IPv6 /64
 challenges_per_minute = 30
 logins_per_minute = 30
 logins_per_node_per_hour = 60
+joins_per_minute = 30           # per source: a device joins under an administrator's invitation
+joins_outstanding_per_list = 32 # joins of one list waiting for an administrator to admit them
 ```
 
 A source that opens more connections with no token than it may is refused at the upgrade (HTTP 429,
-with `Retry-After`), and one that asks more challenges or logins is answered `rate_limited`. Behind a
+with `Retry-After`), and one that asks more challenges, logins or joins is answered `rate_limited`.
+A device an administrator invited joins on the same kind of connection (ADR 0080 section 4): it
+leaves its key package under the administrator's signed invitation, which the relay checks against
+the log it holds, and is issued no token until it is a member; a list that holds
+`joins_outstanding_per_list` joins whose invitation has not expired and whose node is not granted
+refuses the next (`too_large`). Nothing is configured for it beyond these bounds. Behind a
 proxy that terminates TLS, name the proxy in `trusted_proxies`, or every device is one source, the
 proxy's. What logs in, from where and when, is learned by the relay as it learns it of every
 connection; it logs counts, never a key, a token or a nonce. A member taken off is issued no new
 token; one it holds still connects until it expires, and every request is judged by the log.
 
-What the relay does not do yet (ADR 0080 steps 3 and 4): admit a device that is not a member (a
-device being invited leaves its key package with a token of the authority), and create a list for a
-device with no token of the authority. Creation is `closed`: a list is created with a token of the
-authority, as below.
+What the relay does not do yet (ADR 0080 step 4): create a list for a device with no token of the
+authority. Creation is `closed`: a list is created with a token of the authority, as below.
 
 **Whoever holds the authority's key issues tokens the relay takes.** In a deployment with a sign-in
 service of its own, that is the service: it authenticates the person by its own means (an identity

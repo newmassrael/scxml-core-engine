@@ -34,7 +34,13 @@ reviewer learns one set of rules:
   (`sce_peer_link_set_token`, section 11), two functions added alone; but a link made with a null or
   empty token now dials a connection that presents none, where version 4 presented the empty text
   as a token the relay refused, a changed meaning of an input, and the outcome of a login holds
-  `token`, which the policy above makes a new number;
+  `token`, which the policy above makes a new number. The invitations and the join of ADR 0080
+  section 4 (section 12) are functions added alone (`sce_peer_invite`, `_invite_under`,
+  `_invitation_read`, `_invited_by`, `_join`, `_joined`), with statuses appended
+  (`SCE_PEER_ERR_GRANTED`, `_INVITATION`, `_NOT_JOINED`) that only those functions give, and the
+  administrator's acts on a node the core invited, which only they make: a lane of version 5 that
+  calls none of them sees nothing change, and the number stays 5. The sealed state is the core's
+  version 5, which holds the invitations (section 6);
 - a handle (`ScePeer`, `ScePeerLink`, `ScePeerCancel`) is made and freed by the library and used by
   one thread at a time, but for the two calls section 11 lets any thread make at any time (raising a
   run's cancellation, telling a link the network changed);
@@ -79,7 +85,7 @@ The reason of a refusal and the count of a restore may be null.
 | `SCE_PEER_ERR_NO_GROUP_DEVICE` | 3 | the call needs the group's device and the core holds none |
 | `SCE_PEER_ERR_GROUP` | 4 | the group's device refused (a state that is not one, a key package it could not make) |
 | `SCE_PEER_ERR_UNREADABLE` | 5 | bytes given as a sealed state are not one (another form, or cut short of the least a sealed state holds), or what it holds does not hold for this core |
-| `SCE_PEER_ERR_NO_ADMINISTRATOR` | 6 | an administrator's act, and the core holds no administrator's key (`sce_peer_set_administrator`) |
+| `SCE_PEER_ERR_NO_ADMINISTRATOR` | 6 | an administrator's act, and the core holds no administrator's key (`sce_peer_set_administrator`), or, for an invitation, none the log names as an administrator's |
 | `SCE_PEER_ERR_NO_PERSON` | 7 | the act needs the device's person and the core has none (`sce_peer_set_identity`) |
 | `SCE_PEER_ERR_OPENED` | 8 | the list is open already: the core's log holds its genesis |
 | `SCE_PEER_ERR_LOG` | 9 | the membership log refused the entry the act wrote (an administrator's key the log does not name, a genesis that is not the one the device was invited with); nothing was written |
@@ -88,7 +94,10 @@ The reason of a refusal and the count of a restore may be null.
 | `SCE_PEER_ERR_NO_KEY_PACKAGE` | 12 | no key package of the device was read from the relay yet |
 | `SCE_PEER_ERR_DRAWN_KEYS` | 13 | the list's keys are drawn by an administrator and not its group's, and the core does not hand the members left the new key a removal needs |
 | `SCE_PEER_ERR_NOT_OPENED` | 14 | a sealed state did not open under the data key given, for this list and the node given: another key, a changed or cut state, or another device's (a cipher cannot tell these apart); nothing of it was taken (section 6) |
-| `SCE_PEER_ERR_NO_RANDOMNESS` | 15 | the operating system gave no randomness for a data key; no weaker source is used |
+| `SCE_PEER_ERR_NO_RANDOMNESS` | 15 | the operating system gave no randomness for a data key or an invitation's secret; no weaker source is used |
+| `SCE_PEER_ERR_GRANTED` | 16 | an invitation of a node the log has granted (a removal included): an invitation is for a node it never granted (section 12) |
+| `SCE_PEER_ERR_INVITATION` | 17 | an invitation that is not one (another form, a text cut or changed), one of another list, genesis or node than the core's, a lifetime outside 1 ms to a day, or a list not opened yet |
+| `SCE_PEER_ERR_NOT_JOINED` | 18 | the core invited the node, and no join a round read proves the key given under its invitation: a key package or a key the relay made up, or a join not read yet; nothing was written |
 | `SCE_PEER_ERR_NULL_ARGUMENT` | 20 | a pointer, a handle or a place for the result is null |
 | `SCE_PEER_ERR_BAD_TEXT` | 21 | a text is not UTF-8 |
 | `SCE_PEER_ERR_PANIC` | 22 | the library panicked; the panic was caught |
@@ -113,8 +122,8 @@ log is written (section 7).
 | `sce_peer_set_identity(peer, node, seed)` | `Peer::set_identity` | the device's person: their node and the key a 32-byte seed makes |
 | `sce_peer_set_administrator(peer, seed)` | `Peer::set_administrator` | the administrator's key the device holds, from a 32-byte seed |
 | `sce_peer_open_list(peer, profile, genesis)` | `Peer::open_list` | opens a new list (section 7); `genesis` is set to the hash (32 bytes) a person is invited with |
-| `sce_peer_grant(peer, node, role, key)` | `Peer::grant` | grants the device of `node`, which signs with a 32-byte public key, a role of 1 to 3 |
-| `sce_peer_add_member(peer, node, role, key)` | `Peer::add_member` | admits a device to a list keyed by its group, with the grant and the commit in one change |
+| `sce_peer_grant(peer, node, role, key)` | `Peer::grant` | grants the device of `node`, which signs with a 32-byte public key, a role of 1 to 3; for a node the core invited, only the key a join proved (section 12) |
+| `sce_peer_add_member(peer, node, role, key)` | `Peer::add_member` | admits a device to a list keyed by its group, with the grant and the commit in one change; for a node the core invited, only from the key package of a join that proved `key` (section 12) |
 | `sce_peer_remove_member(peer, node)` | `Peer::remove_member` | takes a device off the list, and off its group when the list is keyed by one |
 | `sce_peer_standing(peer, out)` | `Peer::standing` | what the device stands at in its list, as one JSON text (section 8) |
 | `sce_peer_for_a_hub(peer)` | `Peer::for_a_hub` | before the first exchange: the machine is a hub's |
@@ -124,6 +133,12 @@ log is written (section 7).
 | `sce_peer_publish_checkpoint(peer, before, digest)` | `Peer::publish` of a checkpoint | begins the exchange that gives the relay the person's checkpoint up to `before` |
 | `sce_peer_publish_key_package(peer)` | `Peer::publish_key_package` | begins the exchange that leaves a key package of the group's device with the relay |
 | `sce_peer_login(peer, audience)` | `Peer::login` | begins the exchange that logs the device in at the relay named `audience` (the name it was configured with), whose outcome holds the token (section 5); `SCE_PEER_ERR_NO_PERSON` with no person |
+| `sce_peer_invite(peer, relay, audience, node, now_ms, valid_ms, out)` | `Peer::invite` | an administrator's invitation of the device of `node`, which the log never granted, at the relay of address `relay` and name `audience`, from `now_ms` for `valid_ms` (at most a day): `out` is the text for a QR code (section 12) |
+| `sce_peer_invite_under(peer, relay, audience, node, now_ms, valid_ms, secret, out)` | `Peer::invite_under` | the same under a 32-byte secret the host gives: one it drew, or a recording's fixed one |
+| `sce_peer_invitation_read(invitation, len, out)` | `Ticket::from_text` | what the invitation's text says, as one JSON text: `relay`, `audience`, `list`, `node`, `genesis`, `expires_at_ms`; no secret |
+| `sce_peer_invited_by(invitation, len)` | `Peer::invited` | the core of the device the invitation invites, for its list and genesis; null on failure |
+| `sce_peer_join(peer, invitation, len, fingerprint)` | `Peer::join` | begins the exchange that leaves the device's identity key, and its key package when the core holds a device of the group, under the invitation; `fingerprint` is set to the digits the person compares (section 12) |
+| `sce_peer_joined(peer, node, out)` | `Peer::joined` | the devices that joined under the core's invitation of `node`, as a JSON array of `{"key", "fingerprint"}`; empty when none was read, and once the node is admitted |
 | `sce_peer_poll_request(peer, out)` | `Peer::poll_request` | the next request text for the relay; empty when none waits |
 | `sce_peer_respond(peer, response)` | `Peer::respond` | the relay's response text to that request |
 | `sce_peer_fail(peer, reason)` | `Peer::fail` | the transport did not carry the request or its answer |
@@ -265,7 +280,7 @@ made with are drawn from the data key by HKDF-Expand under labels of their own, 
 HMAC-SHA-256 under the second of what is sealed: a synthetic nonce, so the same key and the same state
 give the same bytes (which the recorded scenario holds), and a key a host gives twice gives away only
 whether two states were the same, never the keystream. The list's name, the device's node and the
-form (`sce-peer/state/4`) are associated data: a state opens only for the device it was sealed for,
+form (`sce-peer/state/5`) are associated data: a state opens only for the device it was sealed for,
 and a state of another list or node, another key, a changed byte and a cut are each
 `SCE_PEER_ERR_NOT_OPENED`, which a cipher cannot tell apart; bytes cut short of any sealed state or of
 another form are `SCE_PEER_ERR_UNREADABLE`. Either way the core took nothing. The core zeroes the data
@@ -349,12 +364,15 @@ key does it is the host's, and no platform code is in this repository.
   state is then as strong as the passphrase. The web: a WebCrypto AES-GCM key made with
   `extractable: false` and kept in IndexedDB, which wraps and unwraps and is never read out.
 
-The state is the core's version 4. Version 3 was the first that is sealed; version 4 holds what waits
+The state is the core's version 5. Version 3 was the first that is sealed; version 4 holds what waits
 to be signed, and since the version is bound into the sealed state, a core of version 3, which would
-open a state of version 4 and lose what waits, does not open it. The texts of versions 1 and 2 held no
+open a state of version 4 and lose what waits, does not open it. Version 5 holds the invitations an
+administrator's device made (the node, the key the secret makes, the expiry) and the joins under them
+a round read (section 12), which a core of version 4 would lose. The texts of versions 1 and 2 held no
 secret and were taken back only after the host gave every key again; they, and the sealed states of
-version 3, were never written outside this repository's tests (no device ships before ADR 0034's
-review), so they are not read.
+versions 3 and 4, were never written outside this repository's tests (no device ships before ADR
+0034's review), so they are not read. The known-answer vector of the construction keeps the form
+string of version 4 as one of its inputs: it pins the construction, which did not change.
 
 **A restored device signs nothing new until its own chain is read back.** The core cannot tell the
 last state from an older one, so a restored core keeps a send that would make a new operation
@@ -426,9 +444,14 @@ host's, given to its link (section 11).
 
 `backends/rust/peer-capi/tests/fixtures/two_devices_and_a_relay.json` is a run of two devices of one
 list through the ABI against the real relay in one process: alice's device, which holds the
-administrator's key, opens the list and grants bob writing, and bob's, invited with the hash of the
-genesis alice's core gave. Every call each core is given and every text it gives back is recorded in
-order: the opening and its genesis, the grant, what each device stands at, a write of bob's made
+administrator's key, opens the list and invites bob's device by the text of a QR code (section 12),
+and bob's, made from that text alone (`make_invited`), which joins under the invitation with his key
+and shows a fingerprint; alice's round reads the join, her device shows the same digits (`joined`),
+and she grants writing to the key the proof names. Every call each core is given and every text it
+gives back is recorded in order: the opening and its genesis, the invitation (`invite`, with the
+secret the recording fixes) and what it says (`invitation`), the join and its fingerprint, the
+devices that joined before the grant and none after it, the grant, what each device stands at, a
+write of bob's made
 before his device read the log, kept waiting (and sent again, waiting once) and signed by his first
 round, his writes and his note through `sce_peer_outbound`, an event that is not signed, another
 content under a stamp he signed (refused), each request and the relay's answer, the outcomes, bob's
@@ -457,17 +480,21 @@ missing is skipped unless `SCE_REQUIRE_TOOLS` is set, and the Kotlin lane needs
 
 Everything in it is deterministic (Ed25519 signs deterministically; bob's state is sealed with
 `sce_peer_save_sealed_under` under a data key the recording fixes, and its nonce is a keyed hash of
-what it seals; the relay's challenges are made under a key the recording fixes; nothing reads a clock
-or draws a random number), so a run now records the same file, and
+what it seals; the relay's challenges are made under a key the recording fixes; the invitation is
+made with `sce_peer_invite_under` under a secret the recording fixes, at an instant it fixes; nothing
+reads a clock or draws a random number), so a run now records the same file, and
 `the_recorded_scenario_is_what_a_fresh_run_records` fails, naming the first step that differs, when the
 recording and a fresh run do not agree. It is recorded again with `SCE_PEER_SCENARIO=write cargo test
 -p sce-rust-peer-capi --test the_recorded_scenario_is_what_a_fresh_run_records --
 the_recorded_scenario_is_what`. The list's MLS group is not in it: MLS draws randomness, so a run would
-not record the same texts twice, and the group's own C ABI has its own recorded scenario. The
-administrator's acts on a group are held through this ABI without a recording, by their properties
-(`the_administrators_acts_on_a_group_go_through_the_abi`): a device admitted from its key package joins
-from the Welcome and holds the key of the epoch the administrator's device holds, and once taken off
-holds no key of the epoch after.
+not record the same texts twice, and the group's own C ABI has its own recorded scenario. That is why
+the recorded list is one no group keys, whose invited device joins with its key alone and is admitted
+by a grant (section 12). The administrator's acts on a group are held through this ABI without a
+recording, by their properties (`the_administrators_acts_on_a_group_go_through_the_abi`): a device
+admitted from its key package joins from the Welcome and holds the key of the epoch the
+administrator's device holds, and once taken off holds no key of the epoch after; an invited device's
+join on a list keyed by its group, the fingerprint the same on both sides, and the refusal of a key
+package a relay made up are held by `a_device_is_invited_by_the_text_of_a_qr_code_and_joins`.
 
 ## 10. What the ABI does not hold, because the core does not
 
@@ -482,8 +509,9 @@ The ABI has one function per operation of `Peer` a host needs, and nothing `Peer
 - **A device linked by another of the same person, and an amendment of a removal.** The group's
   device makes both (`Member::add_linked_member`, `Member::amend_removed`); they are not acts of the
   core yet.
-- **The time.** Nothing the core does depends on the time today; when it comes to, it enters as an
-  argument of the calls that need it (ADR 0079 section 3), and the ABI's version moves.
+- **The time.** Nothing the core does depends on the time but the expiry of an invitation, which
+  enters as an argument of the call that makes it (`now_ms`, section 12); when more comes to, it
+  enters as an argument of the calls that need it (ADR 0079 section 3), and the ABI's version moves.
 
 ## 11. A run over a link the library holds
 
@@ -579,3 +607,69 @@ loop (its sockets, its timers, its wakers) to fit into each language's own, whic
 transport code ADR 0079 section 5 rules out. A host that wants to drive each request itself still
 can, with the calls of section 5 and a transport of its own; the core is the same exchange either
 way.
+
+## 12. An invitation and the join (ADR 0080 section 4)
+
+A device that is not in the list's log yet is admitted with no operator and no token: an
+administrator's device invites it, it leaves its key (and its key package) with the relay under the
+invitation, and the administrator's device admits the key the proof names after the two people
+compared a fingerprint.
+
+1. **The invitation.** `sce_peer_invite(peer, relay, audience, node, now_ms, valid_ms, out)`, on a
+   device that holds an administrator's key the log names, for a node the log never granted
+   (`SCE_PEER_ERR_GRANTED` otherwise), from `now_ms` by the host's clock for `valid_ms`, at most a
+   day (86 400 000 ms; `SCE_PEER_ERR_INVITATION` otherwise). The core draws a secret `s` of 32 bytes,
+   makes an Ed25519 key pair whose seed is HKDF-SHA256 of `s` with no salt and the info
+   `sce-relay/invitation-key/1`, and signs with the administrator's key the parts
+   `sce-relay/invitation/1`, the audience, the list, the genesis's hash in the URL alphabet, the node
+   and the expiry in decimal, and the public key `P_s` in the URL alphabet, each in the trust layer's
+   framing (its length as eight bytes big-endian, then its UTF-8). It keeps the node, `P_s` and the
+   expiry in its sealed state; the secret leaves it in `out` alone. An invitation is not withdrawn
+   before it expires (the owner's answer to ADR 0080): its day is its bound.
+2. **The text for the QR code.** `SCEI1.` (the form and its version) and, in the URL alphabet with
+   no padding, each part its length as two bytes big-endian and then its bytes, in this order: the
+   relay's address (UTF-8, the `wss://host:port` a device dials), the audience (UTF-8), the list
+   (UTF-8), the genesis's hash (32 bytes), the node and the expiry in milliseconds (8 bytes
+   big-endian each), the administrator's public key (32 bytes), the signature (64 bytes) and `s` (32
+   bytes). `P_s` is not carried: the reader makes it from `s`. About 350 characters, which a QR code
+   holds in byte mode. A host gives the text, as it scanned it, to `sce_peer_invitation_read` for
+   what it says (`relay`, `audience`, `list`, `node` and `expires_at_ms` as text, `genesis` in the URL
+   alphabet; never `s`), and to `sce_peer_invited_by` for the core of the invited device; it shows
+   the text and does not keep it, since whoever holds it may join once.
+3. **The join.** On that core, given the person of the invitation's node (`sce_peer_set_identity`)
+   and, on a list keyed by its group, a device of the group (`sce_peer_with_group`),
+   `sce_peer_join(peer, invitation, len, fingerprint)` begins an exchange run as a round is, over a
+   link that presents no token: a `challenge` for the invitation's list and node, and
+   `{"op":"join","invitation":{..},"nonce","expires_at_ms","key","key_package"?,"proof"}`, the proof
+   a signature with the key `s` makes of the parts `sce-relay/join/1`, the audience the invitation
+   carries, the list, the node, the nonce in the URL alphabet, its expiry, the identity key in the
+   URL alphabet and the SHA-256 of the key package in the URL alphabet (of no bytes when the core
+   holds no group: a list no group keys leaves no key package, and its device is admitted by a
+   grant). A relay that names itself by another audience than the invitation's is given nothing.
+   The relay checks the invitation's administrator against the log it holds, the signature, that the
+   invitation is for its audience and the list's genesis, the expiry, that the node was never granted
+   and has no key package kept under an invitation (its record of the invitation's use), and the
+   proof under `P_s`; it keeps the key package with the invitation and the proof
+   (`docs/SCE_SHARED_LIST_RELAY.md` section 2) and answers `accepted`. The outcome is `"ended"` and
+   tells the machine nothing; a refusal is the relay's (`unauthorized`: the signature, the expiry,
+   the audience, the proof; `forbidden`: a node granted, an invitation used; `too_large`: as many
+   joins waiting as the list keeps). No token is issued: once admitted, the device logs in (section
+   5) to read its log, and its Welcome.
+4. **What the administrator's device admits.** A round reads the key package record; the core keeps
+   it when its proof holds under a `P_s` it made for that node, and a record under an invitation it
+   made whose proof does not hold is among the round's refusals (a key package the relay made up: the
+   relay knows `P_s` and not `s`). `sce_peer_joined(peer, node, out)` gives the devices that joined,
+   each `{"key": .., "fingerprint": ..}`; two are a relay that took two joins of one invitation, or
+   a person who photographed the code and raced the device, and the fingerprint tells which is the
+   device in front of the administrator. `sce_peer_add_member(peer, node, role, key)` then takes only
+   the key package of the join that proved `key`, and `sce_peer_grant` only that key
+   (`SCE_PEER_ERR_NOT_JOINED` for any other); once the node is admitted the core forgets its
+   invitations. A node the core did not invite is admitted as before, by the key its host gives.
+5. **The fingerprint.** SHA-256 of the parts `sce-relay/fingerprint/1`, the list, the node in
+   decimal, `P_s` and the identity key (both in the URL alphabet), in the trust layer's framing; of
+   its first twenty bytes, each four as a big-endian number modulo 10 000, written as four decimal
+   digits, the five groups joined by a space. Twenty digits, about 66 bits: the invited device shows
+   them from `sce_peer_join`, the administrator's device from `sce_peer_joined`, and every lane
+   shows the same digits since each reads them from the core. For the list `home`, node 2, `P_s` of
+   32 bytes each `0x11` and the identity key of 32 bytes each `0x22`, the digits are
+   `2074 5706 5351 1674 5217` (`a_fingerprint_is_the_digits_the_documentation_gives`).
