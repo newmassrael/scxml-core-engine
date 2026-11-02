@@ -44,7 +44,26 @@ What a session may ask is decided by the log at the relay's head: any session ma
 give it entries (they verify from the genesis, so a stranger's are refused); a device that is a member
 reads (feed, ranges, heads); a device that may write submits operations and checkpoints. Creating a
 list is giving a relay the genesis of a name it holds none of, so who may create one is who the
-application issues a token for that name to.
+application issues a token for that name to, up to the relay's bound on lists (`Limits::max_lists`);
+an entry the relay refuses for a name it holds none of leaves nothing held.
+
+**Who issues a token.** Whoever holds the relay's key: the relay, and the application's sign-in
+service, which holds a copy of the same key, authenticates the person by its own means, decides which
+device of which list the request is for, and issues a token good for a short time; the device asks it
+again when the relay answers `unauthorized`. No operator is in the loop for a device, and the relay
+learns no account. The key is kept as a three-line text (`Authority::to_key_text`,
+`Authority::from_key_text`: `sce-relay-authority 1`, `audience <name>`, `secret <32 bytes in the URL
+alphabet>`), which `sce-relay keygen` makes and `sce-relay token issue` issues from
+(`docs/SCE_RELAY_DEPLOY.md` section 6). A token names a list by a name that is not empty.
+
+A service in another language writes a token as this crate does. The payload is, for each of the
+audience, the list, the node in decimal and the expiry in milliseconds since the Unix epoch in
+decimal, the length of its UTF-8 bytes as four bytes big-endian and then the bytes; the tag is
+HMAC-SHA256 of the payload under the 32-byte secret; the token is the payload and the tag, each in
+base64 with the URL alphabet and no padding, joined by a full stop. For the secret of 32 bytes each
+`0x01`, the audience `relay.example`, the list `home`, node 7 and expiry `1800000000000`, the token is
+`AAAADXJlbGF5LmV4YW1wbGUAAAAEaG9tZQAAAAE3AAAADTE4MDAwMDAwMDAwMDA.z-lS-hdIHQ8_6aqSt6shwplWq3VOPIcCCbj0bLifhwo`
+(`a_token_is_the_bytes_the_documentation_gives`).
 
 ## 3. Requests
 
@@ -71,8 +90,8 @@ operator has looked, rather than hold in memory what it did not keep.
 
 Each device of each list has an allowance that refills with time (a token bucket in whole
 milli-requests, with the clock passed in by the caller); a write costs more than a read; a request,
-a feed and a range are bounded; a list holds at most a set number of records. The defaults suit a
-household list and an operator sets their own (`Limits`).
+a feed and a range are bounded; a list holds at most a set number of records, and a relay at most a
+set number of lists. The defaults suit a household list and an operator sets their own (`Limits`).
 
 ## 5. Storage
 
@@ -82,7 +101,12 @@ list's name (no name a device sends makes a path), a line for each record, flush
 the relay answers. A relay that starts reads the records back **through the checks that took them
 in**, so a store that was tampered with does not make the relay hold what members did not sign: the
 relay does not start, and says which record failed. A line cut off by a crash was never acknowledged
-and is dropped; a whole line that is not a record is corruption and is not read past.
+and is dropped, and is cut from the end of its file before the next record is appended, so that it
+never becomes the front of a whole line; a whole line that is not a record, or a record of another
+list than its file's, is corruption and is not read past. A list's file is written into its directory
+durably before its first record is acknowledged, and a store keeps at most `OPEN_FILES` (64) files
+open, so that a relay of many lists does not run out of descriptors (an append that failed for that
+reason would stop the relay taking anything).
 
 The relay keeps its records in memory and replays them at start; it never forgets one. A settlement
 lets the members' machines forget tombstones, and does not let the relay forget operations (that is a
@@ -227,7 +251,10 @@ Not built, and not claimed:
   the library or the ones a deployment names (section 9), not the device's store: an authority a user
   or an enterprise installed on the device is not believed, and a root the system distrusts after the
   library was built is distrusted only by a new build of it.
-- **Login.** Who a person is, and when to issue them a token, is the application's.
+- **Login.** Who a person is, and when to issue them a token, is the application's (section 2). A
+  token the relay issues itself against a device's proof that it holds its node's key is not built,
+  nor an administrator's signed admission of a node that is not a member yet; an application with no
+  sign-in service of its own needs one of them (`docs/SCE_RELAY_DEPLOY.md` section 12).
 - **Other lists' rules.** The relay verifies the standard record list's events, and no other
   document's: an application builds its list on that part.
 
@@ -339,6 +366,16 @@ believes are decided in one place.
   build; a verification before that initialisation panics inside the library, the failure this
   decision removes. On iOS it needs no initialisation. Taking it later adds another value of `Roots`
   and, for Android, a call of the ABI the host makes once with those handles.
+
+**The server as it is deployed.** `serve::serve` and `serve_tls` run for as long as their listener
+lives and hold a connection to nothing but its messages. A deployed relay runs `serve::Server`: one
+bound on the connections open at once over all its listeners (one past it is closed before its
+handshake costs anything), a time for each connection's TLS handshake and upgrade, and a time it may
+wait for a request; a `Stop` closes the listeners, closes each connection that waits, lets each one
+that is answering send its answer, and `Server::drain` waits for them within a grace. `Counts` says how
+many connections were taken, refused, never opened and how many requests answered, never who
+(`a_deployed_relay_bounds_its_connections_and_stops_when_told`). The program is `sce-relay`
+(`backends/rust/relay-server`, `docs/SCE_RELAY_DEPLOY.md`).
 
 `a_relay_is_reached_over_tls` holds an exchange over `wss://` against a relay in the test's process,
 with a certificate made for the test and believed by the link, and the refusal of that certificate by
