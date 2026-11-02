@@ -416,6 +416,52 @@ impl Publication {
             other => Err(CourierError::Unexpected(format!("{other:?}"))),
         }
     }
+
+    /// The publication as a JSON value, for a host that keeps what it is to give a relay in its
+    /// storage: its kind, its bytes in the URL alphabet, and every 64-bit number as text, as
+    /// [`Record::to_value`] writes a record.
+    pub fn to_value(&self) -> Value {
+        match self {
+            Publication::KeyPackage(package) => {
+                json!({"k": "kp", "d": encoding::encode(package)})
+            }
+            Publication::Commit { epoch, commit } => {
+                json!({"k": "commit", "p": epoch, "d": encoding::encode(commit)})
+            }
+            Publication::Welcome {
+                epoch,
+                node,
+                welcome,
+            } => json!({"k": "welcome", "p": epoch, "n": node.to_string(),
+                        "d": encoding::encode(welcome)}),
+            Publication::Checkpoint { before, digest } => {
+                json!({"k": "cp", "b": before.to_string(), "g": digest})
+            }
+        }
+    }
+
+    /// Read back what [`Self::to_value`] wrote; `None` when the value is not that.
+    pub fn from_value(value: &Value) -> Option<Self> {
+        let bytes = || encoding::decode(value.get("d")?.as_str()?);
+        let epoch = || u32::try_from(value.get("p")?.as_u64()?).ok();
+        match value.get("k")?.as_str()? {
+            "kp" => Some(Publication::KeyPackage(bytes()?)),
+            "commit" => Some(Publication::Commit {
+                epoch: epoch()?,
+                commit: bytes()?,
+            }),
+            "welcome" => Some(Publication::Welcome {
+                epoch: epoch()?,
+                node: value.get("n")?.as_str()?.parse().ok()?,
+                welcome: bytes()?,
+            }),
+            "cp" => Some(Publication::Checkpoint {
+                before: value.get("b")?.as_str()?.parse().ok()?,
+                digest: u32::try_from(value.get("g")?.as_u64()?).ok()?,
+            }),
+            _ => None,
+        }
+    }
 }
 
 /// One round of a courier, or one publication, with no link: it says which request it wants put to
@@ -1656,6 +1702,49 @@ impl Sealer for Keep {
                 "{event}: this host has no hub, and a relay carries only what a member signed"
             )),
             Kept::Refused(reason) => Err(reason),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::Publication;
+
+    #[test]
+    fn every_publication_reads_back_as_it_was_written() {
+        for publication in [
+            Publication::KeyPackage(vec![1, 2, 3]),
+            Publication::Commit {
+                epoch: 4,
+                commit: vec![5, 6],
+            },
+            Publication::Welcome {
+                epoch: 4,
+                node: u64::MAX,
+                welcome: vec![7],
+            },
+            Publication::Checkpoint {
+                before: i64::MIN,
+                digest: u32::MAX,
+            },
+        ] {
+            let value = publication.to_value();
+            assert_eq!(
+                Publication::from_value(&value),
+                Some(publication),
+                "{value}"
+            );
+        }
+        for value in [
+            json!({"k": "commit", "p": 4}),
+            json!({"k": "commit", "p": 4, "d": "not the URL alphabet!"}),
+            json!({"k": "welcome", "p": 4, "n": 9, "d": "AA"}),
+            json!({"k": "cp", "b": "1", "g": u64::MAX}),
+            json!({"k": "nothing", "d": "AA"}),
+        ] {
+            assert_eq!(Publication::from_value(&value), None, "{value}");
         }
     }
 }
