@@ -25,7 +25,8 @@ publish = false
 
 [dependencies]
 sce-rust-mesh = { path = "../mesh" }
-ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast"] }
+# A person's key zeroes its seed when it is dropped (`zeroize`), as the keys of the epochs are.
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "zeroize"] }
 # What keeps the content of a write from the hub: an authenticated cipher with a nonce long
 # enough to be derived from the write's stamp, a key agreement that a member's signing key
 # takes part in (so that a person has one key, not two), and the hash that turns the shared
@@ -41,4 +42,10 @@ zeroize = "1"
 # What a passphrase is made into a key by, in a copy of a device's secrets: memory-hard, so that a
 # guess costs memory as well as time.
 argon2 = { version = "0.6", default-features = false, features = ["alloc"] }
+# What a device's whole state is sealed with under a key its host's platform key store wraps
+# (`backup::seal_state`): the cipher's key and the key the nonce is made with are two keys drawn from
+# the one the host wraps (HKDF-Expand), and the nonce is a keyed hash (HMAC-SHA-256) of what is
+# sealed, so that a key used twice by a host gives away nothing but that two states were the same.
+hkdf = "0.12"
+hmac = "0.12"
 serde_json = "1"

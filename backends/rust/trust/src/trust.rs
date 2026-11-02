@@ -311,6 +311,20 @@ impl Trust {
             .collect()
     }
 
+    /// The device's secrets this host holds, as the contents of a copy of them ([`crate::backup`]):
+    /// its person (the node, and the seed of their key, which is read nowhere else) and the keys of
+    /// the epochs it holds, none of an epoch the list had destroyed. A copy under a passphrase and
+    /// the state a device seals under its platform's key are made from it. `None` when the host has
+    /// no person.
+    pub fn secrets(&self) -> Option<crate::backup::Contents> {
+        let contents = {
+            let state = self.state();
+            let (node, identity) = state.own.as_ref()?;
+            crate::backup::Contents::of_identity(&state.calendar, *node, identity)
+        };
+        Some(contents.with_epoch_keys(self))
+    }
+
     /// What the log holds of each node: every grant of it, oldest first, with the entry that made it,
     /// its role, its key and where the chain it ended was cut (a grant that took writing away).
     pub fn member_history(&self) -> Vec<(u64, Vec<crate::membership::Era>)> {

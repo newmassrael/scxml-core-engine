@@ -164,8 +164,8 @@ PY
 
 mutation_case "A copy opened under a wrong passphrase is called something other than corrupt" <<'PY'
 edit("backends/rust/trust/src/backup.rs",
-     "let mut plain = opened.map_err(|_| BackupError::Corrupt)?;",
-     "let mut plain = opened.unwrap_or_default();")
+     "    key.zeroize();\n    let mut plain = opened.map_err(|_| BackupError::Corrupt)?;",
+     "    key.zeroize();\n    let mut plain = opened.unwrap_or_default();")
 PY
 
 mutation_case "A copy that names another key derivation is taken for one" <<'PY'

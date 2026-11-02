@@ -12,7 +12,7 @@ use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 
 use crate::encoding;
 
-/// A key that signs. It does not print its seed.
+/// A key that signs. It does not print its seed, and zeroes it when it is dropped.
 pub struct Identity {
     key: SigningKey,
 }
@@ -24,6 +24,13 @@ impl Identity {
         Self {
             key: SigningKey::from_bytes(&seed),
         }
+    }
+
+    /// The seed the key was made from, for a copy of the device's secrets
+    /// ([`crate::backup::Contents`]): it leaves this crate sealed, and is read nowhere else. The
+    /// caller zeroes what it was given once it is copied.
+    pub(crate) fn seed(&self) -> [u8; 32] {
+        self.key.to_bytes()
     }
 
     pub fn public(&self) -> PublicKey {
