@@ -283,8 +283,36 @@ when it is called production.
   The operating system's trust store is not read, for the reasons `docs/SCE_SHARED_LIST_RELAY.md` section 9
   gives. Not done: a lane's replay of a run over a link (the Rust tests hold it through the ABI); a call of the
   ABI that names a private authority; and a relay that pushes, which protocol version 1 does not.
-- Not yet saved by `Peer::save`: the device's secrets (identity, epoch keys, MLS group state), which the host gives
-  again before `restore`; section 6 (step 7) seals them.
+- **Step 7** landed 2026-11-02. What a device keeps is one sealed state: its person's key, the administrator's
+  key it holds, the keys of its epochs, the group's device (its MLS state, and the commits, Welcomes and key
+  packages it waits to use, which a member made again had lost), the log, the trust's text, the courier's state
+  and what the relay is owed (`Peer::save_sealed`, `Peer::restore_sealed`). It is envelope encryption: the core
+  draws a data key for each save, seals the state under it with the passphrase backup's cipher
+  (`sce_rust_trust::backup::seal_state`, XChaCha20-Poly1305 under keys drawn by HKDF-Expand, with a synthetic
+  nonce that is an HMAC of what is sealed, and the list, the node and the form as associated data), and gives the
+  key to the host, which wraps it with a key its platform's key store does not export and keeps it beside the
+  state. A key for each save and not for the device: no nonce is ever at risk, a leaked key opens one save, and
+  a platform key the host rotates out retires every save wrapped under it. The synthetic nonce makes a state
+  the same bytes under one key, which the recorded scenario holds with a data key it fixes
+  (`Peer::save_sealed_under`), with no seam a test alone reaches. Another key, a changed or cut state and
+  another list's or node's are each refused (`PeerError::NotOpened`), bytes that are none
+  (`PeerError::Unreadable`), and the state is read whole before the core takes any of it. What the core cannot
+  tell is an older state: nothing it keeps across runs, and no platform counter, says which is the last, so an
+  older state and its wrapped key open as the last does; step 3's wait for the device's own chain is what keeps
+  a restored device from signing at a number it used, and the key of an epoch destroyed since is zeroed when the
+  next round reads the entry. The plain save is gone, not kept for the part that is no secret: a second way to
+  keep a device is the one a host would take to keep its state in the clear, and the texts of versions 1 and 2
+  were never written outside this repository's tests, so they are not read (save version 3). The C ABI is
+  version 3: `sce_peer_save_sealed`, `sce_peer_save_sealed_under` and `sce_peer_restore_sealed` in place of the
+  plain save and restore and of the group's state in the clear, `sce_peer_with_group` making a new device only,
+  and two statuses appended (`SCE_PEER_ERR_NOT_OPENED`, `SCE_PEER_ERR_NO_RANDOMNESS`). How each platform wraps
+  the key (the Android Keystore with StrongBox and its choices of user authentication, the Secure Enclave or a
+  Keychain item of `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, a desktop's TPM, DPAPI or Secret
+  Service) is `docs/SCE_SHARED_LIST_PEER_ABI.md` section 6; no platform code is here, and the Kotlin replay wraps
+  with a software key through the Keystore's `Cipher` calls. The recorded scenario seals bob's state and restores
+  it into a core given nothing but the list and the genesis, and every lane replays it so. Not done: a
+  known-answer vector of the sealed form, and the core drawing a device's keys itself, so that a host does not
+  handle a seed even once at setup.
 
 ## Alternatives considered
 

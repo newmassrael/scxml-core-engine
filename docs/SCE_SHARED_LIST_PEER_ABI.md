@@ -16,11 +16,14 @@ reviewer learns one set of rules:
   and the crate, and `sce_peer_abi_version()` says which the library is. As the group key's ABI rules,
   a change to what a function takes or returns makes a new number, and so does a change to the shape
   of a text a function gives; a function added alone does not, since a lane built against the number
-  before calls none of it. A status is appended and never renumbered. The version is 2: the outcome
-  holds `owed` and the save holds what the relay is owed (sections 5 and 6), which came with the
+  before calls none of it. A status is appended and never renumbered. Version 2: the outcome holds
+  `owed` and the save holds what the relay is owed (sections 5 and 6), which came with the
   administrator's acts (section 7). The links, the run over a link and its cancellation (section 11)
   came after as functions and statuses added alone, which no function of before takes or returns,
-  and left it 2;
+  and left it 2. The version is 3: what the device keeps is one sealed state, its secrets with the
+  rest, under a data key the host wraps (section 6); `sce_peer_save`, `sce_peer_restore` and
+  `sce_peer_group_state` are gone, and `sce_peer_with_group` no longer takes a group's state, since
+  a host no longer holds one;
 - a handle (`ScePeer`, `ScePeerLink`, `ScePeerCancel`) is made and freed by the library and used by
   one thread at a time, but for the two calls section 11 lets any thread make at any time (raising a
   run's cancellation, telling a link the network changed);
@@ -45,8 +48,8 @@ request to put to the relay, no outcome to take, no settlement of an instant, no
 not refused). It is not a failure, and the status is `SCE_PEER_OK`. A call that fills a buffer sets it
 to empty first, so a host may free it whatever the status.
 
-The place a call fills with what it is for (the request, the outcome, the save, the group's state,
-the answer to a send, the genesis of a list opened, the standing) must not be null: the call refuses
+The place a call fills with what it is for (the request, the outcome, the sealed state and its data
+key, the answer to a send, the genesis of a list opened, the standing) must not be null: the call refuses
 with `SCE_PEER_ERR_NULL_ARGUMENT` before it does anything, so that nothing is taken from the core that
 would be lost (an outcome is given once).
 The reason of a refusal and the count of a restore may be null.
@@ -60,7 +63,7 @@ The reason of a refusal and the count of a restore may be null.
 | `SCE_PEER_ERR_OUTCOME_NOT_TAKEN` | 2 | an exchange was begun while the last one's outcome waits; take it first |
 | `SCE_PEER_ERR_NO_GROUP_DEVICE` | 3 | the call needs the group's device and the core holds none |
 | `SCE_PEER_ERR_GROUP` | 4 | the group's device refused (a state that is not one, a key package it could not make) |
-| `SCE_PEER_ERR_UNREADABLE` | 5 | a saved text is not what `sce_peer_save` writes, or does not hold for this list |
+| `SCE_PEER_ERR_UNREADABLE` | 5 | bytes given as a sealed state are not one (another form, or cut short of the least a sealed state holds), or what it holds does not hold for this core |
 | `SCE_PEER_ERR_NO_ADMINISTRATOR` | 6 | an administrator's act, and the core holds no administrator's key (`sce_peer_set_administrator`) |
 | `SCE_PEER_ERR_NO_PERSON` | 7 | the act needs the device's person and the core has none (`sce_peer_set_identity`) |
 | `SCE_PEER_ERR_OPENED` | 8 | the list is open already: the core's log holds its genesis |
@@ -69,6 +72,8 @@ The reason of a refusal and the count of a restore may be null.
 | `SCE_PEER_ERR_ADMITTED_THROUGH_GROUP` | 11 | the list is keyed by its group, and a grant would make a member the group does not hold: the device is admitted with `sce_peer_add_member` |
 | `SCE_PEER_ERR_NO_KEY_PACKAGE` | 12 | no key package of the device was read from the relay yet |
 | `SCE_PEER_ERR_DRAWN_KEYS` | 13 | the list's keys are drawn by an administrator and not its group's, and the core does not hand the members left the new key a removal needs |
+| `SCE_PEER_ERR_NOT_OPENED` | 14 | a sealed state did not open under the data key given, for this list and the node given: another key, a changed or cut state, or another device's (a cipher cannot tell these apart); nothing of it was taken (section 6) |
+| `SCE_PEER_ERR_NO_RANDOMNESS` | 15 | the operating system gave no randomness for a data key; no weaker source is used |
 | `SCE_PEER_ERR_NULL_ARGUMENT` | 20 | a pointer, a handle or a place for the result is null |
 | `SCE_PEER_ERR_BAD_TEXT` | 21 | a text is not UTF-8 |
 | `SCE_PEER_ERR_PANIC` | 22 | the library panicked; the panic was caught |
@@ -98,8 +103,7 @@ log is written (section 7).
 | `sce_peer_remove_member(peer, node)` | `Peer::remove_member` | takes a device off the list, and off its group when the list is keyed by one |
 | `sce_peer_standing(peer, out)` | `Peer::standing` | what the device stands at in its list, as one JSON text (section 8) |
 | `sce_peer_for_a_hub(peer)` | `Peer::for_a_hub` | before the first exchange: the machine is a hub's |
-| `sce_peer_with_group(peer, node, seed, state, len)` | `Peer::with_group` | before the first exchange: the core holds the device of `node` in the list's MLS group, new when `len` is 0, or the one `sce_peer_group_state` gave |
-| `sce_peer_group_state(peer, out)` | `Device::to_bytes` of the group's device | what the group's device keeps, secret, for the host's store |
+| `sce_peer_with_group(peer, node, seed)` | `Peer::with_group` | once, before the first exchange of a device with no sealed state yet: the core holds a new device of `node` in the list's MLS group, which the sealed state keeps from then on |
 | `sce_peer_outbound(peer, event, data, kept, reason)` | `Peer::outbound` | what the machine sent, and what the core did with it (section 4) |
 | `sce_peer_start(peer, kind)` | `Peer::start` | begins a round: `SCE_PEER_ROUND_SYNC`, `_RESYNC` or `_REREAD` |
 | `sce_peer_publish_checkpoint(peer, before, digest)` | `Peer::publish` of a checkpoint | begins the exchange that gives the relay the person's checkpoint up to `before` |
@@ -109,8 +113,9 @@ log is written (section 7).
 | `sce_peer_fail(peer, reason)` | `Peer::fail` | the transport did not carry the request or its answer |
 | `sce_peer_take_outcome(peer, out)` | `Peer::take_outcome` | what the exchange came to, once; empty when none ended |
 | `sce_peer_floor_event(peer, before, digest, out)` | `Peer::floor_event` | the event that says an instant is settled; empty when it is not |
-| `sce_peer_save(peer, out)` | `Peer::save` | what the device keeps, as one text |
-| `sce_peer_restore(peer, saved, count)` | `Peer::restore` | takes a save back into a core just made for the list, after its person was given again |
+| `sce_peer_save_sealed(peer, state, key)` | `Peer::save_sealed` | what the device keeps, its secrets with the rest, sealed under a data key drawn for this save; `key` is set to that key (32 bytes) for the host to wrap (section 6) |
+| `sce_peer_save_sealed_under(peer, key, state)` | `Peer::save_sealed_under` | the same, under a 32-byte data key the host gives: one it drew itself, or a recording's fixed key |
+| `sce_peer_restore_sealed(peer, node, state, len, key, count)` | `Peer::restore_sealed` | takes a sealed state back for the device of `node`, under the unwrapped data key, into a core just made for the list and given nothing else |
 | `sce_peer_link_wss(base, token)` | `WssLink::new` | a link to the relay over its WebSocket binding (section 11); null on failure |
 | `sce_peer_link_host(exchange, release, context)` | a `Transport` over the host's function | a link whose transport the host carries itself (section 11); null when `exchange` is null |
 | `sce_peer_link_free(link)` | | frees a link, releasing a host's context; null is ignored |
@@ -177,16 +182,112 @@ The floor event is the pair `[name, payload text]` the machine is told.
 
 ## 6. What the device keeps
 
-`sce_peer_save` gives one text: the membership log, what the trust holds, the state of the relay's
-client, as it would be if the exchange that runs stopped there, and the commits and Welcomes the relay
-is still owed (section 7). It does not hold the device's secrets: the person's seed is given again
-with `sce_peer_set_identity`, the administrator's with `sce_peer_set_administrator`, and the group's
-device with `sce_peer_with_group` from what `sce_peer_group_state` gave, before `sce_peer_restore`.
-Sealing them in one state under a key from the platform's key store is ADR 0079 section 6. The save is
-the core's version 2; a save of version 1, which owed the relay nothing, is still read.
+What a device keeps between runs is **one sealed state**: its person's key, the administrator's key
+it holds, the keys of the epochs it holds (none of an epoch the list had destroyed), the group's
+device (its MLS state, and the commits, Welcomes and key packages it was given and waits to use), the
+membership log, what the trust holds, the state of the relay's client as it would be if the exchange
+that runs stopped there, and the commits and Welcomes the relay is still owed (section 7). The keys
+are given once, when the device is set up (`sce_peer_set_identity`, `sce_peer_set_administrator`,
+`sce_peer_with_group`); from then on a host never handles a protocol secret in the clear, and gives
+no key again to restore (ADR 0079 section 6).
+
+The state is sealed by **envelope encryption**, the pattern of a platform key store whose keys are not
+exportable:
+
+1. `sce_peer_save_sealed(peer, state, key)` draws a data key of 32 bytes from the operating system for
+   this save alone, seals the state under it, and gives both;
+2. the host wraps the data key with a key its platform's key store holds and does not export (below),
+   keeps the wrapped key beside the state, and zeroes its copy of the data key;
+3. to restore, the host makes a core for the list (`sce_peer_open`, or `sce_peer_invited` with the
+   genesis), unwraps the data key, gives `sce_peer_restore_sealed(peer, node, state, len, key, count)`
+   the state, the key and the device's node, and zeroes the key. The core calls no platform's API.
+
+The state and its wrapped key are a pair: a state does not open under the key of another save. A host
+writes them together, as one file (the wrapped key, then the state) written to a new name and renamed
+over the old, so that a stop in the middle leaves the old pair or the new one, never one of each.
+
+**The sealed form.** `SCES1`, a nonce of 24 bytes, and the state sealed with XChaCha20-Poly1305 (the
+cipher of the passphrase backup, `sce_rust_trust::backup`). The cipher's key and the key the nonce is
+made with are drawn from the data key by HKDF-Expand under labels of their own, and the nonce is
+HMAC-SHA-256 under the second of what is sealed: a synthetic nonce, so the same key and the same state
+give the same bytes (which the recorded scenario holds), and a key a host gives twice gives away only
+whether two states were the same, never the keystream. The list's name, the device's node and the
+form (`sce-peer/state/3`) are associated data: a state opens only for the device it was sealed for,
+and a state of another list or node, another key, a changed byte and a cut are each
+`SCE_PEER_ERR_NOT_OPENED`, which a cipher cannot tell apart; bytes cut short of any sealed state or of
+another form are `SCE_PEER_ERR_UNREADABLE`. Either way the core took nothing. The core zeroes the data
+key, the keys drawn from it and the plain state once they are used; what the MLS library keeps of the
+group in memory is the library's and is not zeroed.
+
+**A data key for each save, not one for the device.** A key seals one state, so no nonce is ever at
+risk; a key that leaked (a dump of the process's memory) opens one save, not every save before and
+after it; and a platform's key the host rotates retires every save wrapped under the old one once
+the old one is deleted from the key store, where one data key for the device would be wrapped again
+under the new key and keep every old save readable. The cost is one wrapping of 32 bytes at each save.
+With a platform key whose public half wraps (the Secure Enclave's, an RSA key of the Android Keystore),
+a save in the background asks for no user's presence, and only a restore can.
+
+**What the core cannot tell: an older state.** The core keeps nothing across runs but what it is
+given, and no platform gives it a counter no one can turn back, so an older state and its wrapped key
+(a copy of the storage, a backup, a save the device ran past before it was stopped) open as well as
+the last. What an older state could do is held by the core: a restored device signs nothing new until
+its own chain is read back (below), so it never signs at a number it used; and the key of an epoch the
+list destroyed since the older save is zeroed when the next round reads the entry that destroys it.
+What it cannot hold: someone who has the device's storage and the use of its platform key opens an
+older state, as they open the last. Deleting a platform key the host rotated out is what retires every
+state wrapped under it.
+
+**The keys of each platform.** The core needs only a wrap and an unwrap of 32 bytes; which platform
+key does it is the host's, and no platform code is in this repository.
+
+- **Android.** An AES-256 key of the Android Keystore (`KeyGenParameterSpec.Builder(alias,
+  PURPOSE_ENCRYPT or PURPOSE_DECRYPT)`, `BLOCK_MODE_GCM`, `ENCRYPTION_PADDING_NONE`, key size 256),
+  used through `Cipher.getInstance("AES/GCM/NoPadding")`: the Keystore draws the IV of each wrapping
+  (randomized encryption is required), and the IV is kept with the wrapped key. In StrongBox
+  (`setIsStrongBoxBacked(true)`) when the device has one (`FEATURE_STRONGBOX_KEYSTORE`), in the TEE
+  otherwise (`StrongBoxUnavailableException`). `setUserAuthenticationRequired` is the host's choice of
+  when a device may save: not required, a background job (WorkManager) saves and restores without the
+  user, and the key still never leaves the device; required with a window
+  (`setUserAuthenticationParameters(seconds, AUTH_BIOMETRIC_STRONG or AUTH_DEVICE_CREDENTIAL)`), a
+  save after the window fails until the user authenticates again, so the host saves in the foreground;
+  required at each use (0 seconds), each wrapping needs a `BiometricPrompt` with the `Cipher`, which
+  no background job has. A host that wants the user's presence for a restore and none for a save uses
+  an RSA key of the Keystore instead (`PURPOSE_ENCRYPT or PURPOSE_DECRYPT`,
+  `ENCRYPTION_PADDING_RSA_OAEP`, SHA-256): it
+  wraps with the public half, which needs no authentication, and unwraps with the private half under
+  authentication. `setUnlockedDeviceRequired(true)` stops either while the screen is locked. A
+  Keystore key is not in a backup, so a backup of the files holds a state no other device opens; the
+  recovery path is the passphrase backup (ADR 0079 section 6). The Kotlin replay
+  (`backends/kotlin/peer-replay`) wraps the data key with a software AES key through the same `Cipher`
+  calls.
+- **iOS, iPadOS and macOS.** The Secure Enclave where there is one: a P-256 key made in it
+  (`kSecAttrTokenIDSecureEnclave`, with `SecAccessControlCreateWithFlags(...,
+  kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly, .privateKeyUsage, ...)`, adding `.userPresence`
+  when a restore should ask for the user); the data key is wrapped with `SecKeyCreateEncryptedData` and
+  `.eciesEncryptionCofactorVariableIVX963SHA256AESGCM` under the public key, which needs neither the
+  enclave nor the user, so a background task saves; it is unwrapped with `SecKeyCreateDecryptedData`
+  in the enclave. Without an enclave: a 256-bit key kept as a Keychain item with
+  `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, and the data key sealed under it with AES-GCM
+  (CryptoKit `AES.GCM.seal`, its combined form kept). `AfterFirstUnlock` lets a background task (a
+  `BGProcessingTask`, a push) save and restore after the device was unlocked once since it started,
+  where `WhenUnlocked` would stop it while locked; `ThisDeviceOnly` keeps the key out of every backup
+  and off every other device, which is what makes the state the device's alone.
+- **Desktop.** macOS as above. Windows: a key of the TPM through the Microsoft Platform Crypto
+  Provider (`NCryptCreatePersistedKey`, RSA, the data key wrapped with OAEP), or DPAPI
+  (`CryptProtectData` in the user's scope) where there is no TPM. Linux: a key sealed to the TPM 2.0
+  (tpm2-tss), or a wrapping key kept by the Secret Service (libsecret: GNOME Keyring, KWallet). A
+  desktop with none of these asks its user for a passphrase and makes the wrapping key from it with
+  Argon2id, which is the passphrase backup's derivation (`sce_rust_trust::backup::Cost`), and the
+  state is then as strong as the passphrase. The web: a WebCrypto AES-GCM key made with
+  `extractable: false` and kept in IndexedDB, which wraps and unwraps and is never read out.
+
+The state is the core's version 3, the first that is sealed. The texts of versions 1 and 2 held no
+secret and were taken back only after the host gave every key again, which is what this version ends;
+they were never written outside this repository's tests (no device ships before ADR 0034's review),
+so they are not read.
 
 **A restored device signs nothing new until its own chain is read back.** The core cannot tell the
-last save from an older one, so a restored core refuses a send that would make a new operation (and
+last state from an older one, so a restored core refuses a send that would make a new operation (and
 still gives what it holds as held) until a round has read the device's own operations back from the
 relay (`docs/SCE_SHARED_LIST_RELAY.md` section 6). A host that rebuilds its machine from its own log
 after a restore makes that round first, then gives the core the machine's sends, then makes a resync.
@@ -253,22 +354,27 @@ administrator's key, opens the list and grants bob writing, and bob's, invited w
 genesis alice's core gave. Every call each core is given and every text it gives back is recorded in
 order: the opening and its genesis, the grant, what each device stands at, bob's writes and his note
 through `sce_peer_outbound`, an event that is not signed, another content under a stamp he signed
-(refused), each request and the relay's answer, the outcomes, bob's save and his core made again and
-restored from it, a write of his that comes back held and a new one that waits for his chain to be
-read back, a resync, a round of alice's whose transport fails, and bob taken off: a write his core
-signs before it read the removal reaches no one, since the relay refuses a device the log took off.
+(refused), each request and the relay's answer, the outcomes, bob's sealed state and his core made
+again given nothing but the list and the genesis and restored from it with no key given again, a
+write of his that comes back held and a new one that waits for his chain to be read back, a resync, a
+round of alice's whose transport fails, and bob taken off: a write his core signs before it read the
+removal reaches no one, since the relay refuses a device the log took off. A `save` step holds the
+data key and the sealed state, in hex; a `restore` step holds the same and the count, and a lane makes
+the device's core again before it restores.
 
 Because the core does no I/O a lane replays it with no relay: it makes the same calls, compares each
-request, outcome, standing, genesis, save and refusal reason with the recording, and gives the core the
-recorded answers.
+request, outcome, standing, genesis, sealed state and refusal reason with the recording, and gives the
+core the recorded answers. The Kotlin lane keeps the data key between the two steps wrapped, as a host
+does (section 6).
 Rust, C, C++, Python (ctypes), Go (cgo), Kotlin (JNA, `backends/kotlin/peer-replay`) and Swift (the
 module map) replay the same file
 (`a_c_abi_is_what_the_lanes_call_and_replays_the_recorded_scenario`); a lane whose toolchain is
 missing is skipped unless `SCE_REQUIRE_TOOLS` is set, and the Kotlin lane needs
 `./gradlew :sce-kotlin-peer-replay:installDist`.
 
-Everything in it is deterministic (Ed25519 signs deterministically; nothing reads a clock or draws a
-random number), so a run now records the same file, and
+Everything in it is deterministic (Ed25519 signs deterministically; bob's state is sealed with
+`sce_peer_save_sealed_under` under a data key the recording fixes, and its nonce is a keyed hash of
+what it seals; nothing reads a clock or draws a random number), so a run now records the same file, and
 `the_recorded_scenario_is_what_a_fresh_run_records` fails, naming the first step that differs, when the
 recording and a fresh run do not agree. It is recorded again with `SCE_PEER_SCENARIO=write cargo test
 -p sce-rust-peer-capi --test the_recorded_scenario_is_what_a_fresh_run_records --

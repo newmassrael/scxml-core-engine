@@ -352,7 +352,12 @@ over what, as they travel, with their signatures and numbers). It holds no key.
 `restore_from_text` verifies each row against today's log and keeps only what is still true,
 so that what a host knew to be withheld is still known after a restart. The log itself is kept as its entries (`Trust::entries`, each
 `Entry::to_json`), and a host reads it back by appending them in order, which checks the chain again.
-Keys and the person's secret are kept where the host keeps secrets.
+Keys and the person's secret are not in that text: `Trust::secrets` gives them (the person's node
+and seed, the keys of the epochs held) as the contents of a copy of the device's secrets, which is
+the only way the seed leaves the crate, and only sealed. A device's whole state, those secrets with
+the text, the log and the rest, is sealed under a data key the host's platform key store wraps
+(`backup::seal_state`, below); the peer core keeps a device so (`docs/SCE_SHARED_LIST_PEER_ABI.md`
+section 6).
 
 ### A machine that sends a write again
 
@@ -394,6 +399,23 @@ is refused before it is paid for. A wrong passphrase and a changed copy look the
 pinned by a known-answer vector. A device made from a copy still needs the administrator: a lost key is
 taken off and a new device is granted, and the copy is for the person who did not lose their
 passphrase and wants the same device back, with its MLS state and its epoch keys.
+
+### A device's state under its platform's key
+
+The same contents are what a device keeps of itself between runs, sealed under a key and not a
+passphrase (`backup::seal_state`, `backup::open_state`): envelope encryption, the pattern of a
+platform key store whose keys are not exportable. A `DataKey` of 32 bytes, drawn from the operating
+system for one state, seals it; the host wraps that key with its platform's key and keeps the wrapped
+key beside the state. The cipher is the same XChaCha20-Poly1305. Its key and the key the nonce is
+made with are drawn from the data key by HKDF-Expand (RFC 5869, section 2.3: the data key is uniformly
+random, so it is the pseudorandom key and needs no extraction) under labels of their own, and the
+nonce is HMAC-SHA-256 under the second of what is sealed, cut to 24 bytes: the synthetic nonce of
+deterministic authenticated encryption (SIV). The same key and contents give the same bytes, and a key
+used twice gives away only that two states were the same. The list, the node and the caller's name
+of the form are associated data, so a state opens only for the device it was sealed for; another key,
+a changed byte, a cut and another device's state all fail as `Corrupt`, and bytes that are no sealed
+state as `Malformed`. The data key, the keys drawn from it and the plain contents are zeroed once
+used, and a person's key zeroes its seed when it is dropped.
 
 ### An audit of the list
 
