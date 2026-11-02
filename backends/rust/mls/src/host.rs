@@ -200,20 +200,32 @@ impl Member {
     /// second read is left to the next round: the commit is still named and still lacking, and the
     /// host asks again.
     pub fn follow<L: Link>(&mut self, courier: &mut Courier<L>, round: &Round) -> Followed {
-        self.absorb(&round.messages);
         let mut followed = Followed {
-            steps: self.advance(),
+            steps: self.take_round(round),
             reread: None,
         };
-        if self.commits_to_fetch().is_empty() {
+        if !self.owes_reread() {
             return followed;
         }
         if let Ok(again) = courier.reread() {
-            self.absorb(&again.messages);
-            followed.steps.extend(self.advance());
+            followed.steps.extend(self.take_round(&again));
             followed.reread = Some(again);
         }
         followed
+    }
+
+    /// Take in what a round read and do what the log allows with it: the half of [`Self::follow`]
+    /// that needs no relay, for a host that drives its rounds itself.
+    pub fn take_round(&mut self, round: &Round) -> Vec<Step> {
+        self.absorb(&round.messages);
+        self.advance()
+    }
+
+    /// Whether the host owes the relay a second read from the start, once, for a commit the log
+    /// names that it dropped at the limit ([`Self::commits_to_fetch`]): the other half of
+    /// [`Self::follow`].
+    pub fn owes_reread(&self) -> bool {
+        !self.commits_to_fetch().is_empty()
     }
 
     fn has_commit(&self, epoch: u32, hash: &[u8; 32]) -> bool {

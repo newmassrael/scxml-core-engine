@@ -212,7 +212,7 @@ PY
 
 mutation_case "A host takes a round and does not read again for the commit it dropped" <<'PY'
 edit("backends/rust/mls/src/host.rs",
-     "        if self.commits_to_fetch().is_empty() {\n            return followed;",
+     "        if !self.owes_reread() {\n            return followed;",
      "        if true {\n            return followed;")
 PY
 
