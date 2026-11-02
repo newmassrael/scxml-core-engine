@@ -6854,6 +6854,45 @@ fn forge_codec_dma_aligned_rejects_on_cpp() {
     );
 }
 
+/// The same gate on Swift: DMA alignment is a sub-feature only an MCU-class backend writes, so
+/// Swift answers the typed diagnostic the other non-MCU backends do, and not a refusal by name of
+/// a construct it has yet to lower.
+#[test]
+fn forge_codec_dma_aligned_rejects_on_swift() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+
+    let scxml_path = resource_dir().join("codec_dma_aligned_basic.scxml");
+    let content =
+        std::fs::read_to_string(&scxml_path).expect("Cannot read codec_dma_aligned_basic.scxml");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_dma_aligned_basic"),
+        sce_build::generator::Language::Swift,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "codec containing sce:dma-burst-align must reject on Swift via \
+             codegen/mcu-class-kind-on-non-mcu-language"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Generate(boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    GenerateError::CodegenMcuClassKindOnNonMcuLanguage { language, .. }
+                        if language == "swift"
+                )
+        ),
+        "must surface CodegenMcuClassKindOnNonMcuLanguage targeting swift; got: {:?}",
+        err.error
+    );
+}
+
 /// RFC §synth-5-B B3: misaligned `sce:byte` rejects with
 /// `codec/dma-alignment-unsatisfiable` (e.g. byte=33 against
 /// burst-align=32). The reason string names both numbers and the

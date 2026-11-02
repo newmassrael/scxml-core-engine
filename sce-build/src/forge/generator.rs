@@ -8628,6 +8628,36 @@ struct CodecForms {
     inline_encode: bool,
 }
 
+/// The refusal of a codec that carries a sub-feature only an MCU-class backend writes (today DMA
+/// alignment, [`CodecModel::has_mcu_only_features`]) when it is generated for a backend that is not
+/// one: Rust and C11 allow it, and every other backend answers the one typed diagnostic
+/// (`codegen/mcu-class-kind-on-non-mcu-language`), Swift among them. It is a decision the document
+/// states about its target and not a lowering a backend has yet to write, so it is made before a
+/// backend looks for what it does not lower.
+pub(crate) fn reject_mcu_only_codec(
+    m: &CodecModel,
+    lang: crate::generator::Language,
+) -> Result<(), ForgeError> {
+    use crate::generator::Language;
+    if !m.has_mcu_only_features() {
+        return Ok(());
+    }
+    let language = match lang {
+        Language::Rust | Language::C11 => return Ok(()),
+        Language::Cpp => "cpp",
+        Language::Kotlin => "kotlin",
+        Language::Go => "go",
+        Language::Python => "python",
+        Language::Swift => "swift",
+    };
+    Err(ForgeError::from(
+        crate::forge::error::GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
+            kind: format!("codec '{}' (MCU-only sub-features)", m.name),
+            language: language.to_string(),
+        },
+    ))
+}
+
 fn render_codec(
     env: &minijinja::Environment,
     m: &CodecModel,
@@ -8729,33 +8759,7 @@ fn render_codec(
     // MutableList / []T / List). Only codecs carrying DMA alignment
     // still typed-reject on those four backends through the existing
     // kind-class diagnostic.
-    if m.has_mcu_only_features() {
-        match lang {
-            crate::generator::Language::Rust | crate::generator::Language::C11 => { /* allowed */ }
-            crate::generator::Language::Cpp
-            | crate::generator::Language::Kotlin
-            | crate::generator::Language::Go
-            | crate::generator::Language::Python
-            | crate::generator::Language::Swift => {
-                return Err(ForgeError::from(
-                    crate::forge::error::GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
-                        kind: format!("codec '{}' (MCU-only sub-features)", m.name),
-                        language: match lang {
-                            crate::generator::Language::Cpp => "cpp",
-                            crate::generator::Language::Kotlin => "kotlin",
-                            crate::generator::Language::Go => "go",
-                            crate::generator::Language::Python => "python",
-                            crate::generator::Language::Swift => "swift",
-                            crate::generator::Language::Rust | crate::generator::Language::C11 => {
-                                unreachable!()
-                            }
-                        }
-                        .to_string(),
-                    },
-                ));
-            }
-        }
-    }
+    reject_mcu_only_codec(m, lang)?;
 
     // RFC §synth-5-B `sce:type="string"` closure: all six backends (Rust / Cpp /
     // Kotlin / Go / Python / C11) emit `sce:type="string"` codec
@@ -27422,6 +27426,11 @@ pub fn generate_swift_with_imports(
 ) -> Result<GeneratedOutput, ForgeError> {
     use crate::generator::Language;
     crate::forge::codegen_matrix::check(doc.kind(), Language::Swift)?;
+    // A codec an MCU-class backend alone writes is the same typed refusal on Swift as on the other
+    // backends that are not one, and is answered before the constructs Swift has yet to lower.
+    if let ForgeDocument::Codec(m) = doc {
+        reject_mcu_only_codec(m, Language::Swift)?;
+    }
     let refused = match doc {
         ForgeDocument::Algorithm(m) => {
             swift_algorithm_unlowered(m, &swift_imports_of_context(imports))

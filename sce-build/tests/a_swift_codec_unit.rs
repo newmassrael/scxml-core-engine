@@ -952,7 +952,6 @@ fn what_the_swift_codec_does_not_write_is_refused_by_name() {
     for (document, what) in [
         ("codec_cbor_map", "cbor"),
         ("codec_content_line_enums", "content-line"),
-        ("codec_dma_aligned_basic", "DMA alignment"),
     ] {
         let refusal = swift_of(&format!("tests/forge/resources/{document}.scxml"))
             .expect_err(&format!("{document} must be refused, not written"));
