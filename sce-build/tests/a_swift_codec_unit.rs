@@ -387,6 +387,56 @@ fn a_byte_string_is_held_to_the_bound_its_document_declares() {
 }
 
 #[test]
+fn a_text_is_the_string_its_utf8_bytes_spell_and_is_measured_in_those_bytes() {
+    let code = swift_of_datamodel(
+        r#"<sce:field id="n" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+           <sce:field id="name" sce:type="string" sce:byte="1" sce:bit-size="length-ref" sce:length-field="n" sce:max-size="8"/>"#,
+    )
+    .expect("a text is written");
+    assert!(
+        code.contains("\n    public var name: String = \"\"\n"),
+        "a field is declared on a line of its own, after its comment: {code}"
+    );
+    assert!(
+        code.contains("frame.name = try reader.readString(Int(clamping: frame.n))"),
+        "a decode reads the bytes as UTF-8 text, refusing bytes that are not: {code}"
+    );
+    assert!(
+        code.contains("frame += Array(self.name.utf8)"),
+        "an encode writes the UTF-8 bytes of the text: {code}"
+    );
+    assert!(
+        code.contains("if self.name.utf8.count > 8 {"),
+        "the bound counts the bytes on the wire, not the characters: {code}"
+    );
+}
+
+#[test]
+fn a_gated_text_reads_a_length_that_shares_its_gate_through_the_value_it_has_there() {
+    let code = swift_of("tests/forge/resources/codec_present_if_string.scxml")
+        .expect("a gated text with a gated length is written");
+    assert!(code.contains("public var text: String? = nil"), "{code}");
+    assert!(
+        code.contains("try reader.readString(Int(clamping: (frame.text_len ?? 0)))"),
+        "{code}"
+    );
+}
+
+#[test]
+fn a_length_that_is_on_the_wire_under_another_gate_than_its_field_is_refused() {
+    let refusal = swift_of_datamodel(
+        r#"<sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8"><sce:flag name="has_n" bit="0"/></sce:flags>
+           <sce:field id="n" sce:type="uint8" sce:byte="1" sce:bit-size="8" sce:present-if="header.has_n"/>
+           <sce:field id="body" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref" sce:length-field="n" sce:max-size="8"/>"#,
+    )
+    .expect_err("a length gated otherwise than its field is not written");
+    assert!(
+        refusal.contains("on the wire only on a condition the field is not"),
+        "{refusal}"
+    );
+}
+
+#[test]
 fn a_gated_byte_string_is_checked_where_it_is_given() {
     let code = swift_of("tests/forge/resources/codec_present_if_tail.scxml")
         .expect("a gated tail is written");
@@ -403,11 +453,6 @@ fn a_gated_byte_string_is_checked_where_it_is_given() {
 #[test]
 fn what_a_variable_length_field_cannot_be_is_refused_by_name() {
     for (field, what) in [
-        (
-            r#"<sce:field id="n" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-               <sce:field id="name" sce:type="string" sce:byte="1" sce:bit-size="length-ref" sce:length-field="n" sce:max-size="8"/>"#,
-            "a `string` field of variable length",
-        ),
         (
             r#"<sce:field id="a" sce:type="uint8" sce:byte="0" sce:bit-offset="0" sce:bit-size="4"/>
                <sce:field id="n" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>"#,
@@ -617,13 +662,24 @@ fn a_list_of_an_entry_codec_swift_does_not_write_is_refused_by_name() {
 
 #[test]
 fn an_embedded_codec_swift_does_not_write_is_refused_by_name() {
-    // The locator holds a string of variable length, which the Swift codec does not write yet, so
-    // the codec that embeds it names a type that is not there.
-    let refusal = swift_of("tests/forge/resources/codec_embed_basic.scxml")
+    // The embedded codec dispatches on a tag, which the Swift codec does not write yet, so the
+    // codec that embeds it names a type that is not there.
+    let refusal = swift_of("tests/forge/resources/codec_embed_variant_dispatch.scxml")
         .expect_err("an embedded codec Swift does not write is not written");
+    assert!(refusal.contains("which has no Swift lowering"), "{refusal}");
+}
+
+#[test]
+fn an_embedded_codec_without_a_length_is_read_from_the_frames_own_cursor() {
+    let code = swift_of("tests/forge/resources/codec_embed_basic.scxml")
+        .expect("an embedded codec is written");
     assert!(
-        refusal.contains("an embedded 'codec_zenoh_locator', which has no Swift lowering"),
-        "{refusal}"
+        code.contains("public var locator: CodecZenohLocator = CodecZenohLocator()"),
+        "{code}"
+    );
+    assert!(
+        code.contains("frame.locator = try CodecZenohLocator.decode(&reader)"),
+        "{code}"
     );
 }
 

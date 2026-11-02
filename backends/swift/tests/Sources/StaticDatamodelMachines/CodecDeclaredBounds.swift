@@ -19,14 +19,14 @@ public struct CodecDeclaredBounds: Equatable, Sendable {
     /// bytes as its type needs.
     public var key_len: UInt64 = 0
 
-    /// As many bytes as `key_len` says, as many as the document's `max-size` admits: a frame that says
+    /// The bytes, as many as `key_len` says, as many as the document's `max-size` admits: a frame that says
     /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var key: [UInt8] = []
 
     /// The field at byte 2, big-endian.
     public var tag_len: UInt8 = 0
 
-    /// As many bytes as `tag_len` says, plus -1, as many as the document's `max-size` admits: a frame that says
+    /// The bytes, as many as `tag_len` says, plus -1, as many as the document's `max-size` admits: a frame that says
     /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var tag: [UInt8] = []
 

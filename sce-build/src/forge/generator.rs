@@ -20438,6 +20438,8 @@ fn encode_bound_guard_lines(
             Language::Go => format!("len({v})"),
             Language::Python if text => format!("len({v}.encode(\"utf-8\"))"),
             Language::Python => format!("len({v})"),
+            // A text is measured in the UTF-8 bytes the wire carries.
+            Language::Swift if text => format!("{v}.utf8.count"),
             Language::Swift => format!("{v}.count"),
             Language::Rust | Language::C11 => bound_held_elsewhere(lang),
         };

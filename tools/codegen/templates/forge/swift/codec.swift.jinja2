@@ -38,11 +38,17 @@ public struct {{ struct_name }}: Equatable, Sendable {
     /// `max-count` admits: a frame with more is refused with `tooManyElements`, as is a value with
     /// more at its encode.
 {% elif f.variable and f.variable.kind == "tail" %}
-    /// The bytes to the end of the frame, as many as the document's `max-size` admits: a frame
+    /// The {% if f.variable.text %}text of the UTF-8 bytes{% else %}bytes{% endif %} to the end of the frame, as many as the document's `max-size` admits: a frame
     /// with more is refused with `lengthOutOfRange`, as is a value with more at its encode.
+{% if f.variable.text %}
+    /// Bytes that are not UTF-8 are refused with `invalidUtf8`.
+{% endif %}
 {% elif f.variable %}
-    /// As many bytes as `{{ f.variable.length_field }}` says{% if f.variable.arith %}, plus {{ f.variable.arith }}{% endif %}, as many as the document's `max-size` admits: a frame that says
+    /// The {% if f.variable.text %}text of as many UTF-8 bytes{% else %}bytes, as many{% endif %} as `{{ f.variable.length_field }}` says{% if f.variable.arith %}, plus {{ f.variable.arith }}{% endif %}, as many as the document's `max-size` admits: a frame that says
     /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
+{% if f.variable.text %}
+    /// Bytes that are not UTF-8 are refused with `invalidUtf8`.
+{% endif %}
 {% elif f.vle %}
     /// A variable-length integer: base-128, the least significant group first, at most as many
     /// bytes as its type needs.
@@ -106,9 +112,17 @@ public struct {{ struct_name }}: Equatable, Sendable {
         if {{ f.present.decode }} {
 {% endif %}
 {% if f.variable and f.variable.kind == "tail" %}
+{% if f.variable.text %}
+{{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = try reader.readString(reader.remaining)
+{% else %}
 {{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = Array(try reader.readSlice(reader.remaining))
+{% endif %}
 {% elif f.variable %}
-{{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = Array(try reader.readSlice(Int(clamping: frame.{{ f.variable.length_field }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}))
+{% if f.variable.text %}
+{{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = try reader.readString(Int(clamping: {{ f.variable.carried }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %})
+{% else %}
+{{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = Array(try reader.readSlice(Int(clamping: {{ f.variable.carried }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}))
+{% endif %}
 {% elif f.embed and f.embed.length %}
 {{ pad }}        let {{ f.embed.inner }}_length = {{ f.embed.length }}
 {{ pad }}        var {{ f.embed.inner }} = SceCursor(Array(try reader.peekSlice({{ f.embed.inner }}_length)))
@@ -172,7 +186,9 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% if f.present %}
         if let {{ f.id }} = self.{{ f.id }} {
 {% endif %}
-{% if f.variable %}
+{% if f.variable and f.variable.text %}
+{{ pad }}        frame += Array({{ src }}.utf8)
+{% elif f.variable %}
 {{ pad }}        frame += {{ src }}
 {% elif f.embed %}
 {{ pad }}        do {

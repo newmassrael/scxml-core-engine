@@ -31,6 +31,9 @@ public enum CodecError: Error, Equatable, Sendable {
     /// before that entry is read; on an encode, the entries of the value, refused before the
     /// first byte is written.
     case tooManyElements
+    /// The bytes a text field holds are not well-formed UTF-8: a decode refuses the frame and
+    /// consumes nothing.
+    case invalidUtf8
 }
 
 /// The byte order of one field on the wire.
@@ -87,6 +90,19 @@ public struct SceCursor: Sendable {
         let slice = try peekSlice(count)
         position += count
         return slice
+    }
+
+    /// The next `count` bytes as text, which the cursor moves past. The bytes must be well-formed UTF-8
+    /// and are not repaired: text that has lost bytes to a substitute is not the text that was sent,
+    /// so bytes that are not UTF-8 answer `invalidUtf8`, as they do in every other backend, and a
+    /// read that is refused has consumed nothing.
+    public mutating func readString(_ count: Int) throws(CodecError) -> String {
+        let bytes = try peekSlice(count)
+        guard let text = String(validating: bytes, as: UTF8.self) else {
+            throw .invalidUtf8
+        }
+        position += count
+        return text
     }
 
     /// A variable-length unsigned integer of type `T` at the cursor, which moves past it: base-128,

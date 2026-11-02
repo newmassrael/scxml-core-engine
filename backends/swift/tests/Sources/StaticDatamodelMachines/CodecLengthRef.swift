@@ -21,7 +21,7 @@ public struct CodecLengthRef: Equatable, Sendable {
     /// The field at byte 1, big-endian.
     public var len: UInt8 = 0
 
-    /// As many bytes as `len` says, as many as the document's `max-size` admits: a frame that says
+    /// The bytes, as many as `len` says, as many as the document's `max-size` admits: a frame that says
     /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var payload: [UInt8] = []
 

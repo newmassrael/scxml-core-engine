@@ -18,7 +18,7 @@ public struct CodecExtAttachment: Equatable, Sendable {
     /// The field at byte 0, big-endian.
     public var length: UInt8 = 0
 
-    /// As many bytes as `length` says, as many as the document's `max-size` admits: a frame that says
+    /// The bytes, as many as `length` says, as many as the document's `max-size` admits: a frame that says
     /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var body: [UInt8] = []
 

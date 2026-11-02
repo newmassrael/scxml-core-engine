@@ -29,7 +29,7 @@ public struct CodecPresentIfLengthRef: Equatable, Sendable {
 
     /// On the wire only when `(flags & 0x1) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
-    /// As many bytes as `payload_size` says, as many as the document's `max-size` admits: a frame that says
+    /// The bytes, as many as `payload_size` says, as many as the document's `max-size` admits: a frame that says
     /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var payload: [UInt8]? = nil
 

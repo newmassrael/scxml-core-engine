@@ -19,7 +19,7 @@ public struct CodecZenohExtZbuf: Equatable, Sendable {
     /// bytes as its type needs.
     public var value_len: UInt64 = 0
 
-    /// As many bytes as `value_len` says, as many as the document's `max-size` admits: a frame that says
+    /// The bytes, as many as `value_len` says, as many as the document's `max-size` admits: a frame that says
     /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var value: [UInt8] = []
 

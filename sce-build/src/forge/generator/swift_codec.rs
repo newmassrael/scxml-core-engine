@@ -324,12 +324,14 @@ fn vle_field_unlowered(f: &CodecField) -> Option<String> {
 /// What of the variable-length field `f` of `m` (a `tail` or a `length-ref`) the Swift codec does
 /// not lower yet; `None` for one it does.
 ///
-/// It is a `bytes` field, held as an array. A `length-ref` takes its count from an unsigned integer
-/// field of the codec, plus the `length-arith` the document names. Each shape past that (a string,
-/// a length held in the flag of a carrier or in a signed field) is named.
+/// It is a `bytes` field, held as an array, or a `string` field, held as the `String` its UTF-8 bytes
+/// spell. A `length-ref` takes its count from an unsigned integer field of the codec, plus the
+/// `length-arith` the document names; a length field that is on the wire only on a condition is
+/// read inside the gate of the field it counts, so the two must hold the one predicate. Each shape
+/// past that (a length held in the flag of a carrier or in a signed field) is named.
 fn variable_field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
     let what = |text: &str| Some(format!("field '{}': {text}", f.id));
-    if !matches!(f.sce_type, SceType::Bytes) {
+    if !matches!(f.sce_type, SceType::Bytes | SceType::String) {
         return what(&format!(
             "a `{}` field of variable length",
             f.sce_type.as_attr()
@@ -355,14 +357,28 @@ fn variable_field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
         }
         if m.fields
             .iter()
-            .any(|g| g.id == name && g.present_if.is_some())
+            .any(|g| g.id == name && g.present_if.is_some() && g.present_if != f.present_if)
         {
             return what(&format!(
-                "a length held in `{name}`, which is on the wire only on a condition"
+                "a length held in `{name}`, which is on the wire only on a condition the field is not"
             ));
         }
     }
     None
+}
+
+/// The length a variable-length field `f` reads from the field `name`, as Swift spells it while the
+/// frame is decoded: the field, or, where it is on the wire only on the predicate `f` holds too, the
+/// value it has where `f` is read, which the gate the two share proves to be present.
+fn carried_length_expr(m: &CodecModel, name: &str) -> String {
+    if m.fields
+        .iter()
+        .any(|g| g.id == name && g.present_if.is_some())
+    {
+        format!("(frame.{name} ?? 0)")
+    } else {
+        format!("frame.{name}")
+    }
 }
 
 /// Where the bits of a field that names a `sce:bit-offset` lie in its byte: the shift that brings
@@ -511,11 +527,7 @@ pub(super) fn render(
                         // A count that is on the wire only on a condition is an optional; it is
                         // read inside the gate that holds the list to the same predicate, where
                         // it is present.
-                        let count = if m.fields.iter().any(|g| g.id == *name && g.present_if.is_some()) {
-                            format!("(frame.{name} ?? 0)")
-                        } else {
-                            format!("frame.{name}")
-                        };
+                        let count = carried_length_expr(m, name);
                         serde_json::json!({
                             "kind": "count",
                             "count_field": name,
@@ -560,11 +572,12 @@ pub(super) fn render(
                 // the bytes that are left.
                 let (carried, held) = match &f.length_field {
                     Some(name) => (
-                        format!("frame.{name}"),
+                        carried_length_expr(m, name),
                         length_guard::carried_held(name, &m.fields, Language::Swift),
                     ),
                     None => ("reader.remaining".to_string(), length_guard::Held::HostInt),
                 };
+                let text = matches!(f.sce_type, SceType::String);
                 let indent = if present.is_some() {
                     "            "
                 } else {
@@ -573,17 +586,24 @@ pub(super) fn render(
                 let guard = length_guard::Guard::of(f, &m.fields)
                     .map(|g| g.stmt(Language::Swift, &carried, held, indent))
                     .unwrap_or_default();
+                let (value_type, empty) = if text {
+                    ("String", "\"\"")
+                } else {
+                    ("[UInt8]", "[]")
+                };
                 return serde_json::json!({
                     "id": f.id,
-                    "swift_type": format!("[UInt8]{optional}"),
+                    "swift_type": format!("{value_type}{optional}"),
                     "offset": f.byte_offset,
-                    "default": if present.is_some() { "nil" } else { "[]" },
+                    "default": if present.is_some() { "nil" } else { empty },
                     "flags": Vec::<serde_json::Value>::new(),
                     "bits": serde_json::Value::Null,
                     "present": present,
                     "variable": {
                         "kind": kind,
+                        "text": text,
                         "length_field": f.length_field.clone().unwrap_or_default(),
+                        "carried": carried,
                         "arith": f.length_arith.unwrap_or(0),
                         "guard": guard,
                     },

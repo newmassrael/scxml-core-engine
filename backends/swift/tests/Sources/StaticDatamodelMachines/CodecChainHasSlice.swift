@@ -23,7 +23,7 @@ public struct CodecChainHasSlice: Equatable, Sendable {
     /// bytes as its type needs.
     public var len: UInt64 = 0
 
-    /// As many bytes as `len` says, as many as the document's `max-size` admits: a frame that says
+    /// The bytes, as many as `len` says, as many as the document's `max-size` admits: a frame that says
     /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
     public var bytes: [UInt8] = []
 

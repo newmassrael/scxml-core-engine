@@ -217,3 +217,29 @@ import Testing
     appendInteger(Int8(-2), to: &out, .big)
     #expect(out == [0x0A, 0x0B, 0x0C, 0x0D, 0x02, 0x01, 0xFE])
 }
+
+@Test func aTextIsTheUtf8BytesTheCursorReadsAndMovesPast() throws {
+    // "a", "é" (two bytes) and a four-byte scalar.
+    let bytes: [UInt8] = [0x61, 0xC3, 0xA9, 0xF0, 0x9F, 0x98, 0x80, 0x7F]
+    var cursor = SceCursor(bytes)
+    #expect(try cursor.readString(7) == "aé😀")
+    #expect(cursor.remaining == 1, "the read stopped at the count")
+    var empty = SceCursor([])
+    #expect(try empty.readString(0) == "")
+}
+
+@Test func bytesThatAreNotUtf8AreRefusedAndNotRepairedAndConsumeNothing() {
+    var cursor = SceCursor([0x61, 0xFF, 0x62])
+    #expect(throws: CodecError.invalidUtf8) { try cursor.readString(3) }
+    #expect(cursor.remaining == 3, "a refused read has consumed nothing")
+    // A scalar cut off at the end of the bytes is not text either.
+    var cut = SceCursor([0xC3])
+    #expect(throws: CodecError.invalidUtf8) { try cut.readString(1) }
+}
+
+@Test func aTextOfMoreBytesThanTheCursorHoldsNeedsMoreBytes() {
+    var cursor = SceCursor([0x61, 0x62])
+    #expect(throws: CodecError.needMoreBytes) { try cursor.readString(3) }
+    #expect(throws: CodecError.needMoreBytes) { try cursor.readString(-1) }
+    #expect(cursor.remaining == 2)
+}
