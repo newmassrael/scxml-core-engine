@@ -38,6 +38,14 @@ pub trait CodecRepeatPresentIfBasicStorage: ::core::fmt::Debug + Clone + Partial
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatPresentIfBasicElemsField>> CodecRepeatPresentIfBasicStorage for S {}
 
+/// What `CodecRepeatPresentIfBasicIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecRepeatPresentIfBasic` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecRepeatPresentIfBasicLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatPresentIfBasicElemsField> {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatPresentIfBasicElemsField>> CodecRepeatPresentIfBasicLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecRepeatPresentIfBasicStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -389,7 +397,7 @@ impl CodecRepeatPresentIfBasicWire {
 // frame gives where bytes and text borrow it, `CodecRepeatPresentIfBasic<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecRepeatPresentIfBasicIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecRepeatPresentIfBasicStorage {
+impl<'a, D> CodecRepeatPresentIfBasicIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecRepeatPresentIfBasicLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecRepeatPresentIfBasicOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

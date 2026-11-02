@@ -41,6 +41,14 @@ pub trait CodecUntilEofBasicStorage: ::core::fmt::Debug + Clone + PartialEq + ::
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecUntilEofBasicMsgsField>> CodecUntilEofBasicStorage for S {}
 
+/// What `CodecUntilEofBasicIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecUntilEofBasic` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecUntilEofBasicLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecUntilEofBasicMsgsField> {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecUntilEofBasicMsgsField>> CodecUntilEofBasicLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecUntilEofBasicStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -382,7 +390,7 @@ impl<'a> CodecUntilEofBasicView<'a> {
     // alone; a crate that includes this module privately is asked to rename
     // it, and the one name is what lets a codec reach every view it holds.
     #[allow(clippy::wrong_self_convention)]
-    pub fn into_builder<D>(&self, _out: &mut CodecUntilEofBasicIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecUntilEofBasicStorage {
+    pub fn into_builder<D>(&self, _out: &mut CodecUntilEofBasicIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecUntilEofBasicLentStorage {
         _out.msgs.refill(|_vec| {
             for _e in self.msgs.iter() {
                 ::sce_forge_runtime::codec::SceList::try_push(_vec, Default::default())?;
@@ -456,7 +464,7 @@ impl<'a> CodecUntilEofBasicView<'a> {
 // frame gives where bytes and text borrow it, `CodecUntilEofBasic<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecUntilEofBasicIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecUntilEofBasicStorage {
+impl<'a, D> CodecUntilEofBasicIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecUntilEofBasicLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecUntilEofBasicOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

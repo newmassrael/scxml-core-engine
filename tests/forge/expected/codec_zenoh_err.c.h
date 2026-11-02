@@ -18,7 +18,7 @@
 #include "codec_zenoh_ext_entry.h"
 
 #define CODEC_ZENOH_ERR_MIN_BYTES 1
-#define CODEC_ZENOH_ERR_MAX_BYTES 690
+#define CODEC_ZENOH_ERR_MAX_BYTES 576
 
 typedef struct {
     uint8_t header;

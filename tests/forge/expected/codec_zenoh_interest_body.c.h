@@ -16,7 +16,7 @@
 #include "codec_zenoh_wireexpr.h"
 
 #define CODEC_ZENOH_INTEREST_BODY_MIN_BYTES 1
-#define CODEC_ZENOH_INTEREST_BODY_MAX_BYTES 257
+#define CODEC_ZENOH_INTEREST_BODY_MAX_BYTES 147
 
 typedef struct {
     uint8_t header;

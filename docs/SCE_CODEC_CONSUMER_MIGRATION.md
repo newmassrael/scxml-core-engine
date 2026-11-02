@@ -607,3 +607,34 @@ Landing: the commit that adds this section.
   - A codec module no longer imports the bare name of a borrowed codec it holds: it names that codec only as
     `{Child}Owned<S>`, `{Child}View`, `{Child}Wire` and `{Child}Parts`.
   - `try_collect_bounded` and `try_collect_lawful` take the decoded list of any profile.
+
+## A byte string states its bound only where the protocol does (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- `sce:max-size` on a positional `tail` or `length-ref` field is optional. Drop it where the protocol bounds the field
+  by nothing but the width of its length; keep it where the protocol states a smaller bound. No default stands in
+  for it: the 256 bytes a field once fell back to are gone.
+- A field's bound is what the document states met with what its length field can say: a `length-ref` whose length is
+  a `uint8` and that states no `sce:max-size` is 255 bytes, one counted by a `uint16` 65535, and a `tail` with none is
+  unbounded. A list counted by a field reads the same rule, so a `<sce:repeat count="n">` with no `max-count` and a
+  `uint8` count is 255 entries; it was `{ usize::MAX }` in the previous section. A bound past `u32::MAX`, a `uint64`
+  length with no `sce:max-size`, is held as none.
+- Rust holds such a field as `Bytes<'a, { usize::MAX }>` or `Text<'a, { usize::MAX }>` where it has no bound, and at
+  its width where its length bounds it. The bare `&'a [u8]` and `&'a str` a field without a bound once had are gone;
+  `.into_inner()` gives the slice, and a slice converts with `Bounded::new`, which checks only the fewest.
+- Where it is stored is the deployment's to say, as for a list:
+  - Rust: `Inline` does not answer for a byte string with no bound, so `{Codec}Owned<Inline>` of a codec that holds
+    one does not compile; name `Heap` or a deployment that gives the field a capacity. The lent form borrows it, so
+    `{Codec}<'a>` decodes such a codec at `Inline`, and its tree needs no views.
+  - Rust: the lent form's methods ask `D: {Codec}LentStorage`, which names only the lists of the codec and of those it
+    holds; a bound written as `D: {Codec}Storage` on the lent form names `{Codec}LentStorage`.
+  - C11 holds a byte string and a text in an array of its capacity: give the field one in the deploy input, or the
+    codec is refused (`codec/capacity-invalid`, naming the field).
+  - C++, Kotlin, Go and Python grow.
+- A broadcast log refuses an element whose codec holds a byte string with no bound
+  (`broadcast-log/element-size-unbounded`), since a slot holds the largest frame.
+- `MAX_ENCODED_BYTES`, C11's `<CODEC>_MAX_BYTES` and Go's reserve of a codec that embeds a body are the body's own
+  largest frame. They counted each `<sce:embed>` as 256 bytes, so they were above the frame for a small body and below
+  it for a large one: `codec_nested_parent` is 3296, not 2710. A buffer sized from the old constant could refuse a frame
+  of the language with `SCE_FORGE_CODEC_BUFFER_OVERFLOW`; regenerate and size from the new one.

@@ -18,7 +18,7 @@
 #include "codec_zenoh_interest_body.h"
 
 #define CODEC_ZENOH_INTEREST_MIN_BYTES 1
-#define CODEC_ZENOH_INTEREST_MAX_BYTES 434
+#define CODEC_ZENOH_INTEREST_MAX_BYTES 325
 
 typedef struct {
     uint8_t header;

@@ -21,8 +21,8 @@ mutation_oracles sce-build/src/forge/codec_totality.rs
 
 mutation_case "no field holds its bound in its type" <<'PY'
 edit("sce-build/src/forge/codec_totality.rs",
-     r'''        .filter(|b| b.max.is_some_and(|max| max <= u64::from(u32::MAX)))''',
-     r'''        .filter(|_| false)''')
+     r'''        max: field.bound(fields),''',
+     r'''        max: None,''')
 PY
 
 mutation_case "a length derived from bounded content is unbounded" <<'PY'

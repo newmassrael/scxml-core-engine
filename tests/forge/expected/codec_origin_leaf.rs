@@ -36,6 +36,14 @@ pub trait CodecOriginLeafStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecOriginLeafDataField>> CodecOriginLeafStorage for S {}
 
+/// What `CodecOriginLeafIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecOriginLeaf` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecOriginLeafLentStorage: ::core::fmt::Debug + Clone + PartialEq {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq> CodecOriginLeafLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecOriginLeafStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -333,7 +341,7 @@ impl CodecOriginLeafWire {
 // frame gives where bytes and text borrow it, `CodecOriginLeaf<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecOriginLeafIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginLeafStorage {
+impl<'a, D> CodecOriginLeafIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginLeafLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecOriginLeafOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -403,7 +411,7 @@ impl<S: CodecOriginLeafStorage> CodecOriginLeafOwned<S> {
 }
 
 #[allow(dead_code)]
-impl<'a, D> CodecOriginLeafIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginLeafStorage {
+impl<'a, D> CodecOriginLeafIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginLeafLentStorage {
     /// Project this borrowed view into an owned [`CodecOriginLeafOwned`]
     /// whose byte and text containers are made by the profile's
     /// `OriginStorage` from each slice AND `origin`, the buffer the

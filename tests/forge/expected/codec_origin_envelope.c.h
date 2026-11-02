@@ -17,7 +17,7 @@
 #include "codec_origin_leaf.h"
 
 #define CODEC_ORIGIN_ENVELOPE_MIN_BYTES 4
-#define CODEC_ORIGIN_ENVELOPE_MAX_BYTES 583
+#define CODEC_ORIGIN_ENVELOPE_MAX_BYTES 105
 
 typedef struct {
     uint8_t hdr;

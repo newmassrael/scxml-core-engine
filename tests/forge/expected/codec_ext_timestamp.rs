@@ -36,6 +36,14 @@ pub trait CodecExtTimestampStorage: ::core::fmt::Debug + Clone + PartialEq + ::s
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecExtTimestampZidField>> CodecExtTimestampStorage for S {}
 
+/// What `CodecExtTimestampIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecExtTimestamp` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecExtTimestampLentStorage: ::core::fmt::Debug + Clone + PartialEq {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq> CodecExtTimestampLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecExtTimestampStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -353,7 +361,7 @@ impl CodecExtTimestampWire {
 // frame gives where bytes and text borrow it, `CodecExtTimestamp<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecExtTimestampIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecExtTimestampStorage {
+impl<'a, D> CodecExtTimestampIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecExtTimestampLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecExtTimestampOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

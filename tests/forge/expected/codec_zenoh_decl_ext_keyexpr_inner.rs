@@ -36,6 +36,14 @@ pub trait CodecZenohDeclExtKeyexprInnerStorage: ::core::fmt::Debug + Clone + Par
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohDeclExtKeyexprInnerSuffixField>> CodecZenohDeclExtKeyexprInnerStorage for S {}
 
+/// What `CodecZenohDeclExtKeyexprInnerIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohDeclExtKeyexprInner` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohDeclExtKeyexprInnerLentStorage: ::core::fmt::Debug + Clone + PartialEq {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq> CodecZenohDeclExtKeyexprInnerLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohDeclExtKeyexprInnerStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -428,7 +436,7 @@ impl CodecZenohDeclExtKeyexprInnerWire {
 // frame gives where bytes and text borrow it, `CodecZenohDeclExtKeyexprInner<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohDeclExtKeyexprInnerIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohDeclExtKeyexprInnerStorage {
+impl<'a, D> CodecZenohDeclExtKeyexprInnerIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohDeclExtKeyexprInnerLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohDeclExtKeyexprInnerOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

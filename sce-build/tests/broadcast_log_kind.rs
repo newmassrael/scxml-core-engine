@@ -841,15 +841,14 @@ fn event_ring() -> String {
     )
 }
 
-/// A positional payload that states no bound is refused where it is written,
-/// before any log reads its codec: the bound is part of the field's type and
-/// the parser requires it (docs/adr/0077 §5). The log's own refusal of an
-/// element without a largest encoded size is held by the CBOR element whose
-/// string states none
-/// (`a_cbor_element_with_a_string_that_states_no_bound_is_refused_for_its_size`),
-/// which the parser admits.
+/// A positional payload the protocol states no bound of is a codec the parser
+/// takes (docs/adr/0077 §7), and an element with no largest encoded size: a
+/// slot holds the element's wire bytes in a fixed number of words, so the log
+/// refuses it on the element-type row, naming the payload, as it refuses a CBOR
+/// element whose string states none
+/// (`a_cbor_element_with_a_string_that_states_no_bound_is_refused_for_its_size`).
 #[test]
-fn an_element_with_a_payload_no_declaration_bounds_is_refused_at_the_payload() {
+fn an_element_with_a_payload_no_declaration_bounds_is_refused_for_its_size() {
     let xml = event_ring();
     let codec = codec_with("event_record", "", UNBOUNDED_FIELDS);
     let located = compile_documents(
@@ -858,10 +857,9 @@ fn an_element_with_a_payload_no_declaration_bounds_is_refused_at_the_payload() {
     )
     .err()
     .unwrap_or_else(|| panic!("the payload has no bound, so the set is refused"));
-    let refused = format!("{:?}", located.error);
-    assert!(refused.contains("MissingAttribute"), "{refused}");
-    assert!(refused.contains("'payload'"), "{refused}");
-    assert!(refused.contains("sce:max-size"), "{refused}");
+    let reason = unbounded_reason(located, &xml, "event_record", "codec");
+    assert!(reason.contains("'payload'"), "{reason}");
+    assert!(reason.contains("sce:max-size"), "{reason}");
 }
 
 #[test]
@@ -918,13 +916,13 @@ fn an_element_that_embeds_a_codec_with_no_bound_is_refused_through_the_embed() {
     )
     .err()
     .unwrap_or_else(|| panic!("the embedded body has no bound, so the set is refused"));
-    // The body's field is refused where it is written (docs/adr/0077 §5); the
-    // size check's naming of a field through the embed that holds it is held by
-    // `codec_size`'s `a_body_with_no_bound_is_named_through_the_codec_that_holds_it`.
-    let refused = format!("{:?}", located.error);
-    assert!(refused.contains("MissingAttribute"), "{refused}");
-    assert!(refused.contains("'blob'"), "{refused}");
-    assert!(refused.contains("sce:max-size"), "{refused}");
+    // The body's field states no bound, which the parser takes (docs/adr/0077
+    // §7), so the element has no largest size, and the reason names the field
+    // through the embed that holds it.
+    let reason = unbounded_reason(located, &xml, "event_record", "codec");
+    assert!(reason.contains("'body'"), "{reason}");
+    assert!(reason.contains("'blob'"), "{reason}");
+    assert!(reason.contains("sce:max-size"), "{reason}");
 }
 
 /// Whether the language's broadcast-log template has landed

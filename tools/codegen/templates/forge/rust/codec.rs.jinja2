@@ -205,7 +205,7 @@ impl{{ variant_lifetime }} Default for {{ struct_name }}Variant{{ variant_lifeti
 {% for stmt in owned_imports %}
 {{ stmt }}
 {% endfor %}
-{{ storage.declare(struct_name, runtime_codec, storage_fields, storage_gated, storage_bound, storage_from_bound) }}
+{{ storage.declare(struct_name, runtime_codec, storage_fields, storage_gated, storage_bound, storage_lent_bound, storage_from_bound) }}
 {% for field in fields %}
 {% if field.rs_owned_alias is defined %}
 {{ field.rs_owned_alias }}
@@ -589,7 +589,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% if emit_owned %}
     // A codec with no list holds every field alike at every profile, so the
     // value at any `D` is filled field by field (docs/adr/0077 §7).
-    pub fn into_builder<D>(&self, _out: &mut {{ struct_name }}In<{{ runtime_codec }}::Lent<'a, D>>) -> Result<(), CodecError> where D: {{ struct_name }}Storage {
+    pub fn into_builder<D>(&self, _out: &mut {{ struct_name }}In<{{ runtime_codec }}::Lent<'a, D>>) -> Result<(), CodecError> where D: {{ struct_name }}LentStorage {
 {% for field in fields %}
         _out.{{ field.id }} = self.{{ field.id }};
 {% endfor %}
@@ -720,7 +720,7 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     // it, and the one name is what lets a codec reach every view it holds.
     #[allow(clippy::wrong_self_convention)]
 {% if emit_owned %}
-    pub fn into_builder<D>(&self, _out: &mut {{ struct_name }}In<{{ runtime_codec }}::Lent<'a, D>>) -> Result<(), CodecError> where D: {{ struct_name }}Storage {
+    pub fn into_builder<D>(&self, _out: &mut {{ struct_name }}In<{{ runtime_codec }}::Lent<'a, D>>) -> Result<(), CodecError> where D: {{ struct_name }}LentStorage {
 {% else %}
     pub fn into_builder(&self, _out: &mut {{ struct_name }}{{ struct_lifetime }}) -> Result<(), CodecError> {
 {% endif %}
@@ -851,7 +851,7 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
 
 #[allow(dead_code)]
 {% if variant_lifetime %}
-impl<'a, D> {{ struct_name }}VariantIn<{{ runtime_codec }}::Lent<'a, D>> where D: {{ struct_name }}Storage {
+impl<'a, D> {{ struct_name }}VariantIn<{{ runtime_codec }}::Lent<'a, D>> where D: {{ struct_name }}LentStorage {
 {% else %}
 impl {{ struct_name }}Variant {
 {% endif %}
@@ -941,7 +941,7 @@ impl{{ variant_owned_generics_impl }} {{ struct_name }}OwnedVariant{{ variant_ow
 // frame gives where bytes and text borrow it, `{{ struct_name }}<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> {{ struct_name }}In<{{ runtime_codec }}::Lent<'a, D>> where D: {{ struct_name }}Storage {
+impl<'a, D> {{ struct_name }}In<{{ runtime_codec }}::Lent<'a, D>> where D: {{ struct_name }}LentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`{{ struct_name }}Owned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -1027,7 +1027,7 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
 {% if has_variant and variant_owned_generics_args %}
 
 #[allow(dead_code)]
-impl<'a, D> {{ struct_name }}VariantIn<{{ runtime_codec }}::Lent<'a, D>> where D: {{ struct_name }}Storage {
+impl<'a, D> {{ struct_name }}VariantIn<{{ runtime_codec }}::Lent<'a, D>> where D: {{ struct_name }}LentStorage {
     /// The projection above, with the profile's byte and text containers made
     /// from `{{ origin_param }}` — what the decoded bytes were taken from.
     pub fn {{ owned_in_origin_fn }}{{ origin_generics_impl }}(self, {{ origin_param }}: {{ origin_ref_type }}) -> Result<{{ struct_name }}OwnedVariant{{ variant_owned_generics_args }}, CodecError> {
@@ -1047,7 +1047,7 @@ impl<'a, D> {{ struct_name }}VariantIn<{{ runtime_codec }}::Lent<'a, D>> where D
 {% endif %}
 
 #[allow(dead_code)]
-impl<'a, D> {{ struct_name }}In<{{ runtime_codec }}::Lent<'a, D>> where D: {{ struct_name }}Storage {
+impl<'a, D> {{ struct_name }}In<{{ runtime_codec }}::Lent<'a, D>> where D: {{ struct_name }}LentStorage {
     /// Project this borrowed view into an owned [`{{ struct_name }}Owned`]
     /// whose byte and text containers are made by the profile's
     /// `OriginStorage` from each slice AND `{{ origin_param }}`, the buffer the

@@ -21,8 +21,8 @@ mutation_oracles sce-build/tests/forge_conformance.rs sce-build/tests/a_gated_ar
 
 mutation_case "what Inline holds is past the field's bound" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''                    SceType::Bytes => ("Bytes", Some(f.storage_bytes())),''',
-     r'''                    SceType::Bytes => ("Bytes", Some(f.storage_bytes() + 1)),''')
+     r'''                    SceType::Bytes => ("Bytes", f.storage_bytes(&m.fields)),''',
+     r'''                    SceType::Bytes => ("Bytes", f.storage_bytes(&m.fields).map(|n| n + 1)),''')
 PY
 
 mutation_case "a storage trait asks nothing of the codecs it holds" <<'PY'

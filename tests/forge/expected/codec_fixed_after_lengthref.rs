@@ -36,6 +36,14 @@ pub trait CodecFixedAfterLengthrefStorage: ::core::fmt::Debug + Clone + PartialE
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecFixedAfterLengthrefPayloadField>> CodecFixedAfterLengthrefStorage for S {}
 
+/// What `CodecFixedAfterLengthrefIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecFixedAfterLengthref` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecFixedAfterLengthrefLentStorage: ::core::fmt::Debug + Clone + PartialEq {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq> CodecFixedAfterLengthrefLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecFixedAfterLengthrefStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -385,7 +393,7 @@ impl CodecFixedAfterLengthrefWire {
 // frame gives where bytes and text borrow it, `CodecFixedAfterLengthref<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecFixedAfterLengthrefIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecFixedAfterLengthrefStorage {
+impl<'a, D> CodecFixedAfterLengthrefIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecFixedAfterLengthrefLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecFixedAfterLengthrefOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

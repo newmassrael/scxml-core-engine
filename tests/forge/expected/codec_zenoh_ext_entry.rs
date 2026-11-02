@@ -70,6 +70,14 @@ pub trait CodecZenohExtEntryStorage: ::core::fmt::Debug + Clone + PartialEq + su
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_ext_zbuf::CodecZenohExtZbufStorage> CodecZenohExtEntryStorage for S {}
 
+/// What `CodecZenohExtEntryIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohExtEntry` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohExtEntryLentStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_ext_zbuf::CodecZenohExtZbufLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_ext_zbuf::CodecZenohExtZbufLentStorage> CodecZenohExtEntryLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohExtEntryStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -575,7 +583,7 @@ impl CodecZenohExtEntryWire {
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
 #[allow(dead_code)]
-impl<'a, D> CodecZenohExtEntryVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohExtEntryStorage {
+impl<'a, D> CodecZenohExtEntryVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohExtEntryLentStorage {
     /// Deep-copy this borrowed variant body into its owned mirror at the
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
@@ -651,7 +659,7 @@ impl<S: CodecZenohExtEntryStorage> CodecZenohExtEntryOwnedVariant<S> {
 // frame gives where bytes and text borrow it, `CodecZenohExtEntry<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohExtEntryIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohExtEntryStorage {
+impl<'a, D> CodecZenohExtEntryIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohExtEntryLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohExtEntryOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

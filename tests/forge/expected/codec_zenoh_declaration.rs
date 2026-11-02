@@ -76,6 +76,14 @@ pub trait CodecZenohDeclarationStorage: ::core::fmt::Debug + Clone + PartialEq +
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprStorage + super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberStorage + super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberStorage + super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableStorage + super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableStorage + super::codec_zenoh_decl_token::CodecZenohDeclTokenStorage + super::codec_zenoh_undecl_token::CodecZenohUndeclTokenStorage> CodecZenohDeclarationStorage for S {}
 
+/// What `CodecZenohDeclarationIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohDeclaration` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohDeclarationLentStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprLentStorage + super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberLentStorage + super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberLentStorage + super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableLentStorage + super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableLentStorage + super::codec_zenoh_decl_token::CodecZenohDeclTokenLentStorage + super::codec_zenoh_undecl_token::CodecZenohUndeclTokenLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprLentStorage + super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberLentStorage + super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberLentStorage + super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableLentStorage + super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableLentStorage + super::codec_zenoh_decl_token::CodecZenohDeclTokenLentStorage + super::codec_zenoh_undecl_token::CodecZenohUndeclTokenLentStorage> CodecZenohDeclarationLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohDeclarationStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -344,7 +352,7 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 274;
+    pub const MAX_ENCODED_BYTES: usize = 164;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -674,7 +682,7 @@ impl CodecZenohDeclarationWire {
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
 #[allow(dead_code)]
-impl<'a, D> CodecZenohDeclarationVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohDeclarationStorage {
+impl<'a, D> CodecZenohDeclarationVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohDeclarationLentStorage {
     /// Deep-copy this borrowed variant body into its owned mirror at the
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
@@ -792,7 +800,7 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationOwnedVariant<S> {
 // frame gives where bytes and text borrow it, `CodecZenohDeclaration<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohDeclarationIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohDeclarationStorage {
+impl<'a, D> CodecZenohDeclarationIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohDeclarationLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohDeclarationOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

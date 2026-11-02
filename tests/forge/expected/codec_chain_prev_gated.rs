@@ -38,6 +38,14 @@ pub trait CodecChainPrevGatedStorage: ::core::fmt::Debug + Clone + PartialEq + :
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecChainPrevGatedEntriesField>> CodecChainPrevGatedStorage for S {}
 
+/// What `CodecChainPrevGatedIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecChainPrevGated` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecChainPrevGatedLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecChainPrevGatedEntriesField> {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecChainPrevGatedEntriesField>> CodecChainPrevGatedLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecChainPrevGatedStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -447,7 +455,7 @@ impl CodecChainPrevGatedWire {
 // frame gives where bytes and text borrow it, `CodecChainPrevGated<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecChainPrevGatedIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecChainPrevGatedStorage {
+impl<'a, D> CodecChainPrevGatedIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecChainPrevGatedLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecChainPrevGatedOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

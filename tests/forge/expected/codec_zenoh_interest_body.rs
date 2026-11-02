@@ -28,6 +28,14 @@ pub trait CodecZenohInterestBodyStorage: ::core::fmt::Debug + Clone + PartialEq 
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_wireexpr::CodecZenohWireexprStorage> CodecZenohInterestBodyStorage for S {}
 
+/// What `CodecZenohInterestBodyIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohInterestBody` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohInterestBodyLentStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_wireexpr::CodecZenohWireexprLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_wireexpr::CodecZenohWireexprLentStorage> CodecZenohInterestBodyLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohInterestBodyStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -247,7 +255,7 @@ impl<S: CodecZenohInterestBodyStorage> CodecZenohInterestBodyIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 257;
+    pub const MAX_ENCODED_BYTES: usize = 147;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -524,7 +532,7 @@ impl CodecZenohInterestBodyWire {
 // frame gives where bytes and text borrow it, `CodecZenohInterestBody<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohInterestBodyIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohInterestBodyStorage {
+impl<'a, D> CodecZenohInterestBodyIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohInterestBodyLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohInterestBodyOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

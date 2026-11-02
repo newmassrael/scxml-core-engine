@@ -41,6 +41,14 @@ pub trait CodecRepeatFlagCarrierStorage: ::core::fmt::Debug + Clone + PartialEq 
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatFlagCarrierEntriesField>> CodecRepeatFlagCarrierStorage for S {}
 
+/// What `CodecRepeatFlagCarrierIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecRepeatFlagCarrier` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecRepeatFlagCarrierLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatFlagCarrierEntriesField> {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatFlagCarrierEntriesField>> CodecRepeatFlagCarrierLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecRepeatFlagCarrierStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -481,7 +489,7 @@ impl<'a> CodecRepeatFlagCarrierView<'a> {
     // alone; a crate that includes this module privately is asked to rename
     // it, and the one name is what lets a codec reach every view it holds.
     #[allow(clippy::wrong_self_convention)]
-    pub fn into_builder<D>(&self, _out: &mut CodecRepeatFlagCarrierIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecRepeatFlagCarrierStorage {
+    pub fn into_builder<D>(&self, _out: &mut CodecRepeatFlagCarrierIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecRepeatFlagCarrierLentStorage {
         _out.head = self.head;
         _out.count = self.count;
         _out.entries.refill_from(self.entries.start(), |_vec| {
@@ -562,7 +570,7 @@ impl<'a> CodecRepeatFlagCarrierView<'a> {
 // frame gives where bytes and text borrow it, `CodecRepeatFlagCarrier<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecRepeatFlagCarrierIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecRepeatFlagCarrierStorage {
+impl<'a, D> CodecRepeatFlagCarrierIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecRepeatFlagCarrierLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecRepeatFlagCarrierOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

@@ -36,6 +36,14 @@ pub trait CodecInitCookieBodyStorage: ::core::fmt::Debug + Clone + PartialEq + :
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecInitCookieBodyCookieField>> CodecInitCookieBodyStorage for S {}
 
+/// What `CodecInitCookieBodyIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecInitCookieBody` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecInitCookieBodyLentStorage: ::core::fmt::Debug + Clone + PartialEq {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq> CodecInitCookieBodyLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecInitCookieBodyStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -381,7 +389,7 @@ impl CodecInitCookieBodyWire {
 // frame gives where bytes and text borrow it, `CodecInitCookieBody<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecInitCookieBodyIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecInitCookieBodyStorage {
+impl<'a, D> CodecInitCookieBodyIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecInitCookieBodyLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecInitCookieBodyOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

@@ -23,7 +23,7 @@ impl {{ runtime }}::Holds{{ field.kind }}<{{ tag }}> for {{ profile }} {
 {% endif %}
 }
 {%- endmacro %}
-{%- macro declare(struct_name, runtime, fields, gated, bound, from_bound) %}
+{%- macro declare(struct_name, runtime, fields, gated, bound, lent_bound, from_bound) %}
 {% for field in fields %}
 /// The field `{{ field.id }}` of `{{ struct_name }}`, which a storage profile
 /// answers for by this type.
@@ -57,6 +57,20 @@ impl<S> {{ child.helper }} for S {}
 
 {{ child.cfg }}
 #[allow(dead_code)]
+pub trait {{ child.helper }}Lent: {{ child.lent_bound }} {}
+
+{{ child.cfg }}
+impl<S: {{ child.lent_bound }}> {{ child.helper }}Lent for S {}
+
+{{ child.cfg_off }}
+#[allow(dead_code)]
+pub trait {{ child.helper }}Lent {}
+
+{{ child.cfg_off }}
+impl<S> {{ child.helper }}Lent for S {}
+
+{{ child.cfg }}
+#[allow(dead_code)]
 pub trait {{ child.helper }}From<'f>: {{ child.from_bound }} {}
 
 {{ child.cfg }}
@@ -75,6 +89,14 @@ impl<S> {{ child.helper }}From<'_> for S {}
 pub trait {{ struct_name }}Storage: {{ bound }} {}
 
 impl<S: {{ bound }}> {{ struct_name }}Storage for S {}
+
+/// What `{{ struct_name }}In<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `{{ struct_name }}` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait {{ struct_name }}LentStorage: {{ lent_bound }} {}
+
+impl<D: {{ lent_bound }}> {{ struct_name }}LentStorage for D {}
 
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside {{ struct_name }}Storage: how it stores each field of that frame.

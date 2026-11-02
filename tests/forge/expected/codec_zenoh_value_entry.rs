@@ -70,6 +70,14 @@ pub trait CodecZenohValueEntryStorage: ::core::fmt::Debug + Clone + PartialEq + 
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_value_zbuf::CodecZenohValueZbufStorage> CodecZenohValueEntryStorage for S {}
 
+/// What `CodecZenohValueEntryIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohValueEntry` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohValueEntryLentStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_value_zbuf::CodecZenohValueZbufLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_value_zbuf::CodecZenohValueZbufLentStorage> CodecZenohValueEntryLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohValueEntryStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -587,7 +595,7 @@ impl CodecZenohValueEntryWire {
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
 #[allow(dead_code)]
-impl<'a, D> CodecZenohValueEntryVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohValueEntryStorage {
+impl<'a, D> CodecZenohValueEntryVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohValueEntryLentStorage {
     /// Deep-copy this borrowed variant body into its owned mirror at the
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
@@ -663,7 +671,7 @@ impl<S: CodecZenohValueEntryStorage> CodecZenohValueEntryOwnedVariant<S> {
 // frame gives where bytes and text borrow it, `CodecZenohValueEntry<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohValueEntryIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohValueEntryStorage {
+impl<'a, D> CodecZenohValueEntryIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohValueEntryLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohValueEntryOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

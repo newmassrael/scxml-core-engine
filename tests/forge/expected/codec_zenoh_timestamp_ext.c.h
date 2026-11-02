@@ -15,7 +15,7 @@
 #include "codec_zenoh_timestamp.h"
 
 #define CODEC_ZENOH_TIMESTAMP_EXT_MIN_BYTES 0
-#define CODEC_ZENOH_TIMESTAMP_EXT_MAX_BYTES 265
+#define CODEC_ZENOH_TIMESTAMP_EXT_MAX_BYTES 43
 
 typedef struct {
     uint64_t ext_size;

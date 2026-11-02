@@ -15,7 +15,7 @@
 #include "codec_zenoh_locator.h"
 
 #define CODEC_EMBED_BASIC_MIN_BYTES 1
-#define CODEC_EMBED_BASIC_MAX_BYTES 257
+#define CODEC_EMBED_BASIC_MAX_BYTES 138
 
 typedef struct {
     uint8_t tag;

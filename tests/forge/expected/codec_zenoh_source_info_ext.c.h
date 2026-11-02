@@ -15,7 +15,7 @@
 #include "codec_zenoh_source_info.h"
 
 #define CODEC_ZENOH_SOURCE_INFO_EXT_MIN_BYTES 0
-#define CODEC_ZENOH_SOURCE_INFO_EXT_MAX_BYTES 265
+#define CODEC_ZENOH_SOURCE_INFO_EXT_MAX_BYTES 36
 
 typedef struct {
     uint64_t ext_size;

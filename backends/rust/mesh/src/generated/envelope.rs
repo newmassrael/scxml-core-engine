@@ -592,6 +592,14 @@ impl<
 {
 }
 
+/// What `EnvelopeIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `Envelope` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait EnvelopeLentStorage: ::core::fmt::Debug + Clone + PartialEq {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq> EnvelopeLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside EnvelopeStorage: how it stores each field of that frame.
 #[allow(dead_code)]

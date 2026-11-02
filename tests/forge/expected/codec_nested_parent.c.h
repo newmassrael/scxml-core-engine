@@ -17,7 +17,7 @@
 #include "codec_nested_body.h"
 
 #define CODEC_NESTED_PARENT_MIN_BYTES 2
-#define CODEC_NESTED_PARENT_MAX_BYTES 2710
+#define CODEC_NESTED_PARENT_MAX_BYTES 3296
 
 typedef struct {
     uint8_t hdr;

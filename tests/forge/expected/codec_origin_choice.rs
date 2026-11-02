@@ -68,6 +68,14 @@ pub trait CodecOriginChoiceStorage: ::core::fmt::Debug + Clone + PartialEq + sup
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_origin_leaf::CodecOriginLeafStorage> CodecOriginChoiceStorage for S {}
 
+/// What `CodecOriginChoiceIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecOriginChoice` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecOriginChoiceLentStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_origin_leaf::CodecOriginLeafLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + super::codec_origin_leaf::CodecOriginLeafLentStorage> CodecOriginChoiceLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecOriginChoiceStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -460,7 +468,7 @@ impl CodecOriginChoiceWire {
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
 #[allow(dead_code)]
-impl<'a, D> CodecOriginChoiceVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginChoiceStorage {
+impl<'a, D> CodecOriginChoiceVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginChoiceLentStorage {
     /// Deep-copy this borrowed variant body into its owned mirror at the
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
@@ -529,7 +537,7 @@ impl<S: CodecOriginChoiceStorage> CodecOriginChoiceOwnedVariant<S> {
 // frame gives where bytes and text borrow it, `CodecOriginChoice<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecOriginChoiceIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginChoiceStorage {
+impl<'a, D> CodecOriginChoiceIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginChoiceLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecOriginChoiceOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -599,7 +607,7 @@ impl<S: CodecOriginChoiceStorage> CodecOriginChoiceOwned<S> {
 }
 
 #[allow(dead_code)]
-impl<'a, D> CodecOriginChoiceVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginChoiceStorage {
+impl<'a, D> CodecOriginChoiceVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginChoiceLentStorage {
     /// The projection above, with the profile's byte and text containers made
     /// from `origin` — what the decoded bytes were taken from.
     pub fn try_into_owned_in_origin<S: CodecOriginChoiceStorage + ::sce_forge_runtime::codec::OriginStorage>(self, origin: &<S as ::sce_forge_runtime::codec::OriginStorage>::Origin) -> Result<CodecOriginChoiceOwnedVariant<S>, CodecError> {
@@ -612,7 +620,7 @@ impl<'a, D> CodecOriginChoiceVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> 
 }
 
 #[allow(dead_code)]
-impl<'a, D> CodecOriginChoiceIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginChoiceStorage {
+impl<'a, D> CodecOriginChoiceIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginChoiceLentStorage {
     /// Project this borrowed view into an owned [`CodecOriginChoiceOwned`]
     /// whose byte and text containers are made by the profile's
     /// `OriginStorage` from each slice AND `origin`, the buffer the

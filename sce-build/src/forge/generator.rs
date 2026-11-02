@@ -7015,31 +7015,23 @@ fn rust_codec_body_lifetime(
 }
 
 /// The Rust type of a `bytes` or `string` field borrowed for `lifetime`: a
-/// `Bytes` or `Text` of the field's bounds where its type holds them
-/// (docs/adr/0077 §3, [`crate::forge::codec_totality::byte_bound`]), and a bare
-/// slice or `str` where it holds none. The one spelling every Rust form of a
-/// codec (the decoded value, the source, the parts, the view) names the field
-/// by, so the forms cannot disagree about a bound.
+/// `Bytes` or `Text` of the field's bounds (docs/adr/0077 §3,
+/// [`crate::forge::codec_totality::byte_bound`]), `{ usize::MAX }` where the
+/// language states none, so a byte string has one shape (§7). The one spelling
+/// every Rust form of a codec (the decoded value, the source, the parts, the
+/// view) names the field by, so the forms cannot disagree about a bound.
 pub(crate) fn rust_borrowed_text_type(
     f: &CodecField,
     fields: &[CodecField],
     lifetime: &str,
 ) -> String {
     let text = matches!(f.sce_type, SceType::String);
-    match crate::forge::codec_totality::byte_bound_args(f, fields) {
-        Some(bounds) => format!(
-            "{RUNTIME_CODEC}::{}<{lifetime}, {bounds}>",
-            if text { "Text" } else { "Bytes" }
-        ),
-        None => {
-            let lifetime = if lifetime == "'_" {
-                String::new()
-            } else {
-                format!("{lifetime} ")
-            };
-            format!("&{lifetime}{}", if text { "str" } else { "[u8]" })
-        }
-    }
+    let bounds = crate::forge::codec_totality::byte_bound_args(f, fields)
+        .expect("a codec's byte string or text is a tail or length-ref field, which has bounds");
+    format!(
+        "{RUNTIME_CODEC}::{}<{lifetime}, {bounds}>",
+        if text { "Text" } else { "Bytes" }
+    )
 }
 
 /// The statement that makes the decoded local of a `bytes` or `string` field
@@ -7053,23 +7045,12 @@ fn rust_store_rebind(l: &LangCtx, f: &CodecField, m: &CodecModel) -> Option<Stri
     {
         return None;
     }
-    let kind = match f.sce_type {
-        SceType::String => "Str",
-        SceType::Bytes => "Bytes",
-        _ => return None,
-    };
+    if !matches!(f.sce_type, SceType::String | SceType::Bytes) {
+        return None;
+    }
     let id = l.codec_field_id(&f.id);
     let tag = rust_storage_tag(&m.name, &f.id);
-    let store = |value: &str| {
-        if crate::forge::codec_totality::byte_bound(f, &m.fields).is_some() {
-            format!("{value}.store::<{STORAGE_PARAM}, {tag}>()")
-        } else {
-            format!(
-                "<{STORAGE_PARAM} as {RUNTIME_CODEC}::Stores{kind}<'_, {tag}>>::store_{}({value})",
-                kind.to_lowercase()
-            )
-        }
-    };
+    let store = |value: &str| format!("{value}.store::<{STORAGE_PARAM}, {tag}>()");
     Some(if f.present_if.is_some() {
         format!("let {id} = {id}.map(|_v| {}).transpose()?;", store("_v"))
     } else {
@@ -7113,7 +7094,12 @@ fn rust_bounded_rebind(l: &LangCtx, f: &CodecField, fields: &[CodecField]) -> Op
 fn codec_scalar_type(l: &LangCtx, f: &CodecField, fields: &[CodecField]) -> String {
     match (l.lang, &f.sce_type) {
         (crate::generator::Language::Swift, _) => no_swift_emitter("codec_scalar_type"),
-        (crate::generator::Language::Rust, SceType::Bytes | SceType::String) => {
+        // A list or an embedded body carries `Bytes` as the sentinel of its
+        // wire shape, and its own branch names its type; only a field that
+        // holds a length is a byte string or text.
+        (crate::generator::Language::Rust, SceType::Bytes | SceType::String)
+            if matches!(f.bit_size, BitSize::Tail | BitSize::LengthRef) =>
+        {
             rust_borrowed_text_type(f, fields, "'a")
         }
         (
@@ -7287,7 +7273,7 @@ fn rust_lawful_list_definition(
         id = f.id,
         alias = rust_lawful_list_alias(m, f),
         list = rust_owned_list(m, f, &entry),
-        bounds = crate::forge::codec_totality::list_bound_args(f),
+        bounds = crate::forge::codec_totality::list_bound_args(f, &m.fields),
     )))
 }
 
@@ -7301,11 +7287,15 @@ fn rust_owned_list(m: &CodecModel, f: &CodecField, entry: &str) -> String {
 }
 
 /// What the storage macro declares for a codec, into `ctx`: its tags in
-/// `fields`, and the two traits a site names. `{Codec}Storage` asks for those
+/// `fields`, and the three traits a site names. `{Codec}Storage` asks for those
 /// tags, for what each codec in `children` asks (named by the path of its type,
 /// a child under a build feature through a trait of its own), and for what the
 /// derives on the value need. `{Codec}From<'f>` asks the same of a decode of a
-/// frame of the lifetime `'f`.
+/// frame of the lifetime `'f`. `{Codec}LentStorage` asks of the profile `D`
+/// under `Lent<'a, D>` what the lent form hands it, its lists and its children's
+/// lists, since the lent form borrows every byte string and text from the frame
+/// (docs/adr/0077 §7): a byte string with no bound asks nothing of `D`, so the
+/// lent form at `Inline` holds a codec of one.
 pub(crate) fn insert_rust_storage(
     ctx: &mut serde_json::Map<String, serde_json::Value>,
     codec: &str,
@@ -7313,32 +7303,40 @@ pub(crate) fn insert_rust_storage(
     children: &[(String, Option<String>)],
 ) {
     let name = filters::to_pascal_case(codec.to_string());
-    let mut bound = vec!["::core::fmt::Debug + Clone + PartialEq".to_string()];
+    let derives = "::core::fmt::Debug + Clone + PartialEq".to_string();
+    let mut bound = vec![derives.clone()];
+    let mut lent_bound = vec![derives];
     let mut from_bound = vec![format!("{name}Storage")];
     for f in &fields {
         let kind = f["kind"].as_str().unwrap_or_default();
         let tag = f["tag"].as_str().unwrap_or_default();
         bound.push(format!("{RUNTIME_CODEC}::Holds{kind}<{tag}>"));
-        if kind != "List" {
+        if kind == "List" {
+            lent_bound.push(format!("{RUNTIME_CODEC}::HoldsList<{tag}>"));
+        } else {
             from_bound.push(format!("{RUNTIME_CODEC}::Stores{kind}<'f, {tag}>"));
         }
     }
     let mut gated = Vec::new();
     for (i, (child, cfg)) in children.iter().enumerate() {
         let child_bound = format!("{child}Storage");
+        let child_lent = format!("{child}LentStorage");
         let child_from = format!("{child}From<'f>");
         match cfg {
             None => {
                 bound.push(child_bound);
+                lent_bound.push(child_lent);
                 from_bound.push(child_from);
             }
             Some(cfg) => {
                 let helper = format!("{name}GatedChild{i}");
                 bound.push(helper.clone());
+                lent_bound.push(format!("{helper}Lent"));
                 from_bound.push(format!("{helper}From<'f>"));
                 gated.push(serde_json::json!({
                     "helper": helper,
                     "bound": child_bound,
+                    "lent_bound": child_lent,
                     "from_bound": child_from,
                     "cfg": cfg,
                     "cfg_off": cfg
@@ -7353,6 +7351,7 @@ pub(crate) fn insert_rust_storage(
     ctx.insert("storage_fields".into(), fields.into());
     ctx.insert("storage_gated".into(), gated.into());
     ctx.insert("storage_bound".into(), bound.join(" + ").into());
+    ctx.insert("storage_lent_bound".into(), lent_bound.join(" + ").into());
     ctx.insert("storage_from_bound".into(), from_bound.join(" + ").into());
 }
 
@@ -7395,7 +7394,7 @@ fn rust_lent_list(roles: &CodecRoles, m: &CodecModel, f: &CodecField, entry: &st
     format!(
         "{RUNTIME_CODEC}::Bounded<<{RUNTIME_CODEC}::Lent<'a> as {RUNTIME_CODEC}::HoldsList<{}>>::List<{entry}>, {}>",
         rust_storage_tag(&m.name, &f.id),
-        crate::forge::codec_totality::list_bound_args(f)
+        crate::forge::codec_totality::list_bound_args(f, &m.fields)
     )
 }
 
@@ -7440,13 +7439,13 @@ pub(crate) fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
         .iter()
         .filter_map(|f| {
             let (kind, capacity) = if f.is_repeat() || f.is_tlv_chain() {
-                ("List", f.storage_entries())
+                ("List", f.storage_entries(&m.fields))
             } else if f.is_embed() {
                 return None;
             } else {
                 match f.sce_type {
-                    SceType::String => ("Str", Some(f.storage_bytes())),
-                    SceType::Bytes => ("Bytes", Some(f.storage_bytes())),
+                    SceType::String => ("Str", f.storage_bytes(&m.fields)),
+                    SceType::Bytes => ("Bytes", f.storage_bytes(&m.fields)),
                     _ => return None,
                 }
             };
@@ -7503,7 +7502,7 @@ fn rust_owned_field_keys(
         // holds as a fact (docs/adr/0065 §6 R2): a growable profile's container
         // is not bounded by its capacity. A chain closed by an entry flag is
         // one entry or more (R7).
-        let bounds = crate::forge::codec_totality::list_bound_args(f);
+        let bounds = crate::forge::codec_totality::list_bound_args(f, &m.fields);
         let (entry, elem) = rust_owned_list_entry(f, &m.name, imports, l, origin)?;
         // A list held to its law is named by its alias, which says the same
         // type (docs/adr/0065 §6 R8).
@@ -7569,60 +7568,29 @@ fn rust_owned_field_keys(
                     "<{STORAGE_PARAM} as {RUNTIME_CODEC}::OriginStorage>::{}::<{tag}>",
                     if text { "str_from" } else { "bytes_from" }
                 );
-                let ctor = match crate::forge::codec_totality::byte_bound_args(f, &m.fields) {
-                    Some(bounds) => {
-                        let ty = format!("{RUNTIME_CODEC}::Bounded<{container}, {bounds}>");
-                        let built = if text {
-                            "from_built_text"
-                        } else {
-                            "from_built"
-                        };
-                        let ctor = if origin {
-                            let built = format!("{RUNTIME_CODEC}::Bounded::{built}");
-                            Ctor {
-                                call: Box::new(move |v| {
-                                    format!(
-                                        "{built}({origin_path}({ORIGIN_PARAM}, {v}.into_inner()))"
-                                    )
-                                }),
-                                point_free: None,
-                            }
-                        } else {
-                            let tag = tag.clone();
-                            Ctor {
-                                call: Box::new(move |v| {
-                                    format!("{v}.store::<{STORAGE_PARAM}, {tag}>()")
-                                }),
-                                point_free: None,
-                            }
-                        };
-                        (ty, ctor)
+                let bounds = crate::forge::codec_totality::byte_bound_args(f, &m.fields).expect(
+                    "a codec's byte string or text is a tail or length-ref field, which has bounds",
+                );
+                let ty = format!("{RUNTIME_CODEC}::Bounded<{container}, {bounds}>");
+                let built = if text {
+                    "from_built_text"
+                } else {
+                    "from_built"
+                };
+                let ctor = if origin {
+                    let built = format!("{RUNTIME_CODEC}::Bounded::{built}");
+                    Ctor {
+                        call: Box::new(move |v| {
+                            format!("{built}({origin_path}({ORIGIN_PARAM}, {v}.into_inner()))")
+                        }),
+                        point_free: None,
                     }
-                    None => {
-                        let ctor = if origin {
-                            Ctor {
-                                call: Box::new(move |v| {
-                                    format!("{origin_path}({ORIGIN_PARAM}, {v})")
-                                }),
-                                point_free: None,
-                            }
-                        } else {
-                            let path = format!(
-                                "<{STORAGE_PARAM} as {RUNTIME_CODEC}::Stores{kind}<'_, {tag}>>::store_{}",
-                                kind.to_lowercase()
-                            );
-                            Ctor {
-                                call: Box::new({
-                                    let path = path.clone();
-                                    move |v| format!("{path}({v})")
-                                }),
-                                point_free: Some(path),
-                            }
-                        };
-                        (container, ctor)
+                } else {
+                    Ctor {
+                        call: Box::new(move |v| format!("{v}.store::<{STORAGE_PARAM}, {tag}>()")),
+                        point_free: None,
                     }
                 };
-                let (ty, ctor) = ctor;
                 call_path = Some(ctor);
                 (ty, Conv::Qualified)
             }
@@ -7943,7 +7911,7 @@ fn rust_group_storage(
         // tested say which, so no construction can fail.
         let chain_built = |f: &CodecField, arm: &GroupArm, view: bool| -> String {
             let local = codec_field_decode_local(&f.id, l.lang);
-            let bound = crate::forge::codec_totality::list_bound_rust(f);
+            let bound = crate::forge::codec_totality::list_bound_rust(f, &m.fields);
             let list = if f.present_if.is_some() {
                 format!("{local}.expect(\"the gate found the chain\").into_inner()")
             } else {
@@ -8303,14 +8271,7 @@ fn rust_group_storage(
             &|f, src, dest| {
                 let mut value = f.clone();
                 value.present_if = None;
-                rust_as_borrowed_field_into_stmt(
-                    &value,
-                    &m.fields,
-                    &roles,
-                    imports,
-                    l,
-                    Some((src, dest)),
-                )
+                rust_as_borrowed_field_into_stmt(&value, &roles, imports, l, Some((src, dest)))
             },
             // An owned chain's entries re-borrowed into the builder's list.
             &|f, list| {
@@ -8465,8 +8426,6 @@ fn rust_as_borrowed_list_entry(imports: &[ImportContext], alias: &str) -> &'stat
 
 fn rust_as_borrowed_field_into_stmt(
     f: &CodecField,
-    // The codec's fields, which hold the field that carries `f`'s length.
-    fields: &[CodecField],
     // What the codec's value presents, which says whether a list is held to
     // the law of its entries' inputs (docs/adr/0065 §6 R8).
     roles: &CodecRoles,
@@ -8559,25 +8518,11 @@ fn rust_as_borrowed_field_into_stmt(
         return Ok(stmt);
     }
 
-    // Scalar. Bytes / String project to their borrowed `&` view through the
-    // storage container's read trait — the profile's container is opaque
-    // behind `S::Bytes<N>` / `S::Str<N>`, so the read goes through the trait
-    // that every profile implements rather than an inherent method. Every
-    // other scalar (ints / float / bool / enum) is `Copy`, so reading the
-    // field through `&self` yields a copy (`Option<Copy>` is itself Copy).
-    let read = |trait_name: &str, method: &str| {
-        let path = format!("{RUNTIME_CODEC}::{trait_name}::{method}");
-        if opt {
-            format!("{self_ref}.as_ref().map({path})")
-        } else if by_ref {
-            format!("{path}({self_ref})")
-        } else {
-            format!("{path}(&{self_ref})")
-        }
-    };
-    // A field held within its bound lends it through the `Bounded` around its
-    // container, with the bounds and no check (docs/adr/0077 §3).
-    let bounded = crate::forge::codec_totality::byte_bound(f, fields).is_some();
+    // Scalar. A byte string or text is held within its bounds, as a `Bounded`
+    // around the profile's container, and lends them with no check
+    // (docs/adr/0077 §3, §7). Every other scalar (ints / float / bool / enum)
+    // is `Copy`, so reading the field through `&self` yields a copy
+    // (`Option<Copy>` is itself Copy).
     let lend = |method: &str| {
         if opt {
             format!("{self_ref}.as_ref().map({RUNTIME_CODEC}::Bounded::{method})")
@@ -8586,10 +8531,8 @@ fn rust_as_borrowed_field_into_stmt(
         }
     };
     let expr = match f.sce_type {
-        SceType::Bytes if bounded => lend("as_bytes"),
-        SceType::String if bounded => lend("as_text"),
-        SceType::Bytes => read("SceByteBuf", "as_slice"),
-        SceType::String => read("SceStr", "as_str"),
+        SceType::Bytes => lend("as_bytes"),
+        SceType::String => lend("as_text"),
         _ if by_ref => format!("*{self_ref}"),
         _ => self_ref,
     };
@@ -8669,17 +8612,18 @@ fn render_codec(
         inline_encode,
     } = forms;
     if matches!(lang, crate::generator::Language::C11) {
-        c11_refuse_a_list_it_cannot_hold(m)?;
+        c11_refuse_a_field_it_cannot_hold(m)?;
     }
     // A Rust decode past a profile's capacity judges the frame by the view, or
     // by the codec's lent form where the tree has no views; the lent form holds
     // a list as `Inline` does, at its bound, and a list the protocol bounds by
-    // nothing has no such container (docs/adr/0077 §7).
+    // nothing has no such container (docs/adr/0077 §7). It borrows a byte
+    // string or text from the frame, so one with no bound needs no view.
     if matches!(lang, crate::generator::Language::Rust) && !views {
         if let Some(f) = m
             .fields
             .iter()
-            .find(|f| (f.is_repeat() || f.is_tlv_chain()) && f.declared_bound().is_none())
+            .find(|f| (f.is_repeat() || f.is_tlv_chain()) && f.bound(&m.fields).is_none())
         {
             return Err(GenerateError::unsupported(format!(
                 "codec '{}': the list `{}` states no bound, so a frame past a profile's capacity \
@@ -9047,7 +8991,7 @@ fn render_codec(
             // first byte is written. The condition is rendered once here and
             // the template emits it for every encode shape.
             if matches!(lang, crate::generator::Language::C11) {
-                if let Some(cond) = c11_over_bound_condition(&l.codec_field_id(&f.id), f) {
+                if let Some(cond) = c11_over_bound_condition(&l.codec_field_id(&f.id), f, &m.fields) {
                     obj.insert("c_over_bound_cond".into(), cond.into());
                     // The error a decode of that frame gives (docs/adr/0058
                     // law 3, docs/adr/0077 §4), named once for every backend.
@@ -9109,7 +9053,7 @@ fn render_codec(
                     // backends own their elements. Applied at type
                     // positions only (`::decode` calls stay bare).
                     let body_lt = rust_codec_body_lifetime(lang, imports, alias);
-                    let max_count = f.storage_entries();
+                    let max_count = f.storage_entries(&m.fields);
                     obj.insert("max_count".into(), max_count.into());
                     obj.insert("repeat_body_type".into(), body_type.clone().into());
                     obj.insert("repeat_body_decoder".into(), body_decoder.clone().into());
@@ -9185,7 +9129,7 @@ fn render_codec(
                             // list that was on the wire and empty is a value.
                             crate::generator::Language::C11 => {
                                 obj.insert("c_gated_optional".into(), true.into());
-                                c11_gated_list_member(&body_type, c11_held_entries(f))
+                                c11_gated_list_member(&body_type, c11_held_entries(f, &m.fields))
                             }
                         }
                     } else {
@@ -9254,6 +9198,7 @@ fn render_codec(
                                 &walk,
                                 repeat_thread.inputs.len(),
                                 f,
+                                &m.fields,
                                 law.as_deref(),
                             )
                             .into(),
@@ -9320,7 +9265,7 @@ fn render_codec(
                     obj.insert("bit_size_kind".into(), "tlv-chain".into());
                     // What a form that stores the chain holds, which the walk
                     // of the frame does not read (docs/adr/0077 §7).
-                    let held = f.storage_entries();
+                    let held = f.storage_entries(&m.fields);
                     obj.insert("max_depth".into(), held.into());
                     let alias = f
                         .tlv_chain_body_alias
@@ -9388,7 +9333,7 @@ fn render_codec(
                         (crate::generator::Language::C11, false) => body_type.clone(),
                         (crate::generator::Language::C11, true) => {
                             obj.insert("c_gated_optional".into(), true.into());
-                            c11_gated_list_member(&body_type, c11_held_entries(f))
+                            c11_gated_list_member(&body_type, c11_held_entries(f, &m.fields))
                         }
                     };
                     obj.insert(type_key.into(), wrapped.into());
@@ -9493,6 +9438,7 @@ fn render_codec(
                                 &walk,
                                 entry_thread.inputs.len(),
                                 f,
+                                &m.fields,
                                 law.as_deref(),
                             )
                             .into(),
@@ -9693,7 +9639,7 @@ fn render_codec(
                         obj.insert("kt_default".into(), kt_default.into());
                     }
                 } else {
-                    let resolved = f.storage_bytes();
+                    let resolved = f.storage_bytes(&m.fields);
                     obj.insert("max_size".into(), resolved.into());
                     let kind = match &f.bit_size {
                         BitSize::Tail => "tail",
@@ -10098,7 +10044,9 @@ fn render_codec(
                         // one over the bytes and their length.
                         crate::generator::Language::C11 => {
                             let held = match &f.sce_type {
-                                SceType::Bytes | SceType::String => c11_gated_bytes_optional(f),
+                                SceType::Bytes | SceType::String => {
+                                    c11_gated_bytes_optional(f, &m.fields)
+                                }
                                 scalar => l.c11_codec_optional(scalar, None),
                             };
                             obj.insert("c_gated_optional".into(), true.into());
@@ -10167,7 +10115,7 @@ fn render_codec(
                 // borrowed view. Consumed by the same owned-projection
                 // template block.
                 let rs_as_borrowed_into_stmt =
-                    rust_as_borrowed_field_into_stmt(f, &m.fields, &roles, imports, &l, None)?;
+                    rust_as_borrowed_field_into_stmt(f, &roles, imports, &l, None)?;
                 obj.insert(
                     "rs_as_borrowed_into_stmt".into(),
                     rs_as_borrowed_into_stmt.into(),
@@ -17247,7 +17195,7 @@ fn present_if_decode_tail(
             let id_snake = filters::to_snake_case(id.to_string());
             let room = c11_storage_check(field, fields, "        ");
             let test = present_if_test_literal(fields, p, lang);
-            let none = c11_gated_bytes_optional(field).none();
+            let none = c11_gated_bytes_optional(field, fields).none();
             format!(
                 "if ({test}) {{\n        \
                      size_t _n = sce_forge_cursor_remaining(cursor);\n        \
@@ -17492,7 +17440,7 @@ fn present_if_decode_length_ref(
         (Language::C11, Some(p)) => {
             let id_snake = filters::to_snake_case(id.to_string());
             let test = present_if_test_literal(fields, p, lang);
-            let none = c11_gated_bytes_optional(field).none();
+            let none = c11_gated_bytes_optional(field, fields).none();
             format!(
                 "if ({test}) {{\n        \
                      {count}\n        \
@@ -17772,7 +17720,7 @@ fn present_if_decode_string_length_ref(
             let id_snake = filters::to_snake_case(id.to_string());
             let room = c11_storage_check(field, fields, "        ");
             let test = present_if_test_literal(fields, p, lang);
-            let none = c11_gated_bytes_optional(field).none();
+            let none = c11_gated_bytes_optional(field, fields).none();
             format!(
                 "if ({test}) {{\n        \
                      {count}\n        \
@@ -18173,32 +18121,52 @@ fn repeat_room_guard(
         .full_stmt(lang, len, indent)
 }
 
-/// C11 holds every list in an array of its capacity, so a list the protocol
-/// states no bound of and the deployment gives no capacity has no array, and
-/// the codec is refused naming it (docs/adr/0077 §7). The other backends grow.
-fn c11_refuse_a_list_it_cannot_hold(m: &CodecModel) -> Result<(), ForgeError> {
-    match m
+/// C11 holds every list, byte string and text in an array of its capacity, so
+/// such a field the protocol states no bound of and the deployment gives no
+/// capacity has no array, and the codec is refused naming it (docs/adr/0077
+/// §7). The other backends grow.
+fn c11_refuse_a_field_it_cannot_hold(m: &CodecModel) -> Result<(), ForgeError> {
+    let unheld = m
         .fields
         .iter()
-        .find(|f| (f.is_repeat() || f.is_tlv_chain()) && f.storage_entries().is_none())
-    {
-        Some(f) => Err(crate::forge::error::ValidationError::CodecCapacityInvalid {
-            codec: m.name.clone(),
-            field: f.id.clone(),
-            rule: "the protocol states no bound of this list, and C11 holds every list in an \
-                   array of its capacity, so the deployment gives it one"
-                .to_string(),
+        .find(|f| f.takes_capacity() && f.storage_held(&m.fields).is_none());
+    match unheld {
+        Some(f) => {
+            let what = if f.is_repeat() || f.is_tlv_chain() {
+                "list"
+            } else if matches!(f.sce_type, SceType::String) {
+                "text"
+            } else {
+                "byte string"
+            };
+            Err(crate::forge::error::ValidationError::CodecCapacityInvalid {
+                codec: m.name.clone(),
+                field: f.id.clone(),
+                rule: format!(
+                    "the protocol states no bound of this {what}, and C11 holds every {what} in \
+                     an array of its capacity, so the deployment gives it one"
+                ),
+            }
+            .into())
         }
-        .into()),
         None => Ok(()),
     }
 }
 
-/// The entries C11's array holds of the list `f`, which
-/// [`c11_refuse_a_list_it_cannot_hold`] has seen to be some number.
-fn c11_held_entries(f: &CodecField) -> u32 {
-    f.storage_entries()
+/// The entries C11's array holds of the list `f` of the codec whose fields are
+/// `fields`, which [`c11_refuse_a_field_it_cannot_hold`] has seen to be some
+/// number.
+fn c11_held_entries(f: &CodecField, fields: &[CodecField]) -> u32 {
+    f.storage_entries(fields)
         .expect("C11 refuses a list it holds no number of before it renders the codec")
+}
+
+/// The bytes C11's array holds of the byte string or text `f` of the codec
+/// whose fields are `fields`, which [`c11_refuse_a_field_it_cannot_hold`] has
+/// seen to be some number.
+fn c11_held_bytes(f: &CodecField, fields: &[CodecField]) -> u32 {
+    f.storage_bytes(fields)
+        .expect("C11 refuses a byte string it holds no number of before it renders the codec")
 }
 
 /// C11's check that a list's count `n` fits the array that holds it, where
@@ -18208,7 +18176,7 @@ fn c11_held_entries(f: &CodecField) -> u32 {
 ///
 /// Without a capacity the array holds the declared bound, so the count guard
 /// has proved it; a list with neither is refused before the codec renders
-/// ([`c11_refuse_a_list_it_cannot_hold`]).
+/// ([`c11_refuse_a_field_it_cannot_hold`]).
 fn c11_list_storage_check(field: &CodecField, n: &str, indent: &str) -> String {
     match field.capacity {
         Some(capacity) => {
@@ -18273,11 +18241,8 @@ fn length_block_indent(lang: crate::generator::Language, gated: bool) -> &'stati
 /// whose declared bound is its array's needs none. Followed by a newline and
 /// `indent`, or empty.
 fn c11_storage_check(field: &CodecField, fields: &[CodecField], indent: &str) -> String {
-    let capacity = u64::from(field.storage_bytes());
-    let proven = field
-        .length_bound(fields)
-        .and_then(|b| b.max)
-        .is_some_and(|max| max <= capacity);
+    let capacity = u64::from(c11_held_bytes(field, fields));
+    let proven = field.bound(fields).is_some_and(|max| max <= capacity);
     if proven {
         String::new()
     } else {
@@ -20401,19 +20366,16 @@ fn encode_bound_guard_lines(
         let Some(kind) = BoundKind::of(field) else {
             continue;
         };
-        // The most is `None` for a list the protocol bounds by nothing, which
-        // no count refuses (docs/adr/0077 §7).
+        // The most is `None` for a field the protocol bounds by nothing, which
+        // no length or count refuses (docs/adr/0077 §7).
         let (least, most) = match kind {
             BoundKind::Length => match codec_totality::byte_bound(field, fields) {
-                Some(bound) => (
-                    bound.min,
-                    Some(bound.max.expect("a byte bound has a largest length")),
-                ),
+                Some(bound) => (bound.min, bound.max),
                 None => continue,
             },
             BoundKind::Count => (
                 codec_totality::list_least(field),
-                codec_totality::list_bound(field),
+                codec_totality::list_bound(field, fields),
             ),
         };
         if least == 0 && most.is_none() {
@@ -31447,11 +31409,12 @@ fn c11_gated_list_member(body_type: &str, max: u32) -> String {
 /// a TLV chain `max-depth`, each as `<id>[bound]` beside `<id>_len`, or as the
 /// optional value of that pair where the field is gated by `sce:present-if`, in
 /// which case an absent field has no length to refuse. A field that holds no
-/// array (a number, an embedded body) has no such condition.
-fn c11_over_bound_condition(id: &str, field: &CodecField) -> Option<String> {
+/// array (a number, an embedded body) has no such condition. `fields` is the
+/// codec's field list.
+fn c11_over_bound_condition(id: &str, field: &CodecField, fields: &[CodecField]) -> Option<String> {
     let bound = match &field.bit_size {
-        BitSize::Tail | BitSize::LengthRef => field.storage_bytes(),
-        BitSize::Repeat { .. } | BitSize::TlvChain { .. } => c11_held_entries(field),
+        BitSize::Tail | BitSize::LengthRef => c11_held_bytes(field, fields),
+        BitSize::Repeat { .. } | BitSize::TlvChain { .. } => c11_held_entries(field, fields),
         BitSize::Fixed { .. } | BitSize::Vle { .. } | BitSize::Embed => return None,
     };
     if field.present_if.is_some() {
@@ -31493,8 +31456,9 @@ fn c11_optional_declared(held: &str, present: &SceType, alias: &str) -> C11Optio
 /// the bytes and the length of the value, over the bound the field is held to. A
 /// text is held as its UTF-8 bytes and their length, as an ungated one is: the
 /// buffer is not NUL-terminated, so a text of the whole bound is a value.
-fn c11_gated_bytes_optional(field: &CodecField) -> C11Optional {
-    let bound = field.storage_bytes();
+/// `fields` is the codec's field list.
+fn c11_gated_bytes_optional(field: &CodecField, fields: &[CodecField]) -> C11Optional {
+    let bound = c11_held_bytes(field, fields);
     c11_optional_declared(
         &crate::forge::static_lowering::c_bytes_storage_type(bound),
         &SceType::Bytes,

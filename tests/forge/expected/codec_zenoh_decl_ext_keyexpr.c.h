@@ -15,7 +15,7 @@
 #include "codec_zenoh_decl_ext_keyexpr_inner.h"
 
 #define CODEC_ZENOH_DECL_EXT_KEYEXPR_MIN_BYTES 1
-#define CODEC_ZENOH_DECL_EXT_KEYEXPR_MAX_BYTES 266
+#define CODEC_ZENOH_DECL_EXT_KEYEXPR_MAX_BYTES 148
 
 typedef struct {
     uint8_t outer_header;

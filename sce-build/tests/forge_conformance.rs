@@ -5768,6 +5768,206 @@ fn what_cannot_hold_a_list_with_no_bound_refuses_it() {
     }
 }
 
+/// A text whose length a `u8` carries and a byte string to the end of the
+/// frame, neither with a `sce:max-size` (docs/adr/0077 §7): the text is bounded
+/// by the width of its length, 255, and the byte string by nothing.
+const OPEN_BYTES: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_open_bytes">
+  <datamodel>
+    <sce:field id="name_len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="name" sce:type="string" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="name_len"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="2" sce:bit-size="tail"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A byte string the protocol states no bound of has none, and one whose length
+/// a field carries is bounded by that field's width (docs/adr/0077 §1, §7). The
+/// lent form borrows both from the frame at `Inline`, which holds the text at
+/// 255 and has no container for the byte string; a growing profile holds what
+/// the frame holds and writes it back; a deployment holds the byte string at
+/// the capacity it gives, and refuses past it with `CapacityExceeded`. A tree
+/// with no views takes it, since the lent form that judges a frame past a
+/// capacity borrows it.
+#[test]
+fn a_byte_string_with_no_bound_reads_what_its_frame_holds() {
+    const HARNESS: &str = r#"// Injected by a_byte_string_with_no_bound_reads_what_its_frame_holds.
+#[cfg(test)]
+mod tests {
+    use crate::codec_open_bytes::{CodecOpenBytes, CodecOpenBytesIn};
+    use crate::narrow::Narrow;
+    use ::sce_forge_runtime::codec::{CodecError, Heap, SceCursor};
+
+    // A text of `name` bytes and a payload of `payload` bytes, past the 256 a
+    // default once held a byte string with no bound to.
+    fn frame(name: usize, payload: usize) -> Vec<u8> {
+        let mut frame = vec![name as u8];
+        frame.extend(std::iter::repeat_n(b'n', name));
+        frame.extend((0..payload).map(|n| n as u8));
+        frame
+    }
+
+    #[test]
+    fn the_lent_form_at_inline_borrows_every_byte() {
+        let frame = frame(255, 300);
+        let lent = CodecOpenBytes::decode(&mut SceCursor::new(&frame)).expect("lent");
+        assert_eq!(lent.name.len(), 255);
+        assert_eq!(lent.payload.len(), 300);
+    }
+
+    #[test]
+    fn a_growing_profile_holds_every_byte_and_writes_it_back() {
+        let frame = frame(255, 300);
+        let held = CodecOpenBytesIn::<Heap>::decode(&mut SceCursor::new(&frame)).expect("held");
+        assert_eq!(held.payload.as_bytes().len(), 300);
+        assert_eq!(held.encode_to_vec(), frame);
+    }
+
+    #[test]
+    fn a_deployment_holds_its_capacity_and_refuses_past_it() {
+        let held = CodecOpenBytesIn::<Narrow>::decode(&mut SceCursor::new(&frame(3, 4)))
+            .expect("four bytes");
+        assert_eq!(held.payload.as_bytes().len(), 4);
+        assert_eq!(
+            CodecOpenBytesIn::<Narrow>::decode(&mut SceCursor::new(&frame(3, 5))).err(),
+            Some(CodecError::CapacityExceeded)
+        );
+    }
+}
+"#;
+    use sce_build::generator::Language;
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let path = dir.path().join("codec_open_bytes.scxml");
+    std::fs::write(&path, OPEN_BYTES).expect("write");
+    let mut files = generate_files_for_codec_set_with(
+        dir.path(),
+        &["codec_open_bytes.scxml"],
+        Language::Rust,
+        golden_options(Language::Rust),
+    )
+    .expect("a tree with no views generates a byte string with no bound");
+    let codec = &files
+        .iter()
+        .find(|(name, _)| name.contains("codec_open_bytes"))
+        .expect("the codec's file")
+        .1;
+    assert!(
+        codec.contains("Bytes<'a, { usize::MAX }>"),
+        "a byte string with no bound has one shape: {codec}"
+    );
+    assert!(
+        codec.contains("Text<'a, 255>"),
+        "a text bounded by its length's width: {codec}"
+    );
+    assert!(
+        codec.contains("InlineStr<255>"),
+        "Inline holds the text at its bound: {codec}"
+    );
+    assert!(
+        codec.contains("`Inline` does not answer for `payload`"),
+        "Inline holds no byte string with no bound: {codec}"
+    );
+    let capacities = [(
+        "codec_open_bytes".to_string(),
+        [("payload".to_string(), 4)].into(),
+    )]
+    .into();
+    let deployment = sce_build::forge::deployment::RustDeployment {
+        name: "Narrow".to_string(),
+        capacities,
+        gates: Default::default(),
+        source: "deploy.yaml".to_string(),
+    };
+    let output = sce_build::compile_rust_deployment(
+        &[path.as_path()],
+        &deployment,
+        &golden_options(Language::Rust),
+    )
+    .expect("the deployment generates");
+    files.extend(output.files);
+    files.push(("open_bytes.rs".to_string(), HARNESS.to_string()));
+    rustc_run_generated_set(files, "open_bytes", "test", RustcProfile::Alloc)
+        .expect("a byte string with no bound reads what its frame holds");
+}
+
+/// What cannot hold a byte string the protocol states no bound of says so,
+/// naming it (docs/adr/0077 §7): a C11 tree with no capacity for it, since C11
+/// holds every byte string in an array, and a deployment that gives it none.
+/// The other backends grow, and read it to the end of the frame. (Swift writes
+/// no text of variable length, and refuses the document for that.)
+#[test]
+fn what_cannot_hold_a_byte_string_with_no_bound_refuses_it() {
+    use sce_build::forge::diagnostic::SingleDiagnostic;
+    use sce_build::generator::Language;
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let path = dir.path().join("codec_open_bytes.scxml");
+    std::fs::write(&path, OPEN_BYTES).expect("write");
+    let compile = |language: Language, opts: sce_build::ForgeCompileOptions| {
+        sce_build::compile_forge_with_imports(
+            OPEN_BYTES,
+            sce_build::DocumentLabel::symmetric("codec_open_bytes"),
+            language,
+            dir.path(),
+            &opts,
+        )
+    };
+    let refused = compile(Language::C11, golden_options(Language::C11))
+        .err()
+        .expect("C11 refuses a byte string it holds no number of");
+    assert_eq!(
+        refused.diagnostic_payload().code.as_str(),
+        "codec/capacity-invalid"
+    );
+    assert!(
+        refused.to_string().contains("'codec_open_bytes.payload'"),
+        "{refused}"
+    );
+    assert!(
+        refused.to_string().contains("C11 holds every byte string"),
+        "{refused}"
+    );
+    let mut held = golden_options(Language::C11);
+    held.codec_capacities = [(
+        "codec_open_bytes".to_string(),
+        [("payload".to_string(), 8)].into(),
+    )]
+    .into();
+    let header = compile(Language::C11, held).expect("C11 holds a capacity it is given");
+    let header = &header.files[0].1;
+    assert!(header.contains("payload[8];"), "{header}");
+    assert!(header.contains("name[255];"), "{header}");
+
+    let deployment = sce_build::forge::deployment::RustDeployment {
+        name: "Bare".to_string(),
+        source: "deploy.yaml".to_string(),
+        ..Default::default()
+    };
+    match sce_build::compile_rust_deployment(
+        &[path.as_path()],
+        &deployment,
+        &golden_options(Language::Rust),
+    ) {
+        Err(sce_build::forge::deployment::RustDeploymentError::Refused(e)) => {
+            assert!(e.to_string().contains("'codec_open_bytes.payload'"), "{e}");
+            assert!(e.to_string().contains("needs a capacity"), "{e}");
+        }
+        Err(other) => panic!("a deployment with no capacity for an open byte string: {other}"),
+        Ok(_) => panic!("a deployment with no capacity for an open byte string is refused"),
+    }
+
+    for language in [
+        Language::Cpp,
+        Language::Kotlin,
+        Language::Go,
+        Language::Python,
+    ] {
+        compile(language, golden_options(language))
+            .unwrap_or_else(|e| panic!("{language:?} grows a byte string with no bound: {e}"));
+    }
+}
+
 /// A field's place in the document is its place on the wire, whichever element
 /// declares it. Read a `<data>` before every `<sce:flags>`, and a codec that
 /// mixes them decodes its header from the frame's second byte with no error.

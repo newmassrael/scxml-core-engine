@@ -28,6 +28,14 @@ pub trait CodecZenohUndeclQueryableStorage: ::core::fmt::Debug + Clone + Partial
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprStorage> CodecZenohUndeclQueryableStorage for S {}
 
+/// What `CodecZenohUndeclQueryableIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohUndeclQueryable` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohUndeclQueryableLentStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprLentStorage> CodecZenohUndeclQueryableLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohUndeclQueryableStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -145,7 +153,7 @@ impl<S: CodecZenohUndeclQueryableStorage> CodecZenohUndeclQueryableIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 261;
+    pub const MAX_ENCODED_BYTES: usize = 153;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -338,7 +346,7 @@ impl CodecZenohUndeclQueryableWire {
 // frame gives where bytes and text borrow it, `CodecZenohUndeclQueryable<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohUndeclQueryableIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohUndeclQueryableStorage {
+impl<'a, D> CodecZenohUndeclQueryableIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohUndeclQueryableLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohUndeclQueryableOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

@@ -46,6 +46,14 @@ pub trait CodecOriginEnvelopeStorage: ::core::fmt::Debug + Clone + PartialEq + :
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsStr<CodecOriginEnvelopeNoteField> + ::sce_forge_runtime::codec::HoldsList<CodecOriginEnvelopeItemsField> + super::codec_origin_leaf::CodecOriginLeafStorage> CodecOriginEnvelopeStorage for S {}
 
+/// What `CodecOriginEnvelopeIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecOriginEnvelope` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecOriginEnvelopeLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecOriginEnvelopeItemsField> + super::codec_origin_leaf::CodecOriginLeafLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecOriginEnvelopeItemsField> + super::codec_origin_leaf::CodecOriginLeafLentStorage> CodecOriginEnvelopeLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecOriginEnvelopeStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -230,7 +238,7 @@ impl<S: CodecOriginEnvelopeStorage> CodecOriginEnvelopeIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 583;
+    pub const MAX_ENCODED_BYTES: usize = 105;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -468,7 +476,7 @@ impl CodecOriginEnvelopeWire {
 // frame gives where bytes and text borrow it, `CodecOriginEnvelope<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecOriginEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginEnvelopeStorage {
+impl<'a, D> CodecOriginEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginEnvelopeLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecOriginEnvelopeOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
@@ -555,7 +563,7 @@ impl<S: CodecOriginEnvelopeStorage> CodecOriginEnvelopeOwned<S> {
 }
 
 #[allow(dead_code)]
-impl<'a, D> CodecOriginEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginEnvelopeStorage {
+impl<'a, D> CodecOriginEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecOriginEnvelopeLentStorage {
     /// Project this borrowed view into an owned [`CodecOriginEnvelopeOwned`]
     /// whose byte and text containers are made by the profile's
     /// `OriginStorage` from each slice AND `origin`, the buffer the

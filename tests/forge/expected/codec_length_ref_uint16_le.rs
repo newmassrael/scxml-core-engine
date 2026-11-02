@@ -36,6 +36,14 @@ pub trait CodecLengthRefUint16LeStorage: ::core::fmt::Debug + Clone + PartialEq 
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecLengthRefUint16LePayloadField>> CodecLengthRefUint16LeStorage for S {}
 
+/// What `CodecLengthRefUint16LeIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecLengthRefUint16Le` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecLengthRefUint16LeLentStorage: ::core::fmt::Debug + Clone + PartialEq {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq> CodecLengthRefUint16LeLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecLengthRefUint16LeStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -334,7 +342,7 @@ impl CodecLengthRefUint16LeWire {
 // frame gives where bytes and text borrow it, `CodecLengthRefUint16Le<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecLengthRefUint16LeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecLengthRefUint16LeStorage {
+impl<'a, D> CodecLengthRefUint16LeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecLengthRefUint16LeLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecLengthRefUint16LeOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

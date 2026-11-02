@@ -1277,7 +1277,7 @@
           ]
         },
         "max_count": {
-          "description": "RFC §synth-5-B B2 maximum element count for `BitSize::Repeat` fields — used by encode-buffer sizing to bound `min_frame + count * element_max`. Defaults to [`crate::forge::limits::REPEAT_DEFAULT_MAX_COUNT`] when absent (mirrors `max_size`'s fallback for Tail/LengthRef bytes).",
+          "description": "RFC §synth-5-B B2 maximum element count for `BitSize::Repeat` fields, as the document states it. `None` where the protocol states none; the list's bound is then the width of its count, or nothing ([`CodecField::bound`], docs/adr/0077 §7).",
           "format": "uint32",
           "minimum": 0.0,
           "type": [

@@ -19,14 +19,9 @@ mutation_oracles sce-build/tests/forge_conformance.rs
 
 mutation_case "a list holds its bound whatever the deployment says" <<'PY'
 edit("sce-build/src/forge/model.rs",
-     r'''        self.capacity.or(match &self.bit_size {
-            BitSize::TlvChain { max_depth, .. } => *max_depth,
-            _ => self.max_count,
-        })''',
-     r'''        match &self.bit_size {
-            BitSize::TlvChain { max_depth, .. } => *max_depth,
-            _ => self.max_count,
-        }''')
+     r'''        self.capacity
+            .or_else(|| self.bound(fields).and_then(|b| u32::try_from(b).ok()))''',
+     r'''        self.bound(fields).and_then(|b| u32::try_from(b).ok())''')
 PY
 
 mutation_case "a full list says its frame is malformed" <<'PY'

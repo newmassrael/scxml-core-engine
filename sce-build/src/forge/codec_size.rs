@@ -257,7 +257,7 @@ fn positional_fields(m: &CodecModel) -> Result<u64, Unbounded> {
         if m.has_dma_aligned_fields() {
             written = written.max(u64::from(field.byte_offset));
         }
-        written = written.saturating_add(payload_bytes(field)?);
+        written = written.saturating_add(payload_bytes(field, &m.fields)?);
     }
     Ok(written)
 }
@@ -269,23 +269,27 @@ fn streamed_fields(codec: &SizedCodec) -> Result<u64, Unbounded> {
         let site = format!("field '{}'", field.id);
         let bytes = match &field.bit_size {
             BitSize::Fixed { bits } => u64::from(bits.div_ceil(8)),
-            BitSize::Tail | BitSize::LengthRef => payload_bytes(field)?,
+            BitSize::Tail | BitSize::LengthRef => payload_bytes(field, &codec.model.fields)?,
             BitSize::Vle { width_bits } => u64::from(vle_cap_bytes(*width_bits)),
             BitSize::Repeat { .. } => {
-                let count = field.max_count.ok_or_else(|| Unbounded::Missing {
-                    subject: format!("field '{}' (a <sce:repeat>)", field.id),
-                    declaration: "max-count",
-                })?;
+                let count = field
+                    .bound(&codec.model.fields)
+                    .ok_or_else(|| Unbounded::Missing {
+                        subject: format!("field '{}' (a <sce:repeat>)", field.id),
+                        declaration: "max-count",
+                    })?;
                 let alias = field.repeat_body_alias.as_deref().unwrap_or_default();
-                body_bytes(codec, &site, alias)?.saturating_mul(u64::from(count))
+                body_bytes(codec, &site, alias)?.saturating_mul(count)
             }
-            BitSize::TlvChain { max_depth, .. } => {
-                let depth = max_depth.ok_or_else(|| Unbounded::Missing {
-                    subject: format!("field '{}' (a <sce:tlv-chain>)", field.id),
-                    declaration: "max-depth",
-                })?;
+            BitSize::TlvChain { .. } => {
+                let depth = field
+                    .bound(&codec.model.fields)
+                    .ok_or_else(|| Unbounded::Missing {
+                        subject: format!("field '{}' (a <sce:tlv-chain>)", field.id),
+                        declaration: "max-depth",
+                    })?;
                 let alias = field.tlv_chain_body_alias.as_deref().unwrap_or_default();
-                body_bytes(codec, &site, alias)?.saturating_mul(u64::from(depth))
+                body_bytes(codec, &site, alias)?.saturating_mul(depth)
             }
             BitSize::Embed => {
                 let alias = field.embed_body_alias.as_deref().unwrap_or_default();
@@ -297,19 +301,18 @@ fn streamed_fields(codec: &SizedCodec) -> Result<u64, Unbounded> {
     Ok(total)
 }
 
-/// A `tail` or `length-ref` payload at its declared `sce:max-size`.
-fn payload_bytes(field: &CodecField) -> Result<u64, Unbounded> {
-    field
-        .max_size
-        .map(u64::from)
-        .ok_or_else(|| Unbounded::Missing {
-            subject: format!(
-                "field '{}' (sce:bit-size=\"{}\")",
-                field.id,
-                field.bit_size.as_attr()
-            ),
-            declaration: "sce:max-size",
-        })
+/// A `tail` or `length-ref` payload at its bound ([`CodecField::bound`]): its
+/// `sce:max-size` met with what the field that carries its length can say.
+/// `fields` is the codec's field list.
+fn payload_bytes(field: &CodecField, fields: &[CodecField]) -> Result<u64, Unbounded> {
+    field.bound(fields).ok_or_else(|| Unbounded::Missing {
+        subject: format!(
+            "field '{}' (sce:bit-size=\"{}\")",
+            field.id,
+            field.bit_size.as_attr()
+        ),
+        declaration: "sce:max-size",
+    })
 }
 
 /// The bound of the codec the import `alias` names, held at `site`.
@@ -924,11 +927,30 @@ mod tests {
         }
     }
 
+    /// A payload with no `sce:max-size` is bounded by the width of its length
+    /// (docs/adr/0077 §1, §7): a `uint8` length says at most 255 bytes.
     #[test]
-    fn a_length_ref_payload_without_a_max_size_is_refused_by_name() {
+    fn a_length_ref_payload_without_a_max_size_counts_at_its_lengths_width() {
         let xml = positional_xml(
             "",
             r#"<data id="len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="body" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+          sce:length-field="len" sce:max-size="8"/>"#,
+        );
+        assert_eq!(
+            largest_encoded_bytes(&without_bound(&xml, "body", Vec::new())),
+            Ok(1 + 255)
+        );
+    }
+
+    /// A payload whose length a VLE `uint64` carries and that states no
+    /// `sce:max-size` has a bound past `u32::MAX`, which is held as none, and
+    /// is refused naming the field and the declaration that bounds it.
+    #[test]
+    fn a_length_ref_payload_bounded_by_nothing_is_refused_by_name() {
+        let xml = positional_xml(
+            "",
+            r#"<data id="len" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
     <data id="body" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
           sce:length-field="len" sce:max-size="8"/>"#,
         );

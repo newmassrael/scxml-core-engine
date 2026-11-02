@@ -38,6 +38,14 @@ pub trait CodecRepeatFlagGatedStorage: ::core::fmt::Debug + Clone + PartialEq + 
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatFlagGatedEntriesField>> CodecRepeatFlagGatedStorage for S {}
 
+/// What `CodecRepeatFlagGatedIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecRepeatFlagGated` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecRepeatFlagGatedLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatFlagGatedEntriesField> {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatFlagGatedEntriesField>> CodecRepeatFlagGatedLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecRepeatFlagGatedStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -428,7 +436,7 @@ impl CodecRepeatFlagGatedWire {
 // frame gives where bytes and text borrow it, `CodecRepeatFlagGated<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecRepeatFlagGatedIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecRepeatFlagGatedStorage {
+impl<'a, D> CodecRepeatFlagGatedIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecRepeatFlagGatedLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecRepeatFlagGatedOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

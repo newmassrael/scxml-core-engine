@@ -36,6 +36,14 @@ pub trait CodecScoutZidBodyStorage: ::core::fmt::Debug + Clone + PartialEq + ::s
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecScoutZidBodyZidField>> CodecScoutZidBodyStorage for S {}
 
+/// What `CodecScoutZidBodyIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecScoutZidBody` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecScoutZidBodyLentStorage: ::core::fmt::Debug + Clone + PartialEq {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq> CodecScoutZidBodyLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecScoutZidBodyStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -333,7 +341,7 @@ impl CodecScoutZidBodyWire {
 // frame gives where bytes and text borrow it, `CodecScoutZidBody<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecScoutZidBodyIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecScoutZidBodyStorage {
+impl<'a, D> CodecScoutZidBodyIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecScoutZidBodyLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecScoutZidBodyOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

@@ -16,7 +16,7 @@
 #include "codec_zenoh_decl_ext_keyexpr.h"
 
 #define CODEC_ZENOH_UNDECL_QUERYABLE_MIN_BYTES 0
-#define CODEC_ZENOH_UNDECL_QUERYABLE_MAX_BYTES 261
+#define CODEC_ZENOH_UNDECL_QUERYABLE_MAX_BYTES 153
 
 typedef struct {
     uint32_t id;

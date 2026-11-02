@@ -46,6 +46,14 @@ pub trait CodecZenohValueZbufStorage: ::core::fmt::Debug + Clone + PartialEq + :
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueZbufValueField> + ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField> + super::codec_zenoh_value_slice::CodecZenohValueSliceStorage> CodecZenohValueZbufStorage for S {}
 
+/// What `CodecZenohValueZbufIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohValueZbuf` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohValueZbufLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField> + super::codec_zenoh_value_slice::CodecZenohValueSliceLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField> + super::codec_zenoh_value_slice::CodecZenohValueSliceLentStorage> CodecZenohValueZbufLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohValueZbufStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -448,7 +456,7 @@ impl CodecZenohValueZbufWire {
 // frame gives where bytes and text borrow it, `CodecZenohValueZbuf<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohValueZbufIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohValueZbufStorage {
+impl<'a, D> CodecZenohValueZbufIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohValueZbufLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohValueZbufOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

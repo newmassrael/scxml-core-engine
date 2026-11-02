@@ -1,0 +1,71 @@
+# Mutation cases for "a byte string states its bound only where the protocol does".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_byte_string_states_its_bound_only_where_the_protocol_does.cases`.
+#
+# A `tail` or `length-ref` with no `sce:max-size` is bounded by the width of the
+# field that carries its length, or by nothing (docs/adr/0077 §1, §7): Rust holds
+# it as `Bytes<'a, { usize::MAX }>` or at that width, the lent form borrows it at
+# any profile, and what cannot hold it (`Inline`, a deployment with no capacity
+# for it, C11 with none) says so by name. A defect here is a field cut at a
+# number no document states, a frame size counted from a number that is not the
+# body's, or a form that compiles holding a byte string it cannot hold.
+#
+# The oracle is `sce-build/tests/forge_conformance.rs`: a text of 255 bytes and a
+# payload of 300 read by the lent form at `Inline`, by a growing profile and by a
+# deployment of four, the refusals of each form that cannot hold them, and the
+# goldens' largest frame of every codec that embeds a body.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test forge_conformance
+mutation_targets sce-build/src/forge/model.rs sce-build/src/forge/generator.rs
+mutation_oracles sce-build/tests/forge_conformance.rs
+
+# A bound read off the document alone calls a text whose length a `u8` carries
+# unbounded. Killed by `a_byte_string_with_no_bound_reads_what_its_frame_holds`
+# (`Text<'a, 255>`, `InlineStr<255>`).
+mutation_case "a bound ignores the width of its length" <<'PY'
+edit("sce-build/src/forge/model.rs",
+     r'''        self.length_bound(fields)
+            .and_then(|b| b.max)
+            .filter(|max| *max <= u64::from(u32::MAX))''',
+     r'''        self.declared_bound()
+            .filter(|max| *max <= u64::from(u32::MAX))''')
+PY
+
+# The lent form borrows a byte string, so asking `D` to hold one leaves the lent
+# form at `Inline` with no impl for a codec whose byte string has no bound.
+# Killed by `a_byte_string_with_no_bound_reads_what_its_frame_holds` (the
+# harness's lent decode at `Inline` does not compile).
+mutation_case "the lent form asks its profile to hold what it borrows" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        if kind == "List" {
+            lent_bound.push(format!("{RUNTIME_CODEC}::HoldsList<{tag}>"));
+        } else {''',
+     r'''        lent_bound.push(format!("{RUNTIME_CODEC}::Holds{kind}<{tag}>"));
+        if kind == "List" {
+        } else {''')
+PY
+
+# C11 holds a byte string in an array of its capacity, so one with neither a
+# bound nor a capacity has none. Killed by
+# `what_cannot_hold_a_byte_string_with_no_bound_refuses_it`
+# (`codec/capacity-invalid`, "C11 holds every byte string").
+mutation_case "C11 takes a byte string it holds no number of" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''        .find(|f| f.takes_capacity() && f.storage_held(&m.fields).is_none());''',
+     r'''        .find(|f| (f.is_repeat() || f.is_tlv_chain()) && f.storage_held(&m.fields).is_none());''')
+PY
+
+# An embedded body counted for nothing leaves the largest frame of every codec
+# that embeds one below what it writes. Killed by the goldens' `MAX_ENCODED_BYTES`
+# and `_MAX_BYTES` of the embedding codecs.
+mutation_case "an embedded body is left out of the largest frame" <<'PY'
+edit("sce-build/src/forge/model.rs",
+     r'''                } else if f.is_embed() {
+                    return body_bytes(f.embed_body_alias.as_deref()?);''',
+     r'''                } else if f.is_embed() {
+                    return None;''')
+PY

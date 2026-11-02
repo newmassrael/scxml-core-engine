@@ -18,7 +18,7 @@
 #include "codec_zenoh_ext_entry.h"
 
 #define CODEC_ZENOH_MSG_DEL_MIN_BYTES 1
-#define CODEC_ZENOH_MSG_DEL_MAX_BYTES 593
+#define CODEC_ZENOH_MSG_DEL_MAX_BYTES 371
 
 typedef struct {
     uint8_t header;

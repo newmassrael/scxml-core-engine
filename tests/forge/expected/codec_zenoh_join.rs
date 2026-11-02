@@ -36,6 +36,14 @@ pub trait CodecZenohJoinStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohJoinZidField>> CodecZenohJoinStorage for S {}
 
+/// What `CodecZenohJoinIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohJoin` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohJoinLentStorage: ::core::fmt::Debug + Clone + PartialEq {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq> CodecZenohJoinLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohJoinStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -512,7 +520,7 @@ impl CodecZenohJoinWire {
 // frame gives where bytes and text borrow it, `CodecZenohJoin<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohJoinIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohJoinStorage {
+impl<'a, D> CodecZenohJoinIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohJoinLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohJoinOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

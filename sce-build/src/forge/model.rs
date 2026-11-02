@@ -2559,11 +2559,10 @@ pub struct CodecField {
     /// resolution).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repeat_body_alias: Option<String>,
-    /// RFC §synth-5-B B2 maximum element count for `BitSize::Repeat` fields
-    /// — used by encode-buffer sizing to bound `min_frame + count *
-    /// element_max`. Defaults to [`crate::forge::limits::REPEAT_DEFAULT_MAX_COUNT`]
-    /// when absent (mirrors `max_size`'s fallback for Tail/LengthRef
-    /// bytes).
+    /// RFC §synth-5-B B2 maximum element count for `BitSize::Repeat` fields,
+    /// as the document states it. `None` where the protocol states none; the
+    /// list's bound is then the width of its count, or nothing
+    /// ([`CodecField::bound`], docs/adr/0077 §7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_count: Option<u32>,
     /// RFC §synth-5-B B3 TLV chain primitive — imported codec alias whose
@@ -2741,27 +2740,54 @@ impl CodecField {
         }
     }
 
+    /// The bound of the language on this field's length or count: the most
+    /// bytes of a `tail` or `length-ref` field, or the most entries of a list,
+    /// that a frame of the protocol can hold. It is what the document states
+    /// ([`Self::declared_bound`]) met with what the field that carries the
+    /// length or count can say, since the width of a length field is a bound of
+    /// the language too (docs/adr/0077 §1, §7): a `u8` length with no
+    /// `sce:max-size` is 255, and not unbounded. `fields` is the codec's field
+    /// list. `None` where neither bounds it, and where the bound is past
+    /// `u32::MAX`, which no generated type or array states on every target, so
+    /// such a field is held as one with no bound; and `None` for a field whose
+    /// size is not a length.
+    pub fn bound(&self, fields: &[CodecField]) -> Option<u64> {
+        self.length_bound(fields)
+            .and_then(|b| b.max)
+            .filter(|max| *max <= u64::from(u32::MAX))
+    }
+
     /// How many bytes a form that stores this byte or text field holds: a C11
     /// array, an inline owned buffer, a broadcast-log slot. It is the capacity
-    /// the deployment gives the field, or its bound (docs/adr/0077 §7). A form
-    /// that stores nothing, a borrowed decode or a view, reads the bound
-    /// ([`Self::length_bound`]) and not this.
-    pub fn storage_bytes(&self) -> u32 {
-        self.capacity
-            .unwrap_or_else(|| crate::forge::limits::resolve_bytes_max(self.max_size))
+    /// the deployment gives the field, or its bound ([`Self::bound`],
+    /// docs/adr/0077 §7). `None` for a field with neither: no fixed buffer
+    /// holds it, so it is stored only by a profile whose bytes grow, and a
+    /// backend that stores in arrays refuses it, naming the field. A form that
+    /// stores nothing, a borrowed decode or a view, reads the bound and not
+    /// this.
+    pub fn storage_bytes(&self, fields: &[CodecField]) -> Option<u32> {
+        self.storage_held(fields)
     }
 
     /// How many entries a form that stores this list holds: a C11 array, an
     /// inline owned list, a list decoded eagerly. It is the capacity the
-    /// deployment gives the field, or its bound (docs/adr/0077 §7). `None` for
-    /// a list with neither: no fixed container holds it, so it is stored only
-    /// by a profile whose list grows, and a backend that stores in arrays
-    /// refuses it, naming the field.
-    pub fn storage_entries(&self) -> Option<u32> {
-        self.capacity.or(match &self.bit_size {
-            BitSize::TlvChain { max_depth, .. } => *max_depth,
-            _ => self.max_count,
-        })
+    /// deployment gives the field, or its bound ([`Self::bound`],
+    /// docs/adr/0077 §7). `None` for a list with neither: no fixed container
+    /// holds it, so it is stored only by a profile whose list grows, and a
+    /// backend that stores in arrays refuses it, naming the field.
+    pub fn storage_entries(&self, fields: &[CodecField]) -> Option<u32> {
+        self.storage_held(fields)
+    }
+
+    /// What a form that stores this field holds of it, in the field's unit:
+    /// bytes of a byte string or text, entries of a list. The capacity, or the
+    /// bound where the deployment states none: the one answer
+    /// [`Self::storage_bytes`] and [`Self::storage_entries`] give. `None` for a
+    /// field with neither, and for a field that has nothing to size
+    /// ([`Self::takes_capacity`]).
+    pub fn storage_held(&self, fields: &[CodecField]) -> Option<u32> {
+        self.capacity
+            .or_else(|| self.bound(fields).and_then(|b| u32::try_from(b).ok()))
     }
 
     /// Whether a form that stores this field has anything to size: a byte or
@@ -3408,8 +3434,11 @@ impl CodecModel {
 
     /// Maximum frame bytes for encode buffer sizing: fixed bytes plus the
     /// resolved per-field cap of every variable-length field. Caps:
-    ///   - `tail` / `length-ref`: `sce:max-size`, fallback to
-    ///     [`crate::forge::limits::BYTES_DEFAULT_MAX`].
+    ///   - `tail` / `length-ref`: what a form that stores it holds
+    ///     ([`CodecField::storage_bytes`]); one held by no number of bytes
+    ///     leaves the frame with no largest size.
+    ///   - an embedded body: contributes 0 here, as a list does — its size
+    ///     is the imported codec's, which [`Self::frame_bytes_with`] adds.
     ///   - `vle { width_bits }`: [`vle_cap_bytes`] (3 / 5 / 9 for
     ///     u16 / u32 / u64) — canonical Zenoh ZInt cap from RFC
     ///     §synth-5-B App. B (the u64 final byte carries 8 data bits).
@@ -3433,18 +3462,23 @@ impl CodecModel {
             .filter(|f| f.is_variable_length())
             .map(|f| match &f.bit_size {
                 BitSize::Vle { width_bits } => u64::from(vle_cap_bytes(*width_bits)),
-                BitSize::Repeat { .. } | BitSize::TlvChain { .. } => 0,
-                _ => u64::from(f.storage_bytes()),
+                BitSize::Repeat { .. } | BitSize::TlvChain { .. } | BitSize::Embed => 0,
+                // A byte string held by no number of bytes has no largest frame.
+                BitSize::Tail | BitSize::LengthRef => {
+                    f.storage_bytes(&self.fields).map_or(u64::MAX, u64::from)
+                }
+                BitSize::Fixed { .. } => 0,
             })
             .fold(u64::from(self.min_frame_bytes()), u64::saturating_add)
     }
 
     /// The largest frame of this codec with what it holds of other codecs:
     /// [`Self::max_frame_bytes`], and the widest arm's body for a variant, or for
-    /// each `<sce:repeat>` and `<sce:tlv-chain>` the entries a form that stores
-    /// it holds times its body. `body_bytes` answers the largest frame of the
-    /// codec an alias imports, `None` where it cannot say, and such a body counts
-    /// for nothing. Saturating, as [`Self::max_frame_bytes`] is.
+    /// each `<sce:embed>` its body and for each `<sce:repeat>` and
+    /// `<sce:tlv-chain>` the entries a form that stores it holds times its body.
+    /// `body_bytes` answers the largest frame of the codec an alias imports,
+    /// `None` where it cannot say, and such a body counts for nothing.
+    /// Saturating, as [`Self::max_frame_bytes`] is.
     ///
     /// The one formula for the figure: the generator reads it with the imports
     /// it was handed and the import enrichment with the documents it reads.
@@ -3467,11 +3501,13 @@ impl CodecModel {
                     f.repeat_body_alias.as_deref()?
                 } else if f.is_tlv_chain() {
                     f.tlv_chain_body_alias.as_deref()?
+                } else if f.is_embed() {
+                    return body_bytes(f.embed_body_alias.as_deref()?);
                 } else {
                     return None;
                 };
                 // A list held by no number of entries has no largest frame.
-                let entries = f.storage_entries().map_or(u64::MAX, u64::from);
+                let entries = f.storage_entries(&self.fields).map_or(u64::MAX, u64::from);
                 Some(body_bytes(alias)?.saturating_mul(entries))
             })
             .fold(own, u64::saturating_add)

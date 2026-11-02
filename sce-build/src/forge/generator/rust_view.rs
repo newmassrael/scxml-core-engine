@@ -39,8 +39,9 @@ pub(super) fn view_lifetime(borrowed: bool) -> &'static str {
 
 /// The type of a list field of a view: a [`ListView`](sce_forge_runtime::view::ListView) read by
 /// the marker type `walk` ([`walk_item`]), `K` being how many flag inputs an entry's decode
-/// takes, held as a list inside the bounds of list field `field`
-/// (`codec_totality::list_bound_args`; docs/adr/0065 §6 R2, R7).
+/// takes, held as a list inside the bounds of list field `field` of the codec
+/// whose fields are `fields` (`codec_totality::list_bound_args`; docs/adr/0065
+/// §6 R2, R7).
 ///
 /// A list of one entry or more that is always present is held as its first
 /// entry and the list after it (`NonEmptyListView`), since a view needs a
@@ -50,11 +51,12 @@ pub(super) fn list_type(
     walk: &str,
     inputs: usize,
     field: &CodecField,
+    fields: &[CodecField],
     // The list's law where its entries say an input it hands them
     // (`rust_source::law_type`; docs/adr/0065 §6 R8).
     law: Option<&str>,
 ) -> String {
-    let bounds = crate::forge::codec_totality::list_bound_args(field);
+    let bounds = crate::forge::codec_totality::list_bound_args(field, fields);
     let gated = field.present_if.is_some();
     let list = if !gated && crate::forge::codec_totality::list_least(field) > 0 {
         format!("Bounded<{RUNTIME_CODEC}::NonEmptyListView<'a, {walk}, {inputs}>, {bounds}>")
@@ -211,7 +213,7 @@ const SCAN_OPEN: &str = "let _rest = cursor.peek_slice(cursor.remaining())?;\n  
 pub(super) fn repeat_decode_stmt(list: &ViewList) -> String {
     use crate::generator::Language;
     let field = list.field;
-    let max_count = crate::forge::codec_totality::list_bound(field);
+    let max_count = crate::forge::codec_totality::list_bound(field, list.fields);
     let id = list.id();
     let entry = list.entry;
     let decode_arg = list.decode_arg;

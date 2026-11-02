@@ -37,6 +37,14 @@ pub trait CodecZenohExtEnvelopeStorage: ::core::fmt::Debug + Clone + PartialEq +
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohExtEnvelopeExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage> CodecZenohExtEnvelopeStorage for S {}
 
+/// What `CodecZenohExtEnvelopeIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohExtEnvelope` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohExtEnvelopeLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohExtEnvelopeExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohExtEnvelopeExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage> CodecZenohExtEnvelopeLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohExtEnvelopeStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -355,7 +363,7 @@ impl CodecZenohExtEnvelopeWire {
 // frame gives where bytes and text borrow it, `CodecZenohExtEnvelope<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohExtEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohExtEnvelopeStorage {
+impl<'a, D> CodecZenohExtEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohExtEnvelopeLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohExtEnvelopeOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

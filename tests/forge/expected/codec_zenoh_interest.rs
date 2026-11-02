@@ -38,6 +38,14 @@ pub trait CodecZenohInterestStorage: ::core::fmt::Debug + Clone + PartialEq + ::
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohInterestExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage + super::codec_zenoh_interest_body::CodecZenohInterestBodyStorage> CodecZenohInterestStorage for S {}
 
+/// What `CodecZenohInterestIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohInterest` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohInterestLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohInterestExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage + super::codec_zenoh_interest_body::CodecZenohInterestBodyLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohInterestExtensionsField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage + super::codec_zenoh_interest_body::CodecZenohInterestBodyLentStorage> CodecZenohInterestLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohInterestStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -241,7 +249,7 @@ impl<S: CodecZenohInterestStorage> CodecZenohInterestIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 434;
+    pub const MAX_ENCODED_BYTES: usize = 325;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -497,7 +505,7 @@ impl CodecZenohInterestWire {
 // frame gives where bytes and text borrow it, `CodecZenohInterest<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohInterestIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohInterestStorage {
+impl<'a, D> CodecZenohInterestIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohInterestLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohInterestOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

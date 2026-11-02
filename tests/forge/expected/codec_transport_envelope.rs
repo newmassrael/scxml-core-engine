@@ -74,6 +74,14 @@ pub trait CodecTransportEnvelopeStorage: ::core::fmt::Debug + Clone + PartialEq 
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_init_body::CodecZenohInitBodyStorage + super::codec_zenoh_open_body::CodecZenohOpenBodyStorage + super::codec_zenoh_frame::CodecZenohFrameStorage + super::codec_zenoh_fragment::CodecZenohFragmentStorage + super::codec_zenoh_join::CodecZenohJoinStorage> CodecTransportEnvelopeStorage for S {}
 
+/// What `CodecTransportEnvelopeIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecTransportEnvelope` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecTransportEnvelopeLentStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_init_body::CodecZenohInitBodyLentStorage + super::codec_zenoh_open_body::CodecZenohOpenBodyLentStorage + super::codec_zenoh_frame::CodecZenohFrameLentStorage + super::codec_zenoh_fragment::CodecZenohFragmentLentStorage + super::codec_zenoh_join::CodecZenohJoinLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_init_body::CodecZenohInitBodyLentStorage + super::codec_zenoh_open_body::CodecZenohOpenBodyLentStorage + super::codec_zenoh_frame::CodecZenohFrameLentStorage + super::codec_zenoh_fragment::CodecZenohFragmentLentStorage + super::codec_zenoh_join::CodecZenohJoinLentStorage> CodecTransportEnvelopeLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecTransportEnvelopeStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -642,7 +650,7 @@ impl CodecTransportEnvelopeWire {
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
 #[allow(dead_code)]
-impl<'a, D> CodecTransportEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecTransportEnvelopeStorage {
+impl<'a, D> CodecTransportEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecTransportEnvelopeLentStorage {
     /// Deep-copy this borrowed variant body into its owned mirror at the
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
@@ -746,7 +754,7 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeOwnedVariant<S> {
 // frame gives where bytes and text borrow it, `CodecTransportEnvelope<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecTransportEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecTransportEnvelopeStorage {
+impl<'a, D> CodecTransportEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecTransportEnvelopeLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecTransportEnvelopeOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

@@ -36,6 +36,14 @@ pub trait CodecExtAttachmentStorage: ::core::fmt::Debug + Clone + PartialEq + ::
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecExtAttachmentBodyField>> CodecExtAttachmentStorage for S {}
 
+/// What `CodecExtAttachmentIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecExtAttachment` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecExtAttachmentLentStorage: ::core::fmt::Debug + Clone + PartialEq {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq> CodecExtAttachmentLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecExtAttachmentStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -333,7 +341,7 @@ impl CodecExtAttachmentWire {
 // frame gives where bytes and text borrow it, `CodecExtAttachment<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecExtAttachmentIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecExtAttachmentStorage {
+impl<'a, D> CodecExtAttachmentIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecExtAttachmentLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecExtAttachmentOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

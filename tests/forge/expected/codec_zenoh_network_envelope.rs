@@ -74,6 +74,14 @@ pub trait CodecZenohNetworkEnvelopeStorage: ::core::fmt::Debug + Clone + Partial
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_interest::CodecZenohInterestStorage + super::codec_zenoh_response_final::CodecZenohResponseFinalStorage + super::codec_zenoh_response::CodecZenohResponseStorage + super::codec_zenoh_request::CodecZenohRequestStorage + super::codec_zenoh_declare::CodecZenohDeclareStorage + super::codec_zenoh_oam::CodecZenohOamStorage> CodecZenohNetworkEnvelopeStorage for S {}
 
+/// What `CodecZenohNetworkEnvelopeIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohNetworkEnvelope` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohNetworkEnvelopeLentStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_interest::CodecZenohInterestLentStorage + super::codec_zenoh_response_final::CodecZenohResponseFinalLentStorage + super::codec_zenoh_response::CodecZenohResponseLentStorage + super::codec_zenoh_request::CodecZenohRequestLentStorage + super::codec_zenoh_declare::CodecZenohDeclareLentStorage + super::codec_zenoh_oam::CodecZenohOamLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_interest::CodecZenohInterestLentStorage + super::codec_zenoh_response_final::CodecZenohResponseFinalLentStorage + super::codec_zenoh_response::CodecZenohResponseLentStorage + super::codec_zenoh_request::CodecZenohRequestLentStorage + super::codec_zenoh_declare::CodecZenohDeclareLentStorage + super::codec_zenoh_oam::CodecZenohOamLentStorage> CodecZenohNetworkEnvelopeLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohNetworkEnvelopeStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -278,7 +286,7 @@ impl<S: CodecZenohNetworkEnvelopeStorage> CodecZenohNetworkEnvelopeIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 1380;
+    pub const MAX_ENCODED_BYTES: usize = 856;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -529,7 +537,7 @@ impl CodecZenohNetworkEnvelopeWire {
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
 #[allow(dead_code)]
-impl<'a, D> CodecZenohNetworkEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohNetworkEnvelopeStorage {
+impl<'a, D> CodecZenohNetworkEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohNetworkEnvelopeLentStorage {
     /// Deep-copy this borrowed variant body into its owned mirror at the
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
@@ -633,7 +641,7 @@ impl<S: CodecZenohNetworkEnvelopeStorage> CodecZenohNetworkEnvelopeOwnedVariant<
 // frame gives where bytes and text borrow it, `CodecZenohNetworkEnvelope<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohNetworkEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohNetworkEnvelopeStorage {
+impl<'a, D> CodecZenohNetworkEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohNetworkEnvelopeLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohNetworkEnvelopeOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

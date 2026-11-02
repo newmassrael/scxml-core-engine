@@ -40,6 +40,14 @@ pub trait CodecTlvChainPresentIfBasicStorage: ::core::fmt::Debug + Clone + Parti
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecTlvChainPresentIfBasicEntriesField> + super::codec_tlv_entry::CodecTlvEntryStorage> CodecTlvChainPresentIfBasicStorage for S {}
 
+/// What `CodecTlvChainPresentIfBasicIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecTlvChainPresentIfBasic` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecTlvChainPresentIfBasicLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecTlvChainPresentIfBasicEntriesField> + super::codec_tlv_entry::CodecTlvEntryLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecTlvChainPresentIfBasicEntriesField> + super::codec_tlv_entry::CodecTlvEntryLentStorage> CodecTlvChainPresentIfBasicLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecTlvChainPresentIfBasicStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -448,7 +456,7 @@ impl<'a> CodecTlvChainPresentIfBasicView<'a> {
     // alone; a crate that includes this module privately is asked to rename
     // it, and the one name is what lets a codec reach every view it holds.
     #[allow(clippy::wrong_self_convention)]
-    pub fn into_builder<D>(&self, _out: &mut CodecTlvChainPresentIfBasicIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecTlvChainPresentIfBasicStorage {
+    pub fn into_builder<D>(&self, _out: &mut CodecTlvChainPresentIfBasicIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecTlvChainPresentIfBasicLentStorage {
         _out.carrier = self.carrier;
         match &self.entries {
             Some(_l) => _out.entries.insert(Default::default()).refill(|_vec| {
@@ -531,7 +539,7 @@ impl<'a> CodecTlvChainPresentIfBasicView<'a> {
 // frame gives where bytes and text borrow it, `CodecTlvChainPresentIfBasic<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecTlvChainPresentIfBasicIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecTlvChainPresentIfBasicStorage {
+impl<'a, D> CodecTlvChainPresentIfBasicIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecTlvChainPresentIfBasicLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecTlvChainPresentIfBasicOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

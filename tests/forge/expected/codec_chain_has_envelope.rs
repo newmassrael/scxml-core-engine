@@ -56,6 +56,14 @@ pub trait CodecChainHasEnvelopeStorage: ::core::fmt::Debug + Clone + PartialEq +
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecChainHasEnvelopeExtensionsField> + ::sce_forge_runtime::codec::HoldsBytes<CodecChainHasEnvelopePayloadField> + ::sce_forge_runtime::codec::HoldsList<CodecChainHasEnvelopeSlicesField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage + super::codec_chain_has_slice::CodecChainHasSliceStorage> CodecChainHasEnvelopeStorage for S {}
 
+/// What `CodecChainHasEnvelopeIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecChainHasEnvelope` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecChainHasEnvelopeLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecChainHasEnvelopeExtensionsField> + ::sce_forge_runtime::codec::HoldsList<CodecChainHasEnvelopeSlicesField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage + super::codec_chain_has_slice::CodecChainHasSliceLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecChainHasEnvelopeExtensionsField> + ::sce_forge_runtime::codec::HoldsList<CodecChainHasEnvelopeSlicesField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage + super::codec_chain_has_slice::CodecChainHasSliceLentStorage> CodecChainHasEnvelopeLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecChainHasEnvelopeStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -537,7 +545,7 @@ impl CodecChainHasEnvelopeWire {
 // frame gives where bytes and text borrow it, `CodecChainHasEnvelope<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecChainHasEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecChainHasEnvelopeStorage {
+impl<'a, D> CodecChainHasEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecChainHasEnvelopeLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecChainHasEnvelopeOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

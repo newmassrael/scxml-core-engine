@@ -26,14 +26,13 @@ const PASSES: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-/// A length-ref field without its bound (docs/adr/0077 §5).
-const UNBOUNDED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+/// A byte string sized by a bit count, which the decoder would assemble as an
+/// integer.
+const BIT_COUNTED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="unbounded">
+       sce:kind="codec" sce:default-endian="big" name="bit_counted">
   <datamodel>
-    <sce:field id="len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-    <sce:field id="body" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
-               sce:length-field="len"/>
+    <sce:field id="body" sce:type="bytes" sce:byte="0" sce:bit-size="24"/>
   </datamodel>
 </scxml>
 "#;
@@ -54,7 +53,7 @@ fn every_document_is_answered_in_order_and_nothing_is_written() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut paths: Vec<PathBuf> = Vec::new();
     for (name, text) in [
-        ("unbounded", UNBOUNDED),
+        ("bit_counted", BIT_COUNTED),
         ("passes", PASSES),
         ("stale", STALE),
     ] {
@@ -88,10 +87,12 @@ fn every_document_is_answered_in_order_and_nothing_is_written() {
     };
     assert!(
         !verdicts[0].passed(),
-        "a field without its bound is refused"
+        "a byte string sized by a bit count is refused"
     );
     assert!(
-        codes(0).iter().any(|c| c == "validation/missing-attribute"),
+        codes(0)
+            .iter()
+            .any(|c| c == "validation/attribute-rule-violated"),
         "{:?}",
         codes(0)
     );

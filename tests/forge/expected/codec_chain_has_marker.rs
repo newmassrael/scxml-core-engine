@@ -56,6 +56,14 @@ pub trait CodecChainHasMarkerStorage: ::core::fmt::Debug + Clone + PartialEq + :
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerExtensionsField> + ::sce_forge_runtime::codec::HoldsBytes<CodecChainHasMarkerPayloadField> + ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerSlicesField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage + super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceStorage> CodecChainHasMarkerStorage for S {}
 
+/// What `CodecChainHasMarkerIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecChainHasMarker` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecChainHasMarkerLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerExtensionsField> + ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerSlicesField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage + super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerExtensionsField> + ::sce_forge_runtime::codec::HoldsList<CodecChainHasMarkerSlicesField> + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage + super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceLentStorage> CodecChainHasMarkerLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecChainHasMarkerStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -552,7 +560,7 @@ impl CodecChainHasMarkerWire {
 // frame gives where bytes and text borrow it, `CodecChainHasMarker<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecChainHasMarkerIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecChainHasMarkerStorage {
+impl<'a, D> CodecChainHasMarkerIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecChainHasMarkerLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecChainHasMarkerOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

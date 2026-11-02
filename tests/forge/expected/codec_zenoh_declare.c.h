@@ -18,7 +18,7 @@
 #include "codec_zenoh_declaration.h"
 
 #define CODEC_ZENOH_DECLARE_MIN_BYTES 1
-#define CODEC_ZENOH_DECLARE_MAX_BYTES 430
+#define CODEC_ZENOH_DECLARE_MAX_BYTES 338
 
 typedef struct {
     uint8_t header;

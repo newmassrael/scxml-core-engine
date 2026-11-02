@@ -15,7 +15,7 @@
 #include "codec_zenoh_wireexpr.h"
 
 #define CODEC_ZENOH_DECL_TOKEN_MIN_BYTES 0
-#define CODEC_ZENOH_DECL_TOKEN_MAX_BYTES 261
+#define CODEC_ZENOH_DECL_TOKEN_MAX_BYTES 151
 
 typedef struct {
     uint32_t id;

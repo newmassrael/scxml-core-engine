@@ -36,6 +36,14 @@ pub trait CodecPresentIfStringStorage: ::core::fmt::Debug + Clone + PartialEq + 
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsStr<CodecPresentIfStringTextField>> CodecPresentIfStringStorage for S {}
 
+/// What `CodecPresentIfStringIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecPresentIfString` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecPresentIfStringLentStorage: ::core::fmt::Debug + Clone + PartialEq {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq> CodecPresentIfStringLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecPresentIfStringStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -391,7 +399,7 @@ impl CodecPresentIfStringWire {
 // frame gives where bytes and text borrow it, `CodecPresentIfString<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecPresentIfStringIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecPresentIfStringStorage {
+impl<'a, D> CodecPresentIfStringIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecPresentIfStringLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecPresentIfStringOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

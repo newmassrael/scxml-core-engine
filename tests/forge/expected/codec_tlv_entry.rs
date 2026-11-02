@@ -36,6 +36,14 @@ pub trait CodecTlvEntryStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_f
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsBytes<CodecTlvEntryEntryBodyField>> CodecTlvEntryStorage for S {}
 
+/// What `CodecTlvEntryIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecTlvEntry` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecTlvEntryLentStorage: ::core::fmt::Debug + Clone + PartialEq {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq> CodecTlvEntryLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecTlvEntryStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -351,7 +359,7 @@ impl CodecTlvEntryWire {
 // frame gives where bytes and text borrow it, `CodecTlvEntry<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecTlvEntryIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecTlvEntryStorage {
+impl<'a, D> CodecTlvEntryIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecTlvEntryLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecTlvEntryOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

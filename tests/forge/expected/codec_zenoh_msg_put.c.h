@@ -19,7 +19,7 @@
 #include "codec_zenoh_ext_entry.h"
 
 #define CODEC_ZENOH_MSG_PUT_MIN_BYTES 1
-#define CODEC_ZENOH_MSG_PUT_MAX_BYTES 1114
+#define CODEC_ZENOH_MSG_PUT_MAX_BYTES 778
 
 typedef struct {
     uint8_t header;

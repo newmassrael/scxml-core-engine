@@ -52,8 +52,8 @@ PY
 # (`codec/capacity-invalid`).
 mutation_case "C11 takes a list it holds no number of" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''        c11_refuse_a_list_it_cannot_hold(m)?;''',
-     r'''        let _ = c11_refuse_a_list_it_cannot_hold;''')
+     r'''        c11_refuse_a_field_it_cannot_hold(m)?;''',
+     r'''        let _ = c11_refuse_a_field_it_cannot_hold;''')
 PY
 
 # A deployment holds every field inline, so a field with no bound needs a capacity

@@ -80,6 +80,14 @@ pub trait CodecZenohRequestStorage: ::core::fmt::Debug + Clone + PartialEq + ::s
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohRequestExtensionsField> + super::codec_zenoh_wireexpr::CodecZenohWireexprStorage + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage + super::codec_zenoh_msg_put::CodecZenohMsgPutStorage + super::codec_zenoh_msg_del::CodecZenohMsgDelStorage + super::codec_zenoh_query::CodecZenohQueryStorage> CodecZenohRequestStorage for S {}
 
+/// What `CodecZenohRequestIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohRequest` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohRequestLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohRequestExtensionsField> + super::codec_zenoh_wireexpr::CodecZenohWireexprLentStorage + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage + super::codec_zenoh_msg_put::CodecZenohMsgPutLentStorage + super::codec_zenoh_msg_del::CodecZenohMsgDelLentStorage + super::codec_zenoh_query::CodecZenohQueryLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohRequestExtensionsField> + super::codec_zenoh_wireexpr::CodecZenohWireexprLentStorage + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage + super::codec_zenoh_msg_put::CodecZenohMsgPutLentStorage + super::codec_zenoh_msg_del::CodecZenohMsgDelLentStorage + super::codec_zenoh_query::CodecZenohQueryLentStorage> CodecZenohRequestLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohRequestStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -347,7 +355,7 @@ impl<S: CodecZenohRequestStorage> CodecZenohRequestIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 1380;
+    pub const MAX_ENCODED_BYTES: usize = 788;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -668,7 +676,7 @@ impl CodecZenohRequestWire {
 // what `Inline` holds: a deployment answers for the same tags from its own.
 
 #[allow(dead_code)]
-impl<'a, D> CodecZenohRequestVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohRequestStorage {
+impl<'a, D> CodecZenohRequestVariantIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohRequestLentStorage {
     /// Deep-copy this borrowed variant body into its owned mirror at the
     /// given storage profile. Fallible because a borrowed arm body's own
     /// projection re-checks its declared capacities (the same bounds decode
@@ -744,7 +752,7 @@ impl<S: CodecZenohRequestStorage> CodecZenohRequestOwnedVariant<S> {
 // frame gives where bytes and text borrow it, `CodecZenohRequest<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohRequestIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohRequestStorage {
+impl<'a, D> CodecZenohRequestIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohRequestLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohRequestOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

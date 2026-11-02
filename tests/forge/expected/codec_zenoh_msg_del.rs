@@ -38,6 +38,14 @@ pub trait CodecZenohMsgDelStorage: ::core::fmt::Debug + Clone + PartialEq + ::sc
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohMsgDelExtensionsField> + super::codec_zenoh_timestamp::CodecZenohTimestampStorage + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage> CodecZenohMsgDelStorage for S {}
 
+/// What `CodecZenohMsgDelIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohMsgDel` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohMsgDelLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohMsgDelExtensionsField> + super::codec_zenoh_timestamp::CodecZenohTimestampLentStorage + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohMsgDelExtensionsField> + super::codec_zenoh_timestamp::CodecZenohTimestampLentStorage + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage> CodecZenohMsgDelLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohMsgDelStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -230,7 +238,7 @@ impl<S: CodecZenohMsgDelStorage> CodecZenohMsgDelIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 593;
+    pub const MAX_ENCODED_BYTES: usize = 371;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -467,7 +475,7 @@ impl CodecZenohMsgDelWire {
 // frame gives where bytes and text borrow it, `CodecZenohMsgDel<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohMsgDelIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohMsgDelStorage {
+impl<'a, D> CodecZenohMsgDelIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohMsgDelLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohMsgDelOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

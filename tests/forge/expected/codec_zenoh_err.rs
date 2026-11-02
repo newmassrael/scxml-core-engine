@@ -47,6 +47,14 @@ pub trait CodecZenohErrStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_f
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohErrExtensionsField> + ::sce_forge_runtime::codec::HoldsBytes<CodecZenohErrPayloadField> + super::codec_zenoh_encoding::CodecZenohEncodingStorage + super::codec_zenoh_ext_entry::CodecZenohExtEntryStorage> CodecZenohErrStorage for S {}
 
+/// What `CodecZenohErrIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohErr` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohErrLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohErrExtensionsField> + super::codec_zenoh_encoding::CodecZenohEncodingLentStorage + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecZenohErrExtensionsField> + super::codec_zenoh_encoding::CodecZenohEncodingLentStorage + super::codec_zenoh_ext_entry::CodecZenohExtEntryLentStorage> CodecZenohErrLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohErrStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -259,7 +267,7 @@ impl<S: CodecZenohErrStorage> CodecZenohErrIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 690;
+    pub const MAX_ENCODED_BYTES: usize = 576;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -513,7 +521,7 @@ impl CodecZenohErrWire {
 // frame gives where bytes and text borrow it, `CodecZenohErr<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohErrIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohErrStorage {
+impl<'a, D> CodecZenohErrIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohErrLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohErrOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

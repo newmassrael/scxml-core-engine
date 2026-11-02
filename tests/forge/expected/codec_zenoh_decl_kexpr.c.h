@@ -15,7 +15,7 @@
 #include "codec_zenoh_wireexpr.h"
 
 #define CODEC_ZENOH_DECL_KEXPR_MIN_BYTES 0
-#define CODEC_ZENOH_DECL_KEXPR_MAX_BYTES 259
+#define CODEC_ZENOH_DECL_KEXPR_MAX_BYTES 149
 
 typedef struct {
     uint16_t id;

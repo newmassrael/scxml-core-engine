@@ -16,7 +16,7 @@
 #include "codec_zenoh_wireexpr.h"
 
 #define CODEC_ZENOH_DECL_QUERYABLE_MIN_BYTES 3
-#define CODEC_ZENOH_DECL_QUERYABLE_MAX_BYTES 273
+#define CODEC_ZENOH_DECL_QUERYABLE_MAX_BYTES 163
 
 typedef struct {
     uint32_t id;

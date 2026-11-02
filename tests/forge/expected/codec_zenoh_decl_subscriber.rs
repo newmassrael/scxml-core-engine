@@ -28,6 +28,14 @@ pub trait CodecZenohDeclSubscriberStorage: ::core::fmt::Debug + Clone + PartialE
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_wireexpr::CodecZenohWireexprStorage> CodecZenohDeclSubscriberStorage for S {}
 
+/// What `CodecZenohDeclSubscriberIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecZenohDeclSubscriber` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecZenohDeclSubscriberLentStorage: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_wireexpr::CodecZenohWireexprLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + super::codec_zenoh_wireexpr::CodecZenohWireexprLentStorage> CodecZenohDeclSubscriberLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecZenohDeclSubscriberStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -141,7 +149,7 @@ impl<S: CodecZenohDeclSubscriberStorage> CodecZenohDeclSubscriberIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 261;
+    pub const MAX_ENCODED_BYTES: usize = 151;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -332,7 +340,7 @@ impl CodecZenohDeclSubscriberWire {
 // frame gives where bytes and text borrow it, `CodecZenohDeclSubscriber<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecZenohDeclSubscriberIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohDeclSubscriberStorage {
+impl<'a, D> CodecZenohDeclSubscriberIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecZenohDeclSubscriberLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohDeclSubscriberOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

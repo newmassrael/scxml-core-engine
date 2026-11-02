@@ -388,13 +388,30 @@ are one value held two ways. So:
   hold such a list says so by name: `Inline` has no impl for its tag, a deployment that gives it no capacity is
   refused, C11 is refused without a capacity, and a Rust tree without views is refused, since its decode past a
   capacity would judge the frame by the lent form, which holds lists as `Inline` does. A gated C11 chain wrote past its
-  array when a deployment's capacity was below the depth; it now refuses, as the ungated chain did. Byte and text
-  fields with no `sce:max-size` are the next landing.
+  array when a deployment's capacity was below the depth; it now refuses, as the ungated chain did.
+- **Step 4 for positional byte strings and text, as landed.** A `tail` or `length-ref` takes no `sce:max-size`, and
+  its bound is `CodecField::bound`: what the document states met with what the field that carries the length can say,
+  as §1 and the upstream widths above require, so a `u8` length with none is 255 and a `tail` with none is unbounded.
+  Lists read the same seam, so a list counted by a `u8` is 255 entries where the first landing for lists called it
+  unbounded. A bound past `u32::MAX` is held as none, since no type or array states it on every target. Nothing stands
+  in for an absent bound: `storage_bytes` answers `None` where a default of 256 bytes used to answer. One shape holds
+  every byte string, `Bytes<'a, { usize::MAX }>` where the language states no bound, and the bare `&[u8]` and `&str`
+  of §3 are gone. The lent form borrows every byte string and text from the frame, so it asks the profile `D` only for
+  its lists: `{Codec}LentStorage` names those, and the lent methods bound `D` by it, so the lent form at `Inline` holds
+  a codec whose byte string has no bound and a Rust tree without views takes one. `Inline` has no impl for such a tag, a
+  deployment with no capacity for it is refused, and C11 is refused without a capacity, naming the field.
+- **An embedded body is counted at its own largest frame.** The default of 256 bytes stood in for every
+  `<sce:embed>` in a codec's largest frame, whatever the body held, so `MAX_ENCODED_BYTES` and C11's `_MAX_BYTES` were
+  a guess: 2710 for a codec whose largest frame is 3296, a buffer sized from it too small for a frame of the language.
+  The body's size is the imported codec's, added as a list's entries and a variant's arms are.
+- **Content-line and CBOR text with no bound are the next landing.** A content-line codec stores its strings in a
+  container of their bound on every Rust profile, with no storage profile to grow one, and a CBOR map has an owned
+  mirror only where every string has a bound. Both move onto the storage profile first.
 - **No generated item stands on the lent form at `Inline`.** The first run of a list with no bound found every static
   of a borrowed codec, and its lent projections, on `{Codec}<'a>`, which is `Lent<'a, Inline>`: such a codec did not
   compile anywhere, an MCU build with a deployment included. A codec's wire functions are on `{Codec}Wire`, a unit
   type of each codec that takes no profile, and a parent, a view, a broadcast log and every form write through it. The
-  lent form's methods are written for `{Codec}In<Lent<'a, D>>` with `D: {Codec}Storage`, bounding `D` and not the
+  lent form's methods are written for `{Codec}In<Lent<'a, D>>` with `D: {Codec}LentStorage`, bounding `D` and not the
   lent profile, since a bound on `Lent<'a, D>` in a `where` clause shadows its impls and its fields' types stop
   normalizing. An owned value re-borrows to `{Codec}In<Lent<'_, S>>`, its lists as `S` holds them; it was re-borrowed
   into `Inline`'s lists, which refused one past its bound. `{Codec}<'a>` stays the eager form at `Inline` for a codec

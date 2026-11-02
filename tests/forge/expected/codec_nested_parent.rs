@@ -37,6 +37,14 @@ pub trait CodecNestedParentStorage: ::core::fmt::Debug + Clone + PartialEq + ::s
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecNestedParentBodyListField> + super::codec_nested_body::CodecNestedBodyStorage> CodecNestedParentStorage for S {}
 
+/// What `CodecNestedParentIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecNestedParent` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecNestedParentLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecNestedParentBodyListField> + super::codec_nested_body::CodecNestedBodyLentStorage {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecNestedParentBodyListField> + super::codec_nested_body::CodecNestedBodyLentStorage> CodecNestedParentLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecNestedParentStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -195,7 +203,7 @@ impl<S: CodecNestedParentStorage> CodecNestedParentIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 2710;
+    pub const MAX_ENCODED_BYTES: usize = 3296;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -416,7 +424,7 @@ impl CodecNestedParentWire {
 // frame gives where bytes and text borrow it, `CodecNestedParent<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecNestedParentIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecNestedParentStorage {
+impl<'a, D> CodecNestedParentIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecNestedParentLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecNestedParentOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input

@@ -41,6 +41,14 @@ pub trait CodecRepeatBasicStorage: ::core::fmt::Debug + Clone + PartialEq + ::sc
 
 impl<S: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatBasicFragsField>> CodecRepeatBasicStorage for S {}
 
+/// What `CodecRepeatBasicIn<Lent<'a, D>>` asks of the profile `D`: how it holds
+/// the lists of `CodecRepeatBasic` and of the codecs it holds, since the lent
+/// form borrows every byte string and text from the frame (docs/adr/0077 §7).
+#[allow(dead_code)]
+pub trait CodecRepeatBasicLentStorage: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatBasicFragsField> {}
+
+impl<D: ::core::fmt::Debug + Clone + PartialEq + ::sce_forge_runtime::codec::HoldsList<CodecRepeatBasicFragsField>> CodecRepeatBasicLentStorage for D {}
+
 /// What a decode of a frame of the lifetime `'f` asks of a storage profile
 /// beside CodecRepeatBasicStorage: how it stores each field of that frame.
 #[allow(dead_code)]
@@ -404,7 +412,7 @@ impl<'a> CodecRepeatBasicView<'a> {
     // alone; a crate that includes this module privately is asked to rename
     // it, and the one name is what lets a codec reach every view it holds.
     #[allow(clippy::wrong_self_convention)]
-    pub fn into_builder<D>(&self, _out: &mut CodecRepeatBasicIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecRepeatBasicStorage {
+    pub fn into_builder<D>(&self, _out: &mut CodecRepeatBasicIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecRepeatBasicLentStorage {
         _out.num_frags = self.num_frags;
         _out.frags.refill(|_vec| {
             for _e in self.frags.iter() {
@@ -479,7 +487,7 @@ impl<'a> CodecRepeatBasicView<'a> {
 // frame gives where bytes and text borrow it, `CodecRepeatBasic<'a>` being it
 // at `Inline` (docs/adr/0077 §7).
 #[allow(dead_code)]
-impl<'a, D> CodecRepeatBasicIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecRepeatBasicStorage {
+impl<'a, D> CodecRepeatBasicIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: CodecRepeatBasicLentStorage {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecRepeatBasicOwned`] held in the given storage profile. Call at
     /// a decode boundary when the decoded value must outlive the input
