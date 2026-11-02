@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use sce_rust_relay::{
     drive, Authority, Code, CourierError, DirectLink, Doorway, Hub, Join, JoinMachine, Limits,
-    LoginPolicy, MemoryStore, Record, Relay, Request, Response, Shards, Signal, Store,
+    LoginPolicy, MemoryStore, Openly, Record, Relay, Request, Response, Shards, Signal, Store,
 };
 use sce_rust_trust::invitation::{self, Invitation, Proof, Ticket};
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
@@ -76,19 +76,27 @@ fn authority() -> Authority {
 
 /// A store whose records outlive the relay that wrote them, so that another relay reads them again.
 #[derive(Clone, Default)]
-struct Kept(Arc<Mutex<Vec<(String, Record)>>>);
+struct Kept(Arc<Mutex<MemoryStore>>);
 
 impl Store for Kept {
     fn load(&mut self) -> io::Result<Vec<(String, Record)>> {
-        Ok(self.0.lock().unwrap().clone())
+        self.0.lock().unwrap().load()
     }
 
     fn append(&mut self, list: &str, record: &Record) -> io::Result<()> {
-        self.0
-            .lock()
-            .unwrap()
-            .push((list.to_string(), record.clone()));
-        Ok(())
+        self.0.lock().unwrap().append(list, record)
+    }
+
+    fn marks(&mut self) -> io::Result<Vec<(String, Openly)>> {
+        self.0.lock().unwrap().marks()
+    }
+
+    fn mark(&mut self, list: &str, mark: &Openly) -> io::Result<()> {
+        self.0.lock().unwrap().mark(list, mark)
+    }
+
+    fn remove(&mut self, list: &str) -> io::Result<()> {
+        self.0.lock().unwrap().remove(list)
     }
 }
 

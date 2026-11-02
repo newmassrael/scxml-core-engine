@@ -8,6 +8,15 @@
 //! append-only list of `(list, record)`, and a relay that starts reads it back through the same
 //! checks that took each record in, which is why a store that was tampered with cannot make a relay
 //! hold what its members never signed: it fails to verify and the relay does not start.
+//!
+//! Beside its records, a store keeps a mark of each list a device created on a connection with no
+//! token (ADR 0080 section 3, [`Openly`]): when it was created and when a login last touched it. A
+//! list no login has touched for long enough lapses, and is removed whole ([`Store::remove`]); the
+//! devices that hold it create it again. A list with no mark (one created with a token of the
+//! authority) never lapses. A mark is written before the first record of its list, and removed
+//! after the list's records, so that a crash between the two leaves a mark of a list the store holds
+//! no record of, which the relay removes as it starts, and never a list created openly with no mark,
+//! which would never lapse.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
@@ -18,6 +27,15 @@ use serde_json::{json, Value};
 
 use crate::protocol::Record;
 
+/// What a store keeps of a list a device created with no token of the authority: when it was
+/// created, and when a login last touched it, in milliseconds since the Unix epoch by the relay's
+/// clock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Openly {
+    pub created_at_ms: u64,
+    pub touched_at_ms: u64,
+}
+
 /// An append-only record of what a relay was given.
 pub trait Store {
     /// Every record kept, each list's in the order it was appended.
@@ -25,6 +43,20 @@ pub trait Store {
 
     /// Keep one more record, durably: when this returns `Ok` the record survives the process.
     fn append(&mut self, list: &str, record: &Record) -> io::Result<()>;
+
+    /// The mark of each list created openly the store keeps one for, in the order of the lists'
+    /// names.
+    fn marks(&mut self) -> io::Result<Vec<(String, Openly)>>;
+
+    /// Keep `mark` as the mark of `list`, in place of the one it had, durably: when this returns
+    /// `Ok` the mark survives the process, and a crash leaves the old mark or the new one whole.
+    fn mark(&mut self, list: &str, mark: &Openly) -> io::Result<()>;
+
+    /// Remove `list` whole, durably: its records, and then its mark. Removing a list the store
+    /// holds nothing of does nothing. A store read again after a crash, or after this failed, holds
+    /// the list's records whole or none of them; a mark it holds of no record is the relay's to
+    /// remove.
+    fn remove(&mut self, list: &str) -> io::Result<()>;
 }
 
 /// A store that keeps nothing past the process: for tests, and for a relay whose lists can be
@@ -32,6 +64,7 @@ pub trait Store {
 #[derive(Default)]
 pub struct MemoryStore {
     rows: Vec<(String, Record)>,
+    marks: BTreeMap<String, Openly>,
 }
 
 impl MemoryStore {
@@ -49,6 +82,25 @@ impl Store for MemoryStore {
         self.rows.push((list.to_string(), record.clone()));
         Ok(())
     }
+
+    fn marks(&mut self) -> io::Result<Vec<(String, Openly)>> {
+        Ok(self
+            .marks
+            .iter()
+            .map(|(list, mark)| (list.clone(), *mark))
+            .collect())
+    }
+
+    fn mark(&mut self, list: &str, mark: &Openly) -> io::Result<()> {
+        self.marks.insert(list.to_string(), *mark);
+        Ok(())
+    }
+
+    fn remove(&mut self, list: &str) -> io::Result<()> {
+        self.rows.retain(|(held, _)| held != list);
+        self.marks.remove(list);
+        Ok(())
+    }
 }
 
 /// A store in a directory: one file for each list, a line for each record, flushed to the disk
@@ -60,6 +112,11 @@ impl Store for MemoryStore {
 /// the end of its file before anything is appended after it, so that it never becomes the front of
 /// a whole line that is not a record. A store keeps at most [`OPEN_FILES`] files open, whatever the
 /// number of lists it holds.
+///
+/// The mark of a list created openly is a file of its own beside the list's, named by the same
+/// hexadecimal with the extension `open`, of one line: written whole to a file beside it and
+/// renamed over it, so that a crash leaves the old mark or the new one. Removing a list closes its
+/// file, deletes it and then its mark, each deletion written into the directory durably.
 pub struct FileStore {
     dir: PathBuf,
     /// The files open for appending, by list, each with the append it was last written by.
@@ -69,6 +126,11 @@ pub struct FileStore {
 }
 
 const EXTENSION: &str = "jsonl";
+
+/// The extension of the file of a list's mark, and of the file a new mark is written to before it
+/// is renamed over it.
+const MARK_EXTENSION: &str = "open";
+const MARK_DRAFT_EXTENSION: &str = "open.draft";
 
 /// The most files a [`FileStore`] keeps open at once: the one written longest ago is closed to open
 /// another, so that a relay of many lists does not run out of the descriptors its connections need.
@@ -117,6 +179,10 @@ impl FileStore {
 
     fn path_of(&self, list: &str) -> PathBuf {
         self.dir.join(format!("{}.{EXTENSION}", hex(list)))
+    }
+
+    fn mark_path_of(&self, list: &str) -> PathBuf {
+        self.dir.join(format!("{}.{MARK_EXTENSION}", hex(list)))
     }
 
     /// The files of the lists the store holds, in the order of their names.
@@ -201,6 +267,19 @@ fn cut_torn_tail(file: &mut File) -> io::Result<()> {
         file.sync_data()?;
     }
     Ok(())
+}
+
+/// Delete the file at `path`, when there is one.
+fn remove_if_there(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        done => done,
+    }
+}
+
+/// A 64-bit number of a mark, written as text.
+fn number_in(value: &Value, name: &str) -> Option<u64> {
+    value.get(name)?.as_str()?.parse().ok()
 }
 
 /// Make what was done to the entries of `dir` (a file made in it) survive the machine.
@@ -295,6 +374,64 @@ impl Store for FileStore {
             self.files.remove(list);
         }
         written
+    }
+
+    fn marks(&mut self) -> io::Result<Vec<(String, Openly)>> {
+        let mut paths: Vec<PathBuf> = fs::read_dir(&self.dir)?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == MARK_EXTENSION))
+            .collect();
+        paths.sort();
+        let mut marks = Vec::new();
+        for path in paths {
+            let named = list_of(&path)?;
+            let not_a_mark = || invalid(format!("{}: it is not a list's mark", path.display()));
+            let text = fs::read_to_string(&path)?;
+            let value: Value = serde_json::from_str(text.trim_end()).map_err(|_| not_a_mark())?;
+            if value.get("list").and_then(Value::as_str) != Some(named.as_str()) {
+                return Err(invalid(format!(
+                    "{}: it is the mark of another list",
+                    path.display()
+                )));
+            }
+            let mark = Openly {
+                created_at_ms: number_in(&value, "created_at_ms").ok_or_else(not_a_mark)?,
+                touched_at_ms: number_in(&value, "touched_at_ms").ok_or_else(not_a_mark)?,
+            };
+            marks.push((named, mark));
+        }
+        Ok(marks)
+    }
+
+    fn mark(&mut self, list: &str, mark: &Openly) -> io::Result<()> {
+        let path = self.mark_path_of(list);
+        let draft = self
+            .dir
+            .join(format!("{}.{MARK_DRAFT_EXTENSION}", hex(list)));
+        let mut line = json!({
+            "list": list,
+            "created_at_ms": mark.created_at_ms.to_string(),
+            "touched_at_ms": mark.touched_at_ms.to_string(),
+        })
+        .to_string();
+        line.push('\n');
+        {
+            let mut file = File::create(&draft)?;
+            file.write_all(line.as_bytes())?;
+            file.sync_all()?;
+        }
+        fs::rename(&draft, &path)?;
+        sync_directory(&self.dir)
+    }
+
+    fn remove(&mut self, list: &str) -> io::Result<()> {
+        // The file open for appending is closed before it is deleted.
+        self.files.remove(list);
+        remove_if_there(&self.path_of(list))?;
+        sync_directory(&self.dir)?;
+        remove_if_there(&self.mark_path_of(list))?;
+        sync_directory(&self.dir)
     }
 }
 
@@ -476,6 +613,110 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         assert!(error.to_string().contains("another list"), "{error}");
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn openly(created_at_ms: u64, touched_at_ms: u64) -> Openly {
+        Openly {
+            created_at_ms,
+            touched_at_ms,
+        }
+    }
+
+    #[test]
+    fn a_mark_is_kept_in_place_of_the_one_before_and_read_back_by_its_list() {
+        let dir = scratch("marks");
+        let mut store = FileStore::open(&dir).unwrap();
+        store.append("../x", &op(1)).unwrap();
+        store.append("home", &op(2)).unwrap();
+        store.mark("home", &openly(10, 10)).unwrap();
+        store.mark("home", &openly(10, 99)).unwrap();
+        store.mark("../x", &openly(5, 6)).unwrap();
+        let mut again = FileStore::open(&dir).unwrap();
+        let mut marks = again.marks().unwrap();
+        marks.sort();
+        assert_eq!(
+            marks,
+            vec![
+                ("../x".to_string(), openly(5, 6)),
+                ("home".to_string(), openly(10, 99)),
+            ]
+        );
+        // A mark is no list: the lists and their records are what they were.
+        let mut lists = again.lists().unwrap();
+        lists.sort();
+        assert_eq!(lists, vec!["../x", "home"]);
+        assert_eq!(again.load().unwrap().len(), 2);
+        // A draft a crash left before its rename is not a mark.
+        fs::write(
+            dir.join(format!("{}.{MARK_DRAFT_EXTENSION}", hex("work"))),
+            b"{\"list\":\"wo",
+        )
+        .unwrap();
+        assert_eq!(again.marks().unwrap().len(), 2);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mark_that_is_not_one_or_names_another_list_is_corruption() {
+        let dir = scratch("bad-marks");
+        let mut store = FileStore::open(&dir).unwrap();
+        store.mark("home", &openly(1, 2)).unwrap();
+        let path = store.mark_path_of("home");
+        fs::write(
+            &path,
+            b"{\"list\":\"work\",\"created_at_ms\":\"1\",\"touched_at_ms\":\"2\"}\n",
+        )
+        .unwrap();
+        let error = store.marks().unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("another list"), "{error}");
+        fs::write(&path, b"{\"list\":\"home\",\"created_at_ms\":1}\n").unwrap();
+        assert_eq!(
+            store.marks().unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_list_removed_is_gone_whole_and_its_name_can_be_held_again() {
+        let dir = scratch("remove");
+        let mut store = FileStore::open(&dir).unwrap();
+        store.mark("home", &openly(1, 1)).unwrap();
+        store.append("home", &op(1)).unwrap();
+        store.append("work", &op(2)).unwrap();
+        assert!(store.files.contains_key("home"), "its file is open");
+        store.remove("home").unwrap();
+        assert!(!store.files.contains_key("home"), "its file was closed");
+        assert!(!store.path_of("home").exists() && !store.mark_path_of("home").exists());
+        let mut again = FileStore::open(&dir).unwrap();
+        assert_eq!(again.load().unwrap(), vec![("work".to_string(), op(2))]);
+        assert_eq!(again.marks().unwrap(), Vec::new());
+        // Removing what the store holds nothing of does nothing.
+        again.remove("home").unwrap();
+        again.remove("never").unwrap();
+        // The name is a new list's from its first record on.
+        store.append("home", &op(3)).unwrap();
+        let rows = FileStore::open(&dir).unwrap().load().unwrap();
+        assert!(rows.contains(&("home".to_string(), op(3))));
+        assert!(!rows.contains(&("home".to_string(), op(1))));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_memory_store_keeps_marks_and_removes_a_list_whole() {
+        let mut store = MemoryStore::new();
+        store.append("home", &op(1)).unwrap();
+        store.append("work", &op(2)).unwrap();
+        store.mark("home", &openly(1, 1)).unwrap();
+        store.mark("home", &openly(1, 4)).unwrap();
+        assert_eq!(
+            store.marks().unwrap(),
+            vec![("home".to_string(), openly(1, 4))]
+        );
+        store.remove("home").unwrap();
+        assert_eq!(store.load().unwrap(), vec![("work".to_string(), op(2))]);
+        assert!(store.marks().unwrap().is_empty());
     }
 
     #[test]

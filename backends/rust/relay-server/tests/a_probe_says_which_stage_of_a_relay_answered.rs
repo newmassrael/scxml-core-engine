@@ -21,7 +21,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sce_rust_relay::serve::{serve, serve_tls};
 use sce_rust_relay::tls::{self, Roots};
-use sce_rust_relay::{Authority, Limits, MemoryStore, Record, Relay, Store};
+use sce_rust_relay::{Authority, Limits, MemoryStore, Openly, Record, Relay, Store};
 use sce_rust_relay_server::probe::{
     self, own_token, Asked, Outcome, Report, Stage, Target, PROBE_LIST,
 };
@@ -82,6 +82,18 @@ impl Store for Refusing {
     }
 
     fn append(&mut self, _list: &str, _record: &Record) -> std::io::Result<()> {
+        Err(std::io::Error::other("no space left on the device"))
+    }
+
+    fn marks(&mut self) -> std::io::Result<Vec<(String, Openly)>> {
+        Ok(Vec::new())
+    }
+
+    fn mark(&mut self, _list: &str, _mark: &Openly) -> std::io::Result<()> {
+        Err(std::io::Error::other("no space left on the device"))
+    }
+
+    fn remove(&mut self, _list: &str) -> std::io::Result<()> {
         Err(std::io::Error::other("no space left on the device"))
     }
 }

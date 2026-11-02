@@ -14,8 +14,8 @@ use std::sync::{Arc, Mutex};
 
 use sce_rust_mesh::endpoint::{Admission, Sealer};
 use sce_rust_relay::{
-    Authority, Code, Courier, DirectLink, FileStore, Limits, Link, LinkError, MemoryStore, Record,
-    Relay, Request, Response, Store,
+    Authority, Code, Courier, DirectLink, FileStore, Limits, Link, LinkError, MemoryStore, Openly,
+    Record, Relay, Request, Response, Store,
 };
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
 use sce_rust_trust::message::{self, Link as OperationLink};
@@ -755,6 +755,15 @@ fn a_relay_that_cannot_keep_a_record_takes_nothing_more() {
                 return Err(std::io::Error::other("the disk is full"));
             }
             self.inner.append(list, record)
+        }
+        fn marks(&mut self) -> std::io::Result<Vec<(String, Openly)>> {
+            self.inner.marks()
+        }
+        fn mark(&mut self, list: &str, mark: &Openly) -> std::io::Result<()> {
+            self.inner.mark(list, mark)
+        }
+        fn remove(&mut self, list: &str) -> std::io::Result<()> {
+            self.inner.remove(list)
         }
     }
     let fail = Arc::new(Mutex::new(false));
