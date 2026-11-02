@@ -237,28 +237,27 @@ fn an_algorithm_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
 
 #[test]
 fn a_forge_document_is_refused_through_the_string_entry() {
-    // A kind no backend of this list writes, in whole or in part: a procedure.
+    // A kind no backend of this list writes, in whole or in part: a queue.
     let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="procedure" name="linear_pipeline" initial="stage_a">
-  <datamodel>
-    <data id="value" sce:type="int32" sce:direction="in"/>
-  </datamodel>
-  <state id="stage_a">
-    <transition target="done"/>
-  </state>
-  <final id="done"/>
+       version="1.0" sce:kind="queue" name="rx_events">
+  <sce:element-type>rx_event</sce:element-type>
+  <sce:producers>many</sce:producers>
+  <sce:consumers>one</sce:consumers>
+  <sce:progress>lock-free</sce:progress>
+  <sce:bounded capacity="64"/>
+  <sce:participants const="2"/>
 </scxml>"#;
     for language in backends_with_no_emitter() {
         let error = compile_forge_from_string(
             document,
             DocumentLabel {
-                identifier: "linear_pipeline",
-                diagnostic_label: "linear_pipeline.scxml",
+                identifier: "rx_events",
+                diagnostic_label: "rx_events.scxml",
             },
             language,
         )
         .err()
-        .unwrap_or_else(|| panic!("{language:?} generated a procedure it has no emitter for"));
+        .unwrap_or_else(|| panic!("{language:?} generated a queue it has no emitter for"));
         let text = format!("{error:?}");
         assert!(
             text.contains(language_wire_name(language)),

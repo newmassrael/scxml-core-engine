@@ -1,0 +1,100 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: 54480e3a74914cc26e2c9613cedbc157df3a8f640cc21e599aebce75be7f1163
+// SCE-MAP: procedure_linear.scxml:2 :: _forge_body
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
+// Runtime: none
+// Do not edit — regenerate from the source SCXML file.
+//
+// An event-driven procedure: a class that states the policy of a state machine (its states and
+// events, the entry action of each state, the transition each takes on each event) and adopts the
+// runtime's `ProcedureStateMachine`, whose `runToCompletion` runs it. It supports <onentry>/<send>,
+// event-driven <transition>, <assign> and <donedata>. A pure decision tree, with no events and no
+// sends, runs by the transitions that name no event.
+//
+// A service address is sent as text: an integer in decimal, a string as written.
+//
+// The states and the events are enumerations nested in the class. A file-level enumeration of one
+// name would be declared again by every procedure of the module, which is one SwiftPM target.
+
+import SceForgeRuntime
+
+public final class ProcedureLinear: ProcedureStateMachine {
+    public enum State {
+        case stageA
+        case stageB
+        case stageC
+        case done
+    }
+
+    public enum Event {
+        case noEvent
+        case errorExecution
+        case fail
+        case ok
+    }
+
+    public var serviceHandler: ProcedureServiceHandler?
+    public var doneData: [String: String] = [:]
+    public var pendingEventData = ""
+
+    private var value: Int32 = 0
+
+    public init() {}
+
+    public func setValue(_ value: Int32) {
+        self.value = value
+    }
+
+    public func initialState() -> State { .stageA }
+
+    public func isFinal(_ state: State) -> Bool {
+        if state == .done { return true }
+        return false
+    }
+
+    public func finalStateName(_ state: State) -> String {
+        if state == .done { return "done" }
+        return ""
+    }
+
+    public func executeEntryActions(_ state: State) -> (event: Event, data: String) {
+        return (.noEvent, "")
+    }
+
+    public func processTransition(_ state: State, _ event: Event) -> ProcedureTransition<State>? {
+        if state == .stageA {
+            if event == .noEvent {
+                return ProcedureTransition(target: .stageB, index: 0, hasAssigns: false)
+            }
+        }
+        if state == .stageB {
+            if event == .noEvent {
+                return ProcedureTransition(target: .stageC, index: 0, hasAssigns: false)
+            }
+        }
+        if state == .stageC {
+            if event == .noEvent {
+                return ProcedureTransition(target: .done, index: 0, hasAssigns: false)
+            }
+        }
+        return nil
+    }
+
+    // Answers nil for the normal flow. An event it answers was raised by an assign-time check (a
+    // bytes value past the cap of its variable), and the run loop handles it in the source state.
+    public func executeTransitionActions(_ source: State, _ index: Int) -> Event? {
+        return nil
+    }
+
+    /// Runs a procedure over `serviceHandler` with the helpers and the inputs it names.
+    public static func execute(
+        _ serviceHandler: @escaping ProcedureServiceHandler,
+        _ value: Int32
+    ) -> ProcedureRunResult {
+        let sceMachine = ProcedureLinear()
+        sceMachine.serviceHandler = serviceHandler
+        sceMachine.setValue(value)
+        return sceMachine.runToCompletion()
+    }
+}

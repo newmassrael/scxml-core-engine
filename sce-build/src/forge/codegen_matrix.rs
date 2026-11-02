@@ -437,7 +437,8 @@ pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
 /// and a variant named for a reserved word), and its codec a positional one of
 /// native-width integers at byte offsets (`forge::generator::swift_codec::unlowered` names
 /// each shape past that), and its observer one whose events are cases Swift can spell
-/// (`forge::generator::swift_observer_unlowered`), and its broadcast log one over an element whose codec that is
+/// (`forge::generator::swift_observer_unlowered`), and its procedure one whose imports are the
+/// functions of stateless kinds (`forge::generator::swift_procedure_unlowered`), and its broadcast log one over an element whose codec that is
 /// (`BroadcastLogElementFacts::refusal_for` refuses every other element by the codec's own
 /// refusal, and the narrow row of a deploy whose target has no 64-bit atomic is refused by
 /// name).
@@ -457,6 +458,7 @@ pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
             | (ForgeKind::Validator, Language::Swift)
             | (ForgeKind::Timer, Language::Swift)
             | (ForgeKind::Observer, Language::Swift)
+            | (ForgeKind::Procedure, Language::Swift)
             | (ForgeKind::BroadcastLog, Language::Swift)
     )
 }

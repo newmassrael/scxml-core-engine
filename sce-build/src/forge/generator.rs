@@ -26949,6 +26949,11 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Observer(m) => {
             swift_observer_unlowered(m).map(|c| swift_observer_refusal(m, &c))
         }
+        // A procedure over scalars and bytes, the functions of the stateless kinds it
+        // imports, and the helpers the host sets.
+        ForgeDocument::Procedure(m) => {
+            swift_procedure_unlowered(m, imports).map(|c| swift_procedure_refusal(m, &c))
+        }
         // A log is refused for its element's codec, which only the document-set compile has
         // in hand: the renderer reads that refusal from the resolution it was handed
         // ([`crate::BroadcastLogElementFacts::swift_unlowered`]) and refuses before it writes.
@@ -26972,6 +26977,7 @@ pub fn generate_swift_with_imports(
     load_forge_templates(&mut env, &forge_dir, Language::Swift, options)?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
+    env.add_filter("swift_case", |pascal: String| swift_procedure_case(&pascal));
     let code = match doc {
         ForgeDocument::Algorithm(m) => {
             render_algorithm(&env, m, imports, Language::Swift, options)?
@@ -26987,6 +26993,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Codec(m) => swift_codec::render(&env, m, imports)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, Language::Swift)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Procedure(m) => render_procedure_swift(&env, m, imports)?,
         ForgeDocument::BroadcastLog(m) => render_broadcast_log_swift(&env, m, imports, options)?,
         _ => unreachable!("every other kind returned above"),
     };
@@ -29448,6 +29455,7 @@ fn build_procedure_states_with_assigns(
             | ExprTarget::Kotlin
             | ExprTarget::Go
             | ExprTarget::Python
+            | ExprTarget::Swift
             | ExprTarget::C
     );
 
@@ -29827,6 +29835,284 @@ fn render_procedure_kotlin(
         all_imports => all_imports,
     };
 
+    Ok(tmpl.render(ctx).map_err(generator::render_error)?)
+}
+
+// ── Procedure: Swift ────────────────────────────────────────
+
+/// The case of a state or an event of a procedure in the Swift enumerations the class nests:
+/// the PascalCase name every backend derives from the document, with its first letter lowered
+/// as a Swift case is (the API Design Guidelines).
+///
+/// One definition, for the template's `swift_case` filter and for the refusal that holds the
+/// cases to each other ([`swift_procedure_unlowered`]).
+pub(crate) fn swift_procedure_case(pascal: &str) -> String {
+    let mut chars = pascal.chars();
+    match chars.next() {
+        Some(first) => first.to_lowercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
+/// The members a generated procedure class has besides the ones an author names: those the
+/// runtime's `ProcedureStateMachine` requires and the class declares. A variable or a helper
+/// spelled as one of them would be a second declaration of it, which Swift does not take.
+const SWIFT_PROCEDURE_MEMBERS: &[&str] = &[
+    "serviceHandler",
+    "doneData",
+    "pendingEventData",
+    "initialState",
+    "isFinal",
+    "finalStateName",
+    "executeEntryActions",
+    "processTransition",
+    "executeTransitionActions",
+    "runToCompletion",
+    "execute",
+    "maxIterations",
+    "init",
+];
+
+/// What of the procedure `m`, whose imports are `imports`, the Swift backend does not lower
+/// yet, described for a refusal by name (`generate/unsupported-feature`); `None` for one it
+/// writes.
+///
+/// A procedure calls the function of a condition, a lookup, a transform or an interpolation it
+/// imports, which is the unit of that kind. An import that holds state (a filter, a codec) is a
+/// member the class would hold, and another kind is not a function a procedure calls; each is
+/// named. A state or an event is a case of an enumeration nested in the class, so a name Swift
+/// reserves is refused and not escaped, and two events that become one case are refused and not
+/// merged (two states that do are refused when the document is validated). A variable or a helper is a property of the class, and a name the class already has
+/// for its own members, or a setter two of them would share, is refused.
+pub(crate) fn swift_procedure_unlowered(
+    m: &ProcedureModel,
+    imports: &[ImportContext],
+) -> Option<String> {
+    use crate::generator::Language;
+    if let Some(why) = imports
+        .iter()
+        .find_map(|import| match import.kind.as_str() {
+            "condition" | "lookup" | "transform" | "interpolation" => import
+                .swift_unlowered
+                .as_ref()
+                .map(|why| format!("{} '{}' with {why}", import.kind, import.alias)),
+            kind => Some(format!(
+                "the <sce:import as=\"{}\">, an import of {kind} that a procedure holds or calls",
+                import.alias
+            )),
+        })
+    {
+        return Some(why);
+    }
+
+    // The cases: a state's, then an event's. Two state ids that become one name are refused
+    // when the document is validated, as every backend's are; the case lowers the first letter
+    // of that name, so a state `Default` is the reserved `default` the id was not. `noEvent` is
+    // the case of "no event", which a document's own event may not be.
+    let case_of = |name: &str| swift_procedure_case(&filters::to_pascal_case(name.to_string()));
+    for state in &m.states {
+        if crate::reader_names::is_reserved_word(Language::Swift, &case_of(&state.id)) {
+            return Some(format!(
+                "a state `{}`, a case name Swift reserves,",
+                state.id
+            ));
+        }
+    }
+    let mut events: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for own in ["ok", "fail", "error.execution"] {
+        events.insert(case_of(own), own.to_string());
+    }
+    events.insert("noEvent".to_string(), "noEvent".to_string());
+    for event in m
+        .states
+        .iter()
+        .flat_map(|s| s.transitions.iter())
+        .filter_map(|tr| tr.event.as_deref())
+    {
+        let case = case_of(event);
+        if crate::reader_names::is_reserved_word(Language::Swift, &case) {
+            return Some(format!("an event `{event}`, a case name Swift reserves,"));
+        }
+        if let Some(first) = events.get(&case) {
+            if first != event {
+                return Some(format!(
+                    "the events `{first}` and `{event}`, which are the one case `{case}`"
+                ));
+            }
+        } else {
+            events.insert(case, event.to_string());
+        }
+    }
+
+    let spelled = |id: &str| swift_local_spelling(id);
+    let names = m
+        .inputs
+        .iter()
+        .map(|f| f.id.as_str())
+        .chain(m.internals.iter().map(|f| f.id.as_str()))
+        .chain(m.helpers.iter().map(|h| h.name.as_str()));
+    let mut setters: std::collections::BTreeMap<String, &str> = std::collections::BTreeMap::new();
+    for name in names {
+        if SWIFT_PROCEDURE_MEMBERS.contains(&spelled(name).as_str()) {
+            return Some(format!(
+                "a variable or a helper `{name}`, the name of a member the class has"
+            ));
+        }
+        let setter = filters::to_pascal_case(name.to_string());
+        if let Some(first) = setters.insert(setter.clone(), name) {
+            if first != name {
+                return Some(format!(
+                    "the variables `{first}` and `{name}`, which share the setter `set{setter}`"
+                ));
+            }
+        }
+    }
+    None
+}
+
+/// The sentence `generate` answers the procedure `m` with for the construct `construct` it
+/// holds ([`swift_procedure_unlowered`]).
+fn swift_procedure_refusal(m: &ProcedureModel, construct: &str) -> String {
+    format!(
+        "procedure '{}': {construct} has no Swift lowering yet",
+        m.name
+    )
+}
+
+/// A procedure as a Swift class that adopts the runtime's `ProcedureStateMachine`: the states
+/// and events as enumerations nested in it, the variables and helpers as properties, the entry
+/// actions, transitions and assigns as the methods the protocol requires.
+fn render_procedure_swift(
+    env: &minijinja::Environment,
+    m: &ProcedureModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    use crate::generator::Language;
+    let l = LangCtx::new(Language::Swift, imports);
+    let pascal = filters::to_pascal_case(m.name.clone());
+    let common = build_procedure_common(m, true);
+
+    let input_fields: Vec<serde_json::Value> = m
+        .inputs
+        .iter()
+        .map(|f| {
+            serde_json::json!({
+                "id": swift_local_spelling(&f.id),
+                "swift_type": l.type_name(&f.sce_type),
+                "setter_name": filters::to_pascal_case(f.id.clone()),
+                "default_value": l.default_expr(&f.sce_type),
+            })
+        })
+        .collect();
+
+    // A `<sce:helper>` is a closure the host sets before the run; until it does, calling it
+    // stops with the helper's name, as on every other backend, and not with a zero value.
+    let helper_fields: Vec<serde_json::Value> = m
+        .helpers
+        .iter()
+        .map(|h| {
+            let params: Vec<String> = h.args.iter().map(|a| l.type_name(a).into_owned()).collect();
+            let setter_name = filters::to_pascal_case(h.name.clone());
+            let ignored = vec!["_"; h.args.len()].join(", ");
+            let message = format!(
+                "helper '{}' not set: call set{setter_name}() before runToCompletion()",
+                h.name
+            );
+            let default_impl = if h.args.is_empty() {
+                format!("{{ fatalError(\"{message}\") }}")
+            } else {
+                format!("{{ {ignored} in fatalError(\"{message}\") }}")
+            };
+            serde_json::json!({
+                "id": swift_local_spelling(&h.name),
+                "setter_name": setter_name,
+                "function_type": format!("({}) -> {}", params.join(", "), l.type_name(&h.returns)),
+                "default_impl": default_impl,
+            })
+        })
+        .collect();
+
+    let procedure_type_ctx = crate::forge::type_ctx::procedure(m, imports);
+    let empty_renames = std::collections::HashMap::new();
+    let internal_fields: Vec<serde_json::Value> = m
+        .internals
+        .iter()
+        .map(|f| -> Result<serde_json::Value, ForgeError> {
+            let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
+            let default_val = match &f.expr {
+                None => l.default_expr(&f.sce_type),
+                Some(e) => transpile_procedure_expr(
+                    f.expr_site(e),
+                    ExprTarget::Swift,
+                    &procedure_type_ctx,
+                    &empty_renames,
+                    expr::Expected::Slot(expected),
+                )?,
+            };
+            Ok(serde_json::json!({
+                "id": swift_local_spelling(&f.id),
+                "swift_type": l.type_name(&f.sce_type),
+                "default_value": default_val,
+            }))
+        })
+        .collect::<Result<_, _>>()?;
+
+    // `_event.data` is the property the runtime protocol holds, and the alias of an imported
+    // function is the call its unit spells.
+    let mut owned_rename: std::collections::HashMap<&str, String> =
+        std::collections::HashMap::from([("_event.data", "pendingEventData".to_string())]);
+    owned_rename.extend(stateless_import_renames(imports));
+    let rename_map: std::collections::HashMap<&str, &str> =
+        owned_rename.iter().map(|(k, v)| (*k, v.as_str())).collect();
+
+    let states_with_entry = build_procedure_states_with_entry(
+        m,
+        ExprTarget::Swift,
+        &procedure_type_ctx,
+        &rename_map,
+        None,
+        imports,
+    )?;
+    let final_states_with_donedata = build_procedure_final_states_with_donedata(
+        m,
+        ExprTarget::Swift,
+        &procedure_type_ctx,
+        &rename_map,
+    )?;
+    let non_final_states = build_procedure_non_final_states(
+        m,
+        ExprTarget::Swift,
+        &procedure_type_ctx,
+        &rename_map,
+        &common.event_name_map,
+    )?;
+    let states_with_assigns = build_procedure_states_with_assigns(
+        m,
+        ExprTarget::Swift,
+        &procedure_type_ctx,
+        &rename_map,
+        &[],
+    )?;
+
+    let tmpl = env
+        .get_template("procedure.swift.jinja2")
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
+    let ctx = minijinja::context! {
+        class_name => &pascal,
+        state_enum => minijinja::Value::from_serialize(&common.state_enum),
+        event_enum => minijinja::Value::from_serialize(&common.event_enum),
+        input_fields => minijinja::Value::from_serialize(&input_fields),
+        internal_fields => minijinja::Value::from_serialize(&internal_fields),
+        helper_fields => minijinja::Value::from_serialize(&helper_fields),
+        initial_state => common.initial_state,
+        final_states => minijinja::Value::from_serialize(&common.final_states),
+        states_with_entry => minijinja::Value::from_serialize(&states_with_entry),
+        final_states_with_donedata => minijinja::Value::from_serialize(&final_states_with_donedata),
+        non_final_states => minijinja::Value::from_serialize(&non_final_states),
+        states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
+        has_external_deps => common.has_external_deps,
+        payload_exprs => minijinja::Value::from_serialize(&common.payload_exprs),
+    };
     Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
@@ -31033,10 +31319,10 @@ impl LangCtx {
             crate::generator::Language::Kotlin => kotlin_default(ty).to_string(),
             crate::generator::Language::Rust => rust_default(ty).to_string(),
             crate::generator::Language::Python => python_default(ty).to_string(),
+            crate::generator::Language::Swift => swift_zero_value(ty).to_string(),
             other @ (crate::generator::Language::Cpp
             | crate::generator::Language::Go
-            | crate::generator::Language::C11
-            | crate::generator::Language::Swift) => unreachable!(
+            | crate::generator::Language::C11) => unreachable!(
                 "LangCtx::default_expr called for {other:?} — only the backends \
                  that spell a per-field default have one"
             ),

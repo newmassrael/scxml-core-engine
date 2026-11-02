@@ -1,0 +1,182 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// An event-driven procedure: a class that states the policy of a state machine (its states and
+// events, the entry action of each state, the transition each takes on each event) and adopts the
+// runtime's `ProcedureStateMachine`, whose `runToCompletion` runs it. It supports <onentry>/<send>,
+// event-driven <transition>, <assign> and <donedata>. A pure decision tree, with no events and no
+// sends, runs by the transitions that name no event.
+//
+// A service address is sent as text: an integer in decimal, a string as written.
+//
+// The states and the events are enumerations nested in the class. A file-level enumeration of one
+// name would be declared again by every procedure of the module, which is one SwiftPM target.
+{% if has_external_deps %}
+//
+// External dependencies (from sce:payload expressions, which must be in scope):
+{% for expr in payload_exprs %}
+//   {{ expr }}
+{% endfor %}
+{% endif %}
+
+import SceForgeRuntime
+
+public final class {{ class_name }}: ProcedureStateMachine {
+    public enum State {
+{% for s in state_enum %}
+        case {{ s.name | swift_case }}
+{% endfor %}
+    }
+
+    public enum Event {
+        case noEvent
+{% for e in event_enum %}
+        case {{ e.name | swift_case }}
+{% endfor %}
+    }
+
+    public var serviceHandler: ProcedureServiceHandler?
+    public var doneData: [String: String] = [:]
+    public var pendingEventData = ""
+
+{% for f in input_fields %}
+    private var {{ f.id }}: {{ f.swift_type }} = {{ f.default_value }}
+{% endfor %}
+{% for f in internal_fields %}
+    private var {{ f.id }}: {{ f.swift_type }} = {{ f.default_value }}
+{% endfor %}
+{% if helper_fields %}
+
+    // <sce:helper> DI closures: each fails fast until the host sets it.
+{% for h in helper_fields %}
+    private var {{ h.id }}: {{ h.function_type }} = {{ h.default_impl }}
+{% endfor %}
+{% endif %}
+
+    public init() {}
+{% for h in helper_fields %}
+
+    public func set{{ h.setter_name }}(_ fn: @escaping {{ h.function_type }}) {
+        self.{{ h.id }} = fn
+    }
+{% endfor %}
+{% for f in input_fields %}
+
+    public func set{{ f.setter_name }}(_ value: {{ f.swift_type }}) {
+        self.{{ f.id }} = value
+    }
+{% endfor %}
+
+    public func initialState() -> State { .{{ initial_state | swift_case }} }
+
+    public func isFinal(_ state: State) -> Bool {
+{% for s in final_states %}
+        if state == .{{ s.name | swift_case }} { return true }
+{% endfor %}
+        return false
+    }
+
+    public func finalStateName(_ state: State) -> String {
+{% for s in final_states %}
+        if state == .{{ s.name | swift_case }} { return "{{ s.id }}" }
+{% endfor %}
+        return ""
+    }
+
+    public func executeEntryActions(_ state: State) -> (event: Event, data: String) {
+{% for s in states_with_entry %}
+        if state == .{{ s.name | swift_case }} {
+{% for send in s.sends %}
+            if let sceHandler = serviceHandler {
+                let sceRequest = ProcedureServiceRequest(service: "{{ send.service }}"{% if send.subfunc %}, subfunc: "{{ send.subfunc }}"{% endif %}{% if send.has_addr %}, addr: {% if send.addr_form == "text" %}{{ send.addr_expr }}{% else %}String({{ send.addr_expr }}){% endif %}{% endif %}{% if send.payload %}, payload: {{ send.payload_expr }}{% endif %})
+                let sceResponse = sceHandler(sceRequest)
+                return (sceResponse.success ? .ok : .fail, sceResponse.data)
+            }
+{% endfor %}
+        }
+{% endfor %}
+{% for s in final_states_with_donedata %}
+        if state == .{{ s.name | swift_case }} {
+{% for p in s.done_params %}
+            doneData["{{ p.name }}"] = String(describing: {{ p.expr }})
+{% endfor %}
+        }
+{% endfor %}
+        return (.noEvent, "")
+    }
+
+    public func processTransition(_ state: State, _ event: Event) -> ProcedureTransition<State>? {
+{% for s in non_final_states %}
+        if state == .{{ s.name | swift_case }} {
+{% for tr in s.transitions %}
+{% if tr.has_event %}
+            if event == .{{ tr.event_enum | swift_case }} {
+{% else %}
+            if event == .noEvent {
+{% endif %}
+{% if tr.has_cond %}
+                if {{ tr.cond }} {
+                    return ProcedureTransition(target: .{{ tr.target_name | swift_case }}, index: {{ tr.index }}, hasAssigns: {{ tr.has_assigns }})
+                }
+{% else %}
+                return ProcedureTransition(target: .{{ tr.target_name | swift_case }}, index: {{ tr.index }}, hasAssigns: {{ tr.has_assigns }})
+{% endif %}
+            }
+{% endfor %}
+        }
+{% endfor %}
+        return nil
+    }
+
+    // Answers nil for the normal flow. An event it answers was raised by an assign-time check (a
+    // bytes value past the cap of its variable), and the run loop handles it in the source state.
+    public func executeTransitionActions(_ source: State, _ index: Int) -> Event? {
+{% for s in states_with_assigns %}
+        if source == .{{ s.name | swift_case }} {
+{% for tr in s.assign_transitions %}
+            if index == {{ tr.index }} {
+{% for a in tr.assigns %}
+{% if a.is_bytes_with_cap %}
+                do {
+                    let sceValue = {{ a.expr }}
+                    if sceValue.count > {{ a.cap }} {
+                        return .errorExecution
+                    }
+                    {{ a.location }} = sceValue
+                }
+{% else %}
+                {{ a.location }} = {{ a.expr }}
+{% endif %}
+{% endfor %}
+            }
+{% endfor %}
+        }
+{% endfor %}
+        return nil
+    }
+
+    /// Runs a procedure over `serviceHandler` with the helpers and the inputs it names.
+    public static func execute(
+        _ serviceHandler: @escaping ProcedureServiceHandler{% for h in helper_fields %},
+        _ {{ h.id }}: @escaping {{ h.function_type }}{% endfor %}{% for f in input_fields %},
+        _ {{ f.id }}: {{ f.swift_type }}{% endfor %}
+
+    ) -> ProcedureRunResult {
+        let sceMachine = {{ class_name }}()
+        sceMachine.serviceHandler = serviceHandler
+{% for h in helper_fields %}
+        sceMachine.set{{ h.setter_name }}({{ h.id }})
+{% endfor %}
+{% for f in input_fields %}
+        sceMachine.set{{ f.setter_name }}({{ f.id }})
+{% endfor %}
+        return sceMachine.runToCompletion()
+    }
+}
