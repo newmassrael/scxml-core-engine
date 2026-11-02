@@ -419,8 +419,19 @@ are one value held two ways. So:
   a profile on every target. A bound written as `where DefaultStorage: {Codec}From<'a>` does not do it: a predicate
   naming no type parameter is checked where it is written. A no-allocator build of every kind of field with no bound
   holds this.
-- **Content-line text with no bound is the next landing.** A content-line codec stores its strings in a container of
-  their bound on every Rust profile, with no storage profile to grow one, so it moves onto the storage profile first.
+- **Content-line text and lists with no bound are the next landing, decided as follows.**
+  - *A repeated property says so apart from its bound.* ADR 0014 made `sce:max-count` both the mark of a repeated
+    property and its bound, which was sound while every list had one; a property the protocol repeats without a bound
+    (an iCalendar `ATTENDEE`) then has no spelling. `sce:repeated="true"` marks it, and `sce:max-count` is taken only
+    beside it, as `sce:max-values` is taken only beside `sce:separator`. `sce:max-values` and `sce:max-size` become
+    optional. A document that writes `sce:max-count` alone is refused, naming `sce:repeated`, and the guide says so.
+  - *The Rust value takes the storage profile.* It is `{Codec}In<S>`, with a tag for each text, parameter text, value
+    list and line list, and `Inline` answers for those with a bound. A content line is unescaped and unfolded as it is
+    read, so no form borrows the frame, and the value has no lent form; the runtime's readers write into what `S`
+    holds through the one container trait the positional and CBOR forms store through, and answer past the bound
+    with the line's own error and past the capacity with `CapacityExceeded`.
+  - *The other backends* take "no bound" in their readers, and C11 takes a deployment's capacity for a content-line
+    entry as it does for a CBOR one, and refuses an entry with neither.
 - **No generated item stands on the lent form at `Inline`.** The first run of a list with no bound found every static
   of a borrowed codec, and its lent projections, on `{Codec}<'a>`, which is `Lent<'a, Inline>`: such a codec did not
   compile anywhere, an MCU build with a deployment included. A codec's wire functions are on `{Codec}Wire`, a unit
