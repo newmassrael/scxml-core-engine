@@ -32,6 +32,7 @@ use sce_rust_relay_transport::{Notice, Notices, Signal, Transport, TransportErro
 use tokio::net::TcpStream;
 use tokio::sync::Notify;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::handshake::client::Request as UpgradeRequest;
 use tokio_tungstenite::tungstenite::{http, Error as WsError, Message};
 use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 
@@ -83,13 +84,7 @@ impl WssLink {
     /// deployment whose relays are under either a private authority or a public one with
     /// [`Roots::PublicAnd`]. An authority that is not a certificate is refused here.
     pub fn believing(base: &str, token: &str, roots: &Roots) -> io::Result<Self> {
-        let base = base.trim_end_matches('/');
-        if !(base.starts_with("ws://") || base.starts_with("wss://")) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("`{base}` is not a ws:// or wss:// address"),
-            ));
-        }
+        let url = endpoint(base)?;
         let tls = tls::client_config(roots).map_err(|error| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -100,7 +95,7 @@ impl WssLink {
             runtime: tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?,
-            url: format!("{base}{PATH}"),
+            url,
             token: token.to_string(),
             tls,
             socket: None,
@@ -118,16 +113,37 @@ impl WssLink {
     }
 }
 
-/// Dial the relay at `url`, over TLS as `tls` says when it is a `wss://` one, and present `token`.
-async fn dial(url: &str, token: &str, tls: &Arc<ClientConfig>) -> Result<Socket, Broke> {
+/// The address a device connects to at the relay whose base is `base` (`ws://host:port` or
+/// `wss://host:port`, with a final `/` or without): the base and [`PATH`]. A base that is not a
+/// WebSocket's is refused.
+pub fn endpoint(base: &str) -> io::Result<String> {
+    let base = base.trim_end_matches('/');
+    if !(base.starts_with("ws://") || base.starts_with("wss://")) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("`{base}` is not a ws:// or wss:// address"),
+        ));
+    }
+    Ok(format!("{base}{PATH}"))
+}
+
+/// The upgrade a device asks for at `url` (an [`endpoint`]), presenting `token` as `Authorization:
+/// Bearer <token>`: what every client of the binding sends, the link's dial and a probe's alike.
+pub fn upgrade_request(url: &str, token: &str) -> Result<UpgradeRequest, String> {
     let mut upgrade = url
         .into_client_request()
-        .map_err(|error| Broke::Link(error.to_string()))?;
+        .map_err(|error| error.to_string())?;
     let value = http::HeaderValue::from_str(&format!("Bearer {token}"))
-        .map_err(|_| Broke::Link("the token is not a header value".to_string()))?;
+        .map_err(|_| "the token is not a header value".to_string())?;
     upgrade
         .headers_mut()
         .insert(http::header::AUTHORIZATION, value);
+    Ok(upgrade)
+}
+
+/// Dial the relay at `url`, over TLS as `tls` says when it is a `wss://` one, and present `token`.
+async fn dial(url: &str, token: &str, tls: &Arc<ClientConfig>) -> Result<Socket, Broke> {
+    let upgrade = upgrade_request(url, token).map_err(Broke::Link)?;
     let connector = Connector::Rustls(Arc::clone(tls));
     match tokio_tungstenite::connect_async_tls_with_config(upgrade, None, false, Some(connector))
         .await

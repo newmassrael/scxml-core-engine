@@ -155,14 +155,51 @@ impl Authority {
 
     /// The device a token names, when the relay issued it for itself and it has not expired.
     pub fn verify(&self, token: &str, now_ms: u64) -> Result<Session, TokenError> {
-        let (payload, tag) = token.split_once('.').ok_or(TokenError::Malformed)?;
-        let payload = encoding::decode(payload).ok_or(TokenError::Malformed)?;
-        let tag = encoding::decode(tag).ok_or(TokenError::Malformed)?;
+        let (payload, tag) = halves(token)?;
         if !equal(&hmac_sha256(&self.secret, &payload), &tag) {
             return Err(TokenError::BadTag);
         }
+        let Claims {
+            audience,
+            list,
+            node,
+            expires_at_ms: expires,
+        } = Claims::read(&payload)?;
+        if audience != self.audience {
+            return Err(TokenError::WrongAudience);
+        }
+        if now_ms >= expires {
+            return Err(TokenError::Expired);
+        }
+        Ok(Session { list, node })
+    }
+}
+
+/// What a token says: the relay it is for, the device of one list it names, and when it expires.
+/// Anyone who holds a token reads it ([`Claims::of`]), since the payload is not sealed; only the
+/// relay's [`Authority::verify`] says that it holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Claims {
+    pub audience: String,
+    pub list: String,
+    pub node: u64,
+    pub expires_at_ms: u64,
+}
+
+impl Claims {
+    /// What `token` says, read without the secret and so not checked: for a holder that needs to
+    /// know which list a token it was handed is for (a probe, which writes only to a list of its
+    /// own). A text that is not a token's form is [`TokenError::Malformed`].
+    pub fn of(token: &str) -> Result<Self, TokenError> {
+        let (payload, _) = halves(token)?;
+        Self::read(&payload)
+    }
+
+    /// The claims a payload writes: four parts, each its length as four bytes big-endian and then
+    /// its UTF-8, and no more.
+    fn read(payload: &[u8]) -> Result<Self, TokenError> {
         let mut parts = Vec::new();
-        let mut rest = payload.as_slice();
+        let mut rest = payload;
         while !rest.is_empty() {
             let length = u32::from_be_bytes(
                 rest.get(..4)
@@ -177,22 +214,25 @@ impl Authority {
         let [audience, list, node, expires] = parts[..] else {
             return Err(TokenError::Malformed);
         };
-        if audience != self.audience {
-            return Err(TokenError::WrongAudience);
-        }
         // A list has a name: the empty one names no list a store could keep.
         if list.is_empty() {
             return Err(TokenError::Malformed);
         }
-        let expires: u64 = expires.parse().map_err(|_| TokenError::Malformed)?;
-        if now_ms >= expires {
-            return Err(TokenError::Expired);
-        }
-        Ok(Session {
+        Ok(Self {
+            audience: audience.to_string(),
             list: list.to_string(),
             node: node.parse().map_err(|_| TokenError::Malformed)?,
+            expires_at_ms: expires.parse().map_err(|_| TokenError::Malformed)?,
         })
     }
+}
+
+/// The payload and the tag of a token, each decoded from the URL alphabet.
+fn halves(token: &str) -> Result<(Vec<u8>, Vec<u8>), TokenError> {
+    let (payload, tag) = token.split_once('.').ok_or(TokenError::Malformed)?;
+    let payload = encoding::decode(payload).ok_or(TokenError::Malformed)?;
+    let tag = encoding::decode(tag).ok_or(TokenError::Malformed)?;
+    Ok((payload, tag))
 }
 
 /// Whether two tags are the same, in time that does not depend on where they first differ.
@@ -292,6 +332,37 @@ mod tests {
             token,
             "AAAADXJlbGF5LmV4YW1wbGUAAAAEaG9tZQAAAAE3AAAADTE4MDAwMDAwMDAwMDA\
              .z-lS-hdIHQ8_6aqSt6shwplWq3VOPIcCCbj0bLifhwo"
+        );
+    }
+
+    #[test]
+    fn a_holder_reads_what_a_token_names_and_only_the_relay_says_it_holds() {
+        let authority = Authority::new([5; 32], "relay-a");
+        let token = authority.issue("home", 7, 10_000);
+        let named = Claims {
+            audience: "relay-a".to_string(),
+            list: "home".to_string(),
+            node: 7,
+            expires_at_ms: 10_000,
+        };
+        assert_eq!(Claims::of(&token), Ok(named.clone()));
+        // Read whatever its tag, and not taken for it: reading is not checking.
+        let (payload, _) = token.split_once('.').unwrap();
+        let forged = format!("{payload}.AAAA");
+        assert_eq!(Claims::of(&forged), Ok(named));
+        assert_eq!(authority.verify(&forged, 0), Err(TokenError::BadTag));
+        // An expired token still says what it named.
+        assert_eq!(
+            Claims::of(&authority.issue("home", 7, 1)).map(|claims| claims.expires_at_ms),
+            Ok(1)
+        );
+        for bad in ["", "x", payload, "AAAA.AAAA"] {
+            assert_eq!(Claims::of(bad), Err(TokenError::Malformed), "{bad}");
+        }
+        assert_eq!(
+            Claims::of(&authority.issue("", 7, 10_000)),
+            Err(TokenError::Malformed),
+            "a list with no name"
         );
     }
 
