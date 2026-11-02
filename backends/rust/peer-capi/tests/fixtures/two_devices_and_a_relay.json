@@ -1,11 +1,13 @@
 {
   "devices": [
     {
+      "administrator": "0909090909090909090909090909090909090909090909090909090909090909",
       "genesis": null,
       "node": 1,
       "seed": "0101010101010101010101010101010101010101010101010101010101010101"
     },
     {
+      "administrator": null,
       "genesis": "9534e3d86384e593f3881b2084b6e98e3ed7db67e6a1c6a03c77735f3b06298b",
       "node": 2,
       "seed": "0202020202020202020202020202020202020202020202020202020202020202"
@@ -18,18 +20,27 @@
       "op": "make"
     },
     {
-      "count": 0,
       "device": 0,
-      "op": "restore",
-      "text": "{\"courier\":\"{\\\"amendmentsSeen\\\":\\\"0\\\",\\\"cursor\\\":\\\"0\\\",\\\"evicted\\\":[],\\\"evidenceSent\\\":[],\\\"hub\\\":false,\\\"parked\\\":[],\\\"restored\\\":[],\\\"rosterLen\\\":\\\"0\\\",\\\"unread\\\":[],\\\"untold\\\":[]}\",\"log\":[\"{\\\"body\\\":{\\\"administrators\\\":[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\"],\\\"kind\\\":\\\"genesis\\\",\\\"profile\\\":\\\"untrusted\\\",\\\"quorum\\\":1},\\\"index\\\":\\\"0\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"E0BotimEXOIVSJi11qjQH5Mb6uY-35Q7-oHoG1Uco7OSwBwQH1NbdG-WTAUmo_fRJleZ59Q8BHqodAVCX0nPCA\\\"]]}\",\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"1\\\",\\\"role\\\":3},\\\"index\\\":\\\"1\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"-DiSu56MyErKOQbXRiA3t8TE1Wj0OkP7Qxb9CDnHvssH-U3JR9o19ZsG6dvzA2EQhRKTZN6qSOQ59DYCU7KJCw\\\"]]}\",\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":2},\\\"index\\\":\\\"2\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"rFCvdEuBRccwBjxHhTZspo-BvqN6EA7VZD4BgONUtG4\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"8hYruhL_8Di-u8hWqsi0xXP4lqjKVpMQAOp2_aTnWea59HVi2ktJTdKyCtvLkUJhw_a__jCG5Hs6_mO6C7oCDw\\\"]]}\"],\"trust\":\"{\\\"checkpoints\\\":[],\\\"operations\\\":[]}\",\"version\":1}"
+      "genesis": "9534e3d86384e593f3881b2084b6e98e3ed7db67e6a1c6a03c77735f3b06298b",
+      "op": "open",
+      "profile": "untrusted"
     },
     {
-      "data": "{\"counter\":0,\"field\":3,\"id\":9,\"nodeId\":\"1\",\"text\":\"\",\"value\":\"1\",\"wallTime\":\"500\"}",
       "device": 0,
-      "event": "record_list.write",
-      "kept": "refused",
-      "op": "outbound",
-      "reason": "record_list.write: this device's state came back from a store that may be behind what it signed, and it signs nothing new until a round has read its own chain back from the relay"
+      "op": "standing",
+      "text": "{\"administrator\":true,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3}],\"node\":\"1\",\"owed\":0,\"role\":3}"
+    },
+    {
+      "device": 0,
+      "key": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "node": 2,
+      "op": "grant",
+      "role": 2
+    },
+    {
+      "device": 0,
+      "op": "standing",
+      "text": "{\"administrator\":true,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"1\",\"owed\":0,\"role\":3}"
     },
     {
       "device": 0,
@@ -99,7 +110,7 @@
     {
       "device": 0,
       "op": "outcome",
-      "text": "{\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"]],\"evicted\":[],\"outcome\":\"ended\",\"pushed\":3,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":3,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
     },
     {
       "device": 1,
@@ -143,7 +154,7 @@
     {
       "device": 1,
       "op": "outcome",
-      "text": "{\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"]],\"evicted\":[],\"outcome\":\"ended\",\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
     },
     {
       "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"10\",\"wallTime\":\"1000\"}",
@@ -253,7 +264,7 @@
     {
       "device": 1,
       "op": "outcome",
-      "text": "{\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"pushed\":3,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":3,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
     },
     {
       "device": 0,
@@ -293,12 +304,12 @@
     {
       "device": 0,
       "op": "outcome",
-      "text": "{\"events\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\"],[\"record_list.supersede\",\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"wallTime\\\":\\\"1000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"events\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\"],[\"record_list.supersede\",\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"wallTime\\\":\\\"1000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
     },
     {
       "device": 1,
       "op": "save",
-      "text": "{\"courier\":\"{\\\"amendmentsSeen\\\":\\\"0\\\",\\\"cursor\\\":\\\"6\\\",\\\"evicted\\\":[],\\\"evidenceSent\\\":[],\\\"hub\\\":false,\\\"parked\\\":[],\\\"restored\\\":[],\\\"rosterLen\\\":\\\"3\\\",\\\"unread\\\":[],\\\"untold\\\":[]}\",\"log\":[\"{\\\"body\\\":{\\\"administrators\\\":[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\"],\\\"kind\\\":\\\"genesis\\\",\\\"profile\\\":\\\"untrusted\\\",\\\"quorum\\\":1},\\\"index\\\":\\\"0\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"E0BotimEXOIVSJi11qjQH5Mb6uY-35Q7-oHoG1Uco7OSwBwQH1NbdG-WTAUmo_fRJleZ59Q8BHqodAVCX0nPCA\\\"]]}\",\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"1\\\",\\\"role\\\":3},\\\"index\\\":\\\"1\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"-DiSu56MyErKOQbXRiA3t8TE1Wj0OkP7Qxb9CDnHvssH-U3JR9o19ZsG6dvzA2EQhRKTZN6qSOQ59DYCU7KJCw\\\"]]}\",\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":2},\\\"index\\\":\\\"2\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"rFCvdEuBRccwBjxHhTZspo-BvqN6EA7VZD4BgONUtG4\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"8hYruhL_8Di-u8hWqsi0xXP4lqjKVpMQAOp2_aTnWea59HVi2ktJTdKyCtvLkUJhw_a__jCG5Hs6_mO6C7oCDw\\\"]]}\"],\"trust\":\"{\\\"checkpoints\\\":[],\\\"operations\\\":[[\\\"record_list.write\\\",\\\"{\\\\\\\"counter\\\\\\\":0,\\\\\\\"field\\\\\\\":3,\\\\\\\"id\\\\\\\":1,\\\\\\\"mh\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"mhh\\\\\\\":\\\\\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\\\\\",\\\\\\\"nodeId\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"prev\\\\\\\":\\\\\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\\\\\",\\\\\\\"seq\\\\\\\":\\\\\\\"1\\\\\\\",\\\\\\\"sig\\\\\\\":\\\\\\\"jETaf85gHRV_6wzm87_MIRza-Xamog2KrvaGINKd1syKu5WEdb2Q1lKV5K5kjHNQK_iWDVAhsoWmMDTz3LZHCg\\\\\\\",\\\\\\\"text\\\\\\\":\\\\\\\"\\\\\\\",\\\\\\\"value\\\\\\\":\\\\\\\"10\\\\\\\",\\\\\\\"wallTime\\\\\\\":\\\\\\\"1000\\\\\\\"}\\\"],[\\\"record_list.write\\\",\\\"{\\\\\\\"counter\\\\\\\":0,\\\\\\\"field\\\\\\\":3,\\\\\\\"id\\\\\\\":1,\\\\\\\"mh\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"mhh\\\\\\\":\\\\\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\\\\\",\\\\\\\"nodeId\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"prev\\\\\\\":\\\\\\\"iJ5cMUfnmqQ0bIW7I4Uv115RiWvPzskbJjRDRUbaa9w\\\\\\\",\\\\\\\"seq\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"sig\\\\\\\":\\\\\\\"3J6Rxjpq2dNY8Iq-l90bXshv-44fuqzoRzv0t6FOqMal54cj1tDSgBbXgwwCYBq3eZecJTmvut6GD36YUp4yCw\\\\\\\",\\\\\\\"text\\\\\\\":\\\\\\\"\\\\\\\",\\\\\\\"value\\\\\\\":\\\\\\\"20\\\\\\\",\\\\\\\"wallTime\\\\\\\":\\\\\\\"2000\\\\\\\"}\\\"],[\\\"record_list.supersede\\\",\\\"{\\\\\\\"atCounter\\\\\\\":0,\\\\\\\"atWallTime\\\\\\\":\\\\\\\"2000\\\\\\\",\\\\\\\"by\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"counter\\\\\\\":0,\\\\\\\"field\\\\\\\":3,\\\\\\\"id\\\\\\\":1,\\\\\\\"mh\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"mhh\\\\\\\":\\\\\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\\\\\",\\\\\\\"nodeId\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"prev\\\\\\\":\\\\\\\"_uQFYyl_odgMYkHeJXi1zKEgMQovc6k9cOsa3LqXSIk\\\\\\\",\\\\\\\"seq\\\\\\\":\\\\\\\"3\\\\\\\",\\\\\\\"sig\\\\\\\":\\\\\\\"RhpomwjileZktvGhv7sxQ6k53uFnwGcP1SuGB2H8oDP0t3dKXuDXYzpLaXtOua1mUrBILx9utVW95Yrt784kCg\\\\\\\",\\\\\\\"wallTime\\\\\\\":\\\\\\\"1000\\\\\\\"}\\\"]]}\",\"version\":1}"
+      "text": "{\"courier\":\"{\\\"amendmentsSeen\\\":\\\"0\\\",\\\"cursor\\\":\\\"6\\\",\\\"evicted\\\":[],\\\"evidenceSent\\\":[],\\\"hub\\\":false,\\\"parked\\\":[],\\\"restored\\\":[],\\\"rosterLen\\\":\\\"3\\\",\\\"unread\\\":[],\\\"untold\\\":[]}\",\"log\":[\"{\\\"body\\\":{\\\"administrators\\\":[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\"],\\\"kind\\\":\\\"genesis\\\",\\\"profile\\\":\\\"untrusted\\\",\\\"quorum\\\":1},\\\"index\\\":\\\"0\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"E0BotimEXOIVSJi11qjQH5Mb6uY-35Q7-oHoG1Uco7OSwBwQH1NbdG-WTAUmo_fRJleZ59Q8BHqodAVCX0nPCA\\\"]]}\",\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"1\\\",\\\"role\\\":3},\\\"index\\\":\\\"1\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"-DiSu56MyErKOQbXRiA3t8TE1Wj0OkP7Qxb9CDnHvssH-U3JR9o19ZsG6dvzA2EQhRKTZN6qSOQ59DYCU7KJCw\\\"]]}\",\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":2},\\\"index\\\":\\\"2\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"rFCvdEuBRccwBjxHhTZspo-BvqN6EA7VZD4BgONUtG4\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"8hYruhL_8Di-u8hWqsi0xXP4lqjKVpMQAOp2_aTnWea59HVi2ktJTdKyCtvLkUJhw_a__jCG5Hs6_mO6C7oCDw\\\"]]}\"],\"owed\":[],\"trust\":\"{\\\"checkpoints\\\":[],\\\"operations\\\":[[\\\"record_list.write\\\",\\\"{\\\\\\\"counter\\\\\\\":0,\\\\\\\"field\\\\\\\":3,\\\\\\\"id\\\\\\\":1,\\\\\\\"mh\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"mhh\\\\\\\":\\\\\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\\\\\",\\\\\\\"nodeId\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"prev\\\\\\\":\\\\\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\\\\\",\\\\\\\"seq\\\\\\\":\\\\\\\"1\\\\\\\",\\\\\\\"sig\\\\\\\":\\\\\\\"jETaf85gHRV_6wzm87_MIRza-Xamog2KrvaGINKd1syKu5WEdb2Q1lKV5K5kjHNQK_iWDVAhsoWmMDTz3LZHCg\\\\\\\",\\\\\\\"text\\\\\\\":\\\\\\\"\\\\\\\",\\\\\\\"value\\\\\\\":\\\\\\\"10\\\\\\\",\\\\\\\"wallTime\\\\\\\":\\\\\\\"1000\\\\\\\"}\\\"],[\\\"record_list.write\\\",\\\"{\\\\\\\"counter\\\\\\\":0,\\\\\\\"field\\\\\\\":3,\\\\\\\"id\\\\\\\":1,\\\\\\\"mh\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"mhh\\\\\\\":\\\\\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\\\\\",\\\\\\\"nodeId\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"prev\\\\\\\":\\\\\\\"iJ5cMUfnmqQ0bIW7I4Uv115RiWvPzskbJjRDRUbaa9w\\\\\\\",\\\\\\\"seq\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"sig\\\\\\\":\\\\\\\"3J6Rxjpq2dNY8Iq-l90bXshv-44fuqzoRzv0t6FOqMal54cj1tDSgBbXgwwCYBq3eZecJTmvut6GD36YUp4yCw\\\\\\\",\\\\\\\"text\\\\\\\":\\\\\\\"\\\\\\\",\\\\\\\"value\\\\\\\":\\\\\\\"20\\\\\\\",\\\\\\\"wallTime\\\\\\\":\\\\\\\"2000\\\\\\\"}\\\"],[\\\"record_list.supersede\\\",\\\"{\\\\\\\"atCounter\\\\\\\":0,\\\\\\\"atWallTime\\\\\\\":\\\\\\\"2000\\\\\\\",\\\\\\\"by\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"counter\\\\\\\":0,\\\\\\\"field\\\\\\\":3,\\\\\\\"id\\\\\\\":1,\\\\\\\"mh\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"mhh\\\\\\\":\\\\\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\\\\\",\\\\\\\"nodeId\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"prev\\\\\\\":\\\\\\\"_uQFYyl_odgMYkHeJXi1zKEgMQovc6k9cOsa3LqXSIk\\\\\\\",\\\\\\\"seq\\\\\\\":\\\\\\\"3\\\\\\\",\\\\\\\"sig\\\\\\\":\\\\\\\"RhpomwjileZktvGhv7sxQ6k53uFnwGcP1SuGB2H8oDP0t3dKXuDXYzpLaXtOua1mUrBILx9utVW95Yrt784kCg\\\\\\\",\\\\\\\"wallTime\\\\\\\":\\\\\\\"1000\\\\\\\"}\\\"]]}\",\"version\":2}"
     },
     {
       "device": 1,
@@ -308,7 +319,12 @@
       "count": 3,
       "device": 1,
       "op": "restore",
-      "text": "{\"courier\":\"{\\\"amendmentsSeen\\\":\\\"0\\\",\\\"cursor\\\":\\\"6\\\",\\\"evicted\\\":[],\\\"evidenceSent\\\":[],\\\"hub\\\":false,\\\"parked\\\":[],\\\"restored\\\":[],\\\"rosterLen\\\":\\\"3\\\",\\\"unread\\\":[],\\\"untold\\\":[]}\",\"log\":[\"{\\\"body\\\":{\\\"administrators\\\":[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\"],\\\"kind\\\":\\\"genesis\\\",\\\"profile\\\":\\\"untrusted\\\",\\\"quorum\\\":1},\\\"index\\\":\\\"0\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"E0BotimEXOIVSJi11qjQH5Mb6uY-35Q7-oHoG1Uco7OSwBwQH1NbdG-WTAUmo_fRJleZ59Q8BHqodAVCX0nPCA\\\"]]}\",\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"1\\\",\\\"role\\\":3},\\\"index\\\":\\\"1\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"-DiSu56MyErKOQbXRiA3t8TE1Wj0OkP7Qxb9CDnHvssH-U3JR9o19ZsG6dvzA2EQhRKTZN6qSOQ59DYCU7KJCw\\\"]]}\",\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":2},\\\"index\\\":\\\"2\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"rFCvdEuBRccwBjxHhTZspo-BvqN6EA7VZD4BgONUtG4\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"8hYruhL_8Di-u8hWqsi0xXP4lqjKVpMQAOp2_aTnWea59HVi2ktJTdKyCtvLkUJhw_a__jCG5Hs6_mO6C7oCDw\\\"]]}\"],\"trust\":\"{\\\"checkpoints\\\":[],\\\"operations\\\":[[\\\"record_list.write\\\",\\\"{\\\\\\\"counter\\\\\\\":0,\\\\\\\"field\\\\\\\":3,\\\\\\\"id\\\\\\\":1,\\\\\\\"mh\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"mhh\\\\\\\":\\\\\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\\\\\",\\\\\\\"nodeId\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"prev\\\\\\\":\\\\\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\\\\\",\\\\\\\"seq\\\\\\\":\\\\\\\"1\\\\\\\",\\\\\\\"sig\\\\\\\":\\\\\\\"jETaf85gHRV_6wzm87_MIRza-Xamog2KrvaGINKd1syKu5WEdb2Q1lKV5K5kjHNQK_iWDVAhsoWmMDTz3LZHCg\\\\\\\",\\\\\\\"text\\\\\\\":\\\\\\\"\\\\\\\",\\\\\\\"value\\\\\\\":\\\\\\\"10\\\\\\\",\\\\\\\"wallTime\\\\\\\":\\\\\\\"1000\\\\\\\"}\\\"],[\\\"record_list.write\\\",\\\"{\\\\\\\"counter\\\\\\\":0,\\\\\\\"field\\\\\\\":3,\\\\\\\"id\\\\\\\":1,\\\\\\\"mh\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"mhh\\\\\\\":\\\\\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\\\\\",\\\\\\\"nodeId\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"prev\\\\\\\":\\\\\\\"iJ5cMUfnmqQ0bIW7I4Uv115RiWvPzskbJjRDRUbaa9w\\\\\\\",\\\\\\\"seq\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"sig\\\\\\\":\\\\\\\"3J6Rxjpq2dNY8Iq-l90bXshv-44fuqzoRzv0t6FOqMal54cj1tDSgBbXgwwCYBq3eZecJTmvut6GD36YUp4yCw\\\\\\\",\\\\\\\"text\\\\\\\":\\\\\\\"\\\\\\\",\\\\\\\"value\\\\\\\":\\\\\\\"20\\\\\\\",\\\\\\\"wallTime\\\\\\\":\\\\\\\"2000\\\\\\\"}\\\"],[\\\"record_list.supersede\\\",\\\"{\\\\\\\"atCounter\\\\\\\":0,\\\\\\\"atWallTime\\\\\\\":\\\\\\\"2000\\\\\\\",\\\\\\\"by\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"counter\\\\\\\":0,\\\\\\\"field\\\\\\\":3,\\\\\\\"id\\\\\\\":1,\\\\\\\"mh\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"mhh\\\\\\\":\\\\\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\\\\\",\\\\\\\"nodeId\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"prev\\\\\\\":\\\\\\\"_uQFYyl_odgMYkHeJXi1zKEgMQovc6k9cOsa3LqXSIk\\\\\\\",\\\\\\\"seq\\\\\\\":\\\\\\\"3\\\\\\\",\\\\\\\"sig\\\\\\\":\\\\\\\"RhpomwjileZktvGhv7sxQ6k53uFnwGcP1SuGB2H8oDP0t3dKXuDXYzpLaXtOua1mUrBILx9utVW95Yrt784kCg\\\\\\\",\\\\\\\"wallTime\\\\\\\":\\\\\\\"1000\\\\\\\"}\\\"]]}\",\"version\":1}"
+      "text": "{\"courier\":\"{\\\"amendmentsSeen\\\":\\\"0\\\",\\\"cursor\\\":\\\"6\\\",\\\"evicted\\\":[],\\\"evidenceSent\\\":[],\\\"hub\\\":false,\\\"parked\\\":[],\\\"restored\\\":[],\\\"rosterLen\\\":\\\"3\\\",\\\"unread\\\":[],\\\"untold\\\":[]}\",\"log\":[\"{\\\"body\\\":{\\\"administrators\\\":[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\"],\\\"kind\\\":\\\"genesis\\\",\\\"profile\\\":\\\"untrusted\\\",\\\"quorum\\\":1},\\\"index\\\":\\\"0\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"E0BotimEXOIVSJi11qjQH5Mb6uY-35Q7-oHoG1Uco7OSwBwQH1NbdG-WTAUmo_fRJleZ59Q8BHqodAVCX0nPCA\\\"]]}\",\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"1\\\",\\\"role\\\":3},\\\"index\\\":\\\"1\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"-DiSu56MyErKOQbXRiA3t8TE1Wj0OkP7Qxb9CDnHvssH-U3JR9o19ZsG6dvzA2EQhRKTZN6qSOQ59DYCU7KJCw\\\"]]}\",\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":2},\\\"index\\\":\\\"2\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"rFCvdEuBRccwBjxHhTZspo-BvqN6EA7VZD4BgONUtG4\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"8hYruhL_8Di-u8hWqsi0xXP4lqjKVpMQAOp2_aTnWea59HVi2ktJTdKyCtvLkUJhw_a__jCG5Hs6_mO6C7oCDw\\\"]]}\"],\"owed\":[],\"trust\":\"{\\\"checkpoints\\\":[],\\\"operations\\\":[[\\\"record_list.write\\\",\\\"{\\\\\\\"counter\\\\\\\":0,\\\\\\\"field\\\\\\\":3,\\\\\\\"id\\\\\\\":1,\\\\\\\"mh\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"mhh\\\\\\\":\\\\\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\\\\\",\\\\\\\"nodeId\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"prev\\\\\\\":\\\\\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\\\\\",\\\\\\\"seq\\\\\\\":\\\\\\\"1\\\\\\\",\\\\\\\"sig\\\\\\\":\\\\\\\"jETaf85gHRV_6wzm87_MIRza-Xamog2KrvaGINKd1syKu5WEdb2Q1lKV5K5kjHNQK_iWDVAhsoWmMDTz3LZHCg\\\\\\\",\\\\\\\"text\\\\\\\":\\\\\\\"\\\\\\\",\\\\\\\"value\\\\\\\":\\\\\\\"10\\\\\\\",\\\\\\\"wallTime\\\\\\\":\\\\\\\"1000\\\\\\\"}\\\"],[\\\"record_list.write\\\",\\\"{\\\\\\\"counter\\\\\\\":0,\\\\\\\"field\\\\\\\":3,\\\\\\\"id\\\\\\\":1,\\\\\\\"mh\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"mhh\\\\\\\":\\\\\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\\\\\",\\\\\\\"nodeId\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"prev\\\\\\\":\\\\\\\"iJ5cMUfnmqQ0bIW7I4Uv115RiWvPzskbJjRDRUbaa9w\\\\\\\",\\\\\\\"seq\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"sig\\\\\\\":\\\\\\\"3J6Rxjpq2dNY8Iq-l90bXshv-44fuqzoRzv0t6FOqMal54cj1tDSgBbXgwwCYBq3eZecJTmvut6GD36YUp4yCw\\\\\\\",\\\\\\\"text\\\\\\\":\\\\\\\"\\\\\\\",\\\\\\\"value\\\\\\\":\\\\\\\"20\\\\\\\",\\\\\\\"wallTime\\\\\\\":\\\\\\\"2000\\\\\\\"}\\\"],[\\\"record_list.supersede\\\",\\\"{\\\\\\\"atCounter\\\\\\\":0,\\\\\\\"atWallTime\\\\\\\":\\\\\\\"2000\\\\\\\",\\\\\\\"by\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"counter\\\\\\\":0,\\\\\\\"field\\\\\\\":3,\\\\\\\"id\\\\\\\":1,\\\\\\\"mh\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"mhh\\\\\\\":\\\\\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\\\\\",\\\\\\\"nodeId\\\\\\\":\\\\\\\"2\\\\\\\",\\\\\\\"prev\\\\\\\":\\\\\\\"_uQFYyl_odgMYkHeJXi1zKEgMQovc6k9cOsa3LqXSIk\\\\\\\",\\\\\\\"seq\\\\\\\":\\\\\\\"3\\\\\\\",\\\\\\\"sig\\\\\\\":\\\\\\\"RhpomwjileZktvGhv7sxQ6k53uFnwGcP1SuGB2H8oDP0t3dKXuDXYzpLaXtOua1mUrBILx9utVW95Yrt784kCg\\\\\\\",\\\\\\\"wallTime\\\\\\\":\\\\\\\"1000\\\\\\\"}\\\"]]}\",\"version\":2}"
+    },
+    {
+      "device": 1,
+      "op": "standing",
+      "text": "{\"administrator\":false,\"awaits_own_chain\":true,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"2\",\"owed\":0,\"role\":2}"
     },
     {
       "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"10\",\"wallTime\":\"1000\"}",
@@ -364,7 +380,12 @@
     {
       "device": 1,
       "op": "outcome",
-      "text": "{\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+    },
+    {
+      "device": 1,
+      "op": "standing",
+      "text": "{\"administrator\":false,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"2\",\"owed\":0,\"role\":2}"
     },
     {
       "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"20\",\"wallTime\":\"2000\"}",
@@ -438,7 +459,7 @@
     {
       "device": 1,
       "op": "outcome",
-      "text": "{\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\"],[\"record_list.supersede\",\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\"],[\"record_list.supersede\",\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
     },
     {
       "device": 0,
@@ -498,8 +519,151 @@
     {
       "device": 0,
       "op": "outcome",
-      "text": "{\"events\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+      "text": "{\"events\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+    },
+    {
+      "device": 0,
+      "node": 2,
+      "op": "remove"
+    },
+    {
+      "device": 0,
+      "op": "standing",
+      "text": "{\"administrator\":true,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3}],\"node\":\"1\",\"owed\":0,\"role\":3}"
+    },
+    {
+      "device": 0,
+      "kind": "sync",
+      "op": "start"
+    },
+    {
+      "device": 0,
+      "op": "request",
+      "text": "{\"from\":\"4\",\"op\":\"entries\",\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "respond",
+      "text": "{\"entries\":[],\"len\":\"3\",\"ok\":\"entries\",\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "request",
+      "text": "{\"entry\":\"{\\\"body\\\":{\\\"final_seq\\\":\\\"4\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"J2uHA85F1X_0oJQn1h_efCh_xci-Z68HpwRWnRDi-Px-mqjB0oLX87VVdeLBgz6nuS-A8VClWzNsZGOvEQV8Cw\\\"]]}\",\"op\":\"append\",\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "respond",
+      "text": "{\"len\":\"4\",\"new\":true,\"ok\":\"appended\",\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "request",
+      "text": "{\"op\":\"heads\",\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "respond",
+      "text": "{\"cursor\":\"8\",\"heads\":[[\"2\",\"4\",\"Y66Dy2wKTUAYFfiA_uYI9PaZ04CZhwgFZaBm4GVLEO8\"]],\"log_len\":\"4\",\"ok\":\"heads\",\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "request",
+      "text": "{\"cursor\":\"7\",\"limit\":200,\"op\":\"feed\",\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "respond",
+      "text": "{\"more\":false,\"next\":\"8\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":\\\"4\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"J2uHA85F1X_0oJQn1h_efCh_xci-Z68HpwRWnRDi-Px-mqjB0oLX87VVdeLBgz6nuS-A8VClWzNsZGOvEQV8Cw\\\"]]}\",\"k\":\"entry\"}],\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "outcome",
+      "text": "{\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":0}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
+    },
+    {
+      "data": "{\"counter\":0,\"field\":3,\"id\":3,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"40\",\"wallTime\":\"4000\"}",
+      "device": 1,
+      "event": "record_list.write",
+      "kept": "taken",
+      "op": "outbound",
+      "reason": ""
+    },
+    {
+      "device": 1,
+      "kind": "sync",
+      "op": "start"
+    },
+    {
+      "device": 1,
+      "op": "request",
+      "text": "{\"from\":\"3\",\"op\":\"entries\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "respond",
+      "text": "{\"entries\":[\"{\\\"body\\\":{\\\"final_seq\\\":\\\"4\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"J2uHA85F1X_0oJQn1h_efCh_xci-Z68HpwRWnRDi-Px-mqjB0oLX87VVdeLBgz6nuS-A8VClWzNsZGOvEQV8Cw\\\"]]}\"],\"len\":\"4\",\"ok\":\"entries\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "request",
+      "text": "{\"op\":\"heads\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "respond",
+      "text": "{\"reason\":\"node 2 has role 0 in this list and this needs 1\",\"refused\":\"forbidden\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "outcome",
+      "text": "{\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":0}\"]],\"evicted\":[[\"2\",\"5\"]],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":true,\"refused\":[\"node 2 has role 0 in this list and this needs 1\"],\"reread\":false,\"restored\":[],\"stalled\":true,\"steps\":[]}"
+    },
+    {
+      "device": 1,
+      "op": "standing",
+      "text": "{\"administrator\":false,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3}],\"node\":\"2\",\"owed\":0,\"role\":0}"
+    },
+    {
+      "device": 0,
+      "kind": "sync",
+      "op": "start"
+    },
+    {
+      "device": 0,
+      "op": "request",
+      "text": "{\"from\":\"4\",\"op\":\"entries\",\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "respond",
+      "text": "{\"entries\":[],\"len\":\"4\",\"ok\":\"entries\",\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "request",
+      "text": "{\"op\":\"heads\",\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "respond",
+      "text": "{\"cursor\":\"8\",\"heads\":[[\"2\",\"4\",\"Y66Dy2wKTUAYFfiA_uYI9PaZ04CZhwgFZaBm4GVLEO8\"]],\"log_len\":\"4\",\"ok\":\"heads\",\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "request",
+      "text": "{\"cursor\":\"8\",\"limit\":200,\"op\":\"feed\",\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "respond",
+      "text": "{\"more\":false,\"next\":\"8\",\"ok\":\"feed\",\"records\":[],\"v\":1}"
+    },
+    {
+      "device": 0,
+      "op": "outcome",
+      "text": "{\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[]}"
     }
   ],
-  "version": 1
+  "version": 2
 }
