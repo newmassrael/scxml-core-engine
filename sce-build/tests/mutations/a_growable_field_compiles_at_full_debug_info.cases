@@ -1,0 +1,43 @@
+# Mutation cases for "a growable field compiles at full debug info".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_growable_field_compiles_at_full_debug_info.cases`.
+#
+# `GrowBytes` and `GrowStr` name `{ usize::MAX }` as their bound. A field that
+# carried `N` as a marker array compiles at reduced debug info, which is what a
+# build machine and the disk-bound CI lane use, and is refused at the full debug
+# info of cargo's default dev profile. The test states that level itself, so its
+# verdict does not depend on who runs it.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test forge_conformance a_growable_field_compiles_at_the_debug_info_a_consumer_builds_with
+mutation_targets backends/rust/portable-bytes/src/lib.rs
+mutation_oracles sce-build/tests/forge_conformance.rs
+
+mutation_case "a growable byte field carries its bound as a marker array" <<'PY'
+LIB = "backends/rust/portable-bytes/src/lib.rs"
+edit(LIB,
+     r'''pub struct HeapList<T, const N: usize>(alloc::vec::Vec<T>);''',
+     r'''pub struct HeapList<T, const N: usize>(alloc::vec::Vec<T>, core::marker::PhantomData<[T; N]>);''')
+edit(LIB,
+     r'''Ok(Self(s.to_vec()))''',
+     r'''Ok(Self(s.to_vec(), core::marker::PhantomData))''')
+edit(LIB,
+     r'''Self(alloc::vec::Vec::new())''',
+     r'''Self(alloc::vec::Vec::new(), core::marker::PhantomData)''')
+PY
+
+mutation_case "a growable text field carries its bound as a marker array" <<'PY'
+LIB = "backends/rust/portable-bytes/src/lib.rs"
+edit(LIB,
+     r'''pub struct HeapStr<const N: usize>(alloc::string::String);''',
+     r'''pub struct HeapStr<const N: usize>(alloc::string::String, core::marker::PhantomData<[u8; N]>);''')
+edit(LIB,
+     r'''Ok(Self(alloc::string::String::from(s)))''',
+     r'''Ok(Self(alloc::string::String::from(s), core::marker::PhantomData))''')
+edit(LIB,
+     r'''Self(alloc::string::String::from(prefix_within(s, N)))''',
+     r'''Self(alloc::string::String::from(prefix_within(s, N)), core::marker::PhantomData)''')
+PY

@@ -13746,6 +13746,11 @@ fn rustc_test_codec_set_with_extra(
 enum RustcProfile {
     /// std-class consumer: the `alloc` feature on, heap facade exercised.
     Alloc,
+    /// The same consumer at the debug info cargo's default dev profile asks
+    /// for, whatever the run's environment says. A build machine and the
+    /// disk-bound CI lane both turn it down, and the compiler lays out types
+    /// for full debug info that it never lays out otherwise.
+    AllocFullDebugInfo,
     /// MCU-class consumer: `#![no_std]`, no allocator, no `alloc` feature.
     NoAlloc,
 }
@@ -13812,7 +13817,7 @@ fn rustc_run_generated_set(
     // makes a reachable `alloc` symbol a hard error rather than a silent
     // dependency.
     let (feature_block, dep_features) = match profile {
-        RustcProfile::Alloc => (
+        RustcProfile::Alloc | RustcProfile::AllocFullDebugInfo => (
             "default = [\"alloc\", \"std\"]\nalloc = []\nstd = []",
             r#", features = ["alloc"]"#,
         ),
@@ -13940,6 +13945,10 @@ warnings = "deny"
             .arg("--quiet")
             .current_dir(&proj_dir)
             .env("CARGO_TARGET_DIR", &workspace_target);
+        if profile == RustcProfile::AllocFullDebugInfo {
+            cmd.env("CARGO_PROFILE_DEV_DEBUG", "full")
+                .env("CARGO_PROFILE_TEST_DEBUG", "full");
+        }
         cmd
     });
     let output = run.output;
@@ -13955,6 +13964,53 @@ warnings = "deny"
 
     let _ = std::fs::remove_dir_all(&proj_dir);
     Ok(())
+}
+
+/// The growable profile holds a field in a type that names `{ usize::MAX }` as
+/// its bound. Full debug info describes a type's arguments, so a type that
+/// carried that bound as an array would stop every consumer on cargo's default
+/// dev profile while a build at reduced debug info compiled it.
+#[test]
+fn a_growable_field_compiles_at_the_debug_info_a_consumer_builds_with() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "sce_growable_full_debug_{}_{id}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+    for (file, kind) in [
+        ("codec_growable_bytes.scxml", "bytes"),
+        ("codec_growable_text.scxml", "string"),
+    ] {
+        let source = format!(
+            r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="payload" sce:type="{kind}" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="len" sce:max-size="16"/>
+  </datamodel>
+</scxml>"#
+        );
+        std::fs::write(dir.join(file), source).expect("write fixture");
+    }
+    let set = ["codec_growable_bytes.scxml", "codec_growable_text.scxml"];
+
+    rustc_run_codec_set(
+        &dir,
+        &set,
+        &[],
+        "growable_full_debug_info",
+        "build",
+        RustcProfile::AllocFullDebugInfo,
+    )
+    .expect("a growable field must compile at full debug info");
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// Parent-tag dispatcher self-gen — Cpp dispatcher emit threads its

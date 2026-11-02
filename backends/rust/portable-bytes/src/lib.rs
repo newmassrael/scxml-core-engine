@@ -60,10 +60,15 @@ pub struct CapacityExceeded;
 /// `list<T>` locals and returns are every other fixed-width scalar. One
 /// definition serves both, so the byte buffer and the list cannot drift in
 /// how they grow, bound or report overflow.
+///
+/// No field names `N`: a const parameter needs none, and a marker of `[T; N]`
+/// would be an array the compiler has to lay out to write debug info for the
+/// type. `sce-forge-runtime`'s growable profile names `{ usize::MAX }`, which
+/// no such array fits, so a build at full debug info would refuse it.
 #[cfg(feature = "alloc")]
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct HeapList<T, const N: usize>(alloc::vec::Vec<T>, core::marker::PhantomData<[T; N]>);
+pub struct HeapList<T, const N: usize>(alloc::vec::Vec<T>);
 
 /// Fixed-capacity owned sequence of `T`: wraps `heapless::Vec<T, N>` (the C11
 /// `T[N]` analog), so the value never allocates and `N` is a hard bound.
@@ -113,7 +118,7 @@ impl<T: Clone, const N: usize> HeapList<T, N> {
     /// generated `try_into_owned` threads one `?` on every profile and the
     /// two profiles keep one call shape.
     pub fn from_slice(s: &[T]) -> Result<Self, CapacityExceeded> {
-        Ok(Self(s.to_vec(), core::marker::PhantomData))
+        Ok(Self(s.to_vec()))
     }
 
     /// Borrow the owned elements back as a slice — the projection an owned
@@ -126,7 +131,7 @@ impl<T: Clone, const N: usize> HeapList<T, N> {
     /// `<sce:var type="bytes" capacity="N">` and `type="list<T>"` locals to
     /// seed a buffer that `push` / `extend_from_slice` then fill.
     pub fn new() -> Self {
-        Self(alloc::vec::Vec::new(), core::marker::PhantomData)
+        Self(alloc::vec::Vec::new())
     }
 
     /// Append one element. The heap form grows, so this never reports
@@ -221,11 +226,12 @@ byte_view_parity!(InlineList);
 /// Growable owned text storage: wraps `String`, so `N` is advisory. `N` still
 /// rides on the type so a hand-assembled owned value infers the cap from the
 /// field it is being placed in, and so the value can be transcoded into
-/// [`InlineStr`] of the matching capacity.
+/// [`InlineStr`] of the matching capacity. No field names `N`, for the reason
+/// [`HeapList`] gives.
 #[cfg(feature = "alloc")]
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct HeapStr<const N: usize>(alloc::string::String, core::marker::PhantomData<[u8; N]>);
+pub struct HeapStr<const N: usize>(alloc::string::String);
 
 /// Fixed-capacity owned text storage: wraps `heapless::String<N>`, so the
 /// value never allocates and `N` is a hard bound. Compiled on every profile,
@@ -276,10 +282,7 @@ impl<const N: usize> HeapStr<N> {
     /// (`N` advisory); the `Result` matches [`InlineStr::from_text`] so one
     /// call shape serves both profiles.
     pub fn from_text(s: &str) -> Result<Self, CapacityExceeded> {
-        Ok(Self(
-            alloc::string::String::from(s),
-            core::marker::PhantomData,
-        ))
+        Ok(Self(alloc::string::String::from(s)))
     }
 
     /// Borrow the owned text back as `&str`.
@@ -295,10 +298,7 @@ impl<const N: usize> HeapStr<N> {
     /// and a machine that holds the text within it. Use [`Self::from_text`]
     /// for text nothing has judged.
     pub fn held(s: &str) -> Self {
-        Self(
-            alloc::string::String::from(prefix_within(s, N)),
-            core::marker::PhantomData,
-        )
+        Self(alloc::string::String::from(prefix_within(s, N)))
     }
 
     /// The text of a buffer of at most `N` bytes, in one of `N`. The fit is a
