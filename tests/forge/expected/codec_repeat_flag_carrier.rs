@@ -103,7 +103,7 @@ impl CodecRepeatFlagCarrier {
             _vec.clear();
             for _ in 0..count {
                 _vec.push(CodecChainFlagEntry::decode(cursor, head & 0x1)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         }
         _out.head = head;

@@ -106,7 +106,7 @@ impl CodecRepeatFlagCarrier {
             _vec.clear();
             for _ in 0..count {
                 _vec.push(CodecChainFlagEntry::decode(cursor, head & 0x1)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         }
         _out.head = head;
@@ -438,7 +438,7 @@ impl<'a> CodecRepeatFlagCarrierView<'a> {
         _out.count = self.count;
         _out.entries.clear();
         for _e in self.entries.iter() {
-            _out.entries.push(CodecChainFlagEntry::default()).map_err(|_| CodecError::TooManyElements)?;
+            _out.entries.push(CodecChainFlagEntry::default()).map_err(|_| CodecError::CapacityExceeded)?;
             if let Some(_slot) = _out.entries.last_mut() {
                 _e.into_builder(_slot)?;
             }

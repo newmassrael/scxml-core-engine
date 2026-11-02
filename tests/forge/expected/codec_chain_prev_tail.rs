@@ -96,10 +96,10 @@ impl CodecChainPrevTail {
                 if cursor.remaining() == 0 { break; }
                 let _entry = CodecChainPrevEntry::decode(cursor, _prev_entries_after_marker, head & 0x1)?;
                 _prev_entries_after_marker = u8::from(u64::from(_entry.ext_id()) == 4u64);
-                // Bounded by max-depth on both sides — loop count and `_vec`
-                // capacity are the same literal — so this push cannot fail. An
-                // over-long chain is refused by the guard after the loop.
-                _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;
+                // The loop walks the chain's depth and `_vec` holds the capacity, so
+                // this push fails only where the deployment holds fewer entries than
+                // the frame says. An over-long chain is refused after the loop.
+                _vec.push(_entry).map_err(|_| CodecError::CapacityExceeded)?;
             }
             if cursor.remaining() > 0 {
                 return Err(CodecError::TlvChainOverflow);

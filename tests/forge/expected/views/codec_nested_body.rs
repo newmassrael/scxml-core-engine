@@ -99,7 +99,7 @@ impl<'a> CodecNestedBody<'a> {
             _vec.clear();
             for _ in 0..n {
                 _vec.push(CodecZenohLocator::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         }
         _out.n = n;
@@ -355,7 +355,7 @@ impl<'a> CodecNestedBodyView<'a> {
         _out.n = self.n;
         _out.locs.clear();
         for _e in self.locs.iter() {
-            _out.locs.push(CodecZenohLocator::default()).map_err(|_| CodecError::TooManyElements)?;
+            _out.locs.push(CodecZenohLocator::default()).map_err(|_| CodecError::CapacityExceeded)?;
             if let Some(_slot) = _out.locs.last_mut() {
                 _e.into_builder(_slot)?;
             }

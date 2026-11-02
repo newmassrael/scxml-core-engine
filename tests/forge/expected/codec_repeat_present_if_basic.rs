@@ -105,7 +105,7 @@ impl CodecRepeatPresentIfBasic {
             let _vec = _out.elems.insert(HeaplessVec::<CodecRepeatElem, 32>::new());
             for _ in 0.._n {
                 _vec.push(CodecRepeatElem::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         } else {
             _out.elems = None;

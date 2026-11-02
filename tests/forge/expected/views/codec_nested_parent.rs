@@ -114,7 +114,7 @@ impl<'a> CodecNestedParent<'a> {
             _vec.clear();
             for _ in 0..m {
                 _vec.push(CodecNestedBody::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         }
         _out.hdr = hdr;
@@ -475,7 +475,7 @@ impl<'a> CodecNestedParentView<'a> {
         }
         _out.body_list.clear();
         for _e in self.body_list.iter() {
-            _out.body_list.push(CodecNestedBody::default()).map_err(|_| CodecError::TooManyElements)?;
+            _out.body_list.push(CodecNestedBody::default()).map_err(|_| CodecError::CapacityExceeded)?;
             if let Some(_slot) = _out.body_list.last_mut() {
                 _e.into_builder(_slot)?;
             }

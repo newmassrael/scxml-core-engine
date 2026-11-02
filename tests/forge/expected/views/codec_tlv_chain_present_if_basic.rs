@@ -95,11 +95,11 @@ impl<'a> CodecTlvChainPresentIfBasic<'a> {
             let _vec = _out.entries.insert(HeaplessVec::<CodecTlvEntry<'a>, 4>::new());
             for _ in 0..4u32 {
                 if cursor.remaining() == 0 { break; }
-                // Bounded by max-depth on both sides — loop count and `_vec`
-                // capacity are the same literal — so this push cannot fail. An
-                // over-long chain is refused by the guard after the loop.
+                // The loop walks the chain's depth and `_vec` holds the capacity, so
+                // this push fails only where the deployment holds fewer entries than
+                // the frame says. An over-long chain is refused after the loop.
                 _vec.push(CodecTlvEntry::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
             if cursor.remaining() > 0 {
                 return Err(CodecError::TlvChainOverflow);
@@ -403,7 +403,7 @@ impl<'a> CodecTlvChainPresentIfBasicView<'a> {
                 let _vec = _out.entries.insert(HeaplessVec::new());
                 _vec.clear();
                 for _e in _l.iter() {
-                    _vec.push(CodecTlvEntry::default()).map_err(|_| CodecError::TooManyElements)?;
+                    _vec.push(CodecTlvEntry::default()).map_err(|_| CodecError::CapacityExceeded)?;
                     if let Some(_slot) = _vec.last_mut() {
                         _e.into_builder(_slot)?;
                     }

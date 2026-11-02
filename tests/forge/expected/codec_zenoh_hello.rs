@@ -125,7 +125,7 @@ impl<'a> CodecZenohHello<'a> {
             let _vec = _out.locators.insert(HeaplessVec::<CodecZenohLocator<'a>, 64>::new());
             for _ in 0.._n {
                 _vec.push(CodecZenohLocator::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         } else {
             _out.locators = None;

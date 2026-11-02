@@ -108,7 +108,7 @@ impl CodecRepeatPresentIfBasic {
             let _vec = _out.elems.insert(HeaplessVec::<CodecRepeatElem, 32>::new());
             for _ in 0.._n {
                 _vec.push(CodecRepeatElem::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         } else {
             _out.elems = None;
@@ -420,7 +420,7 @@ impl<'a> CodecRepeatPresentIfBasicView<'a> {
                 let _vec = _out.elems.insert(HeaplessVec::new());
                 _vec.clear();
                 for _e in _l.iter() {
-                    _vec.push(CodecRepeatElem::default()).map_err(|_| CodecError::TooManyElements)?;
+                    _vec.push(CodecRepeatElem::default()).map_err(|_| CodecError::CapacityExceeded)?;
                     if let Some(_slot) = _vec.last_mut() {
                         _e.into_builder(_slot)?;
                     }

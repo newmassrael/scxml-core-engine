@@ -96,7 +96,7 @@ impl CodecRepeatBasic {
             _vec.clear();
             for _ in 0..num_frags {
                 _vec.push(CodecRepeatElem::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         }
         _out.num_frags = num_frags;

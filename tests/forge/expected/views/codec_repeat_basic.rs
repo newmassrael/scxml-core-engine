@@ -99,7 +99,7 @@ impl CodecRepeatBasic {
             _vec.clear();
             for _ in 0..num_frags {
                 _vec.push(CodecRepeatElem::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         }
         _out.num_frags = num_frags;
@@ -349,7 +349,7 @@ impl<'a> CodecRepeatBasicView<'a> {
         _out.num_frags = self.num_frags;
         _out.frags.clear();
         for _e in self.frags.iter() {
-            _out.frags.push(CodecRepeatElem::default()).map_err(|_| CodecError::TooManyElements)?;
+            _out.frags.push(CodecRepeatElem::default()).map_err(|_| CodecError::CapacityExceeded)?;
             if let Some(_slot) = _out.frags.last_mut() {
                 _e.into_builder(_slot)?;
             }

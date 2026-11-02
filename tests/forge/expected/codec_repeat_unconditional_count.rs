@@ -104,7 +104,7 @@ impl CodecRepeatUnconditionalCount {
             _vec.clear();
             for _ in 0..links_len {
                 _vec.push(CodecRepeatElem::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         }
         let mut weights: Option<HeaplessVec<CodecRepeatElem, 64>> = None;
@@ -116,7 +116,7 @@ impl CodecRepeatUnconditionalCount {
             let _vec = weights.insert(HeaplessVec::<CodecRepeatElem, 64>::new());
             for _ in 0.._n {
                 _vec.push(CodecRepeatElem::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         } else {
             weights = None;

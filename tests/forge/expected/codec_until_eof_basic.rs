@@ -89,7 +89,7 @@ impl CodecUntilEofBasic {
                     return Err(CodecError::TooManyElements);
                 }
                 _vec.push(CodecRepeatElem::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         }
         Ok(())

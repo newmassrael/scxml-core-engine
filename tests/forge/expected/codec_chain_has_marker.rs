@@ -98,10 +98,10 @@ impl<'a> CodecChainHasMarker<'a> {
                 for _ in 0..4u32 {
                     let _entry = CodecZenohExtEntry::decode(cursor)?;
                     _more = _entry.z();
-                    // Bounded by max-depth on both sides — loop count and `_vec`
-                // capacity are the same literal — so this push cannot fail. An
-                // over-long chain is refused by the guard after the loop.
-                _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;
+                    // The loop walks the chain's depth and `_vec` holds the capacity, so
+                // this push fails only where the deployment holds fewer entries than
+                // the frame says. An over-long chain is refused after the loop.
+                _vec.push(_entry).map_err(|_| CodecError::CapacityExceeded)?;
                     if !_more { break; }
                 }
                 if _more && cursor.remaining() == 0 {
@@ -151,7 +151,7 @@ impl<'a> CodecChainHasMarker<'a> {
             let _vec = slices.insert(HeaplessVec::<CodecChainHasMarkerSlice<'a>, 4>::new());
             for _ in 0.._n {
                 _vec.push(CodecChainHasMarkerSlice::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         } else {
             slices = None;

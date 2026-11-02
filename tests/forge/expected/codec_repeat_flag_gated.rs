@@ -105,7 +105,7 @@ impl CodecRepeatFlagGated {
             let _vec = _out.entries.insert(HeaplessVec::<CodecChainFlagEntry, 4>::new());
             for _ in 0.._n {
                 _vec.push(CodecChainFlagEntry::decode(cursor, head & 0x1)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         } else {
             _out.entries = None;

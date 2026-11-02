@@ -97,10 +97,10 @@ impl CodecChainHasTagged {
             for _ in 0..3u32 {
                 let _entry = CodecChainHasTaggedEntry::decode(cursor)?;
                 _more = _entry.more();
-                // Bounded by max-depth on both sides — loop count and `_vec`
-                // capacity are the same literal — so this push cannot fail. An
-                // over-long chain is refused by the guard after the loop.
-                _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;
+                // The loop walks the chain's depth and `_vec` holds the capacity, so
+                // this push fails only where the deployment holds fewer entries than
+                // the frame says. An over-long chain is refused after the loop.
+                _vec.push(_entry).map_err(|_| CodecError::CapacityExceeded)?;
                 if !_more { break; }
             }
             if _more && cursor.remaining() == 0 {
@@ -591,19 +591,19 @@ impl<'a> CodecChainHasTaggedView<'a> {
         _out.header = self.header;
         match &self.entries_has_0x7_has_0x9_header_wide {
             CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { entries, priority } => {
-                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key), (), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::TooManyElements)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
+                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key), (), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::CapacityExceeded)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
                 let mut _o_priority: u8 = Default::default();
                 _o_priority = *priority;
                 _out.entries_has_0x7_has_0x9_header_wide = CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { entries: _o_entries, priority: _o_priority };
             }
             CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9 { entries, priority } => {
-                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key), (), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::TooManyElements)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
+                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key), (), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::CapacityExceeded)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
                 let mut _o_priority: u8 = Default::default();
                 _o_priority = *priority;
                 _out.entries_has_0x7_has_0x9_header_wide = CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9 { entries: _o_entries, priority: _o_priority };
             }
             CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { entries, priority, checksum } => {
-                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (CodecChainHasTaggedEntriesHas0x7Key,), (CodecChainHasTaggedEntriesHas0x9Key,), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::TooManyElements)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
+                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (CodecChainHasTaggedEntriesHas0x7Key,), (CodecChainHasTaggedEntriesHas0x9Key,), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::CapacityExceeded)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
                 let mut _o_priority: u8 = Default::default();
                 _o_priority = *priority;
                 let mut _o_checksum: u16 = Default::default();
@@ -611,13 +611,13 @@ impl<'a> CodecChainHasTaggedView<'a> {
                 _out.entries_has_0x7_has_0x9_header_wide = CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { entries: _o_entries, priority: _o_priority, checksum: _o_checksum };
             }
             CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { entries, priority } => {
-                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (CodecChainHasTaggedEntriesHas0x9Key,), (CodecChainHasTaggedEntriesHas0x7Key,), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::TooManyElements)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
+                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (CodecChainHasTaggedEntriesHas0x9Key,), (CodecChainHasTaggedEntriesHas0x7Key,), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::CapacityExceeded)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
                 let mut _o_priority: u8 = Default::default();
                 _o_priority = *priority;
                 _out.entries_has_0x7_has_0x9_header_wide = CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { entries: _o_entries, priority: _o_priority };
             }
             CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7 { entries, priority, checksum } => {
-                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (CodecChainHasTaggedEntriesHas0x7Key,), (CodecChainHasTaggedEntriesHas0x9Key,), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::TooManyElements)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
+                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (CodecChainHasTaggedEntriesHas0x7Key,), (CodecChainHasTaggedEntriesHas0x9Key,), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::CapacityExceeded)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
                 let mut _o_priority: u8 = Default::default();
                 _o_priority = *priority;
                 let mut _o_checksum: u16 = Default::default();
@@ -625,11 +625,11 @@ impl<'a> CodecChainHasTaggedView<'a> {
                 _out.entries_has_0x7_has_0x9_header_wide = CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7 { entries: _o_entries, priority: _o_priority, checksum: _o_checksum };
             }
             CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9 { entries } => {
-                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (CodecChainHasTaggedEntriesHas0x9Key,), (CodecChainHasTaggedEntriesHas0x7Key,), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::TooManyElements)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
+                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (CodecChainHasTaggedEntriesHas0x9Key,), (CodecChainHasTaggedEntriesHas0x7Key,), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::CapacityExceeded)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
                 _out.entries_has_0x7_has_0x9_header_wide = CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9 { entries: _o_entries };
             }
             CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { entries, priority, checksum } => {
-                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (), (CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::TooManyElements)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
+                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (), (CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::CapacityExceeded)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
                 let mut _o_priority: u8 = Default::default();
                 _o_priority = *priority;
                 let mut _o_checksum: u16 = Default::default();
@@ -637,7 +637,7 @@ impl<'a> CodecChainHasTaggedView<'a> {
                 _out.entries_has_0x7_has_0x9_header_wide = CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { entries: _o_entries, priority: _o_priority, checksum: _o_checksum };
             }
             CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Neither { entries, checksum } => {
-                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (), (CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::TooManyElements)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
+                let _o_entries: ::sce_forge_runtime::codec::Chain<HeaplessVec<CodecChainHasTaggedEntry, 3>, (), (CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key), 3, 1> = ::sce_forge_runtime::codec::Chain::new({ let mut _v = HeaplessVec::new(); for _e in ::sce_forge_runtime::codec::Entries::entries(entries.inner()) { _v.push(Default::default()).map_err(|_| CodecError::CapacityExceeded)?; if let Some(_slot) = _v.last_mut() { _e.into_builder(_slot)?; } } _v }).expect("the projection keeps each entry's identifier");
                 let mut _o_checksum: u16 = Default::default();
                 _o_checksum = *checksum;
                 _out.entries_has_0x7_has_0x9_header_wide = CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Neither { entries: _o_entries, checksum: _o_checksum };

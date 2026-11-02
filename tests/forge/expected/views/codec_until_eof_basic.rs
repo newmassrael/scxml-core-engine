@@ -92,7 +92,7 @@ impl CodecUntilEofBasic {
                     return Err(CodecError::TooManyElements);
                 }
                 _vec.push(CodecRepeatElem::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         }
         Ok(())
@@ -327,7 +327,7 @@ impl<'a> CodecUntilEofBasicView<'a> {
     pub fn into_builder(&self, _out: &mut CodecUntilEofBasic) -> Result<(), CodecError> {
         _out.msgs.clear();
         for _e in self.msgs.iter() {
-            _out.msgs.push(CodecRepeatElem::default()).map_err(|_| CodecError::TooManyElements)?;
+            _out.msgs.push(CodecRepeatElem::default()).map_err(|_| CodecError::CapacityExceeded)?;
             if let Some(_slot) = _out.msgs.last_mut() {
                 _e.into_builder(_slot)?;
             }

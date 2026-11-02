@@ -96,7 +96,7 @@ impl<'a> CodecNestedBody<'a> {
             _vec.clear();
             for _ in 0..n {
                 _vec.push(CodecZenohLocator::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         }
         _out.n = n;

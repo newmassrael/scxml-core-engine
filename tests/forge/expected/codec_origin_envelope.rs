@@ -132,7 +132,7 @@ impl<'a> CodecOriginEnvelope<'a> {
             _vec.clear();
             for _ in 0..m {
                 _vec.push(CodecOriginLeaf::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         }
         _out.hdr = hdr;

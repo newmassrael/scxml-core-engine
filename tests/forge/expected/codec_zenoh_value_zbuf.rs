@@ -123,7 +123,7 @@ impl<'a> CodecZenohValueZbuf<'a> {
             let _vec = slices.insert(HeaplessVec::<CodecZenohValueSlice<'a>, 4>::new());
             for _ in 0.._n {
                 _vec.push(CodecZenohValueSlice::decode(cursor)?)
-                    .map_err(|_| CodecError::TooManyElements)?;
+                    .map_err(|_| CodecError::CapacityExceeded)?;
             }
         } else {
             slices = None;
