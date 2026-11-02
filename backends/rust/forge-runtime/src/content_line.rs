@@ -25,7 +25,7 @@
 //! UTF-8 character, or the two octets of a TEXT escape — that would take it past
 //! 75 octets.
 
-use crate::codec::{CodecError, SceSink};
+use crate::codec::{CodecError, SceSink, SceStr};
 use crate::heapless::{String as BoundedString, Vec as BoundedVec};
 
 /// The most octets of one physical line (SCE_FORGE.md §4.6.4, *Folding*).
@@ -278,6 +278,92 @@ enum Phase {
     Done,
 }
 
+/// The text a reader builds into a profile's container as it unescapes it, one
+/// byte at a time: each character is appended once its bytes are whole, so no
+/// buffer but one character's is held (docs/adr/0077 §7). The bound is judged
+/// at each byte, as the reader that returns a bounded string judges it; a byte
+/// past the container's capacity stops the appending and not the reading, and
+/// a text that is not UTF-8 is judged at its end, after the bound.
+struct TextInto<'b, B: SceStr> {
+    out: &'b mut B,
+    /// The most bytes, or `None` for no bound.
+    max: Option<usize>,
+    /// The bytes read so far.
+    len: usize,
+    /// The bytes of the character being read.
+    char_buf: [u8; 4],
+    char_len: usize,
+    /// The bytes the character being read takes, or 0 between characters.
+    char_need: usize,
+    /// A byte that no UTF-8 text holds where it stood.
+    bad: bool,
+    /// The container refused a character: the rest is read, and not held.
+    full: bool,
+}
+
+impl<'b, B: SceStr> TextInto<'b, B> {
+    fn new(out: &'b mut B, max: Option<usize>) -> Self {
+        Self {
+            out,
+            max,
+            len: 0,
+            char_buf: [0; 4],
+            char_len: 0,
+            char_need: 0,
+            bad: false,
+            full: false,
+        }
+    }
+
+    fn push(&mut self, b: u8) -> Result<(), CodecError> {
+        self.len += 1;
+        if self.max.is_some_and(|max| self.len > max) {
+            return Err(CodecError::LineTooLong);
+        }
+        if self.bad {
+            return Ok(());
+        }
+        if self.char_need == 0 {
+            self.char_need = match b {
+                0x00..=0x7f => 1,
+                0xc2..=0xdf => 2,
+                0xe0..=0xef => 3,
+                0xf0..=0xf4 => 4,
+                _ => {
+                    self.bad = true;
+                    return Ok(());
+                }
+            };
+            self.char_len = 0;
+        }
+        self.char_buf[self.char_len] = b;
+        self.char_len += 1;
+        if self.char_len < self.char_need {
+            return Ok(());
+        }
+        self.char_need = 0;
+        match core::str::from_utf8(&self.char_buf[..self.char_len]) {
+            Ok(ch) => {
+                if !self.full && self.out.try_push_str(ch).is_err() {
+                    self.full = true;
+                }
+            }
+            Err(_) => self.bad = true,
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> Result<(), CodecError> {
+        if self.bad || self.char_need != 0 {
+            return Err(CodecError::LineBadValue);
+        }
+        if self.full {
+            return Err(CodecError::CapacityExceeded);
+        }
+        Ok(())
+    }
+}
+
 /// One property line the codec has been handed.
 ///
 /// Ask [`is`](Self::is) whether it is one the codec reads. Then, for a property
@@ -445,6 +531,65 @@ impl<'a> Property<'a> {
             buf.push(byte).map_err(|_| CodecError::LineTooLong)?;
         }
         BoundedString::from_utf8(buf).map_err(|_| CodecError::LineBadValue)
+    }
+
+    /// Read the value as a `string` into `out`, the container a storage profile
+    /// holds it in, as [`Self::read_string`] reads it: at most `max` bytes,
+    /// the bound the protocol states, `None` for none (docs/adr/0077 §7). A text
+    /// past the bound is `LineTooLong`; one inside it and past what `out` holds
+    /// is read to the end of its line and then `CapacityExceeded`, so the line
+    /// is judged whole before a node says it cannot hold it.
+    pub fn read_string_into<B: SceStr>(
+        &mut self,
+        text: bool,
+        max: Option<usize>,
+        out: &mut B,
+    ) -> Result<(), CodecError> {
+        self.begin_value()?;
+        let mut into = TextInto::new(out, max);
+        while let Some(b) = self.scan.bump() {
+            let byte = if text && b == b'\\' {
+                match self.scan.bump() {
+                    Some(b'\\') => b'\\',
+                    Some(b';') => b';',
+                    Some(b',') => b',',
+                    Some(b'n' | b'N') => b'\n',
+                    _ => return Err(CodecError::LineBadEscape),
+                }
+            } else if is_control(b) {
+                return Err(CodecError::LineBadValue);
+            } else {
+                b
+            };
+            into.push(byte)?;
+        }
+        into.finish()
+    }
+
+    /// Read the value of the parameter [`next_param`](Self::next_param) stands
+    /// on into `out`, as [`Self::read_param_string`] reads it, held to `max`
+    /// bytes as [`Self::read_string_into`] holds a value.
+    pub fn read_param_string_into<B: SceStr>(
+        &mut self,
+        max: Option<usize>,
+        out: &mut B,
+    ) -> Result<(), CodecError> {
+        if self.phase != Phase::ParamValue {
+            return Err(CodecError::LineMalformed);
+        }
+        let mut into = TextInto::new(out, max);
+        let more = self.scan_param_value(|b| {
+            if is_control(b) {
+                return Err(CodecError::LineBadValue);
+            }
+            into.push(b)
+        })?;
+        if more {
+            return Err(CodecError::LineBadValue);
+        }
+        self.param = None;
+        self.phase = Phase::AtSeparator;
+        into.finish()
     }
 
     /// Read the value as a list of `string` cut at `separator`, at most `M` of
@@ -1142,6 +1287,92 @@ mod tests {
             assert!(p.next_param().expect("param"));
             assert_eq!(p.read_param_string::<8>(), Err(want), "{param:?}");
         }
+    }
+
+    /// A text read into a profile's container holds the protocol's bound and
+    /// the container's capacity apart (docs/adr/0077 §7): past the bound is
+    /// `LineTooLong`, inside it and past the capacity `CapacityExceeded`, and a
+    /// line that is malformed after the container is full is refused for that.
+    #[test]
+    fn a_text_read_into_a_profile_holds_its_bound_and_its_capacity_apart() {
+        use crate::codec::InlineStr;
+        fn on<T>(line: &[u8], read: impl FnOnce(&mut Property<'_>) -> T) -> T {
+            let mut input = Vec::from(&b"BEGIN:VEVENT\r\n"[..]);
+            input.extend_from_slice(line);
+            input.extend_from_slice(b"\r\nEND:VEVENT\r\n");
+            let mut r = ContentLineReader::begin(&input, "VEVENT").expect("begin");
+            let mut p = r.next_property().expect("line").expect("property");
+            read(&mut p)
+        }
+        let into = |line: &[u8], text: bool, max: Option<usize>| {
+            on(line, |p| {
+                let mut out = InlineStr::<4>::default();
+                p.read_string_into(text, max, &mut out)
+                    .map(|()| String::from(out.as_str()))
+            })
+        };
+        // Unescaped as it is read, and held.
+        assert_eq!(into(b"N:a\\,b", true, Some(8)), Ok(String::from("a,b")));
+        // Past the bound, whatever the container holds.
+        assert_eq!(into(b"N:abc", true, Some(2)), Err(CodecError::LineTooLong));
+        // Inside the bound, or with none, and past the container.
+        assert_eq!(
+            into(b"N:abcde", false, Some(8)),
+            Err(CodecError::CapacityExceeded)
+        );
+        assert_eq!(
+            into(b"N:abcde", false, None),
+            Err(CodecError::CapacityExceeded)
+        );
+        // A character the container has no room for whole is not cut.
+        assert_eq!(
+            into("N:aaé".as_bytes(), false, None),
+            Ok(String::from("aaé"))
+        );
+        assert_eq!(
+            into("N:aaaé".as_bytes(), false, None),
+            Err(CodecError::CapacityExceeded)
+        );
+        // The line is judged whole: malformed after the container is full.
+        assert_eq!(
+            into(b"N:abcde\x01", false, None),
+            Err(CodecError::LineBadValue)
+        );
+        assert_eq!(
+            into(b"N:abcd\xff", false, None),
+            Err(CodecError::LineBadValue)
+        );
+        // A parameter is held the same way.
+        let param = |line: &[u8], max: Option<usize>| {
+            on(line, |p| {
+                assert!(p.next_param().expect("param"));
+                let mut out = InlineStr::<4>::default();
+                p.read_param_string_into(max, &mut out)
+                    .map(|()| String::from(out.as_str()))
+            })
+        };
+        assert_eq!(param(b"N;X=ab:v", Some(4)), Ok(String::from("ab")));
+        assert_eq!(param(b"N;X=abc:v", Some(2)), Err(CodecError::LineTooLong));
+        assert_eq!(
+            param(b"N;X=abcde:v", None),
+            Err(CodecError::CapacityExceeded)
+        );
+    }
+
+    /// A growing profile holds a text the protocol bounds by nothing, however
+    /// long the frame says it is.
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn a_growing_profile_reads_a_text_of_no_bound_whole() {
+        use crate::codec::GrowStr;
+        let mut input = Vec::from(&b"BEGIN:VEVENT\r\nN:"[..]);
+        input.extend(core::iter::repeat_n(b'n', 300));
+        input.extend_from_slice(b"\r\nEND:VEVENT\r\n");
+        let mut r = ContentLineReader::begin(&input, "VEVENT").expect("begin");
+        let mut p = r.next_property().expect("line").expect("property");
+        let mut out = GrowStr::default();
+        p.read_string_into(false, None, &mut out).expect("read");
+        assert_eq!(out.as_str().len(), 300);
     }
 
     #[test]

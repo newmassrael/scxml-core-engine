@@ -290,6 +290,13 @@ impl<const N: usize> HeapStr<N> {
         self.0.as_str()
     }
 
+    /// Append `s`. The heap text grows (`N` advisory); the `Result` matches
+    /// [`InlineStr::try_push_str`] so one call shape serves both profiles.
+    pub fn try_push_str(&mut self, s: &str) -> Result<(), CapacityExceeded> {
+        self.0.push_str(s);
+        Ok(())
+    }
+
     /// The text of `s`, which the caller has already held to `N` bytes.
     ///
     /// Total: a text past `N` is cut at the last character boundary that fits
@@ -321,6 +328,13 @@ impl<const N: usize> InlineStr<N> {
     /// Borrow the owned text back as `&str`.
     pub fn as_str(&self) -> &str {
         self.0.as_str()
+    }
+
+    /// Append `s`, raising [`CapacityExceeded`] where the text would pass `N`
+    /// bytes; the text is then as it was. What a reader that builds a text as
+    /// it unescapes it writes through.
+    pub fn try_push_str(&mut self, s: &str) -> Result<(), CapacityExceeded> {
+        self.0.push_str(s).map_err(|_| CapacityExceeded)
     }
 
     /// The text of `s`, which the caller has already held to `N` bytes. See

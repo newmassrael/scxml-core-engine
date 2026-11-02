@@ -113,6 +113,12 @@ pub trait SceStr: Sized {
 
     /// Borrow the text back — the owned→borrowed projection's read side.
     fn as_str(&self) -> &str;
+
+    /// Append `s`, raising [`CodecError::CapacityExceeded`] past a fixed
+    /// capacity, the text then as it was: what a reader that builds a text as
+    /// it unescapes it writes through, with no buffer of its own
+    /// (docs/adr/0077 §7).
+    fn try_push_str(&mut self, s: &str) -> Result<(), CodecError>;
 }
 
 /// Owned byte storage for a codec's `bytes` field.
@@ -495,6 +501,10 @@ macro_rules! sce_str_impl {
 
             fn as_str(&self) -> &str {
                 Self::as_str(self)
+            }
+
+            fn try_push_str(&mut self, s: &str) -> Result<(), CodecError> {
+                Self::try_push_str(self, s).map_err(CodecError::from)
             }
         }
     };
