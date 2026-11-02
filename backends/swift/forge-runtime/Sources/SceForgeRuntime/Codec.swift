@@ -18,6 +18,9 @@ public enum CodecError: Error, Equatable, Sendable {
     case needMoreBytes
     /// An encode would write past the capacity of a bounded sink.
     case bufferOverflow
+    /// A variable-length integer's continuation chain names a value wider than the type that holds
+    /// it (`codec/vle-width-overflow`).
+    case vleWidthOverflow
 }
 
 /// The byte order of one field on the wire.
@@ -55,6 +58,65 @@ public struct SceCursor: Sendable {
             throw .needMoreBytes
         }
         position += count
+    }
+
+    /// The integer of type `T` at the cursor, which moves past it. A frame whose layout depends on
+    /// what it holds (a variable-length integer, a count a field states) is read field by field
+    /// through a copy of the cursor, and the cursor is replaced by the copy only when the whole frame
+    /// was read, so a frame that is refused has consumed nothing.
+    public mutating func readInteger<T: FixedWidthInteger>(
+        _ type: T.Type, _ order: SceByteOrder
+    ) throws(CodecError) -> T {
+        let value = try peekInteger(type, at: 0, order)
+        position += T.bitWidth / 8
+        return value
+    }
+
+    /// The next `count` bytes, which the cursor moves past.
+    public mutating func readSlice(_ count: Int) throws(CodecError) -> ArraySlice<UInt8> {
+        let slice = try peekSlice(count)
+        position += count
+        return slice
+    }
+
+    /// A variable-length unsigned integer of type `T` at the cursor, which moves past it: base-128,
+    /// least significant group first, the high bit of every byte but the last saying that another
+    /// follows. The last byte a `T` can need carries a full 8 data bits and no flag, so a 64-bit
+    /// value takes at most 9 bytes and not 10 (the canonical Zenoh ZInt; RFC §synth-5-B Appendix B).
+    /// A chain that names a value wider than `T` answers `vleWidthOverflow`, one that ends before it
+    /// is complete `needMoreBytes`.
+    public mutating func readVle<T: FixedWidthInteger & UnsignedInteger>(
+        _ type: T.Type
+    ) throws(CodecError) -> T {
+        let maxBits = T.bitWidth
+        let length = (maxBits - 1 + 6) / 7
+        let finalShift = 7 * (length - 1)
+        var value: UInt64 = 0
+        var shift = 0
+        var index = 0
+        while index < length {
+            guard position + index < buffer.count else {
+                throw .needMoreBytes
+            }
+            let byte = UInt64(buffer[position + index])
+            index += 1
+            if shift == finalShift {
+                let allowed = maxBits - shift
+                if allowed < 8 && byte > (UInt64(1) << UInt64(allowed)) - 1 {
+                    throw .vleWidthOverflow
+                }
+                value |= byte << UInt64(shift)
+                position += index
+                return T(truncatingIfNeeded: value)
+            }
+            value |= (byte & 0x7F) << UInt64(shift)
+            if byte & 0x80 == 0 {
+                position += index
+                return T(truncatingIfNeeded: value)
+            }
+            shift += 7
+        }
+        throw .vleWidthOverflow
     }
 
     /// The integer of type `T` that starts `offset` bytes after the cursor, read without moving it.
@@ -102,6 +164,37 @@ public func storeInteger<T: FixedWidthInteger>(
             buffer[offset + index] = byte
         }
     }
+}
+
+/// Appends `value` to `buffer` in `order`: the counterpart of `SceCursor.readInteger`, for an encode
+/// whose layout depends on what it holds and so cannot be laid out at fixed offsets
+/// (`storeInteger`). A signed type is written as its two's-complement bytes.
+public func appendInteger<T: FixedWidthInteger>(
+    _ value: T, to buffer: inout [UInt8], _ order: SceByteOrder
+) {
+    let width = T.bitWidth / 8
+    for index in 0..<width {
+        let shift = order == .big ? (width - 1 - index) * 8 : index * 8
+        buffer.append(UInt8(truncatingIfNeeded: value >> T(shift)))
+    }
+}
+
+/// Appends `value` to `buffer` as a variable-length unsigned integer: the counterpart of
+/// `SceCursor.readVle`. Every byte but the last carries 7 data bits and a flag that another follows,
+/// and the last byte a `T` can need carries a full 8 data bits, so the value of a `T` takes the
+/// fewest bytes that hold it and a 64-bit one never more than 9 (the canonical Zenoh ZInt).
+public func appendVle<T: FixedWidthInteger & UnsignedInteger>(
+    _ value: T, to buffer: inout [UInt8]
+) {
+    let continuationMax = (T.bitWidth - 1 + 6) / 7 - 1
+    var rest = UInt64(truncatingIfNeeded: value)
+    var written = 0
+    while rest >= 0x80 && written < continuationMax {
+        buffer.append(UInt8(truncatingIfNeeded: rest & 0x7F) | 0x80)
+        rest >>= 7
+        written += 1
+    }
+    buffer.append(UInt8(truncatingIfNeeded: rest))
 }
 
 /// The write-side of an encode: the destination of the bytes, owned by the caller.

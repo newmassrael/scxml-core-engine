@@ -280,14 +280,66 @@ fn a_tail_is_the_bytes_to_the_end_of_the_frame() {
         code.contains("public static let frameLength = 2"),
         "the fixed part is the bytes before the tail: {code}"
     );
-    assert!(code.contains("let sceEnd = cursor.remaining"), "{code}");
     assert!(
-        code.contains("frame.payload = Array(try cursor.peekSlice(sceEnd).dropFirst(2))"),
+        code.contains("var reader = cursor"),
+        "the frame is read through a copy of the cursor: {code}"
+    );
+    assert!(
+        code.contains("frame.payload = Array(try reader.readSlice(reader.remaining))"),
         "{code}"
     );
+    assert!(code.contains("cursor = reader"), "{code}");
     assert!(
         code.contains("frame += self.payload"),
         "the encode appends the bytes after the fixed part: {code}"
+    );
+}
+
+#[test]
+fn a_variable_length_integer_is_read_and_written_as_a_chain() {
+    let code =
+        swift_of("tests/forge/resources/codec_vle_zint_u64.scxml").expect("a VLE is written");
+    assert!(code.contains("public var value: UInt64 = 0"), "{code}");
+    assert!(
+        code.contains("frame.value = try reader.readVle(UInt64.self)"),
+        "{code}"
+    );
+    assert!(code.contains("appendVle(self.value, to: &frame)"), "{code}");
+    assert!(
+        code.contains("public static let frameLength = 1"),
+        "a chain takes one byte at the least: {code}"
+    );
+}
+
+#[test]
+fn a_field_after_a_variable_length_one_begins_where_it_ended() {
+    // `time` is a chain, so `zid_size` and the bytes it counts have no byte of their own.
+    let code =
+        swift_of("tests/forge/resources/codec_ext_timestamp.scxml").expect("a VLE is written");
+    let time = code
+        .find("frame.time = try reader.readVle")
+        .expect("the chain is read");
+    let size = code
+        .find("frame.zid_size = try reader.readInteger")
+        .expect("the size is read");
+    let zid = code
+        .find("frame.zid = Array(try reader.readSlice")
+        .expect("the bytes are read");
+    assert!(
+        time < size && size < zid,
+        "the fields are read in the order of the document: {code}"
+    );
+    let fixed_after = swift_of("tests/forge/resources/codec_fixed_after_lengthref.scxml")
+        .expect("a fixed field after a length-ref is written");
+    let bytes = fixed_after
+        .find("frame.payload = Array")
+        .expect("the bytes are read");
+    let crc = fixed_after
+        .find("frame.crc32 = try reader.readInteger")
+        .expect("the crc is read");
+    assert!(
+        bytes < crc,
+        "a field after the bytes is read after them: {fixed_after}"
     );
 }
 
@@ -296,12 +348,10 @@ fn a_length_ref_takes_its_count_from_an_unsigned_field_and_its_arithmetic() {
     let code = swift_of("tests/forge/resources/codec_length_ref_uint16_be.scxml")
         .expect("a length-ref is written");
     assert!(
-        code.contains("let sceEnd = 2 &+ Int(clamping: frame.payload_len)"),
+        code.contains(
+            "frame.payload = Array(try reader.readSlice(Int(clamping: frame.payload_len)))"
+        ),
         "{code}"
-    );
-    assert!(
-        code.contains("guard sceEnd >= 2 else { throw .needMoreBytes }"),
-        "a count that ends before the field begins is not a frame: {code}"
     );
     let arith = swift_of("tests/forge/resources/codec_scout_zid_body.scxml")
         .expect("a length-ref with arithmetic is written");
@@ -320,12 +370,9 @@ fn what_a_variable_length_field_cannot_be_is_refused_by_name() {
             "a `string` field of variable length",
         ),
         (
-            // A tail must be the last field (validated), so the second one is a tail that
-            // follows a length-ref.
-            r#"<sce:field id="n" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-               <sce:field id="a" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref" sce:length-field="n" sce:max-size="8"/>
-               <sce:field id="b" sce:type="bytes" sce:byte="2" sce:bit-size="tail" sce:max-size="8"/>"#,
-            "a second field of variable length",
+            r#"<sce:field id="a" sce:type="uint8" sce:byte="0" sce:bit-offset="0" sce:bit-size="4"/>
+               <sce:field id="n" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>"#,
+            "a bit offset in a frame whose layout depends on what it holds",
         ),
         (
             r#"<sce:field id="n" sce:type="int8" sce:byte="0" sce:bit-size="8"/>
@@ -339,14 +386,9 @@ fn what_a_variable_length_field_cannot_be_is_refused_by_name() {
             "{field}: {refusal}"
         );
     }
-    for (document, what) in [
-        ("codec_fixed_after_lengthref", "follows or overlaps it"),
-        ("codec_length_ref_dotted_basic", "a flag of a carrier"),
-    ] {
-        let refusal = swift_of(&format!("tests/forge/resources/{document}.scxml"))
-            .expect_err(&format!("{document} is not lowered"));
-        assert!(refusal.contains(what), "{document}: {refusal}");
-    }
+    let dotted = swift_of("tests/forge/resources/codec_length_ref_dotted_basic.scxml")
+        .expect_err("a length held in a flag is not lowered");
+    assert!(dotted.contains("a flag of a carrier"), "{dotted}");
 }
 
 #[test]

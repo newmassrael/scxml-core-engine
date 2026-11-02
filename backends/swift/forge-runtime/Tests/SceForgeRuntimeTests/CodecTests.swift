@@ -153,3 +153,67 @@ import Testing
     #expect(negative.remaining == 0, "a capacity below zero is no capacity")
     try negative.writeBytes([])
 }
+
+// A frame whose layout depends on what it holds is read field by field and written field by field:
+// the reads move the cursor, a variable-length integer is the canonical Zenoh ZInt in both
+// directions, and a refused read moves nothing.
+
+@Test func aReadMovesTheCursorPastWhatItReturned() throws {
+    var cursor = SceCursor([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+    #expect(try cursor.readInteger(UInt16.self, .big) == 0x0102)
+    #expect(try cursor.readInteger(UInt16.self, .little) == 0x0403)
+    #expect(Array(try cursor.readSlice(1)) == [0x05])
+    #expect(cursor.remaining == 1)
+    #expect(throws: CodecError.needMoreBytes) { try cursor.readInteger(UInt16.self, .big) }
+    #expect(cursor.remaining == 1, "a refused read has consumed nothing")
+}
+
+@Test func aVariableLengthIntegerTakesTheFewestBytesThatHoldIt() throws {
+    func bytes<T: FixedWidthInteger & UnsignedInteger>(_ value: T) -> [UInt8] {
+        var out: [UInt8] = []
+        appendVle(value, to: &out)
+        return out
+    }
+    #expect(bytes(UInt64(0)) == [0x00])
+    #expect(bytes(UInt64(127)) == [0x7F])
+    #expect(bytes(UInt64(128)) == [0x80, 0x01])
+    #expect(bytes(UInt16.max) == [0xFF, 0xFF, 0x03])
+    #expect(bytes(UInt32.max).count == 5)
+    #expect(bytes(UInt64.max) == [UInt8](repeating: 0xFF, count: 9), "a 64-bit value takes 9 bytes, not 10")
+}
+
+@Test func aVariableLengthIntegerReadsBackAsItselfAtEveryWidth() throws {
+    func roundTrip<T: FixedWidthInteger & UnsignedInteger>(_ values: [T]) throws {
+        for value in values {
+            var out: [UInt8] = []
+            appendVle(value, to: &out)
+            var cursor = SceCursor(out + [0xEE])
+            #expect(try cursor.readVle(T.self) == value, "\(T.self) \(value)")
+            #expect(cursor.remaining == 1, "the read stops at the end of the chain")
+        }
+    }
+    try roundTrip([UInt8(0), 1, 127, 128, 255])
+    try roundTrip([UInt16(0), 1, 127, 128, 16383, 16384, .max])
+    try roundTrip([UInt32(0), 127, 128, 1 << 21, 1 << 28, .max])
+    try roundTrip([UInt64(0), 127, 128, 1 << 35, 1 << 56, 1 << 63, .max])
+}
+
+@Test func aChainWiderThanItsTypeIsRefusedAndOneCutShortNeedsMoreBytes() throws {
+    // The last byte of a 16-bit value holds 2 bits: 4 is one too many.
+    var wide = SceCursor([0xFF, 0xFF, 0x04])
+    #expect(throws: CodecError.vleWidthOverflow) { try wide.readVle(UInt16.self) }
+    #expect(wide.remaining == 3, "a refused read has consumed nothing")
+    var cut = SceCursor([0x80, 0x80])
+    #expect(throws: CodecError.needMoreBytes) { try cut.readVle(UInt32.self) }
+    #expect(cut.remaining == 2)
+    var empty = SceCursor([])
+    #expect(throws: CodecError.needMoreBytes) { try empty.readVle(UInt8.self) }
+}
+
+@Test func anIntegerAppendedIsTheBytesOfItsByteOrder() throws {
+    var out: [UInt8] = []
+    appendInteger(UInt32(0x0A0B0C0D), to: &out, .big)
+    appendInteger(UInt16(0x0102), to: &out, .little)
+    appendInteger(Int8(-2), to: &out, .big)
+    #expect(out == [0x0A, 0x0B, 0x0C, 0x0D, 0x02, 0x01, 0xFE])
+}

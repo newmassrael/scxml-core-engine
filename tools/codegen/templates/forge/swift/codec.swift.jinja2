@@ -13,17 +13,24 @@ import SceForgeRuntime
 /// The frame this codec lays on the wire: {{ fields | length }} field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
 public struct {{ struct_name }}: Equatable, Sendable {
+{% if sequential %}
+    /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
+    /// integer or a field of bytes may take more.
+{% else %}
     /// The bytes of one frame.
+{% endif %}
     public static let frameLength = {{ frame_length }}
 {% for f in fields %}
 
 {% if f.variable and f.variable.kind == "tail" %}
-    /// The bytes from byte {{ f.offset }} to the end of the frame. The size the document bounds
-    /// them to is not held here, as it is not by the other managed backends.
+    /// The bytes to the end of the frame. The size the document bounds them to is not held here,
+    /// as it is not by the other managed backends.
 {% elif f.variable %}
-    /// The bytes from byte {{ f.offset }} for as many as `{{ f.variable.length_field }}` says{% if f.variable.arith %}, plus {{ f.variable.arith }}{% endif %}. The
-    /// size the document bounds them to is not held here, as it is not by the other managed
-    /// backends.
+    /// As many bytes as `{{ f.variable.length_field }}` says{% if f.variable.arith %}, plus {{ f.variable.arith }}{% endif %}. The size the document bounds them to is not
+    /// held here, as it is not by the other managed backends.
+{% elif f.vle %}
+    /// A variable-length integer: base-128, the least significant group first, at most as many
+    /// bytes as its type needs.
 {% elif f.bits %}
     /// The {{ f.bits.size }} bits of byte {{ f.offset }} from bit {{ f.bits.shift }}. A value wider than that is cut
     /// to it when written.
@@ -62,34 +69,37 @@ public struct {{ struct_name }}: Equatable, Sendable {
     }
 {% endif %}
 
+{% if sequential %}
+    /// Decodes the frame at the cursor and moves the cursor past it. The frame is read field by
+    /// field through a copy of the cursor, which replaces it only when the whole frame was read: a
+    /// frame that is short, or says more than it holds, answers `needMoreBytes`, and a variable-
+    /// length integer wider than its type `vleWidthOverflow`, and either leaves the cursor where
+    /// it was. A count the wire states is clamped and then added to, so a huge one wraps negative
+    /// and is refused like any other count past the end, and is no trap.
+{% else %}
     /// Decodes the frame at the cursor and moves the cursor past it. A cursor with fewer than
     /// `frameLength` bytes left answers `needMoreBytes` and is left where it was (RFC §synth-5-B
     /// L494-519).
+{% endif %}
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> {{ struct_name }} {
-        _ = try cursor.peekSlice(frameLength)
-{% if has_variable %}
+{% if sequential %}
+        var reader = cursor
         var frame = {{ struct_name }}()
 {% for f in fields %}
-{% if f.variable %}
-{% if f.variable.kind == "tail" %}
-        let sceEnd = cursor.remaining
+{% if f.variable and f.variable.kind == "tail" %}
+        frame.{{ f.id }} = Array(try reader.readSlice(reader.remaining))
+{% elif f.variable %}
+        frame.{{ f.id }} = Array(try reader.readSlice(Int(clamping: frame.{{ f.variable.length_field }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}))
+{% elif f.vle %}
+        frame.{{ f.id }} = try reader.readVle({{ f.swift_type }}.self)
 {% else %}
-        // The count is the wire's: a huge one clamps and wraps to a negative end, which the cursor
-        // answers as `needMoreBytes` like any frame that says more than it holds.
-        let sceEnd = {{ f.offset }} &+ Int(clamping: frame.{{ f.variable.length_field }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}
-
-        guard sceEnd >= {{ f.offset }} else { throw .needMoreBytes }
-{% endif %}
-        frame.{{ f.id }} = Array(try cursor.peekSlice(sceEnd).dropFirst({{ f.offset }}))
-        try cursor.advance(sceEnd)
-{% elif f.bits %}
-        frame.{{ f.id }} = try (cursor.peekInteger({{ f.swift_type }}.self, at: {{ f.offset }}, .{{ f.order }}) >> {{ f.bits.shift }}) & {{ f.bits.mask }}
-{% else %}
-        frame.{{ f.id }} = try cursor.peekInteger({{ f.swift_type }}.self, at: {{ f.offset }}, .{{ f.order }})
+        frame.{{ f.id }} = try reader.readInteger({{ f.swift_type }}.self, .{{ f.order }})
 {% endif %}
 {% endfor %}
+        cursor = reader
         return frame
 {% else %}
+        _ = try cursor.peekSlice(frameLength)
         let frame = {{ struct_name }}(
 {% for f in fields %}
 {% if f.bits %}
@@ -107,10 +117,18 @@ public struct {{ struct_name }}: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+{% if sequential %}
+        var frame: [UInt8] = []
+{% else %}
         {{ "var" if fields else "let" }} frame = [UInt8](repeating: 0, count: Self.frameLength)
+{% endif %}
 {% for f in fields %}
 {% if f.variable %}
         frame += self.{{ f.id }}
+{% elif f.vle %}
+        appendVle(self.{{ f.id }}, to: &frame)
+{% elif sequential %}
+        appendInteger(self.{{ f.id }}, to: &frame, .{{ f.order }})
 {% elif f.bits %}
         frame[{{ f.offset }}] |= (self.{{ f.id }} & {{ f.bits.mask }}) << {{ f.bits.shift }}
 {% else %}

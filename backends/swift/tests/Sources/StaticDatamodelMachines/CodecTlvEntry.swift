@@ -11,7 +11,8 @@ import SceForgeRuntime
 /// The frame this codec lays on the wire: 3 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
 public struct CodecTlvEntry: Equatable, Sendable {
-    /// The bytes of one frame.
+    /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
+    /// integer or a field of bytes may take more.
     public static let frameLength = 2
 
     /// The field at byte 0, big-endian.
@@ -20,9 +21,8 @@ public struct CodecTlvEntry: Equatable, Sendable {
     /// The field at byte 1, big-endian.
     public var entry_len: UInt8 = 0
 
-    /// The bytes from byte 2 for as many as `entry_len` says. The
-    /// size the document bounds them to is not held here, as it is not by the other managed
-    /// backends.
+    /// As many bytes as `entry_len` says. The size the document bounds them to is not
+    /// held here, as it is not by the other managed backends.
     public var entry_body: [UInt8] = []
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
@@ -35,29 +35,28 @@ public struct CodecTlvEntry: Equatable, Sendable {
         self.entry_body = entry_body
     }
 
-    /// Decodes the frame at the cursor and moves the cursor past it. A cursor with fewer than
-    /// `frameLength` bytes left answers `needMoreBytes` and is left where it was (RFC §synth-5-B
-    /// L494-519).
+    /// Decodes the frame at the cursor and moves the cursor past it. The frame is read field by
+    /// field through a copy of the cursor, which replaces it only when the whole frame was read: a
+    /// frame that is short, or says more than it holds, answers `needMoreBytes`, and a variable-
+    /// length integer wider than its type `vleWidthOverflow`, and either leaves the cursor where
+    /// it was. A count the wire states is clamped and then added to, so a huge one wraps negative
+    /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecTlvEntry {
-        _ = try cursor.peekSlice(frameLength)
+        var reader = cursor
         var frame = CodecTlvEntry()
-        frame.entry_type = try cursor.peekInteger(UInt8.self, at: 0, .big)
-        frame.entry_len = try cursor.peekInteger(UInt8.self, at: 1, .big)
-        // The count is the wire's: a huge one clamps and wraps to a negative end, which the cursor
-        // answers as `needMoreBytes` like any frame that says more than it holds.
-        let sceEnd = 2 &+ Int(clamping: frame.entry_len)
-        guard sceEnd >= 2 else { throw .needMoreBytes }
-        frame.entry_body = Array(try cursor.peekSlice(sceEnd).dropFirst(2))
-        try cursor.advance(sceEnd)
+        frame.entry_type = try reader.readInteger(UInt8.self, .big)
+        frame.entry_len = try reader.readInteger(UInt8.self, .big)
+        frame.entry_body = Array(try reader.readSlice(Int(clamping: frame.entry_len)))
+        cursor = reader
         return frame
     }
 
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        var frame = [UInt8](repeating: 0, count: Self.frameLength)
-        storeInteger(self.entry_type, into: &frame, at: 0, .big)
-        storeInteger(self.entry_len, into: &frame, at: 1, .big)
+        var frame: [UInt8] = []
+        appendInteger(self.entry_type, to: &frame, .big)
+        appendInteger(self.entry_len, to: &frame, .big)
         frame += self.entry_body
         try sink.writeBytes(frame)
     }
