@@ -1,0 +1,463 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// The peer core run over a transport by the one driver (`sce_rust_relay::drive`), with a relay in
+// the same process and no network. What is asked: that the driver puts the requests a host carrying
+// the texts by hand puts, in the same order, and the core comes to the same outcomes, over one
+// history of the list in two universes that never meet; that a transport that fails in the middle of
+// a round ends the round as a failure of the link and leaves the next round to hand over what the
+// broken one took in, and nothing twice; that a round whose transport waits ends when it is
+// cancelled from another thread, and when its deadline passes, long before it would otherwise; that
+// a cancellation raised before the drive carries nothing; and that a drive with no exchange running
+// asks nothing.
+
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
+
+use sce_rust_peer::{
+    drive, CourierError, Driven, Kept, Outcome, Peer, Profile, RoundKind, Signal, Transport,
+    TransportError,
+};
+use sce_rust_relay::{Authority, DirectLink, Limits, MemoryStore, Notice, Relay};
+use sce_rust_trust::membership::{Body, Entry, Log};
+use sce_rust_trust::Identity;
+use serde_json::json;
+
+const LIST: &str = "home";
+const ALICE: u64 = 1;
+const BOB: u64 = 2;
+const CAROL: u64 = 3;
+
+const WRITE: &str = "record_list.write";
+const SUPERSEDE: &str = "record_list.supersede";
+
+fn person(node: u64) -> Identity {
+    Identity::from_seed([node as u8; 32])
+}
+
+fn administrator() -> Identity {
+    Identity::from_seed([9; 32])
+}
+
+fn genesis() -> Entry {
+    Log::genesis_draft(
+        LIST,
+        Body::Genesis {
+            administrators: vec![administrator().public()],
+            quorum: 1,
+            profile: Profile::Untrusted,
+        },
+    )
+    .sign(&administrator())
+    .finish()
+}
+
+/// A write of `value` to field 3 of row `id`, stamped by `node` at `wall`.
+fn write(id: u32, node: u64, wall: i64, value: i64) -> String {
+    json!({"id": id, "field": 3, "value": value.to_string(), "text": "",
+           "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()})
+    .to_string()
+}
+
+/// The note that `by` wrote over the write of row `id` that `node` stamped at `wall`, at `at`.
+fn supersede(id: u32, node: u64, wall: i64, by: u64, at: i64) -> String {
+    json!({"id": id, "field": 3, "wallTime": wall.to_string(), "counter": 0,
+           "nodeId": node.to_string(), "by": by.to_string(),
+           "atWallTime": at.to_string(), "atCounter": 0})
+    .to_string()
+}
+
+/// Alice's device, which holds the administrator's key: it opens the list and grants bob writing
+/// and carol reading.
+fn alice() -> Peer {
+    let mut alice = Peer::open(LIST);
+    alice.set_identity(ALICE, person(ALICE));
+    alice.set_administrator(administrator());
+    assert_eq!(
+        alice.open_list(Profile::Untrusted).unwrap(),
+        genesis().hash()
+    );
+    for (node, role) in [(BOB, 2u8), (CAROL, 1)] {
+        alice.grant(node, role, person(node).public()).unwrap();
+    }
+    alice
+}
+
+/// A device invited with the hash of the genesis.
+fn invited(node: u64) -> Peer {
+    let mut peer = Peer::invited(LIST, genesis().hash());
+    peer.set_identity(node, person(node));
+    peer
+}
+
+type Shared = Arc<Mutex<Relay<MemoryStore>>>;
+
+fn authority() -> Authority {
+    Authority::new([3; 32], "the-relay")
+}
+
+fn relay(limits: Limits) -> Shared {
+    Arc::new(Mutex::new(
+        Relay::open(MemoryStore::new(), authority(), limits).unwrap(),
+    ))
+}
+
+/// The transport of the device of `node` to `relay` in this process.
+fn direct(relay: &Shared, node: u64) -> DirectLink<MemoryStore> {
+    let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| 0);
+    DirectLink::new(
+        relay.clone(),
+        authority().issue(LIST, node, u64::MAX),
+        clock,
+    )
+}
+
+type Carried = Arc<Mutex<Vec<String>>>;
+
+/// A transport over another that keeps every request text it carried, and that fails the request
+/// whose number (from 1) is `fail_at`, as a connection that closes does.
+struct Recording<T> {
+    inner: T,
+    carried: Carried,
+    fail_at: Option<usize>,
+}
+
+impl<T: Transport> Recording<T> {
+    fn over(inner: T) -> (Self, Carried) {
+        let carried = Carried::default();
+        let recording = Self {
+            inner,
+            carried: carried.clone(),
+            fail_at: None,
+        };
+        (recording, carried)
+    }
+}
+
+impl<T: Transport> Transport for Recording<T> {
+    fn exchange(
+        &mut self,
+        request: &str,
+        deadline: Option<Instant>,
+        cancel: &Signal,
+    ) -> Result<String, TransportError> {
+        let mut carried = self.carried.lock().unwrap();
+        carried.push(request.to_string());
+        if self.fail_at == Some(carried.len()) {
+            return Err(TransportError::Link("the connection closed".to_string()));
+        }
+        drop(carried);
+        self.inner.exchange(request, deadline, cancel)
+    }
+
+    fn take_notices(&mut self) -> Vec<Notice> {
+        self.inner.take_notices()
+    }
+
+    fn network(&self) -> Signal {
+        self.inner.network()
+    }
+}
+
+/// A round of `kind` of `peer`, run by the driver over `transport` with no deadline, and what it
+/// came to.
+fn run(peer: &mut Peer, transport: &mut impl Transport, kind: RoundKind) -> Outcome {
+    peer.start(kind).unwrap();
+    assert_eq!(drive(peer, transport, None, &Signal::new()), Driven::Ended);
+    peer.take_outcome()
+        .expect("the exchange ended")
+        .expect("the exchange held")
+}
+
+/// A round of `kind` of `peer`, the device of `node`, with every text carried to `relay` by hand, as
+/// a host that carries the texts itself does: what it came to, and the requests it asked.
+fn by_hand(peer: &mut Peer, relay: &Shared, node: u64, kind: RoundKind) -> (Outcome, Vec<String>) {
+    let token = authority().issue(LIST, node, u64::MAX);
+    let mut asked = Vec::new();
+    peer.start(kind).unwrap();
+    while let Some(request) = peer.poll_request() {
+        let response = relay.lock().unwrap().handle(&token, &request, 0);
+        asked.push(request);
+        peer.respond(&response).unwrap();
+    }
+    let outcome = peer
+        .take_outcome()
+        .expect("the exchange ended")
+        .expect("the exchange held");
+    (outcome, asked)
+}
+
+fn taken(carried: &Carried) -> Vec<String> {
+    std::mem::take(&mut *carried.lock().unwrap())
+}
+
+#[test]
+fn the_driver_asks_and_comes_to_what_a_host_carrying_the_texts_by_hand_does() {
+    let (hand_relay, driven_relay) = (relay(Limits::default()), relay(Limits::default()));
+    let (mut hand_alice, mut driven_alice) = (alice(), alice());
+    let (mut hand_bob, mut driven_bob) = (invited(BOB), invited(BOB));
+    let (mut alice_link, alice_carried) = Recording::over(direct(&driven_relay, ALICE));
+    let (mut bob_link, bob_carried) = Recording::over(direct(&driven_relay, BOB));
+
+    for alice in [&mut hand_alice, &mut driven_alice] {
+        assert_eq!(
+            alice.outbound(WRITE, &write(1, ALICE, 1000, 10)),
+            Kept::Taken
+        );
+        assert_eq!(
+            alice.outbound(WRITE, &write(1, ALICE, 2000, 20)),
+            Kept::Taken
+        );
+    }
+    let (expected, asked) = by_hand(&mut hand_alice, &hand_relay, ALICE, RoundKind::Sync);
+    let outcome = run(&mut driven_alice, &mut alice_link, RoundKind::Sync);
+    assert_eq!(outcome, expected);
+    assert_eq!(taken(&alice_carried), asked);
+    assert_eq!(outcome.round.pushed, 4 + 2, "the log and the two writes");
+
+    let (expected, asked) = by_hand(&mut hand_bob, &hand_relay, BOB, RoundKind::Sync);
+    let outcome = run(&mut driven_bob, &mut bob_link, RoundKind::Sync);
+    assert_eq!(outcome, expected);
+    assert_eq!(taken(&bob_carried), asked);
+    assert_eq!(
+        outcome
+            .events()
+            .iter()
+            .filter(|(event, _)| event == WRITE)
+            .count(),
+        2
+    );
+
+    for alice in [&mut hand_alice, &mut driven_alice] {
+        assert_eq!(
+            alice.outbound(SUPERSEDE, &supersede(1, ALICE, 1000, ALICE, 2000)),
+            Kept::Taken
+        );
+    }
+    let (expected, asked) = by_hand(&mut hand_alice, &hand_relay, ALICE, RoundKind::Sync);
+    assert_eq!(
+        run(&mut driven_alice, &mut alice_link, RoundKind::Sync),
+        expected
+    );
+    assert_eq!(taken(&alice_carried), asked);
+    let (expected, asked) = by_hand(&mut hand_bob, &hand_relay, BOB, RoundKind::Resync);
+    assert_eq!(
+        run(&mut driven_bob, &mut bob_link, RoundKind::Resync),
+        expected
+    );
+    assert_eq!(taken(&bob_carried), asked);
+    assert_eq!(driven_bob.trust().heads(), hand_bob.trust().heads());
+}
+
+/// A relay that holds alice's log and four writes of hers, and gives two records a batch, so that a
+/// round of bob's has several steps to stop between.
+fn four_writes() -> Shared {
+    let relay = relay(Limits {
+        max_feed: 2,
+        ..Limits::default()
+    });
+    let mut alice = alice();
+    for n in 1..=4 {
+        assert_eq!(
+            alice.outbound(WRITE, &write(n, ALICE, 1000 + i64::from(n), i64::from(n))),
+            Kept::Taken
+        );
+    }
+    let outcome = run(&mut alice, &mut direct(&relay, ALICE), RoundKind::Sync);
+    assert!(outcome.refused().is_empty(), "{:?}", outcome.refused());
+    relay
+}
+
+#[test]
+fn a_transport_that_fails_mid_round_leaves_the_next_round_to_hand_over_what_was_taken() {
+    let unbroken = four_writes();
+    let reference = run(
+        &mut invited(BOB),
+        &mut direct(&unbroken, BOB),
+        RoundKind::Sync,
+    );
+    assert_eq!(
+        reference
+            .events()
+            .iter()
+            .filter(|(event, _)| event == WRITE)
+            .count(),
+        4
+    );
+
+    let broken = four_writes();
+    let mut bob = invited(BOB);
+    let (mut link, carried) = Recording::over(direct(&broken, BOB));
+    // The log is records 0 to 3 and alice's writes 4 to 7: the fourth batch is the last two writes.
+    let feeds_before_the_fourth = {
+        let mut probe = invited(BOB);
+        let (mut probe_link, probe_carried) = Recording::over(direct(&broken, BOB));
+        run(&mut probe, &mut probe_link, RoundKind::Sync);
+        let asked = taken(&probe_carried);
+        let fourth_feed = asked
+            .iter()
+            .enumerate()
+            .filter(|(_, request)| request.contains("\"op\":\"feed\""))
+            .nth(3)
+            .map(|(at, _)| at)
+            .expect("a round asks for four batches");
+        fourth_feed + 1
+    };
+    link.fail_at = Some(feeds_before_the_fourth);
+
+    bob.start(RoundKind::Sync).unwrap();
+    assert_eq!(
+        drive(&mut bob, &mut link, None, &Signal::new()),
+        Driven::Ended,
+        "a failure of the link is the end of the exchange, not an interruption of the drive"
+    );
+    assert_eq!(
+        bob.take_outcome(),
+        Some(Err(CourierError::Link("the connection closed".to_string())))
+    );
+    assert_eq!(taken(&carried).len(), feeds_before_the_fourth);
+
+    link.fail_at = None;
+    let resumed = run(&mut bob, &mut link, RoundKind::Sync);
+    assert_eq!(
+        resumed.events(),
+        reference.events(),
+        "the roster, then the writes the broken round took in, then the rest, each once"
+    );
+    let again = run(&mut bob, &mut link, RoundKind::Sync);
+    assert!(again.events().is_empty(), "{:?}", again.events());
+}
+
+/// A transport whose relay never answers: an exchange waits until its cancellation is raised or its
+/// deadline passes, and says which, as the contract asks of every transport.
+struct NeverAnswers;
+
+impl Transport for NeverAnswers {
+    fn exchange(
+        &mut self,
+        _request: &str,
+        deadline: Option<Instant>,
+        cancel: &Signal,
+    ) -> Result<String, TransportError> {
+        let woken = Arc::new((Mutex::new(false), Condvar::new()));
+        let _watch = {
+            let woken = woken.clone();
+            cancel.watch(move || {
+                *woken.0.lock().unwrap() = true;
+                woken.1.notify_all();
+            })
+        };
+        let mut raised = woken.0.lock().unwrap();
+        loop {
+            if *raised || cancel.is_raised() {
+                return Err(TransportError::Cancelled);
+            }
+            match deadline {
+                Some(deadline) => {
+                    let now = Instant::now();
+                    if now >= deadline {
+                        return Err(TransportError::Deadline);
+                    }
+                    raised = woken.1.wait_timeout(raised, deadline - now).unwrap().0;
+                }
+                None => raised = woken.1.wait(raised).unwrap(),
+            }
+        }
+    }
+
+    fn take_notices(&mut self) -> Vec<Notice> {
+        Vec::new()
+    }
+
+    fn network(&self) -> Signal {
+        Signal::new()
+    }
+}
+
+#[test]
+fn a_round_whose_transport_waits_ends_when_cancelled_and_when_its_deadline_passes() {
+    let relay = relay(Limits::default());
+    let mut alice = alice();
+    assert_eq!(
+        alice.outbound(WRITE, &write(1, ALICE, 1000, 10)),
+        Kept::Taken
+    );
+
+    // Cancelled from another thread, a minute before its deadline.
+    alice.start(RoundKind::Sync).unwrap();
+    let cancel = Signal::new();
+    let raiser = {
+        let cancel = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            cancel.raise();
+        })
+    };
+    let began = Instant::now();
+    let driven = drive(
+        &mut alice,
+        &mut NeverAnswers,
+        Some(began + Duration::from_secs(60)),
+        &cancel,
+    );
+    raiser.join().unwrap();
+    assert_eq!(driven, Driven::Cancelled);
+    assert!(
+        began.elapsed() < Duration::from_secs(20),
+        "{:?}",
+        began.elapsed()
+    );
+    assert_eq!(
+        alice.take_outcome(),
+        Some(Err(CourierError::Link(
+            TransportError::Cancelled.to_string()
+        )))
+    );
+
+    // Its deadline passes.
+    alice.start(RoundKind::Sync).unwrap();
+    let began = Instant::now();
+    let driven = drive(
+        &mut alice,
+        &mut NeverAnswers,
+        Some(began + Duration::from_millis(300)),
+        &Signal::new(),
+    );
+    assert_eq!(driven, Driven::DeadlinePassed);
+    let waited = began.elapsed();
+    assert!(
+        waited >= Duration::from_millis(300) && waited < Duration::from_secs(20),
+        "{waited:?}"
+    );
+    assert_eq!(
+        alice.take_outcome(),
+        Some(Err(CourierError::Link(
+            TransportError::Deadline.to_string()
+        )))
+    );
+
+    // A cancellation raised before the drive: the request is not carried.
+    let (mut link, carried) = Recording::over(direct(&relay, ALICE));
+    alice.start(RoundKind::Sync).unwrap();
+    assert_eq!(
+        drive(&mut alice, &mut link, None, &cancel),
+        Driven::Cancelled
+    );
+    assert!(taken(&carried).is_empty(), "nothing was carried");
+    assert!(matches!(
+        alice.take_outcome(),
+        Some(Err(CourierError::Link(_)))
+    ));
+
+    // Nothing was lost by the rounds that did not end: the next one gives the relay all of it.
+    let outcome = run(&mut alice, &mut link, RoundKind::Sync);
+    assert_eq!(outcome.round.pushed, 4 + 1, "the log and the write");
+
+    // With no exchange running, a drive asks nothing.
+    assert_eq!(
+        drive(&mut alice, &mut link, None, &Signal::new()),
+        Driven::Ended
+    );
+    assert!(taken(&carried).is_empty());
+    assert_eq!(alice.take_outcome(), None);
+}

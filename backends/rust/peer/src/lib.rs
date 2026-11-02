@@ -18,7 +18,10 @@
 //!   ([`Peer::poll_request`]) and response texts the host gives back ([`Peer::respond`]), or a
 //!   failure of the transport ([`Peer::fail`]); its outcome ([`Peer::take_outcome`]) is the events
 //!   for the machine in order, the refusals, whether the machine is to be built again, whether the
-//!   round stalled, and what the group's device did with what was read;
+//!   round stalled, and what the group's device did with what was read. A host that has a
+//!   [`Transport`] (the relay's WebSocket binding, the deployment transport's adapter) gives the core
+//!   and the transport to the one driver ([`drive`]) instead, with a deadline and a cancellation; the
+//!   core stays the same exchange ([`Exchange`]), and the driver, not the core, does the waiting;
 //! - an administrator's acts ([`Peer::open_list`], [`Peer::grant`], [`Peer::add_member`],
 //!   [`Peer::remove_member`]) write the entries of the membership log and make the group's change
 //!   that goes with them in one call; the entries go to the relay with the next round, and the
@@ -44,12 +47,15 @@
 
 pub use sce_rust_mls::host::{Member, Step as GroupStep};
 pub use sce_rust_mls::{Device, MlsError};
+// What runs the core over a transport: the one driver, the exchange it carries, how it ended, and
+// the transport's contract with what it is given.
+pub use sce_rust_relay::{drive, Driven, Exchange, Signal, Transport, TransportError};
 pub use sce_rust_relay::{CourierError, Kept, Publication, Round, RoundKind};
 pub use sce_rust_trust::membership::{Hash, LogError, Profile, OWNER, READER, WRITER};
 
 use sce_rust_mls::host::Issued;
 use sce_rust_relay::client::{floor_event, keep};
-use sce_rust_relay::{CourierState, LinkError, Response, RoundMachine, Step};
+use sce_rust_relay::{CourierState, LinkError, Request, Response, RoundMachine, Step};
 use sce_rust_trust::membership::{Body, Entry};
 use sce_rust_trust::{Identity, PublicKey, Trust};
 use serde_json::{json, Value};
@@ -554,26 +560,24 @@ impl Peer {
     /// The next request to put to the relay, as the protocol's text; `None` when no exchange runs
     /// or the one that ran is over, and its outcome waits ([`Self::take_outcome`]). Asked again
     /// before it is answered, it is the same request.
+    ///
+    /// A host that carries the texts itself calls this, [`Self::respond`] and [`Self::fail`]; one
+    /// that has a [`Transport`] gives the core to the driver instead ([`drive`], through the core's
+    /// [`Exchange`]), which makes the same calls.
     pub fn poll_request(&mut self) -> Option<String> {
-        loop {
-            let running = self.running.as_mut()?;
-            match running.machine.poll() {
-                Step::Request(request) => return Some(request.to_json()),
-                Step::Done(result) => self.conclude(result),
-            }
-        }
+        Exchange::request(self).map(|request| request.to_json())
     }
 
     /// The relay's response text to the request [`Self::poll_request`] gave. A text that is not a
     /// response of the protocol is taken as a failure of the transport.
     pub fn respond(&mut self, text: &str) -> Result<(), PeerError> {
-        self.answer(Response::from_json(text).map_err(LinkError))
+        self.give_answer(Response::from_json(text).map_err(LinkError))
     }
 
     /// The transport did not carry the request or its response: the exchange ends with
     /// [`CourierError::Link`], and what it took in is handed over by the next round.
     pub fn fail(&mut self, reason: &str) -> Result<(), PeerError> {
-        self.answer(Err(LinkError(reason.to_string())))
+        self.give_answer(Err(LinkError(reason.to_string())))
     }
 
     /// The outcome of the exchange that ended, once.
@@ -740,7 +744,7 @@ impl Peer {
         Ok(())
     }
 
-    fn answer(&mut self, answer: Result<Response, LinkError>) -> Result<(), PeerError> {
+    fn give_answer(&mut self, answer: Result<Response, LinkError>) -> Result<(), PeerError> {
         let running = self.running.as_mut().ok_or(PeerError::NothingAsked)?;
         if !running.machine.is_asking() {
             return Err(PeerError::NothingAsked);
@@ -856,5 +860,27 @@ impl Peer {
                 self.outcome = Some(Ok(outcome));
             }
         }
+    }
+}
+
+/// The core is an exchange the driver carries over any link ([`drive`]): the requests are the ones
+/// [`Peer::poll_request`] gives, and an answer goes where [`Peer::respond`] and [`Peer::fail`] put
+/// it. An exchange the core composes (a round, the second read it owes, what the relay is owed after
+/// it) is one exchange to the driver, whose outcome is taken with [`Peer::take_outcome`].
+impl Exchange for Peer {
+    fn request(&mut self) -> Option<Request> {
+        loop {
+            let running = self.running.as_mut()?;
+            match running.machine.poll() {
+                Step::Request(request) => return Some(request),
+                Step::Done(result) => self.conclude(result),
+            }
+        }
+    }
+
+    fn answer(&mut self, answer: Result<Response, LinkError>) {
+        // The driver answers only the request it was given, which waits; an answer when none waits
+        // is not taken, as `respond` says.
+        let _ = self.give_answer(answer);
     }
 }
