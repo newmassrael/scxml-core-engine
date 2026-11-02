@@ -5968,6 +5968,77 @@ fn what_cannot_hold_a_byte_string_with_no_bound_refuses_it() {
     }
 }
 
+/// A gated byte string whose length a VLE `uint64` carries and that states no
+/// `sce:max-size`, so it has no bound (docs/adr/0077 §7): the shape of a
+/// consumer's cookie and query parameters.
+const OPEN_GATED_BYTES: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_open_gated_bytes">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_payload" bit="0"/>
+    </sce:flags>
+    <sce:field id="payload_size" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="payload_size" sce:present-if="flags.has_payload"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A gated byte string with no bound generates on every backend that grows,
+/// and in Rust as `Bytes<'a, { usize::MAX }>` and compiles; only C11, which holds it in an
+/// array, asks for a capacity. The gated read once asked C11's question of its
+/// array on every backend and panicked on a field it had no number for.
+#[test]
+fn a_gated_byte_string_with_no_bound_generates_on_every_backend_that_grows() {
+    use sce_build::generator::Language;
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    std::fs::write(
+        dir.path().join("codec_open_gated_bytes.scxml"),
+        OPEN_GATED_BYTES,
+    )
+    .expect("write");
+    let compile = |language: Language| {
+        sce_build::compile_forge_with_imports(
+            OPEN_GATED_BYTES,
+            sce_build::DocumentLabel::symmetric("codec_open_gated_bytes"),
+            language,
+            dir.path(),
+            &golden_options(language),
+        )
+    };
+    let rust = compile(Language::Rust).expect("Rust generates a gated byte string with no bound");
+    let code = &rust.files[0].1;
+    // The gate decides the payload and the length together, so the value holds
+    // them as the arms of one sum (docs/adr/0065 §6 R4b), the payload in it
+    // with no bound.
+    assert!(
+        code.contains("::sce_forge_runtime::codec::Bytes<'a, { usize::MAX }>"),
+        "{code}"
+    );
+    rustc_run_generated_set(rust.files, "open_gated_bytes", "build", RustcProfile::Alloc)
+        .expect("the Rust codec compiles");
+    for language in [
+        Language::Cpp,
+        Language::Kotlin,
+        Language::Go,
+        Language::Python,
+    ] {
+        compile(language).unwrap_or_else(|e| {
+            panic!("{language:?} grows a gated byte string with no bound: {e}")
+        });
+    }
+    let refused = compile(Language::C11)
+        .err()
+        .expect("C11 refuses a byte string it holds no number of");
+    assert!(
+        refused
+            .to_string()
+            .contains("'codec_open_gated_bytes.payload'"),
+        "{refused}"
+    );
+}
+
 /// A CBOR map whose text states no bound (docs/adr/0077 §7).
 const OPEN_MAP: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"

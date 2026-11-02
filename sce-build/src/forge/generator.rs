@@ -17341,7 +17341,10 @@ fn present_if_decode_length_ref(
         lang,
         length_block_indent(lang, field.present_if.is_some()),
     );
-    let c11_room = c11_storage_check(field, fields, "        ");
+    // C11's check of the length against its array, asked only of C11: no other
+    // backend holds the field in an array, and one with neither a bound nor a
+    // capacity has no number for it (docs/adr/0077 §7).
+    let c11_room = || c11_storage_check(field, fields, "        ");
     match (lang, &field.present_if) {
         (Language::Swift, _) => no_swift_emitter("present_if_decode_length_ref"),
         (Language::Rust, None) => {
@@ -17453,6 +17456,7 @@ fn present_if_decode_length_ref(
         }
         (Language::C11, None) => {
             let id_snake = filters::to_snake_case(id.to_string());
+            let c11_room = c11_room();
             format!(
                 "{{\n        \
                      {count}\n        \
@@ -17471,6 +17475,7 @@ fn present_if_decode_length_ref(
             let id_snake = filters::to_snake_case(id.to_string());
             let test = present_if_test_literal(fields, p, lang);
             let none = c11_gated_bytes_optional(field, fields).none();
+            let c11_room = c11_room();
             format!(
                 "if ({test}) {{\n        \
                      {count}\n        \
