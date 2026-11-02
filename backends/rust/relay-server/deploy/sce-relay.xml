@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+  SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+  The relay of shared lists as a firewalld service (docs/SCE_RELAY_DEPLOY.md), installed as
+  /etc/firewalld/services/sce-relay.xml and added to the zone the server faces the network in:
+
+    firewall-cmd --reload
+    firewall-cmd --permanent --zone=public --add-service=sce-relay
+    firewall-cmd --reload
+
+  The port is the one the relay listens on with TLS ([listen] tls in relay.toml). A relay behind a
+  proxy on the same server opens no port of its own: the proxy's port is opened instead.
+-->
+<service>
+  <short>sce-relay</short>
+  <description>The relay of shared lists: its WebSocket binding over TLS (wss://).</description>
+  <port protocol="tcp" port="443"/>
+</service>

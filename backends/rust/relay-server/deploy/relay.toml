@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The configuration of a relay on a small Linux server (docs/SCE_RELAY_DEPLOY.md), installed as
+# /etc/sce-relay/relay.toml. It holds paths and numbers and no secret: the authority's key and the
+# certificate's private key are files of their own, which the service unit hands the relay
+# (`LoadCredential=`, `--authority-key`, `--tls-key`). A relative path is read from this file's
+# directory. A key the relay does not read is refused by name.
+
+[listen]
+# wss:// on port 443, IPv6 and IPv4 at once (a kernel with IPv6 off takes "0.0.0.0:443" instead).
+tls = ["[::]:443"]
+# ws:// for a relay behind a proxy that terminates TLS, or on a private network: in place of `tls`
+# above, with no [tls] section.
+# plain = ["127.0.0.1:8080"]
+
+[tls]
+# The certificate the relay presents, its own first and then the intermediates, as PEM. The private
+# key is given by the service unit (`--tls-key`), from a credential only the relay reads.
+certificate_chain = "/etc/sce-relay/tls/chain.pem"
+
+[store]
+# Made by the service manager (`StateDirectory=sce-relay`), and the relay's alone.
+directory = "/var/lib/sce-relay"
+# The number of slots the store is laid out for, fixed when the deployment begins. One suits a
+# server of one core.
+slots = 1
+
+[connections]
+max = 512
+handshake_seconds = 10
+idle_seconds = 300
+# Less than the unit's TimeoutStopSec, with room for the runtime to wind down as long again.
+shutdown_grace_seconds = 10
+
+[limits]
+# A relay keeps every record it holds in memory: the lists it holds, times the records of each,
+# times their size, is what it can come to. These suit a server of 1 GB for a few households;
+# measure, and set your own (docs/SCE_RELAY_DEPLOY.md, section 9).
+max_lists = 200
+max_records_per_list = 50000
