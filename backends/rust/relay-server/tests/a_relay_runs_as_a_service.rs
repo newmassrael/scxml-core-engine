@@ -320,8 +320,7 @@ fn a_key_is_made_for_its_owner_alone_and_a_token_from_it_names_one_device() {
     assert_eq!(status_of(&unnamed), Some(2), "{}", text(&unnamed.stderr));
     assert!(!scratch.path("other.key").exists());
 
-    // A token names node 7 of the list, until the time it was issued for.
-    let before = now_ms();
+    // A token names node 7 of the list, for the time it was issued for and no longer.
     let issued = sce_relay(&[
         "token",
         "issue",
@@ -334,18 +333,20 @@ fn a_key_is_made_for_its_owner_alone_and_a_token_from_it_names_one_device() {
         "--valid-for",
         "600",
     ]);
+    // Issued before now: good now, and gone 600 seconds from now.
+    let after = now_ms();
     assert_eq!(status_of(&issued), Some(0), "{}", text(&issued.stderr));
     let token = text(&issued.stdout).trim().to_string();
     assert!(!text(&issued.stderr).contains(&token));
     assert_eq!(
-        authority.verify(&token, now_ms()),
+        authority.verify(&token, after),
         Ok(Session {
             list: LIST.to_string(),
             node: 7
         })
     );
     assert_eq!(
-        authority.verify(&token, before + 601_000),
+        authority.verify(&token, after + 600_000),
         Err(TokenError::Expired)
     );
 
