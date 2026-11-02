@@ -485,7 +485,7 @@ codec fields.
 | Length-prefixed | `<sce:field name="payload" type="bytes" sce:len-prefix="size"/>` | Field size = value of `size` (earlier VLE or int) |
 | Repeated | `<sce:repeat count="n"> <sce:field ... /> </sce:repeat>` | Array of sub-structures; count from field `n` |
 | Until-EOF | `<sce:field name="tail" type="bytes" sce:until-eof="true"/>` | Greedy consume-remaining |
-| TLV chain | `<sce:kind="tlv-chain" max-depth="N" on-overflow="reject\|truncate\|diagnostic-event">` as a codec subtype | Bounded extension list, each has id+len+body. `max-depth` MUST be specified for MCU targets; enforced via `max-iter` on the parse loop (§5.A) — iterative, never recursive |
+| TLV chain | `<sce:tlv-chain max-depth="N">` as a codec subtype | Extension list, each has id+len+body. `max-depth` is stated only where the protocol bounds the chain, and a node's limit is its deployment's capacity (docs/adr/0077); a stated depth is enforced via `max-iter` on the parse loop (§5.A) — iterative, never recursive |
 | DMA alignment (field) | `<sce:field ... sce:dma-burst-align="32" sce:pad-before="auto"/>` | Field start address constrained to DMA burst boundary; codegen inserts padding bytes to honor it |
 | DMA alignment (codec) | `<sce:dma-constraint><sce:burst-align>32</sce:burst-align><sce:header-stride>4</sce:header-stride></sce:dma-constraint>` | Codec-level defaults applied to every field unless overridden |
 | Test vector | `<sce:test-vector hex="a1b2c3..." value="..."/>` in codec file | Golden input/output pair for regression |
@@ -530,10 +530,10 @@ the hex through the codec and compare to the declared value.
 Cross-backend parity is guaranteed because both backends consume the
 same test vector from the same SCXML.
 
-**TLV chain bound enforcement.** Iterative parse only; `max-depth`
+**TLV chain bound enforcement.** Iterative parse only; a stated `max-depth`
 lowers to a `max-iter` on the chain traversal loop (§5.A). No
-runtime recursion. On MCU the decoder carries a fixed-size working
-set sized at `max-depth`; overflow is handled by `on-overflow`.
+runtime recursion. A form that stores the chain holds the deployment's
+capacity, or the depth, and refuses past it (docs/adr/0077).
 
 **DMA alignment semantics.** `sce:dma-burst-align` on a field
 constrains the field's offset within the encoded buffer AND, on
@@ -677,8 +677,8 @@ WCET; the runtime is preemptive and a slow parse blocks only one task.
 - `codec/len-prefix-refs-non-int` — length must be integer
 - `codec/borrow-mode-with-owned-field` — mixed parse modes
 - `codec/test-vector-drift` — regression on golden vector
-- `codec/tlv-chain-depth-unspecified` — MCU target without `max-depth`
-- `codec/tlv-chain-truncate-under-entry-flag` — `on-overflow="truncate"` declared with `terminate-on="entry-flag"`. Entry-flag termination means the bytes after the chain belong to the fields that follow it, so a dropped post-cap entry leaves its bytes where the next field reads them. Consuming them instead has no declaration-derived bound, which is what `max-depth` lowering to a `max-iter` forbids. Hard error; use `on-overflow="reject"`, or `terminate-on="exhaust-or-depth"` if the chain owns the rest of the wire
+- `codec/capacity-invalid` — a backend that stores in arrays (C11) given a chain with neither `max-depth` nor a deployment capacity, or a capacity past the chain's bound (docs/adr/0077)
+- `codec/list-cannot-move` — a list with no bound whose entry can take no bytes, so no frame ends its walk (docs/adr/0077). A chain's entry reads its header, so a chain always moves; a node past what it stores refuses with `CapacityExceeded`, and nothing is dropped
 - `codec/tlv-chain-depth-exceeds-stack-budget` — `max-depth` × per-level working set > deploy-declared worker stack budget
 - `codec/dma-alignment-unsatisfiable` — burst-align requirement cannot be honored given preceding variable-length fields
 - `codec/dma-alignment-pool-mismatch` — field `dma-burst-align` > bound pool `alignment`
