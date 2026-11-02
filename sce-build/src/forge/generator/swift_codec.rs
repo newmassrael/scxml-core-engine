@@ -54,15 +54,56 @@ pub(super) fn unlowered(m: &CodecModel) -> Option<String> {
     if m.fields.is_empty() {
         return Some("a codec with no field".to_string());
     }
-    m.fields.iter().find_map(|f| field_unlowered(m, f))
+    m.fields
+        .iter()
+        .find_map(|f| field_unlowered(m, f))
+        .or_else(|| flags_unlowered(m))
+}
+
+/// The members a codec struct has besides its fields and the flags its fields carry.
+const MEMBERS: &[&str] = &["frameLength", "init", "decode", "encode"];
+
+/// The property that reads and writes the flag `name` of a carrier: lowerCamel, as a Swift
+/// property is spelled.
+fn flag_property(name: &str) -> String {
+    filters::to_camel_case(name.to_string())
+}
+
+/// What of the flags the fields of `m` carry the Swift codec does not lower yet: a flag is a
+/// property of the struct beside the fields, so a name the struct already has (a member of it,
+/// or a field), or that two flags would share, is refused and not renamed.
+///
+/// A name that is a reserved word, in Swift's list or in any backend's, and two flags whose names
+/// are the one name in any backend, are refused when the document is validated
+/// (`ReservedCodeIdentifier`, `CollidingCodeIdentifier`), spelled as each backend spells them; a
+/// flag and a field are not compared there, and the members the struct has are Swift's own.
+fn flags_unlowered(m: &CodecModel) -> Option<String> {
+    let mut taken: std::collections::BTreeMap<String, String> = m
+        .fields
+        .iter()
+        .map(|f| (f.id.clone(), format!("the field '{}'", f.id)))
+        .collect();
+    for member in MEMBERS {
+        taken.insert((*member).to_string(), format!("the member `{member}`"));
+    }
+    for f in &m.fields {
+        for flag in &f.flags {
+            let property = flag_property(&flag.name);
+            if let Some(other) = taken.insert(property.clone(), format!("the flag `{}`", flag.name))
+            {
+                return Some(format!(
+                    "field '{}': the flag `{}` and {other}, which are the one property `{property}`",
+                    f.id, flag.name
+                ));
+            }
+        }
+    }
+    None
 }
 
 /// What of the field `f` of `m` the Swift codec does not lower yet.
 fn field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
     let what = |text: &str| Some(format!("field '{}': {text}", f.id));
-    if !f.flags.is_empty() {
-        return what("a `<sce:flags>` carrier");
-    }
     if f.present_if.is_some() {
         return what("a `sce:present-if` condition");
     }
@@ -102,6 +143,36 @@ fn field_unlowered(m: &CodecModel, f: &CodecField) -> Option<String> {
     }
 }
 
+/// What the template needs to write the property of one flag: its name, where its bits lie in
+/// the carrier (`mask` is the bits shifted into place, `value_mask` the same bits at zero), and,
+/// for a flag of more than one bit, the unsigned integer type that reads and writes it (the
+/// smallest that holds its width). A flag of one bit is a `Bool`.
+fn flag_context(flag: &FlagDef) -> serde_json::Value {
+    let width = flag.width.max(1);
+    let value_mask = if width >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << width) - 1
+    };
+    let result_type = match width {
+        1 => "Bool",
+        2..=8 => "UInt8",
+        9..=16 => "UInt16",
+        17..=32 => "UInt32",
+        _ => "UInt64",
+    };
+    serde_json::json!({
+        "property": flag_property(&flag.name),
+        "name": flag.name,
+        "bit": flag.bit,
+        "width": width,
+        "multi_bit": width > 1,
+        "mask": format!("0x{:X}", value_mask << flag.bit),
+        "value_mask": format!("0x{value_mask:X}"),
+        "result_type": result_type,
+    })
+}
+
 /// The refusal of the codec `m` for the Swift construct `construct` it holds ([`unlowered`]).
 pub(super) fn refusal(m: &CodecModel, construct: &str) -> String {
     format!("codec '{}': {construct} has no Swift lowering yet", m.name)
@@ -126,11 +197,19 @@ pub(super) fn render(
                 Endian::Little => "little",
                 Endian::Big | Endian::Native => "big",
             };
+            // The carrier's value before anything is read into it: the bits the document's
+            // `<sce:flag value=>` declarations set, and zero where it declares none.
+            let default = match flag_default_carrier_value(f) {
+                0 => "0".to_string(),
+                bits => format!("0x{bits:X}"),
+            };
             serde_json::json!({
                 "id": f.id,
                 "swift_type": swift_type,
                 "offset": f.byte_offset,
                 "order": order,
+                "default": default,
+                "flags": f.flags.iter().map(flag_context).collect::<Vec<_>>(),
             })
         })
         .collect();

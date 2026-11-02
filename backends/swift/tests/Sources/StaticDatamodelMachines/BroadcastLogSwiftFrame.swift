@@ -26,8 +26,8 @@ public struct BroadcastLogSwiftFrame: Equatable, Sendable {
     /// The field at byte 10, big-endian.
     public var level: UInt8 = 0
 
-    /// A frame of zeros: what a holder that has read no frame yet holds, as a validator that
-    /// composes this codec does until it is given one.
+    /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
+    /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
     public init(sequence: UInt32, reading: UInt32, status: UInt16, level: UInt8) {

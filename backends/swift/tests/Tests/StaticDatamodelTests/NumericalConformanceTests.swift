@@ -988,6 +988,31 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     }
 }
 
+// MARK: - codec: codec_qos_byte
+
+@Test func codecQosByteMatchesReference() throws {
+
+    let cases = try oracleCases("codecs", "codec_qos_byte")
+    #expect(!cases.isEmpty, "codec_qos_byte: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_qos_byte case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+
+        let value = CodecQosByte(
+            qos: try oracleInteger(decoded.member("qos"), as: UInt8.self)
+        )
+
+        var sink = BytesSink()
+        try value.encode(into: &sink)
+        #expect(sink.bytes == expectedBytes, "codec_qos_byte case \(index) encode")
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecQosByte.decode(&cursor)
+        #expect(roundTripped == value, "codec_qos_byte case \(index) decode")
+        #expect(cursor.remaining == 0, "codec_qos_byte case \(index) decode consumed the frame and nothing else")
+    }
+}
+
 // MARK: - codec: codec_zenoh_put
 
 @Test func codecZenohPutMatchesReference() throws {
@@ -4424,6 +4449,38 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecOriginScalar.frameLength
+}
+
+// MARK: - codec: codec_chain_has_tagged_entry
+
+@Test func codecChainHasTaggedEntryMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainHasTaggedEntry.frameLength
+}
+
+// MARK: - codec: codec_flags_basic
+
+@Test func codecFlagsBasicMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecFlagsBasic.frameLength
+}
+
+// MARK: - codec: codec_peek_arm_a
+
+@Test func codecPeekArmAMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecPeekArmA.frameLength
+}
+
+// MARK: - codec: codec_peek_arm_b
+
+@Test func codecPeekArmBMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecPeekArmB.frameLength
 }
 
 // MARK: - codec: codec_repeat_elem

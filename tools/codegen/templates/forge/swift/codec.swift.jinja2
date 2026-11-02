@@ -18,11 +18,28 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% for f in fields %}
 
     /// The field at byte {{ f.offset }}, {{ f.order }}-endian.
-    public var {{ f.id }}: {{ f.swift_type }} = 0
+    public var {{ f.id }}: {{ f.swift_type }} = {{ f.default }}
+{% for fl in f.flags %}
+
+{% if fl.multi_bit %}
+    /// The {{ fl.width }} bits of `{{ f.id }}` from bit {{ fl.bit }} (flag `{{ fl.name }}`). A value
+    /// wider than the flag is cut to it when written.
+    public var {{ fl.property }}: {{ fl.result_type }} {
+        get { {{ fl.result_type }}(truncatingIfNeeded: ({{ f.id }} >> {{ fl.bit }}) & {{ fl.value_mask }}) }
+        set { {{ f.id }} = ({{ f.id }} & ~({{ fl.value_mask }} << {{ fl.bit }})) | ((({{ f.swift_type }}(truncatingIfNeeded: newValue)) & {{ fl.value_mask }}) << {{ fl.bit }}) }
+    }
+{% else %}
+    /// Bit {{ fl.bit }} of `{{ f.id }}` (flag `{{ fl.name }}`).
+    public var {{ fl.property }}: Bool {
+        get { ({{ f.id }} & {{ fl.mask }}) != 0 }
+        set { {{ f.id }} = newValue ? ({{ f.id }} | {{ fl.mask }}) : ({{ f.id }} & ~{{ fl.mask }}) }
+    }
+{% endif %}
+{% endfor %}
 {% endfor %}
 
-    /// A frame of zeros: what a holder that has read no frame yet holds, as a validator that
-    /// composes this codec does until it is given one.
+    /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
+    /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
     public init({% for f in fields %}{{ f.id }}: {{ f.swift_type }}{% if not loop.last %}, {% endif %}{% endfor %}) {
