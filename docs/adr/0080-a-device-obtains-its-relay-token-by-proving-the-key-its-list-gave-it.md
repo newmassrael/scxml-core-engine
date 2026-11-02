@@ -1,6 +1,7 @@
 # ADR 0080 — A device obtains its relay token by proving the key its list gave it, and the relay issues it
 
-- Status: Proposed (2026-11-02). For the owner to accept or amend; nothing of it is built.
+- Status: Accepted (2026-11-02), as proposed and with the proposed answers to its open questions (see the end).
+  Being built in its order of work.
 - Date: 2026-11-02
 - Related:
   - ADR 0034 (a shared list is held by its members, and the hub only relays), sections 8 and 9 and its threat
@@ -226,7 +227,15 @@ may turn proof-of-possession login off (`[login] enabled = false`), and leaves c
 4. Lapse in the store, then `[creation] policy = "open"` with self-certifying names and proof of work.
 5. The runbook, and a probe that logs in.
 
-## Open questions for the owner
+## The owner's answers (2026-11-02)
+
+The owner accepted the proposals: a relay that names no policy is `closed`; administrators invite; tokens live an
+hour and invitations a day; openly created lists lapse after 90 idle days and lists created with an authority token
+do not; no platform attestation, the proof of work at the difficulty section 3 proposes; an invitation is not
+withdrawn before it expires (its day is the bound, and withdrawing it would make it the log's business); the relay
+trusts `X-Forwarded-For` only from proxies its configuration names. The questions as they were asked:
+
+## Open questions for the owner (answered above)
 
 1. The default creation policy of a relay that names none: `closed` (proposed) or `open`.
 2. The proof-of-work difficulty, and whether a platform-attestation policy is wanted for open creation.
