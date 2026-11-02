@@ -614,3 +614,28 @@ fn the_scenario_replays_from_c() {
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn the_scenario_replays_from_cpp() {
+    if !have("c++", "--version") {
+        return;
+    }
+    let scenario = scenario();
+    let library = library();
+    let dir = scratch("cpp");
+    let script = script_in(&dir, &scenario);
+    let program = dir.join("replay");
+    compile(
+        "c++",
+        &["-std=c++17", "-Wall", "-Wextra", "-Werror"],
+        &Path::new(MANIFEST).join("tests/cpp/replay.cpp"),
+        &program,
+        &library,
+    );
+    replay_in(
+        Command::new(&program).arg(&script),
+        "the C++ replay",
+        steps_of(&scenario),
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
