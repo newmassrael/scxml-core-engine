@@ -139,6 +139,21 @@ and starts no thread, so the C ABI every application lane links is a thin layer 
 (`docs/SCE_SHARED_LIST_PEER_ABI.md`): the same texts through a hand-written header, and a recorded
 scenario of two devices and this relay that C, C++, Python, Go, Kotlin and Swift replay with no relay.
 
+**A host opens and runs a list through the core.** The device that holds an administrator's key
+opens the list (`Peer::open_list`: the genesis, the grant of its own person, and the group when it
+holds a device of it), grants a role (`Peer::grant`), admits a device to a list keyed by its group
+from the key package a round read (`Peer::add_member`) and takes one off (`Peer::remove_member`). Each
+act writes the entries of the log and makes the group's change in one call, and makes the commit
+before it writes an entry, so that a refused act wrote nothing. The entries reach the relay with the
+next round, as every entry the relay lacks does (step 1 above); a commit and a Welcome cannot go before
+them, since the relay keeps a commit only once its log names it, so the core keeps them as owed and
+gives them after the round that ends (`Publication`, the exchange `Peer::publish` makes), keeps one
+the relay did not take for the round after, and saves them with its state. What a device stands at
+(its role, the members, whether it waits for its own chain, what the relay is still owed) is
+`Peer::standing`. A host that drives a `Courier` and a `Member` itself does what these acts do with
+`Member::add_member`, `Member::remove_member` and the courier's `publish_commit` and `publish_welcome`,
+in that order (`a_shared_list_keys_its_content_with_mls_through_a_relay`).
+
 **A replay writes nothing twice.** An application that keeps its own log of commands as its original
 builds its machine again from it, and the machine sends its writes and notes again, as it made them.
 `keep` (and so `Keep` and `Peer::outbound`) signs a write or a note once: one the host holds already

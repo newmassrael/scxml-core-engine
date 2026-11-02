@@ -91,7 +91,12 @@ by a time it alone can claim, and cannot go back to an entry before its removal 
   the old key's operations up to it stay, and the new key's are numbered past it and name nothing
   before them.
 - The administrator reads `final_seq` from what the hosts have seen of the device's chain
-  (`Trust::last_seq`).
+  (`Trust::last_seq`). `Trust::grant_body` writes a grant with it where the log requires it, and
+  `Trust::removal_body` the grant that takes a device off at it; `Trust::administer` drafts an entry
+  after the head (the genesis of an empty log), signs it with one administrator's key and appends it.
+  These are what the peer core's administrator's acts write (`Peer::open_list`, `Peer::grant`,
+  `Peer::remove_member`, `docs/SCE_SHARED_LIST_PEER_ABI.md` section 7), and the group's device too
+  (`Member::add_member`, `Member::remove_member`).
 - A host that relays entries cannot make one: it does not hold an administrator's key.
 
 **What a host held before it knew is dropped.** An entry that takes a device off at a number reaches
@@ -315,6 +320,13 @@ the key it holds for an epoch with another (`GrantError::EpochTaken`), so an adm
 must hold the keys of the epochs that exist, or it would begin a number already used. Only an
 administrator the host was told to trust begins an epoch. A lost key means lost content: the hub
 cannot recover it.
+
+A list keyed by its MLS group (`docs/SCE_SHARED_LIST_MLS.md`) is taken off by a commit of the group
+instead of a drawn key, and the peer core does both halves in one call (`Peer::remove_member`): the
+grant that takes the device off, the commit that moves the group to an epoch without it, and the entry
+that names the commit. It takes no member off a list whose keys are drawn here, since the grants of
+the new key go to the members left by a channel the core does not have, and a removal with no new
+epoch would leave what is written after it readable by the device taken off.
 
 ### Destroying an epoch's keys
 

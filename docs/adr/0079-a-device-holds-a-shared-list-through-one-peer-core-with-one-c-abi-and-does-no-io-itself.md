@@ -236,11 +236,22 @@ when it is called production.
   The CI lane that builds the Kotlin replays now starts when one of them alone changes. Two departures from section
   4: the scenario has no removal, and the group key is not in it. A removal is an administrator's operation and
   those are not yet on `Peer` (below), and the group key draws randomness, so the MLS ABI keeps its own scenario.
-- Not on `Peer` yet, so not on the ABI: the administrator's operations (drafting and signing the genesis, a grant
-  and a removal, creating the group, adding and removing a member, and the commit and Welcome they publish) are
-  reached only through `Peer::trust()` and `Peer::group_mut()`, and a lane learns that its device waits for its own
-  chain only from a refusal's reason. A lane can therefore join a list and write to it, but cannot open one or admit a
-  device. They are added to `Peer` and to the ABI before an application links it.
+- **The administrator's acts** landed 2026-11-02, on `Peer` and on the ABI (version 2). `Peer::open_list` writes
+  the genesis (the device's administrator's key, a quorum of one) and the grant of the device's person as owner, and
+  makes the group when the core holds a device of it; `grant` gives a role; `add_member` admits a device to a list
+  keyed by its group from the key package a round read; `remove_member` takes a device off; `standing` and
+  `awaits_own_chain` say what the device stands at, so a lane no longer reads it from a refusal's reason. An act that
+  writes the log and changes the group is one call, because the log is append-only and the group's roster must be
+  the log's members at every commit: a grant without its commit, or a removal the group did not follow, would leave
+  the two apart for good. The commit is made before any entry is written (the group's device now makes it against
+  the log as it will be), so a refused act writes nothing. The entries go with the next round, and the commit and
+  the Welcome after it, since the relay keeps a commit only once its log names it: the core keeps them as owed,
+  gives them after each round that ends, keeps one the relay did not take, and saves them (save version 2). The
+  recorded scenario now opens the list and grants bob through the ABI, and ends with bob taken off and a write of
+  his reaching no one; the acts on a group are held through the ABI by their properties, without a recording.
+  `Peer::trust` stays, for what a host reads of the trust; `Peer::group_mut` is gone. Not done: a list with several
+  administrators, a linked device and an amendment through the core, and a removal from a list whose keys an
+  administrator draws, which the core refuses.
 - Not yet saved by `Peer::save`: the device's secrets (identity, epoch keys, MLS group state), which the host gives
   again before `restore`; section 6 (step 7) seals them.
 

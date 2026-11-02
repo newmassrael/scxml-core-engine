@@ -13,7 +13,12 @@ reviewer learns one set of rules:
 
 - the header is written by hand, and a test keeps it equal to the library's exports and its numbers
   (`the_header_declares_exactly_what_the_library_exports`); `SCE_PEER_ABI_VERSION` is in the header
-  and the crate, and `sce_peer_abi_version()` says which the library is;
+  and the crate, and `sce_peer_abi_version()` says which the library is. As the group key's ABI rules,
+  a change to what a function takes or returns makes a new number, and so does a change to the shape
+  of a text a function gives; a function added alone does not, since a lane built against the number
+  before calls none of it. A status is appended and never renumbered. The version is 2: the outcome
+  holds `owed` and the save holds what the relay is owed (sections 5 and 6), which came with the
+  administrator's acts (section 7);
 - a handle (`ScePeer`) is made and freed by the library and used by one thread at a time;
 - a function that does something returns `int32_t`, `SCE_PEER_OK` (0) or a status, and says why in
   `sce_peer_last_error()`, a text the library owns, per thread, good until the thread's next call;
@@ -37,8 +42,9 @@ not refused). It is not a failure, and the status is `SCE_PEER_OK`. A call that 
 to empty first, so a host may free it whatever the status.
 
 The place a call fills with what it is for (the request, the outcome, the save, the group's state,
-the answer to a send) must not be null: the call refuses with `SCE_PEER_ERR_NULL_ARGUMENT` before it
-does anything, so that nothing is taken from the core that would be lost (an outcome is given once).
+the answer to a send, the genesis of a list opened, the standing) must not be null: the call refuses
+with `SCE_PEER_ERR_NULL_ARGUMENT` before it does anything, so that nothing is taken from the core that
+would be lost (an outcome is given once).
 The reason of a refusal and the count of a restore may be null.
 
 ## 2. Statuses
@@ -51,14 +57,23 @@ The reason of a refusal and the count of a restore may be null.
 | `SCE_PEER_ERR_NO_GROUP_DEVICE` | 3 | the call needs the group's device and the core holds none |
 | `SCE_PEER_ERR_GROUP` | 4 | the group's device refused (a state that is not one, a key package it could not make) |
 | `SCE_PEER_ERR_UNREADABLE` | 5 | a saved text is not what `sce_peer_save` writes, or does not hold for this list |
+| `SCE_PEER_ERR_NO_ADMINISTRATOR` | 6 | an administrator's act, and the core holds no administrator's key (`sce_peer_set_administrator`) |
+| `SCE_PEER_ERR_NO_PERSON` | 7 | the act needs the device's person and the core has none (`sce_peer_set_identity`) |
+| `SCE_PEER_ERR_OPENED` | 8 | the list is open already: the core's log holds its genesis |
+| `SCE_PEER_ERR_LOG` | 9 | the membership log refused the entry the act wrote (an administrator's key the log does not name, a genesis that is not the one the device was invited with); nothing was written |
+| `SCE_PEER_ERR_NOT_A_MEMBER` | 10 | the device of that node is no member of the list now |
+| `SCE_PEER_ERR_ADMITTED_THROUGH_GROUP` | 11 | the list is keyed by its group, and a grant would make a member the group does not hold: the device is admitted with `sce_peer_add_member` |
+| `SCE_PEER_ERR_NO_KEY_PACKAGE` | 12 | no key package of the device was read from the relay yet |
+| `SCE_PEER_ERR_DRAWN_KEYS` | 13 | the list's keys are drawn by an administrator and not its group's, and the core does not hand the members left the new key a removal needs |
 | `SCE_PEER_ERR_NULL_ARGUMENT` | 20 | a pointer, a handle or a place for the result is null |
 | `SCE_PEER_ERR_BAD_TEXT` | 21 | a text is not UTF-8 |
 | `SCE_PEER_ERR_PANIC` | 22 | the library panicked; the panic was caught |
-| `SCE_PEER_ERR_BAD_ARGUMENT` | 23 | a number is outside what it may be (a kind of round) |
+| `SCE_PEER_ERR_BAD_ARGUMENT` | 23 | a number is outside what it may be (a kind of round, a profile, a role) |
 
 A refusal by the trust of what the machine sent, and a failure of the transport or the relay in a
 round, are not statuses: they are answers, in the answer to a send and in the outcome (sections 4
-and 5).
+and 5). An administrator's act that is refused wrote nothing: what can refuse it is asked, and the
+group's commit is made, before an entry of the log is written (section 7).
 
 ## 3. Functions
 
@@ -68,6 +83,12 @@ and 5).
 | `sce_peer_invited(list, genesis)` | `Peer::invited` | the core of a device invited with the hash (32 bytes) of the list's genesis entry; null on failure |
 | `sce_peer_free(peer)` | | frees a core; null is ignored |
 | `sce_peer_set_identity(peer, node, seed)` | `Peer::set_identity` | the device's person: their node and the key a 32-byte seed makes |
+| `sce_peer_set_administrator(peer, seed)` | `Peer::set_administrator` | the administrator's key the device holds, from a 32-byte seed |
+| `sce_peer_open_list(peer, profile, genesis)` | `Peer::open_list` | opens a new list (section 7); `genesis` is set to the hash (32 bytes) a person is invited with |
+| `sce_peer_grant(peer, node, role, key)` | `Peer::grant` | grants the device of `node`, which signs with a 32-byte public key, a role of 1 to 3 |
+| `sce_peer_add_member(peer, node, role, key)` | `Peer::add_member` | admits a device to a list keyed by its group, with the grant and the commit in one change |
+| `sce_peer_remove_member(peer, node)` | `Peer::remove_member` | takes a device off the list, and off its group when the list is keyed by one |
+| `sce_peer_standing(peer, out)` | `Peer::standing` | what the device stands at in its list, as one JSON text (section 8) |
 | `sce_peer_for_a_hub(peer)` | `Peer::for_a_hub` | before the first exchange: the machine is a hub's |
 | `sce_peer_with_group(peer, node, seed, state, len)` | `Peer::with_group` | before the first exchange: the core holds the device of `node` in the list's MLS group, new when `len` is 0, or the one `sce_peer_group_state` gave |
 | `sce_peer_group_state(peer, out)` | `Device::to_bytes` of the group's device | what the group's device keeps, secret, for the host's store |
@@ -126,6 +147,7 @@ The outcome is a JSON object, read by its members' names:
 | `stalled` | ended | whether the round stopped before the end of what the relay holds; a later round goes on from there |
 | `reread` | ended | whether the group's device needed a second read from the start, whose events are in `events` after the round's |
 | `steps` | ended | what the group's device did with what was read, each `{"step": "joined" or "applied", "epoch": text}`, `{"step": "removed"}` or `{"step": "refused", "reason": text}` |
+| `owed` | ended | how many commits and Welcomes of the administrator's acts the relay is still owed once the exchange ended (section 7); one the relay did not take is among `refused` |
 | `failure` | failed | `"link"` (the transport), `"relay"` (the relay refused the round as a whole) or `"unexpected"` (an answer that is not the answer to the request) |
 | `code` | failed by the relay | the relay protocol's word for the refusal (`"forbidden"`, `"rate_limited"`, ...), and `retry_after_ms` as text when it is a rate limit |
 | `reason` | failed | why |
@@ -138,32 +160,90 @@ The floor event is the pair `[name, payload text]` the machine is told.
 
 ## 6. What the device keeps
 
-`sce_peer_save` gives one text: the membership log, what the trust holds and the state of the relay's
-client, as it would be if the exchange that runs stopped there. It does not hold the device's secrets:
-the person's seed is given again with `sce_peer_set_identity`, and the group's device with
-`sce_peer_with_group` from what `sce_peer_group_state` gave, before `sce_peer_restore`. Sealing them in
-one state under a key from the platform's key store is ADR 0079 section 6.
+`sce_peer_save` gives one text: the membership log, what the trust holds, the state of the relay's
+client, as it would be if the exchange that runs stopped there, and the commits and Welcomes the relay
+is still owed (section 7). It does not hold the device's secrets: the person's seed is given again
+with `sce_peer_set_identity`, the administrator's with `sce_peer_set_administrator`, and the group's
+device with `sce_peer_with_group` from what `sce_peer_group_state` gave, before `sce_peer_restore`.
+Sealing them in one state under a key from the platform's key store is ADR 0079 section 6. The save is
+the core's version 2; a save of version 1, which owed the relay nothing, is still read.
 
 **A restored device signs nothing new until its own chain is read back.** The core cannot tell the
 last save from an older one, so a restored core refuses a send that would make a new operation (and
 still gives what it holds as held) until a round has read the device's own operations back from the
 relay (`docs/SCE_SHARED_LIST_RELAY.md` section 6). A host that rebuilds its machine from its own log
 after a restore makes that round first, then gives the core the machine's sends, then makes a resync.
+Whether it still waits is in what it stands at (`awaits_own_chain`, section 8).
 
-## 7. The recorded scenario every lane replays
+## 7. An administrator's acts
+
+A device that holds an administrator's key (`sce_peer_set_administrator`) runs the list. Each act is
+one call, and writes the entries of the membership log and makes the change of the group that goes
+with them together, so that no host can do one without the other:
+
+- `sce_peer_open_list` writes the genesis (the administrator's key the device holds as the list's one
+  administrator, a quorum of one, the hub's profile `SCE_PEER_PROFILE_UNTRUSTED` or `_TRUSTED_HUB`)
+  and a grant that makes the device's person a member with the highest role (3), and, when the core
+  holds a device of the group (`sce_peer_with_group`, called before), makes the group with that device
+  alone in it: a list is keyed by its group from its first entry, or not at all. The hash of the
+  genesis is what a person is invited with (`sce_peer_invited`).
+- `sce_peer_grant` gives a device a role of 1 (may read), 2 (may also write) or 3 (may also do what an
+  owner does), or another role or key to a member; one that takes writing away carries where the
+  device's chain ends, as the log requires. On a list keyed by its group it is refused for a device the
+  group does not hold (`SCE_PEER_ERR_ADMITTED_THROUGH_GROUP`): a grant alone would make the log's
+  members differ from the group's, and every later commit would be refused for it.
+- `sce_peer_add_member` admits a device to a list keyed by its group from the newest key package of it
+  a round read from the relay (the device leaves one with `sce_peer_publish_key_package`): the grant,
+  the commit that adds the device and the entry that names the commit.
+- `sce_peer_remove_member` takes a device off, its chain ending at the last operation of it the
+  administrator's device holds; on a list keyed by its group the same call makes the commit that moves
+  the group to an epoch without it, since a removal the group did not follow would leave what is
+  written after it readable by the device. A list whose content keys an administrator draws (not its
+  group's) is refused (`SCE_PEER_ERR_DRAWN_KEYS`): the members left would need a new key the core does
+  not hand over.
+
+The log is append-only and a commit made and not merged can be given up, so an act asks everything
+that can refuse it and makes its commit before it writes an entry: an act that is refused wrote
+nothing. The entries go to the relay with the next round. A commit and a Welcome go after them, since
+the relay keeps a commit only once its log names it: the round that ends gives the relay what it is
+owed, in order, before its outcome is given, and `owed` in the outcome says how many it still is. One
+the relay did not take (the transport failed, the relay refused it) stays owed, is among the
+outcome's refusals, and is given again after the next round; it is in the save, so a device stopped
+before its next round gives it once it runs again.
+
+## 8. What a device stands at
+
+`sce_peer_standing` gives one JSON object, for a host to show the list as it is without reading a
+refusal's words:
+
+| Member | What |
+|---|---|
+| `genesis` | the hash of the list's genesis in the URL alphabet, as the log writes hashes; `null` while the core holds no entry |
+| `node`, `key` | the device's person: their node as text, their public key in the URL alphabet; `null` with no person |
+| `role` | the person's role now, 0 when they are no member |
+| `administrator` | whether the core holds an administrator's key the log names as one |
+| `awaits_own_chain` | whether the device signs nothing new until a round has read its own chain back (section 6) |
+| `members` | the members now, in the order of their nodes, each `{"node": text, "role": number}` |
+| `epoch` | the latest epoch the log begins, 0 when none |
+| `keys` | the epochs whose keys the device holds: what it can open |
+| `owed` | how many commits and Welcomes the relay is still owed (section 7) |
+
+## 9. The recorded scenario every lane replays
 
 `backends/rust/peer-capi/tests/fixtures/two_devices_and_a_relay.json` is a run of two devices of one
 list through the ABI against the real relay in one process: alice's device, which holds the
-administrator's key and opens the list from a save that holds the genesis and the grants, and bob's,
-invited with the hash of the genesis and granted writing. Every call each core is given and every text
-it gives back is recorded in order: bob's writes and his note through `sce_peer_outbound`, an event
-that is not signed, another content under a stamp he signed (refused), each request and the relay's
-answer, the outcomes, bob's save and his core made again and restored from it, a write of his that
-comes back held and a new one that waits for his chain to be read back, a resync, and a round of
-alice's whose transport fails.
+administrator's key, opens the list and grants bob writing, and bob's, invited with the hash of the
+genesis alice's core gave. Every call each core is given and every text it gives back is recorded in
+order: the opening and its genesis, the grant, what each device stands at, bob's writes and his note
+through `sce_peer_outbound`, an event that is not signed, another content under a stamp he signed
+(refused), each request and the relay's answer, the outcomes, bob's save and his core made again and
+restored from it, a write of his that comes back held and a new one that waits for his chain to be
+read back, a resync, a round of alice's whose transport fails, and bob taken off: a write his core
+signs before it read the removal reaches no one, since the relay refuses a device the log took off.
 
 Because the core does no I/O a lane replays it with no relay: it makes the same calls, compares each
-request, outcome, save and refusal reason with the recording, and gives the core the recorded answers.
+request, outcome, standing, genesis, save and refusal reason with the recording, and gives the core the
+recorded answers.
 Rust, C, C++, Python (ctypes), Go (cgo), Kotlin (JNA, `backends/kotlin/peer-replay`) and Swift (the
 module map) replay the same file
 (`a_c_abi_is_what_the_lanes_call_and_replays_the_recorded_scenario`); a lane whose toolchain is
@@ -176,19 +256,24 @@ random number), so a run now records the same file, and
 recording and a fresh run do not agree. It is recorded again with `SCE_PEER_SCENARIO=write cargo test
 -p sce-rust-peer-capi --test the_recorded_scenario_is_what_a_fresh_run_records --
 the_recorded_scenario_is_what`. The list's MLS group is not in it: MLS draws randomness, so a run would
-not record the same texts twice, and the group's own C ABI has its own recorded scenario.
+not record the same texts twice, and the group's own C ABI has its own recorded scenario. The
+administrator's acts on a group are held through this ABI without a recording, by their properties
+(`the_administrators_acts_on_a_group_go_through_the_abi`): a device admitted from its key package joins
+from the Welcome and holds the key of the epoch the administrator's device holds, and once taken off
+holds no key of the epoch after.
 
-## 8. What the ABI does not hold, because the core does not
+## 10. What the ABI does not hold, because the core does not
 
 The ABI has one function per operation of `Peer` a host needs, and nothing `Peer` does not do:
 
-- **An administrator's operations.** `Peer` has none of its own: the entries of the membership log
-  (the genesis, a grant, a removal) are drafted and signed with the trust (`Peer::trust`), and the
-  group's changes (making the group, adding and removing a member, the commit and the Welcome to
-  publish) are the group's device's (`Peer::group_mut`). A lane cannot open a list or grant a device
-  through this ABI; the recorded scenario starts the administrator's device from a save that holds the
-  log for that reason.
-- **Whether a restored device still waits for its own chain.** It is the trust's
-  (`Trust::awaits_own_chain`); a lane learns it from a refusal's reason.
+- **A list with several administrators.** A list the core opens has one administrator and a quorum
+  of one. An entry that needs the signatures of a quorum above one (a change to the administrators,
+  a profile, a shredded epoch) is collected across hosts with the trust's draft, which no lane reaches.
+- **A list whose keys an administrator draws.** The core keys a list's content with its group; the
+  drawn keys of `Trust::rotate_epoch` are handed to the members by a channel the core does not have,
+  so the core takes no member off such a list (section 7).
+- **A device linked by another of the same person, and an amendment of a removal.** The group's
+  device makes both (`Member::add_linked_member`, `Member::amend_removed`); they are not acts of the
+  core yet.
 - **The time.** Nothing the core does depends on the time today; when it comes to, it enters as an
   argument of the calls that need it (ADR 0079 section 3), and the ABI's version moves.
