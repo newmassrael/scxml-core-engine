@@ -277,6 +277,10 @@ pub use crate::bounded::{
 pub use crate::membership::{
     place_first, place_first_in, Chain, Key, Kinds, OfKind, Placed, SkipAt, Slot, Slots, Without,
 };
+// A list whose entries say their inputs by a law (docs/adr/0065 §6 R8).
+pub use crate::law::{
+    try_collect_lawful, AfterKey, Follows, Law, LawOver, Lawful, LawfulWalk, Says, Uniform,
+};
 
 impl From<sce_portable_bytes::CapacityExceeded> for CodecError {
     /// A fixed-capacity `from_slice` past what it holds says nothing about the

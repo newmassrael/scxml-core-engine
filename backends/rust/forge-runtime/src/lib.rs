@@ -45,6 +45,9 @@ pub mod codec;
 pub mod content_line;
 pub mod filter;
 pub mod interpolation;
+/// Lists whose entries say their inputs by a law (docs/adr/0065 §6 R8),
+/// re-exported from [`codec`].
+pub mod law;
 pub mod lookup;
 /// Lists refined by the kind of entry a chain's gate names (docs/adr/0065 §6 R6),
 /// re-exported from [`codec`].
