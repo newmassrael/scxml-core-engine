@@ -53,8 +53,10 @@ pub(super) fn unlowered(
             return Some("a `sce:encoding=\"content-line\"` codec".to_string())
         }
     }
-    if m.variant.is_some() {
-        return Some("a `<sce:variant>`".to_string());
+    if let Some(variant) = &m.variant {
+        if let Some(why) = variant_unlowered(m, variant, element) {
+            return Some(why);
+        }
     }
     if !m.flag_inputs.is_empty() {
         return Some("a flag input".to_string());
@@ -170,6 +172,58 @@ fn field_unlowered(
     }
 }
 
+/// What of the variant `v` of `m` the Swift codec does not lower yet; `None` for one it does.
+///
+/// It is the arm a tag selects, held with the fields before it: the tag is a field of the codec
+/// (the whole of it, or a range of bits of a flags carrier), and each arm is the struct of an
+/// imported entry codec, read from the frame once the tag is. The unit of every arm must be
+/// written (`element`). A tag the codec peeks at without reading, or that its caller supplies, or an
+/// arm that is built only under a feature, is named. Two arms of one entry codec would be two cases
+/// of one name, and a field named `body` would be the name of the arm's own.
+fn variant_unlowered(
+    m: &CodecModel,
+    v: &CodecVariant,
+    element: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    let what = |text: &str| Some(format!("a `<sce:variant>` {text}"));
+    if v.peek_byte.is_some() {
+        return what("that dispatches on a byte it peeks");
+    }
+    if v.tag_field.is_none() {
+        return what("whose tag its caller supplies");
+    }
+    if v.arms.iter().any(|arm| arm.feature.is_some()) {
+        return what("with an arm built only under a feature");
+    }
+    if m.fields.iter().any(|f| f.id == VARIANT_FIELD) {
+        return what(&format!(
+            "in a codec with a field named `{VARIANT_FIELD}`, which holds the arm"
+        ));
+    }
+    let mut seen: Vec<&str> = Vec::new();
+    for arm in &v.arms {
+        if seen.contains(&arm.body_alias.as_str()) {
+            return what(&format!("with two arms of '{}'", arm.body_alias));
+        }
+        seen.push(arm.body_alias.as_str());
+    }
+    v.arms
+        .iter()
+        .chain(v.default_arm.as_ref())
+        .find_map(|arm| {
+            element(&arm.body_alias).map(|why| {
+                what(&format!(
+                    "with an arm '{}', which has no Swift lowering ({why})",
+                    arm.body_alias
+                ))
+            })
+        })
+        .flatten()
+}
+
+/// The name of the field a variant's arm is held in.
+const VARIANT_FIELD: &str = "body";
+
 /// What of the list `f` (a `<sce:repeat>`) of `m` the Swift codec does not lower yet; `None` for one
 /// it does.
 ///
@@ -261,9 +315,10 @@ fn is_variable(f: &CodecField) -> bool {
 /// the fields after it, so it is read from the cursor in the order of the document, and each field
 /// begins where the last one ended; the `sce:byte` of a field is then its place in that order.
 fn is_sequential(m: &CodecModel) -> bool {
-    m.fields.iter().any(|f| {
-        f.is_vle() || is_variable(f) || f.is_repeat() || f.is_embed() || f.present_if.is_some()
-    })
+    m.variant.is_some()
+        || m.fields.iter().any(|f| {
+            f.is_vle() || is_variable(f) || f.is_repeat() || f.is_embed() || f.present_if.is_some()
+        })
 }
 
 /// What of the predicate `predicate` the Swift codec does not lower yet: a clause on a flag input
@@ -403,6 +458,176 @@ fn bit_field(f: &CodecField) -> Result<(u32, u8), String> {
         ));
     }
     Ok((offset, ((1u32 << bits) - 1) as u8))
+}
+
+/// What the template needs to write a variant: the field that holds the arm, and the enum of arms
+/// that field has the type of.
+struct VariantParts {
+    /// The `body` field, which the struct holds the active arm in.
+    field: serde_json::Value,
+    /// The enum of arms, declared before the struct.
+    arms_enum: serde_json::Value,
+    /// The fewest bytes of any arm: what the variant adds to the codec's own `frameLength`.
+    fewest_bytes: String,
+}
+
+/// The smallest unsigned Swift integer type that holds `width` bits.
+fn smallest_unsigned(width: u32) -> &'static str {
+    match width {
+        0..=8 => "UInt8",
+        9..=16 => "UInt16",
+        17..=32 => "UInt32",
+        _ => "UInt64",
+    }
+}
+
+/// The variant `v` of `m`, [`variant_unlowered`] having found nothing to refuse in it.
+///
+/// The tag is read from the fields before the arm, as they have been read into `frame`: the whole of
+/// a field, or the bits of a flag in a carrier, shifted down and masked. Each arm of the enum holds the
+/// struct of its entry codec; the catch-all holds the tag the frame said besides, so that a value
+/// that names no arm is not lost. Where there is no catch-all the tag domain is covered by the arms
+/// (validation has refused a codec where it is not), and the last arm stands for what is left, as
+/// Swift requires every `switch` over an integer to end with one that matches the rest.
+fn variant_context(
+    m: &CodecModel,
+    v: &CodecVariant,
+    imports: &[ImportContext],
+) -> Result<VariantParts, ForgeError> {
+    let enum_name = format!("{}Variant", filters::to_pascal_case(m.name.clone()));
+    let tag_field = v
+        .tag_field
+        .as_deref()
+        .expect("a variant this renderer is given has a tag field");
+    let carrier = m
+        .fields
+        .iter()
+        .find(|f| f.id == tag_field)
+        .expect("validation holds the tag to a field of the codec");
+    let (carrier_type, _) =
+        integer(&carrier.sce_type).expect("validation holds the tag to an unsigned integer");
+    // The tag as the prefix has read it, and the type a tag the arms do not name is held in.
+    let (tag, tag_type) = match &v.tag_flag {
+        Some(name) => {
+            let flag = carrier
+                .flags
+                .iter()
+                .find(|fl| &fl.name == name)
+                .expect("validation holds the tag to a flag of its carrier");
+            let width = flag.width.max(1);
+            let mask = if width >= 64 {
+                u64::MAX
+            } else {
+                (1u64 << width) - 1
+            };
+            (
+                format!("(frame.{tag_field} >> {}) & 0x{mask:X}", flag.bit),
+                smallest_unsigned(width),
+            )
+        }
+        None => (format!("frame.{tag_field}"), carrier_type),
+    };
+    let local = format!("{VARIANT_FIELD}_tag");
+    let narrowed = if v.tag_flag.is_some() {
+        format!("{tag_type}(truncatingIfNeeded: {local})")
+    } else {
+        local.clone()
+    };
+    let entry = |alias: &str| resolve_repeat_body_type(&m.name, alias, imports, Language::Swift);
+    let mut arms = Vec::new();
+    for arm in &v.arms {
+        arms.push((
+            arm,
+            filters::to_camel_case(arm.body_alias.clone()),
+            entry(&arm.body_alias)?,
+        ));
+    }
+    let default = match &v.default_arm {
+        Some(arm) => Some(entry(&arm.body_alias)?),
+        None => None,
+    };
+    // Without a catch-all the last arm matches whatever the others do not.
+    let last = arms.len().saturating_sub(1);
+    let mut cases: Vec<serde_json::Value> = arms
+        .iter()
+        .enumerate()
+        .map(|(index, (arm, case, ty))| {
+            let label = if default.is_none() && index == last {
+                "default:".to_string()
+            } else {
+                format!("case 0x{:X}:", arm.value)
+            };
+            serde_json::json!({
+                "label": label,
+                "value": format!(".{case}(try {ty}.decode(&reader))"),
+                "pattern": format!(".{case}(let arm)"),
+            })
+        })
+        .collect();
+    if let Some(ty) = &default {
+        cases.push(serde_json::json!({
+            "label": "default:",
+            "value": format!(".default(tag: {narrowed}, body: try {ty}.decode(&reader))"),
+            "pattern": ".default(_, let arm)",
+        }));
+    }
+    // What a value that has read no frame yet holds: the arm the document marks as its default, and
+    // else the first.
+    let initial = match arms
+        .iter()
+        .find(|(arm, ..)| arm.is_default)
+        .or(arms.first())
+    {
+        Some((_, case, ty)) => format!(".{case}({ty}())"),
+        None => format!(
+            ".default(tag: 0, body: {}())",
+            default.as_deref().expect("a variant holds an arm")
+        ),
+    };
+    let mut bodies: Vec<String> = Vec::new();
+    for ty in arms.iter().map(|(_, _, ty)| ty).chain(default.as_ref()) {
+        if !bodies.contains(ty) {
+            bodies.push(ty.clone());
+        }
+    }
+    let fewest_bytes = match bodies.as_slice() {
+        [only] => format!("{only}.frameLength"),
+        many => format!(
+            "Swift.min({})",
+            many.iter()
+                .map(|ty| format!("{ty}.frameLength"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    };
+    Ok(VariantParts {
+        field: serde_json::json!({
+            "id": VARIANT_FIELD,
+            "swift_type": enum_name,
+            "offset": 0,
+            "default": initial,
+            "flags": Vec::<serde_json::Value>::new(),
+            "bits": serde_json::Value::Null,
+            "present": serde_json::Value::Null,
+            "variant": {
+                "tag": tag,
+                "local": local,
+                "cases": cases,
+            },
+        }),
+        arms_enum: serde_json::json!({
+            "name": enum_name,
+            "cases": arms
+                .iter()
+                .map(|(_, case, ty)| serde_json::json!({ "case": case, "type": ty }))
+                .collect::<Vec<_>>(),
+            "default": default.as_ref().map(|ty| serde_json::json!({
+                "type": ty,
+                "tag_type": tag_type,
+            })),
+        }),
+        fewest_bytes,
+    })
 }
 
 /// What the template needs to write the property of one flag: its name, where its bits lie in
@@ -653,7 +878,15 @@ pub(super) fn render(
             })
         })
         .collect();
+    let mut fields = fields;
     let mut ctx = l.base_context(&m.name);
+    // The arm a tag selects is the last of the fields, and its enum is declared before the struct.
+    if let Some(variant) = &m.variant {
+        let parts = variant_context(m, variant, imports)?;
+        fields.push(parts.field);
+        embedded_lengths.push(parts.fewest_bytes);
+        ctx.insert("variant_enum".into(), parts.arms_enum);
+    }
     ctx.insert("fields".into(), fields.into());
     // The refusals an encode makes before its first byte, of a value outside its bound.
     let (bound_checks, _) = encode_bound_guard_lines(&m.fields, Language::Swift);

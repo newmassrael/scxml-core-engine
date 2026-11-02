@@ -10,6 +10,21 @@
 
 import SceForgeRuntime
 
+{% if variant_enum %}
+/// The arm of `{{ struct_name }}` the tag of a frame selects: the struct of the entry codec the arm names.
+{% if variant_enum.default %}
+/// The catch-all holds the tag it was read for, as no arm names it.
+{% endif %}
+public enum {{ variant_enum.name }}: Equatable, Sendable {
+{% for c in variant_enum.cases %}
+    case {{ c.case }}({{ c.type }})
+{% endfor %}
+{% if variant_enum.default %}
+    case `default`(tag: {{ variant_enum.default.tag_type }}, body: {{ variant_enum.default.type }})
+{% endif %}
+}
+
+{% endif %}
 /// The frame this codec lays on the wire: {{ fields | length }} field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
 public struct {{ struct_name }}: Equatable, Sendable {
@@ -26,7 +41,11 @@ public struct {{ struct_name }}: Equatable, Sendable {
     /// On the wire only when `{{ f.present.encode | replace("self.", "") }}`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
 {% endif %}
-{% if f.embed %}
+{% if f.variant %}
+    /// The arm the tag selects, whose struct holds the rest of the frame. The tag is the field it was
+    /// read from; an encode writes that field as it stands, and the arm after it, so the two are
+    /// kept in step by whoever holds the value.
+{% elif f.embed %}
     /// A `{{ f.embed.element }}` laid in place: it has no bytes of its own, the frame holds its fields
     /// where this field stands{% if f.embed.length %}, read from as many bytes as the document says an earlier field gives it, of which it need not take all{% endif %}.
 {% elif f.list and f.list.kind == "count" %}
@@ -123,6 +142,14 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% else %}
 {{ pad }}        {{ f.variable.guard }}frame.{{ f.id }} = Array(try reader.readSlice(Int(clamping: {{ f.variable.carried }}){% if f.variable.arith %} &+ ({{ f.variable.arith }}){% endif %}))
 {% endif %}
+{% elif f.variant %}
+{{ pad }}        let {{ f.variant.local }} = {{ f.variant.tag }}
+{{ pad }}        switch {{ f.variant.local }} {
+{% for c in f.variant.cases %}
+{{ pad }}        {{ c.label }}
+{{ pad }}            frame.{{ f.id }} = {{ c.value }}
+{% endfor %}
+{{ pad }}        }
 {% elif f.embed and f.embed.length %}
 {{ pad }}        let {{ f.embed.inner }}_length = {{ f.embed.length }}
 {{ pad }}        var {{ f.embed.inner }} = SceCursor(Array(try reader.peekSlice({{ f.embed.inner }}_length)))
@@ -190,6 +217,17 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {{ pad }}        frame += Array({{ src }}.utf8)
 {% elif f.variable %}
 {{ pad }}        frame += {{ src }}
+{% elif f.variant %}
+{{ pad }}        do {
+{{ pad }}            var piece = BytesSink()
+{{ pad }}            switch {{ src }} {
+{% for c in f.variant.cases %}
+{{ pad }}            case {{ c.pattern }}:
+{{ pad }}                try arm.encode(into: &piece)
+{% endfor %}
+{{ pad }}            }
+{{ pad }}            frame += piece.bytes
+{{ pad }}        }
 {% elif f.embed %}
 {{ pad }}        do {
 {{ pad }}            var piece = BytesSink()

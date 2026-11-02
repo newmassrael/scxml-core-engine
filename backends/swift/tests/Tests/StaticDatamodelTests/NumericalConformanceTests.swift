@@ -4747,6 +4747,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecOriginEnvelope.frameLength
 }
 
+// MARK: - codec: codec_origin_choice
+
+@Test func codecOriginChoiceMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecOriginChoice.frameLength
+}
+
 // MARK: - codec: codec_chain_has_slice
 
 @Test func codecChainHasSliceMatchesReference() throws {
@@ -4947,6 +4955,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecUntilEofBasic.frameLength
 }
 
+// MARK: - codec: codec_variant_dispatch
+
+@Test func codecVariantDispatchMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecVariantDispatch.frameLength
+}
+
 // MARK: - codec: codec_variant_session_close
 
 @Test func codecVariantSessionCloseMatchesReference() throws {
@@ -4987,6 +5003,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecZenohEncoding.frameLength
 }
 
+// MARK: - codec: codec_zenoh_ext_entry
+
+@Test func codecZenohExtEntryMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohExtEntry.frameLength
+}
+
 // MARK: - codec: codec_zenoh_ext_unit
 
 @Test func codecZenohExtUnitMatchesReference() throws {
@@ -5009,6 +5033,22 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohExtZint.frameLength
+}
+
+// MARK: - codec: codec_zenoh_push
+
+@Test func codecZenohPushMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohPush.frameLength
+}
+
+// MARK: - codec: codec_zenoh_push_body
+
+@Test func codecZenohPushBodyMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecZenohPushBody.frameLength
 }
 
 // MARK: - codec: codec_zenoh_timestamp

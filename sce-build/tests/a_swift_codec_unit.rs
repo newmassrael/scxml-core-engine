@@ -437,6 +437,71 @@ fn a_length_that_is_on_the_wire_under_another_gate_than_its_field_is_refused() {
 }
 
 #[test]
+fn a_variant_is_the_arm_its_tag_selects_with_the_tag_the_frame_said_for_the_catch_all() {
+    let code = swift_of("tests/forge/resources/codec_variant_dispatch.scxml")
+        .expect("a variant over a field is written");
+    assert!(
+        code.contains("public enum CodecVariantDispatchVariant: Equatable, Sendable {\n    case codecVariantSessionOpen(CodecVariantSessionOpen)\n    case codecVariantSessionClose(CodecVariantSessionClose)\n    case `default`(tag: UInt8, body: CodecVariantSessionClose)\n}"),
+        "{code}"
+    );
+    assert!(
+        code.contains("\n    public var body: CodecVariantDispatchVariant = .codecVariantSessionClose(CodecVariantSessionClose())\n"),
+        "the arm the document marks as its default is what a value that has read no frame holds: {code}"
+    );
+    assert!(
+        code.contains("let body_tag = frame.msg_id\n        switch body_tag {\n        case 0x1:\n            frame.body = .codecVariantSessionOpen(try CodecVariantSessionOpen.decode(&reader))\n        case 0x2:"),
+        "{code}"
+    );
+    assert!(
+        code.contains("        default:\n            frame.body = .default(tag: body_tag, body: try CodecVariantSessionClose.decode(&reader))"),
+        "{code}"
+    );
+    assert!(
+        code.contains("case .default(_, let arm):\n                try arm.encode(into: &piece)"),
+        "an encode writes the arm that is held: {code}"
+    );
+    assert!(
+        code.contains("public static let frameLength = 1 + Swift.min(CodecVariantSessionOpen.frameLength, CodecVariantSessionClose.frameLength)"),
+        "the fewest bytes are the tag's and the shortest arm's: {code}"
+    );
+}
+
+#[test]
+fn a_variant_over_the_bits_of_a_flag_reads_them_shifted_down_and_masked() {
+    let code = swift_of("tests/forge/resources/codec_zenoh_push_body.scxml")
+        .expect("a variant over a flag is written");
+    assert!(
+        code.contains("let body_tag = (frame.header >> 0) & 0x1F"),
+        "{code}"
+    );
+    assert!(
+        code.contains("frame.body = .default(tag: UInt8(truncatingIfNeeded: body_tag), body: try CodecZenohPut.decode(&reader))"),
+        "the tag the catch-all holds is the bits, in the smallest type that holds them: {code}"
+    );
+}
+
+#[test]
+fn a_variant_the_swift_codec_does_not_write_is_refused_by_name() {
+    for (document, what) in [
+        (
+            "codec_variant_peek_basic",
+            "a `<sce:variant>` that dispatches on a byte it peeks",
+        ),
+        (
+            "codec_variant_default_marker",
+            "a `<sce:variant>` that dispatches on a byte it peeks",
+        ),
+    ] {
+        let refusal = swift_of(&format!("tests/forge/resources/{document}.scxml"))
+            .expect_err(&format!("{document} must be refused, not written"));
+        assert!(
+            refusal.contains("has no Swift lowering yet") && refusal.contains(what),
+            "{document}: {refusal}"
+        );
+    }
+}
+
+#[test]
 fn a_gated_byte_string_is_checked_where_it_is_given() {
     let code = swift_of("tests/forge/resources/codec_present_if_tail.scxml")
         .expect("a gated tail is written");
