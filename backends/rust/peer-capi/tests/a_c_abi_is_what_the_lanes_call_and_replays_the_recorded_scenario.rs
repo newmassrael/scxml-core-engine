@@ -658,6 +658,36 @@ fn the_scenario_replays_from_python() {
     );
 }
 
+/// The Kotlin lane needs its JVM program built: `./gradlew :sce-kotlin-peer-replay:installDist`.
+#[test]
+fn the_scenario_replays_from_kotlin() {
+    if !have("java", "-version") {
+        return;
+    }
+    let lib = Path::new(MANIFEST)
+        .join("../../kotlin/peer-replay/build/install/sce-kotlin-peer-replay/lib");
+    let built = std::fs::read_dir(&lib).is_ok_and(|entries| entries.count() > 0);
+    if !built {
+        skip(&format!(
+            "{} (`./gradlew :sce-kotlin-peer-replay:installDist`)",
+            lib.display()
+        ));
+        return;
+    }
+    let scenario = scenario();
+    let library = library();
+    replay_in(
+        Command::new("java")
+            .arg("-cp")
+            .arg(lib.join("*"))
+            .arg("com.sce.peer.ReplayKt")
+            .arg(&library)
+            .arg(scenario_path()),
+        "the Kotlin replay",
+        steps_of(&scenario),
+    );
+}
+
 #[test]
 fn the_scenario_replays_from_go() {
     if !have("go", "version") {

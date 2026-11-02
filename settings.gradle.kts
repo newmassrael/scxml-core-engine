@@ -48,6 +48,10 @@ project(":sce-kotlin-world").projectDir = file("backends/kotlin/world")
 // a test of the Rust crate builds it without compiling anything else.
 include(":sce-kotlin-mls-replay")
 project(":sce-kotlin-mls-replay").projectDir = file("backends/kotlin/mls-replay")
+// The Kotlin replay of the peer core's C ABI (backends/rust/peer-capi), its own module for the
+// same reason.
+include(":sce-kotlin-peer-replay")
+project(":sce-kotlin-peer-replay").projectDir = file("backends/kotlin/peer-replay")
 // The reference host of the standard host features (docs/SCE_HOST_FEATURES.md).
 include(":sce-kotlin-host-features")
 project(":sce-kotlin-host-features").projectDir = file("backends/kotlin/host-features")
