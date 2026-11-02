@@ -7342,9 +7342,17 @@ fn broadcast_log_element_facts(
             }),
         cbor_entry_unbounded: codec.encoding == forge::model::CodecEncoding::Cbor
             && forge::cbor_codec::has_unbounded_text_or_bytes(codec),
+        // A log reads its element with the typed `decode(&cursor)`, which hands a codec that asks its
+        // caller for a flag input none, so the unit it would write would not call the codec's own.
         swift_unlowered: forge::static_imports::swift_codec_through_imports(
             codec, imports, base_dir,
         )
+        .or_else(|| {
+            codec
+                .flag_inputs
+                .first()
+                .map(|input| format!("a flag input `{}` its caller supplies", input.name))
+        })
         .map(|construct| forge::generator::swift_codec_refusal(codec, &construct)),
     }
 }

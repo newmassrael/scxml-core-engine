@@ -1,0 +1,91 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: 814c7782483a2e1383636d59b115ce52cb83fc95e5c66e5ef4b90acbc7ce1d0e
+// SCE-MAP: codec_zenoh_wireexpr.scxml:53 :: _forge_body
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+// Runtime: none
+// Do not edit — regenerate from the source SCXML file.
+
+import SceForgeRuntime
+
+/// The frame this codec lays on the wire: 3 field(s) of integers, each at its
+/// byte offset and in its byte order. A value, so a host that reads one holds a copy.
+public struct CodecZenohWireexpr: Equatable, Sendable {
+    /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
+    /// integer or a field of bytes may take more.
+    public static let frameLength = 1
+
+    /// A variable-length integer: base-128, the least significant group first, at most as many
+    /// bytes as its type needs.
+    public var id: UInt64 = 0
+
+    /// On the wire only when `(N & 0x1) != 0`; `nil` when it is not. An encode
+    /// writes it when it is not `nil`.
+    /// A variable-length integer: base-128, the least significant group first, at most as many
+    /// bytes as its type needs.
+    public var suffix_len: UInt64? = nil
+
+    /// On the wire only when `(N & 0x1) != 0`; `nil` when it is not. An encode
+    /// writes it when it is not `nil`.
+    /// The text of as many UTF-8 bytes as `suffix_len` says, as many as the document's `max-size` admits: a frame that says
+    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
+    /// Bytes that are not UTF-8 are refused with `invalidUtf8`.
+    public var suffix: String? = nil
+
+    /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
+    /// frame yet holds, as a validator that composes this codec does until it is given one.
+    public init() {}
+
+    public init(id: UInt64, suffix_len: UInt64?, suffix: String?) {
+        self.id = id
+        self.suffix_len = suffix_len
+        self.suffix = suffix
+    }
+
+    /// Decodes the frame at the cursor and moves the cursor past it. The frame is read field by
+    /// field through a copy of the cursor, which replaces it only when the whole frame was read: a
+    /// frame that is short, or says more than it holds, answers `needMoreBytes`, and a variable-
+    /// length integer wider than its type `vleWidthOverflow`, and either leaves the cursor where
+    /// it was. A count the wire states is clamped and then added to, so a huge one wraps negative
+    /// and is refused like any other count past the end, and is no trap.
+    public static func decode(_ cursor: inout SceCursor, N: UInt8) throws(CodecError) -> CodecZenohWireexpr {
+        var reader = cursor
+        var frame = CodecZenohWireexpr()
+        frame.id = try reader.readVle(UInt64.self)
+        if (N & 0x1) != 0 {
+            frame.suffix_len = try reader.readVle(UInt64.self)
+        }
+        if (N & 0x1) != 0 {
+            if (frame.suffix_len ?? 0) > 128 {
+                throw CodecError.lengthOutOfRange
+            }
+            frame.suffix = try reader.readString(Int(clamping: (frame.suffix_len ?? 0)))
+        }
+        cursor = reader
+        return frame
+    }
+
+    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// `bufferOverflow` and holds none of it.
+    public func encode<Sink: SceSink>(into sink: inout Sink, N: UInt8) throws(CodecError) {
+        if (N & 0x1) != 0 {
+            if self.suffix == nil {
+                throw CodecError.presentIfMismatch
+            }
+        } else if self.suffix != nil {
+            throw CodecError.presentIfMismatch
+        }
+        if let value = self.suffix, value.utf8.count > 128 {
+            throw CodecError.lengthOutOfRange
+        }
+        var frame: [UInt8] = []
+        appendVle(self.id, to: &frame)
+        if let suffix_len = self.suffix_len {
+            appendVle(suffix_len, to: &frame)
+        }
+        if let suffix = self.suffix {
+            frame += Array(suffix.utf8)
+        }
+        try sink.writeBytes(frame)
+    }
+}

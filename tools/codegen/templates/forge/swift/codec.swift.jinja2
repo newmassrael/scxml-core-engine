@@ -121,7 +121,7 @@ public struct {{ struct_name }}: Equatable, Sendable {
     /// `frameLength` bytes left answers `needMoreBytes` and is left where it was (RFC §synth-5-B
     /// L494-519).
 {% endif %}
-    public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> {{ struct_name }} {
+    public static func decode(_ cursor: inout SceCursor{% for input in flag_params %}, {{ input }}: UInt8{% endfor %}) throws(CodecError) -> {{ struct_name }} {
 {% if sequential %}
         var reader = cursor
         var frame = {{ struct_name }}()
@@ -153,20 +153,20 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% elif f.embed and f.embed.length %}
 {{ pad }}        let {{ f.embed.inner }}_length = {{ f.embed.length }}
 {{ pad }}        var {{ f.embed.inner }} = SceCursor(Array(try reader.peekSlice({{ f.embed.inner }}_length)))
-{{ pad }}        frame.{{ f.id }} = try {{ f.embed.element }}.decode(&{{ f.embed.inner }})
+{{ pad }}        frame.{{ f.id }} = try {{ f.embed.element }}.decode(&{{ f.embed.inner }}{{ f.embed.decode_args }})
 {{ pad }}        try reader.advance({{ f.embed.inner }}_length)
 {% elif f.embed %}
-{{ pad }}        frame.{{ f.id }} = try {{ f.embed.element }}.decode(&reader)
+{{ pad }}        frame.{{ f.id }} = try {{ f.embed.element }}.decode(&reader{{ f.embed.decode_args }})
 {% elif f.list and f.list.kind == "count" %}
 {{ pad }}        {{ f.list.guard }}var {{ f.list.items }}: [{{ f.list.element }}] = []
 {{ pad }}        for _ in 0..<Int(clamping: {{ f.list.count }}) {
-{{ pad }}            {{ f.list.items }}.append(try {{ f.list.element }}.decode(&reader))
+{{ pad }}            {{ f.list.items }}.append(try {{ f.list.element }}.decode(&reader{{ f.list.decode_args }}))
 {{ pad }}        }
 {{ pad }}        frame.{{ f.id }} = {{ f.list.items }}
 {% elif f.list %}
 {{ pad }}        var {{ f.list.items }}: [{{ f.list.element }}] = []
 {{ pad }}        while reader.remaining > 0 {
-{{ pad }}            {{ f.list.room }}{{ f.list.items }}.append(try {{ f.list.element }}.decode(&reader))
+{{ pad }}            {{ f.list.room }}{{ f.list.items }}.append(try {{ f.list.element }}.decode(&reader{{ f.list.decode_args }}))
 {{ pad }}        }
 {{ pad }}        frame.{{ f.id }} = {{ f.list.items }}
 {% elif f.vle %}
@@ -198,7 +198,7 @@ public struct {{ struct_name }}: Equatable, Sendable {
 
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+    public func encode<Sink: SceSink>(into sink: inout Sink{% for input in flag_params %}, {{ input }}: UInt8{% endfor %}) throws(CodecError) {
 {% for check in bound_checks %}
         {{ check }}
 {% endfor %}
@@ -223,7 +223,7 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {{ pad }}            switch {{ src }} {
 {% for c in f.variant.cases %}
 {{ pad }}            case {{ c.pattern }}:
-{{ pad }}                try arm.encode(into: &piece)
+{{ pad }}                try arm.encode(into: &piece{{ c.encode_args }})
 {% endfor %}
 {{ pad }}            }
 {{ pad }}            frame += piece.bytes
@@ -231,13 +231,13 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% elif f.embed %}
 {{ pad }}        do {
 {{ pad }}            var piece = BytesSink()
-{{ pad }}            try {{ src }}.encode(into: &piece)
+{{ pad }}            try {{ src }}.encode(into: &piece{{ f.embed.encode_args }})
 {{ pad }}            frame += piece.bytes
 {{ pad }}        }
 {% elif f.list %}
 {{ pad }}        for entry in {{ src }} {
 {{ pad }}            var piece = BytesSink()
-{{ pad }}            try entry.encode(into: &piece)
+{{ pad }}            try entry.encode(into: &piece{{ f.list.encode_args }})
 {{ pad }}            frame += piece.bytes
 {{ pad }}        }
 {% elif f.vle %}

@@ -14485,7 +14485,18 @@ fn embed_flag_bind_thread_args_supplying(
                 };
                 let mask: u64 = (1u64 << width) - 1;
                 let (decode_arg, encode_arg) = match lang {
-                    Language::Swift => no_swift_emitter("embed_flag_bind_thread_args_supplying"),
+                    // A Swift codec takes its inputs as labelled `UInt8` parameters, named as the
+                    // leaf names them.
+                    Language::Swift => (
+                        format!(
+                            ", {}: UInt8(truncatingIfNeeded: (frame.{carrier} >> {bit}) & 0x{mask:X})",
+                            input.name
+                        ),
+                        format!(
+                            ", {}: UInt8(truncatingIfNeeded: (self.{carrier} >> {bit}) & 0x{mask:X})",
+                            input.name
+                        ),
+                    ),
                     Language::Rust => {
                         // Rust struct field + decode local are both
                         // snake_cased (see codec_field_id). Carrier
@@ -14562,7 +14573,8 @@ fn embed_flag_bind_thread_args_supplying(
                     Language::Kotlin | Language::Go => {
                         format!(", {}", filters::to_camel_case(name.clone()))
                     }
-                    Language::Swift => no_swift_emitter("embed_flag_bind_thread_args_supplying"),
+                    // The parent's own input, handed on under the name the leaf gives it.
+                    Language::Swift => format!(", {}: {name}", input.name),
                 };
                 decode_out.push_str(&arg);
                 encode_out.push_str(&arg);

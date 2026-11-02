@@ -34,6 +34,10 @@ public enum CodecError: Error, Equatable, Sendable {
     /// The bytes a text field holds are not well-formed UTF-8: a decode refuses the frame and
     /// consumes nothing.
     case invalidUtf8
+    /// An encode was handed a field that is present where the flag input that gates it says it is not,
+    /// or absent where the input says it is: the value and the input contradict each other, so no
+    /// frame is written.
+    case presentIfMismatch
 }
 
 /// The byte order of one field on the wire.

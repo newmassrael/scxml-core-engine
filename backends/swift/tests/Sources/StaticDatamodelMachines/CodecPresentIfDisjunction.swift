@@ -64,6 +64,13 @@ public struct CodecPresentIfDisjunction: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        if (self.flags & 0x1) != 0 || (self.flags & 0x2) != 0 {
+            if self.seq == nil {
+                throw CodecError.presentIfMismatch
+            }
+        } else if self.seq != nil {
+            throw CodecError.presentIfMismatch
+        }
         var frame: [UInt8] = []
         appendInteger(self.flags, to: &frame, .big)
         if let seq = self.seq {

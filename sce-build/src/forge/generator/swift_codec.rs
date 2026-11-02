@@ -58,8 +58,17 @@ pub(super) fn unlowered(
             return Some(why);
         }
     }
-    if !m.flag_inputs.is_empty() {
-        return Some("a flag input".to_string());
+    // A flag input is a parameter of `decode` and of `encode`, read in the body by the name the
+    // document gives it, so it must not be a name the body already uses for something else.
+    if let Some(input) = m
+        .flag_inputs
+        .iter()
+        .find(|input| LOCALS.contains(&input.name.as_str()))
+    {
+        return Some(format!(
+            "a flag input named `{}`, a name the body of the codec uses",
+            input.name
+        ));
     }
     // A codec with no field is a frame of no bytes: what a body whose tag is written outside it
     // carries (`codec_zenoh_keep_alive`).
@@ -71,6 +80,12 @@ pub(super) fn unlowered(
 
 /// The members a codec struct has besides its fields and the flags its fields carry.
 const MEMBERS: &[&str] = &["frameLength", "init", "decode", "encode"];
+
+/// The names the body of `decode` and `encode` binds besides the fields it reads through `frame` and
+/// `self`, which a parameter of the same name would hide.
+const LOCALS: &[&str] = &[
+    "cursor", "reader", "frame", "sink", "piece", "entry", "arm", "value",
+];
 
 /// The property that reads and writes the flag `name` of a carrier: lowerCamel, as a Swift
 /// property is spelled.
@@ -318,30 +333,32 @@ fn is_sequential(m: &CodecModel) -> bool {
         })
 }
 
-/// What of the predicate `predicate` the Swift codec does not lower yet: a clause on a flag input
-/// reads a parameter the codec does not take, and a clause on the entries of a chain reads a chain
-/// the codec does not hold. The carrier a local clause names, and its flag, exist and are unsigned
-/// integers: validation has refused a codec where they do not.
+/// What of the predicate `predicate` the Swift codec does not lower yet: a clause on the entries of
+/// a chain reads a chain the codec does not hold. A clause on a flag input reads the parameter the
+/// codec takes for it, and one on a local flag the bit of a carrier it has read. The carrier a local
+/// clause names, and its flag, exist and are unsigned integers, and an input a clause names is one
+/// the codec declares: validation has refused a codec where they do not.
 fn present_if_unlowered(predicate: &PresentIfPredicate) -> Option<String> {
-    if predicate.scope != PresentIfScope::Local {
-        return Some("a `sce:present-if` on a flag input or on a chain".to_string());
+    if predicate.scope == PresentIfScope::Chain {
+        return Some("a `sce:present-if` on the entries of a chain".to_string());
     }
     predicate.or_with.as_deref().and_then(present_if_unlowered)
 }
 
 /// The Swift condition under which a field gated by `predicate` is on the wire: the bit a flag of
-/// an earlier carrier names is set (or clear, for a negated clause), and any clause of a
-/// disjunction holds. `holder` names the value whose carriers are read: the frame being decoded,
-/// or `self` when it is encoded. The mask is the one every backend tests, from the shared
-/// resolution of the predicate. [`present_if_unlowered`] has found nothing to refuse in it.
+/// an earlier carrier names is set, or the flag input the codec is given (or clear, for a negated
+/// clause), and any clause of a disjunction holds. `holder` names the value whose carriers are
+/// read: the frame being decoded, or `self` when it is encoded; an input is a parameter of both. The
+/// mask is the one every backend tests, from the shared resolution of the predicate.
+/// [`present_if_unlowered`] has found nothing to refuse in it.
 fn present_if_condition(m: &CodecModel, predicate: &PresentIfPredicate, holder: &str) -> String {
     let (mask, _, carrier) = present_if_carrier_info(&m.fields, predicate);
-    let PresentIfCarrier::Local(carrier) = carrier else {
-        unreachable!("a clause on a flag input is refused before its condition is written");
+    let operand = match carrier {
+        PresentIfCarrier::Local(carrier) => format!("{holder}.{}", carrier.id),
+        PresentIfCarrier::Input => predicate.flag_name.clone(),
     };
     let test = format!(
-        "({holder}.{} & 0x{mask:X}) {} 0",
-        carrier.id,
+        "({operand} & 0x{mask:X}) {} 0",
         if predicate.negate { "==" } else { "!=" }
     );
     match &predicate.or_with {
@@ -457,6 +474,35 @@ fn bit_field(f: &CodecField) -> Result<(u32, u8), String> {
     Ok((offset, ((1u32 << bits) - 1) as u8))
 }
 
+/// The refusals, at the top of an encode, of a value whose gated field and whose gate contradict each
+/// other: the field is held by the value when the gate is clear, or is not when it is set. They are
+/// made for the fields `checks` names, which are the ones whose gate the value does not carry (a flag
+/// input the caller hands in), and before the first byte is written, as the other backends make them.
+fn presence_mismatch_checks(
+    m: &CodecModel,
+    checks: &[crate::forge::codec_roles::Check],
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    for field in &m.fields {
+        let Some(predicate) = &field.present_if else {
+            continue;
+        };
+        if !checks.iter().any(|check| check.field == field.id) {
+            continue;
+        }
+        let test = present_if_condition(m, predicate, "self");
+        let refuse = "throw CodecError.presentIfMismatch";
+        lines.push(format!("if {test} {{"));
+        lines.push(format!("    if self.{} == nil {{", field.id));
+        lines.push(format!("        {refuse}"));
+        lines.push("    }".to_string());
+        lines.push(format!("}} else if self.{} != nil {{", field.id));
+        lines.push(format!("    {refuse}"));
+        lines.push("}".to_string());
+    }
+    lines
+}
+
 /// What the template needs to write a variant: the field that holds the arm, and the enum of arms
 /// that field has the type of.
 struct VariantParts {
@@ -490,6 +536,7 @@ fn variant_context(
     m: &CodecModel,
     v: &CodecVariant,
     imports: &[ImportContext],
+    thread: &dyn Fn(&str) -> (String, String),
 ) -> Result<VariantParts, ForgeError> {
     let enum_name = format!("{}Variant", filters::to_pascal_case(m.name.clone()));
     let tag_field = v
@@ -577,18 +624,22 @@ fn variant_context(
             } else {
                 format!("case 0x{:X}:", arm.value)
             };
+            let (decode_args, encode_args) = thread(&arm.body_alias);
             serde_json::json!({
                 "label": label,
-                "value": format!(".{case}(try {ty}.decode(&reader))"),
+                "value": format!(".{case}(try {ty}.decode(&reader{decode_args}))"),
                 "pattern": format!(".{case}(let arm)"),
+                "encode_args": encode_args,
             })
         })
         .collect();
-    if let Some(ty) = &default {
+    if let (Some(ty), Some(arm)) = (&default, &v.default_arm) {
+        let (decode_args, encode_args) = thread(&arm.body_alias);
         cases.push(serde_json::json!({
             "label": "default:",
-            "value": format!(".default(tag: {narrowed}, body: try {ty}.decode(&reader))"),
+            "value": format!(".default(tag: {narrowed}, body: try {ty}.decode(&reader{decode_args}))"),
             "pattern": ".default(_, let arm)",
+            "encode_args": encode_args,
         }));
     }
     // What a value that has read no frame yet holds: the arm the document marks as its default, and
@@ -714,6 +765,17 @@ pub(super) fn render(
             );
         }
     }
+    // What the codec an embed, a list or a variant names is handed for each flag input it declares,
+    // after the cursor of a decode and the sink of an encode: the bit of a carrier of this codec, or
+    // an input of its own handed on.
+    let thread = |alias: &str| {
+        let args = embed_flag_bind_thread_args(
+            imports.iter().find(|import| import.alias == alias),
+            m,
+            Language::Swift,
+        );
+        (args.decode_arg, args.encode_arg)
+    };
     let fields: Vec<serde_json::Value> = m
         .fields
         .iter()
@@ -742,6 +804,8 @@ pub(super) fn render(
                     .embed_length_from
                     .as_deref()
                     .map(|name| format!("Int(clamping: frame.{name})"));
+                let (decode_args, encode_args) =
+                    thread(f.embed_body_alias.as_deref().unwrap_or_default());
                 return serde_json::json!({
                     "id": f.id,
                     "swift_type": format!("{element}{optional}"),
@@ -754,6 +818,8 @@ pub(super) fn render(
                         "element": element,
                         "length": length,
                         "inner": format!("{}_inner", f.id),
+                        "decode_args": decode_args,
+                        "encode_args": encode_args,
                     },
                 });
             }
@@ -765,6 +831,8 @@ pub(super) fn render(
                 // The list is read into a local and set when it is whole, so a gated list, an
                 // optional on the frame, is not appended to through the optional.
                 let items = format!("{}_items", f.id);
+                let (decode_args, encode_args) =
+                    thread(f.repeat_body_alias.as_deref().unwrap_or_default());
                 let pad = if present.is_some() { 4 } else { 0 };
                 let at = |extra: usize| " ".repeat(8 + pad + extra);
                 let list = match count_ref {
@@ -777,6 +845,8 @@ pub(super) fn render(
                             "kind": "count",
                             "count_field": name,
                             "element": element,
+                            "decode_args": decode_args,
+                            "encode_args": encode_args,
                             "items": items,
                             "count": count,
                             "guard": repeat_count_guard(f, &m.fields, &count, Language::Swift, &at(0)),
@@ -785,6 +855,8 @@ pub(super) fn render(
                     CountRef::UntilEof => serde_json::json!({
                         "kind": "until_eof",
                         "element": element,
+                        "decode_args": decode_args,
+                        "encode_args": encode_args,
                         "items": items,
                         "room": repeat_room_guard(
                             f,
@@ -902,15 +974,27 @@ pub(super) fn render(
     let mut ctx = l.base_context(&m.name);
     // The arm a tag selects is the last of the fields, and its enum is declared before the struct.
     if let Some(variant) = &m.variant {
-        let parts = variant_context(m, variant, imports)?;
+        let parts = variant_context(m, variant, imports, &thread)?;
         fields.push(parts.field);
         embedded_lengths.push(parts.fewest_bytes);
         ctx.insert("variant_enum".into(), parts.arms_enum);
     }
     ctx.insert("fields".into(), fields.into());
-    // The refusals an encode makes before its first byte, of a value outside its bound.
-    let (bound_checks, _) = encode_bound_guard_lines(&m.fields, Language::Swift);
+    // The refusals an encode makes before its first byte: of a field and the gate it is held to that
+    // contradict each other, and of a value outside its bound.
+    let roles = crate::forge::codec_roles::classify(m, imports);
+    let mut bound_checks = presence_mismatch_checks(m, &roles.checks);
+    bound_checks.extend(encode_bound_guard_lines(&m.fields, Language::Swift).0);
     ctx.insert("bound_checks".into(), bound_checks.into());
+    // The flag inputs the codec is handed by whoever decodes or encodes it, in declared order.
+    ctx.insert(
+        "flag_params".into(),
+        m.flag_inputs
+            .iter()
+            .map(|input| input.name.clone())
+            .collect::<Vec<_>>()
+            .into(),
+    );
     // A number of bytes and each embedded codec's own, summed: a constant of the codec's unit.
     let frame_length = match (frame_length, embedded_lengths.is_empty()) {
         (n, true) => n.to_string(),

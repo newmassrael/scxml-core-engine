@@ -511,6 +511,62 @@ fn an_embedded_variant_whose_arm_the_embedder_drives_is_refused_by_name() {
 }
 
 #[test]
+fn a_flag_input_is_a_parameter_of_decode_and_encode_that_a_gate_reads() {
+    let code = swift_of("tests/forge/resources/codec_zenoh_wireexpr.scxml")
+        .expect("a codec with a flag input is written");
+    assert!(
+        code.contains(
+            "public static func decode(_ cursor: inout SceCursor, N: UInt8) throws(CodecError) -> CodecZenohWireexpr"
+        ),
+        "{code}"
+    );
+    assert!(
+        code.contains(
+            "public func encode<Sink: SceSink>(into sink: inout Sink, N: UInt8) throws(CodecError)"
+        ),
+        "{code}"
+    );
+    assert!(
+        code.contains("        if (N & 0x1) != 0 {\n            frame.suffix_len = "),
+        "a decode reads a field gated by the input only when the input is set: {code}"
+    );
+}
+
+#[test]
+fn an_encode_refuses_a_field_and_an_input_that_contradict_each_other_before_a_byte() {
+    let code = swift_of("tests/forge/resources/codec_zenoh_wireexpr.scxml")
+        .expect("a codec with a flag input is written");
+    assert!(
+        code.contains("if (N & 0x1) != 0 {\n            if self.suffix == nil {\n                throw CodecError.presentIfMismatch\n            }\n        } else if self.suffix != nil {\n            throw CodecError.presentIfMismatch\n        }\n"),
+        "{code}"
+    );
+}
+
+#[test]
+fn an_embedder_hands_the_codec_it_embeds_an_input_of_its_own_or_a_bit_of_a_carrier() {
+    let forwarded = swift_of("tests/forge/resources/codec_zenoh_decl_kexpr.scxml")
+        .expect("an embed that hands an input on is written");
+    assert!(
+        forwarded.contains("try CodecZenohWireexpr.decode(&reader, N: N)"),
+        "{forwarded}"
+    );
+    assert!(
+        forwarded.contains("try self.wireexpr.encode(into: &piece, N: N)"),
+        "{forwarded}"
+    );
+    let carrier = swift_of("tests/forge/resources/codec_repeat_flag_carrier.scxml")
+        .expect("a list whose entries are handed a bit of a carrier is written");
+    assert!(
+        carrier.contains("wide: UInt8(truncatingIfNeeded: (frame.head >> 0) & 0x1)"),
+        "a decode hands the bit of the carrier it has read: {carrier}"
+    );
+    assert!(
+        carrier.contains("wide: UInt8(truncatingIfNeeded: (self.head >> 0) & 0x1)"),
+        "an encode hands the bit of the carrier the value holds: {carrier}"
+    );
+}
+
+#[test]
 fn a_gated_byte_string_is_checked_where_it_is_given() {
     let code = swift_of("tests/forge/resources/codec_present_if_tail.scxml")
         .expect("a gated tail is written");
@@ -659,15 +715,10 @@ fn a_gated_variable_length_field_is_an_optional_that_reads_and_writes_as_an_unga
 }
 
 #[test]
-fn a_gate_on_a_flag_input_or_a_chain_is_refused_by_name() {
-    for document in ["codec_chain_flag_entry", "codec_tlv_chain_present_if_basic"] {
-        let refusal = swift_of(&format!("tests/forge/resources/{document}.scxml"))
-            .expect_err(&format!("{document} must be refused, not written"));
-        assert!(
-            refusal.contains("has no Swift lowering yet"),
-            "{document}: {refusal}"
-        );
-    }
+fn a_gate_on_the_entries_of_a_chain_is_refused_by_name() {
+    let refusal = swift_of("tests/forge/resources/codec_tlv_chain_present_if_basic.scxml")
+        .expect_err("a chain is not written");
+    assert!(refusal.contains("has no Swift lowering yet"), "{refusal}");
 }
 
 #[test]
@@ -721,16 +772,6 @@ fn a_list_is_held_to_its_declared_count_on_decode_and_on_encode() {
     assert!(
         code.contains("if let value = self.elems, value.count > 32 {\n            throw CodecError.tooManyElements\n        }"),
         "an encode refuses a list past the bound before its first byte: {code}"
-    );
-}
-
-#[test]
-fn a_list_of_an_entry_codec_swift_does_not_write_is_refused_by_name() {
-    let refusal = swift_of("tests/forge/resources/codec_repeat_flag_carrier.scxml")
-        .expect_err("a list of entries that take a flag input is not written");
-    assert!(
-        refusal.contains("a list of 'codec_chain_flag_entry', which has no Swift lowering"),
-        "{refusal}"
     );
 }
 
@@ -795,7 +836,6 @@ fn what_the_swift_codec_does_not_write_is_refused_by_name() {
         ("codec_cbor_map", "cbor"),
         ("codec_content_line_enums", "content-line"),
         ("codec_chain_flag_carrier", "field '"),
-        ("codec_chain_flag_entry", "a flag input"),
         ("codec_chain_has_envelope", "field '"),
     ] {
         let refusal = swift_of(&format!("tests/forge/resources/{document}.scxml"))
