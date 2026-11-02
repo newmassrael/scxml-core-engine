@@ -494,6 +494,46 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
     `ListView`, whose default is the absent chain, so no view of a Zenoh message grew.
   The other backends write the list their value holds, past its bound or empty, as their encode's contract states
   for every list; they take both bounds when they take the source interface (ADR 0058 §6).
+- **R8, a law on the inputs of a list's entries.** R4a left two refusals with the list: a flag bound to every entry of
+  a list, which the parent checks each entry against, and an input a chain supplies from the entry before, which the
+  chain checks. Both are a relation between entries of one list, or between the list and one value beside it, that
+  every entry's codec takes part in and none can hold alone.
+  *Measured 2026-11-02, after R4e.* 14 documents in the tree declare `may-fail`. Nine refuse at this relation and
+  nothing else: four for a bound flag alone (`chain_flag_carrier`, `repeat_flag_carrier`, `repeat_flag_gated`,
+  `chain_flag_forward`), one for the entry before alone (`zenoh_query_value`), and four for both
+  (`chain_prev_carrier`, `chain_prev_gated`, `chain_prev_tail`, `chain_prev_tail_gated`). Of the consumer's 37
+  declarations, 35 no longer refuse anything, and the two that do (`query` and `request`) refuse at the entry before.
+  The other five in the tree are four content-line codecs (ADR 0077 §3) and the parent R4e left (`some_arms_say_parent`).
+
+  Both relations are a language over the list that a small automaton decides: a state, a value each entry must say
+  in it, and the state after the entry. A bound flag is the automaton whose state is the flag and never changes.
+  The entry before is the automaton whose state starts clear and becomes whether the entry has the identifier. A list
+  with both runs the two together, one state for each. The list is the refinement of its entries by that language,
+  and its constructor runs the automaton once, as `Bounded::new` counts once.
+  - The runtime holds one type, `Lawful<L, A>`: a bounded list or a chain `L`, and the state the automaton `A` starts
+    in, which is the value's to give where the automaton's start is not fixed. `new(start, list)` runs `A` over the
+    entries and returns `None` where an entry says a value other than its state's. An automaton is generated for
+    each list, over every form of its entry, as a chain's kinds are (R6); it asks each entry the input through
+    `{Codec}::input_{i}`.
+  - A bound flag is derived from the list's start, as any derived flag is: the encode writes the start in the flag's
+    bit, whatever the carrier the value presents holds there. An empty list still has a start. That is also what a
+    decode needs: the frame states the flag before the list, whether it has entries or not, and a flag derived from
+    the first entry would read an empty list's flag as clear.
+  - A list that a gate leaves absent has no start. The carrier then keeps the bit the value presents, as R4a says of
+    a gated body that is absent, so the flag is the value's exactly where nothing else says it.
+  - A parent's own input bound to every entry is said by the list's start (R4a), and partly where the list is gated,
+    which R4e already says.
+  - The automaton of the entry before has no start the value gives. A list that runs only it holds `()` there.
+  - The decode reads each entry under the state the automaton is in, as it reads the input now, so the entries it
+    reads say that state, and it builds the list through the same constructor.
+  - Each check of the parent and of the chain at the encode goes, and with it the refusal `PresentIfMismatch` at a
+    list. Law 5 holds it: `new` refuses exactly the lists the encode refused, with the same kind where a decode or a
+    projection converts the error.
+
+  It lands in two steps: R8a, the type and a bound flag, which makes `chain_flag_carrier`, `repeat_flag_carrier`,
+  `repeat_flag_gated` and `chain_flag_forward` total; and R8b, the entry before, which makes the other five total,
+  and the consumer's `query` and `request` with them. Rust first; the other backends take the law when they take the
+  source interface (ADR 0058 §6), as they take R7's bounds.
 
 A source made of refined types cannot be refused, but the refinement leaves the trait shape alone. A consumer that
 implements `XSource` on its own type returns refined values from the same accessors.
@@ -559,7 +599,7 @@ The mutation round for step 1 kills five mutants:
    widening of §5, and the declarations across the tree. The goldens are regenerated once. The conformance sweep
    holds laws 1 to 4, and the mutation round holds the five mutants above.
 2. R1. Then R2, R3, R4 and R5, each one step, each removing the declarations it makes untrue.
-3. R7, then R6.
+3. R7, then R6, then R8a and R8b.
 4. The other five backends, as each takes the source interface (ADR 0058 §6), with the same signatures in their
    idiom: a total encode returns its bytes, and a `may-fail` one returns the backend's failure.
 
@@ -570,3 +610,7 @@ The mutation round for step 1 kills five mutants:
   is the whole entry header but its continuation flag, so nothing is left. `chain_has_envelope` names `0x2` by the
   4-bit identifier alone, which leaves the mandatory bit and the body, and `chain_has_tagged` names entries that
   carry a body byte. R6 therefore takes the dependent pair.
+- What holds a flag bound to a body that some arms of its variant say, where an arm says nothing
+  (`some_arms_say_parent`, left by R4e). The flag would join the arms that say nothing, which are the held codec's
+  arms, not the parent's; the parent would hold a sum over another codec's arms. Open until a document in a consumer
+  needs it.
