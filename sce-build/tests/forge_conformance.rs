@@ -14415,6 +14415,151 @@ fn generate_files_for_codec_set(
     generate_files_for_codec_set_with(dir, scxml_filenames, lang, golden_options(lang))
 }
 
+/// `golden_options` with a deployment that holds `capacity` entries of
+/// `codec_repeat_basic`'s list, whose bound is 32 (docs/adr/0077 §7).
+fn with_capacity_of_frags(
+    lang: sce_build::generator::Language,
+    capacity: u32,
+) -> sce_build::ForgeCompileOptions {
+    let mut opts = golden_options(lang);
+    opts.codec_capacities = [(
+        "codec_repeat_basic".to_string(),
+        [("frags".to_string(), capacity)].into(),
+    )]
+    .into();
+    opts
+}
+
+/// A deployment's capacity is what a form that stores a field holds, and the
+/// field's bound stays the language (docs/adr/0077 §7): a frame inside the bound
+/// and past the capacity is refused by the eager decode with `CapacityExceeded`
+/// and read by the view, which stores nothing; a frame past the bound is
+/// malformed for both.
+#[test]
+fn a_form_that_stores_refuses_past_its_capacity_and_a_view_reads_on() {
+    const HARNESS: &str = r#"// Injected by a_form_that_stores_refuses_past_its_capacity_*.
+#[cfg(test)]
+mod tests {
+    use crate::codec_repeat_basic::{CodecRepeatBasic, CodecRepeatBasicView};
+    use ::sce_forge_runtime::codec::{CodecError, SceCursor};
+
+    // Three entries: inside the bound of 32, past the capacity of 2.
+    const THREE: [u8; 7] = [3, 0, 1, 0, 2, 0, 3];
+    // Two entries, which the capacity holds.
+    const TWO: [u8; 5] = [2, 0, 1, 0, 2];
+    // A count past the bound: malformed, whatever a form holds.
+    const PAST: [u8; 1] = [33];
+
+    #[test]
+    fn the_eager_decode_holds_its_capacity() {
+        let held = CodecRepeatBasic::decode(&mut SceCursor::new(&TWO)).expect("two entries");
+        assert_eq!(held.frags.len(), 2);
+        assert_eq!(
+            CodecRepeatBasic::decode(&mut SceCursor::new(&THREE)).err(),
+            Some(CodecError::CapacityExceeded)
+        );
+    }
+
+    #[test]
+    fn a_view_stores_nothing_and_reads_up_to_the_bound() {
+        let view = CodecRepeatBasicView::decode(&mut SceCursor::new(&THREE)).expect("three");
+        assert_eq!(view.frags.len(), 3);
+    }
+
+    #[test]
+    fn a_frame_past_the_bound_is_malformed_for_every_form() {
+        assert_eq!(
+            CodecRepeatBasic::decode(&mut SceCursor::new(&PAST)).err(),
+            Some(CodecError::TooManyElements)
+        );
+        assert_eq!(
+            CodecRepeatBasicView::decode(&mut SceCursor::new(&PAST)).err(),
+            Some(CodecError::TooManyElements)
+        );
+    }
+}
+"#;
+    let language = sce_build::generator::Language::Rust;
+    let mut options = with_capacity_of_frags(language, 2);
+    options.views = true;
+    let mut files = generate_files_for_codec_set_with(
+        &resource_dir(),
+        &["codec_repeat_elem.scxml", "codec_repeat_basic.scxml"],
+        language,
+        options,
+    )
+    .expect("the codec set generates");
+    files.push(("capacity_behaviour.rs".to_string(), HARNESS.to_string()));
+    rustc_run_generated_set(files, "capacity_behaviour", "test", RustcProfile::Alloc)
+        .expect("a form holds its capacity, and the bound stays the language");
+}
+
+/// C11 stores every field, so its array is the capacity, and a frame past it is
+/// refused with the code of its own (docs/adr/0077 §7).
+#[test]
+fn c11_holds_a_field_in_an_array_of_its_capacity() {
+    let language = sce_build::generator::Language::C11;
+    let files = generate_files_for_codec_set_with(
+        &resource_dir(),
+        &["codec_repeat_elem.scxml", "codec_repeat_basic.scxml"],
+        language,
+        with_capacity_of_frags(language, 2),
+    )
+    .expect("the codec set generates");
+    let header = files
+        .iter()
+        .find(|(name, _)| name.starts_with("codec_repeat_basic"))
+        .map(|(_, text)| text.as_str())
+        .expect("the codec's header");
+    assert!(header.contains("frags[2];"), "{header}");
+    assert!(
+        header.contains("SCE_FORGE_CODEC_CAPACITY_EXCEEDED"),
+        "{header}"
+    );
+    assert!(
+        header.contains("SCE_FORGE_CODEC_TOO_MANY_ELEMENTS"),
+        "{header}"
+    );
+}
+
+/// A capacity no form can hold is refused where the deployment reaches the
+/// codec, with what is wrong with it (docs/adr/0077 §7).
+#[test]
+fn a_capacity_no_form_can_hold_is_refused() {
+    use sce_build::forge::diagnostic::SingleDiagnostic;
+
+    let dir = resource_dir();
+    let source = std::fs::read_to_string(dir.join("codec_repeat_basic.scxml")).expect("the codec");
+    for (field, capacity, phrase) in [
+        ("nothing", 2, "the codec has no such field"),
+        ("num_frags", 2, "stores no variable length"),
+        ("frags", 0, "at least one"),
+        ("frags", 33, "past the field's bound 32"),
+    ] {
+        let mut opts = golden_options(sce_build::generator::Language::Rust);
+        opts.codec_capacities = [(
+            "codec_repeat_basic".to_string(),
+            [(field.to_string(), capacity)].into(),
+        )]
+        .into();
+        let refused = match sce_build::compile_forge_with_imports(
+            &source,
+            sce_build::DocumentLabel::symmetric("codec_repeat_basic"),
+            sce_build::generator::Language::Rust,
+            &dir,
+            &opts,
+        ) {
+            Ok(_) => panic!("{field}: the capacity must be refused"),
+            Err(e) => e,
+        };
+        assert_eq!(
+            refused.diagnostic_payload().code.as_str(),
+            "codec/capacity-invalid"
+        );
+        assert!(refused.to_string().contains(phrase), "{refused}");
+    }
+}
+
 /// [`generate_files_for_codec_set`] under explicit options.
 fn generate_files_for_codec_set_with(
     dir: &std::path::Path,

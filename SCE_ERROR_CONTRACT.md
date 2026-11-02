@@ -748,6 +748,7 @@ references against a real document and drift silently.
 | `broadcast-log/slots-not-a-divisor-of-the-stamp-space` | `generate` | no |  |
 | `broadcast-log/wrap-bound-below-deploy-minimum` | `generate` | no |  |
 | `broadcast-log/wrap-bound-unstated` | `generate` | no |  |
+| `codec/capacity-invalid` | `validation` | no | ADR 0077 §7 |
 | `codec/dma-alignment-unsatisfiable` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/encode-may-fail-without-refusal` | `validation` | no | SCE Forge §4.6 |
 | `codec/flag-bind-carrier-after-embed` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |

@@ -188,11 +188,13 @@ const SCAN_OPEN: &str = "let _rest = cursor.peek_slice(cursor.remaining())?;\n  
 ///
 /// A count past the list's bound is refused before the first entry is read
 /// (docs/adr/0077 §2), and a list read to the end of the frame refuses the
-/// entry past `max_count` before it reads it, as the eager decode does: a frame
-/// cut short there is refused for its count, not for its missing bytes.
-pub(super) fn repeat_decode_stmt(list: &ViewList, max_count: u32) -> String {
+/// entry past its bound before it reads it, as the eager decode does: a frame
+/// cut short there is refused for its count, not for its missing bytes. A view
+/// stores no entry, so it reads to the bound and no capacity holds it (§7).
+pub(super) fn repeat_decode_stmt(list: &ViewList) -> String {
     use crate::generator::Language;
     let field = list.field;
+    let max_count = crate::forge::codec_totality::list_bound(field);
     let id = list.id();
     let entry = list.entry;
     let decode_arg = list.decode_arg;
@@ -460,7 +462,7 @@ fn fill_list(list: &str, indent: &str, walk: &str, entry: &str) -> String {
     format!(
         "{list}.clear();\n{indent}\
          for _e in {walk}.iter() {{\n{indent}    \
-             {list}.push({entry}::default()).map_err(|_| CodecError::TooManyElements)?;\n{indent}    \
+             {list}.push({entry}::default()).map_err(|_| CodecError::CapacityExceeded)?;\n{indent}    \
              if let Some(_slot) = {list}.last_mut() {{\n{indent}        \
                  _e.into_builder(_slot)?;\n{indent}    \
              }}\n{indent}\

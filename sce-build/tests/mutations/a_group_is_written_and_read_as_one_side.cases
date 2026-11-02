@@ -25,10 +25,18 @@ edit("sce-build/src/forge/generator.rs",
      r'''            format!("if {test} {{ {} }} else {{ {} }}", value(off), value(on))''')
 PY
 
-mutation_case "a gate is read from the arms it does not hold in" <<'PY'
+mutation_case "a gate is read as its opposite" <<'PY'
 edit("sce-build/src/forge/generator/rust_source.rs",
-     r'''            (arms_with(true), false)''',
-     r'''            (arms_with(false), false)''')
+     r'''        if negate {
+            format!("!{test}")
+        } else {
+            test
+        }''',
+     r'''        if !negate {
+            format!("!{test}")
+        } else {
+            test
+        }''')
 PY
 
 mutation_case "a disjunction's arms are built under the wrong assignment" <<'PY'
@@ -38,10 +46,6 @@ edit("sce-build/src/forge/generator.rs",
                         .map(bool::to_string)''')
 PY
 
-mutation_case "an encode writes the elements of the side the value does not hold" <<'PY'
-edit("sce-build/src/forge/generator/rust_source.rs",
-     r'''                        if !arm.fields.contains(&f.id) {
-                            "None".to_string()''',
-     r'''                        if arm.fields.contains(&f.id) {
-                            "None".to_string()''')
-PY
+# No case writes the elements of a side the value does not hold: an arm has no
+# such element to read, so the type of the group refuses that encode where it is
+# generated, and a mutant of it does not compile.

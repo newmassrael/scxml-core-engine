@@ -1009,6 +1009,7 @@ fn a_codec_renders_every_field_it_can_carry() {
         embed_length_from: Some("len".to_string()),
         length_arith: Some(-2),
         quantity: None,
+        capacity: None,
     };
 
     let m = CodecModel {
@@ -1151,6 +1152,7 @@ fn a_chain_identifier_that_leaves_flags_out_renders_one_line_per_flag() {
         embed_length_from: None,
         length_arith: None,
         quantity: None,
+        capacity: None,
     };
     let m = CodecModel {
         name: "env".to_string(),

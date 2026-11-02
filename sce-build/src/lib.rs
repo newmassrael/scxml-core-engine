@@ -2375,14 +2375,69 @@ pub fn check_forge_files(
     options: &ForgeCompileOptions,
 ) -> Vec<ForgeFileCheck> {
     use forge::diagnostic::ToDiagnostics;
-    paths
+    let mut reached: Vec<PathBuf> = paths.to_vec();
+    let mut checks: Vec<ForgeFileCheck> = paths
         .iter()
         .map(|path| ForgeFileCheck {
             path: path.clone(),
             diagnostics: match compile_forge_file(path, language, include_dirs, options) {
-                Ok(_) => Vec::new(),
+                Ok(output) => {
+                    reached.extend(output.deps);
+                    Vec::new()
+                }
                 Err(refused) => refused.to_diagnostics(),
             },
+        })
+        .collect();
+    // One compile sees one document and its imports, so only the whole set can
+    // tell a capacity whose codec is misspelled from one for another document.
+    if checks.iter().all(ForgeFileCheck::passed) {
+        checks.extend(unreached_capacities(&reached, include_dirs, options));
+    }
+    checks
+}
+
+/// A verdict for each codec the deployment states a capacity of and no document
+/// of `reached` is (docs/adr/0077 §7): left alone, a misspelled name would leave
+/// a field at its bound with nothing said. It stands under the deploy input,
+/// which is what to change.
+fn unreached_capacities(
+    reached: &[PathBuf],
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Vec<ForgeFileCheck> {
+    use forge::diagnostic::ToDiagnostics;
+    const DEPLOY_INPUT: &str = "deploy";
+    let names: BTreeSet<String> = reached
+        .iter()
+        .filter_map(|path| {
+            let loaded = load_forge_source(path, include_dirs).ok()?;
+            let path_text = path.to_string_lossy();
+            let label = DocumentLabel::for_input_path(&path_text);
+            let document = forge::parser::parse_forge(loaded.text(), label).ok()??;
+            Some(document.name().to_string())
+        })
+        .collect();
+    options
+        .codec_capacities
+        .iter()
+        .filter(|(codec, _)| !names.contains(*codec))
+        .map(|(codec, fields)| {
+            let refused = forge::error::Located::new(
+                forge::error::ValidationError::CodecCapacityInvalid {
+                    codec: codec.clone(),
+                    field: fields.keys().next().cloned().unwrap_or_default(),
+                    rule: "no document of the set is a codec of this name".to_string(),
+                }
+                .into(),
+                DEPLOY_INPUT,
+                None,
+                None,
+            );
+            ForgeFileCheck {
+                path: PathBuf::from(DEPLOY_INPUT),
+                diagnostics: refused.to_diagnostics(),
+            }
         })
         .collect()
 }
@@ -3445,6 +3500,12 @@ pub struct ForgeCompileOptions {
     /// Empty (the default) resolves fragments relative to the including
     /// document only.
     pub include_dirs: Vec<PathBuf>,
+    /// What the deployment's storing forms hold, read from the deploy input's
+    /// `codecs:` (docs/adr/0077 §7). It lives here because a capacity has to
+    /// reach the codec compiled and each codec it imports, and a codec's
+    /// document does not state it. Empty (the default) leaves every field at
+    /// its bound.
+    pub codec_capacities: forge::model::CodecCapacities,
     /// The `source-hash` digest the files [`compile_scxml_with_imports`]
     /// returns are written under, as lowercase hex: what a statechart
     /// declaring its transition table or its transition function is bound
@@ -3942,6 +4003,23 @@ pub fn compile_forge_from_parsed(
     options: &ForgeCompileOptions,
 ) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
     use forge::error::Located;
+
+    // What the deployment says this codec's storing forms hold is read before
+    // anything sizes one (docs/adr/0077 §7). The parsed document stays the
+    // caller's: a capacity is no fact of it.
+    let with_capacities;
+    let parsed = match &parsed.document {
+        forge::model::ForgeDocument::Codec(m) if options.codec_capacities.contains_key(&m.name) => {
+            let mut held = parsed.clone();
+            if let forge::model::ForgeDocument::Codec(m) = &mut held.document {
+                m.take_capacities(&options.codec_capacities)
+                    .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
+            }
+            with_capacities = held;
+            &with_capacities
+        }
+        _ => parsed,
+    };
 
     // SCE Protocol-Synthesis RFC §synth-5-O — forge IR provenance pre-emit
     // guard. Runs before import resolution + cross-doc validators so a
@@ -6027,7 +6105,13 @@ fn validate_and_enrich_imports(
         //        member field types for stateful kinds) used by the typed
         //        expression transpiler pipeline in `forge::type_ctx`.
         if let Some(parsed) = source.parse()? {
-            let doc = parsed.document;
+            let mut doc = parsed.document;
+            // A codec this one imports is sized by the same deployment
+            // (docs/adr/0077 §7).
+            if let forge::model::ForgeDocument::Codec(cm) = &mut doc {
+                cm.take_capacities(&options.codec_capacities)
+                    .map_err(|e| Located::new(e, importing_doc, imp.line, None))?;
+            }
             // Identity SSOT: recompute the name-derived emission context
             // (`#include` / `use` / `import`, namespace, type/member type)
             // from the imported document's authoritative

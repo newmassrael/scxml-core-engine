@@ -7373,7 +7373,7 @@ fn rust_owned_field_keys(
             // `FromIterator` (which the profile's container is not required to
             // implement). It keeps the decoded list's bound, which its capacity
             // proves. Uniformly fallible: on a fixed-capacity profile an
-            // over-long run is `TooManyElements`, on a growable one it cannot
+            // over-long run is `CapacityExceeded`, on a growable one it cannot
             // fail — one call shape, no per-profile branch.
             Conv::List(elem) => (
                 format!("{RUNTIME_CODEC}::try_collect_bounded({e}, {elem})"),
@@ -8051,7 +8051,7 @@ fn rust_group_storage(
                 // built where it sits from its view.
                 &|_, list| {
                     format!(
-                        "{{ let mut _v = HeaplessVec::new(); for _e in {RUNTIME_CODEC}::Entries::entries({list}) {{ _v.push(Default::default()).map_err(|_| CodecError::TooManyElements)?; if let Some(_slot) = _v.last_mut() {{ _e.into_builder(_slot)?; }} }} _v }}"
+                        "{{ let mut _v = HeaplessVec::new(); for _e in {RUNTIME_CODEC}::Entries::entries({list}) {{ _v.push(Default::default()).map_err(|_| CodecError::CapacityExceeded)?; if let Some(_slot) = _v.last_mut() {{ _e.into_builder(_slot)?; }} }} _v }}"
                     )
                 },
             )?;
@@ -8151,7 +8151,7 @@ fn replace_place(text: &str, place: &str, local: &str) -> String {
 /// `&self`, so owned-by-value bodies must `clone()` and bounded lists must
 /// re-bound (owned `Vec` -> borrowed `heapless::Vec<_, N>`) via the shared
 /// runtime projector `try_project_bounded_into`, which raises
-/// `CodecError::TooManyElements` past `N`. Every list field is therefore
+/// `CodecError::CapacityExceeded` past `N`. Every list field is therefore
 /// fallible (`?`); the enclosing method is `try_as_borrowed_into -> Result`
 /// exactly when [`codec_self_as_borrowed_fallible`] holds, so the `?` here
 /// always lands in a `Result` context. Rust-only.
@@ -8922,16 +8922,13 @@ fn render_codec(
                         );
                         obj.insert(
                             "view_repeat_decode_stmt".into(),
-                            rust_view::repeat_decode_stmt(
-                                &rust_view::ViewList {
-                                    field: f,
-                                    fields: &m.fields,
-                                    entry: &entry,
-                                    inputs: &repeat_thread.inputs,
-                                    decode_arg: &repeat_thread.decode_arg,
-                                },
-                                max_count,
-                            )
+                            rust_view::repeat_decode_stmt(&rust_view::ViewList {
+                                field: f,
+                                fields: &m.fields,
+                                entry: &entry,
+                                inputs: &repeat_thread.inputs,
+                                decode_arg: &repeat_thread.decode_arg,
+                            })
                             .into(),
                         );
                     }
@@ -8982,7 +8979,10 @@ fn render_codec(
                     // here. Non-MCU language hitting this branch is a
                     // bug (gate not reached).
                     obj.insert("bit_size_kind".into(), "tlv-chain".into());
-                    obj.insert("max_depth".into(), (*max_depth).into());
+                    // What a form that stores the chain holds, which the walk
+                    // of the frame does not read (docs/adr/0077 §7).
+                    let held = f.storage_entries();
+                    obj.insert("max_depth".into(), held.into());
                     obj.insert(
                         "on_overflow".into(),
                         match on_overflow {
@@ -9023,9 +9023,9 @@ fn render_codec(
                     // one entry or more, so its list says so where the value
                     // is made (docs/adr/0065 §6 R7).
                     let rust_list = match crate::forge::codec_totality::list_least(f) {
-                        0 => format!("HeaplessVec<{body_type}{body_lt}, {max_depth}>"),
+                        0 => format!("HeaplessVec<{body_type}{body_lt}, {held}>"),
                         least => format!(
-                            "{RUNTIME_CODEC}::Bounded<HeaplessVec<{body_type}{body_lt}, {max_depth}>, {max_depth}, {least}>"
+                            "{RUNTIME_CODEC}::Bounded<HeaplessVec<{body_type}{body_lt}, {held}>, {max_depth}, {least}>"
                         ),
                     };
                     let wrapped = match (lang, gated) {
@@ -9062,7 +9062,7 @@ fn render_codec(
                         (crate::generator::Language::C11, false) => body_type.clone(),
                         (crate::generator::Language::C11, true) => {
                             obj.insert("c_gated_optional".into(), true.into());
-                            c11_gated_list_member(&body_type, *max_depth)
+                            c11_gated_list_member(&body_type, held)
                         }
                     };
                     obj.insert(type_key.into(), wrapped.into());
@@ -13155,7 +13155,7 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
                      _vec.clear();\n            \
                      for _ in 0..{len_field_snake} {{\n                \
                          _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                         .map_err(|_| CodecError::TooManyElements)?;\n            \
+                         .map_err(|_| CodecError::CapacityExceeded)?;\n            \
                      }}\n        \
                  }}"
             )
@@ -13168,7 +13168,7 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
                      _vec.clear();\n            \
                      while cursor.remaining() > 0 {{\n                \
                          {room}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                         .map_err(|_| CodecError::TooManyElements)?;\n            \
+                         .map_err(|_| CodecError::CapacityExceeded)?;\n            \
                      }}\n        \
                  }}"
             )
@@ -14561,7 +14561,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                      {guard}let _vec = {RUST_DECODE_OUT}.{id}.insert(HeaplessVec::<{body_type}{body_lt}, {max_count}>::new());\n            \
                      for _ in 0.._n {{\n                \
                          _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                         .map_err(|_| CodecError::TooManyElements)?;\n            \
+                         .map_err(|_| CodecError::CapacityExceeded)?;\n            \
                      }}\n        \
                  }} else {{\n            \
                      {RUST_DECODE_OUT}.{id} = None;\n        \
@@ -14575,7 +14575,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                      let _vec = {RUST_DECODE_OUT}.{id}.insert(HeaplessVec::<{body_type}{body_lt}, {max_count}>::new());\n            \
                      while cursor.remaining() > 0 {{\n                \
                          {room}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                         .map_err(|_| CodecError::TooManyElements)?;\n            \
+                         .map_err(|_| CodecError::CapacityExceeded)?;\n            \
                      }}\n        \
                  }} else {{\n            \
                      {RUST_DECODE_OUT}.{id} = None;\n        \
@@ -14940,9 +14940,9 @@ struct TlvChainDecode<'a> {
 /// Rendered at the 16-space body indent both chain emits use, and closing on
 /// the same indent so the caller can concatenate it straight onto the push.
 const RUST_CHAIN_PUSH_NOTE: &str =
-    "// Bounded by max-depth on both sides — loop count and `_vec`\n                \
-     // capacity are the same literal — so this push cannot fail. An\n                \
-     // over-long chain is refused by the guard after the loop.\n                ";
+    "// The loop walks the chain's depth and `_vec` holds the capacity, so\n                \
+     // this push fails only where the deployment holds fewer entries than\n                \
+     // the frame says. An over-long chain is refused after the loop.\n                ";
 
 /// The destination a Rust codec's `decode_into` fills, spelled where a
 /// list, embed or variant statement writes straight into it.
@@ -15155,7 +15155,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 (None, true) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
                      {RUST_CHAIN_PUSH_NOTE}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                     .map_err(|_| CodecError::TooManyElements)?;\n            "
+                     .map_err(|_| CodecError::CapacityExceeded)?;\n            "
                 ),
                 // The entry is bound to a local when the loop reads something
                 // off it: the flag that ends the chain, the identifier a
@@ -15170,7 +15170,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                     }
                     lines.extend(entry_binds.update_lines(field, "_entry", lang, indent));
                     lines.push(format!(
-                        "{RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;"
+                        "{RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::CapacityExceeded)?;"
                     ));
                     if acc.is_some() {
                         lines.push("if !_more { break; }".to_string());
@@ -15223,9 +15223,19 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             // name (used as the accessor's free-function prefix per
             // c/codec.h.jinja2 line 444 / 455).
             let entry_struct_snake = body_decoder.strip_suffix("_decode").unwrap_or(body_decoder);
+            // A chain the deployment holds fewer entries of than its depth has
+            // an array shorter than the walk (docs/adr/0077 §7).
+            let room = field
+                .capacity
+                .map(|capacity| {
+                    format!(
+                        "if (out->{id_snake}_len >= {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n            "
+                    )
+                })
+                .unwrap_or_default();
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
-                    "            if (sce_forge_cursor_remaining(cursor) == 0) break;\n            \
+                    "            if (sce_forge_cursor_remaining(cursor) == 0) break;\n            {room}\
                      sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n            \
                      if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
                      out->{id_snake}_len++;\n        "
@@ -15240,6 +15250,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                         acc,
                         "if (sce_forge_cursor_remaining(cursor) == 0) break;",
                     );
+                    lines.extend((!room.is_empty()).then(|| room.trim_end().to_string()));
                     lines.extend([
                         format!(
                             "sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});"
@@ -15668,7 +15679,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 (None, true) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
                      {RUST_CHAIN_PUSH_NOTE}_vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
-                     .map_err(|_| CodecError::TooManyElements)?;\n            "
+                     .map_err(|_| CodecError::CapacityExceeded)?;\n            "
                 ),
                 (acc, _) => {
                     let mut lines =
@@ -15679,7 +15690,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                     }
                     lines.extend(entry_binds.update_lines(field, "_entry", lang, inner));
                     lines.push(format!(
-                        "{RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;"
+                        "{RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::CapacityExceeded)?;"
                     ));
                     if acc.is_some() {
                         lines.push("if !_more { break; }".to_string());
@@ -17773,6 +17784,12 @@ fn repeat_room_guard(
 /// exactly the declared `max-count`, which [`repeat_count_guard`] has checked.
 /// Followed by a newline and `indent`, or empty.
 fn c11_list_storage_check(field: &CodecField, n: &str, indent: &str) -> String {
+    if field.capacity.is_some() {
+        let capacity = field.storage_entries();
+        return format!(
+            "if ({n} > {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}"
+        );
+    }
     if field.declared_bound().is_some() {
         return String::new();
     }
@@ -17784,6 +17801,12 @@ fn c11_list_storage_check(field: &CodecField, n: &str, indent: &str) -> String {
 /// the declared bound is the array's, and an undeclared list's array is checked
 /// as it fills.
 fn c11_list_room(field: &CodecField, fields: &[CodecField], len: &str, indent: &str) -> String {
+    if field.capacity.is_some() {
+        let capacity = field.storage_entries();
+        return format!(
+            "if ({len} >= {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}"
+        );
+    }
     if field.declared_bound().is_some() {
         return repeat_room_guard(field, fields, len, crate::generator::Language::C11, indent);
     }
@@ -17842,7 +17865,7 @@ fn c11_storage_check(field: &CodecField, fields: &[CodecField], indent: &str) ->
     if proven {
         String::new()
     } else {
-        format!("if (_n > {capacity}) return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;\n{indent}")
+        format!("if (_n > {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}")
     }
 }
 

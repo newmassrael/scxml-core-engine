@@ -141,6 +141,12 @@ typedef enum {
      * Mirrors the typed `CodecError::TooManyElements` of Rust,
      * `codec.ErrTooManyElements` of Go and `TooManyElements` of Python. */
     SCE_FORGE_CODEC_TOO_MANY_ELEMENTS = 21,
+    /* A value inside its field's bound and past the array that holds it: the
+     * capacity the deployment gave the field (docs/adr/0077 §7). The frame is
+     * well formed and this node cannot store it. Mirrors the typed
+     * `CodecError::CapacityExceeded` of Rust; the backends whose containers
+     * grow have no such refusal. */
+    SCE_FORGE_CODEC_CAPACITY_EXCEEDED = 22,
 } sce_forge_codec_status_t;
 
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a

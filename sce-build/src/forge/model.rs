@@ -2655,6 +2655,14 @@ pub struct CodecField {
     /// the legacy byte-identical codec emission.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantity: Option<crate::forge::quantity::Quantity>,
+    /// What a form that stores this field holds where the deployment says:
+    /// bytes of a byte or text field, entries of a list (docs/adr/0077 §7).
+    /// `None` leaves it to the field's bound. It is no fact of the document,
+    /// so the parser leaves it `None` and the document's AST does not carry
+    /// it; [`CodecModel::take_capacities`] reads it from the deploy input.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub capacity: Option<u32>,
 }
 
 impl CodecField {
@@ -2747,20 +2755,32 @@ impl CodecField {
     }
 
     /// How many bytes a form that stores this byte or text field holds: a C11
-    /// array, an inline owned buffer, a broadcast-log slot (docs/adr/0077 §7). A
-    /// form that stores nothing, a borrowed decode or a view, reads the bound
+    /// array, an inline owned buffer, a broadcast-log slot. It is the capacity
+    /// the deployment gives the field, or its bound (docs/adr/0077 §7). A form
+    /// that stores nothing, a borrowed decode or a view, reads the bound
     /// ([`Self::length_bound`]) and not this.
     pub fn storage_bytes(&self) -> u32 {
-        crate::forge::limits::resolve_bytes_max(self.max_size)
+        self.capacity
+            .unwrap_or_else(|| crate::forge::limits::resolve_bytes_max(self.max_size))
     }
 
     /// How many entries a form that stores this list holds: a C11 array, an
-    /// inline owned list, a list decoded eagerly (docs/adr/0077 §7).
+    /// inline owned list, a list decoded eagerly. It is the capacity the
+    /// deployment gives the field, or its bound (docs/adr/0077 §7).
     pub fn storage_entries(&self) -> u32 {
-        match &self.bit_size {
+        self.capacity.unwrap_or_else(|| match &self.bit_size {
             BitSize::TlvChain { max_depth, .. } => *max_depth,
             _ => crate::forge::limits::resolve_max_count(self.max_count),
-        }
+        })
+    }
+
+    /// Whether a form that stores this field has anything to size: a byte or
+    /// text field of variable length, or a list.
+    pub fn takes_capacity(&self) -> bool {
+        matches!(
+            self.bit_size,
+            BitSize::Tail | BitSize::LengthRef | BitSize::Repeat { .. } | BitSize::TlvChain { .. }
+        )
     }
 
     /// The lengths (bytes of a `tail` or `length-ref` field) or counts
@@ -3303,7 +3323,62 @@ impl ContentLineModel {
     }
 }
 
+/// What a deployment's storing forms hold (docs/adr/0077 §7): for each codec by
+/// name, for each of its fields by id, how many bytes or entries.
+pub type CodecCapacities =
+    std::collections::BTreeMap<String, std::collections::BTreeMap<String, u32>>;
+
 impl CodecModel {
+    /// Take from `capacities` what the deployment says of this codec's fields
+    /// (docs/adr/0077 §7). A capacity is refused where it names no field of the
+    /// codec, a field a form stores nothing of, nothing at all, or more than the
+    /// field's bound lets a frame say: the bound is the language, so what lies
+    /// past it needs no room.
+    pub fn take_capacities(
+        &mut self,
+        capacities: &CodecCapacities,
+    ) -> Result<(), crate::forge::error::ForgeError> {
+        let Some(declared) = capacities.get(&self.name) else {
+            return Ok(());
+        };
+        let invalid = |field: &str, rule: String| -> crate::forge::error::ForgeError {
+            crate::forge::error::ValidationError::CodecCapacityInvalid {
+                codec: self.name.clone(),
+                field: field.to_string(),
+                rule,
+            }
+            .into()
+        };
+        let mut taken: Vec<(usize, u32)> = Vec::with_capacity(declared.len());
+        for (id, capacity) in declared {
+            let Some(at) = self.fields.iter().position(|f| &f.id == id) else {
+                return Err(invalid(id, "the codec has no such field".to_string()));
+            };
+            let field = &self.fields[at];
+            if !field.takes_capacity() {
+                return Err(invalid(
+                    id,
+                    "a form stores no variable length of this field".to_string(),
+                ));
+            }
+            if *capacity == 0 {
+                return Err(invalid(id, "a capacity holds at least one".to_string()));
+            }
+            let bound = field.length_bound(&self.fields).and_then(|b| b.max);
+            if let Some(bound) = bound.filter(|bound| u64::from(*capacity) > *bound) {
+                return Err(invalid(
+                    id,
+                    format!("capacity {capacity} is past the field's bound {bound}"),
+                ));
+            }
+            taken.push((at, *capacity));
+        }
+        for (at, capacity) in taken {
+            self.fields[at].capacity = Some(capacity);
+        }
+        Ok(())
+    }
+
     /// Minimum required frame bytes for decode (from fixed fields, and from the
     /// start of a burst-aligned field: the padding before it is on the wire).
     pub fn min_frame_bytes(&self) -> u32 {

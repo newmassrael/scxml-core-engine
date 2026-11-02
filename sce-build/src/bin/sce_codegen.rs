@@ -4356,6 +4356,10 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         go_module_prefix,
         const_fold_budget,
         include_dirs: include_dirs.clone(),
+        codec_capacities: deploy_cfg
+            .as_ref()
+            .map(|cfg| cfg.codec_capacities())
+            .unwrap_or_default(),
         host_processor_types: host_processor,
         host_invoker_types: host_invoker,
         target_machine,
@@ -5500,6 +5504,10 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         go_module_prefix,
         const_fold_budget,
         include_dirs: include_dir.iter().map(PathBuf::from).collect(),
+        codec_capacities: deploy_cfg
+            .as_ref()
+            .map(|cfg| cfg.codec_capacities())
+            .unwrap_or_default(),
         // §scxml-6.2.5 + §scxml-6.4.1: the same declaration `orchestrate`
         // takes, read the same way. Without it here this route would
         // answer for an interpretation the producer can be given and this
@@ -6365,6 +6373,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
             let mut forge_opts = sce_build::ForgeCompileOptions {
                 go_module_prefix: go_module_prefix.map(str::to_owned),
                 const_fold_budget,
+                // What the deployment's storing forms hold (docs/adr/0077 §7).
+                codec_capacities: deploy_path
+                    .map(|path| load_deploy_config(path, error_format).codec_capacities())
+                    .unwrap_or_default(),
                 owned_origin,
                 views,
                 inline_encode,

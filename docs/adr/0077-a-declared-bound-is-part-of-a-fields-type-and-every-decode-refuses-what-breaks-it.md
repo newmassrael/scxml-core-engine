@@ -277,7 +277,9 @@ This lands in steps, each its own commit and guide section:
 
 1. The split with no change of behaviour: `CodecField` answers what a storing form holds apart from its bound, and
    every storing reader moves to it. The regeneration changes nothing, which is the proof.
-2. The deploy input, `CapacityExceeded` on each backend, and the parser admitting a field with no bound.
+2. The deploy input and `CapacityExceeded` on the two backends that store, Rust and C11; the containers of the others
+   grow, so they have no such refusal. Then the parser admitting a field with no bound, with `on-overflow` leaving the
+   document, as a landing of its own.
 3. Eager lists on the storage profile, and owned forms bound to growable profiles where a field has no capacity.
 4. The consumer moves each field by what the protocol says.
 

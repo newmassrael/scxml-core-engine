@@ -111,3 +111,29 @@ fn every_document_is_answered_in_order_and_nothing_is_written() {
         .collect();
     assert_eq!(before, after, "checking writes nothing");
 }
+
+/// One compile sees one document and its imports, so only the set can tell a
+/// capacity whose codec is misspelled from one for another document
+/// (docs/adr/0077 §7). It is refused under the deploy input, and a name the set
+/// has is not.
+#[test]
+fn a_capacity_for_a_codec_the_set_does_not_have_is_refused() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("passes.scxml");
+    std::fs::write(&path, PASSES).expect("write document");
+    let check = |codec: &str| {
+        let options = sce_build::ForgeCompileOptions {
+            codec_capacities: [(codec.to_string(), Default::default())].into(),
+            ..Default::default()
+        };
+        sce_build::check_forge_files(std::slice::from_ref(&path), Language::Rust, &[], &options)
+    };
+    assert!(check("passes").iter().all(|v| v.passed()));
+    let verdicts = check("pases");
+    assert_eq!(verdicts.len(), 2, "{verdicts:?}");
+    assert_eq!(verdicts[1].path, PathBuf::from("deploy"));
+    assert_eq!(
+        verdicts[1].diagnostics[0].code.as_str(),
+        "codec/capacity-invalid"
+    );
+}

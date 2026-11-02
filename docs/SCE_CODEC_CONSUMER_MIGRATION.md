@@ -312,3 +312,39 @@ Landing: the commit that adds this section.
 - A variant with an arm that does not say the input is unchanged: the parent hands the input, and the arm that says
   it is held to it.
 - The other backends do not change: their encode is still handed every input.
+
+## A deployment says what its storing forms hold (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- A field's `sce:max-size`, `max-count` and `max-depth` are its bound: what the protocol lets a frame say, the same on
+  every profile. What a node stores is the deployment's, and the deploy input states it:
+
+  ```yaml
+  codecs:
+    msg_put:
+      capacity:
+        payload: 256
+        slices: 4
+  ```
+
+- `sce-codegen generate --deploy <file>` and `check --deploy <file>` read it, and from Rust
+  `ForgeCompileOptions::codec_capacities` takes it. A deployment of codecs alone needs no `topology:`.
+- With no capacity stated a field stores its bound, so nothing changes for a document or a build that states none.
+- A capacity sizes what stores: an inline owned buffer or list, a list decoded eagerly, a C11 array. A borrowed
+  decode and a view hold the receive buffer's bytes and read up to the bound.
+- Past its capacity a storing form refuses with `CodecError::CapacityExceeded` in Rust and
+  `SCE_FORGE_CODEC_CAPACITY_EXCEEDED` in C11: this node cannot hold the field. Past the bound a frame stays
+  `LengthOutOfRange` or `TooManyElements`. The other backends' containers grow, so they have no such refusal.
+- For now a storing decode stops at the field past its capacity and reads no further, so `CapacityExceeded` says the
+  frame was well formed up to that field and nothing about the rest. A view of the same frame gives the verdict on all
+  of it.
+- This renames an error a consumer may match. Where a fixed list or buffer was full, Rust said `TooManyElements`: a
+  list decoded eagerly, `try_into_owned_in::<Inline>`, the owned projections and `SceList::try_push`, `SceStr::from_view`
+  and `SceByteBuf::from_slice`. Each now says `CapacityExceeded`. With no capacity stated these are reached only by an
+  owned value past its list's size, since the bound refuses first.
+- A capacity is refused (`codec/capacity-invalid`) where it names no field of the codec, a field of no variable
+  length, nothing at all, or more than the field's bound.
+- A capacity naming a codec no document is, a misspelled name, is refused by `check_forge_files`, which sees the whole
+  set, under the path `deploy`. A single compile sees one document and its imports and cannot tell.
+- The bound itself stays required until the next landing, which lets a field state none.

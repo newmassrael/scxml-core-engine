@@ -59,7 +59,7 @@ pub trait SceList<T>: Sized {
     /// An empty list. The fixed-capacity implementation reserves `N` inline.
     fn empty() -> Self;
 
-    /// Append one element, raising [`CodecError::TooManyElements`] when a
+    /// Append one element, raising [`CodecError::CapacityExceeded`] when a
     /// fixed-capacity list is full. The growable implementation never fails.
     fn try_push(&mut self, value: T) -> Result<(), CodecError>;
 
@@ -71,7 +71,7 @@ pub trait SceList<T>: Sized {
 /// Owned text storage for a codec's `string` field.
 pub trait SceStr: Sized {
     /// Copy a borrowed decode view into owned storage, raising
-    /// [`CodecError::TooManyElements`] past a fixed capacity.
+    /// [`CodecError::CapacityExceeded`] past a fixed capacity.
     fn from_view(s: &str) -> Result<Self, CodecError>;
 
     /// Borrow the text back — the owned→borrowed projection's read side.
@@ -81,7 +81,7 @@ pub trait SceStr: Sized {
 /// Owned byte storage for a codec's `bytes` field.
 pub trait SceByteBuf: Sized {
     /// Copy a borrowed decode view into owned storage, raising
-    /// [`CodecError::TooManyElements`] past a fixed capacity.
+    /// [`CodecError::CapacityExceeded`] past a fixed capacity.
     fn from_slice(b: &[u8]) -> Result<Self, CodecError>;
 
     /// Borrow the bytes back — the owned→borrowed projection's read side.
@@ -198,7 +198,7 @@ pub struct Heap;
 ///
 /// The profile for MCU tiers and for real-time paths inside otherwise
 /// heap-capable programs. Declared capacities are hard bounds, and exceeding
-/// one is [`CodecError::TooManyElements`] rather than an allocation.
+/// one is [`CodecError::CapacityExceeded`] rather than an allocation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Inline;
 
@@ -259,7 +259,7 @@ impl<T, const N: usize> SceList<T> for heapless::Vec<T, N> {
     }
 
     fn try_push(&mut self, value: T) -> Result<(), CodecError> {
-        self.push(value).map_err(|_| CodecError::TooManyElements)
+        self.push(value).map_err(|_| CodecError::CapacityExceeded)
     }
 
     fn as_slice(&self) -> &[T] {
@@ -329,7 +329,7 @@ byte_buf_impl!(InlineBytes);
 /// capacity semantics live in one place. The destination profile is inferred
 /// from the field the result is being placed in, which is what lets one
 /// generated body serve every storage profile: on [`Inline`] an over-long
-/// source raises [`CodecError::TooManyElements`], on [`Heap`] it cannot fail.
+/// source raises [`CodecError::CapacityExceeded`], on [`Heap`] it cannot fail.
 ///
 /// The inverse direction (owned→borrowed) is
 /// [`crate::codec::try_project_bounded`], which always targets the borrowed
@@ -357,7 +357,7 @@ mod tests {
         let full: Result<heapless::Vec<u8, 2>, _> = try_collect_list([1u8, 2], Ok);
         assert!(full.is_ok());
         let over: Result<heapless::Vec<u8, 2>, _> = try_collect_list([1u8, 2, 3], Ok);
-        assert_eq!(over, Err(CodecError::TooManyElements));
+        assert_eq!(over, Err(CodecError::CapacityExceeded));
     }
 
     #[test]
@@ -381,7 +381,7 @@ mod tests {
         assert!(InlineStr::<4>::from_view("abcd").is_ok());
         assert_eq!(
             InlineStr::<4>::from_view("abcde"),
-            Err(CodecError::TooManyElements)
+            Err(CodecError::CapacityExceeded)
         );
     }
 
@@ -407,7 +407,7 @@ mod tests {
         assert!(text::<Heap>("nine char").is_ok());
         assert_eq!(
             text::<Inline>("nine char").err(),
-            Some(CodecError::TooManyElements)
+            Some(CodecError::CapacityExceeded)
         );
     }
 

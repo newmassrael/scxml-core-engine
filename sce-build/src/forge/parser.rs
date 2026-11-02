@@ -4400,6 +4400,7 @@ pub fn parse_codec_field_from_node(
         embed_body_alias: None,
         embed_length_from: None,
         quantity,
+        capacity: None,
     })
 }
 
@@ -5047,6 +5048,7 @@ fn parse_codec_repeat_from_node(
         // Repeat fields carry a list of imported-codec entries — no
         // scalar wire value to attach a physical conversion to.
         quantity: None,
+        capacity: None,
     })
 }
 
@@ -5466,6 +5468,7 @@ fn parse_codec_tlv_chain_from_node(
         // TLV chain carries a chain of entries — no scalar wire value
         // to attach a physical conversion to.
         quantity: None,
+        capacity: None,
     })
 }
 
@@ -5600,6 +5603,7 @@ fn parse_codec_embed_from_node(
         // wire interpretation; the embed envelope itself has no
         // scalar physical reading.
         quantity: None,
+        capacity: None,
     })
 }
 

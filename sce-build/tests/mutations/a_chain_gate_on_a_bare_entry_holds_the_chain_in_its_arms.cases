@@ -10,9 +10,7 @@
 # The conformance crate generates its codecs from the documents when it
 # builds, so each case reaches the codec the `memberships` tests decode and
 # encode: a walk that writes the named entry after the others, which moves the
-# marker of a frame that holds it between two entries, and a judgement that
-# finds no entry bare, which leaves the gate a check the document no longer
-# declares, so the codec does not generate.
+# marker of a frame that holds it between two entries.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -27,8 +25,6 @@ edit("backends/rust/forge-runtime/src/membership.rs",
      r'''            place: Some(self.rest.entry_count()),''')
 PY
 
-mutation_case "no named entry is bare" <<'PY'
-edit("sce-build/src/forge/codec_roles.rs",
-     r'''    if id.carrier.is_some() || shape.fields.len() != 1 {''',
-     r'''    if true || id.carrier.is_some() || shape.fields.len() != 1 {''')
-PY
+# That a bare entry is told from one with content is a case of
+# `a_generation_writes_what_its_analysis_says.cases`: a marker that is not bare
+# has another type, which a round trip naming that type does not compile with.

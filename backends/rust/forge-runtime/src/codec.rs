@@ -84,6 +84,12 @@ pub enum CodecError {
     /// symbol; the Cpp/Kotlin truncation backends never construct it
     /// (their list storage is the heap-backed host container).
     TooManyElements,
+    /// A value inside its field's bound and past what this form holds: the
+    /// capacity the deployment gave an inline buffer or list
+    /// (docs/adr/0077 §7). The frame is well formed and this node cannot
+    /// store it, so a form that stores nothing, a view or a borrowed decode,
+    /// still reads it.
+    CapacityExceeded,
     /// An enum-typed field carried a value its declared set does not
     /// hold. `sce:strict-variants="true"` (the default) closes the set,
     /// so a carrier value outside it is not a value of that type and
@@ -229,7 +235,7 @@ where
     out.clear();
     for item in src.as_slice() {
         out.push(f(item)?)
-            .map_err(|_| CodecError::TooManyElements)?;
+            .map_err(|_| CodecError::CapacityExceeded)?;
     }
     Ok(())
 }
@@ -281,11 +287,10 @@ pub use crate::membership::{
 };
 
 impl From<sce_portable_bytes::CapacityExceeded> for CodecError {
-    /// A fixed-capacity `from_slice` past its bound is the same
-    /// bounded-storage overflow the decode path reports — surface it as the
-    /// existing typed variant so callers match one error.
+    /// A fixed-capacity `from_slice` past what it holds says nothing about the
+    /// frame, which its bound judged (docs/adr/0077 §7).
     fn from(_: sce_portable_bytes::CapacityExceeded) -> Self {
-        CodecError::TooManyElements
+        CodecError::CapacityExceeded
     }
 }
 

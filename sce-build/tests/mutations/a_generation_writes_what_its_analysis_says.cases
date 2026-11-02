@@ -1,0 +1,42 @@
+# Mutation cases for "a generation writes what its analysis says".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_generation_writes_what_its_analysis_says.cases`.
+#
+# Each case breaks a fact the analysis of a codec gives its generation: the
+# fewest entries of a chain (docs/adr/0065 §6 R7), whether a chain's named entry
+# is bare (R6a), which flags a value must hand an entry (R4a). A broken fact
+# changes a value's type or fails the generation outright, so a build of
+# generated codecs, or a test that names their types, never compiles and says
+# nothing. These run where the generation itself is the thing tested: each
+# fails a golden or panics inside a test, on a build of the generator that
+# compiles.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test forge_conformance
+mutation_targets sce-build/src/forge/codec_totality.rs sce-build/src/forge/codec_roles.rs sce-build/src/forge/generator/rust_source.rs
+mutation_oracles sce-build/tests/forge_conformance.rs
+
+mutation_case "a chain closed by an entry flag has no fewest entries" <<'PY'
+edit("sce-build/src/forge/codec_totality.rs",
+     r'''        } => 1,''',
+     r'''        } => 0,''')
+PY
+
+mutation_case "no named entry is bare" <<'PY'
+edit("sce-build/src/forge/codec_roles.rs",
+     r'''    if id.carrier.is_some() || shape.fields.len() != 1 {''',
+     r'''    if true || id.carrier.is_some() || shape.fields.len() != 1 {''')
+PY
+
+mutation_case "an entry is not held to the flag its chain hands it" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''        for check in &self.roles.input_checks {
+            self.input_check(&check.binder, &check.against, derived, lines);
+        }''',
+     r'''        for check in self.roles.input_checks.iter().take(0) {
+            self.input_check(&check.binder, &check.against, derived, lines);
+        }''')
+PY

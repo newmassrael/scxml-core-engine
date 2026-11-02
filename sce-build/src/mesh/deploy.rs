@@ -28,6 +28,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
+/// What a deployment says of one codec (docs/adr/0077 §7).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CodecDeployConfig {
+    /// How many bytes or entries each field's storing forms hold, by field id.
+    #[serde(default)]
+    pub capacity: BTreeMap<String, u32>,
+}
+
 /// Top-level deploy.yaml structure.
 ///
 /// `deny_unknown_fields` catches typos at parse time — e.g. `topolgy:`
@@ -38,7 +47,8 @@ pub struct DeployConfig {
     /// Schema version. The compiler rejects unknown versions to prevent
     /// silent misinterpretation when the schema evolves.
     pub version: Option<String>,
-    /// Device → `DeviceConfig` map.
+    /// Device → `DeviceConfig` map. A deployment of codecs alone has none.
+    #[serde(default)]
     pub topology: HashMap<String, DeviceConfig>,
     /// Reserved `discovery:` top-level key. Parsed as opaque `Value` so
     /// the parse-time validator can surface a spec-linked diagnostic
@@ -123,6 +133,13 @@ pub struct DeployConfig {
     /// fixtures and consumers compile unchanged.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub variant_defaults: BTreeMap<String, u64>,
+
+    /// `codecs:` block (docs/adr/0077 §7): what this deployment's storing
+    /// forms hold of each codec's fields. A codec's bound is its protocol's and
+    /// stays in its document; a capacity is this deployment's. Absent ⇒ every
+    /// field at its bound.
+    #[serde(default)]
+    pub codecs: BTreeMap<String, CodecDeployConfig>,
 
     /// `build:` block — facts about the build environment that SCE
     /// records but does not act on.
@@ -7217,6 +7234,15 @@ fn validate_someip_machine_liveness_service_ids(cfg: &DeployConfig) -> Result<()
 // ── Helpers for topology/codegen ────────────────────────────
 
 impl DeployConfig {
+    /// What this deployment's storing forms hold (docs/adr/0077 §7), as a
+    /// compile takes it.
+    pub fn codec_capacities(&self) -> crate::forge::model::CodecCapacities {
+        self.codecs
+            .iter()
+            .map(|(codec, config)| (codec.clone(), config.capacity.clone()))
+            .collect()
+    }
+
     /// Find the device config that owns a given machine.
     ///
     /// Since devices are a flat `HashMap`, this is O(devices) — fine for

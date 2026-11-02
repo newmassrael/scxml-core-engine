@@ -2623,6 +2623,7 @@ fn parse_codec_field(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<CodecField, 
         embed_length_from: None,
         length_arith: None,
         quantity: None,
+        capacity: None,
     };
 
     for k in kids {

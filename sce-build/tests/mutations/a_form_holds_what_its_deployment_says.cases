@@ -1,0 +1,57 @@
+# Mutation cases for "a form holds what its deployment says".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_form_holds_what_its_deployment_says.cases`.
+#
+# A field's bound is the language and its capacity is the deployment's
+# (docs/adr/0077 §7). The first case drops the capacity, so the eager decode
+# holds the bound and reads a frame the deployment cannot store; the second has
+# a full list say the frame is malformed; the third admits a capacity past the
+# bound; the fourth has a C11 list past its capacity say the frame is malformed.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test forge_conformance
+mutation_targets sce-build/src/forge/model.rs sce-build/src/forge/generator.rs sce-build/src/lib.rs
+mutation_oracles sce-build/tests/forge_conformance.rs
+
+mutation_case "a list holds its bound whatever the deployment says" <<'PY'
+edit("sce-build/src/forge/model.rs",
+     r'''        self.capacity.unwrap_or_else(|| match &self.bit_size {
+            BitSize::TlvChain { max_depth, .. } => *max_depth,
+            _ => crate::forge::limits::resolve_max_count(self.max_count),
+        })''',
+     r'''        match &self.bit_size {
+            BitSize::TlvChain { max_depth, .. } => *max_depth,
+            _ => crate::forge::limits::resolve_max_count(self.max_count),
+        }''')
+PY
+
+mutation_case "a full list says its frame is malformed" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''                         _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
+                         .map_err(|_| CodecError::CapacityExceeded)?;\n            \
+                     }}\n        \
+                 }}"
+            )
+        }''',
+     r'''                         _vec.push({body_type}::decode(cursor{decode_arg})?)\n                    \
+                         .map_err(|_| CodecError::TooManyElements)?;\n            \
+                     }}\n        \
+                 }}"
+            )
+        }''')
+PY
+
+mutation_case "a capacity past the bound is taken" <<'PY'
+edit("sce-build/src/forge/model.rs",
+     r'''            if let Some(bound) = bound.filter(|bound| u64::from(*capacity) > *bound) {''',
+     r'''            if let Some(bound) = bound.filter(|bound| u64::from(*capacity) > *bound + 1) {''')
+PY
+
+mutation_case "a C11 list past its capacity is called too many" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''            "if ({n} > {capacity}) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;\n{indent}"''',
+     r'''            "if ({n} > {capacity}) return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;\n{indent}"''')
+PY

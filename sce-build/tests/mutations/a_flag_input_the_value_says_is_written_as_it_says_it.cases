@@ -30,7 +30,7 @@ PY
 mutation_case "an arm's input is read under the parent's name for it" <<'PY'
 edit("sce-build/src/forge/generator/rust_source.rs",
      r'''                            filters::to_snake_case(arms[&arm.alias].clone())''',
-     r'''                            filters::to_snake_case(name.to_string())''')
+     r'''                            filters::to_snake_case(format!("{name}{}", &arms[&arm.alias][..0]))''')
 PY
 
 mutation_case "a bound flag keeps the bit the value presents" <<'PY'
@@ -38,15 +38,11 @@ edit("sce-build/src/forge/generator/rust_source.rs",
      r'''                    Derivation::BoundInput { binders } => {
                         self.derive_bound_input(id, binders, lines, &mut derived)
                     }''',
-     r'''                    Derivation::BoundInput { .. } => {}''')
+     r'''                    Derivation::BoundInput { binders } => {
+                        let _ = (Self::derive_bound_input, binders);
+                    }''')
 PY
 
-mutation_case "an entry is not held to the flag its chain hands it" <<'PY'
-edit("sce-build/src/forge/generator/rust_source.rs",
-     r'''        for check in &self.roles.input_checks {
-            self.input_check(&check.binder, &check.against, derived, lines);
-        }''',
-     r'''        for check in self.roles.input_checks.iter().take(0) {
-            self.input_check(&check.binder, &check.against, derived, lines);
-        }''')
-PY
+# That an entry is held to the flag its chain hands it is a case of
+# `a_generation_writes_what_its_analysis_says.cases`: dropping the check fails
+# the generation itself, which a build of generated codecs never gets past.

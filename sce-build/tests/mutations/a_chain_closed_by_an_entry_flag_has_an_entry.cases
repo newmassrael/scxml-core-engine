@@ -12,15 +12,24 @@
 # chain closed by an entry flag reads a frame that ends there as the empty
 # chain.
 #
+# Two things refuse that frame: the loop has no such stop, and the list's
+# `refill` holds its fewest entries. Each alone is enough, so a case that
+# removes one survives without showing anything, as this one did when it did.
+# The case removes both, which is the frame reaching the value.
+#
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-forge-conformance --features alloc --test forge_source_round_trip
-mutation_targets sce-build/src/forge/generator.rs
+mutation_targets sce-build/src/forge/generator.rs backends/rust/forge-runtime/src/bounded.rs
 mutation_oracles backends/rust/forge-conformance/tests/forge_source_round_trip.rs
 
 mutation_case "a chain closed by an entry flag stops where the frame ends" <<'PY'
 edit("sce-build/src/forge/generator.rs",
      r'''        Some(_) => Vec::new(),''',
      r'''        Some(_) => vec![stop.to_string()],''')
+edit("backends/rust/forge-runtime/src/bounded.rs",
+     r'''            n if n < MIN => Err(crate::codec::CodecError::NeedMoreBytes),
+''',
+     r'''''')
 PY

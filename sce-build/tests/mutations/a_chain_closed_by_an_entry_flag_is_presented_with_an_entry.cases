@@ -25,8 +25,6 @@ edit("backends/rust/forge-runtime/src/bounded.rs",
      r'''        if list.entry_count() <= MAX {''')
 PY
 
-mutation_case "a chain closed by an entry flag has no fewest entries" <<'PY'
-edit("sce-build/src/forge/codec_totality.rs",
-     r'''        } => 1,''',
-     r'''        } => 0,''')
-PY
+# That such a chain has a fewest of one is a case of
+# `a_generation_writes_what_its_analysis_says.cases`: without it the generator
+# has no bounded list to read, and generated codecs never build.

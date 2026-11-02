@@ -1457,6 +1457,17 @@ pub enum ValidationError {
     )]
     CodecEncodeMayFailWithoutRefusal { codec: String },
 
+    /// A deployment's capacity for a codec's field that no form can hold
+    /// (docs/adr/0077 §7): it names no field of the codec, a field a form
+    /// stores nothing of, nothing at all, or more than the field's bound. The
+    /// repair is the deploy input's, and `rule` says which.
+    #[error("the deployment's capacity for '{codec}.{field}' is refused: {rule}")]
+    CodecCapacityInvalid {
+        codec: String,
+        field: String,
+        rule: String,
+    },
+
     /// RFC §synth-5-B variant primitive: the variant's enumerated
     /// arms don't cover the tag field's value domain AND no
     /// `<sce:default>` arm catches the unenumerated values. At least
