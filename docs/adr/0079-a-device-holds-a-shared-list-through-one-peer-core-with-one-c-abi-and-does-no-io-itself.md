@@ -201,6 +201,24 @@ ones does not change what it holds.
 An application starts linking the core after step 4 and ships it after step 6; the review gate of ADR 0034 decides
 when it is called production.
 
+## Status of the plan
+
+- **Step 1** landed 2026-11-02 (ADR 0042 step 1 verified, step 3 landed; see ADR 0042).
+- **Step 2** landed 2026-11-02. A courier's round is `client::RoundMachine`, a state machine over the relay's
+  requests and answers that does no I/O; what a courier keeps between rounds is `client::CourierState`, one text
+  when saved; a publication (key package, commit, Welcome, checkpoint) is `client::Publication`. `Courier` keeps its
+  API as a loop over the machine, and every existing relay and world test passed unedited. The device's core is the
+  crate `sce-rust-peer` (`Peer`): the trust layer, the courier's state, the round machine and the MLS member
+  (`with_group`), with events, data, requests and answers as JSON texts; it reads no clock and starts no thread.
+  The one place a send is signed and remembered is `client::keep`, which step 3 makes idempotent.
+- **A revision made in building it.** A round that fails or is abandoned used to lose the events and MLS records
+  it had already taken in: the trust held them and the cursor had passed them, so the machine was told them only by
+  a resync. They are now kept in the courier's state and handed over first by the next round (a resync drops them,
+  since it reads everything again). A round that follows no failure makes the same requests, in the same order,
+  with the same result as before.
+- Not yet saved by `Peer::save`: the device's secrets (identity, epoch keys, MLS group state), which the host gives
+  again before `restore`; section 6 (step 7) seals them.
+
 ## Alternatives considered
 
 - **Each language implements the trust layer and the relay client.** It is what a machine generated in five
