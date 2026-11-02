@@ -109,7 +109,7 @@ fn a_cbor_entry_that_may_be_absent_is_the_optional_struct_of_its_element() {
             "char source[64];",
             "size_t source_len;",
             "uint8_t id[16];",
-            "s = sce_forge_cbor_read_text(&c, 64U, 64, v->source, &v->source_len);",
+            "s = sce_forge_codec_note_capacity(sce_forge_cbor_read_text(&c, 64U, 64, v->source, &v->source_len), &over);",
         ],
         &["deadline_present", "urgent_present"],
     );
@@ -136,7 +136,7 @@ fn an_optional_text_bytes_and_enum_entry_hold_what_a_statechart_variable_does() 
             "typedef RpcStatus_t rpc_status_enum_t;",
             "SCE_OPTIONAL_DECLARE(enum_rpc_status, rpc_status_enum_t, SCE_OPTIONAL_SAME_VALUE)",
             // The text is the buffer of its bound, with no length beside it.
-            "s = sce_forge_cbor_read_text(&c, 262144U, 262144, v->subject.value.data, &text_len);",
+            "s = sce_forge_codec_note_capacity(sce_forge_cbor_read_text(&c, 262144U, 262144, v->subject.value.data, &text_len), &over);",
             "if (strlen(v->subject.value.data) != text_len) {",
             "s = sce_forge_cbor_write_text(w, self->subject.value.data, strlen(self->subject.value.data));",
             // The byte string is that buffer and its length.

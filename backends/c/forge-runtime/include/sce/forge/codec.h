@@ -146,6 +146,20 @@ typedef enum {
     SCE_FORGE_CODEC_CAPACITY_EXCEEDED = 22,
 } sce_forge_codec_status_t;
 
+/* A refusal of a node's capacity, noted in `*over`, and every other status as
+ * it is. A storing decode is a store after a parse (docs/adr/0077 §7): past
+ * what it holds it reads the frame on, judging it as a decode that stores
+ * nothing would, and answers SCE_FORGE_CODEC_CAPACITY_EXCEEDED once every
+ * other refusal has had its turn, so this node and one that holds more give a
+ * frame the same answer where both refuse it. */
+static inline sce_forge_codec_status_t sce_forge_codec_note_capacity(sce_forge_codec_status_t s, bool *over) {
+    if (s == SCE_FORGE_CODEC_CAPACITY_EXCEEDED) {
+        *over = true;
+        return SCE_FORGE_CODEC_OK;
+    }
+    return s;
+}
+
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a
  * cursor at the call site, peek the minimum frame, then advance after
  * the construction succeeds.

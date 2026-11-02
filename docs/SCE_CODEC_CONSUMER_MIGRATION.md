@@ -748,3 +748,18 @@ Landing: the commit that adds this section.
 - `sce_forge_cl_scan_param_value_as` takes a `sce_forge_cl_param_sink_t`, and `sce_forge_cl_scan_param_value` is gone:
   read a string parameter with `sce_forge_cl_property_read_param_string`.
 
+## A C11 CBOR map past a capacity is read whole (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- `sce_forge_cbor_read_text` and `sce_forge_cbor_read_bytes` step over a string past `capacity` and judge it: a text
+  that is not UTF-8 is `SCE_FORGE_CODEC_INVALID_UTF8` and one past the input `SCE_FORGE_CODEC_NEED_MORE_BYTES`, where
+  both answered `SCE_FORGE_CODEC_CAPACITY_EXCEEDED` at its head. Any other is still `CAPACITY_EXCEEDED`, with `*len`
+  0 and the cursor after it. A caller of its own that reads a map on past it notes it with
+  `sce_forge_codec_note_capacity`.
+- A generated C11 CBOR decode of a map past a capacity answers `SCE_FORGE_CODEC_CAPACITY_EXCEEDED` only when the
+  map's own rules admit it: a key given twice is `CBOR_MALFORMED` and a required key absent
+  `CBOR_REQUIRED_KEY_MISSING`, as Rust answers them.
+- `sce_forge_cl_note_capacity` is `sce_forge_codec_note_capacity`, in `sce/forge/codec.h`, the one helper every
+  encoding notes a capacity through.
+

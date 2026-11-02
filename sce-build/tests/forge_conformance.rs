@@ -6492,10 +6492,18 @@ fn c11_holds_a_content_line_text_with_no_bound_at_its_capacity() {
     ] {
         assert!(header.contains(needle), "{needle}\n{header}");
     }
-    std::fs::write(dir.path().join("codec_open_line.h"), header).expect("write the header");
-    let driver = dir.path().join("driver.c");
-    std::fs::write(&driver, OPEN_LINE_C_DRIVER).expect("write the driver");
-    let binary = dir.path().join("driver");
+    run_c_driver(dir.path(), "codec_open_line.h", header, OPEN_LINE_C_DRIVER);
+}
+
+/// Write `header` as `header_name` into `dir` beside the C program `driver`,
+/// compile them as C11 with the strictest warnings and the address and
+/// undefined-behaviour sanitizers, and run it: every check the driver makes
+/// holds.
+fn run_c_driver(dir: &std::path::Path, header_name: &str, header: &str, driver: &str) {
+    std::fs::write(dir.join(header_name), header).expect("write the header");
+    let source = dir.join("driver.c");
+    std::fs::write(&source, driver).expect("write the driver");
+    let binary = dir.join("driver");
     let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
     let backends_c = project_root().join("backends/c");
     let compiled = std::process::Command::new(&cc)
@@ -6508,12 +6516,12 @@ fn c11_holds_a_content_line_text_with_no_bound_at_its_capacity() {
             "-fno-sanitize-recover=all",
             "-I",
         ])
-        .arg(dir.path())
+        .arg(dir)
         .arg("-I")
         .arg(backends_c.join("forge-runtime/include"))
         .arg("-I")
         .arg(backends_c.join("runtime/include"))
-        .arg(&driver)
+        .arg(&source)
         .arg("-o")
         .arg(&binary)
         .output()
@@ -6532,6 +6540,54 @@ fn c11_holds_a_content_line_text_with_no_bound_at_its_capacity() {
         String::from_utf8_lossy(&run.stderr)
     );
 }
+
+/// A driver of the C11 form of [`OPEN_MAP`] held at eight bytes of its text: a
+/// map past the capacity is read whole, so the refusals the map's own rules make
+/// come first and `CAPACITY_EXCEEDED` last, as Rust's projection answers it
+/// after its decode (docs/adr/0077 §7).
+const OPEN_MAP_C_DRIVER: &str = r#"#include <stdio.h>
+#include <string.h>
+
+#include "codec_open_map.h"
+
+static int failures = 0;
+#define CHECK(cond, what)                                                              \
+    do {                                                                               \
+        if (!(cond)) {                                                                 \
+            fprintf(stderr, "FAIL: %s\n", what);                                       \
+            ++failures;                                                                \
+        }                                                                              \
+    } while (0)
+
+static codec_open_map_t v;
+
+static sce_forge_codec_status_t decode(const uint8_t *frame, size_t len) {
+    sce_forge_cursor_t c = sce_forge_cursor_init(frame, len);
+    return codec_open_map_decode(&c, &v);
+}
+
+int main(void) {
+    /* {1: "nnnnnnnn"} and {1: "nnnnnnnnn"}. */
+    static const uint8_t eight[] = {0xa1, 0x01, 0x68, 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n'};
+    static const uint8_t nine[] = {0xa1, 0x01, 0x69, 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n'};
+    /* {1: nine bytes that are no UTF-8 text}. */
+    static const uint8_t nine_bad[] = {0xa1, 0x01, 0x69, 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 0xff};
+    /* {1: "nnnnnnnnn", 1: "n"}: a key given twice. */
+    static const uint8_t twice[] = {0xa2, 0x01, 0x69, 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 0x01, 0x61, 'n'};
+    /* {2: "nnnnnnnnn", 3: 0}: keys the codec skips, and the text's key absent. */
+    static const uint8_t absent[] = {0xa2, 0x02, 0x69, 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 0x03, 0x00};
+    CHECK(decode(eight, sizeof eight) == SCE_FORGE_CODEC_OK && v.note_len == 8U, "a text that fills its capacity");
+    CHECK(decode(nine, sizeof nine) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED, "a text past its capacity");
+    CHECK(decode(nine_bad, sizeof nine_bad) == SCE_FORGE_CODEC_INVALID_UTF8,
+          "a text past its capacity that is no UTF-8 text");
+    CHECK(decode(twice, sizeof twice) == SCE_FORGE_CODEC_CBOR_MALFORMED,
+          "a key given twice, after a text past its capacity");
+    CHECK(decode(absent, sizeof absent) == SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING, "the text's key absent");
+    CHECK(decode(nine, sizeof nine - 1U) == SCE_FORGE_CODEC_NEED_MORE_BYTES,
+          "a text past its capacity and past the input");
+    return failures == 0 ? 0 : 1;
+}
+"#;
 
 /// What cannot hold a map's text the protocol states no bound of says so,
 /// naming the entry (docs/adr/0077 §7): C11 with no capacity for it, and a
@@ -6574,9 +6630,12 @@ fn what_cannot_hold_a_cbor_text_with_no_bound_refuses_it() {
         "{header}"
     );
     assert!(
-        header.contains("sce_forge_cbor_read_text(&c, SIZE_MAX, 8, v->note, &v->note_len);"),
+        header.contains(
+            "sce_forge_codec_note_capacity(sce_forge_cbor_read_text(&c, SIZE_MAX, 8, v->note, &v->note_len), &over);"
+        ),
         "{header}"
     );
+    run_c_driver(dir.path(), "codec_open_map.h", header, OPEN_MAP_C_DRIVER);
 
     let deployment = sce_build::forge::deployment::RustDeployment {
         name: "Bare".to_string(),

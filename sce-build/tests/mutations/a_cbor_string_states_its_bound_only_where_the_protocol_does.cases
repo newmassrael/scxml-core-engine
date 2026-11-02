@@ -22,7 +22,7 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test forge_conformance --test a_c11_codec_holds_what_may_be_absent_in_the_optional_type
-mutation_targets sce-build/src/forge/cbor_codec.rs sce-build/src/forge/model.rs sce-build/src/forge/generator.rs
+mutation_targets sce-build/src/forge/cbor_codec.rs sce-build/src/forge/model.rs sce-build/src/forge/generator.rs tools/codegen/templates/forge/c/codec_cbor.h.jinja2
 mutation_oracles sce-build/tests/forge_conformance.rs sce-build/tests/a_c11_codec_holds_what_may_be_absent_in_the_optional_type.rs
 
 # A map with a text of no bound and no mirror cannot be kept past its buffer.
@@ -52,6 +52,16 @@ mutation_case "a C11 read takes no bound apart from its capacity" <<'PY'
 edit("sce-build/src/forge/cbor_codec.rs",
      r'''                .map_or_else(|| "SIZE_MAX".to_string(), |max| format!("{max}U"))''',
      r'''                .map_or_else(|| "SIZE_MAX".to_string(), |_| "SIZE_MAX".to_string())''')
+PY
+
+# A C11 map answers a text past its capacity before its own rules, so one frame
+# has two answers across C11 and Rust. Killed by
+# `what_cannot_hold_a_cbor_text_with_no_bound_refuses_it` (a key given twice
+# after a text past its capacity is `CBOR_MALFORMED`).
+mutation_case "a C11 map answers a capacity at the text past it" <<'PY'
+edit("tools/codegen/templates/forge/c/codec_cbor.h.jinja2",
+     r'''            s = sce_forge_codec_note_capacity(sce_forge_cbor_read_text(&c, {{ e.bound }}, {{ e.capacity }}, v->{{ e.data_ref }}, &{{ ("v->" ~ e.len_ref) if e.len_ref else "text_len" }}), &over);''',
+     r'''            s = sce_forge_cbor_read_text(&c, {{ e.bound }}, {{ e.capacity }}, v->{{ e.data_ref }}, &{{ ("v->" ~ e.len_ref) if e.len_ref else "text_len" }});''')
 PY
 
 # A codec `Inline` does not hold given the default profile names `Inline` with

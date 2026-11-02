@@ -13,9 +13,9 @@
 {% if e.kind == "bool" %}
             s = sce_forge_cbor_read_bool(&c, &v->{{ e.value_ref }});
 {% elif e.kind == "text" %}
-            s = sce_forge_cbor_read_text(&c, {{ e.bound }}, {{ e.capacity }}, v->{{ e.data_ref }}, &{{ ("v->" ~ e.len_ref) if e.len_ref else "text_len" }});
+            s = sce_forge_codec_note_capacity(sce_forge_cbor_read_text(&c, {{ e.bound }}, {{ e.capacity }}, v->{{ e.data_ref }}, &{{ ("v->" ~ e.len_ref) if e.len_ref else "text_len" }}), &over);
 {% elif e.kind == "bytes" %}
-            s = sce_forge_cbor_read_bytes(&c, {{ e.bound }}, {{ e.capacity }}, v->{{ e.data_ref }}, &v->{{ e.len_ref }});
+            s = sce_forge_codec_note_capacity(sce_forge_cbor_read_bytes(&c, {{ e.bound }}, {{ e.capacity }}, v->{{ e.data_ref }}, &v->{{ e.len_ref }}), &over);
 {% elif e.kind == "bytes_exact" %}
             s = sce_forge_cbor_read_bytes_exact(&c, {{ e.capacity }}, v->{{ e.data_ref }});
             v->{{ e.len_ref }} = {{ e.capacity }};
@@ -174,12 +174,16 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     uint64_t i;
     uint64_t raw = 0;
     size_t text_len = 0;
+    /* A string past what this node holds: read on, and answered last
+     * (docs/adr/0077 §7). */
+    bool over = false;
 {% for e in entries %}
     bool seen_{{ e.name }} = false;
 {% endfor %}
     sce_forge_codec_status_t s = sce_forge_cbor_read_map_len(&c, &count);
     (void)raw;
     (void)text_len;
+    (void)over;
     if (s != SCE_FORGE_CODEC_OK) {
         return s;
     }
@@ -216,6 +220,10 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
         return SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING;
     }
 {% endfor %}
+    /* A map every rule admits and this node cannot hold. */
+    if (over) {
+        return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
+    }
     *cursor = c;
     return SCE_FORGE_CODEC_OK;
 }

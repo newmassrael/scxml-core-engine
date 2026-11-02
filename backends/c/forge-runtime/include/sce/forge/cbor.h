@@ -212,11 +212,30 @@ static inline sce_forge_codec_status_t sce_forge_cbor_read_payload(sce_forge_cur
     return SCE_FORGE_CODEC_OK;
 }
 
+/* Step over a string payload of `len` bytes this node does not hold, judging a
+ * text's as a text: a payload past the input is NEED_MORE_BYTES, a text that is
+ * not UTF-8 INVALID_UTF8, and any other is CAPACITY_EXCEEDED, which a decode
+ * notes and reads on past (`sce_forge_codec_note_capacity`): a storing decode
+ * is a store after a parse (docs/adr/0077 §7). */
+static inline sce_forge_codec_status_t sce_forge_cbor_pass_payload(sce_forge_cursor_t *c, uint64_t len, bool text) {
+    const uint8_t *p;
+    if (len > (uint64_t)sce_forge_cursor_remaining(c)) {
+        return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    }
+    p = sce_forge_cursor_peek(c, (size_t)len);
+    if (text && !sce_forge_is_valid_utf8(p, (size_t)len)) {
+        return SCE_FORGE_CODEC_INVALID_UTF8;
+    }
+    (void)sce_forge_cursor_advance(c, (size_t)len);
+    return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
+}
+
 /* Read a UTF-8 text string into `dst`, which holds `capacity` bytes, its length
  * into `*len`. A text longer than `max_size`, the bound the protocol states
  * (`SIZE_MAX` where it states none), is no frame of the language; one inside
  * it and longer than `capacity` is one this node cannot hold (docs/adr/0077
- * section 7). */
+ * section 7): it is read whole and judged, nothing of it is held (`*len` is
+ * 0), and it is CAPACITY_EXCEEDED. */
 static inline sce_forge_codec_status_t sce_forge_cbor_read_text(sce_forge_cursor_t *c, size_t max_size, size_t capacity,
                                                                 char *dst, size_t *len) {
     uint64_t n = 0;
@@ -228,7 +247,8 @@ static inline sce_forge_codec_status_t sce_forge_cbor_read_text(sce_forge_cursor
         return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
     }
     if (n > (uint64_t)capacity) {
-        return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
+        *len = 0;
+        return sce_forge_cbor_pass_payload(c, n, true);
     }
     s = sce_forge_cbor_read_payload(c, n, (uint8_t *)dst);
     if (s != SCE_FORGE_CODEC_OK) {
@@ -244,7 +264,7 @@ static inline sce_forge_codec_status_t sce_forge_cbor_read_text(sce_forge_cursor
 /* Read a byte string into `dst`, which holds `capacity` bytes, its length into
  * `*len`: one longer than `max_size` (`SIZE_MAX` for no bound) is no frame of
  * the language, and one inside it and longer than `capacity` is one this node
- * cannot hold, as for a text. */
+ * cannot hold, read whole and not held, as for a text. */
 static inline sce_forge_codec_status_t sce_forge_cbor_read_bytes(sce_forge_cursor_t *c, size_t max_size,
                                                                  size_t capacity, uint8_t *dst, size_t *len) {
     uint64_t n = 0;
@@ -256,7 +276,8 @@ static inline sce_forge_codec_status_t sce_forge_cbor_read_bytes(sce_forge_curso
         return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
     }
     if (n > (uint64_t)capacity) {
-        return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
+        *len = 0;
+        return sce_forge_cbor_pass_payload(c, n, false);
     }
     s = sce_forge_cbor_read_payload(c, n, dst);
     if (s != SCE_FORGE_CODEC_OK) {

@@ -427,18 +427,6 @@ static inline sce_forge_codec_status_t sce_forge_cl_text_finish(const sce_forge_
     return SCE_FORGE_CODEC_OK;
 }
 
-/* A refusal of a node's capacity, noted in `*over`, and every other status as
- * it is: a decode reads the frame on past what it cannot hold, and answers
- * SCE_FORGE_CODEC_CAPACITY_EXCEEDED once every other refusal has had its
- * turn (docs/adr/0077 §7). */
-static inline sce_forge_codec_status_t sce_forge_cl_note_capacity(sce_forge_codec_status_t s, bool *over) {
-    if (s == SCE_FORGE_CODEC_CAPACITY_EXCEEDED) {
-        *over = true;
-        return SCE_FORGE_CODEC_OK;
-    }
-    return s;
-}
-
 /* Where the bytes of a parameter value go: a string parameter's text, judged
  * at each byte (`text`); an enum's word, held in word[0, cap) and counted on in
  * `*n` past it, with nothing judged until the whole value is scanned
@@ -584,7 +572,7 @@ static inline sce_forge_codec_status_t sce_forge_cl_property_next_param(sce_forg
  * as `sce_forge_cl_text_t` holds a text. A second value is
  * SCE_FORGE_CODEC_LINE_BAD_VALUE; a value that does not fit is read whole and
  * is SCE_FORGE_CODEC_CAPACITY_EXCEEDED, which a decode notes and reads on past
- * (`sce_forge_cl_note_capacity`). */
+ * (`sce_forge_codec_note_capacity`). */
 static inline sce_forge_codec_status_t sce_forge_cl_property_read_param_string(sce_forge_cl_property_t *p,
                                                                                size_t max_size, size_t capacity,
                                                                                char *out, size_t *len) {
@@ -735,7 +723,7 @@ static inline sce_forge_codec_status_t sce_forge_cl_property_read_strings(sce_fo
         if (empty) {
             return SCE_FORGE_CODEC_LINE_BAD_VALUE;
         }
-        s = sce_forge_cl_note_capacity(sce_forge_cl_text_finish(&part, &len), &over);
+        s = sce_forge_codec_note_capacity(sce_forge_cl_text_finish(&part, &len), &over);
         if (s != SCE_FORGE_CODEC_OK) {
             return s;
         }

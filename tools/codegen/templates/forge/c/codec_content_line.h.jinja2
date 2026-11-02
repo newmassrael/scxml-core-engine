@@ -14,7 +14,7 @@
     SCE_FORGE_CODEC_CAPACITY_EXCEEDED once every other refusal has had its turn
     (docs/adr/0077 §7); any other refusal returns its status. #}
 {% macro note(call, i) %}
-{{ i }}s = sce_forge_cl_note_capacity({{ call }}, &over);
+{{ i }}s = sce_forge_codec_note_capacity({{ call }}, &over);
 {{ i }}if (s != SCE_FORGE_CODEC_OK) {
 {{ i }}    return s;
 {{ i }}}

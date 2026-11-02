@@ -452,8 +452,13 @@ are one value held two ways. So:
     each character, a character held whole or not at all, the rest read on and not held. A decode reads a frame past
     a capacity whole, a line of a full list into its last row, and answers `CAPACITY_EXCEEDED` after every other
     refusal, so C11 and Rust give one frame one answer. `..._MAX_BYTES` is measured at what is held (`Measured::Held`),
-    and a broadcast log's element at the bound (`Measured::Bound`). C11's CBOR reader still refuses at the byte past a
-    capacity, before a UTF-8 check that would come after; it is the next landing, to hold a map as this holds a line.
+    and a broadcast log's element at the bound (`Measured::Bound`).
+  - *C11 CBOR, a store after a parse:* a text or byte string past its capacity is judged in place, a text for UTF-8,
+    stepped over and not held, and the map answers `CAPACITY_EXCEEDED` after its own refusals (a key given twice, a
+    required key absent), as Rust's projection answers after its decode. `sce_forge_codec_note_capacity` is the one
+    helper both encodings note a capacity through. C11's positional codecs still refuse at the field past a capacity
+    (`generator.rs`'s list, chain and byte-field reads), before the rest of the frame is judged; holding a frame as a
+    map and a line are held is the landing after.
 - **No generated item stands on the lent form at `Inline`.** The first run of a list with no bound found every static
   of a borrowed codec, and its lent projections, on `{Codec}<'a>`, which is `Lent<'a, Inline>`: such a codec did not
   compile anywhere, an MCU build with a deployment included. A codec's wire functions are on `{Codec}Wire`, a unit

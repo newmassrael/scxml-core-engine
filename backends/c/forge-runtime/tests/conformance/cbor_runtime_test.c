@@ -113,9 +113,20 @@ static void what_the_codec_cannot_read_is_refused(void) {
     c = sce_forge_cursor_init(long_text, sizeof long_text);
     CHECK(sce_forge_cbor_read_text(&c, SIZE_MAX, 1, txt, &len) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED,
           "a text inside its bound and past its capacity");
+    /* It is read whole and not held (docs/adr/0077 §7): the cursor stands after
+     * it, so a decode reads the map on. */
+    CHECK(sce_forge_cursor_remaining(&c) == 0U && len == 0U, "a text past its capacity is stepped over");
     c = sce_forge_cursor_init(not_utf8, sizeof not_utf8);
     CHECK(sce_forge_cbor_read_text(&c, sizeof txt, sizeof txt, txt, &len) == SCE_FORGE_CODEC_INVALID_UTF8,
           "a text that is not UTF-8");
+    /* A text past the capacity is still judged: one that is not UTF-8 is that,
+     * and one past the input needs more bytes. */
+    c = sce_forge_cursor_init(not_utf8, sizeof not_utf8);
+    CHECK(sce_forge_cbor_read_text(&c, SIZE_MAX, 0, txt, &len) == SCE_FORGE_CODEC_INVALID_UTF8,
+          "a text past its capacity that is not UTF-8");
+    c = sce_forge_cursor_init(long_text, sizeof long_text - 1U);
+    CHECK(sce_forge_cbor_read_text(&c, SIZE_MAX, 1, txt, &len) == SCE_FORGE_CODEC_NEED_MORE_BYTES,
+          "a text past its capacity and past the input");
 }
 
 static void an_unknown_value_is_skipped_whole_and_a_deep_one_refused(void) {
