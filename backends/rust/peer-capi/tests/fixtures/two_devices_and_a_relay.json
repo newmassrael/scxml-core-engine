@@ -138,6 +138,36 @@
       "text": "{\"administrator\":false,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":null,\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[],\"node\":\"2\",\"owed\":0,\"role\":0,\"waiting\":1}"
     },
     {
+      "audience": "the-relay",
+      "device": 1,
+      "op": "login"
+    },
+    {
+      "device": 1,
+      "op": "request",
+      "text": "{\"list\":\"home\",\"node\":\"2\",\"op\":\"challenge\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "respond",
+      "text": "{\"audience\":\"the-relay\",\"expires_at_ms\":\"67000\",\"held\":true,\"nonce\":\"9HFAEj8gtVdb071D-4VQhVmyQS6J-5_YU-4LV4fOM7Q\",\"ok\":\"challenge\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "request",
+      "text": "{\"expires_at_ms\":\"67000\",\"list\":\"home\",\"node\":\"2\",\"nonce\":\"9HFAEj8gtVdb071D-4VQhVmyQS6J-5_YU-4LV4fOM7Q\",\"op\":\"login\",\"signature\":\"veR4XQrNOpjFA2JI95DtnBcAcSnMu-OPytiei18WJNEHPkVhyC1CdutIXw2w2v_wpixLxBZweH0xpL7T3oh5BA\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "respond",
+      "text": "{\"expires_at_ms\":\"3608000\",\"ok\":\"token\",\"token\":\"AAAACXRoZS1yZWxheQAAAARob21lAAAAATIAAAAHMzYwODAwMA.YUPEZFMUiI5YB32DZXDSnzFgT70rHqctvLjOoYYVhqs\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "outcome",
+      "text": "{\"dropped\":[],\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[],\"token\":{\"expires_at_ms\":\"3608000\",\"token\":\"AAAACXRoZS1yZWxheQAAAARob21lAAAAATIAAAAHMzYwODAwMA.YUPEZFMUiI5YB32DZXDSnzFgT70rHqctvLjOoYYVhqs\"}}"
+    },
+    {
       "device": 1,
       "kind": "sync",
       "op": "start"
@@ -646,6 +676,36 @@
       "text": "{\"administrator\":false,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3}],\"node\":\"2\",\"owed\":0,\"role\":0,\"waiting\":0}"
     },
     {
+      "audience": "the-relay",
+      "device": 1,
+      "op": "login"
+    },
+    {
+      "device": 1,
+      "op": "request",
+      "text": "{\"list\":\"home\",\"node\":\"2\",\"op\":\"challenge\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "respond",
+      "text": "{\"audience\":\"the-relay\",\"expires_at_ms\":\"97000\",\"held\":true,\"nonce\":\"jb54enBYL3X-4BX6gWeNqMDwbEg4b5INFzKwd1TeBfI\",\"ok\":\"challenge\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "request",
+      "text": "{\"entries\":[\"{\\\"body\\\":{\\\"final_seq\\\":\\\"4\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"J2uHA85F1X_0oJQn1h_efCh_xci-Z68HpwRWnRDi-Px-mqjB0oLX87VVdeLBgz6nuS-A8VClWzNsZGOvEQV8Cw\\\"]]}\"],\"expires_at_ms\":\"97000\",\"list\":\"home\",\"node\":\"2\",\"nonce\":\"jb54enBYL3X-4BX6gWeNqMDwbEg4b5INFzKwd1TeBfI\",\"op\":\"login\",\"signature\":\"KSTd5yoFYtQiDDrF1ma2V6QMw9iIYZmxJ1r4LLB5NTfepI5ldfYUA1hS2PYuyrWsnnIqyO1IIkm2vtHcNcqnDA\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "respond",
+      "text": "{\"reason\":\"node 2 is no member of this list\",\"refused\":\"forbidden\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "outcome",
+      "text": "{\"code\":\"forbidden\",\"failure\":\"relay\",\"outcome\":\"failed\",\"reason\":\"node 2 is no member of this list\"}"
+    },
+    {
       "device": 0,
       "kind": "sync",
       "op": "start"
@@ -686,5 +746,5 @@
       "text": "{\"dropped\":[],\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
     }
   ],
-  "version": 4
+  "version": 5
 }
