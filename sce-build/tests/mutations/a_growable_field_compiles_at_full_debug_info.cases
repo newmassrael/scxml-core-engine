@@ -13,7 +13,11 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --test forge_conformance a_growable_field_compiles_at_the_debug_info_a_consumer_builds_with
-mutation_targets backends/rust/portable-bytes/src/lib.rs
+# The test builds the generated crate, which depends on this one by path, while
+# it runs: the crate is read at run time and is in no test binary, so a round
+# that judged it by a changed binary reported both cases INCONCLUSIVE (run
+# 41415818510).
+mutation_runtime_targets backends/rust/portable-bytes/src/lib.rs
 mutation_oracles sce-build/tests/forge_conformance.rs
 
 mutation_case "a growable byte field carries its bound as a marker array" <<'PY'

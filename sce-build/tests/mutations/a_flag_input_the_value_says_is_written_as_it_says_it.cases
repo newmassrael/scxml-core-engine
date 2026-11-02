@@ -27,11 +27,11 @@ edit("sce-build/src/forge/generator/rust_source.rs",
                     format!("!{present}")''')
 PY
 
-mutation_case "an arm's input is read under the parent's name for it" <<'PY'
-edit("sce-build/src/forge/generator/rust_source.rs",
-     r'''                            filters::to_snake_case(arms[&arm.alias].clone())''',
-     r'''                            filters::to_snake_case(format!("{name}{}", &arms[&arm.alias][..0]))''')
-PY
+# That an arm's input is read under the arm's own name for it has no case: each
+# codec's `input_{i}` is named after its own input, so reading it under the
+# parent's name either reads the same function (the name is the same) or names
+# a function the arm's codec does not have, and the build refuses it (E0599).
+# A round reported the case INCONCLUSIVE for that reason (run 41415818510).
 
 # A value that says nothing of an input disagrees with nothing (§6 R4e). Refused
 # instead, every chain with a unit or a number entry refuses a frame it decoded.
