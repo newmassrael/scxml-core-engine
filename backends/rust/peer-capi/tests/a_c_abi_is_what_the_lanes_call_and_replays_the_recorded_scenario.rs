@@ -4,17 +4,43 @@
 // that the header declares exactly what the library exports, with the same numbers; and that the
 // boundary refuses a null pointer, a text that is not UTF-8, an answer out of turn, a kind of round
 // that is none and a saved text that is not one, with a status and a text, takes no outcome into
-// nowhere, and never crosses with a panic.
+// nowhere, and never crosses with a panic; and that the recorded scenario of two devices and a relay
+// (`tests/fixtures/two_devices_and_a_relay.json`, recorded and held to a fresh run by
+// `the_recorded_scenario_is_what_a_fresh_run_records`) is replayed through the shared library, with
+// no relay, by each lane, and every text each core gives is the recorded one. A lane whose tool is
+// missing says so and passes, unless `SCE_REQUIRE_TOOLS` is set, which is a lane's claim that it ran.
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use std::ffi::{c_char, CStr, CString};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use sce_peer_capi::*;
 use serde_json::Value;
 
 const MANIFEST: &str = env!("CARGO_MANIFEST_DIR");
+
+fn scenario_path() -> PathBuf {
+    Path::new(MANIFEST).join("tests/fixtures/two_devices_and_a_relay.json")
+}
+
+fn scenario() -> Value {
+    let path = scenario_path();
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|_| {
+        panic!(
+            "{} is not recorded: SCE_PEER_SCENARIO=write cargo test -p sce-rust-peer-capi --test \
+             the_recorded_scenario_is_what_a_fresh_run_records -- the_recorded_scenario_is_what",
+            path.display()
+        )
+    });
+    serde_json::from_str(&text).expect("the recording is JSON")
+}
+
+/// How many steps a lane must say it replayed.
+fn steps_of(scenario: &Value) -> usize {
+    scenario["steps"].as_array().unwrap().len()
+}
 
 fn last_error() -> String {
     // SAFETY: the library returns a NUL-terminated text it owns.
@@ -395,4 +421,196 @@ unsafe fn group_state_of(peer: *mut ScePeer) -> Vec<u8> {
     // SAFETY: returned by the library and not given back yet.
     unsafe { sce_peer_buf_free(out) };
     bytes
+}
+
+/// A text as the token the C, C++ and Swift replays read: `x` and its UTF-8 bytes in hex.
+fn token(text: &str) -> String {
+    let mut token = String::with_capacity(1 + 2 * text.len());
+    token.push('x');
+    for byte in text.bytes() {
+        token += &format!("{byte:02x}");
+    }
+    token
+}
+
+/// The scenario as the tokens the C, C++ and Swift replays read (described in `tests/c/replay.c`).
+fn script_of(scenario: &Value) -> String {
+    let devices = scenario["devices"].as_array().unwrap();
+    let mut script = format!(
+        "{} {}\n",
+        token(scenario["list"].as_str().unwrap()),
+        devices.len()
+    );
+    for device in devices {
+        script += &format!(
+            "{} {} {}\n",
+            device["node"],
+            device["seed"].as_str().unwrap(),
+            device["genesis"].as_str().unwrap_or("-")
+        );
+    }
+    for step in scenario["steps"].as_array().unwrap() {
+        let device = &step["device"];
+        let text = |name: &str| token(step[name].as_str().unwrap());
+        let word = |name: &str| step[name].as_str().unwrap().to_string();
+        let op = step["op"].as_str().unwrap();
+        script += &match op {
+            "make" => format!("make {device}"),
+            "restore" => format!("restore {device} {} {}", text("text"), step["count"]),
+            "outbound" => format!(
+                "outbound {device} {} {} {} {}",
+                text("event"),
+                text("data"),
+                word("kept"),
+                text("reason")
+            ),
+            "start" => format!("start {device} {}", word("kind")),
+            "request" | "respond" | "outcome" | "save" => format!("{op} {device} {}", text("text")),
+            "fail" => format!("fail {device} {}", text("reason")),
+            other => panic!("`{other}` is no step of the scenario"),
+        };
+        script.push('\n');
+    }
+    script
+}
+
+fn scratch(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "sce-peer-capi-{name}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_nanos())
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// A missing tool is a skip unless the lane claims it ran.
+fn skip(what: &str) {
+    assert!(
+        std::env::var_os("SCE_REQUIRE_TOOLS").is_none(),
+        "SCE_REQUIRE_TOOLS is set and {what} is missing"
+    );
+    eprintln!("skipped: {what} is missing");
+}
+
+/// Whether `tool` runs; a missing one is a skip unless the lane claims it ran.
+fn have(tool: &str, version_flag: &str) -> bool {
+    let present = Command::new(tool)
+        .arg(version_flag)
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
+    if !present {
+        skip(&format!("`{tool}`"));
+    }
+    present
+}
+
+/// The shared library this crate builds, which the lanes load. A test binary links the Rust library
+/// and does not build the shared one, so it is built here, into the same target directory.
+fn library() -> PathBuf {
+    let exe = std::env::current_exe().unwrap();
+    let profile_dir = exe.parent().unwrap().parent().unwrap().to_path_buf();
+    let mut build = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string()));
+    build
+        .args(["build", "--lib", "--locked", "--manifest-path"])
+        .arg(Path::new(MANIFEST).join("Cargo.toml"));
+    if profile_dir
+        .file_name()
+        .is_some_and(|name| name == "release")
+    {
+        build.arg("--release");
+    }
+    let output = build.output().expect("cargo runs");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for name in [
+        "libsce_peer_capi.so",
+        "libsce_peer_capi.dylib",
+        "sce_peer_capi.dll",
+    ] {
+        let path = profile_dir.join(name);
+        if path.exists() {
+            return path;
+        }
+    }
+    panic!("the shared library is not in {}", profile_dir.display());
+}
+
+fn replay_in(command: &mut Command, what: &str, steps: usize) {
+    let output = command
+        .output()
+        .unwrap_or_else(|error| panic!("{what}: {error}"));
+    assert!(
+        output.status.success(),
+        "{what} failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains(&format!("replayed {steps} steps")),
+        "{what}: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+/// The scenario written as the token script, in `dir`.
+fn script_in(dir: &Path, scenario: &Value) -> PathBuf {
+    let script = dir.join("scenario.txt");
+    std::fs::write(&script, script_of(scenario)).unwrap();
+    script
+}
+
+/// Compile `source` with `compiler` and the flags the lane needs, against the header and the
+/// shared library, into `program`.
+fn compile(compiler: &str, flags: &[&str], source: &Path, program: &Path, library: &Path) {
+    let libdir = library.parent().unwrap();
+    let compiled = Command::new(compiler)
+        .args(flags)
+        .arg("-o")
+        .arg(program)
+        .arg(source)
+        .arg("-I")
+        .arg(Path::new(MANIFEST).join("include"))
+        .arg("-L")
+        .arg(libdir)
+        .arg("-lsce_peer_capi")
+        .arg(format!("-Wl,-rpath,{}", libdir.display()))
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+}
+
+#[test]
+fn the_scenario_replays_from_c() {
+    if !have("cc", "--version") {
+        return;
+    }
+    let scenario = scenario();
+    let library = library();
+    let dir = scratch("c");
+    let script = script_in(&dir, &scenario);
+    let program = dir.join("replay");
+    compile(
+        "cc",
+        &["-Wall", "-Werror"],
+        &Path::new(MANIFEST).join("tests/c/replay.c"),
+        &program,
+        &library,
+    );
+    replay_in(
+        Command::new(&program).arg(&script),
+        "the C replay",
+        steps_of(&scenario),
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
 }
