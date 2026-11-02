@@ -2,7 +2,9 @@
 
 - Status: Accepted (2026-11-01). The owner ordered the work started on the recommendation of that day, under the rule
   of 2026-10-26 and 2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored.
-  Amended by the owner on 2026-11-02 (§7): the wire bound and the storage capacity are two facts.
+  Amended by the owner on 2026-11-02 (§7): the wire bound and the storage capacity are two facts. Steps 1 to 4 of §7
+  have landed on every backend that stores, a heap node's policy limit with them (2026-11-03); step 5 is the
+  consumer's.
 - Date: 2026-11-01
 - Amends:
   - ADR 0065 §6 R1: the bound of a bounded byte string or text includes its `sce:max-size`, not only the range of its
@@ -419,7 +421,7 @@ are one value held two ways. So:
   a profile on every target. A bound written as `where DefaultStorage: {Codec}From<'a>` does not do it: a predicate
   naming no type parameter is checked where it is written. A no-allocator build of every kind of field with no bound
   holds this.
-- **Content-line text and lists with no bound are the next landing, decided as follows.**
+- **Content-line text and lists with no bound, decided as follows and landed in the steps below.**
   - *A repeated property says so apart from its bound.* ADR 0014 made `sce:max-count` both the mark of a repeated
     property and its bound, which was sound while every list had one; a property the protocol repeats without a bound
     (an iCalendar `ATTENDEE`) then has no spelling. `sce:repeated="true"` marks it, and `sce:max-count` is taken only
@@ -432,13 +434,13 @@ are one value held two ways. So:
     with the line's own error and past the capacity with `CapacityExceeded`.
   - *The other backends* take "no bound" in their readers, and C11 takes a deployment's capacity for a content-line
     entry as it does for a CBOR one, and refuses an entry with neither.
-  - *Landed so far:* the parser takes a text, a line of values and a repeated property with no bound. Each runtime
+  - *Landed first:* the parser takes a text, a line of values and a repeated property with no bound. Each runtime
     names "no bound" once (`codec.Unbounded`, `SCE::Forge::ContentLine::kUnbounded`, `ContentLine.UNBOUNDED`,
     `content_line.UNBOUNDED`, and `usize::MAX` to the Rust writer, `None` to its reader), the generator writes that
     name where the protocol states no number, and a count is checked only where there is one.
     `ContentLineEntry::unbounded` is the one answer of which declaration an entry lacks: C11 refuses the codec by it,
     the largest encoded size is `None` by it, and a broadcast log's element is refused by it. C11's deployment
-    capacity for a content-line entry is the landing after.
+    capacity for a content-line entry landed after it (below).
   - *Held on every backend:* the conformance fixture `codec_content_line_open` states no bound of a text, a line of
     values, a repeated property and a parameter, beside two it does state, and its vectors go past every number a
     default once stood in for (256 octets, 64 lines, 8 values), which a test of the vectors holds. Rust, C++, Go,
