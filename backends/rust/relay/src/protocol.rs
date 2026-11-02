@@ -475,7 +475,7 @@ mod tests {
                 entry: "{\"x\":1}".to_string(),
             },
             Request::Submit {
-                event: "todo.write".to_string(),
+                event: "record_list.write".to_string(),
                 data: "{}".to_string(),
             },
             Request::Checkpoint {
@@ -524,7 +524,7 @@ mod tests {
                 records: vec![
                     Record::Entry("e".to_string()),
                     Record::Operation {
-                        event: "todo.write".to_string(),
+                        event: "record_list.write".to_string(),
                         data: "d".to_string(),
                     },
                     Record::Checkpoint("c".to_string()),
@@ -546,7 +546,7 @@ mod tests {
                 more: true,
             },
             Response::Operations {
-                operations: vec![("todo.write".to_string(), "d".to_string())],
+                operations: vec![("record_list.write".to_string(), "d".to_string())],
             },
             Response::Heads {
                 heads: vec![Head {
@@ -573,7 +573,7 @@ mod tests {
             r#"{"v":1,"op":"fly"}"#,
             r#"{"v":1,"op":"entries","from":"x"}"#,
             r#"{"v":1,"op":"feed","cursor":"0","limit":-1}"#,
-            r#"{"v":1,"op":"submit","event":"todo.write"}"#,
+            r#"{"v":1,"op":"submit","event":"record_list.write"}"#,
         ] {
             assert!(Request::from_json(text).is_err(), "{text}");
         }

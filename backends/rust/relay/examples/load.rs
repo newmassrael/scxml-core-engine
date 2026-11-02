@@ -230,7 +230,7 @@ fn drive(mut devices: Vec<Device>, writes: usize) -> Outcome {
                 "nodeId": device.node.to_string(),
             })
             .to_string();
-            let sealed = match device.trust.seal("#server", "todo.write", &write) {
+            let sealed = match device.trust.seal("#hub", "record_list.write", &write) {
                 Ok(Some(sealed)) => sealed,
                 other => {
                     outcome.errors += 1;
@@ -242,7 +242,7 @@ fn drive(mut devices: Vec<Device>, writes: usize) -> Outcome {
             };
             let start = Instant::now();
             let answer = device.link.call(&Request::Submit {
-                event: "todo.write".to_string(),
+                event: "record_list.write".to_string(),
                 data: sealed,
             });
             let took = start.elapsed().as_micros() as u64;

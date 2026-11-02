@@ -140,8 +140,8 @@ fn two_hosts_that_never_meet_carry_a_write_through_the_relay_over_a_socket() {
     let mut sealer = alice.clone();
     sealer
         .seal(
-            "#server",
-            "todo.write",
+            "#hub",
+            "record_list.write",
             &json!({"id":"1","field":"3","value":"7","text":"","wallTime":"1000",
                     "counter":"0","nodeId":"1"})
             .to_string(),
@@ -168,7 +168,7 @@ fn two_hosts_that_never_meet_carry_a_write_through_the_relay_over_a_socket() {
         round
             .events
             .iter()
-            .filter(|(event, _)| event == "todo.write")
+            .filter(|(event, _)| event == "record_list.write")
             .count(),
         1
     );

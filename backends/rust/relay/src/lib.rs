@@ -19,7 +19,8 @@
 //! * `serve` (feature) - the WebSocket binding that carries the request and response texts.
 //!
 //! A relay is generic over where it keeps its records and over how it is reached, and is specific
-//! to the events whose rules `sce-rust-trust` knows (the writes and notes of the to-do list).
+//! to the events whose rules `sce-rust-trust` knows: the writes and notes of the standard shared
+//! record list (`sce:std/shared/record_list.scxml`), which is the one document it carries.
 
 #![forbid(unsafe_code)]
 

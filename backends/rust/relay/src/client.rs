@@ -23,6 +23,7 @@ use std::sync::{Arc, Mutex};
 use sce_rust_mesh::endpoint::Sealer;
 use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{Body, Entry, LogError};
+use sce_rust_trust::message;
 use sce_rust_trust::{TakeError, Trust};
 
 use crate::protocol::{Code, Record, Request, Response};
@@ -562,7 +563,7 @@ impl<L: Link> Courier<L> {
     pub fn floor_event(&self, before: i64, digest: u32) -> Option<(String, String)> {
         self.trust.settlement(before, digest)?;
         Some((
-            "todo.floor".to_string(),
+            message::FLOOR_EVENT.to_string(),
             // As the machine writes it: a 64-bit number as text, a 32-bit one as a number.
             format!("{{\"before\":\"{before}\",\"hash\":{digest}}}"),
         ))
