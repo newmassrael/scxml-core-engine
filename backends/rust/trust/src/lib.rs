@@ -13,6 +13,9 @@
 //! * [`identity`] - a person's key: it signs, and what it signed is checked by the public key.
 //! * [`login`] - the bytes a device signs to log in at a relay with the key its list's log gave its
 //!   node, under a domain no other signature here is made under.
+//! * [`invitation`] - an administrator's invitation of a device the log has not granted yet, the
+//!   proof the device joins with under the key the invitation's secret makes, the text a host shows
+//!   as a QR code, and the fingerprint two people compare before the device is admitted.
 //! * [`membership`] - the list's log of who its administrators and members are, what each may do
 //!   from when, which epoch its content is sealed under, and whether its hub is trusted: an
 //!   append-only chain of entries signed by administrators, so that a host believes nothing a
@@ -55,6 +58,7 @@ mod chain;
 pub mod checkpoint;
 pub mod encoding;
 pub mod identity;
+pub mod invitation;
 pub mod login;
 pub mod membership;
 pub mod message;

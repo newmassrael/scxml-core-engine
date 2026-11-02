@@ -755,6 +755,19 @@ impl Log {
         self.hashes.get(usize::try_from(index).ok()?).copied()
     }
 
+    /// The hash of the genesis this log holds, or, before it holds one, the hash it was invited
+    /// with ([`Self::invited`]): the genesis it takes and no other. `None` for a log that takes
+    /// whatever genesis it is first given and holds none yet.
+    pub fn genesis_taken(&self) -> Option<Hash> {
+        self.hash_at(0).or(self.expected_genesis)
+    }
+
+    /// Whether the log has ever granted the device of `node` a role, a removal included: a node it
+    /// holds a grant of, which an invitation is never for.
+    pub fn has_granted(&self, node: u64) -> bool {
+        self.members.contains_key(&node)
+    }
+
     /// What the log says of `node` as of the entry at `entry`: the latest grant at or before it.
     /// `None` when there is none, which is a device that was not yet a member.
     pub fn era_for(&self, node: u64, entry: u64) -> Option<&Era> {

@@ -473,6 +473,18 @@ impl Trust {
         self.state().log.hash_at(0)
     }
 
+    /// The hash of the genesis this host holds, or, before it holds one, the one it was invited
+    /// with: what an invitation of this list names ([`crate::invitation`]).
+    pub fn genesis_taken(&self) -> Option<Hash> {
+        self.state().log.genesis_taken()
+    }
+
+    /// Whether the log has ever granted the device of `node` a role, a removal included: an
+    /// invitation is for a node it never granted.
+    pub fn has_granted(&self, node: u64) -> bool {
+        self.state().log.has_granted(node)
+    }
+
     /// The position the next entry takes and the hash it names: what two hosts compare to know
     /// whether they hold the same log.
     pub fn head(&self) -> (u64, Hash) {
