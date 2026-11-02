@@ -25,7 +25,7 @@
 //! UTF-8 character, or the two octets of a TEXT escape — that would take it past
 //! 75 octets.
 
-use crate::codec::{CodecError, SceSink, SceStr};
+use crate::codec::{CodecError, SceList, SceSink, SceStr};
 use crate::heapless::{String as BoundedString, Vec as BoundedVec};
 
 /// The most octets of one physical line (SCE_FORGE.md §4.6.4, *Folding*).
@@ -276,6 +276,20 @@ enum Phase {
     ParamValue,
     /// The value has been read.
     Done,
+}
+
+/// `result` with a refusal for a container past its capacity set aside in
+/// `over` and answered as `Ok`, every other refusal as it is: what a storing
+/// decode reads each value through, so that it reads the rest of the frame and
+/// says `CapacityExceeded` only for one that parsed (docs/adr/0077 §7).
+pub fn note_capacity(result: Result<(), CodecError>, over: &mut bool) -> Result<(), CodecError> {
+    match result {
+        Err(CodecError::CapacityExceeded) => {
+            *over = true;
+            Ok(())
+        }
+        other => other,
+    }
 }
 
 /// The text a reader builds into a profile's container as it unescapes it, one
@@ -640,6 +654,76 @@ impl<'a> Property<'a> {
                 b
             };
             buf.push(byte).map_err(|_| CodecError::LineTooLong)?;
+        }
+    }
+
+    /// Read the value as a list of `string` cut at `separator` into `out`, the
+    /// list a storage profile holds it in, as [`Self::read_strings`] reads it:
+    /// each part at most `max_size` bytes and at most `max_values` parts, the
+    /// bounds the protocol states, `None` for none (docs/adr/0077 §7). A part or
+    /// a list past its bound is refused at once; one inside its bounds and past
+    /// what the profile holds is read to the end of the line and then
+    /// `CapacityExceeded`.
+    pub fn read_strings_into<L, B>(
+        &mut self,
+        separator: u8,
+        text: bool,
+        max_size: Option<usize>,
+        max_values: Option<usize>,
+        out: &mut L,
+    ) -> Result<(), CodecError>
+    where
+        L: SceList<B>,
+        B: SceStr + Default,
+    {
+        self.begin_value()?;
+        let mut count = 0usize;
+        let mut over = false;
+        loop {
+            let mut part = B::default();
+            let mut into = TextInto::new(&mut part, max_size);
+            let mut empty = true;
+            let ended = loop {
+                let next = self.scan.bump();
+                if next.is_none() || next == Some(separator) {
+                    break next.is_none();
+                }
+                let b = next.unwrap_or_default();
+                let byte = if text && b == b'\\' {
+                    match self.scan.bump() {
+                        Some(b'\\') => b'\\',
+                        Some(b';') => b';',
+                        Some(b',') => b',',
+                        Some(b'n' | b'N') => b'\n',
+                        _ => return Err(CodecError::LineBadEscape),
+                    }
+                } else if is_control(b) {
+                    return Err(CodecError::LineBadValue);
+                } else {
+                    b
+                };
+                into.push(byte)?;
+                empty = false;
+            };
+            if empty {
+                return Err(CodecError::LineBadValue);
+            }
+            note_capacity(into.finish(), &mut over)?;
+            count += 1;
+            if !over {
+                note_capacity(out.try_push(part), &mut over)?;
+            }
+            if ended {
+                return if over {
+                    Err(CodecError::CapacityExceeded)
+                } else {
+                    Ok(())
+                };
+            }
+            // A separator opens another part, which may not pass the bound.
+            if max_values.is_some_and(|max| count >= max) {
+                return Err(CodecError::LineTooMany);
+            }
         }
     }
 
@@ -1356,6 +1440,43 @@ mod tests {
         assert_eq!(
             param(b"N;X=abcde:v", None),
             Err(CodecError::CapacityExceeded)
+        );
+        // A line of values is held the same way, each part and the list.
+        let values = |line: &[u8], max_size: Option<usize>, max_values: Option<usize>| {
+            on(line, |p| {
+                let mut out: crate::heapless::Vec<InlineStr<4>, 2> = crate::heapless::Vec::new();
+                p.read_strings_into(b',', false, max_size, max_values, &mut out)
+                    .map(|()| {
+                        out.iter()
+                            .map(|s| String::from(s.as_str()))
+                            .collect::<Vec<_>>()
+                    })
+            })
+        };
+        assert_eq!(
+            values(b"N:a,bc", Some(4), Some(2)),
+            Ok(Vec::from([String::from("a"), String::from("bc")]))
+        );
+        assert_eq!(
+            values(b"N:a,b,c", Some(4), Some(2)),
+            Err(CodecError::LineTooMany)
+        );
+        assert_eq!(
+            values(b"N:abc", Some(2), None),
+            Err(CodecError::LineTooLong)
+        );
+        assert_eq!(
+            values(b"N:a,b,c", None, None),
+            Err(CodecError::CapacityExceeded)
+        );
+        assert_eq!(
+            values(b"N:abcde", None, None),
+            Err(CodecError::CapacityExceeded)
+        );
+        assert_eq!(values(b"N:a,,b", None, None), Err(CodecError::LineBadValue));
+        assert_eq!(
+            values(b"N:a,b,c,\x01", None, None),
+            Err(CodecError::LineBadValue)
         );
     }
 

@@ -192,16 +192,19 @@ pub trait HoldsList<Tag> {
         T: Default + core::fmt::Debug + Clone + PartialEq;
 }
 
-/// What a profile holds the `string` field `Tag` in.
+/// What a profile holds the `string` field `Tag` in. The text is a value with
+/// a default, the empty text, so a list of texts and a reader that builds one
+/// in place can start from it (docs/adr/0077 §7).
 pub trait HoldsStr<Tag> {
     /// The text.
-    type Str: HeldStr + crate::bounded::Fewest + core::fmt::Debug + Clone + PartialEq;
+    type Str: HeldStr + crate::bounded::Fewest + Default + core::fmt::Debug + Clone + PartialEq;
 }
 
-/// What a profile holds the `bytes` field `Tag` in.
+/// What a profile holds the `bytes` field `Tag` in, as [`HoldsStr`] is for a
+/// `string` field.
 pub trait HoldsBytes<Tag> {
     /// The bytes.
-    type Bytes: HeldBytes + crate::bounded::Fewest + core::fmt::Debug + Clone + PartialEq;
+    type Bytes: HeldBytes + crate::bounded::Fewest + Default + core::fmt::Debug + Clone + PartialEq;
 }
 
 /// How a profile holds the `bytes` field `Tag` when it reads a frame of the
