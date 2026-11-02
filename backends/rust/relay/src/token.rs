@@ -14,6 +14,12 @@
 //! node and the expiry, each written with its length, and the tag is HMAC-SHA256 of it under the
 //! relay's secret. Short expiries are the revocation a token has; what a member taken off may still
 //! do is decided at each request by the log, not by the token.
+//!
+//! Whoever holds the secret issues tokens the relay takes: the relay, and the service that logs a
+//! person in and asks for their device's token, which holds the same key. The key is kept as a
+//! short text ([`Authority::to_key_text`]): its audience and its secret, which is never printed.
+
+use std::fmt;
 
 use sha2::{Digest, Sha256};
 
@@ -39,6 +45,22 @@ pub enum TokenError {
     Expired,
 }
 
+/// Why the text of an authority's key was not taken: what is wrong with its form, never what it
+/// holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyTextError(pub &'static str);
+
+impl fmt::Display for KeyTextError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for KeyTextError {}
+
+/// The first line of the text a key is kept in, which names the form and its version.
+const KEY_TEXT_HEADER: &str = "sce-relay-authority 1";
+
 /// What issues and checks tokens for one relay.
 #[derive(Clone)]
 pub struct Authority {
@@ -52,6 +74,58 @@ impl Authority {
             secret,
             audience: audience.to_string(),
         }
+    }
+
+    /// The relay this authority's tokens are for: a name, not a secret.
+    pub fn audience(&self) -> &str {
+        &self.audience
+    }
+
+    /// Whether `name` can be an audience: not empty, no space at either end, and no control
+    /// character, so that it stays one line of the key's text.
+    pub fn is_audience(name: &str) -> bool {
+        !name.is_empty() && name.trim() == name && !name.chars().any(char::is_control)
+    }
+
+    /// The text the key is kept in: three lines, the form (`sce-relay-authority 1`), `audience
+    /// <name>` and `secret <32 bytes in the URL alphabet>`. Whoever holds it issues tokens this
+    /// relay takes, so it is kept where only the relay and the service that issues tokens read it.
+    pub fn to_key_text(&self) -> String {
+        format!(
+            "{KEY_TEXT_HEADER}\naudience {}\nsecret {}\n",
+            self.audience,
+            encoding::encode(&self.secret)
+        )
+    }
+
+    /// The authority whose key `text` is, as [`Authority::to_key_text`] writes it, and nothing
+    /// else: no other line, no other form.
+    pub fn from_key_text(text: &str) -> Result<Self, KeyTextError> {
+        let mut lines = text.strip_suffix('\n').unwrap_or(text).split('\n');
+        if lines.next() != Some(KEY_TEXT_HEADER) {
+            return Err(KeyTextError(
+                "its first line is not `sce-relay-authority 1`",
+            ));
+        }
+        let audience = lines
+            .next()
+            .and_then(|line| line.strip_prefix("audience "))
+            .filter(|name| Self::is_audience(name))
+            .ok_or(KeyTextError(
+                "its second line is not `audience <name>` with a name of one line",
+            ))?;
+        let secret: [u8; 32] = lines
+            .next()
+            .and_then(|line| line.strip_prefix("secret "))
+            .and_then(encoding::decode)
+            .and_then(|bytes| bytes.try_into().ok())
+            .ok_or(KeyTextError(
+                "its third line is not `secret <32 bytes in the URL alphabet>`",
+            ))?;
+        if lines.next().is_some() {
+            return Err(KeyTextError("it has more than three lines"));
+        }
+        Ok(Self::new(secret, audience))
     }
 
     /// An authority with a secret drawn from the operating system, which is the only source a
@@ -105,6 +179,10 @@ impl Authority {
         };
         if audience != self.audience {
             return Err(TokenError::WrongAudience);
+        }
+        // A list has a name: the empty one names no list a store could keep.
+        if list.is_empty() {
+            return Err(TokenError::Malformed);
         }
         let expires: u64 = expires.parse().map_err(|_| TokenError::Malformed)?;
         if now_ms >= expires {
@@ -201,6 +279,86 @@ mod tests {
         );
         for bad in ["", "x", "a.b.c", &format!("{payload}."), ".AAAA"] {
             assert!(authority.verify(bad, 0).is_err(), "{bad}");
+        }
+    }
+
+    /// The bytes a token is, pinned: a service in another language that issues tokens for a relay
+    /// writes these for the same key and the same device.
+    #[test]
+    fn a_token_is_the_bytes_the_documentation_gives() {
+        let authority = Authority::new([1; 32], "relay.example");
+        let token = authority.issue("home", 7, 1_800_000_000_000);
+        assert_eq!(
+            token,
+            "AAAADXJlbGF5LmV4YW1wbGUAAAAEaG9tZQAAAAE3AAAADTE4MDAwMDAwMDAwMDA\
+             .z-lS-hdIHQ8_6aqSt6shwplWq3VOPIcCCbj0bLifhwo"
+        );
+    }
+
+    #[test]
+    fn a_token_for_a_list_with_no_name_is_not_taken() {
+        let authority = Authority::new([5; 32], "relay-a");
+        let token = authority.issue("", 7, 10_000);
+        assert_eq!(authority.verify(&token, 0), Err(TokenError::Malformed));
+    }
+
+    #[test]
+    fn a_key_is_kept_as_three_lines_and_read_back_as_the_same_authority() {
+        let authority = Authority::new([1; 32], "relay.example");
+        let text = authority.to_key_text();
+        assert_eq!(
+            text,
+            "sce-relay-authority 1\naudience relay.example\n\
+             secret AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\n"
+        );
+        let again = Authority::from_key_text(&text).unwrap();
+        assert_eq!(again.audience(), "relay.example");
+        let token = authority.issue("home", 7, 10_000);
+        assert_eq!(again.issue("home", 7, 10_000), token, "the same secret");
+        assert!(again.verify(&token, 0).is_ok());
+        assert!(
+            Authority::from_key_text(text.trim_end()).is_ok(),
+            "the last line end is optional"
+        );
+    }
+
+    #[test]
+    fn a_key_text_that_is_not_the_form_is_refused_and_says_where() {
+        let good = Authority::new([1; 32], "relay.example").to_key_text();
+        let refused = |text: &str| Authority::from_key_text(text).err().map(|error| error.0);
+        let wrong: Vec<(String, &str)> = vec![
+            (String::new(), "first line"),
+            (good.replace("authority 1", "authority 2"), "first line"),
+            (good.replace('\n', "\r\n"), "first line"),
+            (
+                good.replace("audience relay.example", "audience "),
+                "second line",
+            ),
+            (
+                good.replace("audience relay.example", "audience  x"),
+                "second line",
+            ),
+            (good.replace("audience ", "audience:"), "second line"),
+            (good.replace("secret AQ", "secret A"), "third line"),
+            (good.replace("secret AQ", "secret AQEB"), "third line"),
+            (good.replace("secret ", "secret\t"), "third line"),
+            (format!("{good}extra\n"), "more than three"),
+            (format!("{good}\n"), "more than three"),
+        ];
+        for (text, said) in &wrong {
+            let why = refused(text.as_str()).unwrap_or_else(|| panic!("taken: {text:?}"));
+            assert!(why.contains(*said), "{text:?}: {why}");
+            assert!(!why.contains("AQEB"), "the secret is never said: {why}");
+        }
+    }
+
+    #[test]
+    fn an_audience_is_one_line_with_no_space_at_either_end() {
+        for good in ["relay.example", "wss://relay.example/sce-relay/1", "a b"] {
+            assert!(Authority::is_audience(good), "{good}");
+        }
+        for bad in ["", " a", "a ", "a\nb", "a\tb", "a\u{7f}"] {
+            assert!(!Authority::is_audience(bad), "{bad:?}");
         }
     }
 }

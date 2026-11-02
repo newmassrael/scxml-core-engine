@@ -68,4 +68,4 @@ pub use sce_rust_relay_transport::{
     Notice, Notices, Signal, Transport, TransportError, Watch, NOTICES_KEPT,
 };
 pub use store::{FileStore, MemoryStore, Store};
-pub use token::{Authority, Session, TokenError};
+pub use token::{Authority, KeyTextError, Session, TokenError};
