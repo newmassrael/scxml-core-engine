@@ -62,5 +62,5 @@ pub use checkpoint::{Checkpoint, Head, Settlement};
 pub use identity::{Identity, PublicKey};
 pub use membership::{Body, Entry, Log, LogError, Profile};
 pub use trust::{
-    CheckpointError, Divergence, GrantError, RotateError, Rotation, TakeError, Taken, Trust,
+    CheckpointError, Divergence, GrantError, RotateError, Rotation, Sealed, TakeError, Taken, Trust,
 };

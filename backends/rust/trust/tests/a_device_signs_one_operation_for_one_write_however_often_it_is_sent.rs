@@ -1,0 +1,309 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// A device's host is given what its machine sends, and a machine sends a write again: an
+// application that keeps its own log of commands builds the machine again from it, and the machine
+// sends every write and note it makes as it made them the first time. What is asked: that the same
+// write or note sent again, after the host restarted from its store too, leaves as the operation the
+// host holds (its number, its signature, its sealed text) and nothing is signed; that a write of the
+// device under a stamp it signed with another content is refused before anything is signed; and
+// that a host whose state came back from a store older than the device's last operation signs
+// nothing new until it holds the device's chain as far as a relay does, and then signs at the next
+// number, where a host that did not wait signs a second operation at a number it had used and every
+// host given both freezes the device.
+
+use sce_rust_trust::membership::{Body, Entry, Log, Profile};
+use sce_rust_trust::{Head, Identity, Sealed, Trust};
+use serde_json::{json, Value};
+
+const LIST: &str = "home";
+const ALICE: u64 = 1;
+const WRITE: &str = "record_list.write";
+const SUPERSEDE: &str = "record_list.supersede";
+
+fn admin() -> Identity {
+    Identity::from_seed([9; 32])
+}
+
+fn person(node: u64) -> Identity {
+    Identity::from_seed([node as u8; 32])
+}
+
+/// The log of a list in which alice (node 1) and bob (node 2) write, and that has begun `epochs`
+/// epochs.
+fn list(epochs: u32) -> Vec<Entry> {
+    let scratch = Trust::open(LIST);
+    let genesis = Log::genesis_draft(
+        LIST,
+        Body::Genesis {
+            administrators: vec![admin().public()],
+            quorum: 1,
+            profile: Profile::Untrusted,
+        },
+    )
+    .sign(&admin())
+    .finish();
+    scratch.append(&genesis).unwrap();
+    let mut entries = vec![genesis];
+    for node in [1, 2] {
+        let entry = scratch
+            .draft(Body::Grant {
+                node,
+                role: 2,
+                key: person(node).public(),
+                final_seq: None,
+            })
+            .sign(&admin())
+            .finish();
+        scratch.append(&entry).unwrap();
+        entries.push(entry);
+    }
+    for epoch in 1..=epochs {
+        let entry = scratch.draft(Body::Epoch { epoch }).sign(&admin()).finish();
+        scratch.append(&entry).unwrap();
+        entries.push(entry);
+    }
+    entries
+}
+
+/// A host that holds the log `entries`, for the person of `own` when there is one, with the key of
+/// every epoch the log began.
+fn host_in(entries: &[Entry], own: Option<u64>, epochs: u32) -> Trust {
+    let trust = Trust::open(LIST);
+    for entry in entries {
+        trust.append(entry).unwrap();
+    }
+    if let Some(node) = own {
+        trust.set_identity(node, person(node));
+    }
+    for epoch in 1..=epochs {
+        trust.set_epoch_key(epoch, [5; 32]);
+    }
+    trust
+}
+
+/// A write of `value` and `text` to field 3 of row `id`, stamped by alice at `wall`.
+fn write(id: u64, wall: i64, value: i64, text: &str) -> Value {
+    json!({"id": id, "field": 3, "value": value.to_string(), "text": text,
+           "wallTime": wall.to_string(), "counter": 0, "nodeId": ALICE.to_string()})
+}
+
+/// Alice's note that she wrote over her write of row `id` stamped at `wall`, in the change stamped
+/// `at`.
+fn note(id: u64, wall: i64, at: i64) -> Value {
+    json!({"id": id, "field": 3, "wallTime": wall.to_string(), "counter": 0,
+           "nodeId": ALICE.to_string(), "by": ALICE.to_string(),
+           "atWallTime": at.to_string(), "atCounter": 0})
+}
+
+fn sealed(host: &Trust, event: &str, data: &Value) -> Sealed {
+    match host.seal_sent(event, &data.to_string()) {
+        Ok(Some(sealed)) => sealed,
+        other => panic!("expected {event} to leave, got {other:?}"),
+    }
+}
+
+fn refused(host: &Trust, event: &str, data: &Value) -> String {
+    match host.seal_sent(event, &data.to_string()) {
+        Err(reason) => reason,
+        other => panic!("expected {event} to be refused, got {other:?}"),
+    }
+}
+
+fn parsed(data: &str) -> Value {
+    serde_json::from_str(data).unwrap()
+}
+
+fn field(data: &str, name: &str) -> Value {
+    parsed(data)[name].clone()
+}
+
+/// Alice's machine writes two values, notes that the second is over the first, and writes a row
+/// as one part of a change of two; the host restarts from its store, and the machine, built again
+/// from her commands, sends all of it again. Each leaves as the operation that was made, with its
+/// number and its signature, and the chain does not grow.
+fn sent_again_leaves_as_it_was_made(epochs: u32) {
+    let entries = list(epochs);
+    let alice = host_in(&entries, Some(ALICE), epochs);
+    let mut part = write(2, 3000, 7, "");
+    part["parts"] = json!("2");
+    let sends = [
+        (WRITE, write(1, 1000, 10, "milk")),
+        (WRITE, write(1, 2000, 11, "bread")),
+        (SUPERSEDE, note(1, 1000, 2000)),
+        (WRITE, part),
+    ];
+    let made: Vec<Sealed> = sends
+        .iter()
+        .map(|(event, data)| sealed(&alice, event, data))
+        .collect();
+    assert!(made.iter().all(|one| one.signed), "{made:?}");
+    let numbers: Vec<Value> = made.iter().map(|one| field(&one.data, "seq")).collect();
+    assert_eq!(
+        numbers,
+        vec![json!("1"), json!("2"), json!("3"), json!("4")]
+    );
+    if epochs > 0 {
+        assert!(
+            !made[0].data.contains("milk")
+                && field(&made[0].data, "text")
+                    .as_str()
+                    .unwrap()
+                    .starts_with('~'),
+            "the content is sealed: {}",
+            made[0].data
+        );
+    }
+
+    // Sent again on the same host, each is the operation it holds.
+    for ((event, data), first) in sends.iter().zip(&made) {
+        let again = sealed(&alice, event, data);
+        assert!(!again.signed, "{event} was signed a second time");
+        assert_eq!(parsed(&again.data), parsed(&first.data));
+    }
+
+    // The host restarts from its store, and the machine sends it all again.
+    let restarted = host_in(&entries, Some(ALICE), epochs);
+    assert_eq!(restarted.restore_from_text(&alice.to_text()), 4);
+    for ((event, data), first) in sends.iter().zip(&made) {
+        let again = sealed(&restarted, event, data);
+        assert!(!again.signed, "{event} was signed again after a restart");
+        assert_eq!(
+            parsed(&again.data),
+            parsed(&first.data),
+            "the same number, signature and text"
+        );
+    }
+    // A part sent alone, as a copy that shares what it holds sends it, is the part as it was made.
+    let alone = sealed(&restarted, WRITE, &write(2, 3000, 7, ""));
+    assert!(!alone.signed);
+    assert_eq!(parsed(&alone.data), parsed(&made[3].data));
+    assert_eq!(field(&alone.data, "parts"), json!("2"));
+    assert_eq!(restarted.last_seq(ALICE), 4);
+    assert_eq!(restarted.signed_operations(), alice.signed_operations());
+
+    // What it makes next is the next number.
+    let next = sealed(&restarted, WRITE, &write(3, 4000, 1, ""));
+    assert!(next.signed);
+    assert_eq!(field(&next.data, "seq"), json!("5"));
+}
+
+#[test]
+fn a_write_or_a_note_sent_again_leaves_as_the_operation_that_was_made() {
+    sent_again_leaves_as_it_was_made(0);
+}
+
+#[test]
+fn a_sealed_write_sent_again_leaves_with_the_text_it_was_sealed_with() {
+    sent_again_leaves_as_it_was_made(1);
+}
+
+/// A write of the device under a stamp it signed with another value or another text is the device
+/// signing two things for one write: its host refuses it before anything is sealed or signed, says
+/// so, and holds what it held. A restart changes nothing of it.
+#[test]
+fn another_content_under_a_stamp_the_device_signed_is_refused_and_nothing_is_signed() {
+    let entries = list(1);
+    let alice = host_in(&entries, Some(ALICE), 1);
+    let first = sealed(&alice, WRITE, &write(1, 1000, 10, "milk"));
+    assert!(first.signed);
+
+    for other in [write(1, 1000, 11, "milk"), write(1, 1000, 10, "bread")] {
+        let reason = refused(&alice, WRITE, &other);
+        assert!(reason.contains("another content"), "{reason}");
+        assert!(reason.contains("at 1"), "{reason}");
+    }
+    assert_eq!(alice.last_seq(ALICE), 1);
+    assert_eq!(alice.signed_operations().len(), 1, "nothing was held of it");
+    assert!(alice.equivocating().is_empty());
+
+    let restarted = host_in(&entries, Some(ALICE), 1);
+    restarted.restore_from_text(&alice.to_text());
+    let reason = refused(&restarted, WRITE, &write(1, 1000, 11, "milk"));
+    assert!(reason.contains("another content"), "{reason}");
+    assert_eq!(restarted.signed_operations().len(), 1);
+    // The write it made is the one it holds, and what follows is numbered after it.
+    assert!(!sealed(&restarted, WRITE, &write(1, 1000, 10, "milk")).signed);
+    let next = sealed(&restarted, WRITE, &write(1, 2000, 11, "milk"));
+    assert_eq!(field(&next.data, "seq"), json!("2"));
+}
+
+/// Alice's device signs four operations, and its store holds the first two: the device was stopped
+/// before it saved again, or came back from a backup. The relay holds all four. A host that comes
+/// back from that store and waits for its chain signs nothing new, still gives what it holds, and
+/// signs at 5 once it holds 3 and 4; a host that does not wait signs a second operation at 3, which
+/// every host that is given both holds as proof and freezes the device at.
+#[test]
+fn a_device_whose_state_came_back_signs_nothing_new_until_it_holds_its_chain_again() {
+    let entries = list(0);
+    let alice = host_in(&entries, Some(ALICE), 0);
+    for n in 1..=2 {
+        sealed(&alice, WRITE, &write(n, 1000 + n as i64, 1, ""));
+    }
+    let older = alice.to_text();
+    for n in 3..=4 {
+        sealed(&alice, WRITE, &write(n, 1000 + n as i64, 1, ""));
+    }
+    // What a relay that was given all four says of the device's chain.
+    let published: Vec<Head> = alice.heads();
+    assert_eq!(published[0].seq, 4);
+
+    let restored = host_in(&entries, Some(ALICE), 0);
+    assert_eq!(restored.restore_from_text(&older), 2);
+    assert!(
+        !restored.awaits_own_chain(),
+        "a restore alone does not wait"
+    );
+    restored.await_own_chain();
+    assert!(restored.awaits_own_chain());
+
+    let reason = refused(&restored, WRITE, &write(9, 5000, 1, ""));
+    assert!(reason.contains("signs nothing new"), "{reason}");
+    assert!(
+        !sealed(&restored, WRITE, &write(1, 1001, 1, "")).signed,
+        "what it holds still leaves"
+    );
+    assert_eq!(restored.own_chain_behind(&published), Some((ALICE, 3, 4)));
+    assert!(!restored.confirm_own_chain(&published), "it holds 2 of 4");
+    assert!(restored.awaits_own_chain());
+
+    for (event, data) in alice.operations(ALICE, 3, 4) {
+        restored.take_operation(&event, &data).unwrap();
+    }
+    assert_eq!(restored.own_chain_behind(&published), None);
+    assert!(restored.confirm_own_chain(&published));
+    assert!(!restored.awaits_own_chain());
+    let next = sealed(&restored, WRITE, &write(9, 5000, 1, ""));
+    assert!(next.signed);
+    assert_eq!(field(&next.data, "seq"), json!("5"));
+
+    let witness = host_in(&entries, None, 0);
+    for (event, data) in alice.operations(ALICE, 1, 4) {
+        witness.take_operation(&event, &data).unwrap();
+    }
+    witness.take_operation(WRITE, &next.data).unwrap();
+    assert!(witness.equivocating().is_empty());
+    assert_eq!(witness.last_seq(ALICE), 5);
+
+    // A host that did not wait signs at 3, and the device is frozen there.
+    let careless = host_in(&entries, Some(ALICE), 0);
+    careless.restore_from_text(&older);
+    let forked = sealed(&careless, WRITE, &write(9, 5000, 1, ""));
+    assert_eq!(field(&forked.data, "seq"), json!("3"));
+    let other = host_in(&entries, None, 0);
+    for (event, data) in alice.operations(ALICE, 1, 4) {
+        other.take_operation(&event, &data).unwrap();
+    }
+    other.take_operation(WRITE, &forked.data).unwrap();
+    assert_eq!(other.equivocating(), vec![(ALICE, 3)]);
+}
+
+/// A host with no person has no chain of its own to wait for.
+#[test]
+fn a_host_with_no_person_waits_for_nothing() {
+    let hub = host_in(&list(0), None, 0);
+    hub.await_own_chain();
+    assert_eq!(hub.own_chain_behind(&[]), None);
+    assert!(hub.confirm_own_chain(&[]));
+    assert!(!hub.awaits_own_chain());
+}

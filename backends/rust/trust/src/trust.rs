@@ -143,6 +143,11 @@ struct State {
     /// administrator resolves it.
     forked: Option<u64>,
     own: Option<(u64, Identity)>,
+    /// Whether this host's person's own chain may be behind what the device signed and published:
+    /// its state came back from a store that may be older than the device's last operation. Until
+    /// the chain is read back from where it was published ([`Trust::confirm_own_chain`]), the device
+    /// signs nothing new, since the next number it would sign at may be one it used already.
+    awaiting_own_chain: bool,
     /// The checkpoints the host made or took in, one for each device and each instant and digest
     /// it speaks of: what a settlement is made from, and what shows an operation withheld.
     checkpoints: BTreeMap<(u64, i64, u32), Checkpoint>,
@@ -233,6 +238,7 @@ impl Trust {
                 log,
                 forked: None,
                 own: None,
+                awaiting_own_chain: false,
                 checkpoints: BTreeMap::new(),
                 wires: BTreeMap::new(),
                 notes: BTreeMap::new(),
@@ -451,6 +457,51 @@ impl Trust {
             .get(&node)
             .and_then(|chain| chain.last().map(Held::seq))
             .unwrap_or(0)
+    }
+
+    /// Hold this host's person's signing until their own chain is read back from where the device
+    /// published it: what a host calls when the state it holds came back from a store that may be
+    /// older than the device's last operation (a save, or a copy of the device's secrets and no
+    /// state at all). A device that signed operations 1 to 7 and came back with a state that holds
+    /// 1 to 5 would sign its next operation at 6, a second operation at a number the hosts that hold
+    /// the first take as the device signing two histories, and freeze it for. What the host holds
+    /// already still leaves as it is ([`Self::seal_sent`]); only a new operation waits, and
+    /// [`Self::confirm_own_chain`] ends the wait.
+    pub fn await_own_chain(&self) {
+        self.state().awaiting_own_chain = true;
+    }
+
+    /// Whether this host's person signs nothing new until their own chain is read back
+    /// ([`Self::await_own_chain`]).
+    pub fn awaits_own_chain(&self) -> bool {
+        self.state().awaiting_own_chain
+    }
+
+    /// What `published`, the heads a relay holds (its answer to `Heads`), names of this host's
+    /// person's own chain past the highest number of it this host holds: the device's node and the
+    /// first and last number to read back. `None` when the host holds as much of the chain as the
+    /// relay does, or has no person.
+    pub fn own_chain_behind(&self, published: &[Head]) -> Option<(u64, u64, u64)> {
+        own_chain_behind(&self.state(), published)
+    }
+
+    /// The chain this host holds of its person reaches `published`, the heads a relay holds: the
+    /// wait [`Self::await_own_chain`] began ends, and the device signs again from the number after
+    /// the last it holds. `false`, and the wait goes on, while the relay holds more of the chain
+    /// than this host does ([`Self::own_chain_behind`]). A host with no person waits for nothing.
+    ///
+    /// What it rests on: the relay's word of how far the device's chain goes. A relay that withholds
+    /// the device's own operations from the heads it gives as well as from what it hands back makes
+    /// the device sign at a number it used, and every host that is given both holds the proof and
+    /// freezes the device; a relay that names operations and does not give them keeps the device
+    /// waiting, and another relay, or a member, gives them.
+    pub fn confirm_own_chain(&self, published: &[Head]) -> bool {
+        let mut state = self.state();
+        if own_chain_behind(&state, published).is_some() {
+            return false;
+        }
+        state.awaiting_own_chain = false;
+        true
     }
 
     /// The devices this host holds conflicting operations of, and the number of the first conflict:
@@ -897,6 +948,20 @@ impl Trust {
         }
         kept
     }
+}
+
+/// What `published` holds of this host's person's chain past the highest number of it the host
+/// holds (the proof of a conflict included, so that a device frozen by one does not read back what
+/// it holds already): the node, and the first and last number of it.
+fn own_chain_behind(state: &State, published: &[Head]) -> Option<(u64, u64, u64)> {
+    let node = state.own.as_ref()?.0;
+    let theirs = published.iter().find(|head| head.node == node)?.seq;
+    let ours = state
+        .ops
+        .get(&node)
+        .and_then(|chain| chain.all().next_back())
+        .map_or(0, Held::seq);
+    (theirs > ours).then_some((node, ours + 1, theirs))
 }
 
 /// What the machine is told of `node`: the number and id of each operation, in order.
@@ -1666,6 +1731,14 @@ fn make_operation(
             "{event}: this device's chain conflicts at {from}, and it signs nothing more until an administrator has taken it off"
         ));
     }
+    // A device whose state came back from a store may have signed past what the store holds: the
+    // number this would take may be one it used already, so nothing new is signed until its own
+    // chain is read back from where it was published (`Trust::await_own_chain`).
+    if state.awaiting_own_chain {
+        return Err(format!(
+            "{event}: this device's state came back from a store that may be behind what it signed, and it signs nothing new until a round has read its own chain back from the relay"
+        ));
+    }
     let (log, log_hash) = state
         .log
         .tip()
@@ -1750,7 +1823,7 @@ fn signed_name(event: &str) -> Option<&'static str> {
 /// the host holds that; and as the host's own person's next operation, when it does not and the
 /// note names that person: a copy that holds a tombstone and sends it again vouches for it by
 /// sending what the person signed, and a host that holds no author for it sends nothing.
-fn seal_note(state: &mut State, data: &str) -> Result<Option<String>, String> {
+fn seal_note(state: &mut State, data: &str) -> Result<Sealed, String> {
     let event = SUPERSEDE_EVENT;
     let malformed = || format!("{event}: the data is not a note");
     let value: Value = serde_json::from_str(data).map_err(|_| malformed())?;
@@ -1758,7 +1831,11 @@ fn seal_note(state: &mut State, data: &str) -> Result<Option<String>, String> {
         .and_then(Result::ok)
         .ok_or_else(malformed)?;
     if let Some(wire) = state.notes.get(&signing.subject) {
-        return wire.to_json().map(Some).ok_or_else(malformed);
+        let data = wire.to_json().ok_or_else(malformed)?;
+        return Ok(Sealed {
+            data,
+            signed: false,
+        });
     }
     if !matches!(&state.own, Some((node, _)) if *node == signing.author) {
         return Err(format!(
@@ -1767,12 +1844,42 @@ fn seal_note(state: &mut State, data: &str) -> Result<Option<String>, String> {
         ));
     }
     let wire = make_operation(state, event, value, signing.author, signing.subject)?;
-    let sent = wire.to_json().ok_or_else(malformed)?;
-    Ok(Some(sent))
+    let data = wire.to_json().ok_or_else(malformed)?;
+    Ok(Sealed { data, signed: true })
 }
 
-impl Sealer for Trust {
-    fn seal(&mut self, _target: &str, event: &str, data: &str) -> Result<Option<String>, String> {
+/// What an event the host's machine sent leaves as ([`Trust::seal_sent`]), and whether a new
+/// operation of the host's person's chain was signed for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sealed {
+    /// The data the event leaves with.
+    pub data: String,
+    /// Whether a new operation was signed and numbered for it. When not, the event leaves as what
+    /// the host held already: the operation made or admitted before for the same write or note
+    /// (the machine sent it again, as a machine built again from its host's own log does, or as a
+    /// copy that shares what it holds on a resync does), or a settled instant with the members'
+    /// settlement.
+    pub signed: bool,
+}
+
+impl Trust {
+    /// What the host's machine sent, as it leaves, and whether that signed a new operation: the one
+    /// place a send becomes an operation of the host's person's chain (the [`Sealer`] a host puts
+    /// behind its machine is this, without the second part). `Ok(None)` for an event that is not
+    /// signed.
+    ///
+    /// **A write or a note is signed once.** What the host keeps a write by is its register, its
+    /// stamp and its content, and a note by the write it is about ([`message::Signing::subject`]):
+    /// the same write or note sent again leaves as the operation the host holds, with the number
+    /// and the signature it has, and nothing is signed. So a machine built again from its host's own
+    /// log, which sends its writes again, makes no operation and gives the relay nothing new. What
+    /// an operation travels in (`parts`, and a note's `by`, `atWallTime` and `atCounter`) is not
+    /// what it is about, so a write sent alone that was signed as a part of a change leaves as that
+    /// part. A write of the host's person under a stamp the device signed another content under is
+    /// refused before anything is sealed or signed: one stamp names one write, and a second content
+    /// under it would be the device signing two things for one write, which every host given both
+    /// holds as proof and freezes the device for.
+    pub fn seal_sent(&self, event: &str, data: &str) -> Result<Option<Sealed>, String> {
         let mut state = self.state();
         if let Some(index) = state.forked {
             if event == FLOOR_EVENT || message::SIGNED_EVENTS.contains(&event) {
@@ -1782,10 +1889,13 @@ impl Sealer for Trust {
             }
         }
         if event == FLOOR_EVENT {
-            return Ok(seal_floor(&state, data));
+            return Ok(seal_floor(&state, data).map(|data| Sealed {
+                data,
+                signed: false,
+            }));
         }
         if event == SUPERSEDE_EVENT {
-            return seal_note(&mut state, data);
+            return seal_note(&mut state, data).map(Some);
         }
         if !message::SIGNED_EVENTS.contains(&event) {
             return Ok(None);
@@ -1794,12 +1904,18 @@ impl Sealer for Trust {
     }
 }
 
+impl Sealer for Trust {
+    fn seal(&mut self, _target: &str, event: &str, data: &str) -> Result<Option<String>, String> {
+        Ok(self.seal_sent(event, data)?.map(|sealed| sealed.data))
+    }
+}
+
 /// A write leaves as it traveled to this host, with its author's signature, when it is another
 /// person's; and as this host's person's own, sealed when the host keeps content from the hub,
 /// and signed here, when it is theirs. A write this host cannot make leave as it must is not sent
 /// as something else: a host that keeps content and holds no key of the epoch the log is in sends
 /// nothing, and does not fall back to an older key or to the clear.
-fn seal_write(state: &mut State, data: &str) -> Result<String, String> {
+fn seal_write(state: &mut State, data: &str) -> Result<Sealed, String> {
     let event = WRITE_EVENT;
     let malformed = || format!("{event}: the data is not a write");
     let visible: Value = serde_json::from_str(data).map_err(|_| malformed())?;
@@ -1808,14 +1924,34 @@ fn seal_write(state: &mut State, data: &str) -> Result<String, String> {
         .ok_or_else(malformed)?;
     let held = signing.subject;
     let own = matches!(&state.own, Some((node, _)) if *node == signing.author);
-    // What was made or admitted before leaves as it did: one write is one set of bytes.
+    // What was made or admitted before leaves as it did: one write is one set of bytes, and the
+    // same write sent again (a machine built again from its host's log) signs nothing.
     if let Some(wire) = state.wires.get(&held) {
-        return wire.to_json().ok_or_else(malformed);
+        let data = wire.to_json().ok_or_else(malformed)?;
+        return Ok(Sealed {
+            data,
+            signed: false,
+        });
     }
     if !own {
         return Err(format!(
             "{event}: this host holds no signature of node {}'s for it, and signs none in their name",
             signing.author
+        ));
+    }
+    // One stamp names one write. Another content under a stamp this device has signed is refused
+    // here, before it is sealed under the stamp's nonce or signed: it would be the device signing two
+    // things for one write.
+    let stamp = message::write_stamp(&visible).map_err(|_| malformed())?;
+    if let Some(at) = state
+        .ops
+        .get(&signing.author)
+        .and_then(|chain| chain.stamped(&stamp))
+        .filter(|other| other.key != held)
+        .map(Held::seq)
+    {
+        return Err(format!(
+            "{event}: this device signed another content for this write (its register and stamp) at {at}, and one write is signed with one content"
         ));
     }
     let mut wire = visible.clone();
@@ -1827,7 +1963,6 @@ fn seal_write(state: &mut State, data: &str) -> Result<String, String> {
             )
         })?;
         let (number, text) = message::write_content(&visible).map_err(|_| malformed())?;
-        let stamp = message::write_stamp(&visible).map_err(|_| malformed())?;
         let object = wire.as_object_mut().ok_or_else(malformed)?;
         object.insert("value".to_string(), Value::String("0".to_string()));
         object.insert(
@@ -1843,5 +1978,6 @@ fn seal_write(state: &mut State, data: &str) -> Result<String, String> {
         );
     }
     let operation = make_operation(state, event, wire, signing.author, held)?;
-    operation.to_json().ok_or_else(malformed)
+    let data = operation.to_json().ok_or_else(malformed)?;
+    Ok(Sealed { data, signed: true })
 }

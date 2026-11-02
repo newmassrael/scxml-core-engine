@@ -188,6 +188,13 @@ impl Chain {
             .is_some_and(|held| held.iter().any(|one| one.id == *id))
     }
 
+    /// The lowest-numbered write held that is sealed under `wid` (its id, field, time, counter and
+    /// device), the proof included: what a device asks before it signs a write under a stamp.
+    pub fn stamped(&self, wid: &[u8]) -> Option<&Held> {
+        let (seq, id) = self.stamps.get(wid)?.iter().min_by_key(|(seq, _)| *seq)?;
+        self.ops.get(seq)?.iter().find(|held| held.id == *id)
+    }
+
     /// The last operation told to the machine.
     pub fn last(&self) -> Option<&Held> {
         self.view().next_back()
