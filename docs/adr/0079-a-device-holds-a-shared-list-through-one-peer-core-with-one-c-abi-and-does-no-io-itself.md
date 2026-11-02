@@ -79,15 +79,17 @@ fields it signs.
 
 ### 2. The trust layer secures the standard part, and the protocol exists once
 
-Before the core is built, ADR 0042's own order of work is completed:
+Before the core is built, the trust layer is bound to the standard part:
 
-1. ADR 0042 step 1 is verified (the standard part on every backend `todo_peer` runs on).
-2. ADR 0042 step 2: `todo_peer` is rebuilt on the standard part, and its duplicated body is deleted in the same
-   change, so the protocol exists once.
-3. ADR 0042 step 3: the trust layer and the relay name the standard part's events. The table of signed events, the
-   floor event and the field layout of the signed bytes are read from **one declaration that belongs to the standard
-   part** (its event schemas), not written as names in `message.rs`. A list built on the standard part is secured
-   without the trust layer learning the application.
+1. ADR 0042 step 1 is verified (the standard part on every backend `todo_peer` runs on). Done 2026-11-02.
+2. ADR 0042 step 3: the trust layer and the relay name the standard part's events, and only those. The table of
+   signed events, the floor event and the field layout of the signed bytes follow **one declaration that belongs to
+   the standard part** (its event schemas), held to it by a test, not written as names in `message.rs` alone. A list
+   built on the standard part is secured without the trust layer learning the application. The tests that ran
+   `todo_peer` under the trust layer or through a relay run the standard list as a copy a host starts.
+3. ADR 0042 step 2 (`todo_peer` rebuilt on the standard part, its duplicated body deleted) follows ADR 0043, as that
+   ADR orders; a device's core does not wait for it (ADR 0042, "The order of steps 2 and 3", the owner's order of
+   2026-11-02).
 
 The signed bytes keep their domain separation and layout rules (`sce-trust/event/1`, length-prefixed parts, the
 list's name and the event's name first); the event names in them change, which is a new domain version, since a
@@ -178,7 +180,7 @@ ones does not change what it holds.
 - The world runs the core on every device of a list, with the relay, under the virtual network: a Rust device, a
   Kotlin device through the C ABI, and the relay's own policy, with loss, delay, reordering, a device suspended
   mid-round, a relay that withholds and a relay that forges. The present `todo_peer` relay tests move to the
-  standard part in ADR 0042 step 2 and are the first of these.
+  standard part in ADR 0042 step 3 and are the first of these.
 - The C ABI's recorded scenario is replayed from every lane that has a toolchain.
 - The core's state machine is fuzzed on its inputs (events, responses, times), as the trust layer is.
 - ADR 0034's rule stands: nothing built on this is called production until the independent cryptographic review is
@@ -186,7 +188,7 @@ ones does not change what it holds.
 
 ## Order of work
 
-1. ADR 0042 steps 1 to 3 (section 2), in that ADR's order.
+1. ADR 0042 step 1, then step 3 (section 2); step 2 follows ADR 0043 and is not on this path.
 2. The sans-I/O peer core, with `Courier` rebuilt on it; the world's relay tests pass unchanged.
 3. Idempotent sealing on replay (section 7), with a world test that replays a device's log against a relay.
 4. The C ABI and its recorded scenario, replayed from C, Kotlin, Swift, Python and Go.

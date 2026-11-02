@@ -1,6 +1,7 @@
 # ADR 0042 - A shared record list is a standard part, and an application writes only its rules
 
-- Status: Accepted (2026-10-20); step 1 verified (2026-11-02), steps 2 and 3 not started
+- Status: Accepted (2026-10-20); step 1 verified (2026-11-02); step 3 in progress before step 2
+  (the owner's order of 2026-11-02, "The order of steps 2 and 3" below)
 - Date: 2026-10-20
 - Scope: a new standard statechart `sce:std/shared/record_list.scxml` and its schemas under
   `stdlib/shared/`; `sce-build/tests/fixtures/static_datamodel/todo_peer.scxml` and the documents
@@ -113,8 +114,27 @@ scenarios (`83c95878f1`):
 | C11 | W3C SCXML Compliance Tests, C11 job | `c11_integration_static_scalars`, which replays them (`test_static_scalars.c`) |
 | C++ | C++ Test Suite | `static_datamodel_lowered` (`AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`) |
 
-`todo_peer` is untouched. Steps 2 and 3 are not started; ADR 0079 makes them the first steps of a
-device's peer core.
+`todo_peer` is untouched. Step 3 is in progress before step 2 (below); step 2 is not started.
+
+### The order of steps 2 and 3 (the owner's order, 2026-11-02)
+
+Section 4 put step 2 before step 3, and ADR 0043 puts step 2 after its own steps 3 to 6 (a child
+session's endpoint in the Rust and Kotlin Mesh host cores, the world's child nodes, the generated
+C++ router), since `todo_peer` rebuilt on the list sends from the list, a child. Step 3 is done
+first instead:
+
+- **What step 3 secures is the list, not the fixture.** The trust layer and the relay name
+  `record_list.write`, `record_list.supersede`, `record_list.floor` and `record_list.role`, and
+  only those; the tests that ran `todo_peer` under the trust layer or through a relay run the
+  standard list as a copy a host starts (`announce` false), which needs no child session.
+- **A device does not need a child's Mesh endpoint to be secured.** Under ADR 0079 the list's
+  sends to its peers are taken by the host and carried by the device's peer core to the relay, not
+  by the Mesh; ADR 0043's remaining steps are what step 2 needs, not what a device needs.
+- **The protocol is still held once where it is secured.** From step 3 on, `todo_peer` is a
+  fixture of the merge and the schedule that no trust layer or relay accepts; its copy of the
+  protocol is deleted by step 2, which follows ADR 0043 as that ADR says.
+
+ADR 0079 makes step 3 the first step of a device's peer core.
 
 ## Revisions made in building it
 
