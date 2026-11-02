@@ -37,8 +37,10 @@ use crate::view::{ListView, ListWalk, NonEmptyListView};
 /// A flag-input an entry says. Generated for each input a list's entries say,
 /// over every form of the entry.
 pub trait Says<E: ?Sized> {
-    /// The value `entry` says the input has.
-    fn says(entry: &E) -> bool;
+    /// The value `entry` says the input has, or `None` where it says nothing of
+    /// it: an entry in an arm that does not read the input has no bit it could
+    /// change (docs/adr/0065 §6 R4e), so it disagrees with no state (R8b).
+    fn says(entry: &E) -> Option<bool>;
 }
 
 /// An automaton over a list's entries: the start a value gives it.
@@ -81,11 +83,13 @@ impl<S: Says<E>, E: ?Sized> LawOver<E> for Uniform<S> {
     }
 
     fn step(state: bool, entry: &E) -> Option<bool> {
-        (S::says(entry) == state).then_some(state)
+        S::says(entry)
+            .is_none_or(|said| said == state)
+            .then_some(state)
     }
 
     fn start_of(first: Option<&E>) -> bool {
-        first.is_some_and(|entry| S::says(entry))
+        first.and_then(|entry| S::says(entry)).unwrap_or(false)
     }
 }
 
@@ -107,7 +111,9 @@ impl<S: Says<E>, K: Key<E>, E: ?Sized> LawOver<E> for AfterKey<S, K> {
     }
 
     fn step(state: bool, entry: &E) -> Option<bool> {
-        (S::says(entry) == state).then(|| K::matches(entry))
+        S::says(entry)
+            .is_none_or(|said| said == state)
+            .then(|| K::matches(entry))
     }
 
     fn start_of(_: Option<&E>) {}
@@ -500,16 +506,17 @@ mod tests {
     }
 
     // A generated input or kind is asked of every form of the entry, a walk's
-    // `&Entry` among them, as these are.
+    // `&Entry` among them, as these are. An entry whose identifier is 7 says
+    // nothing of the input, as an arm that does not read it.
     struct Wide;
     impl Says<Entry> for Wide {
-        fn says(entry: &Entry) -> bool {
-            entry.wide
+        fn says(entry: &Entry) -> Option<bool> {
+            (entry.id != 7).then_some(entry.wide)
         }
     }
     impl Says<&Entry> for Wide {
-        fn says(entry: &&Entry) -> bool {
-            entry.wide
+        fn says(entry: &&Entry) -> Option<bool> {
+            (entry.id != 7).then_some(entry.wide)
         }
     }
 
@@ -566,12 +573,28 @@ mod tests {
     }
 
     #[test]
+    fn an_entry_that_says_nothing_disagrees_with_no_state() {
+        // After the marker, an entry that says nothing; the state after it is
+        // still whether it is the marker, so the entry after it is clear.
+        let quiet = [e(false, 4), e(true, 7), e(false, 2)];
+        assert!(Lawful::<&[Entry], After>::new((), &quiet[..]).is_some());
+        let first_quiet = [e(true, 7), e(false, 1)];
+        assert!(Lawful::<&[Entry], After>::new((), &first_quiet[..]).is_some());
+        let set_after_quiet = [e(false, 4), e(true, 7), e(true, 2)];
+        assert!(Lawful::<&[Entry], After>::new((), &set_after_quiet[..]).is_none());
+        // A bound flag holds a quiet entry under either start.
+        let mixed = [e(true, 1), e(false, 7)];
+        assert!(Lawful::<&[Entry], Every>::new(true, &mixed[..]).is_some());
+        assert!(Lawful::<&[Entry], Every>::new(false, &mixed[..]).is_none());
+    }
+
+    #[test]
     fn two_laws_hold_a_list_together() {
         // A second input, said by every entry whose identifier is not zero.
         struct Tagged;
         impl Says<Entry> for Tagged {
-            fn says(entry: &Entry) -> bool {
-                entry.id != 0
+            fn says(entry: &Entry) -> Option<bool> {
+                Some(entry.id != 0)
             }
         }
         type Both = (Uniform<Tagged>, After);

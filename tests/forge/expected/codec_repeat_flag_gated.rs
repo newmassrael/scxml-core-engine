@@ -253,8 +253,8 @@ pub type CodecRepeatFlagGatedEntriesList<S> = ::sce_forge_runtime::codec::Lawful
 pub struct CodecRepeatFlagGatedEntriesWide;
 
 impl<E: super::codec_chain_flag_entry::CodecChainFlagEntrySource + ?Sized> ::sce_forge_runtime::codec::Says<E> for CodecRepeatFlagGatedEntriesWide {
-    fn says(entry: &E) -> bool {
-        CodecChainFlagEntry::input_wide(entry)
+    fn says(entry: &E) -> Option<bool> {
+        Some(CodecChainFlagEntry::input_wide(entry))
     }
 }
 

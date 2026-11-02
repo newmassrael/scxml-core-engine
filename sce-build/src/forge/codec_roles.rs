@@ -1212,14 +1212,13 @@ pub fn classify_with(
     // A flag of this codec bound to an input that the codec of a body or an
     // arm says is derived from it, as a parent tag is. A list hands its one
     // bound value to every entry, which the list holds as its law and its start
-    // says (docs/adr/0065 §6 R8). A body that says it in some of its values only
-    // is checked instead, as are the entries of a list that say it in some of
-    // theirs and a chain whose memberships an arm refines: the flag is the
-    // value's where it says nothing.
+    // says (docs/adr/0065 §6 R8), entries that say nothing of it included (R8b).
+    // A body that says it in some of its values only is checked instead, as is a
+    // chain whose memberships an arm refines: the flag is the value's where it
+    // says nothing.
     let held = held_codecs(model, inputs);
     let members = memberships(model, inputs);
-    let lawful =
-        |field: &str, partly: bool| !partly && !members.keys().any(|(chain, _)| chain == field);
+    let lawful = |field: &str| !members.keys().any(|(chain, _)| chain == field);
     let mut input_checks: Vec<InputCheck> = Vec::new();
     let mut list_laws: Vec<InputCheck> = Vec::new();
     for held_codec in &held {
@@ -1243,7 +1242,7 @@ pub fn classify_with(
                 let partly = held_codec.says_partly(&bind.input);
                 let derived = match site {
                     BindSite::Embed { .. } | BindSite::Arm => !partly,
-                    BindSite::List { field } => lawful(field, partly),
+                    BindSite::List { field } => lawful(field),
                 };
                 if !derived {
                     input_checks.push(InputCheck { binder, against });
@@ -1404,7 +1403,9 @@ pub fn classify_with(
             }
         }
     }
-    // An input a chain supplies from the entry before, which the entry says.
+    // An input a chain supplies from the entry before, which the entry says: the
+    // chain holds it as its law (docs/adr/0065 §6 R8b), and a chain whose
+    // memberships an arm refines is checked instead.
     for field in &model.fields {
         let BitSize::TlvChain { entry_binds, .. } = &field.bit_size else {
             continue;
@@ -1417,7 +1418,7 @@ pub fn classify_with(
         };
         for bind in entry_binds {
             if held_codec.says(&bind.input) {
-                input_checks.push(InputCheck {
+                let law = InputCheck {
                     binder: Binder {
                         alias: held_codec.alias.clone(),
                         input: bind.input.clone(),
@@ -1428,7 +1429,12 @@ pub fn classify_with(
                     against: InputValue::PreviousEntry {
                         id: bind.previous_entry_id,
                     },
-                });
+                };
+                if lawful(&field.id) {
+                    list_laws.push(law);
+                } else {
+                    input_checks.push(law);
+                }
             }
         }
     }
@@ -2032,7 +2038,7 @@ fn said_inputs(
     held: &[HeldCodec],
     derived_whole: &BTreeSet<String>,
     groups: &[GateGroup],
-    lawful: &dyn Fn(&str, bool) -> bool,
+    lawful: &dyn Fn(&str) -> bool,
 ) -> BTreeMap<String, InputSource> {
     let mut said = BTreeMap::new();
     for input in model.flag_inputs.iter().filter(|i| i.width == 1) {
@@ -2097,17 +2103,15 @@ fn said_inputs(
                         partly: h.says_partly(&bind.input),
                     })
                 }
-                [BindSite::List { field }] if lawful(field, h.says_partly(&bind.input)) => {
-                    Some(InputSource::List {
-                        list: field.clone(),
-                        alias: h.alias.clone(),
-                        input: bind.input.clone(),
-                        partly: model
-                            .fields
-                            .iter()
-                            .any(|f| &f.id == field && f.present_if.is_some()),
-                    })
-                }
+                [BindSite::List { field }] if lawful(field) => Some(InputSource::List {
+                    list: field.clone(),
+                    alias: h.alias.clone(),
+                    input: bind.input.clone(),
+                    partly: model
+                        .fields
+                        .iter()
+                        .any(|f| &f.id == field && f.present_if.is_some()),
+                }),
                 _ => None,
             },
             _ => None,

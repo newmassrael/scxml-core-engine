@@ -17,14 +17,25 @@ mutation_oracles backends/rust/forge-runtime/src/law.rs
 
 mutation_case "the law of a bound flag admits any entry" <<'PY'
 edit("backends/rust/forge-runtime/src/law.rs",
-     r'''        (S::says(entry) == state).then_some(state)''',
-     r'''        Some(state)''')
+     r'''            .is_none_or(|said| said == state)
+            .then_some(state)''',
+     r'''            .map_or(true, |_| true)
+            .then_some(state)''')
 PY
 
 mutation_case "the law of the entry before forgets the kind of the entry" <<'PY'
 edit("backends/rust/forge-runtime/src/law.rs",
-     r'''        (S::says(entry) == state).then(|| K::matches(entry))''',
-     r'''        (S::says(entry) == state).then_some(false)''')
+     r'''            .then(|| K::matches(entry))''',
+     r'''            .then_some(false)''')
+PY
+
+# An entry that says nothing of an input disagrees with no state (§6 R8b).
+mutation_case "an entry that says nothing is refused by the entry before" <<'PY'
+edit("backends/rust/forge-runtime/src/law.rs",
+     r'''            .is_none_or(|said| said == state)
+            .then(|| K::matches(entry))''',
+     r'''            .is_some_and(|said| said == state)
+            .then(|| K::matches(entry))''')
 PY
 
 mutation_case "a fill keeps entries that break the law" <<'PY'

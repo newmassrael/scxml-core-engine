@@ -17,7 +17,7 @@ mutation_oracles sce-build/tests/forge_conformance.rs
 
 mutation_case "a list's bound flag is checked again rather than held as its start" <<'PY'
 edit("sce-build/src/forge/codec_roles.rs",
-     r'''                    BindSite::List { field } => lawful(field, partly),''',
+     r'''                    BindSite::List { field } => lawful(field),''',
      r'''                    BindSite::List { .. } => false,''')
 PY
 

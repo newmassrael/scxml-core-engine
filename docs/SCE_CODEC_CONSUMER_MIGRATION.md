@@ -350,6 +350,27 @@ Landing: the commit that adds this section.
   keeps its declaration until R8b.
 - The other backends do not change.
 
+## A chain holds the input it supplies from the entry before as its law (ADR 0065 §6 R8b)
+
+Landing: the commit that adds this section.
+
+- In Rust, a chain that supplies an input to each entry from the entry before (`<sce:entry-flag-bind
+  previous-entry-id>`), where the entry says the input, is held as `Lawful<list, law>` as R8a's lists are. Its law's
+  start is `()`: nothing for a value to give. A chain that also hands every entry a bound flag starts from
+  `(flag, ())`.
+- `Lawful::new(start, list)` returns `None` where an entry says the input otherwise than the entry before asks of it:
+  set after an entry with the identifier, clear after any other and for the first.
+- An entry that says the input in some of its values only (an extension entry whose ZBuf arm alone reads it) says
+  nothing from the others, and that disagrees with no state. The same holds now for a list's bound flag, so such a
+  list is held to its law too rather than checked.
+- `Says::says` returns `Option<bool>`. A source of your own that implements it returns `None` for an entry that says
+  nothing of the input.
+- The codec names the kind the chain waits for `{Codec}{Chain}…Key`, as a gate's kind is named.
+- A codec whose only refusal was that bind is now total, and its `sce:encode-may-fail` is untrue and refused. Run the
+  check of the introduction and drop what it reports. In the tree that is the query value and the four chains that
+  read the entry before; in the consumer, the query and the request.
+- The other backends do not change.
+
 ## A deployment says what its storing forms hold (ADR 0077 §7)
 
 Landing: the commit that adds this section.

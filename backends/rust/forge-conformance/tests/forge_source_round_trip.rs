@@ -500,7 +500,7 @@ mod parts {
 // refusal stays only where a value handed from elsewhere can disagree.
 mod said_inputs {
     use super::codecs::codec_chain_prev_carrier::{
-        CodecChainPrevCarrier, CodecChainPrevCarrierParts,
+        CodecChainPrevCarrier, CodecChainPrevCarrierEntriesLaw, CodecChainPrevCarrierParts,
     };
     use super::codecs::codec_chain_prev_entry::{
         CodecChainPrevEntryAfterMarker, CodecChainPrevEntryParts,
@@ -584,29 +584,41 @@ mod said_inputs {
         );
     }
 
-    // The chain hands every entry the flag `T` as its start, so an entry that
-    // says the input otherwise has no chain to be in (docs/adr/0065 §6 R8): the
-    // refusal is the list's constructor's, and the frame's `T` is the start,
-    // whatever the carrier the value presents holds.
+    // The chain hands every entry the flag `T` as its start and the input
+    // `after_marker` from the entry before, so an entry that says either
+    // otherwise has no chain to be in (docs/adr/0065 §6 R8): the refusal is the
+    // list's constructor's, the frame's `T` is the start, whatever the carrier
+    // the value presents holds, and the encode refuses nothing.
     #[test]
     fn an_entry_that_says_its_input_otherwise_than_its_chain_has_no_chain() {
-        let entries = [CodecChainPrevEntryParts {
+        let entry = |after_marker| CodecChainPrevEntryParts {
             header: 0x01,
-            after_marker: CodecChainPrevEntryAfterMarker::NotAfterMarker { short_value: 5 },
+            after_marker,
             tag: Some(9),
-        }];
-        let list = |start| Lawful::new(start, (&entries).into());
+        };
+        let first = [entry(CodecChainPrevEntryAfterMarker::NotAfterMarker {
+            short_value: 5,
+        })];
+        // The start is the flag `T` and nothing for the entry before.
+        let list = |start: bool| Lawful::new((start, ()), (&first).into());
         assert!(
             list(false).is_none(),
             "an entry that says T set has no chain whose start is clear"
+        );
+        let after_nothing = [entry(CodecChainPrevEntryAfterMarker::AfterMarker {
+            long_value: 0x1234,
+        })];
+        let after_nothing: Bounded<&[CodecChainPrevEntryParts], 4, 1> = (&after_nothing).into();
+        assert!(
+            Lawful::<_, CodecChainPrevCarrierEntriesLaw>::new((true, ()), after_nothing).is_none(),
+            "a first entry that says it follows a marker has no chain"
         );
         let carrier = CodecChainPrevCarrierParts {
             head: 0x00,
             entries: list(true).expect("the entry says the start"),
         };
         let mut bytes = Vec::new();
-        CodecChainPrevCarrier::encode_source(&carrier, &mut VecSink::new(&mut bytes))
-            .expect("the entry before says nothing the chain refuses");
+        let Ok(()) = CodecChainPrevCarrier::encode_source(&carrier, &mut VecSink::new(&mut bytes));
         assert_eq!(bytes, [0x01, 0x01, 5, 9]);
     }
 }

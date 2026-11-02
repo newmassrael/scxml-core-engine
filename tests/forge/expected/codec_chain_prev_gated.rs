@@ -143,7 +143,7 @@ impl<S: CodecChainPrevGatedStorage> CodecChainPrevGatedIn<S> {
             _v
         };
         if (head & 0x02u8) != 0 {
-            _out.entries.insert(Default::default()).refill_from((head & 0x1) != 0, |_vec| {
+            _out.entries.insert(Default::default()).refill_from(((head & 0x1) != 0, (),), |_vec| {
                 let mut _prev_entries_after_marker: u8 = 0;
                 let mut _more = false;
                 for _ in 0..4u32 {
@@ -207,42 +207,39 @@ impl<S: CodecChainPrevGatedStorage> CodecChainPrevGatedIn<S> {
     /// caller-owned `SliceSink` allocations.
     pub const MAX_ENCODED_BYTES: usize = 21;
 
-    /// Encode `self` into the caller-owned sink. Returns the value's refusal
-    /// when the encoding cannot carry it (a length past its type, a list past
-    /// its bound, a gate that disagrees with a presence; the document declares
-    /// `sce:encode-may-fail`), or the sink's own error:
+    /// Encode `self` into the caller-owned sink. Every value has a frame
+    /// (docs/adr/0065), so the only error is the sink's own:
     /// `CodecError::BufferOverflow` from a bounded sink when the destination
-    /// has insufficient remaining capacity.
-    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// has insufficient remaining capacity, and none from a sink that cannot
+    /// refuse (`VecSink`, `CountSink`).
+    pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), K::Error> {
         CodecChainPrevGated::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
-    /// `encode` refuses a value with: one the encoding cannot carry (a
-    /// length past its type, a list past its bound) or one a gate
-    /// disagrees with. Callers targeting zero-alloc hot paths should call
-    /// `encode` directly against a caller-owned sink.
+    /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
+    /// no value and the vector cannot run out of room. Callers targeting
+    /// zero-alloc hot paths should call `encode` directly against a
+    /// caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
+    pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)?;
-        Ok(_sce_v)
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
     }
 }
 
 /// The law the entries of `entries` follow in the inputs they say, which
 /// the list holds them to (docs/adr/0065 §6 R8).
 #[allow(dead_code)]
-pub type CodecChainPrevGatedEntriesLaw = ::sce_forge_runtime::codec::Uniform<CodecChainPrevGatedEntriesTagged>;
+pub type CodecChainPrevGatedEntriesLaw = (::sce_forge_runtime::codec::Uniform<CodecChainPrevGatedEntriesTagged>, ::sce_forge_runtime::codec::AfterKey<CodecChainPrevGatedEntriesAfterMarker, CodecChainPrevGatedEntriesHas0x4Key>);
 
 /// The list `entries` at the storage profile `S`, held to its law
 /// (docs/adr/0065 §6 R8).
@@ -256,8 +253,32 @@ pub type CodecChainPrevGatedEntriesList<S> = ::sce_forge_runtime::codec::Lawful<
 pub struct CodecChainPrevGatedEntriesTagged;
 
 impl<E: super::codec_chain_prev_entry::CodecChainPrevEntrySource + ?Sized> ::sce_forge_runtime::codec::Says<E> for CodecChainPrevGatedEntriesTagged {
-    fn says(entry: &E) -> bool {
-        CodecChainPrevEntry::input_tagged(entry)
+    fn says(entry: &E) -> Option<bool> {
+        Some(CodecChainPrevEntry::input_tagged(entry))
+    }
+}
+
+/// The input `after_marker` each entry of `entries` says, which the list hands
+/// every entry as whether the entry before has the identifier 0x4 and holds to its law (docs/adr/0065 §6 R8).
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecChainPrevGatedEntriesAfterMarker;
+
+impl<E: super::codec_chain_prev_entry::CodecChainPrevEntrySource + ?Sized> ::sce_forge_runtime::codec::Says<E> for CodecChainPrevGatedEntriesAfterMarker {
+    fn says(entry: &E) -> Option<bool> {
+        Some(CodecChainPrevEntry::input_after_marker(entry))
+    }
+}
+
+/// The kind of entry the entry after which `entries` supplies its input
+/// set: an entry whose identifier is 0x4 (docs/adr/0065 §6 R8b).
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecChainPrevGatedEntriesHas0x4Key;
+
+impl<E: super::codec_chain_prev_entry::CodecChainPrevEntrySource + ?Sized> ::sce_forge_runtime::codec::Key<E> for CodecChainPrevGatedEntriesHas0x4Key {
+    fn matches(entry: &E) -> bool {
+        (u64::from(super::codec_chain_prev_entry::CodecChainPrevEntrySource::header(entry)) & 0x7F) == 4u64
     }
 }
 
@@ -316,31 +337,22 @@ impl<'a> CodecChainPrevGated<'a> {
     /// Encode what `src` says into the caller-owned sink: the bytes
     /// [`Self::encode`] writes for the value it holds, read through
     /// [`CodecChainPrevGatedSource`]. A length, a count or a gate flag is computed from what
-    /// `src` presents, and a value the encoding cannot carry is refused
-    /// before the first byte is written.
-    pub fn encode_source<S: CodecChainPrevGatedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    /// `src` presents. Every value `src` can present has a frame, so the
+    /// only error is the sink's (docs/adr/0065).
+    pub fn encode_source<S: CodecChainPrevGatedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         Self::write_source(src, w)
     }
 
     /// [`Self::encode_source`] without the guard a parent has already made.
     #[doc(hidden)]
-    pub fn write_source<S: CodecChainPrevGatedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    pub fn write_source<S: CodecChainPrevGatedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> {
         let _k_entries: usize = src.entries().map_or(0, |_l| _l.len());
-        let _n_d_head_t_0: usize = src.entries().map_or(0, |_l| usize::from(_l.start()));
+        let _n_d_head_t_0: usize = src.entries().map_or(0, |_l| usize::from(_l.start().0));
         let _f_d_head_t: Option<usize> = if src.entries().is_some() { Some(_n_d_head_t_0) } else { None };
         let _p_head_e_0: bool = src.entries().is_some();
         let mut _c_head: u8 = (src.head() & !0x2) | (u8::from(_p_head_e_0) << 1);
         if let Some(_n) = _f_d_head_t {
             _c_head = (_c_head & !0x1) | (_n as u8);
-        }
-        {
-            let mut _prev: bool = false;
-            for _e in src.entries().into_iter().flatten() {
-                if CodecChainPrevEntry::input_after_marker(&_e) != _prev {
-                    return Err(CodecError::PresentIfMismatch);
-                }
-                _prev = (u64::from(super::codec_chain_prev_entry::CodecChainPrevEntrySource::header(&_e)) & 0x7F) == 4u64;
-            }
         }
         w.write_u8(_c_head)?;
         if let Some(_v) = src.entries() {
@@ -354,17 +366,17 @@ impl<'a> CodecChainPrevGated<'a> {
     /// The bytes [`Self::write_source`] writes for `src`, counted with
     /// nothing written.
     #[doc(hidden)]
-    pub fn count_source<S: CodecChainPrevGatedSource + ?Sized>(src: &S) -> Result<usize, CodecError> {
+    pub fn count_source<S: CodecChainPrevGatedSource + ?Sized>(src: &S) -> usize {
         let mut _c = ::sce_forge_runtime::codec::CountSink::new();
-        Self::write_source(src, &mut _c)?;
-        Ok(_c.len())
+        let Ok(()) = Self::write_source(src, &mut _c);
+        _c.len()
     }
 }
 
 impl<'a, S: CodecChainPrevGatedSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecChainPrevGated<'a> {
-    type Error<E> = CodecError;
+    type Error<E> = E;
 
-    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> where CodecError: From<K::Error> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), K::Error> where CodecError: From<K::Error> {
         Self::write_source(src, w)
     }
 }
@@ -372,10 +384,12 @@ impl<'a, S: CodecChainPrevGatedSource + ?Sized> ::sce_forge_runtime::codec::Sour
 #[allow(dead_code)]
 impl<'a> CodecChainPrevGated<'a> {
     /// The size of the frame [`Self::encode_source`] writes for `src`, found
-    /// with nothing written, or the refusal that encode would give. The result
-    /// writes the frame into a window of exactly that size and cannot fail.
-    pub fn measure<S: CodecChainPrevGatedSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
-        ::sce_forge_runtime::codec::measure(src)
+    /// with nothing written: the encode refuses no value, so neither does
+    /// this. The result writes the frame into a window of exactly that size
+    /// and cannot fail.
+    pub fn measure<S: CodecChainPrevGatedSource + ?Sized>(src: &S) -> ::sce_forge_runtime::codec::Measured<'_, Self, S> {
+        let Ok(measured) = ::sce_forge_runtime::codec::measure(src);
+        measured
     }
 
     /// Write `src` into `window` in one pass and return the bytes it is, for a

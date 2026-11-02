@@ -544,6 +544,24 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   declaration. A parent no longer overrides the flag, so `{Codec}Overrides` lost its field. Each walk of a lawful list
   runs the automaton again and panics where an entry says otherwise, as `BoundedIter` does for its count.
 
+  *R8b designed 2026-11-02.* The entries the entry before supplies an input to are, in the tree and in the consumer,
+  entries that say it in some of their values only: the value entry of a query reads `after_shm` in its ZBuf arm and
+  nowhere else (R4e). An entry that says nothing of an input has no bit the input could change, so it disagrees with
+  no state. The automaton reads what an entry says as an `Option`: `Says` answers `Option<bool>`, a step admits an entry
+  that says nothing, and the state after it is what it would be after any entry (the flag, unchanged, for a bound
+  flag; whether the entry has the identifier, for the entry before). That also lifts the first of R8a's three cases
+  for a bound flag, so a list keeps the check only where a group holds the chain's memberships or another
+  declaration derives the flag. A bound flag of a list whose entries all say nothing is still the list's start: the
+  frame states it, and a decode reads it back. The kinds the entry before is asked for are the chain's `Key` types,
+  generated for the identifiers its binds name as they are for the ones its gates name (R6).
+
+  *R8b landed 2026-11-02.* `Says::says` answers `Option<bool>`, and both automata admit `None` with the state they would
+  have after any entry. `codec_roles` records an input a chain supplies from the entry before as a list law, and a
+  chain whose memberships a group holds keeps the check. The five documents above lost their declaration: the query
+  value and the four chains that read the entry before. A refusal test whose document tags a variant by the flag the
+  import binds still declares one, since there the flag has a second derivation and the chain keeps its check. The
+  tree's codecs that still declare `may-fail` are the four content-line codecs (ADR 0077 §3) and `some_arms_say_parent`.
+
 A source made of refined types cannot be refused, but the refinement leaves the trait shape alone. A consumer that
 implements `XSource` on its own type returns refined values from the same accessors.
 

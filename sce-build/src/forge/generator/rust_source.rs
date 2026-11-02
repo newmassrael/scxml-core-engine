@@ -1145,6 +1145,7 @@ impl<'a> Plan<'a> {
                 .expect("a list with a law has a type at a profile"),
             );
         }
+        let mut keys: BTreeSet<String> = BTreeSet::new();
         for law in &self.roles.list_laws {
             let BindSite::List { field } = &law.binder.site else {
                 continue;
@@ -1160,6 +1161,18 @@ impl<'a> Plan<'a> {
                     format!("whether the entry before has the identifier 0x{id:X}")
                 }
             };
+            // An entry that says the input in some of its values only answers
+            // `None` from the others, which disagrees with no state (R8b).
+            let read = format!(
+                "{}::input_{}(entry)",
+                child.type_name,
+                filters::to_snake_case(law.binder.input.clone())
+            );
+            let said = if self.child_says_input_partly(&law.binder.alias, &law.binder.input) {
+                read
+            } else {
+                format!("Some({read})")
+            };
             out.push_str(&format!(
                 "/// The input `{input}` each entry of `{field}` says, which the list hands\n\
                  /// every entry as {given} and holds to its law (docs/adr/0065 §6 R8).\n\
@@ -1167,17 +1180,47 @@ impl<'a> Plan<'a> {
                  #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\n\
                  pub struct {says};\n\n\
                  impl<E: {trait_path} + ?Sized> {RUNTIME_CODEC}::Says<E> for {says} {{\n\
-                 \x20   fn says(entry: &E) -> bool {{\n\
-                 \x20       {child}::input_{snake}(entry)\n\
+                 \x20   fn says(entry: &E) -> Option<bool> {{\n\
+                 \x20       {said}\n\
                  \x20   }}\n\
                  }}\n\n",
                 input = law.binder.input,
                 trait_path = child.trait_path,
-                child = child.type_name,
-                snake = filters::to_snake_case(law.binder.input.clone()),
             ));
+            // One kind for each identifier the chain's binds wait for.
+            if let InputValue::PreviousEntry { id } = &law.against {
+                if keys.insert(key_type(self.name(), field, *id)) {
+                    out.push_str(&self.law_key(field, &child.trait_path, *id));
+                }
+            }
         }
         out
+    }
+
+    /// The kind of entry an input a chain supplies from the entry before waits
+    /// for (docs/adr/0065 §6 R8b): an entry whose identifier is `id`, read off
+    /// every form of the entry through its source, as a gate's kind is (R6).
+    fn law_key(&self, chain_id: &str, entry_trait: &str, id: u64) -> String {
+        let chain = self
+            .m()
+            .fields
+            .iter()
+            .find(|f| f.id == chain_id)
+            .expect("a list law names a chain of the codec");
+        let key_ty = key_type(self.name(), chain_id, id);
+        let test = format!("{} == {id}u64", self.entry_identifier(chain, "entry"));
+        format!(
+            "/// The kind of entry the entry after which `{chain_id}` supplies its input\n\
+             /// set: an entry whose identifier is 0x{id:X} (docs/adr/0065 §6 R8b).\n\
+             #[allow(dead_code)]\n\
+             #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\n\
+             pub struct {key_ty};\n\n\
+             impl<E: {entry_trait} + ?Sized> {RUNTIME_CODEC}::Key<E> for {key_ty} {{\n\
+             \x20   fn matches(entry: &E) -> bool {{\n\
+             \x20       {test}\n\
+             \x20   }}\n\
+             }}\n\n"
+        )
     }
 
     /// The pattern that binds `_b` to the body of `arm` in the value of the

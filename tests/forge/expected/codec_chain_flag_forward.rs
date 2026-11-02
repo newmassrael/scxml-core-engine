@@ -244,8 +244,8 @@ pub type CodecChainFlagForwardEntriesList<S> = ::sce_forge_runtime::codec::Lawfu
 pub struct CodecChainFlagForwardEntriesWide;
 
 impl<E: super::codec_chain_flag_entry::CodecChainFlagEntrySource + ?Sized> ::sce_forge_runtime::codec::Says<E> for CodecChainFlagForwardEntriesWide {
-    fn says(entry: &E) -> bool {
-        CodecChainFlagEntry::input_wide(entry)
+    fn says(entry: &E) -> Option<bool> {
+        Some(CodecChainFlagEntry::input_wide(entry))
     }
 }
 

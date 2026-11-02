@@ -3425,11 +3425,19 @@ fn an_entry_flag_bind_that_cannot_hold_is_refused_with_its_reason() {
         ),
     ];
     for (case, import_binds, id_attrs, children, after, phrase) in CASES {
+        // A variant on `head.T` derives the flag the import binds as well, so
+        // the chain's entries are checked against it and the encode can refuse
+        // (docs/adr/0065 §6 R8a); no other case's encode refuses anything.
+        let declares = if after.contains("<sce:variant") {
+            r#"sce:encode-may-fail="true" "#
+        } else {
+            ""
+        };
         let scxml = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="prev_bind_refusal">
+       sce:kind="codec" {declares}sce:default-endian="big" name="prev_bind_refusal">
   <sce:import src="codec_chain_prev_entry.scxml" kind="codec" as="codec_chain_prev_entry">
     {import_binds}
   </sce:import>
@@ -18287,7 +18295,7 @@ mod tests {
             shapes(&v.entries),
             vec![(0x84, Some(0x11), None, None), (0x03, None, Some(0x1234), None)]
         );
-        assert_eq!(v.encode_to_vec().expect("encode"),AFTER.to_vec());
+        assert_eq!(v.encode_to_vec(),AFTER.to_vec());
     }
 
     #[test]
@@ -18297,7 +18305,7 @@ mod tests {
             shapes(&v.entries),
             vec![(0x83, Some(0x11), None, None), (0x03, Some(0x22), None, None)]
         );
-        assert_eq!(v.encode_to_vec().expect("encode"),NONE.to_vec());
+        assert_eq!(v.encode_to_vec(),NONE.to_vec());
     }
 
     #[test]
@@ -18311,7 +18319,7 @@ mod tests {
                 (0x03, Some(0x77), None, None),
             ]
         );
-        assert_eq!(v.encode_to_vec().expect("encode"),ADJ.to_vec());
+        assert_eq!(v.encode_to_vec(),ADJ.to_vec());
     }
 
     #[test]
@@ -18321,14 +18329,14 @@ mod tests {
             shapes(&v.entries),
             vec![(0x84, Some(0x11), None, Some(0xA1)), (0x03, None, Some(0x1234), Some(0xA2))]
         );
-        assert_eq!(v.encode_to_vec().expect("encode"),TAGGED.to_vec());
+        assert_eq!(v.encode_to_vec(),TAGGED.to_vec());
     }
 
     #[test]
     fn the_first_entry_has_no_entry_before_it() {
         let v = carrier(&ONLY);
         assert_eq!(shapes(&v.entries), vec![(0x04, Some(0x11), None, None)]);
-        assert_eq!(v.encode_to_vec().expect("encode"),ONLY.to_vec());
+        assert_eq!(v.encode_to_vec(),ONLY.to_vec());
     }
 
     #[test]
@@ -18338,14 +18346,14 @@ mod tests {
             shapes(v.entries.as_ref().expect("chain")),
             vec![(0x84, Some(0x11), None, None), (0x03, None, Some(0x1234), None)]
         );
-        assert_eq!(v.encode_to_vec().expect("encode"),G_AFTER.to_vec());
+        assert_eq!(v.encode_to_vec(),G_AFTER.to_vec());
 
         let v = gated(&G_TAGGED);
         assert_eq!(
             shapes(v.entries.as_ref().expect("chain")),
             vec![(0x84, Some(0x11), None, Some(0xA1)), (0x03, None, Some(0x1234), Some(0xA2))]
         );
-        assert_eq!(v.encode_to_vec().expect("encode"),G_TAGGED.to_vec());
+        assert_eq!(v.encode_to_vec(),G_TAGGED.to_vec());
     }
 
     #[test]
@@ -18361,14 +18369,14 @@ mod tests {
                 (0x03, None, Some(0x1234), None),
             ]
         );
-        assert_eq!(v.encode_to_vec().expect("encode"),G_MIDDLE.to_vec());
+        assert_eq!(v.encode_to_vec(),G_MIDDLE.to_vec());
     }
 
     #[test]
     fn a_gated_chain_without_its_gate_holds_no_entries() {
         let v = gated(&G_ABSENT);
         assert!(v.entries.is_none());
-        assert_eq!(v.encode_to_vec().expect("encode"),G_ABSENT.to_vec());
+        assert_eq!(v.encode_to_vec(),G_ABSENT.to_vec());
     }
 
     fn tail(frame: &[u8]) -> CodecChainPrevTail<'_> {
@@ -18386,7 +18394,7 @@ mod tests {
             shapes(&v.entries),
             vec![(0x84, Some(0x11), None, None), (0x03, None, Some(0x1234), None)]
         );
-        assert_eq!(v.encode_to_vec().expect("encode"),AFTER.to_vec());
+        assert_eq!(v.encode_to_vec(),AFTER.to_vec());
 
         let v = tail(&ADJ);
         assert_eq!(
@@ -18397,14 +18405,14 @@ mod tests {
                 (0x03, Some(0x77), None, None),
             ]
         );
-        assert_eq!(v.encode_to_vec().expect("encode"),ADJ.to_vec());
+        assert_eq!(v.encode_to_vec(),ADJ.to_vec());
 
         let v = tail(&TAGGED);
         assert_eq!(
             shapes(&v.entries),
             vec![(0x84, Some(0x11), None, Some(0xA1)), (0x03, None, Some(0x1234), Some(0xA2))]
         );
-        assert_eq!(v.encode_to_vec().expect("encode"),TAGGED.to_vec());
+        assert_eq!(v.encode_to_vec(),TAGGED.to_vec());
     }
 
     #[test]
@@ -18414,7 +18422,7 @@ mod tests {
             shapes(v.entries.as_ref().expect("chain")),
             vec![(0x84, Some(0x11), None, None), (0x03, None, Some(0x1234), None)]
         );
-        assert_eq!(v.encode_to_vec().expect("encode"),G_AFTER.to_vec());
+        assert_eq!(v.encode_to_vec(),G_AFTER.to_vec());
 
         let v = tail_gated(&G_MIDDLE);
         assert_eq!(
@@ -18425,11 +18433,11 @@ mod tests {
                 (0x03, None, Some(0x1234), None),
             ]
         );
-        assert_eq!(v.encode_to_vec().expect("encode"),G_MIDDLE.to_vec());
+        assert_eq!(v.encode_to_vec(),G_MIDDLE.to_vec());
 
         let v = tail_gated(&G_ABSENT);
         assert!(v.entries.is_none());
-        assert_eq!(v.encode_to_vec().expect("encode"),G_ABSENT.to_vec());
+        assert_eq!(v.encode_to_vec(),G_ABSENT.to_vec());
     }
 }
 "#;
@@ -18579,7 +18587,7 @@ mod tests {
         assert_eq!(slices[0].kind, 1);
         assert_eq!(slices[0].len, 7);
         assert_eq!(slices[0].data, &[0x80, 0x08, 0xAE, 0xCF, 0x01, 0x00, 0x00]);
-        assert_eq!(v.encode_to_vec().expect("encode"),SHM.to_vec());
+        assert_eq!(v.encode_to_vec(),SHM.to_vec());
     }
 
     #[test]
@@ -18591,7 +18599,7 @@ mod tests {
             panic!("a sliced body without the marker");
         };
         assert_eq!(*value, &[0xDE, 0xAD, 0xBE, 0xEF][..]);
-        assert_eq!(v.encode_to_vec().expect("encode"),PLAIN.to_vec());
+        assert_eq!(v.encode_to_vec(),PLAIN.to_vec());
     }
 
     #[test]
@@ -18603,7 +18611,7 @@ mod tests {
             panic!("a sliced body after an extension that is not the marker");
         };
         assert_eq!(*value, &[0xDE, 0xAD, 0xBE, 0xEF][..]);
-        assert_eq!(v.encode_to_vec().expect("encode"),NOT_ADJACENT.to_vec());
+        assert_eq!(v.encode_to_vec(),NOT_ADJACENT.to_vec());
     }
 }
 "#;
