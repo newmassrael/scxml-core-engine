@@ -376,6 +376,13 @@ when it is called production.
   authority, and one that later moves it under a public authority, or keeps relays under each, strands
   every application it shipped believing its own authority alone on the day the certificate changes. A
   function added alone: the ABI stays version 4. The Kotlin binding has it (`PeerLink.wssBelieving`).
+- **A known-answer vector of the sealed form** (2026-11-02), which step 7 left open:
+  `backends/rust/trust/tests/fixtures/sealed_state.json` holds a fixed data key, list, node and contents,
+  the keys and the nonce made on the way, and the sealed bytes. Its test holds what `backup::seal_state`
+  gives equal to the recording and to the documented construction made again from the primitives alone
+  (HKDF-Expand written as its one HMAC block, HMAC-SHA-256, XChaCha20-Poly1305), so it pins the
+  construction and not only the bytes, and the recorded bytes open into the contents sealed. It is
+  recorded with `SCE_SEALED_KAT=write` (`docs/SCE_SHARED_LIST_PEER_ABI.md` section 6).
 
 ## Alternatives considered
 

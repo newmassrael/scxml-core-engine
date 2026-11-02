@@ -250,6 +250,21 @@ another form are `SCE_PEER_ERR_UNREADABLE`. Either way the core took nothing. Th
 key, the keys drawn from it and the plain state once they are used; what the MLS library keeps of the
 group in memory is the library's and is not zeroed.
 
+The form is pinned by a known-answer vector, `backends/rust/trust/tests/fixtures/sealed_state.json`:
+a fixed data key, list, node, seed and extras, what is made on the way (the contents as sealed, the
+associated data, the cipher's key and the nonce's key, the nonce) and the sealed bytes, for an
+implementation in another language to check itself step by step. Its test
+(`a_sealed_state_is_the_bytes_its_construction_makes`) holds the bytes the library seals equal to the
+recording, and equal to what the construction gives when it is made again from the primitives alone:
+`SCEB1` and each part of the contents after its length (a big-endian 64-bit number), the associated
+data as `sce-trust/state/1`, the list, the node and the form each after its length, the two keys as
+HKDF-Expand with SHA-256 of the data key under `sce-trust/state/1 seal` and `sce-trust/state/1 nonce`,
+the nonce as HMAC-SHA-256 under the nonce's key of the associated data's length, the associated data and
+the contents, cut to 24 bytes, and `SCES1`, the nonce and XChaCha20-Poly1305 under the cipher's key of
+the contents with the associated data. A change of the form is recorded again with
+`SCE_SEALED_KAT=write cargo test -p sce-rust-trust --test a_sealed_state_is_the_bytes_its_construction_makes`,
+which is a decision, not a drift.
+
 **A data key for each save, not one for the device.** A key seals one state, so no nonce is ever at
 risk; a key that leaked (a dump of the process's memory) opens one save, not every save before and
 after it; and a platform's key the host rotates retires every save wrapped under the old one once

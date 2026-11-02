@@ -90,7 +90,13 @@ send    = "tracked+submodules"
 # a build machine it records the far side's copy and leaves this tree without
 # the fixture; the artifact path cannot carry it back, because an artifact lands
 # only where git does not look (2026-11-02).
-writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", "scripts/package_embed.sh", "UPDATE_GOLDEN", "UPDATE_EXPECT", "SCE_PEER_SCENARIO"]
+#
+# `SCE_SEALED_KAT` is the same shape once more: set to `write`, it turns
+# `cargo test -p sce-rust-trust` into the writer of the known-answer vector of
+# the sealed device state (`backends/rust/trust/tests/fixtures/`). Sent to a
+# build machine it records the far side's copy and leaves this tree without the
+# vector, for the same reason (2026-11-02).
+writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", "scripts/package_embed.sh", "UPDATE_GOLDEN", "UPDATE_EXPECT", "SCE_PEER_SCENARIO", "SCE_SEALED_KAT"]
 
 # `node` is not optional: every BasicHTTP fixture in the Rust workspace
 # posts to localhost:8080, and without the echo server they route to their
