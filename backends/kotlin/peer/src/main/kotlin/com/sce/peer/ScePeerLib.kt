@@ -131,6 +131,7 @@ interface ScePeerLib : Library {
     fun sce_peer_invited(list: String, genesis: ByteArray): Pointer?
     fun sce_peer_invited_by(invitation: ByteArray, len: NativeLong): Pointer?
     fun sce_peer_free(peer: Pointer)
+    fun sce_peer_certified_name(administrator: ByteArray, salt: ByteArray?, saltLen: NativeLong, out: Buf): Int
     fun sce_peer_set_identity(peer: Pointer, node: Long, seed: ByteArray): Int
     fun sce_peer_set_administrator(peer: Pointer, seed: ByteArray): Int
     fun sce_peer_for_a_hub(peer: Pointer): Int

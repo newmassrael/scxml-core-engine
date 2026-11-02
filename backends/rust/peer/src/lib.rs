@@ -31,7 +31,10 @@
 //! - a device logs in at a relay with its person's key ([`Peer::login`], ADR 0080): the same
 //!   exchange over the same transport, made on a connection that presents no token, or one that
 //!   expired, whose outcome holds the token the relay issued ([`Outcome::token`]); the host gives the
-//!   token to its transport, which carries it, and the core holds none;
+//!   token to its transport, which carries it, and the core holds none. At a relay that takes a
+//!   creation with no token, the login of a list the relay does not hold creates it, under a name
+//!   that certifies its genesis ([`Peer::certified_name`]): a list opened there, or one that lapsed
+//!   there, which the next round gives back what the device holds;
 //! - an administrator's device invites a device that is not in the log yet ([`Peer::invite`], ADR
 //!   0080 section 4): a text for a QR code that holds the relay's address, the signed invitation and
 //!   its secret, of which the core keeps the key the secret makes; the invited device joins with it
@@ -82,6 +85,7 @@ use sce_rust_relay::{
     Response, RoundMachine, Step,
 };
 use sce_rust_trust::backup::{self, Contents};
+use sce_rust_trust::creation;
 use sce_rust_trust::encoding;
 use sce_rust_trust::invitation::{self, Invitation, Ticket};
 use sce_rust_trust::membership::{Body, Entry};
@@ -595,6 +599,27 @@ impl Peer {
     /// ([`Trust::open`]).
     pub fn open(list: &str) -> Self {
         Self::over(list, Trust::open(list))
+    }
+
+    /// The name of a list to open at a relay that takes a creation with no token (ADR 0080 section
+    /// 3): `n1.<salt>.<digest>`, which certifies `administrator`, the key the list's genesis names
+    /// first ([`sce_rust_trust::creation`]), so that no device without that key creates a list
+    /// under it, before or after the list lapses. The host makes the core with this name
+    /// ([`Self::open`]), gives it that administrator's key ([`Self::set_administrator`]) and opens
+    /// the list ([`Self::open_list`]); the core's login creates the list at such a relay
+    /// ([`Self::login`]). `salt` is the host's (any 1 to 32 bytes; two lists of one administrator
+    /// take two salts), and [`Self::draw_certified_name`] draws one. `None` for a salt that is empty
+    /// or longer.
+    pub fn certified_name(administrator: &PublicKey, salt: &[u8]) -> Option<String> {
+        creation::list_name(salt, administrator)
+    }
+
+    /// [`Self::certified_name`] under a salt of 16 bytes drawn from the operating system, the only
+    /// source it is drawn from.
+    pub fn draw_certified_name(administrator: &PublicKey) -> Result<String, PeerError> {
+        let salt = creation::draw_salt().map_err(|_| PeerError::NoRandomness)?;
+        // A salt of 16 bytes is within what a name carries: this never refuses.
+        creation::list_name(&salt, administrator).ok_or(PeerError::NoRandomness)
     }
 
     /// The core of a device invited to the list `list` with the hash of its genesis entry, which the
@@ -1141,6 +1166,19 @@ impl Peer {
     /// asks: when a round's outcome is the relay's `unauthorized`, or before the token's time is
     /// out. A login begun while a round runs abandons the round, which loses nothing, as beginning
     /// any exchange does.
+    ///
+    /// **A list the relay does not hold is created by the login** when the relay takes a creation
+    /// with no token (ADR 0080 section 3) and its challenge says the work it takes: the core gives
+    /// the relay its log from the genesis to its person's grant, with the work and the login's
+    /// signature, under the list's name, which must certify the genesis ([`Self::certified_name`]).
+    /// That is how a device opens such a list at the relay ([`Self::open_list`], then this), and how
+    /// a list that lapsed there is made again, by whichever of its devices logs in first, with the
+    /// same genesis and name. The relay then holds the log as far as the grant and nothing more, and
+    /// its heads say its history of the list began at another instant: the next round of every
+    /// device of the list reads the relay from its start, and gives it back everything the device
+    /// holds that it lacks (the log, every device's operations, the checkpoints and the proof of a
+    /// conflict). The group's commits and Welcomes that only the relay held are not given back; a
+    /// device that had not read one before the list lapsed is admitted again.
     pub fn login(&mut self, audience: &str) -> Result<(), PeerError> {
         self.ready()?;
         if self.trust.person().is_none() {

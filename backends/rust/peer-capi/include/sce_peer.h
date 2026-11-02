@@ -112,6 +112,14 @@ ScePeer *sce_peer_invited(const char *list, const uint8_t *genesis /* 32 bytes *
 ScePeer *sce_peer_invited_by(const uint8_t *invitation, size_t len);
 void sce_peer_free(ScePeer *peer);
 
+/* The name of a list to open at a relay that takes a creation with no token (ADR 0080 section 3),
+ * into out as UTF-8: n1.<salt>.<digest>, which certifies the administrator's key the 32-byte seed
+ * makes. salt is 1 to 32 bytes of the host's; with salt_len 0 the library draws 16. The host opens
+ * the core with this name, gives it the same seed as its administrator, opens the list, and its
+ * login creates the list at such a relay. */
+int32_t sce_peer_certified_name(const uint8_t *administrator /* 32 bytes */, const uint8_t *salt, size_t salt_len,
+                                ScePeerBuf *out);
+
 /* The device's person: the node the log names them by, and the key the 32-byte seed makes. */
 int32_t sce_peer_set_identity(ScePeer *peer, uint64_t node, const uint8_t *seed /* 32 bytes */);
 /* The administrator's key the device holds, from its 32-byte seed: a secret, given once and kept in the
@@ -154,7 +162,10 @@ int32_t sce_peer_take_outcome(ScePeer *peer, ScePeerBuf *out);
 
 /* A login at the relay named audience (the name the device was configured with, never the one the
  * relay says): an exchange as a round is, over a link that presents no token or one that expired,
- * whose outcome holds "token", which the lane gives the link with sce_peer_link_set_token. */
+ * whose outcome holds "token", which the lane gives the link with sce_peer_link_set_token. At a relay
+ * that takes a creation with no token, the login of a list the relay does not hold creates it (a list
+ * just opened under sce_peer_certified_name's name, or one that lapsed there), and the next round
+ * gives the relay back what the device holds. */
 int32_t sce_peer_login(ScePeer *peer, const char *audience);
 
 /* Invitations (ADR 0080 section 4). An administrator's device invites the device of a node the log

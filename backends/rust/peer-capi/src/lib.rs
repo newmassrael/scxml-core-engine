@@ -74,7 +74,10 @@ use serde_json::{json, Value};
 /// [`sce_peer_invited_by`], [`sce_peer_join`], [`sce_peer_joined`]) are functions added alone, with
 /// statuses appended (`SCE_PEER_ERR_GRANTED`, `_INVITATION`, `_NOT_JOINED`) that only they and the
 /// acts on a node they invited give, and move no number; the sealed state is the core's version 5,
-/// which holds the invitations.
+/// which holds the invitations. The creation of ADR 0080 section 3 moves none either: a login that
+/// meets a relay holding no such list and asking work creates the list ([`sce_peer_login`]), work no
+/// relay asked before, and its outcome has the shape of a login's; and [`sce_peer_certified_name`]
+/// is a function added alone.
 pub const SCE_PEER_ABI_VERSION: u32 = 5;
 
 pub const SCE_PEER_OK: i32 = 0;
@@ -543,6 +546,49 @@ pub unsafe extern "C" fn sce_peer_invited(list: *const c_char, genesis: *const u
     })
 }
 
+/// The name of a list to open at a relay that takes a creation with no token (ADR 0080 section 3),
+/// into `out` as UTF-8: `n1.<salt>.<digest>`, which certifies the administrator's key the 32-byte
+/// `administrator` seed makes, the key the list's genesis will name first
+/// ([`Peer::certified_name`]). `salt` is the host's, from 1 to 32 bytes; with `salt_len` 0 the
+/// library draws 16 bytes from the operating system ([`Peer::draw_certified_name`]). The host makes
+/// the core with this name ([`sce_peer_open`]), gives it the same seed
+/// ([`sce_peer_set_administrator`]) and opens the list ([`sce_peer_open_list`]); its login creates
+/// the list at such a relay ([`sce_peer_login`]).
+///
+/// # Safety
+/// `administrator` points at 32 readable bytes; `salt` at `salt_len` readable bytes, or is null
+/// when `salt_len` is 0; `out` is valid for a write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_certified_name(
+    administrator: *const u8,
+    salt: *const u8,
+    salt_len: usize,
+    out: *mut ScePeerBuf,
+) -> i32 {
+    guard(|| {
+        required(out)?;
+        // SAFETY: the promises in the function's contract.
+        let (seed, salt) = unsafe {
+            put(out, ScePeerBuf::EMPTY);
+            (array::<32>(administrator)?, bytes(salt, salt_len)?)
+        };
+        let key = Identity::from_seed(seed).public();
+        let name = if salt.is_empty() {
+            Peer::draw_certified_name(&key).map_err(from_error)?
+        } else {
+            Peer::certified_name(&key, salt).ok_or_else(|| {
+                fail(
+                    SCE_PEER_ERR_BAD_ARGUMENT,
+                    format!("a salt is 1 to 32 bytes, and not {}", salt.len()),
+                )
+            })?
+        };
+        // SAFETY: `out` is valid for a write.
+        unsafe { put(out, ScePeerBuf::of(name.into_bytes())) };
+        Ok(())
+    })
+}
+
 /// Free a core.
 ///
 /// # Safety
@@ -814,7 +860,10 @@ pub unsafe extern "C" fn sce_peer_start(peer: *mut ScePeer, kind: i32) -> i32 {
 /// name the device was configured with, shipped with the relay's address or carried in an
 /// invitation, never the one the relay says ([`Peer::login`], ADR 0080). Its requests are taken and
 /// answered as a round's, over a link that presents no token or one that expired, and its outcome
-/// holds `token`, which the host gives the link ([`sce_peer_link_set_token`]).
+/// holds `token`, which the host gives the link ([`sce_peer_link_set_token`]). At a relay that takes
+/// a creation with no token, the login of a list the relay does not hold creates it, under a name
+/// that certifies its genesis ([`sce_peer_certified_name`]): a list just opened, or one that lapsed
+/// there, which the next round gives back what the device holds.
 /// `SCE_PEER_ERR_NO_PERSON` when the core has no person to log in as.
 ///
 /// # Safety

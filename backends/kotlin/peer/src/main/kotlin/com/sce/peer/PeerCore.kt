@@ -108,6 +108,22 @@ class PeerCore private constructor(lib: ScePeerLib, handle: Pointer) : Handle(li
             return lib.text(out) ?: throw IllegalStateException("the core read nothing of the invitation")
         }
 
+        /**
+         * The name of a list to open at a relay that takes a creation with no token
+         * (`sce_peer_certified_name`, ADR 0080 section 3): `n1.<salt>.<digest>`, which certifies the
+         * administrator's key the 32-byte [administrator] seed makes. [salt] is 1 to 32 bytes of the
+         * host's, or `null` for 16 the library draws. The host opens the core with this name ([open]),
+         * gives it the same seed ([setAdministrator]) and opens the list ([openList]); its [login]
+         * creates the list at such a relay.
+         */
+        fun certifiedName(lib: ScePeerLib, administrator: ByteArray, salt: ByteArray? = null): String {
+            require(administrator.size == 32) { "an administrator's seed is 32 bytes" }
+            val out = Buf()
+            val length = NativeLong((salt?.size ?: 0).toLong())
+            lib.check(lib.sce_peer_certified_name(administrator, salt, length, out), "certified_name")
+            return lib.text(out) ?: throw IllegalStateException("the core gave no name")
+        }
+
         private fun made(lib: ScePeerLib, handle: Pointer?, what: String): Pointer = handle ?: throw ScePeerException(ScePeerAbi.ERR_NULL_ARGUMENT, "$what: ${lib.sce_peer_last_error()}")
     }
 
@@ -158,7 +174,10 @@ class PeerCore private constructor(lib: ScePeerLib, handle: Pointer) : Handle(li
      * Begins a login at the relay named [audience] (`sce_peer_login`): the name the device was
      * configured with, never the one the relay says. It is run as a round is, over a link that
      * presents no token or one that expired, and its outcome holds `token`, which the host gives the
-     * link ([PeerLink.setToken]). `ERR_NO_PERSON` when the core has no person.
+     * link ([PeerLink.setToken]). At a relay that takes a creation with no token, the login of a list
+     * the relay does not hold creates it (one just opened under a [certifiedName], or one that lapsed
+     * there), and the next round gives the relay back what the device holds. `ERR_NO_PERSON` when the
+     * core has no person.
      */
     fun login(audience: String) = lib.check(lib.sce_peer_login(pointer, audience), "login")
 
