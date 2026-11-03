@@ -256,17 +256,11 @@ fn creation_word(config: &Config) -> &'static str {
     }
 }
 
-/// Remove the lists created openly that no login touched for `idle_ms`, and say so: how many were
-/// removed and how many are kept, never which. A sweep that removed nothing says nothing unless
-/// `always`.
-fn sweep(log: &Log, hub: &Shards<FileStore>, idle_ms: u64, always: bool) {
+/// Remove the lists created openly that no login touched for `idle_ms`. How many were removed and
+/// how many are kept, never which, is the library's line of each sweep (`event=lapsed`); what a
+/// removal the store refused said is written here.
+fn sweep(log: &Log, hub: &Shards<FileStore>, idle_ms: u64) {
     let lapsed = hub.lapse(idle_ms, now_ms());
-    if always || lapsed.removed > 0 {
-        log.info(
-            "lapsed",
-            &[("removed", &lapsed.removed), ("kept", &lapsed.kept)],
-        );
-    }
     for failure in &lapsed.failures {
         log.error("lapse_failed", &[("reason", failure)]);
     }
@@ -518,7 +512,7 @@ async fn run(log: &Log, prepared: Prepared) -> u8 {
     // answers, and the others as they lapse, once an hour.
     let lapsing = (config.lapse_days > 0).then(|| {
         let idle_ms = config.lapse_days.saturating_mul(DAY_MS);
-        sweep(log, &hub, idle_ms, true);
+        sweep(log, &hub, idle_ms);
         let (hub, log) = (Arc::clone(&hub), *log);
         tokio::spawn(async move {
             let mut ticks =
@@ -526,8 +520,7 @@ async fn run(log: &Log, prepared: Prepared) -> u8 {
             loop {
                 ticks.tick().await;
                 let hub = Arc::clone(&hub);
-                let _ =
-                    tokio::task::spawn_blocking(move || sweep(&log, &hub, idle_ms, false)).await;
+                let _ = tokio::task::spawn_blocking(move || sweep(&log, &hub, idle_ms)).await;
             }
         })
     });
