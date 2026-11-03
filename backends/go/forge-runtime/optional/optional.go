@@ -185,3 +185,34 @@ func Lift[T any](fields map[string]any, name string, read func() (T, error)) (Of
 	}
 	return Some(v), nil
 }
+
+// Nullable is one value read off a wire that spells absence as `null`: the
+// runtime's PayloadValue, at whatever depth of an event's data it stands.
+type Nullable interface {
+	IsNull() bool
+}
+
+// Read reads v as a value of `optional<T>` (docs/adr/0086, section 4.3): absent
+// where v is `null`, and what read answers of v where it is not; read is called
+// only then. It is the optional combinator of the payload readers, so an
+// optional value inside a list or a record is read as one at the top is.
+func Read[V Nullable, T any](v V, read func(V) (T, error)) (Of[T], error) {
+	if v.IsNull() {
+		return Of[T]{}, nil
+	}
+	present, err := read(v)
+	if err != nil {
+		return Of[T]{}, err
+	}
+	return Some(present), nil
+}
+
+// Check holds the value of o, where it is present, to its type through present:
+// the optional step of the check a generated raise runs over a value a host
+// built (docs/adr/0086, section 5.4). An absent value holds nothing to check.
+func Check[T any](o Of[T], present func(T) error) error {
+	if !o.present {
+		return nil
+	}
+	return present(o.value)
+}

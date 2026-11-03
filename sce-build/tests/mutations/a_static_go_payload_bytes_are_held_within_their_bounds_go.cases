@@ -43,6 +43,6 @@ PY
 
 mutation_case "a character past U+00FF is read as the byte its low eight bits make" <<'PY'
 edit("backends/go/runtime/event_payload.go",
-     "		if r > 0xFF {\n			return nil, fmt.Errorf(\n				\"%q carries a character above U+00FF, which no single byte spells\", name)",
-     "		if r > 0x10FFFF {\n			return nil, fmt.Errorf(\n				\"%q carries a character above U+00FF, which no single byte spells\", name)")
+     "		if r > 0xFF {\n			return nil, v.Refuse(\"carries a character above U+00FF, which no single byte spells\")",
+     "		if r > 0x10FFFF {\n			return nil, v.Refuse(\"carries a character above U+00FF, which no single byte spells\")")
 PY

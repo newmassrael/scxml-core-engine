@@ -61,7 +61,7 @@ func TestAFieldOfTheFirstRevisionIsStillRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the object did not read: %v", err)
 	}
-	if _, err := PayloadUnsigned[uint8](fields, "level"); err == nil || !strings.Contains(err.Error(), `"level"`) {
+	if _, err := PayloadUnsigned[uint8](fields, "level"); err == nil || !strings.Contains(err.Error(), `'level'`) {
 		t.Errorf("a missing field of the first revision was not refused by name: %v", err)
 	}
 	fields, err = LiftPayloadWithDefaults("", revisedDefaults)

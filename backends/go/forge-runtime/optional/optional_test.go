@@ -181,3 +181,47 @@ func TestAnAbsentValueIsJSONNullAndAPresentOneIsItsValue(t *testing.T) {
 		t.Errorf("the value is written as %s, want %s", written, want)
 	}
 }
+
+// nullable is a value of a wire, for Read: `null` or the number it carries.
+type nullable struct {
+	null bool
+	n    int64
+}
+
+func (v nullable) IsNull() bool { return v.null }
+
+// Read is absent at `null` and asks the reader of T only of a value, whose
+// refusal it passes on; Check asks nothing of an absent value.
+func TestReadIsAbsentAtNullAndAsksTheReaderOnlyOfAValue(t *testing.T) {
+	asked := 0
+	read := func(v nullable) (int64, error) {
+		asked++
+		if v.n < 0 {
+			return 0, errors.New("below zero")
+		}
+		return v.n, nil
+	}
+	if got, err := Read(nullable{null: true}, read); err != nil || got.IsPresent() || asked != 0 {
+		t.Fatalf("null reads %v, %v, asking the reader %d times", got, err, asked)
+	}
+	if got, err := Read(nullable{n: 5}, read); err != nil || !got.Equal(Some[int64](5)) {
+		t.Fatalf("a value reads %v, %v", got, err)
+	}
+	if _, err := Read(nullable{n: -1}, read); err == nil || err.Error() != "below zero" {
+		t.Fatalf("the reader's refusal reads %v", err)
+	}
+	checked := 0
+	check := func(v int64) error {
+		checked++
+		if v > 3 {
+			return errors.New("past three")
+		}
+		return nil
+	}
+	if err := Check(None[int64](), check); err != nil || checked != 0 {
+		t.Fatalf("an absent value was checked: %v, %d", err, checked)
+	}
+	if err := Check(Some[int64](4), check); err == nil || err.Error() != "past three" {
+		t.Fatalf("a present value past its check reads %v", err)
+	}
+}

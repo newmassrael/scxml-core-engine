@@ -22,6 +22,6 @@ mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios
 
 mutation_case "a number past the range of a single is read" <<'PY'
 edit("backends/go/runtime/event_payload.go",
-     "	if _, single := any(T(0)).(float32); single && math.Abs(v) > math.MaxFloat32 {",
-     "	if _, single := any(T(0)).(float32); single && false && math.Abs(v) > math.MaxFloat32 {")
+     "	if _, single := any(T(0)).(float32); single && math.Abs(wide) > math.MaxFloat32 {",
+     "	if _, single := any(T(0)).(float32); single && false && math.Abs(wide) > math.MaxFloat32 {")
 PY
