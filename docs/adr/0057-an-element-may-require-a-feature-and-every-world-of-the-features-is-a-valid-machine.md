@@ -482,7 +482,14 @@ that backend gap to be closed, as its own change, rather than holding to a weake
   sets, and a set that breaks the edge stops at its `#error`. The enum of events writes its last member without a
   comma, so a variant that adds an event writes that member twice, each under its builds: correct, and left so,
   since the template's hash moves every committed tree.
-- Still to do: the C11 CMake matrix, then C++, then Swift; the fixtures to `tests/product_line/`.
+- **The C11 lane.** The fixtures are `tests/product_line/`, which the Rust crate reads too. `backends/c/tests`
+  generates the machine for every build (symbol prefix `lifted`) and each feature set's own (`alone`), and builds
+  one program per feature set with that set's `-D`: `c11_feature_conformance_{none,unicast,accept}` drive both
+  machines through every run of up to four events and compare what a host observes, and
+  `c11_feature_conformance_refuses_a_broken_edge` holds a build that breaks the edge to the header's `#error`. Two
+  machines of one name in one program needed the host's table nested under the prefix like every other symbol
+  (`native_action::render_with_options`); it had kept the bare name.
+- Still to do: C++, then Swift.
 
 ## Questions left open
 

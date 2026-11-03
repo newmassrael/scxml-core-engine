@@ -5071,6 +5071,101 @@ set_tests_properties(c11_headers_are_cxx_consumable PROPERTIES
 )
 
 # ============================================================
+# A product line's machine for every build (docs/adr/0057 §6 and §10).
+# ============================================================
+#
+# `tests/product_line/session.scxml` is generated once for every build of its
+# feature model, its members under `#if` over the features' macros, and once
+# for each feature set alone. The generator checks the first against the
+# second token for token before it writes it; this hands the question to the
+# compiler and to a run. One program per feature set compiles both machines
+# with that set's `-D` and drives them through every run of up to four events:
+# they must agree on everything a host observes of a machine. The symbol
+# prefixes keep the two machines apart in one program.
+#
+# One more test compiles the machine for every build under a set the model
+# does not admit (a feature without the one it requires), which its header
+# refuses with an `#error`.
+if(SCE_C_RUNTIME_POSIX)
+    set(_SCE_PRODUCT_LINE "${CMAKE_SOURCE_DIR}/tests/product_line")
+    set(_SCE_FEATURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/feature_conformance")
+
+    sce_codegen_generation(_SCE_FEATURE_LIFTED
+        DOCUMENT "${_SCE_PRODUCT_LINE}/session.scxml"
+        OUTPUT_DIR "${_SCE_FEATURE_DIR}/lifted"
+        LANGUAGE c11
+        INPUT_ROOT "${_SCE_PRODUCT_LINE}"
+        ARGS --c-symbol-prefix lifted
+        COMMENT "Generating the C11 machine for every build of tests/product_line/session.scxml")
+
+    # Each feature set: its name, the features it turns on, and the macros a
+    # build of it defines.
+    set(_SCE_FEATURE_SETS none unicast accept)
+    set(_SCE_FEATURES_none "")
+    set(_SCE_FEATURES_unicast "session-unicast")
+    set(_SCE_FEATURES_accept "session-unicast,session-unicast-accept")
+    set(_SCE_DEFINES_none "")
+    set(_SCE_DEFINES_unicast SCE_FEATURE_SESSION_UNICAST)
+    set(_SCE_DEFINES_accept SCE_FEATURE_SESSION_UNICAST SCE_FEATURE_SESSION_UNICAST_ACCEPT)
+
+    foreach(_SET ${_SCE_FEATURE_SETS})
+        sce_codegen_generation(_SCE_FEATURE_ALONE_${_SET}
+            DOCUMENT "${_SCE_PRODUCT_LINE}/session.scxml"
+            OUTPUT_DIR "${_SCE_FEATURE_DIR}/${_SET}/alone"
+            LANGUAGE c11
+            INPUT_ROOT "${_SCE_PRODUCT_LINE}"
+            ARGS "--features=${_SCE_FEATURES_${_SET}}" --c-symbol-prefix alone
+            COMMENT "Generating the C11 machine of tests/product_line/session.scxml for `${_SET}`")
+
+        add_executable(sce_c_feature_conformance_${_SET}
+            integration/test_feature_conformance.c
+            ${_SCE_FEATURE_LIFTED_SOURCES} ${_SCE_FEATURE_LIFTED_HEADERS}
+            ${_SCE_FEATURE_ALONE_${_SET}_SOURCES} ${_SCE_FEATURE_ALONE_${_SET}_HEADERS}
+        )
+        target_compile_definitions(sce_c_feature_conformance_${_SET} PRIVATE
+            ${_SCE_DEFINES_${_SET}}
+        )
+        # The program names each machine by its directory: `lifted/` beside
+        # the feature sets' own, and `alone/` in this set's.
+        target_include_directories(sce_c_feature_conformance_${_SET} PRIVATE
+            "${_SCE_FEATURE_DIR}" "${_SCE_FEATURE_DIR}/${_SET}"
+        )
+        target_link_libraries(sce_c_feature_conformance_${_SET} PRIVATE
+            sce_c_runtime sce_c_runtime_posix sce_c_base
+        )
+        set_target_properties(sce_c_feature_conformance_${_SET} PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        add_test(NAME c11_feature_conformance_${_SET}
+            COMMAND sce_c_feature_conformance_${_SET}
+        )
+        set_tests_properties(c11_feature_conformance_${_SET} PROPERTIES
+            TIMEOUT 120
+            LABELS "integration;c11;aot"
+        )
+    endforeach()
+
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        add_test(NAME c11_feature_conformance_refuses_a_broken_edge
+            COMMAND ${CMAKE_C_COMPILER} -std=c11 -fsyntax-only
+                    "-I$<JOIN:$<TARGET_PROPERTY:sce_c_runtime,INTERFACE_INCLUDE_DIRECTORIES>,;-I>"
+                    -DSCE_FEATURE_SESSION_UNICAST_ACCEPT
+                    "${_SCE_FEATURE_DIR}/lifted/session_sm.c"
+            COMMAND_EXPAND_LISTS
+        )
+        # The compiler fails either way; the test is that it fails on the
+        # model's refusal, which names the edge.
+        set_tests_properties(c11_feature_conformance_refuses_a_broken_edge PROPERTIES
+            TIMEOUT 60
+            LABELS "integration;c11;aot"
+            PASS_REGULAR_EXPRESSION "feature `session-unicast-accept` requires `session-unicast`"
+        )
+    endif()
+endif()
+
+# ============================================================
 # Aggregate build target for the whole C11 test surface.
 # ============================================================
 #

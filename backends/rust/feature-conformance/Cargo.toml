@@ -17,7 +17,7 @@ build = "build.rs"
 path = "src/lib.rs"
 
 [features]
-# The features of `product-line/features.scxml`, as the model states them
+# The features of `tests/product_line/features.scxml`, as the model states them
 # (`FeatureModel::cargo_features`): a feature the model says requires another
 # implies it here, which is how Cargo keeps the one thing the model asserts, a
 # build holds what each of its features requires (docs/adr/0057 §1). build.rs

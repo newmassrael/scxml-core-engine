@@ -125,6 +125,9 @@ on:
       # The policy documents `forge_conformance` compiles into its per-language
       # run tests: an edit to one changes what those tests assert.
       - 'tests/forge/resources/**'
+      # The product line every backend that keeps the variability is held to
+      # (docs/adr/0057 §10); `sce-feature-conformance`'s build.rs generates it.
+      - 'tests/product_line/**'
       # The documents `the_emitted_transition_function_equals_the_producer`
       # generates and states the table of: integration stems, so outside
       # `sce-build/**`, and an edit to one changes what that test asserts.
@@ -231,6 +234,9 @@ on:
       # The policy documents `forge_conformance` compiles into its per-language
       # run tests: an edit to one changes what those tests assert.
       - 'tests/forge/resources/**'
+      # The product line every backend that keeps the variability is held to
+      # (docs/adr/0057 §10); `sce-feature-conformance`'s build.rs generates it.
+      - 'tests/product_line/**'
       # The documents `the_emitted_transition_function_equals_the_producer`
       # generates and states the table of: integration stems, so outside
       # `sce-build/**`, and an edit to one changes what that test asserts.

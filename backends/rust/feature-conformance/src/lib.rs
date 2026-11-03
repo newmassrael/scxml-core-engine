@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! The machines `build.rs` generates from `product-line/session.scxml`
+//! The machines `build.rs` generates from `tests/product_line/session.scxml`
 //! (docs/adr/0057): [`lifted`], one machine for every build, and the machine of
 //! each feature set generated alone. The tests hold the first to the second.
 

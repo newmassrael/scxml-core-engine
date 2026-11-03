@@ -52,12 +52,17 @@ fn main() {
         .canonicalize()
         .expect("canonicalize tools/codegen/templates");
     let template_dir = templates.join(Language::Rust.template_subdir());
-    let document = manifest_dir.join("product-line/session.scxml");
+    // The product line every backend's lane reads (docs/adr/0057 §10).
+    let product_line = manifest_dir
+        .join("../../../tests/product_line")
+        .canonicalize()
+        .expect("canonicalize tests/product_line");
+    let document = product_line.join("session.scxml");
     let document = document.to_str().expect("a path of text");
 
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
-    println!("cargo:rerun-if-changed=product-line");
+    println!("cargo:rerun-if-changed={}", product_line.display());
     println!("cargo:rerun-if-changed={}", templates.display());
     println!(
         "cargo:rerun-if-changed={}",
