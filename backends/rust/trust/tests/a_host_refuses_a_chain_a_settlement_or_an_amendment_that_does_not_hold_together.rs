@@ -369,18 +369,18 @@ fn an_operation_that_conflicts_says_where_with_what_and_whether_it_froze_its_dev
         conflict.with.iter().map(|(_, data)| parsed(data)).collect()
     };
 
-    let host = host();
-    grant(&host, 1, 2, 1);
-    let (one, one_id) = operation(&host, &key(1), 1, 1, NO_OPERATION, 1);
-    let (two, two_id) = operation(&host, &key(1), 1, 2, one_id, 2);
+    let host_a = host();
+    grant(&host_a, 1, 2, 1);
+    let (one, one_id) = operation(&host_a, &key(1), 1, 1, NO_OPERATION, 1);
+    let (two, two_id) = operation(&host_a, &key(1), 1, 2, one_id, 2);
     // Past a gap: it names an operation at 3 the host is never given.
-    let (four, _) = operation(&host, &key(1), 1, 4, [5; 32], 4);
+    let (four, _) = operation(&host_a, &key(1), 1, 4, [5; 32], 4);
     for data in [&one, &two, &four] {
-        let taken = host.take_operation(WRITE, data).unwrap();
+        let taken = host_a.take_operation(WRITE, data).unwrap();
         assert!(taken.new && taken.applied, "{taken:?}");
         assert_eq!(taken.conflict, None);
     }
-    let again = host.take_operation(WRITE, &two).unwrap();
+    let again = host_a.take_operation(WRITE, &two).unwrap();
     assert!(!again.new);
     assert_eq!(
         again.conflict, None,
@@ -388,8 +388,8 @@ fn an_operation_that_conflicts_says_where_with_what_and_whether_it_froze_its_dev
     );
 
     // Another second, at the number of the true one: it froze the device at 2.
-    let (other_two, _) = operation(&host, &key(1), 1, 2, one_id, 9);
-    let taken = host.take_operation(WRITE, &other_two).unwrap();
+    let (other_two, _) = operation(&host_a, &key(1), 1, 2, one_id, 9);
+    let taken = host_a.take_operation(WRITE, &other_two).unwrap();
     assert!(taken.new && !taken.applied);
     let conflict = taken.conflict.clone().unwrap();
     assert_eq!(
@@ -402,11 +402,11 @@ fn an_operation_that_conflicts_says_where_with_what_and_whether_it_froze_its_dev
         (2, None, 2, true)
     );
     assert_eq!(with(&taken), vec![parsed(&two)]);
-    assert_eq!(host.equivocating(), vec![(1, 2)]);
+    assert_eq!(host_a.equivocating(), vec![(1, 2)]);
 
     // A third second: it conflicts with both held there, and the chain was frozen there already.
-    let (third_two, _) = operation(&host, &key(1), 1, 2, one_id, 10);
-    let taken = host.take_operation(WRITE, &third_two).unwrap();
+    let (third_two, _) = operation(&host_a, &key(1), 1, 2, one_id, 10);
+    let taken = host_a.take_operation(WRITE, &third_two).unwrap();
     let conflict = taken.conflict.clone().unwrap();
     assert_eq!(
         (
@@ -425,8 +425,8 @@ fn an_operation_that_conflicts_says_where_with_what_and_whether_it_froze_its_dev
 
     // A third that follows the true second, and that the fourth held does not name: it conflicts
     // at 3 with the fourth, above where the chain is frozen.
-    let (three, _) = operation(&host, &key(1), 1, 3, two_id, 3);
-    let taken = host.take_operation(WRITE, &three).unwrap();
+    let (three, _) = operation(&host_a, &key(1), 1, 3, two_id, 3);
+    let taken = host_a.take_operation(WRITE, &three).unwrap();
     let conflict = taken.conflict.clone().unwrap();
     assert_eq!(
         (

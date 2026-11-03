@@ -509,9 +509,9 @@ impl Request {
                 list: text_of("list")?,
                 node: number("node")?,
             }),
-            Some("login") => Ok(Request::Login(read_login(&value)?)),
+            Some("login") => Ok(Request::Login(read_login(value)?)),
             Some("create") => {
-                let login = read_login(&value)?;
+                let login = read_login(value)?;
                 if login.entries.is_empty() {
                     return Err("a creation gives the list's entries from its genesis".to_string());
                 }
@@ -525,7 +525,7 @@ impl Request {
                     .get("invitation")
                     .and_then(Invitation::from_value)
                     .ok_or("its `invitation` is not one")?,
-                proof: read_proof(&value).ok_or("its proof is not one")?,
+                proof: read_proof(value).ok_or("its proof is not one")?,
                 key_package: match value.get("key_package") {
                     None => None,
                     Some(_) => Some(text_of("key_package")?),
