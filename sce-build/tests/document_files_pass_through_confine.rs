@@ -192,11 +192,10 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             // records of a run and not documents a document names. Both commands
             // read them in the one function that judges the files of a kind.
             ("judge_history_files", 1),
-            // The document a command is named, read before its pipeline is given
-            // it (`generate`, the AST emit and the position finder all read it
-            // here), and the replay scenario a command is named: the operator's own
-            // arguments, as `cmd_check` and `cmd_scenarios` read theirs.
-            ("read_named_document", 1),
+            // The replay scenario a command is named: the operator's own
+            // argument, as `cmd_scenarios` reads it. (The document a command is
+            // named is read through `confine`, so a plan run can answer for a
+            // child document it holds in memory.)
             ("replay_scenario", 1),
         ],
     ),
