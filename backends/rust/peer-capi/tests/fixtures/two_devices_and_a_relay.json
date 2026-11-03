@@ -562,6 +562,16 @@
     {
       "device": 1,
       "op": "request",
+      "text": "{\"from\":\"4\",\"node\":\"2\",\"op\":\"operations\",\"to\":\"18446744073709551615\",\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "respond",
+      "text": "{\"ok\":\"operations\",\"operations\":[],\"v\":1}"
+    },
+    {
+      "device": 1,
+      "op": "request",
       "text": "{\"data\":\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"0yyRTxR99ywkc8QNgmCWBwvShzn_NuNWbgbAFMIPwkk\\\",\\\"seq\\\":\\\"4\\\",\\\"sig\\\":\\\"e6mRQXxXNsa8Km3kgxRi7LRZ9YlusZLCGpl3w_VyvwyM28ca9YadGEjMgGLUhLuMbyHbIUzNMzcJot25H5RPAA\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\",\"event\":\"record_list.write\",\"op\":\"submit\",\"v\":1}"
     },
     {
@@ -829,12 +839,12 @@
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"audience\":\"the-relay\",\"expires_at_ms\":\"105000\",\"held\":true,\"nonce\":\"M1GaVzYPGr5bNnONQEESqv9EVAJlBrdpaChwldnXss0\",\"ok\":\"challenge\",\"v\":1}"
+      "text": "{\"audience\":\"the-relay\",\"expires_at_ms\":\"106000\",\"held\":true,\"nonce\":\"M1GaVzYPGr5bNnONQEESqttr1VGHYeziNjJKzzQ8ehU\",\"ok\":\"challenge\",\"v\":1}"
     },
     {
       "device": 1,
       "op": "request",
-      "text": "{\"entries\":[\"{\\\"body\\\":{\\\"final_seq\\\":\\\"4\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"J2uHA85F1X_0oJQn1h_efCh_xci-Z68HpwRWnRDi-Px-mqjB0oLX87VVdeLBgz6nuS-A8VClWzNsZGOvEQV8Cw\\\"]]}\"],\"expires_at_ms\":\"105000\",\"list\":\"home\",\"node\":\"2\",\"nonce\":\"M1GaVzYPGr5bNnONQEESqv9EVAJlBrdpaChwldnXss0\",\"op\":\"login\",\"signature\":\"ifEYCWbQnTg_kZVTC-3zzfdflM8umoPQQ6cq3tlBxLTHWNQI-yshfD4zxRp7Ptq02wtG-mYainkJwJl2OJefAw\",\"v\":1}"
+      "text": "{\"entries\":[\"{\\\"body\\\":{\\\"final_seq\\\":\\\"4\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"J2uHA85F1X_0oJQn1h_efCh_xci-Z68HpwRWnRDi-Px-mqjB0oLX87VVdeLBgz6nuS-A8VClWzNsZGOvEQV8Cw\\\"]]}\"],\"expires_at_ms\":\"106000\",\"list\":\"home\",\"node\":\"2\",\"nonce\":\"M1GaVzYPGr5bNnONQEESqttr1VGHYeziNjJKzzQ8ehU\",\"op\":\"login\",\"signature\":\"mtiaIYGnQv_UvHRKlmeQhF5OZ9b7K666cAfiaqdw7cSU2b_Hxq2mqhSESIjRGElHdmSX1A5fWXhvw8lzJrt7Bw\",\"v\":1}"
     },
     {
       "device": 1,
