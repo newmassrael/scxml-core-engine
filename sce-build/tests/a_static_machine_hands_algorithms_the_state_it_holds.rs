@@ -193,8 +193,8 @@ fn a_value_that_is_computed_is_not_handed_over() {
 fn a_list_the_variable_cannot_hold_is_refused() {
     assert_refused(
         &machine(Some((
-            r#"sce:type="list&lt;record:Entry&gt;" sce:capacity="8""#,
-            r#"sce:type="list&lt;record:Entry&gt;" sce:capacity="4""#,
+            r#"sce:type="list&lt;record:Entry&gt;[8]""#,
+            r#"sce:type="list&lt;record:Entry&gt;[4]""#,
         ))),
         "`AddEntry` may return at most 8, and `entries` holds at most 4",
     );

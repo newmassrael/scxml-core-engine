@@ -7,8 +7,9 @@
 // list may not be smaller than what the algorithm may return, because a machine holds
 // the same list wherever it runs. A build that wants a larger one (a team calendar on a
 // server, where a room on a microcontroller holds a few) cannot edit the number in one
-// file and leave the other behind. `sce:limit="name"` beside a `capacity` or a
-// `returns-max-size` is the name that ties them, and `sce-codegen --limit name=N` is the
+// file and leave the other behind. A name in the bound of the type, `[name=N]`
+// (docs/adr/0086; the legacy `sce:limit="name"` beside a `capacity` or a
+// `returns-max-size` is its synonym), is what ties them, and `sce-codegen --limit name=N` is the
 // number a build gives it; a document built without one is the document as written.
 //
 // What is asked here is that one name moves the machine's list and the algorithm's
@@ -24,6 +25,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::value_type::WrittenType;
 use tempfile::{tempdir, TempDir};
 
 fn sce_codegen_bin() -> PathBuf {
@@ -607,7 +609,12 @@ fn an_algorithm_reads_a_bound_by_its_name() {
     assert!(out.contains("rooms"), "the refusal names the read:\n{out}");
 }
 
-/// Every `sce:limit` the repository's own documents write, with the bound beside it.
+const SCE_NS: &str = "http://sce.dev/ext";
+
+/// Every named bound the repository's own documents write, with its number: a
+/// `[name=N]` in a type (docs/adr/0086, read by the build's own type reader at any
+/// depth of the type) and a legacy `sce:limit` beside the attribute it names, which
+/// the build still reads as a synonym.
 fn limits_the_repository_writes() -> BTreeMap<String, Vec<(PathBuf, u32)>> {
     let mut found: BTreeMap<String, Vec<(PathBuf, u32)>> = BTreeMap::new();
     for root in ["stdlib", "sce-build/tests/fixtures/static_datamodel"] {
@@ -623,37 +630,68 @@ fn limits_the_repository_writes() -> BTreeMap<String, Vec<(PathBuf, u32)>> {
                     continue;
                 }
                 let text = std::fs::read_to_string(&path).expect("a document");
-                if !text.contains("sce:limit") {
-                    continue;
-                }
                 let doc = roxmltree::Document::parse(&text).expect("a document that parses");
                 for node in doc.descendants().filter(|n| n.is_element()) {
-                    let Some(name) = node.attribute(("http://sce.dev/ext", "limit")) else {
-                        continue;
-                    };
-                    let bound = node
-                        .attribute("capacity")
-                        .or_else(|| node.attribute(("http://sce.dev/ext", "capacity")))
-                        .or_else(|| node.attribute("returns-max-size"))
-                        .or_else(|| node.attribute(("http://sce.dev/ext", "max-size")))
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "{}: sce:limit=\"{name}\" is beside no capacity, \
-                                 returns-max-size or max-size",
-                                path.display()
-                            )
-                        })
-                        .parse::<u32>()
-                        .expect("a bound is a number");
-                    found
-                        .entry(name.to_string())
-                        .or_default()
-                        .push((path.clone(), bound));
+                    for (name, bound) in named_bounds_in_types(&path, node)
+                        .into_iter()
+                        .chain(legacy_named_bound(&path, node))
+                    {
+                        found.entry(name).or_default().push((path.clone(), bound));
+                    }
                 }
             }
         }
     }
     found
+}
+
+/// The named bounds of the types an element writes: `sce:type` on a datamodel
+/// variable, and `type` on an element of the SCE namespace (an algorithm's return,
+/// parameter and local, a record's field). `type` on an SCXML element names an I/O
+/// processor or an invoked service, not a value type, and is not read. Only a type
+/// that writes a name (`=` appears in the grammar only inside `[name=N]`) is read,
+/// so a fixture that holds a malformed type on purpose is not this test's concern;
+/// a type that writes a name and does not read is.
+fn named_bounds_in_types(path: &Path, node: roxmltree::Node) -> Vec<(String, u32)> {
+    let in_sce = node.tag_name().namespace() == Some(SCE_NS);
+    let written = [
+        node.attribute((SCE_NS, "type")),
+        in_sce.then(|| node.attribute("type")).flatten(),
+    ];
+    let mut named = Vec::new();
+    for text in written.into_iter().flatten().filter(|t| t.contains('=')) {
+        let ty = WrittenType::read(text).unwrap_or_else(|refusal| {
+            panic!(
+                "{}: the type `{text}` names a bound and does not read: {}",
+                path.display(),
+                refusal.rule()
+            )
+        });
+        ty.resolve_limits(&mut |name, max| {
+            named.push((name.to_string(), max));
+            max
+        });
+    }
+    named
+}
+
+/// A legacy `sce:limit="name"` with the number of the attribute beside it.
+fn legacy_named_bound(path: &Path, node: roxmltree::Node) -> Option<(String, u32)> {
+    let name = node.attribute((SCE_NS, "limit"))?;
+    let bound = node
+        .attribute("capacity")
+        .or_else(|| node.attribute((SCE_NS, "capacity")))
+        .or_else(|| node.attribute("returns-max-size"))
+        .or_else(|| node.attribute((SCE_NS, "max-size")))
+        .unwrap_or_else(|| {
+            panic!(
+                "{}: sce:limit=\"{name}\" is beside no capacity, returns-max-size or max-size",
+                path.display()
+            )
+        })
+        .parse::<u32>()
+        .expect("a bound is a number");
+    Some((name.to_string(), bound))
 }
 
 #[test]
@@ -673,7 +711,7 @@ fn the_bounds_of_the_repository_that_share_a_name_write_one_number() {
             assert_eq!(
                 *bound,
                 first,
-                "sce:limit=\"{name}\" is {first} in {} and {bound} in {}: one name is one bound",
+                "the bound named `{name}` is {first} in {} and {bound} in {}: one name is one bound",
                 sites[0].0.display(),
                 path.display()
             );
