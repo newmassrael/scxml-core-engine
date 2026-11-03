@@ -67,8 +67,6 @@ const GENERATED_NAME_FRAGMENTS: &[&str] = &[
     "__sce_synth_invoke__",
     // The stub of a hybrid `<invoke>`.
     "_hybrid",
-    // The list of children a C++ generation writes.
-    "_children.txt",
     // The source map every generation writes.
     "sce_sourcemap",
 ];

@@ -1500,14 +1500,16 @@ const IN_LINE_LISTING_LEAF: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/sc
   <state id="idle"/>
 </scxml>"#;
 
-/// The C++ children listing (`<stem>_children.txt`) names the children of
-/// every machine the run writes, the in-line child's as well as the
-/// document's, and the document that child starts by `src` is staged into the
-/// output directory as one the document starts is. The listing named the
-/// document's own children only, and nothing staged the in-line child's
-/// `src` child, whose machine the in-line child's machine includes.
+/// A C++ run answers for the children of every machine it writes, the in-line
+/// child's as well as the document's: it writes the machine of each child it
+/// carries, at every depth, stages the document the in-line child starts by
+/// `src` into the output directory as one the document starts is, and plans
+/// that document's generation once (`--plan-children`), which is what a build
+/// declares it from. A listing the run wrote named the document's own
+/// children only, and nothing staged the in-line child's `src` child, whose
+/// machine the in-line child's machine includes.
 #[test]
-fn a_cpp_children_listing_names_the_children_of_every_machine_the_run_writes() {
+fn a_cpp_run_answers_for_the_children_of_every_machine_it_writes() {
     let scratch = reset_scratch("cpp_in_line_listing");
     let document = scratch.join("in_line_listing.scxml");
     std::fs::write(&document, IN_LINE_LISTING).expect("write in_line_listing");
@@ -1518,21 +1520,50 @@ fn a_cpp_children_listing_names_the_children_of_every_machine_the_run_writes() {
     .expect("write in_line_listing_leaf");
     let out_dir = scratch.join("out");
     generate_into("cpp", &document, &out_dir, &["--no-format"]);
-    let listing = std::fs::read_to_string(out_dir.join("in_line_listing_children.txt"))
-        .expect("read the children listing");
-    let listed: Vec<&str> = listing.lines().collect();
-    assert_eq!(
-        listed,
-        [
-            "in_line_listing__sce_synth_invoke__kid",
-            "in_line_listing__sce_synth_invoke__kid__sce_synth_invoke__kid",
-            "in_line_listing_leaf",
-        ],
-        "the listing names each child of each machine the run writes, once"
-    );
+    for machine in [
+        "in_line_listing__sce_synth_invoke__kid_sm.h",
+        "in_line_listing__sce_synth_invoke__kid__sce_synth_invoke__kid_sm.h",
+    ] {
+        assert!(
+            out_dir.join(machine).is_file(),
+            "the run did not write {machine}, the machine of a child it carries"
+        );
+    }
     assert!(
         out_dir.join("in_line_listing_leaf.scxml").is_file(),
         "the document the in-line child starts by `src` was not staged beside the output"
+    );
+
+    let planned_into = scratch.join("planned");
+    let plan = Command::new(sce_codegen_bin())
+        .args([
+            "--plan",
+            "--plan-children",
+            "generate",
+            "-l",
+            "cpp",
+            "--no-format",
+            "-o",
+        ])
+        .arg(&planned_into)
+        .arg(&document)
+        .current_dir(repo_root())
+        .output()
+        .expect("spawn sce-codegen");
+    assert!(
+        plan.status.success(),
+        "the plan failed:\n{}",
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    let leaf = planned_into.join("in_line_listing_leaf.scxml");
+    let leaf_machine = planned_into.join("in_line_listing_leaf_sm.h");
+    let generation = format!("{}\t{}", leaf.display(), leaf_machine.display());
+    let stdout = String::from_utf8_lossy(&plan.stdout);
+    assert_eq!(
+        stdout.lines().filter(|line| *line == generation).count(),
+        1,
+        "the plan does not plan the generation of the in-line child's `src` child once:\n\
+         {stdout}"
     );
 }
 

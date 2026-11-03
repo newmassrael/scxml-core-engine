@@ -537,8 +537,8 @@ impl DriftContext {
 
 /// File extension predicate matching `cmd_verify`'s
 /// `collect_generated_files` set. Header injection is skipped for
-/// every other extension so `.scxml` stubs, `.txt` children lists,
-/// CMake `.d` depfiles, and `.inl` C++ partials stay byte-stable.
+/// every other extension so `.scxml` stubs, CMake `.d` depfiles, and
+/// `.inl` C++ partials stay byte-stable.
 fn is_drift_eligible_path(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|e| e.to_str()),
@@ -7501,21 +7501,12 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
             .host_invoker_types
             .clone_from(&model.host_invoker_types);
 
-        // §scxml-6.4: Generate children metadata + hybrid SCXML stubs for all languages.
-        // C++ lists, in `_children.txt`, every child a machine this run writes
-        // starts, for a build of its own that generates those children itself.
-        // Nothing in this repository reads it: the CMake routes that generate
-        // at build time ask `--plan generate`, which names this file among the
-        // run's outputs, so they declare it as a byproduct, and name each child
-        // document to generate from the same answer (cmake/SCECodegenPlan.cmake).
-        // All languages need hybrid stubs.
-        let children = collect_invoke_child_names(&model);
-        if lang == Language::Cpp && !children.is_empty() {
-            let children_file = out_path.join(format!("{input_stem}_children.txt"));
-            let listing = children.join("\n") + "\n";
-            emit_generated(&children_file, listing.as_bytes(), WritePolicy::Always);
-        }
-        // §scxml-6.4: Copy each child document the machines start by `src`, or
+        // §scxml-6.4: which children a build generates by a run of their own is
+        // the run's answer, not a listing written beside its output: the child
+        // documents it writes ([`child_documents`]), whose generations
+        // `--plan-children` plans (cmake/SCECodegenPlan.cmake).
+        //
+        // Copy each child document the machines start by `src`, or
         // as a candidate, to the output directory, beside the parent that
         // starts it, where a build generates the child's own machine from it
         // (`copy_static_invoke_children` says which). An in-line child is not
