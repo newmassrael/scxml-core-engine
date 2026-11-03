@@ -22,7 +22,7 @@ use crate::forge::error::{ForgeError, ImportError, Located};
 use crate::forge::generator::StatelessFunction;
 use crate::forge::model::{
     AlgorithmModel, AlgorithmValueType, CodecModel, EntryType, EnumRef, ForgeDocument, ForgeField,
-    ForgeImport, ForgeKind, ListElemType, OptionalElemType, OutOfBounds, ParsedForge, SceType,
+    ForgeImport, ForgeKind, OutOfBounds, ParsedForge, SceType,
 };
 use crate::forge::type_ctx::{CalleeKind, StaticCallee, StaticSlot, StaticValueSignature};
 use crate::forge::types::{CallReading, RecordId};
@@ -370,7 +370,7 @@ fn value_signature(
     let state_return = signature.return_type.as_ref().is_some_and(|t| {
         holds_enum(t)
             || (t.scalar().is_none()
-                && !matches!(t.list_elem(), Some(ListElemType::Scalar(_)) if !state_param))
+                && !matches!(t.list_elem(), Some(AlgorithmValueType::Scalar(_)) if !state_param))
     });
     if !state_param && !state_return {
         return Ok(None);
@@ -453,52 +453,64 @@ fn value_signature(
         Ok(SceType::Enum(EnumRef { alias: own_alias }))
     };
     let slot = |name: &str, ty: &AlgorithmValueType| -> Result<StaticSlot, String> {
+        // A composition no call of a statechart hands over yet, refused by the
+        // part of the type it stops at (docs/adr/0086, section 7.3).
+        let composed = |part: &AlgorithmValueType| {
+            format!(
+                "its {name} is of type {}, and a statechart does not hand an algorithm the {} \
+                 `{part}` yet (docs/adr/0086, section 7.3)",
+                ty.as_attr(),
+                part.constructor()
+            )
+        };
         match ty {
             AlgorithmValueType::Scalar(SceType::Enum(reference)) => {
                 enum_slot(name, &reference.alias).map(StaticSlot::Scalar)
             }
             AlgorithmValueType::Scalar(t) => Ok(StaticSlot::Scalar(t.clone())),
+            AlgorithmValueType::Text { .. } => Ok(StaticSlot::Scalar(SceType::String)),
+            AlgorithmValueType::Bytes { .. } => Ok(StaticSlot::Scalar(SceType::Bytes)),
             AlgorithmValueType::Record { alias } => Ok(StaticSlot::Record(record(alias)?)),
-            AlgorithmValueType::List {
-                elem: ListElemType::Scalar(t),
-            } => {
-                if crate::forge::types::ListElem::of(t).is_none() {
-                    return Err(format!(
-                        "a list of {} is not one a statechart holds",
-                        t.as_attr()
-                    ));
+            AlgorithmValueType::List { elem, .. } => match &**elem {
+                AlgorithmValueType::Scalar(t) => {
+                    if crate::forge::types::ListElem::of(t).is_none() {
+                        return Err(format!(
+                            "a list of {} is not one a statechart holds",
+                            t.as_attr()
+                        ));
+                    }
+                    Ok(StaticSlot::ScalarList(t.clone()))
                 }
-                Ok(StaticSlot::ScalarList(t.clone()))
-            }
-            AlgorithmValueType::List {
-                elem: ListElemType::Record { alias },
-            } => Ok(StaticSlot::RecordList(record(alias)?)),
-            // A value that may be absent, of a number, a `bool` or a text: the same
-            // type on both sides, handed over and taken back as it is
-            // (docs/adr/0055).
-            //
-            // One of an enum is named, as an enum slot is, by the alias the
-            // statechart imports the document under, and crosses by the declared name
-            // of its variant where it is present, as a value of the enum does.
-            AlgorithmValueType::Optional {
-                elem: OptionalElemType::Scalar(SceType::Enum(reference)),
-            } => enum_slot(name, &reference.alias).map(StaticSlot::Optional),
-            AlgorithmValueType::Optional {
-                elem: OptionalElemType::Scalar(SceType::Bytes),
-            } => Err(format!(
-                "its {name} is of type {}, and a byte string an algorithm holds is not the one \
-                 a statechart's variable holds, so no call crosses an optional one \
-                 (docs/adr/0055)",
-                ty.as_attr()
-            )),
-            AlgorithmValueType::Optional {
-                elem: OptionalElemType::Scalar(t),
-            } => Ok(StaticSlot::Optional(t.clone())),
-            // An optional record is named, as a record is, by the alias the
-            // statechart imports the same schema under (docs/adr/0055, step 9).
-            AlgorithmValueType::Optional {
-                elem: OptionalElemType::Record { alias },
-            } => Ok(StaticSlot::OptionalRecord(record(alias)?)),
+                AlgorithmValueType::Record { alias } => Ok(StaticSlot::RecordList(record(alias)?)),
+                other => Err(composed(other)),
+            },
+            AlgorithmValueType::Optional { elem } => match &**elem {
+                // A value that may be absent, of a number, a `bool` or a text: the
+                // same type on both sides, handed over and taken back as it is
+                // (docs/adr/0055).
+                //
+                // One of an enum is named, as an enum slot is, by the alias the
+                // statechart imports the document under, and crosses by the
+                // declared name of its variant where it is present, as a value of
+                // the enum does.
+                AlgorithmValueType::Scalar(SceType::Enum(reference)) => {
+                    enum_slot(name, &reference.alias).map(StaticSlot::Optional)
+                }
+                AlgorithmValueType::Bytes { .. } => Err(format!(
+                    "its {name} is of type {}, and a byte string an algorithm holds is not the \
+                     one a statechart's variable holds, so no call crosses an optional one \
+                     (docs/adr/0055)",
+                    ty.as_attr()
+                )),
+                AlgorithmValueType::Scalar(t) => Ok(StaticSlot::Optional(t.clone())),
+                AlgorithmValueType::Text { .. } => Ok(StaticSlot::Optional(SceType::String)),
+                // An optional record is named, as a record is, by the alias the
+                // statechart imports the same schema under (docs/adr/0055, step 9).
+                AlgorithmValueType::Record { alias } => {
+                    Ok(StaticSlot::OptionalRecord(record(alias)?))
+                }
+                other => Err(composed(other)),
+            },
         }
     };
     let params = signature

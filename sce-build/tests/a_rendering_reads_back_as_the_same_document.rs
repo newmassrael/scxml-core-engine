@@ -325,7 +325,7 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
                 sce_type: AlgorithmValueType::Scalar(SceType::Uint8),
                 type_spelling: None,
             }],
-            return_type: Some(AlgorithmValueType::Scalar(SceType::Bytes)),
+            return_type: Some(AlgorithmValueType::Bytes { max: None }),
             returns_max_size: Some(4),
             returns_limit: None,
             may_fail: false,
@@ -335,7 +335,7 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
             AlgorithmStmt::Var {
                 name: "out".to_string(),
                 name_spelling: None,
-                sce_type: AlgorithmValueType::Scalar(SceType::Bytes),
+                sce_type: AlgorithmValueType::Bytes { max: None },
                 init: None,
                 init_spelling: None,
                 capacity: Some(4),

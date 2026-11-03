@@ -220,7 +220,7 @@ pub fn check(
             .value_type
             .as_ref()
             .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
-            .and_then(crate::forge::model::OptionalElemType::record_alias)
+            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
         {
             judge.optional_record(&plain, var, alias, &model.imported_records)?;
             continue;
@@ -249,7 +249,7 @@ pub fn check(
             .value_type
             .as_ref()
             .and_then(crate::forge::model::AlgorithmValueType::list_elem)
-            .and_then(crate::forge::model::ListElemType::record_alias)
+            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
         {
             // A list starts empty, so it names no variant of an enum field of its
             // records, and holds one the document does not import (docs/adr/0054);
@@ -655,7 +655,7 @@ pub(crate) fn enum_variables(
         // (docs/adr/0055): `status.value`, and not `status`, holds it.
         if let Some(crate::forge::model::SceType::Enum(reference)) = value_type
             .optional_elem()
-            .and_then(crate::forge::model::OptionalElemType::scalar)
+            .and_then(crate::forge::model::AlgorithmValueType::scalar)
         {
             held.insert(
                 crate::forge::static_enum::present_value_path(&var.id),
@@ -669,7 +669,7 @@ pub(crate) fn enum_variables(
         // `<id>.value.<field>` (docs/adr/0055, step 9).
         if let Some(schema) = value_type
             .optional_elem()
-            .and_then(crate::forge::model::OptionalElemType::record_alias)
+            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
             .and_then(|a| records.get(a))
         {
             held.extend(enum_fields(
@@ -679,7 +679,10 @@ pub(crate) fn enum_variables(
         }
         // The enum field of the element a list of records is indexed at, held
         // under `<list>[].<field>` whatever the index is.
-        if let Some(crate::forge::model::ListElemType::Record { alias }) = value_type.list_elem() {
+        if let Some(alias) = value_type
+            .list_elem()
+            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
+        {
             if let Some(schema) = records.get(alias) {
                 held.extend(enum_field_aliases(schema).map(|(field, alias)| {
                     (
@@ -1622,7 +1625,7 @@ impl<'a> Judge<'a> {
             .as_ref()
             .and_then(crate::forge::model::AlgorithmValueType::list_elem)
         {
-            Some(crate::forge::model::ListElemType::Scalar(elem)) => elem,
+            Some(crate::forge::model::AlgorithmValueType::Scalar(elem)) => elem,
             _ => {
                 return Err(place(format!(
                     "`{}` returns a list of {}, and `{}` holds records",
@@ -1680,7 +1683,7 @@ impl<'a> Judge<'a> {
         target: &Variable,
         callee: &crate::forge::type_ctx::StaticCallee,
     ) -> Result<(), Located<ForgeError>> {
-        use crate::forge::model::{AlgorithmValueType, ListElemType};
+        use crate::forge::model::AlgorithmValueType;
         use crate::forge::type_ctx::StaticSlot;
         let value = callee
             .value
@@ -1699,51 +1702,47 @@ impl<'a> Judge<'a> {
             )
         };
         let held = target.value_type.as_ref();
-        let expected = match (&value.ret, held) {
-            (Some(StaticSlot::Record(returned)), Some(AlgorithmValueType::Record { alias }))
-                if returned == alias =>
-            {
+        let held_record = held.and_then(AlgorithmValueType::record_alias);
+        let held_optional_record = held
+            .and_then(AlgorithmValueType::optional_elem)
+            .and_then(AlgorithmValueType::record_alias);
+        let held_list = held.and_then(AlgorithmValueType::list_elem);
+        let expected = match &value.ret {
+            Some(StaticSlot::Record(returned)) if held_record == Some(returned.as_str()) => {
                 InferredType::Unknown
             }
             // An optional record a call answers is taken whole into an optional
             // record variable of its schema, and a record into one as a present
             // value (docs/adr/0055, step 9).
-            (
-                Some(StaticSlot::OptionalRecord(returned)),
-                Some(AlgorithmValueType::Optional {
-                    elem: crate::forge::model::OptionalElemType::Record { alias },
-                }),
-            ) if returned == alias => {
+            Some(StaticSlot::OptionalRecord(returned))
+                if held_optional_record == Some(returned.as_str()) =>
+            {
                 InferredType::Optional(crate::forge::types::OptionalElem::Record)
             }
-            (
-                Some(StaticSlot::Record(returned)),
-                Some(AlgorithmValueType::Optional {
-                    elem: crate::forge::model::OptionalElemType::Record { alias },
-                }),
-            ) if returned == alias => InferredType::Unknown,
-            (
-                Some(StaticSlot::ScalarList(returned)),
-                Some(AlgorithmValueType::List {
-                    elem: ListElemType::Scalar(held),
-                }),
-            ) if returned == held => match crate::forge::types::ListElem::of(returned) {
-                Some(elem) => InferredType::List(elem),
-                None => {
-                    return Err(place(format!(
-                        "`{}` returns a list of {}, which a list variable does not hold",
-                        callee.alias,
-                        returned.as_attr()
-                    )))
+            Some(StaticSlot::Record(returned))
+                if held_optional_record == Some(returned.as_str()) =>
+            {
+                InferredType::Unknown
+            }
+            Some(StaticSlot::ScalarList(returned)) if matches!(held_list, Some(AlgorithmValueType::Scalar(elem)) if elem == returned) => {
+                match crate::forge::types::ListElem::of(returned) {
+                    Some(elem) => InferredType::List(elem),
+                    None => {
+                        return Err(place(format!(
+                            "`{}` returns a list of {}, which a list variable does not hold",
+                            callee.alias,
+                            returned.as_attr()
+                        )))
+                    }
                 }
-            },
-            (
-                Some(StaticSlot::RecordList(returned)),
-                Some(AlgorithmValueType::List {
-                    elem: ListElemType::Record { alias },
-                }),
-            ) if returned == alias => InferredType::List(crate::forge::types::ListElem::Record),
-            (Some(slot), _) => {
+            }
+            Some(StaticSlot::RecordList(returned))
+                if held_list.and_then(AlgorithmValueType::record_alias)
+                    == Some(returned.as_str()) =>
+            {
+                InferredType::List(crate::forge::types::ListElem::Record)
+            }
+            Some(slot) => {
                 return Err(place(format!(
                     "`{}` returns {}, which `{}` does not hold",
                     callee.alias,
@@ -1762,7 +1761,7 @@ impl<'a> Judge<'a> {
                     target.id
                 )))
             }
-            (None, _) => {
+            None => {
                 return Err(place(format!("`{}` returns nothing", callee.alias)));
             }
         };
@@ -1984,7 +1983,7 @@ impl<'a> Judge<'a> {
             .find(|v| v.id == name.trim())
             .and_then(|v| v.value_type.as_ref())
             .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
-            .and_then(crate::forge::model::OptionalElemType::record_alias)
+            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
     }
 
     /// An `<assign>` of a whole value to the optional record variable at the
@@ -2844,7 +2843,7 @@ impl<'a> Judge<'a> {
     /// [`Self::text_bound`] of one node of a parsed value.
     fn node_text_bound(&self, node: &crate::forge::expr::TypedExpr) -> Option<u32> {
         use crate::forge::expr::{BinOp, ExprKind};
-        use crate::forge::model::{ListElemType, SceType};
+        use crate::forge::model::SceType;
         let schema_field = |alias: &str, field: &str| -> Option<u32> {
             self.schemas
                 .get(alias)?
@@ -2920,10 +2919,12 @@ impl<'a> Judge<'a> {
                         let ExprKind::Ident(list) = &list.kind else {
                             return None;
                         };
-                        match variable(list)?.value_type.as_ref()?.list_elem()? {
-                            ListElemType::Record { alias } => schema_field(alias, property),
-                            ListElemType::Scalar(_) => None,
-                        }
+                        let alias = variable(list)?
+                            .value_type
+                            .as_ref()?
+                            .list_elem()?
+                            .record_alias()?;
+                        schema_field(alias, property)
                     }
                     _ => None,
                 }
@@ -3517,7 +3518,7 @@ impl<'a> Judge<'a> {
                 {
                     // A record is appended whole, by the name of a record of
                     // the list's schema: nothing computes one in an expression.
-                    Some(crate::forge::model::ListElemType::Record { alias }) => {
+                    Some(crate::forge::model::AlgorithmValueType::Record { alias }) => {
                         self.record_of(
                             "sce:append",
                             &action.expr,
@@ -3528,7 +3529,7 @@ impl<'a> Judge<'a> {
                     }
                     elem => {
                         let elem = elem
-                            .and_then(crate::forge::model::ListElemType::scalar)
+                            .and_then(crate::forge::model::AlgorithmValueType::scalar)
                             .map_or(InferredType::Unknown, InferredType::from_sce_type);
                         self.expr(
                             ctx,
@@ -3683,10 +3684,7 @@ impl<'a> Judge<'a> {
         // (docs/adr/0055, section 3).
         inner.proven = narrowing::loop_entry(&ctx.proven, &action.actions);
         // A record item is a record an append in the body may take by name.
-        let record_item = match elem {
-            crate::forge::model::ListElemType::Record { alias } => Some(alias.clone()),
-            crate::forge::model::ListElemType::Scalar(_) => None,
-        };
+        let record_item = elem.record_alias().map(str::to_string);
         let enum_paths = record_item
             .as_deref()
             .and_then(|alias| self.schemas.get(alias))
@@ -3754,8 +3752,9 @@ impl<'a> Judge<'a> {
             .and_then(|v| v.value_type.as_ref())
             .and_then(crate::forge::model::AlgorithmValueType::list_elem)
         {
-            Some(crate::forge::model::ListElemType::Record { alias: held }) if held == alias => {}
-            Some(crate::forge::model::ListElemType::Record { alias: held }) => {
+            Some(crate::forge::model::AlgorithmValueType::Record { alias: held })
+                if held == alias => {}
+            Some(crate::forge::model::AlgorithmValueType::Record { alias: held }) => {
                 return Err(refuse(format!(
                     "an element of the list `{list}` is a record of the schema {held}, and \
                      `{location}` holds one of the schema {alias}"
@@ -4239,8 +4238,13 @@ impl<'a> Judge<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::model::{AlgorithmValueType, OptionalElemType, SceType};
+    use crate::forge::model::{AlgorithmValueType, SceType};
     use crate::forge::types::OptionalElem;
+
+    /// The type of one value of the scalar `t`.
+    fn scalar(t: SceType) -> AlgorithmValueType {
+        AlgorithmValueType::of_scalar(t)
+    }
 
     /// A child's top-level `<data>` of `value_type`, starting at `expr`.
     fn variable(value_type: AlgorithmValueType, expr: &str) -> Variable {
@@ -4252,8 +4256,10 @@ mod tests {
         }
     }
 
-    fn optional(elem: OptionalElemType) -> AlgorithmValueType {
-        AlgorithmValueType::Optional { elem }
+    fn optional(elem: AlgorithmValueType) -> AlgorithmValueType {
+        AlgorithmValueType::Optional {
+            elem: Box::new(elem),
+        }
     }
 
     /// A value is handed to a bool, a number or a text, and to an optional value of
@@ -4264,32 +4270,33 @@ mod tests {
     fn a_child_variable_is_handed_a_value_of_its_own_optional_type() {
         let slot = |value_type| seed_slot(&variable(value_type, "null"));
         assert_eq!(
-            slot(optional(OptionalElemType::Scalar(SceType::Int64))),
+            slot(optional(scalar(SceType::Int64))),
             Some(InferredType::Optional(OptionalElem::of(&SceType::Int64)))
         );
         assert_eq!(
-            slot(optional(OptionalElemType::Scalar(SceType::String))),
+            slot(optional(scalar(SceType::String))),
             Some(InferredType::Optional(OptionalElem::of(&SceType::String)))
         );
         assert_eq!(
-            slot(optional(OptionalElemType::Scalar(SceType::Bool))),
+            slot(optional(scalar(SceType::Bool))),
             Some(InferredType::Optional(OptionalElem::of(&SceType::Bool)))
         );
         assert_eq!(
-            slot(AlgorithmValueType::Scalar(SceType::Int64)),
+            slot(scalar(SceType::Int64)),
             Some(InferredType::from_sce_type(&SceType::Int64))
         );
         assert_eq!(
-            slot(optional(OptionalElemType::Scalar(SceType::Bytes))),
-            None
+            slot(scalar(SceType::String)),
+            Some(InferredType::from_sce_type(&SceType::String))
         );
+        assert_eq!(slot(optional(scalar(SceType::Bytes))), None);
         assert_eq!(
-            slot(optional(OptionalElemType::Record {
+            slot(optional(AlgorithmValueType::Record {
                 alias: "Item".to_string()
             })),
             None
         );
-        assert_eq!(slot(AlgorithmValueType::Scalar(SceType::Bytes)), None);
+        assert_eq!(slot(scalar(SceType::Bytes)), None);
     }
 
     /// A value that may be absent stands for no value handed, so a child whose
@@ -4297,7 +4304,7 @@ mod tests {
     /// `null` takes it; a value that is never absent is taken by both.
     #[test]
     fn an_absent_value_is_handed_only_to_a_variable_that_starts_absent() {
-        let int64 = || optional(OptionalElemType::Scalar(SceType::Int64));
+        let int64 = || optional(scalar(SceType::Int64));
         let maybe = InferredType::Optional(OptionalElem::of(&SceType::Int64));
         let rule = |var: &Variable, ty| absent_handed_to_a_present_start(var, ty, "the child's");
         let present_start = variable(int64(), "3");
@@ -4312,7 +4319,7 @@ mod tests {
         assert!(rule(&absent_start, InferredType::Null).is_none());
         assert!(rule(&present_start, InferredType::from_sce_type(&SceType::Int64)).is_none());
         // A variable that is not optional has no start to keep apart from absence.
-        let plain = variable(AlgorithmValueType::Scalar(SceType::Int64), "3");
+        let plain = variable(scalar(SceType::Int64), "3");
         assert!(rule(&plain, maybe).is_none());
     }
 }

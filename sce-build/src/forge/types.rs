@@ -239,10 +239,11 @@ impl ListElem {
 
     /// The element a list of `elem` holds; `None` for a scalar no list
     /// admits.
-    pub fn of_list(elem: &crate::forge::model::ListElemType) -> Option<Self> {
-        match elem {
-            crate::forge::model::ListElemType::Scalar(ty) => Self::of(ty),
-            crate::forge::model::ListElemType::Record { .. } => Some(Self::Record),
+    pub fn of_list(elem: &crate::forge::model::AlgorithmValueType) -> Option<Self> {
+        match (elem.scalar(), elem.record_alias()) {
+            (Some(ty), _) => Self::of(ty),
+            (None, Some(_)) => Some(Self::Record),
+            (None, None) => None,
         }
     }
 
@@ -324,11 +325,14 @@ impl OptionalElem {
         })
     }
 
-    /// The element of the `optional<elem>` a variable declares.
-    pub fn of_value(elem: &crate::forge::model::OptionalElemType) -> Self {
-        match elem {
-            crate::forge::model::OptionalElemType::Scalar(ty) => Self::of(ty),
-            crate::forge::model::OptionalElemType::Record { .. } => Self::Record,
+    /// The element of the `optional<elem>` a variable declares: a scalar, a
+    /// text, a byte string or a record, the elements a slot's optional holds
+    /// ([`crate::forge::value_type::WrittenType::slot_view`], which refuses
+    /// any other before a lowering reads the slot).
+    pub fn of_value(elem: &crate::forge::model::AlgorithmValueType) -> Self {
+        match elem.scalar() {
+            Some(ty) => Self::of(ty),
+            None => Self::Record,
         }
     }
 

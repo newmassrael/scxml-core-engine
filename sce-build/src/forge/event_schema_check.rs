@@ -173,7 +173,7 @@ pub fn check_records_carry_payload(
         let Some(alias) = var.value_type.as_ref().and_then(|ty| {
             ty.record_alias().or_else(|| {
                 ty.optional_elem()
-                    .and_then(crate::forge::model::OptionalElemType::record_alias)
+                    .and_then(crate::forge::model::AlgorithmValueType::record_alias)
             })
         }) else {
             continue;

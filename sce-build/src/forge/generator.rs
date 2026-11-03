@@ -786,15 +786,24 @@ impl RecordImport {
 /// its own arm, and no other backend's.
 pub(crate) fn algorithm_optional_spelled(
     lang: crate::generator::Language,
-    elem: &OptionalElemType,
+    elem: &AlgorithmValueType,
 ) -> bool {
     use crate::generator::Language;
+    // A list or an optional inside an optional is a composition no backend's
+    // slot spells yet ([`AlgorithmValueType::slot_view`]).
+    if matches!(
+        elem,
+        AlgorithmValueType::List { .. } | AlgorithmValueType::Optional { .. }
+    ) {
+        return false;
+    }
     // What every backend spells in an algorithm since step 8: a fixed-width
     // number and a `bool`, whose present value each holds as the value itself.
     let number_or_bool = matches!(
         elem,
-        OptionalElemType::Scalar(ty) if AlgorithmValueType::list_elem_admitted(ty)
+        AlgorithmValueType::Scalar(ty) if AlgorithmValueType::list_elem_admitted(ty)
     );
+    let bytes = matches!(elem, AlgorithmValueType::Bytes { .. });
     match lang {
         // C++: `std::optional<T>` over the type the present value is held in, so a
         // number, a `bool`, a text, a value of an enum and a record are each one
@@ -804,7 +813,7 @@ pub(crate) fn algorithm_optional_spelled(
         // return, three types no one `std::optional` holds as it is, and a record
         // with a byte string field is no record of an algorithm at all
         // ([`resolve_record`]).
-        Language::Cpp => !matches!(elem, OptionalElemType::Scalar(SceType::Bytes)),
+        Language::Cpp => !bytes,
         // `T?` over the type of the present value, whatever it is: a number, a
         // `bool`, a `String`, a `ByteArray`, the enum class of the enum document
         // and the data class a record parameter is, in an algorithm's slot, local
@@ -820,10 +829,7 @@ pub(crate) fn algorithm_optional_spelled(
         // bound in a slot (a `bytes` an algorithm builds declares its capacity
         // beside the buffer, `sce:returns-max-size`), and is an algorithm's own
         // array of numbers, which a statechart's variable is not.
-        Language::Rust => match elem {
-            OptionalElemType::Scalar(SceType::Bytes) => false,
-            OptionalElemType::Scalar(_) | OptionalElemType::Record { .. } => true,
-        },
+        Language::Rust => !bytes,
         // Go: `optional.Of[T]` over the type the algorithm holds a present value
         // in — a number, a `bool`, a `string`, a `[]byte`, the enum document's
         // type, the schema's payload struct — every one of which is a Go value
@@ -845,15 +851,16 @@ pub(crate) fn algorithm_optional_spelled(
             number_or_bool
                 || matches!(
                     elem,
-                    OptionalElemType::Scalar(SceType::Enum(_) | SceType::String)
-                        | OptionalElemType::Record { .. }
+                    AlgorithmValueType::Scalar(SceType::Enum(_))
+                        | AlgorithmValueType::Text { .. }
+                        | AlgorithmValueType::Record { .. }
                 )
         }
         // `T?` over the type of the present value: a number, a `bool`, a text, a value
         // of an enum (the unit of its document) and a record (the struct of its
         // schema) are each one, as a plain Swift value. A byte string is none: an
         // algorithm holds it in no Swift slot yet ([`swift_algorithm_unlowered`]).
-        Language::Swift => !matches!(elem, OptionalElemType::Scalar(SceType::Bytes)),
+        Language::Swift => !bytes,
     }
 }
 
@@ -3616,7 +3623,7 @@ fn render_event_schema(
     // yet: refused by name before a field is spelled.
     if let Some(field) = entries.iter().flatten().find(|f| {
         f.sce_type.optional_elem().is_some_and(|elem| {
-            !algorithm_optional_spelled(_lang, &OptionalElemType::Scalar(elem.clone()))
+            !algorithm_optional_spelled(_lang, &AlgorithmValueType::of_scalar(elem.clone()))
         })
     }) {
         return Err(crate::forge::static_lowering::optional_not_lowered(
@@ -3695,7 +3702,7 @@ fn render_event_schema(
                     let held = algorithm_optional_type(
                         &l,
                         imports,
-                        &OptionalElemType::Scalar(elem.clone()),
+                        &AlgorithmValueType::of_scalar(elem.clone()),
                     )?;
                     // A text the schema bounds is held, where it is present, in the
                     // buffer a present one is: the runtime's bounded text on Rust,
@@ -28164,8 +28171,9 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
     // parameter, a buffer local a body appends to, and the list it returns.
     fn lowered_list(ty: &AlgorithmValueType) -> bool {
         ty.list_elem().is_some_and(|elem| match elem {
-            ListElemType::Scalar(ty) => !matches!(ty, SceType::Bytes | SceType::Enum(_)),
-            ListElemType::Record { .. } => true,
+            AlgorithmValueType::Scalar(ty) => !matches!(ty, SceType::Bytes | SceType::Enum(_)),
+            AlgorithmValueType::Record { .. } => true,
+            _ => false,
         })
     }
     // A byte string is a read-only parameter, the `[UInt8]` its length and bytes are
@@ -28654,7 +28662,7 @@ fn swift_schema_fields_unlowered<'a>(
             EntryType::Optional { elem }
                 if !algorithm_optional_spelled(
                     crate::generator::Language::Swift,
-                    &OptionalElemType::Scalar(elem.clone()),
+                    &AlgorithmValueType::of_scalar(elem.clone()),
                 )
         ) {
             Some(format!("the optional field `{id}`"))
@@ -33778,7 +33786,7 @@ fn algorithm_format_param(l: &LangCtx, name: &str, ty: &SceType) -> String {
 fn algorithm_optional_type(
     l: &LangCtx,
     imports: &[ImportContext],
-    elem: &OptionalElemType,
+    elem: &AlgorithmValueType,
 ) -> Result<String, ForgeError> {
     if l.lang == crate::generator::Language::C11 {
         return c11_algorithm_optional(l, imports, elem).map(|held| held.ty);
@@ -33793,11 +33801,11 @@ fn algorithm_optional_type(
 fn algorithm_optional_parts(
     l: &LangCtx,
     imports: &[ImportContext],
-    elem: &OptionalElemType,
+    elem: &AlgorithmValueType,
 ) -> Result<(String, String), ForgeError> {
-    let element = match elem {
-        OptionalElemType::Record { alias } => format!("optional<record:{alias}>"),
-        OptionalElemType::Scalar(_) => String::new(),
+    let element = match elem.record_alias() {
+        Some(alias) => format!("optional<record:{alias}>"),
+        None => String::new(),
     };
     algorithm_optional_slot_parts(l, imports, elem, SlotKind::Held, None, &element)
 }
@@ -33824,7 +33832,7 @@ enum SlotKind {
 fn algorithm_optional_slot_type(
     l: &LangCtx,
     imports: &[ImportContext],
-    elem: &OptionalElemType,
+    elem: &AlgorithmValueType,
     kind: SlotKind,
     spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
     element: &str,
@@ -33841,7 +33849,7 @@ fn algorithm_optional_slot_type(
 fn algorithm_optional_slot_parts(
     l: &LangCtx,
     imports: &[ImportContext],
-    elem: &OptionalElemType,
+    elem: &AlgorithmValueType,
     kind: SlotKind,
     spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
     element: &str,
@@ -33867,16 +33875,19 @@ fn algorithm_optional_slot_parts(
     };
     // The type a present value is held in: a scalar's, or the payload struct of the
     // schema an optional record is of.
-    let present = match elem {
-        OptionalElemType::Scalar(SceType::String)
+    let present = match (elem.scalar(), elem.record_alias()) {
+        (Some(SceType::String), _)
             if kind == SlotKind::Param && l.lang == crate::generator::Language::Rust =>
         {
             rust_param_type(&SceType::String)
         }
-        OptionalElemType::Scalar(ty) => l.type_name(ty).into_owned(),
-        OptionalElemType::Record { alias } => resolve_record(imports, alias, spelling, element)?
+        (Some(ty), _) => l.type_name(ty).into_owned(),
+        (None, Some(alias)) => resolve_record(imports, alias, spelling, element)?
             .qualified_type
             .clone(),
+        // A composition inside an optional was refused above
+        // ([`algorithm_optional_spelled`]).
+        (None, None) => return Err(refused()),
     };
     let optional = l
         .optional_of(&present)
@@ -33920,7 +33931,7 @@ struct C11OptionalElem {
 fn c11_algorithm_optional(
     l: &LangCtx,
     imports: &[ImportContext],
-    elem: &OptionalElemType,
+    elem: &AlgorithmValueType,
 ) -> Result<C11OptionalElem, ForgeError> {
     use crate::forge::static_lowering::{
         c11_optional_elem, c11_optional_enum_declaration, c11_optional_record_declaration,
@@ -33951,11 +33962,13 @@ fn c11_algorithm_optional(
                 })
         };
     match elem {
-        OptionalElemType::Scalar(SceType::String) => Err(refused(
+        AlgorithmValueType::Text { .. } => Err(refused(
             " (it declares no bound for the buffer the optional text is held in)",
         )),
-        OptionalElemType::Scalar(SceType::Bytes) => Err(refused("")),
-        OptionalElemType::Scalar(SceType::Enum(reference)) => {
+        AlgorithmValueType::Bytes { .. }
+        | AlgorithmValueType::List { .. }
+        | AlgorithmValueType::Optional { .. } => Err(refused("")),
+        AlgorithmValueType::Scalar(SceType::Enum(reference)) => {
             // Named by the document, as the machine that holds one of the enum
             // names it, so that one declaration serves both
             // ([`crate::forge::static_lowering::c11_optional_elem`]).
@@ -33966,8 +33979,8 @@ fn c11_algorithm_optional(
                 declaration: Some(c11_optional_enum_declaration(&name, &imported.qualified)),
             })
         }
-        OptionalElemType::Scalar(ty) => held(&l.type_name(ty), None),
-        OptionalElemType::Record { alias } => {
+        AlgorithmValueType::Scalar(ty) => held(&l.type_name(ty), None),
+        AlgorithmValueType::Record { alias } => {
             let record =
                 resolve_record(imports, alias, None, &format!("optional<record:{alias}>"))?;
             let present = record.qualified_type.clone();
@@ -34016,7 +34029,7 @@ fn c11_schema_field_optional(
             l.lang.canonical_name(),
         )
         .into()),
-        _ => c11_algorithm_optional(l, imports, &OptionalElemType::Scalar(elem.clone())),
+        _ => c11_algorithm_optional(l, imports, &AlgorithmValueType::of_scalar(elem.clone())),
     }
 }
 
@@ -34786,8 +34799,8 @@ fn optional_record_locals(body: &[AlgorithmStmt]) -> Vec<(&str, &str)> {
 
 /// Every local of `body` that holds a value that may be absent — its name and the
 /// element it holds one of — at any depth (docs/adr/0055).
-fn optional_locals(body: &[AlgorithmStmt]) -> Vec<(&str, &OptionalElemType)> {
-    fn walk<'b>(stmts: &'b [AlgorithmStmt], out: &mut Vec<(&'b str, &'b OptionalElemType)>) {
+fn optional_locals(body: &[AlgorithmStmt]) -> Vec<(&str, &AlgorithmValueType)> {
+    fn walk<'b>(stmts: &'b [AlgorithmStmt], out: &mut Vec<(&'b str, &'b AlgorithmValueType)>) {
         for s in stmts {
             match s {
                 AlgorithmStmt::Var { name, sce_type, .. } => {
@@ -34848,13 +34861,13 @@ impl TypedAbsences {
         if l.lang != crate::generator::Language::Go {
             return Ok(absences);
         }
-        let unnamed = |elem: &OptionalElemType| {
+        let unnamed = |elem: &AlgorithmValueType| {
             matches!(
                 elem,
-                OptionalElemType::Scalar(SceType::Enum(_)) | OptionalElemType::Record { .. }
+                AlgorithmValueType::Scalar(SceType::Enum(_)) | AlgorithmValueType::Record { .. }
             )
         };
-        let absent = |elem: &OptionalElemType| -> Result<String, ForgeError> {
+        let absent = |elem: &AlgorithmValueType| -> Result<String, ForgeError> {
             algorithm_optional_parts(l, imports, elem)
                 .map(|(present, _)| go_optional_none(&present))
         };
@@ -35066,7 +35079,7 @@ fn collect_append_buffers(
 /// declared beside the algorithm, [`c11_record_view_typedef`]).
 struct ListSpelling<'a> {
     lang: crate::generator::Language,
-    elem: &'a ListElemType,
+    elem: &'a AlgorithmValueType,
     elem_name: String,
 }
 
@@ -35076,16 +35089,26 @@ impl<'a> ListSpelling<'a> {
     /// judged, so a failure here is a pipeline fault, not the document's.
     fn new(
         l: &LangCtx,
-        elem: &'a ListElemType,
+        elem: &'a AlgorithmValueType,
         imports: &[ImportContext],
     ) -> Result<Self, ForgeError> {
         let elem_name = match elem {
-            ListElemType::Scalar(t) => l.type_name(t).into_owned(),
-            ListElemType::Record { alias } => {
+            AlgorithmValueType::Scalar(t) => l.type_name(t).into_owned(),
+            AlgorithmValueType::Record { alias } => {
                 let element = format!("list<{}>", elem.as_attr());
                 resolve_record(imports, alias, None, &element)?
                     .qualified_type
                     .clone()
+            }
+            // A list of anything else is a composition no algorithm's list
+            // lowers yet, refused by name (docs/adr/0086, section 7.3).
+            other => {
+                return Err(crate::forge::static_lowering::composition_not_lowered(
+                    &format!("list<{other}>"),
+                    other,
+                    "an algorithm",
+                )
+                .into())
             }
         };
         Ok(Self {
@@ -35096,7 +35119,7 @@ impl<'a> ListSpelling<'a> {
     }
 
     fn is_record(&self) -> bool {
-        matches!(self.elem, ListElemType::Record { .. })
+        matches!(self.elem, AlgorithmValueType::Record { .. })
     }
 
     /// A read-only `list<T>` parameter: a borrowed view of the caller's
@@ -35257,7 +35280,7 @@ impl<'a> ListSpelling<'a> {
     }
 
     fn kotlin_array_type(&self) -> &'static str {
-        let ListElemType::Scalar(elem) = self.elem else {
+        let AlgorithmValueType::Scalar(elem) = self.elem else {
             unreachable!("a list of records is a Kotlin `List`, not a primitive array")
         };
         match elem {
@@ -35279,7 +35302,7 @@ impl<'a> ListSpelling<'a> {
     }
 
     fn kotlin_to_array(&self) -> &'static str {
-        let ListElemType::Scalar(elem) = self.elem else {
+        let AlgorithmValueType::Scalar(elem) = self.elem else {
             unreachable!("a list of records is returned as its `ArrayList`")
         };
         match elem {
@@ -36365,7 +36388,7 @@ fn lower_algorithm_stmt(
             // same rule and code as a wrong-kind assignment.
             if let Some(elem) = buffer.ty.list_elem() {
                 let e = match elem {
-                    ListElemType::Scalar(t) => expr::transpile_into(
+                    AlgorithmValueType::Scalar(t) => expr::transpile_into(
                         rhs,
                         l.expr_target(),
                         type_ctx,
@@ -36376,7 +36399,7 @@ fn lower_algorithm_stmt(
                     // A record element is a record of the element's schema,
                     // by name — there is no record expression, the rule a
                     // record return keeps (SCE_FORGE.md §4.12).
-                    ListElemType::Record { alias } => {
+                    AlgorithmValueType::Record { alias } => {
                         let name = rhs.trim();
                         if records.get(name) != Some(alias) {
                             let at = rhs_site.locate(Some(0..name.len()));
@@ -36397,6 +36420,14 @@ fn lower_algorithm_stmt(
                         let holds_text =
                             resolve_record(imports, alias, None, "<sce:append>")?.holds_text();
                         owned_record(lang, &l.local_id(name), holds_text)
+                    }
+                    other => {
+                        return Err(crate::forge::static_lowering::composition_not_lowered(
+                            "<sce:append>",
+                            other,
+                            "an algorithm",
+                        )
+                        .into())
                     }
                 };
                 out.push_str(
@@ -38852,7 +38883,7 @@ pub(crate) struct AlgorithmTypes<'a> {
     optional_enums: Vec<(String, String)>,
     /// Every `list<T>` parameter and its element type: read by `xs[i]`,
     /// `len(xs)` and `<sce:foreach in="xs">`, never written.
-    list_params: Vec<(String, ListElemType)>,
+    list_params: Vec<(String, AlgorithmValueType)>,
     /// Every `list<T>` local of a scalar element — a buffer the body builds
     /// by `<sce:append>` and may read back by `len(xs)` and `xs[i]`, e.g. a
     /// breadth-first walk's queue (SCE_FORGE.md §4.12) — with its element.
@@ -38954,7 +38985,7 @@ impl<'a> AlgorithmTypes<'a> {
             .iter()
             .filter_map(|p| p.sce_type.scalar().map(|t| (p.name.clone(), t.clone())))
             .collect();
-        let list_params: Vec<(String, ListElemType)> = m
+        let list_params: Vec<(String, AlgorithmValueType)> = m
             .signature
             .params
             .iter()
@@ -39022,7 +39053,7 @@ impl<'a> AlgorithmTypes<'a> {
                         }
                         Some(t) => t.clone(),
                         None => {
-                            if let Some(ListElemType::Scalar(elem)) = sce_type.list_elem() {
+                            if let Some(AlgorithmValueType::Scalar(elem)) = sce_type.list_elem() {
                                 list_buffers.push((name.to_string(), elem.clone()));
                             }
                             // An optional local is read as an optional
@@ -39067,8 +39098,8 @@ impl<'a> AlgorithmTypes<'a> {
                         .find(|p| p.name == *source)
                         .and_then(|p| p.sce_type.list_elem());
                     match elem {
-                        Some(ListElemType::Scalar(elem)) => elem.clone(),
-                        Some(ListElemType::Record { alias }) => {
+                        Some(AlgorithmValueType::Scalar(elem)) => elem.clone(),
+                        Some(AlgorithmValueType::Record { alias }) => {
                             record_list_items.push((
                                 name,
                                 alias.as_str(),
@@ -39076,6 +39107,10 @@ impl<'a> AlgorithmTypes<'a> {
                             ));
                             continue;
                         }
+                        // A list of another element is a composition the list
+                        // parameter's own spelling refuses by name
+                        // ([`ListSpelling::new`]); its item is typed by nothing.
+                        Some(_) => continue,
                         None => SceType::Uint8,
                     }
                 }
@@ -39166,7 +39201,7 @@ impl<'a> AlgorithmTypes<'a> {
             .filter_map(|p| {
                 p.sce_type
                     .optional_elem()
-                    .and_then(OptionalElemType::record_alias)
+                    .and_then(AlgorithmValueType::record_alias)
                     .map(|alias| {
                         (
                             p.name.as_str(),
@@ -39306,12 +39341,12 @@ impl<'a> AlgorithmTypes<'a> {
     pub(crate) fn refuse_optional(
         &self,
         lang: &str,
-        spelled: &dyn Fn(&OptionalElemType) -> bool,
+        spelled: &dyn Fn(&AlgorithmValueType) -> bool,
     ) -> Result<(), GenerateError> {
         // An optional record parameter or local (docs/adr/0055, step 9) is held in
         // no type on a backend that does not spell one yet.
         if let Some(&(name, alias, _)) = self.optional_records.iter().find(|&&(_, alias, _)| {
-            !spelled(&OptionalElemType::Record {
+            !spelled(&AlgorithmValueType::Record {
                 alias: alias.to_string(),
             })
         }) {
@@ -39323,7 +39358,7 @@ impl<'a> AlgorithmTypes<'a> {
         let held = self.records.iter().find_map(|&(name, alias, record)| {
             record
                 .first_unheld_optional_field(&|elem: &SceType| {
-                    spelled(&OptionalElemType::Scalar(elem.clone()))
+                    spelled(&AlgorithmValueType::of_scalar(elem.clone()))
                 })
                 .map(|field| (name, alias, field))
         });
@@ -40047,7 +40082,7 @@ fn render_algorithm(
     if matches!(lang, Language::C11) {
         let mut declared = std::collections::BTreeSet::new();
         for p in &m.signature.params {
-            let Some(elem @ ListElemType::Record { .. }) = p.sce_type.list_elem() else {
+            let Some(elem @ AlgorithmValueType::Record { .. }) = p.sce_type.list_elem() else {
                 continue;
             };
             let record_type = ListSpelling::new(&l, elem, imports)?.elem_name;
@@ -40322,7 +40357,7 @@ fn render_algorithm(
         || m.signature.params.iter().any(|p| {
             p.sce_type
                 .list_elem()
-                .and_then(ListElemType::scalar)
+                .and_then(AlgorithmValueType::scalar)
                 .is_some_and(SceType::is_unsigned)
         });
     ctx.insert(

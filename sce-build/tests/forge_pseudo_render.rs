@@ -63,7 +63,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
             params: vec![
                 AlgorithmParam {
                     name: "data".to_string(),
-                    sce_type: AlgorithmValueType::Scalar(SceType::Bytes),
+                    sce_type: AlgorithmValueType::Bytes { max: None },
                     type_spelling: None,
                 },
                 AlgorithmParam {
@@ -72,7 +72,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                     type_spelling: None,
                 },
             ],
-            return_type: Some(AlgorithmValueType::Scalar(SceType::Bytes)),
+            return_type: Some(AlgorithmValueType::Bytes { max: None }),
             returns_max_size: Some(64),
             returns_limit: None,
             may_fail: false,
@@ -121,7 +121,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
             AlgorithmStmt::Var {
                 name: "out".to_string(),
                 name_spelling: None,
-                sce_type: AlgorithmValueType::Scalar(SceType::Bytes),
+                sce_type: AlgorithmValueType::Bytes { max: None },
                 init: None,
                 init_spelling: None,
                 capacity: Some(32),

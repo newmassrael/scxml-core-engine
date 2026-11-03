@@ -670,10 +670,11 @@ fn static_record_paths<'v>(
         // the element's fields can be read as. An enum field is registered untyped,
         // as a record variable's is: the lattice names no type for an enum, and
         // [`crate::forge::static_enum`] answers which enum the path holds.
-        if let Some(ListElemType::Record { alias }) = var
+        if let Some(alias) = var
             .value_type
             .as_ref()
             .and_then(AlgorithmValueType::list_elem)
+            .and_then(AlgorithmValueType::record_alias)
         {
             if let Some(schema) = records.get(alias) {
                 for field in &schema.fields {
@@ -719,16 +720,17 @@ fn static_record_paths<'v>(
 /// `<id>.value` for an optional record, whose fields are those of its present
 /// value (docs/adr/0055, step 9). `None` for any other variable.
 pub(crate) fn record_holder(var: &crate::model::Variable) -> Option<(&str, String)> {
-    match var.value_type.as_ref()? {
-        AlgorithmValueType::Record { alias } => Some((alias.as_str(), var.id.clone())),
-        AlgorithmValueType::Optional {
-            elem: OptionalElemType::Record { alias },
-        } => Some((
-            alias.as_str(),
-            crate::forge::static_enum::present_value_path(&var.id),
-        )),
-        _ => None,
+    let ty = var.value_type.as_ref()?;
+    if let Some(alias) = ty.record_alias() {
+        return Some((alias, var.id.clone()));
     }
+    let alias = ty
+        .optional_elem()
+        .and_then(AlgorithmValueType::record_alias)?;
+    Some((
+        alias,
+        crate::forge::static_enum::present_value_path(&var.id),
+    ))
 }
 
 /// What stands between a list's name and a field's in the path an indexed read
@@ -749,10 +751,11 @@ fn static_record_string_bounds<'v>(
     for var in variables {
         // A string field of the element a list of records is indexed at is bounded
         // by the schema alike, under the path it is typed by (`labels[].label`).
-        if let Some(ListElemType::Record { alias }) = var
+        if let Some(alias) = var
             .value_type
             .as_ref()
             .and_then(AlgorithmValueType::list_elem)
+            .and_then(AlgorithmValueType::record_alias)
         {
             if let Some(schema) = records.get(alias) {
                 for field in &schema.fields {
@@ -812,12 +815,16 @@ impl LoopVariables {
     pub fn new(
         item: &str,
         index: Option<&str>,
-        elem: &ListElemType,
+        elem: &AlgorithmValueType,
         schemas: &std::collections::BTreeMap<String, EntrySchema>,
     ) -> Self {
-        let (item_ty, paths) = match elem {
-            ListElemType::Scalar(ty) => (Some(InferredType::from_sce_type(ty)), Vec::new()),
-            ListElemType::Record { alias } => (
+        // A slot's list holds a fixed-width number, `bool` or a record
+        // ([`crate::forge::value_type::WrittenType::slot_view`]).
+        let record = elem.record_alias();
+        let (item_ty, paths) = match (elem.scalar(), record) {
+            (Some(ty), _) => (Some(InferredType::from_sce_type(ty)), Vec::new()),
+            (None, None) => (None, Vec::new()),
+            (None, Some(alias)) => (
                 None,
                 schemas
                     .get(alias)
@@ -832,9 +839,9 @@ impl LoopVariables {
                     .collect(),
             ),
         };
-        let string_bounds = match elem {
-            ListElemType::Scalar(_) => Vec::new(),
-            ListElemType::Record { alias } => schemas
+        let string_bounds = match record {
+            None => Vec::new(),
+            Some(alias) => schemas
                 .get(alias)
                 .into_iter()
                 .flat_map(|schema| &schema.fields)
@@ -1284,7 +1291,7 @@ impl StaticScope {
                     let held = variable(name)
                         .and_then(|v| v.value_type.as_ref())
                         .and_then(AlgorithmValueType::optional_elem)
-                        .and_then(OptionalElemType::record_alias);
+                        .and_then(AlgorithmValueType::record_alias);
                     match held {
                         Some(held) if held == alias => return Ok('o'),
                         Some(held) => {
@@ -1342,26 +1349,24 @@ impl StaticScope {
                     .to_string()),
             },
             (StaticSlot::ScalarList(elem), ArgShape::Name(name)) => match list_of(name) {
-                Some(ListElemType::Scalar(held)) if held == elem => Ok('v'),
-                Some(ListElemType::Scalar(held)) => Err(format!(
-                    "`{name}` is a list of {}, and the algorithm takes a list of {}",
-                    held.as_attr(),
+                Some(AlgorithmValueType::Scalar(held)) if held == elem => Ok('v'),
+                Some(AlgorithmValueType::Record { .. }) => Err(format!(
+                    "`{name}` is a list of records, not of {}",
                     elem.as_attr()
                 )),
-                Some(ListElemType::Record { .. }) => Err(format!(
-                    "`{name}` is a list of records, not of {}",
+                Some(held) => Err(format!(
+                    "`{name}` is a list of {}, and the algorithm takes a list of {}",
+                    held.as_attr(),
                     elem.as_attr()
                 )),
                 None => Err(format!("`{name}` is not a list variable")),
             },
             (StaticSlot::RecordList(alias), ArgShape::Name(name)) => match list_of(name) {
-                Some(ListElemType::Record { alias: held }) if held == alias => Ok('v'),
-                Some(ListElemType::Record { alias: held }) => Err(format!(
+                Some(AlgorithmValueType::Record { alias: held }) if held == alias => Ok('v'),
+                Some(AlgorithmValueType::Record { alias: held }) => Err(format!(
                     "`{name}` is a list of `{held}`, and the algorithm takes a list of `{alias}`"
                 )),
-                Some(ListElemType::Scalar(_)) => {
-                    Err(format!("`{name}` is a list of numbers, not of records"))
-                }
+                Some(_) => Err(format!("`{name}` is a list of numbers, not of records")),
                 None => Err(format!("`{name}` is not a list variable")),
             },
             _ => Err(

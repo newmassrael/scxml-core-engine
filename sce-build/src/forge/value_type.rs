@@ -37,7 +37,7 @@ use std::fmt;
 
 use serde::Serialize;
 
-use crate::forge::model::{AlgorithmValueType, EntryType, ListElemType, OptionalElemType, SceType};
+use crate::forge::model::{EntryType, SceType};
 
 /// A bound written in a type: the most elements of a list, or the most bytes of
 /// a text or a byte string. `limit` is the name a build may give another number
@@ -108,45 +108,113 @@ impl schemars::JsonSchema for Bound {
 /// number, `bool` or a value of an enum, never `string` or `bytes`: a text and a
 /// byte string are `Text` and `Bytes`, whose bound is part of them.
 ///
-/// Serialized untagged, as the model's other types are: a scalar is the bare
-/// string it always was (`"int64"`), and each other constructor an object
-/// keyed by its own name, its bound beside it: `{"string": 8}`,
-/// `{"bytes": 4}`, `{"optional": "int64"}`, `{"record": "Item"}`,
-/// `{"list": "uint8", "max": 2}`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-#[cfg_attr(test, schemars(rename = "ValueType"))]
-#[serde(untagged)]
+/// Serialized as the model's other types are: a scalar is the bare string it
+/// always was (`"int64"`), and each other constructor an object keyed by its
+/// own name, its bound beside it: `{"string": 8}`, `{"bytes": 4}`,
+/// `{"optional": "int64"}`, `{"record": "Item"}`, `{"list": "uint8", "max":
+/// 2}`. A text, byte string or list whose bound is not written (an
+/// algorithm's parameter, whose outermost bound is its argument's) is the
+/// shape it had before a type held bounds: `"string"`, `"bytes"`,
+/// `{"list": "uint8"}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeOf<B> {
     /// A fixed-width number, `bool`, or `enum:<alias>`.
     Scalar(SceType),
     /// `string[B]`: a UTF-8 text of at most `max` bytes.
-    Text {
-        #[serde(rename = "string")]
-        max: B,
-    },
+    Text { max: B },
     /// `bytes[B]`: a byte string of at most `max` bytes.
-    Bytes {
-        #[serde(rename = "bytes")]
-        max: B,
-    },
+    Bytes { max: B },
     /// `optional<T>`: absent, or a value of `elem`. `elem` is never itself
     /// optional.
-    Optional {
-        #[serde(rename = "optional")]
-        elem: Box<TypeOf<B>>,
-    },
+    Optional { elem: Box<TypeOf<B>> },
     /// `record:<alias>`: a value of the struct the aliased event schema declares.
-    Record {
-        #[serde(rename = "record")]
-        alias: String,
-    },
+    Record { alias: String },
     /// `list<T>[B]`: an ordered sequence of at most `max` values of `elem`.
-    List {
-        #[serde(rename = "list")]
-        elem: Box<TypeOf<B>>,
-        max: B,
-    },
+    List { elem: Box<TypeOf<B>>, max: B },
+}
+
+impl<B: BoundSlot> Serialize for TypeOf<B> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        fn keyed<S: serde::Serializer>(
+            serializer: S,
+            key: &str,
+            bound: &Bound,
+        ) -> Result<S::Ok, S::Error> {
+            let mut map = serializer.serialize_map(Some(1))?;
+            map.serialize_entry(key, bound)?;
+            map.end()
+        }
+        match self {
+            Self::Scalar(t) => t.serialize(serializer),
+            Self::Text { max } => match max.stated() {
+                Some(bound) => keyed(serializer, "string", bound),
+                None => SceType::String.serialize(serializer),
+            },
+            Self::Bytes { max } => match max.stated() {
+                Some(bound) => keyed(serializer, "bytes", bound),
+                None => SceType::Bytes.serialize(serializer),
+            },
+            Self::Optional { elem } => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("optional", &**elem)?;
+                map.end()
+            }
+            Self::Record { alias } => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("record", alias)?;
+                map.end()
+            }
+            Self::List { elem, max } => {
+                let stated = max.stated();
+                let mut map = serializer.serialize_map(Some(1 + usize::from(stated.is_some())))?;
+                map.serialize_entry("list", &**elem)?;
+                if let Some(bound) = stated {
+                    map.serialize_entry("max", bound)?;
+                }
+                map.end()
+            }
+        }
+    }
+}
+
+/// The schema of the shape [`TypeOf`]'s `Serialize` writes: one definition
+/// for a [`ValueType`], whose every bound is required, and one for a
+/// [`WrittenType`], whose bounds may be left out.
+#[cfg(test)]
+impl<B: BoundSlot> schemars::JsonSchema for TypeOf<B> {
+    fn schema_name() -> String {
+        B::SCHEMA_NAME.to_string()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        let scalar = generator.subschema_for::<SceType>();
+        let this = generator.subschema_for::<Self>();
+        let bound = serde_json::json!({"type": "integer", "format": "uint32", "minimum": 1});
+        let list_required = if B::REQUIRED {
+            serde_json::json!(["list", "max"])
+        } else {
+            serde_json::json!(["list"])
+        };
+        serde_json::from_value(serde_json::json!({
+            "description": "A type of the one type grammar (docs/adr/0086, section 1): a \
+                            scalar's bare name, or an object keyed by its constructor, its \
+                            bound beside it.",
+            "anyOf": [
+                scalar,
+                {"type": "object", "required": ["string"], "properties": {"string": bound}},
+                {"type": "object", "required": ["bytes"], "properties": {"bytes": bound}},
+                {"type": "object", "required": ["optional"], "properties": {"optional": this}},
+                {"type": "object", "required": ["record"], "properties": {"record": {"type": "string"}}},
+                {
+                    "type": "object",
+                    "required": list_required,
+                    "properties": {"list": this, "max": bound}
+                }
+            ]
+        }))
+        .expect("the schema of a type is a JSON schema")
+    }
 }
 
 /// A type whose every bound is stated: what a position holds.
@@ -158,17 +226,31 @@ pub type WrittenType = TypeOf<Option<Bound>>;
 /// What stands where a bound is written: a stated bound, or one that may be
 /// absent. The one reading the printer needs of either.
 pub trait BoundSlot {
+    /// The name of the schema of a type of this kind.
+    #[cfg(test)]
+    const SCHEMA_NAME: &'static str;
+    /// Whether a type of this kind states every bound.
+    #[cfg(test)]
+    const REQUIRED: bool;
     /// The bound written there, if one is.
     fn stated(&self) -> Option<&Bound>;
 }
 
 impl BoundSlot for Bound {
+    #[cfg(test)]
+    const SCHEMA_NAME: &'static str = "ValueType";
+    #[cfg(test)]
+    const REQUIRED: bool = true;
     fn stated(&self) -> Option<&Bound> {
         Some(self)
     }
 }
 
 impl BoundSlot for Option<Bound> {
+    #[cfg(test)]
+    const SCHEMA_NAME: &'static str = "WrittenType";
+    #[cfg(test)]
+    const REQUIRED: bool = false;
     fn stated(&self) -> Option<&Bound> {
         self.as_ref()
     }
@@ -796,80 +878,204 @@ pub struct Composition {
 }
 
 impl Composition {
-    fn of<B: BoundSlot>(ty: &TypeOf<B>) -> Self {
+    /// The composition `ty` is, named by its whole text and its outermost
+    /// constructor.
+    pub fn of<B: BoundSlot>(ty: &TypeOf<B>) -> Self {
         Self {
             place: ty.to_string(),
             constructor: ty.constructor(),
         }
     }
-}
 
-/// The leaf a type is when it is one value of a scalar, a text or a byte
-/// string, with the bound of a text or a byte string: what the lowerings of a
-/// field, an entry and a slot read as a `SceType` and a bound beside it.
-fn leaf(ty: &WrittenType) -> Option<(SceType, Option<Bound>)> {
-    match ty {
-        WrittenType::Scalar(t) => Some((t.clone(), None)),
-        WrittenType::Text { max } => Some((SceType::String, max.clone())),
-        WrittenType::Bytes { max } => Some((SceType::Bytes, max.clone())),
-        WrittenType::Optional { .. } | WrittenType::Record { .. } | WrittenType::List { .. } => {
-            None
-        }
+    /// The sentence of the refusal of the composition where `element` declares
+    /// it, in `position` (`an algorithm`, `a statechart's variable`): one
+    /// wording for every place a slot's composition is refused by name.
+    pub fn sentence(&self, element: &str, position: &str) -> String {
+        format!(
+            "{element}: `{}` in {position} is a type of the language, and no backend lowers \
+             its {} there yet",
+            self.place, self.constructor
+        )
     }
 }
 
+// ── A slot: an algorithm's parameter, return and local, a statechart's variable ──
+
+/// The scalar a text reads as through [`WrittenType::scalar`].
+static TEXT_SCALAR: SceType = SceType::String;
+/// The scalar a byte string reads as through [`WrittenType::scalar`].
+static BYTES_SCALAR: SceType = SceType::Bytes;
+
 impl WrittenType {
-    /// The type as a statechart's variable and an algorithm's slot hold it
-    /// today: a scalar, a text or a byte string; a record; a list of fixed-width
-    /// numbers, `bool` or records; an optional scalar, text, byte string or
-    /// record. With the bound of the outermost bounded type. Any other type is a
-    /// composition those lowerings do not hold yet.
-    pub fn as_algorithm_type(&self) -> Result<(AlgorithmValueType, Option<Bound>), Composition> {
-        if let Some((t, max)) = leaf(self) {
-            return Ok((AlgorithmValueType::Scalar(t), max));
+    /// The prefix of an optional type's spelling, `optional<T>`.
+    pub const OPTIONAL_PREFIX: &'static str = "optional<";
+
+    /// The prefix of a record type's spelling, `record:<alias>`.
+    pub const RECORD_PREFIX: &'static str = "record:";
+
+    /// The prefix of a list type's spelling, `list<T>`.
+    pub const LIST_PREFIX: &'static str = "list<";
+
+    /// What stands inside `optional<…>` in `text`, untrimmed, or `None` when
+    /// `text` is not written as an optional type. The one reading of the
+    /// spelling, so the parser, the statechart's rules and a codec's entry
+    /// cannot disagree about what is written as one.
+    pub fn optional_inner(text: &str) -> Option<&str> {
+        text.trim()
+            .strip_prefix(Self::OPTIONAL_PREFIX)
+            .and_then(|t| t.strip_suffix('>'))
+    }
+
+    /// Whether the lowerings of a slot hold a list of `elem` today: a
+    /// fixed-width number or `bool`. A list of records is held too
+    /// ([`Self::slot_view`]); a list of anything else is a composition they do
+    /// not lower yet.
+    pub fn list_elem_admitted(elem: &SceType) -> bool {
+        matches!(
+            elem,
+            SceType::Uint8
+                | SceType::Uint16
+                | SceType::Uint32
+                | SceType::Uint64
+                | SceType::Int8
+                | SceType::Int16
+                | SceType::Int32
+                | SceType::Int64
+                | SceType::Float32
+                | SceType::Float64
+                | SceType::Bool
+        )
+    }
+
+    /// The type of one value of the scalar `t`, as written with no bound: a
+    /// text for `string`, a byte string for `bytes`, the scalar itself
+    /// otherwise. The one way a scalar becomes a type, so a text is never a
+    /// `Scalar`.
+    pub fn of_scalar(t: SceType) -> Self {
+        match t {
+            SceType::String => Self::Text { max: None },
+            SceType::Bytes => Self::Bytes { max: None },
+            other => Self::Scalar(other),
         }
+    }
+
+    /// The type as one scalar: a fixed-width number, `bool` or an enum, or a
+    /// text or a byte string read as `string` or `bytes`; `None` for a list,
+    /// a record or an optional value. An optional scalar is not a scalar: a
+    /// value of it may be absent.
+    pub fn scalar(&self) -> Option<&SceType> {
         match self {
-            Self::Record { alias } => Ok((
-                AlgorithmValueType::Record {
-                    alias: alias.clone(),
-                },
-                None,
-            )),
-            Self::List { elem, max } => {
-                let elem = match &**elem {
-                    Self::Scalar(t) if AlgorithmValueType::list_elem_admitted(t) => {
-                        ListElemType::Scalar(t.clone())
-                    }
-                    Self::Record { alias } => ListElemType::Record {
-                        alias: alias.clone(),
-                    },
-                    other => return Err(Composition::of(other)),
-                };
-                Ok((AlgorithmValueType::List { elem }, max.clone()))
+            Self::Scalar(t) => Some(t),
+            Self::Text { .. } => Some(&TEXT_SCALAR),
+            Self::Bytes { .. } => Some(&BYTES_SCALAR),
+            Self::List { .. } | Self::Record { .. } | Self::Optional { .. } => None,
+        }
+    }
+
+    /// The element type of a list, or `None` for any other type.
+    pub fn list_elem(&self) -> Option<&Self> {
+        match self {
+            Self::List { elem, .. } => Some(elem),
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::Record { .. }
+            | Self::Optional { .. } => None,
+        }
+    }
+
+    /// The import alias a record names, or `None` for any other type. An
+    /// optional record is not a record: it may be absent.
+    pub fn record_alias(&self) -> Option<&str> {
+        match self {
+            Self::Record { alias } => Some(alias),
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::List { .. }
+            | Self::Optional { .. } => None,
+        }
+    }
+
+    /// The element of an optional value, or `None` for any other type.
+    pub fn optional_elem(&self) -> Option<&Self> {
+        match self {
+            Self::Optional { elem } => Some(elem),
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::List { .. }
+            | Self::Record { .. } => None,
+        }
+    }
+
+    /// Whether a local of this type is a buffer filled by `<sce:append>`, a
+    /// byte string or a list, and so starts empty, takes no `init`, and is the
+    /// one shape a buffer-returning algorithm returns.
+    pub fn is_append_buffer(&self) -> bool {
+        matches!(self, Self::Bytes { .. } | Self::List { .. })
+    }
+
+    /// The `type=` attribute spelling: the type as the grammar spells it,
+    /// every bound it states in its bracket.
+    pub fn as_attr(&self) -> String {
+        self.to_string()
+    }
+
+    /// Read the `type=` spelling [`Self::as_attr`] writes, for text SCE wrote
+    /// itself: a type of the grammar that a slot's lowerings hold
+    /// ([`Self::slot_view`]), or `None`. A document's types are read by the
+    /// parser, which adds the refusals a document needs.
+    pub fn from_attr(s: &str) -> Option<Self> {
+        Self::read(s).ok().filter(|ty| ty.slot_view().is_ok())
+    }
+
+    /// The type as the lowerings of a slot (an algorithm's parameter, return
+    /// and local, a statechart's variable) hold it today: a scalar, a text or a
+    /// byte string; a record; a list of fixed-width numbers, `bool` or
+    /// records; an optional scalar, text, byte string or record. Any other
+    /// type is a composition those lowerings do not hold yet, named by the
+    /// part of it they stop at, so that a lowering refuses it by name
+    /// (docs/adr/0086, section 7.3), as [`ValueType::entry`] does for an
+    /// event schema's field.
+    pub fn slot_view(&self) -> Result<&Self, Composition> {
+        match self {
+            Self::Scalar(_) | Self::Text { .. } | Self::Bytes { .. } | Self::Record { .. } => {
+                Ok(self)
             }
-            Self::Optional { elem } => {
-                if let Self::Record { alias } = &**elem {
-                    return Ok((
-                        AlgorithmValueType::Optional {
-                            elem: OptionalElemType::Record {
-                                alias: alias.clone(),
-                            },
-                        },
-                        None,
-                    ));
+            Self::List { elem, .. } => match &**elem {
+                Self::Scalar(t) if Self::list_elem_admitted(t) => Ok(self),
+                Self::Record { .. } => Ok(self),
+                other => Err(Composition::of(other)),
+            },
+            Self::Optional { elem } => match &**elem {
+                Self::Scalar(_) | Self::Text { .. } | Self::Bytes { .. } | Self::Record { .. } => {
+                    Ok(self)
                 }
-                leaf(elem)
-                    .map(|(t, max)| {
-                        (
-                            AlgorithmValueType::Optional {
-                                elem: OptionalElemType::Scalar(t),
-                            },
-                            max,
-                        )
-                    })
-                    .ok_or_else(|| Composition::of(&**elem))
+                other => Err(Composition::of(other)),
+            },
+        }
+    }
+
+    /// The same type with the bound of its outermost text, byte string or
+    /// list, seen through every `optional<…>`, taken out of it, and that
+    /// bound: a slot's type as a model that keeps the outermost bound beside
+    /// the type holds it.
+    pub fn split_outer_bound(self) -> (Self, Option<Bound>) {
+        match self {
+            Self::Text { max } => (Self::Text { max: None }, max),
+            Self::Bytes { max } => (Self::Bytes { max: None }, max),
+            Self::List { elem, max } => (Self::List { elem, max: None }, max),
+            Self::Optional { elem } => {
+                let (elem, max) = elem.split_outer_bound();
+                (
+                    Self::Optional {
+                        elem: Box::new(elem),
+                    },
+                    max,
+                )
             }
-            Self::Scalar(_) | Self::Text { .. } | Self::Bytes { .. } => Err(Composition::of(self)),
+            other @ (Self::Scalar(_) | Self::Record { .. }) => (other, None),
         }
     }
 }
@@ -1855,60 +2061,123 @@ mod tests {
 
     #[test]
     fn a_slot_holds_what_its_lowerings_hold_and_names_any_composition() {
-        let read = |t: &str| WrittenType::read(t).unwrap();
-        assert_eq!(
-            read("list<int64>[16]").as_algorithm_type(),
-            Ok((
-                AlgorithmValueType::List {
-                    elem: ListElemType::Scalar(SceType::Int64)
-                },
-                Some(Bound::of(16))
-            ))
-        );
-        assert_eq!(
-            read("list<record:Item>").as_algorithm_type(),
-            Ok((
-                AlgorithmValueType::List {
-                    elem: ListElemType::Record {
-                        alias: "Item".into()
-                    }
-                },
-                None
-            ))
-        );
-        assert_eq!(
-            read("optional<record:Item>").as_algorithm_type(),
-            Ok((
-                AlgorithmValueType::Optional {
-                    elem: OptionalElemType::Record {
-                        alias: "Item".into()
-                    }
-                },
-                None
-            ))
-        );
-        assert_eq!(
-            read("optional<string[8]>").as_algorithm_type(),
-            Ok((
-                AlgorithmValueType::Optional {
-                    elem: OptionalElemType::Scalar(SceType::String)
-                },
-                Some(Bound::of(8))
-            ))
-        );
-        for (text, place) in [
-            ("list<string[8]>[4]", "string[8]"),
-            ("list<enum:Level>[2]", "enum:Level"),
-            ("list<list<uint8>[2]>[2]", "list<uint8>[2]"),
-            ("list<optional<uint16>>[2]", "optional<uint16>"),
-            ("optional<list<uint8>[2]>", "list<uint8>[2]"),
-        ] {
-            assert_eq!(
-                read(text).as_algorithm_type().map_err(|c| c.place),
-                Err(place.to_string()),
-                "{text}"
-            );
+        // The oracle, from the text the enumeration built: every leaf is held;
+        // a list of a fixed-width number, `bool` or a record is held; an
+        // optional over any leaf is held; anything else is a composition named
+        // by its element.
+        let held_list_elements = ["uint8", "int64", "float64", "bool", "record:Item"];
+        let expected = |text: &str| -> Result<(), String> {
+            if let Some(inner) = text
+                .strip_prefix("optional<")
+                .and_then(|t| t.strip_suffix('>'))
+            {
+                let leaf = LEAVES
+                    .iter()
+                    .any(|(leaf, _)| inner == *leaf || inner.strip_prefix(leaf) == Some("[8]"));
+                return if leaf { Ok(()) } else { Err(inner.to_string()) };
+            }
+            if let Some(rest) = text.strip_prefix("list<") {
+                let inner = rest
+                    .trim_end_matches("[3]")
+                    .strip_suffix('>')
+                    .expect("a list's element is closed");
+                return if held_list_elements.contains(&inner) {
+                    Ok(())
+                } else {
+                    Err(inner.to_string())
+                };
+            }
+            Ok(())
+        };
+        let mut held = 0;
+        let mut refused = 0;
+        for case in cases(3).into_iter().filter(|c| c.well_formed) {
+            let ty = WrittenType::read(&case.text).unwrap();
+            let view = ty.slot_view().map(|_| ()).map_err(|c| c.place);
+            assert_eq!(view, expected(&case.text), "{}", case.text);
+            if view.is_ok() {
+                held += 1;
+                assert_eq!(WrittenType::from_attr(&case.text), Some(ty.clone()));
+            } else {
+                refused += 1;
+                assert_eq!(WrittenType::from_attr(&case.text), None, "{}", case.text);
+            }
         }
+        assert!(held > 0 && refused > 0, "{held} held, {refused} refused");
+    }
+
+    #[test]
+    fn the_outer_bound_of_a_slot_is_split_off_and_folds_back() {
+        for case in cases(3).into_iter().filter(|c| c.well_formed) {
+            let ty = WrittenType::read(&case.text).unwrap();
+            let outer = ty.outer_bound().cloned().flatten();
+            let (bare, bound) = ty.clone().split_outer_bound();
+            assert_eq!(bound, outer, "{}", case.text);
+            assert_eq!(bare.outer_bound().cloned().flatten(), None, "{}", case.text);
+            match bound {
+                Some(bound) => assert_eq!(bare.with_outer_bound(bound), Ok(ty), "{}", case.text),
+                None => assert_eq!(bare, ty, "{}", case.text),
+            }
+        }
+    }
+
+    #[test]
+    fn a_scalar_is_one_type_and_reads_back_as_that_scalar() {
+        let scalars = [
+            SceType::Uint8,
+            SceType::Uint64,
+            SceType::Int32,
+            SceType::Float64,
+            SceType::Bool,
+            SceType::String,
+            SceType::Bytes,
+            enum_ty("Level"),
+        ];
+        for t in scalars {
+            let ty = WrittenType::of_scalar(t.clone());
+            assert_eq!(ty.scalar(), Some(&t), "{t:?}");
+            assert_eq!(
+                matches!(ty, WrittenType::Scalar(_)),
+                !matches!(t, SceType::String | SceType::Bytes),
+                "a text or a byte string is never a Scalar: {t:?}"
+            );
+            assert_eq!(ty.is_append_buffer(), matches!(t, SceType::Bytes), "{t:?}");
+            assert_eq!(ty.list_elem(), None);
+            assert_eq!(ty.record_alias(), None);
+            assert_eq!(ty.optional_elem(), None);
+            assert_eq!(WrittenType::from_attr(&ty.as_attr()), Some(ty.clone()));
+        }
+        let list = WrittenType::read("list<record:Item>").unwrap();
+        assert_eq!(
+            list.list_elem().and_then(WrittenType::record_alias),
+            Some("Item")
+        );
+        assert!(list.is_append_buffer());
+        assert_eq!(list.scalar(), None);
+        let optional = WrittenType::read("optional<string>").unwrap();
+        assert_eq!(
+            optional.optional_elem().and_then(WrittenType::scalar),
+            Some(&SceType::String)
+        );
+        assert_eq!(optional.scalar(), None);
+        assert_eq!(optional.record_alias(), None);
+    }
+
+    #[test]
+    fn a_type_with_no_bound_crosses_the_ast_in_the_shape_it_had_before_bounds() {
+        let json = |t: &str| serde_json::to_value(WrittenType::read(t).unwrap()).unwrap();
+        assert_eq!(json("string"), serde_json::json!("string"));
+        assert_eq!(json("bytes"), serde_json::json!("bytes"));
+        assert_eq!(json("list<int64>"), serde_json::json!({"list": "int64"}));
+        assert_eq!(
+            json("optional<record:Item>"),
+            serde_json::json!({"optional": {"record": "Item"}})
+        );
+        assert_eq!(json("string[8]"), serde_json::json!({"string": 8}));
+        assert_eq!(
+            json("list<uint8>[2]"),
+            serde_json::json!({"list": "uint8", "max": 2})
+        );
     }
 
     // ── The size calculus ─────────────────────────────────────────────────

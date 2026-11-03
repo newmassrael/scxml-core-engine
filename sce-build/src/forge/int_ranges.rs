@@ -1481,9 +1481,9 @@ mod tests {
         }
         let params: Vec<(String, AlgorithmValueType)> = params
             .iter()
-            .map(|(n, t)| (n.to_string(), AlgorithmValueType::Scalar(t.clone())))
+            .map(|(n, t)| (n.to_string(), AlgorithmValueType::of_scalar(t.clone())))
             .collect();
-        let ret = ret.map(AlgorithmValueType::Scalar);
+        let ret = ret.map(AlgorithmValueType::of_scalar);
         hazards(&params, ret.as_ref(), body, &ctx, &BTreeMap::new())
             .expect("every expression of a unit-test body types")
             .into_iter()
@@ -1688,7 +1688,7 @@ mod tests {
         // so a uint32 index steps safely; a uint8 index still passes 255.
         let scan = |ty: SceType| {
             let body = [
-                var("i", AlgorithmValueType::Scalar(ty.clone()), "0"),
+                var("i", AlgorithmValueType::of_scalar(ty.clone()), "0"),
                 while_("i < len(a)", 64, vec![assign("i", "i + 1")]),
                 ret("i"),
             ];
@@ -1722,7 +1722,7 @@ mod tests {
         }
         let params: Vec<(String, AlgorithmValueType)> = params
             .iter()
-            .map(|(n, t)| (n.to_string(), AlgorithmValueType::Scalar(t.clone())))
+            .map(|(n, t)| (n.to_string(), AlgorithmValueType::of_scalar(t.clone())))
             .collect();
         let arrays: BTreeMap<String, i128> =
             arrays.iter().map(|(n, l)| (n.to_string(), *l)).collect();

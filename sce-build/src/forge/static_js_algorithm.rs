@@ -60,8 +60,7 @@ use crate::forge::generator::{
     TextSource,
 };
 use crate::forge::model::{
-    AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType, ForgeImport,
-    ListElemType, OptionalElemType, SceType,
+    AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType, ForgeImport, SceType,
 };
 use crate::forge::narrowing::{
     after_algorithm_statement, loop_entry, present_record_of, proves_written, Chain, Facts,
@@ -397,13 +396,12 @@ fn collect_buffers<'a>(stmts: &'a [AlgorithmStmt], out: &mut HashMap<&'a str, Bu
                 ..
             } => {
                 let element = match sce_type {
-                    AlgorithmValueType::Scalar(SceType::Bytes) => Some(BufferElement::Byte),
-                    AlgorithmValueType::List {
-                        elem: ListElemType::Scalar(elem),
-                    } => Some(BufferElement::Scalar(elem)),
-                    AlgorithmValueType::List {
-                        elem: ListElemType::Record { .. },
-                    } => Some(BufferElement::Record),
+                    AlgorithmValueType::Bytes { .. } => Some(BufferElement::Byte),
+                    AlgorithmValueType::List { elem, .. } => match &**elem {
+                        AlgorithmValueType::Scalar(elem) => Some(BufferElement::Scalar(elem)),
+                        AlgorithmValueType::Record { .. } => Some(BufferElement::Record),
+                        _ => None,
+                    },
                     _ => None,
                 };
                 if let Some(element) = element {
@@ -890,18 +888,26 @@ impl Body<'_> {
 }
 
 /// Whether `ty` is a parameter or a return this lowering can hold.
+///
+/// A composition no slot's lowering holds yet
+/// ([`AlgorithmValueType::slot_view`]) is not held here either, and is refused
+/// by name where it is met.
 fn holds(ty: &AlgorithmValueType) -> bool {
+    if ty.slot_view().is_err() {
+        return false;
+    }
     match ty {
-        AlgorithmValueType::Scalar(scalar) => {
-            has_a_value_form(scalar) || matches!(scalar, SceType::Bytes)
+        AlgorithmValueType::Scalar(_) | AlgorithmValueType::Text { .. } => {
+            ty.scalar().is_some_and(has_a_value_form)
         }
-        AlgorithmValueType::List {
-            elem: ListElemType::Scalar(elem),
-        } => has_a_value_form(elem),
-        AlgorithmValueType::List {
-            elem: ListElemType::Record { .. },
-        }
-        | AlgorithmValueType::Record { .. } => true,
+        // A byte string is the array of numbers an algorithm holds it as.
+        AlgorithmValueType::Bytes { .. } => true,
+        AlgorithmValueType::List { elem, .. } => match &**elem {
+            AlgorithmValueType::Scalar(elem) => has_a_value_form(elem),
+            AlgorithmValueType::Record { .. } => true,
+            _ => false,
+        },
+        AlgorithmValueType::Record { .. } => true,
         // A value that may be absent is `null` or its present value
         // (docs/adr/0055): a number, a `bool`, a text, a value of an enum (its
         // declared name) or a record (a plain object). A byte string is the array
@@ -913,10 +919,13 @@ fn holds(ty: &AlgorithmValueType) -> bool {
 
 /// Whether this lowering holds an optional value of `elem`
 /// ([`holds`]).
-fn holds_optional(elem: &OptionalElemType) -> bool {
+fn holds_optional(elem: &AlgorithmValueType) -> bool {
     match elem {
-        OptionalElemType::Scalar(scalar) => has_a_value_form(scalar),
-        OptionalElemType::Record { .. } => true,
+        AlgorithmValueType::Scalar(_)
+        | AlgorithmValueType::Text { .. }
+        | AlgorithmValueType::Bytes { .. } => elem.scalar().is_some_and(has_a_value_form),
+        AlgorithmValueType::Record { .. } => true,
+        AlgorithmValueType::List { .. } | AlgorithmValueType::Optional { .. } => false,
     }
 }
 
@@ -944,7 +953,7 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
                 ),
             ));
         }
-        let is_bytes = matches!(param.sce_type, AlgorithmValueType::Scalar(SceType::Bytes));
+        let is_bytes = matches!(param.sce_type, AlgorithmValueType::Bytes { .. });
         if param.sce_type.list_elem().is_some() || is_bytes {
             iterable.insert(&param.name);
         }
@@ -953,7 +962,9 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
         if is_bytes
             || !matches!(
                 param.sce_type,
-                AlgorithmValueType::Scalar(_) | AlgorithmValueType::Optional { .. }
+                AlgorithmValueType::Scalar(_)
+                    | AlgorithmValueType::Text { .. }
+                    | AlgorithmValueType::Optional { .. }
             )
         {
             whole_values.insert(&param.name);
@@ -978,14 +989,16 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
     let return_ty = match &m.signature.return_type {
         None => InferredType::Unknown,
         // A `bytes` return is a buffer returned by name, like a list.
-        Some(AlgorithmValueType::Scalar(SceType::Bytes)) => InferredType::Unknown,
+        Some(AlgorithmValueType::Bytes { .. }) => InferredType::Unknown,
         Some(ty) if !holds(ty) => {
             return Err(refuse(
                 &m.name,
                 format!("a return of type `{}`", ty.as_attr()),
             ))
         }
-        Some(AlgorithmValueType::Scalar(scalar)) => InferredType::from_sce_type(scalar),
+        Some(ty @ (AlgorithmValueType::Scalar(_) | AlgorithmValueType::Text { .. })) => ty
+            .scalar()
+            .map_or(InferredType::Unknown, InferredType::from_sce_type),
         // A list is returned by name, never judged as an operand.
         Some(AlgorithmValueType::List { .. }) => InferredType::Unknown,
         // An optional return takes `null`, a value of its element or an optional

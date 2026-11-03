@@ -752,8 +752,13 @@ impl Holds {
             None => Self::Record(BTreeMap::new()),
         };
         match ty {
-            None | Some(AlgorithmValueType::Scalar(_)) => Self::Present,
-            Some(AlgorithmValueType::List { elem }) => match elem.record_alias() {
+            None
+            | Some(
+                AlgorithmValueType::Scalar(_)
+                | AlgorithmValueType::Text { .. }
+                | AlgorithmValueType::Bytes { .. },
+            ) => Self::Present,
+            Some(AlgorithmValueType::List { elem, .. }) => match elem.record_alias() {
                 Some(alias) => Self::List(Box::new(record(alias))),
                 None => Self::Present,
             },

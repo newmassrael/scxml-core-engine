@@ -908,7 +908,7 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::model::{AlgorithmValueType, ListElemType, SceType};
+    use crate::forge::model::{AlgorithmValueType, SceType};
     use crate::model::{Param, State, Transition, Variable};
 
     /// A document built state by state, as the static lowering leaves one.
@@ -998,7 +998,8 @@ mod tests {
         Variable {
             id: id.to_string(),
             value_type: Some(AlgorithmValueType::List {
-                elem: ListElemType::Scalar(SceType::Uint8),
+                elem: Box::new(AlgorithmValueType::Scalar(SceType::Uint8)),
+                max: None,
             }),
             capacity: Some(capacity),
             ..Variable::default()

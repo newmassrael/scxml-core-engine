@@ -21,7 +21,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sce_build::forge::model::{AlgorithmValueType, OptionalElemType, SceType};
+use sce_build::forge::model::{AlgorithmValueType, SceType};
 use tempfile::tempdir;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -145,22 +145,34 @@ fn lowers_optional(args: &[&str]) -> bool {
 #[test]
 fn the_type_is_read_and_spelled_back_as_written() {
     for (written, elem) in [
-        ("optional<int64>", OptionalElemType::Scalar(SceType::Int64)),
-        ("optional<bool>", OptionalElemType::Scalar(SceType::Bool)),
+        (
+            "optional<int64>",
+            AlgorithmValueType::of_scalar(SceType::Int64),
+        ),
+        (
+            "optional<bool>",
+            AlgorithmValueType::of_scalar(SceType::Bool),
+        ),
         (
             "optional<string>",
-            OptionalElemType::Scalar(SceType::String),
+            AlgorithmValueType::of_scalar(SceType::String),
         ),
         (
             "optional<record:Move>",
-            OptionalElemType::Record {
+            AlgorithmValueType::Record {
                 alias: "Move".to_string(),
             },
         ),
     ] {
         let read = AlgorithmValueType::from_attr(written)
             .unwrap_or_else(|| panic!("`{written}` reads as a type"));
-        assert_eq!(read, AlgorithmValueType::Optional { elem }, "{written}");
+        assert_eq!(
+            read,
+            AlgorithmValueType::Optional {
+                elem: Box::new(elem)
+            },
+            "{written}"
+        );
         assert_eq!(read.as_attr(), written, "spelled back as written");
         // An optional value is neither its element nor a list nor a record.
         assert!(read.scalar().is_none(), "{written} is no scalar");

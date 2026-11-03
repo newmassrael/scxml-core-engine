@@ -550,7 +550,7 @@ fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EntrySche
                     && match spec.lang {
                         Some(lang) => crate::forge::generator::algorithm_optional_spelled(
                             lang,
-                            &crate::forge::model::OptionalElemType::Scalar(elem.clone()),
+                            &crate::forge::model::AlgorithmValueType::of_scalar(elem.clone()),
                         ),
                         None => true,
                     }
@@ -588,7 +588,7 @@ fn swift_field_unwritten(field: &crate::forge::model::EntryField) -> Option<&'st
         EntryType::Optional { elem }
             if !crate::forge::generator::algorithm_optional_spelled(
                 Language::Swift,
-                &crate::forge::model::OptionalElemType::Scalar(elem.clone()),
+                &crate::forge::model::AlgorithmValueType::of_scalar(elem.clone()),
             )
     ) {
         Some("an optional byte string")
@@ -979,7 +979,7 @@ pub trait StaticTarget {
     /// ([`crate::forge::generator::algorithm_optional_spelled`]), and the
     /// Interpreter's lowering, whose values are the objects the algorithm holds,
     /// always.
-    fn holds_algorithm_optional(&self, elem: &crate::forge::model::OptionalElemType) -> bool {
+    fn holds_algorithm_optional(&self, elem: &crate::forge::model::AlgorithmValueType) -> bool {
         match self.expr_target().language() {
             Some(lang) => crate::forge::generator::algorithm_optional_spelled(lang, elem),
             None => true,
@@ -3855,6 +3855,20 @@ pub(crate) fn optional_not_lowered(what: &str, lang: &str) -> GenerateError {
     ))
 }
 
+/// The refusal of `part`, the part of a slot's type that `element` declares and
+/// that a lowering in `position` does not hold yet (docs/adr/0086, section 7.3):
+/// the wording the reader of the type refuses a composition in
+/// ([`crate::forge::value_type::Composition::sentence`]).
+pub(crate) fn composition_not_lowered(
+    element: &str,
+    part: &crate::forge::model::AlgorithmValueType,
+    position: &str,
+) -> GenerateError {
+    GenerateError::unsupported(
+        crate::forge::value_type::Composition::of(part).sentence(element, position),
+    )
+}
+
 /// The refusal of the first optional record of `scope` (docs/adr/0055, step 9)
 /// on a target, `lang`, that does not lower one yet
 /// ([`StaticTarget::lowers_optional_record`]): a variable of one, or a call of
@@ -3903,7 +3917,7 @@ fn algorithm_optional_not_lowered(
     scope: &StaticScope,
     target: &dyn StaticTarget,
 ) -> Option<GenerateError> {
-    use crate::forge::model::OptionalElemType;
+    use crate::forge::model::AlgorithmValueType;
     scope.callees.iter().find_map(|callee| {
         let value = callee.value.as_ref()?;
         value
@@ -3913,7 +3927,7 @@ fn algorithm_optional_not_lowered(
             .find_map(|slot| match slot {
                 StaticSlot::Optional(elem)
                     if !target
-                        .holds_algorithm_optional(&OptionalElemType::Scalar(elem.clone())) =>
+                        .holds_algorithm_optional(&AlgorithmValueType::of_scalar(elem.clone())) =>
                 {
                     Some(optional_not_lowered(
                         &format!(
@@ -4562,9 +4576,9 @@ pub fn lower(
             // A list starts empty. Its elements are numbers and bools, or
             // records, which are declared as a record variable's are.
             if let Some(elem) = var.value_type.as_ref().and_then(|t| t.list_elem()) {
-                use crate::forge::model::ListElemType;
+                use crate::forge::model::AlgorithmValueType;
                 let (ty, view, saved_kind, saved_type, empty, holds) = match elem {
-                    ListElemType::Scalar(elem) => {
+                    AlgorithmValueType::Scalar(elem) => {
                         let list = declarations.scalar_list(elem, var.capacity);
                         (
                             list.ty,
@@ -4575,7 +4589,7 @@ pub fn lower(
                             false,
                         )
                     }
-                    ListElemType::Record { alias } => {
+                    AlgorithmValueType::Record { alias } => {
                         let schema = records.get(alias).ok_or_else(|| {
                             GenerateError::unsupported(format!(
                                 "<data id=\"{}\">: list<record:{alias}> names no event-schema \
@@ -4594,6 +4608,13 @@ pub fn lower(
                             holds_bytes(schema),
                         )
                     }
+                    other => {
+                        return Err(composition_not_lowered(
+                            &format!("<data id=\"{}\">", var.id),
+                            other,
+                            "a statechart's list variable",
+                        ))
+                    }
                 };
                 if let Some(element) = target.data_element(&var.id, &empty) {
                     rewrites.note_element(var.value_type_spelling.as_ref(), &element);
@@ -4601,8 +4622,8 @@ pub fn lower(
                 // An element is a number's own type, or the record type the list
                 // holds, which is what its saved form is read by.
                 let elem_ty = match elem {
-                    ListElemType::Scalar(elem) => target.scalar_type(elem),
-                    ListElemType::Record { .. } => saved_type.clone(),
+                    AlgorithmValueType::Scalar(elem) => target.scalar_type(elem),
+                    _ => saved_type.clone(),
                 };
                 fields.push(StaticField {
                     id: var.id.clone(),
@@ -5147,8 +5168,8 @@ pub fn lower(
         .collect();
     let mut record_list_bounds: std::collections::BTreeMap<String, u32> = Default::default();
     for (elem, capacity) in rewrites.lists.values() {
-        if let crate::forge::model::ListElemType::Record { alias } = elem {
-            let bound = record_list_bounds.entry(alias.clone()).or_default();
+        if let Some(alias) = elem.record_alias() {
+            let bound = record_list_bounds.entry(alias.to_string()).or_default();
             *bound = (*bound).max(*capacity);
         }
     }
@@ -5788,17 +5809,9 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
 fn shape_type(
     value_type: &crate::forge::model::AlgorithmValueType,
 ) -> crate::forge::model::AlgorithmValueType {
-    use crate::forge::model::{AlgorithmValueType, OptionalElemType};
-    match value_type {
-        AlgorithmValueType::Optional {
-            elem: OptionalElemType::Scalar(present),
-        } => AlgorithmValueType::Scalar(present.clone()),
-        AlgorithmValueType::Optional {
-            elem: OptionalElemType::Record { alias },
-        } => AlgorithmValueType::Record {
-            alias: alias.clone(),
-        },
-        other => other.clone(),
+    match value_type.optional_elem() {
+        Some(present) => present.clone(),
+        None => value_type.clone(),
     }
 }
 
@@ -6240,7 +6253,7 @@ type RecordVars = std::collections::BTreeMap<String, (String, EntrySchema)>;
 
 /// A `sce-static` document's list variables, each with its element type and
 /// its declared capacity.
-type ListVars = std::collections::BTreeMap<String, (crate::forge::model::ListElemType, u32)>;
+type ListVars = std::collections::BTreeMap<String, (crate::forge::model::AlgorithmValueType, u32)>;
 
 /// A `sce-static` document's string variables, each with its declared capacity
 /// in UTF-8 bytes.
@@ -10094,11 +10107,9 @@ impl StaticTarget for CTarget {
     // ([`crate::forge::generator::algorithm_optional_spelled`]): a text is held
     // only as the field of a record, over the buffer of its `sce:max-size`, and
     // the slot of an algorithm declares no bound to hold one in.
-    fn holds_algorithm_optional(&self, elem: &crate::forge::model::OptionalElemType) -> bool {
-        !matches!(
-            elem,
-            crate::forge::model::OptionalElemType::Scalar(SceType::String)
-        ) && crate::forge::generator::algorithm_optional_spelled(Language::C11, elem)
+    fn holds_algorithm_optional(&self, elem: &crate::forge::model::AlgorithmValueType) -> bool {
+        !matches!(elem, crate::forge::model::AlgorithmValueType::Text { .. })
+            && crate::forge::generator::algorithm_optional_spelled(Language::C11, elem)
     }
     // A list is handed as the borrowed view of its elements, `{data, len}`, as the
     // algorithm's own list parameter is; a record or a payload as the struct it is.
@@ -10527,10 +10538,11 @@ impl StaticTarget for CTarget {
             if let Some(elem) = value_type.list_elem() {
                 return !(v.capacity.is_some()
                     && match elem {
-                        crate::forge::model::ListElemType::Scalar(ty) => {
+                        crate::forge::model::AlgorithmValueType::Scalar(ty) => {
                             held_scalar(ty) || matches!(ty, SceType::Float32 | SceType::Float64)
                         }
-                        crate::forge::model::ListElemType::Record { .. } => true,
+                        crate::forge::model::AlgorithmValueType::Record { .. } => true,
+                        _ => false,
                     });
             }
             !matches!(
@@ -13525,10 +13537,10 @@ fn lower_action(
                         .get(location)
                         .filter(|_| state_call.is_none())
                         .and_then(|(elem, capacity)| match elem {
-                            crate::forge::model::ListElemType::Scalar(elem) => {
+                            crate::forge::model::AlgorithmValueType::Scalar(elem) => {
                                 Some((elem.clone(), *capacity))
                             }
-                            crate::forge::model::ListElemType::Record { .. } => None,
+                            _ => None,
                         })
                         .and_then(|(elem, capacity)| {
                             let (whole, _) = crate::forge::expr::called_names(&action.expr).ok()?;
@@ -13689,12 +13701,12 @@ fn lower_action(
             // a record variable or a loop's record item — stands now: a plain
             // value the list then holds a copy of.
             let value = match elem {
-                crate::forge::model::ListElemType::Scalar(elem) => {
+                crate::forge::model::AlgorithmValueType::Scalar(elem) => {
                     lower(&action.expr, InferredType::from_sce_type(elem))?
                 }
                 // The payload of the event the transition is on is a record of
                 // its schema too, taken whole as `_event.data`.
-                crate::forge::model::ListElemType::Record { alias }
+                crate::forge::model::AlgorithmValueType::Record { alias }
                     if action.expr.trim() == "_event.data" =>
                 {
                     let schema = rewrites.schemas.get(alias).ok_or_else(|| {
@@ -13705,7 +13717,7 @@ fn lower_action(
                     })?;
                     payload_record_value(rewrites.machine, alias, schema, target, &lower)?
                 }
-                crate::forge::model::ListElemType::Record { alias } => {
+                crate::forge::model::AlgorithmValueType::Record { alias } => {
                     reads_payload = false;
                     let written = action.expr.trim();
                     let named = renames.get(written).copied().unwrap_or(written);
@@ -13716,6 +13728,13 @@ fn lower_action(
                         },
                         can_fail: false,
                     }
+                }
+                other => {
+                    return Err(composition_not_lowered(
+                        &format!("<sce:append target=\"{list}\">"),
+                        other,
+                        "a statechart's list variable",
+                    ))
                 }
             };
             let name = renames.get(list).copied().unwrap_or(list);
@@ -13791,14 +13810,21 @@ fn lower_action(
             // What a target that has to name the item's type and the list it
             // copies is told: the element's type and the list's own.
             let (item_ty, list_ty) = match elem {
-                crate::forge::model::ListElemType::Scalar(scalar) => (
+                crate::forge::model::AlgorithmValueType::Scalar(scalar) => (
                     target.scalar_type(scalar),
                     target.bounded_list(scalar, Some(*capacity)).ty,
                 ),
-                crate::forge::model::ListElemType::Record { alias } => {
+                crate::forge::model::AlgorithmValueType::Record { alias } => {
                     let record_ty = target.record_type(rewrites.machine, alias);
                     let list = target.bounded_record_list(&record_ty, Some(*capacity));
                     (record_ty, list.ty)
+                }
+                other => {
+                    return Err(composition_not_lowered(
+                        &format!("<foreach array=\"{list}\">"),
+                        other,
+                        "a statechart's list variable",
+                    ))
                 }
             };
             // The loops that hold this one, and the copy it walks at that depth.
@@ -13822,10 +13848,7 @@ fn lower_action(
                     .unwrap_or_default();
             }
             // A record item is a record a `<send>` of the body may take whole.
-            let holds_a_record = match elem {
-                crate::forge::model::ListElemType::Record { alias } => Some(alias.clone()),
-                crate::forge::model::ListElemType::Scalar(_) => None,
-            };
+            let holds_a_record = elem.record_alias().map(str::to_string);
             if let Some(alias) = &holds_a_record {
                 rewrites
                     .loop_records

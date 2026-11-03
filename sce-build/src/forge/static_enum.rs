@@ -735,17 +735,14 @@ impl AlgorithmWalk<'_, '_> {
 
     /// The place an element appended to the buffer local `target` stands in.
     fn buffer_element(&self, target: &str) -> Slot {
-        use crate::forge::model::{AlgorithmBinding, ListElemType};
+        use crate::forge::model::AlgorithmBinding;
         self.m
             .body_bindings()
             .into_iter()
             .find_map(|binding| match binding {
                 AlgorithmBinding::Local { name, sce_type } if name == target => {
                     Some(match sce_type.list_elem() {
-                        Some(ListElemType::Scalar(elem)) => {
-                            Slot::of(&AlgorithmValueType::Scalar(elem.clone()))
-                        }
-                        Some(ListElemType::Record { .. }) => Slot::Named,
+                        Some(elem) => Slot::of(elem),
                         None => Slot::Scalar,
                     })
                 }

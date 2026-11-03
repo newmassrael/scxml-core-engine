@@ -474,7 +474,7 @@ pub(crate) fn check_algorithm(
         returns: returns_return.map_or(InferredType::Unknown, value_type),
         returns_alias: returns_return
             .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
-            .and_then(crate::forge::model::OptionalElemType::record_alias)
+            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
             .map(str::to_string),
         records: types.record_aliases(),
         optional_records: types.optional_record_aliases(),

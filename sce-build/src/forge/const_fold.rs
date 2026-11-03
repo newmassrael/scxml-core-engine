@@ -1527,7 +1527,7 @@ mod tests {
             body: vec![AlgorithmStmt::Var {
                 name: "x".into(),
                 name_spelling: None,
-                sce_type: crate::forge::model::AlgorithmValueType::Scalar(elem),
+                sce_type: crate::forge::model::AlgorithmValueType::of_scalar(elem),
                 init: Some(init.into()),
                 init_spelling: None,
                 capacity: None,

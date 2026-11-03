@@ -22,7 +22,7 @@ use crate::forge::error::{ExprError, ForgeError};
 use crate::forge::expr::{parse_to_ast, ExprKind, Refusal, TypedExpr};
 use crate::forge::expression_site::ExpressionSite;
 use crate::forge::generator::{AlgorithmSlots, AlgorithmTypes, CalleeSlot, ImportContext};
-use crate::forge::model::{AlgorithmModel, AlgorithmStmt, OptionalElemType};
+use crate::forge::model::{AlgorithmModel, AlgorithmStmt, AlgorithmValueType};
 use crate::forge::types::RecordId;
 
 /// Hold every call of an imported algorithm with an optional record slot, in the
@@ -53,7 +53,7 @@ pub(crate) fn check_algorithm(
         .return_type
         .as_ref()
         .and_then(|ty| ty.optional_elem())
-        .and_then(OptionalElemType::record_alias)
+        .and_then(AlgorithmValueType::record_alias)
         .and_then(|alias| {
             imports
                 .iter()

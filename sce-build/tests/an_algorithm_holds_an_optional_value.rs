@@ -26,7 +26,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sce_build::forge::model::{AlgorithmStmt, AlgorithmValueType, OptionalElemType, SceType};
+use sce_build::forge::model::{AlgorithmStmt, AlgorithmValueType, SceType};
 use tempfile::tempdir;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -162,7 +162,7 @@ fn an_algorithms_parameter_return_and_local_hold_an_optional_number() {
             panic!("expected an algorithm, got {:?}", parsed.document.kind());
         };
         let optional = AlgorithmValueType::Optional {
-            elem: OptionalElemType::Scalar(elem),
+            elem: Box::new(AlgorithmValueType::of_scalar(elem)),
         };
         assert_eq!(
             algorithm.signature.params[0].sce_type, optional,
@@ -190,15 +190,15 @@ fn an_algorithms_slot_reads_every_optional_element_a_statechart_holds() {
     for (written, elem) in [
         (
             "optional&lt;string&gt;",
-            OptionalElemType::Scalar(SceType::String),
+            AlgorithmValueType::of_scalar(SceType::String),
         ),
         (
             "optional&lt;bytes&gt;",
-            OptionalElemType::Scalar(SceType::Bytes),
+            AlgorithmValueType::of_scalar(SceType::Bytes),
         ),
         (
             "optional&lt;record:Goal&gt;",
-            OptionalElemType::Record {
+            AlgorithmValueType::Record {
                 alias: "Goal".to_string(),
             },
         ),
@@ -219,7 +219,9 @@ fn an_algorithms_slot_reads_every_optional_element_a_statechart_holds() {
         let ForgeDocument::Algorithm(algorithm) = &parsed.document else {
             panic!("expected an algorithm, got {:?}", parsed.document.kind());
         };
-        let optional = AlgorithmValueType::Optional { elem };
+        let optional = AlgorithmValueType::Optional {
+            elem: Box::new(elem),
+        };
         assert_eq!(
             algorithm.signature.params[0].sce_type, optional,
             "{written}"

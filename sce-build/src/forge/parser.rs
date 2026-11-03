@@ -12076,30 +12076,12 @@ pub(crate) fn read_entry_type(
         )
         .map(EntryType::Scalar);
     }
-    match read_optional_elem(
-        node,
-        doc_name,
-        element.clone(),
-        attr,
-        text,
-        OptionalElems::Scalar,
-    )? {
-        OptionalElemType::Scalar(elem) => Ok(EntryType::Optional { elem }),
-        // `OptionalElems::Scalar` admits no record, so the reader has already
-        // refused one; were it to hand one back, the refusal is the same.
-        OptionalElemType::Record { .. } => Err(optional_elem_refusal(
-            node,
-            doc_name,
-            element,
-            attr,
-            text,
-            OptionalElems::Scalar,
-        )),
-    }
+    read_optional_scalar(node, doc_name, element, attr, text)
+        .map(|elem| EntryType::Optional { elem })
 }
 
-/// What may stand inside an `optional<…>` a position declares
-/// ([`read_optional_elem`]).
+/// What may stand inside an `optional<…>` a position declares, as its
+/// refusal offers it ([`optional_elem_refusal`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OptionalElems {
     /// A scalar or a value of an imported enum: an event schema's field.
@@ -12109,31 +12091,27 @@ enum OptionalElems {
     OrRecord,
 }
 
-/// The element of the `optional<…>` `text` spells, judged against the closed
-/// set the document decides (its enum imports, and its event-schema imports
-/// where `admitted` takes a record). The one reading of what stands inside an
-/// optional type, so a variable and a field cannot disagree about it.
-fn read_optional_elem(
+/// The scalar inside the `optional<…>` `text` spells, a value of an enum
+/// judged against the document's enum imports: what a codec's entry may hold
+/// inside an optional. Anything else is refused with the optional scalars the
+/// document could have written as its candidates.
+fn read_optional_scalar(
     node: &roxmltree::Node,
     doc_name: &str,
     element: String,
     attr: &str,
     text: &str,
-    admitted: OptionalElems,
-) -> Result<OptionalElemType, Located<ForgeError>> {
+) -> Result<SceType, Located<ForgeError>> {
     let enums = enum_import_aliases(node);
-    let records = match admitted {
-        OptionalElems::Scalar => Vec::new(),
-        OptionalElems::OrRecord => import_aliases_of(node, ForgeKind::EventSchema),
-    };
     AlgorithmValueType::optional_inner(text)
-        .and_then(OptionalElemType::from_attr)
+        .and_then(|inner| SceType::from_attr(inner.trim()))
         .filter(|elem| match elem {
-            OptionalElemType::Scalar(SceType::Enum(reference)) => enums.contains(&reference.alias),
-            OptionalElemType::Scalar(_) => true,
-            OptionalElemType::Record { alias } => records.contains(alias),
+            SceType::Enum(reference) => enums.contains(&reference.alias),
+            _ => true,
         })
-        .ok_or_else(|| optional_elem_refusal(node, doc_name, element, attr, text, admitted))
+        .ok_or_else(|| {
+            optional_elem_refusal(node, doc_name, element, attr, text, OptionalElems::Scalar)
+        })
 }
 
 /// The refusal of an `optional<…>` whose element `admitted` does not take, with
@@ -12277,11 +12255,7 @@ fn composition_refusal(
     located(
         node,
         doc_name,
-        crate::forge::error::GenerateError::unsupported(format!(
-            "{element}: `{}` in {position} is a type of the language, and no backend lowers \
-             its {} there yet",
-            composition.place, composition.constructor
-        )),
+        crate::forge::error::GenerateError::unsupported(composition.sentence(element, position)),
     )
 }
 
@@ -12291,7 +12265,7 @@ fn composition_refusal(
 ///
 /// A refusal of a type written as `optional<…>` whose inside names no type, or
 /// is itself optional, offers every type the position could have written
-/// inside it (`admitted`), as [`read_optional_elem`] does for an entry; a word
+/// inside it (`admitted`), as [`read_optional_scalar`] does for an entry; a word
 /// that names no type elsewhere offers the scalars and the document's enums; a
 /// record alias no import declares offers the document's records. Every other
 /// breach of the grammar is refused naming the place in the type
@@ -12512,7 +12486,7 @@ pub(crate) fn read_static_variable_type(
             data, doc_name, element, "sce:type", text, &refusal,
         ));
     }
-    written.as_algorithm_type().map_err(|composition| {
+    written.slot_view().map_err(|composition| {
         composition_refusal(
             data,
             doc_name,
@@ -12520,7 +12494,8 @@ pub(crate) fn read_static_variable_type(
             "a statechart's variable",
             &composition,
         )
-    })
+    })?;
+    Ok(written.split_outer_bound())
 }
 
 /// Which of an algorithm's slots a type is read for (docs/adr/0086, section 1).
@@ -12585,9 +12560,10 @@ fn read_algorithm_slot_type(
             node, doc_name, element, "type", text, &refusal,
         ));
     }
-    let (sce_type, bound) = written.as_algorithm_type().map_err(|composition| {
+    written.slot_view().map_err(|composition| {
         composition_refusal(node, doc_name, element, "an algorithm", &composition)
     })?;
+    let (sce_type, bound) = written.clone().split_outer_bound();
     // A held text or byte string has a length, and the build sizes the value
     // held by it: one that states no bound is no type of the language. A buffer
     // (`bytes`, `list<T>`) is the exception only in the code its refusal carries.

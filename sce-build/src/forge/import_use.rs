@@ -48,7 +48,7 @@ use crate::forge::expr;
 use crate::forge::expression_site::ExpressionSite;
 use crate::forge::model::{
     AlgorithmConstType, AlgorithmStmt, AlgorithmValueType, CodecModel, CodecVariant, Cycle,
-    ForgeDocument, ForgeField, ForgeImport, ListElemType, OptionalElemType, SceType,
+    ForgeDocument, ForgeField, ForgeImport, SceType,
 };
 
 /// The aliases of `imports` that `document` or its `cycles` name.
@@ -131,19 +131,14 @@ impl Names {
     /// nowhere a value is read and would be pruned from the generated code.
     fn value_ty(&mut self, ty: &AlgorithmValueType) {
         match ty {
-            AlgorithmValueType::Scalar(t)
-            | AlgorithmValueType::List {
-                elem: ListElemType::Scalar(t),
-            } => self.ty(t),
-            AlgorithmValueType::Record { alias }
-            | AlgorithmValueType::List {
-                elem: ListElemType::Record { alias },
-            } => self.name(alias),
-            // An optional value names what its element names (docs/adr/0055).
-            AlgorithmValueType::Optional { elem } => match elem {
-                OptionalElemType::Scalar(t) => self.ty(t),
-                OptionalElemType::Record { alias } => self.name(alias),
-            },
+            AlgorithmValueType::Scalar(t) => self.ty(t),
+            AlgorithmValueType::Text { .. } | AlgorithmValueType::Bytes { .. } => {}
+            AlgorithmValueType::Record { alias } => self.name(alias),
+            // A list and an optional value name what their element names
+            // (docs/adr/0055), at every depth.
+            AlgorithmValueType::List { elem, .. } | AlgorithmValueType::Optional { elem } => {
+                self.value_ty(elem)
+            }
         }
     }
 

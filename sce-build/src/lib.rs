@@ -8912,16 +8912,19 @@ fn algorithm_record_slots(
     };
     let slot = |ty: &AlgorithmValueType| -> Option<CalleeSlot> {
         match ty {
-            AlgorithmValueType::Scalar(t) => Some(CalleeSlot::Scalar(t.clone())),
-            // An optional slot over a scalar (docs/adr/0055): the value of an enum
-            // in one is held to its enum by `algorithm_enum_slots`.
-            AlgorithmValueType::Optional {
-                elem: forge::model::OptionalElemType::Scalar(t),
-            } => Some(CalleeSlot::Optional(t.clone())),
-            // An optional record, of the schema the callee names.
-            AlgorithmValueType::Optional {
-                elem: forge::model::OptionalElemType::Record { alias },
-            } => schema(alias).map(|(id, _)| CalleeSlot::OptionalRecord { id }),
+            AlgorithmValueType::Scalar(_)
+            | AlgorithmValueType::Text { .. }
+            | AlgorithmValueType::Bytes { .. } => ty.scalar().cloned().map(CalleeSlot::Scalar),
+            AlgorithmValueType::Optional { elem } => match (elem.scalar(), elem.record_alias()) {
+                // An optional slot over a scalar (docs/adr/0055): the value of an
+                // enum in one is held to its enum by `algorithm_enum_slots`.
+                (Some(t), _) => Some(CalleeSlot::Optional(t.clone())),
+                // An optional record, of the schema the callee names.
+                (None, Some(alias)) => {
+                    schema(alias).map(|(id, _)| CalleeSlot::OptionalRecord { id })
+                }
+                (None, None) => None,
+            },
             AlgorithmValueType::List { .. } => None,
             AlgorithmValueType::Record { alias } => {
                 schema(alias).map(|(id, qualified_type)| CalleeSlot::Record { id, qualified_type })
@@ -9139,8 +9142,8 @@ pub(crate) fn discover_stateless_signature(
                     .filter(|_| m.signature.may_fail)
                     .and_then(|params| {
                         let elem = match m.signature.return_type.as_ref()?.list_elem()? {
-                            forge::model::ListElemType::Scalar(elem) => elem.clone(),
-                            forge::model::ListElemType::Record { .. } => return None,
+                            forge::model::AlgorithmValueType::Scalar(elem) => elem.clone(),
+                            _ => return None,
                         };
                         Some(ListReturn {
                             params,
@@ -9171,7 +9174,7 @@ pub(crate) fn discover_stateless_signature(
                                     slot.sce_type.as_attr(),
                                     slot.name
                                 )
-                            } else if matches!(elem, forge::model::ListElemType::Record { .. }) {
+                            } else if elem.record_alias().is_some() {
                                 "it returns a list of records, and a statechart takes a list of \
                                  numbers or bools only"
                                     .to_string()
