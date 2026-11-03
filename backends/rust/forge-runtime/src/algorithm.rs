@@ -153,18 +153,6 @@ pub fn bounded<S: AsRef<[u8]>>(value: S, capacity: u32) -> Result<S, AlgorithmEr
     Ok(value)
 }
 
-/// `items`, handed back, when it holds no more than `capacity` elements — the
-/// bound a list variable of a `sce-static` machine declares — and a capacity
-/// failure otherwise. A list an algorithm returns may hold more than the
-/// bound it declared on a backend whose lists grow, and the machine holds the
-/// same list wherever it runs, so the list it takes is held to its own.
-pub fn within<T>(items: &[T], capacity: u32) -> Result<&[T], AlgorithmError> {
-    if items.len() > capacity as usize {
-        return Err(AlgorithmError::CapacityExceeded);
-    }
-    Ok(items)
-}
-
 /// The value a reading found, or an out-of-range failure when it found none:
 /// the variant an enum's `from_underlying` found for a number, which is what
 /// `<alias>.fromNumber(n)` answers (SCE_FORGE.md §4.12, "An enum value in a

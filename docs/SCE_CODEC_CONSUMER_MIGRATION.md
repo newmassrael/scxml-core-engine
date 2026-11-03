@@ -911,3 +911,15 @@ Landing: the commit that adds this section.
   named `SceString` or `SceBytes`, so a codec consumer changes nothing; code that passed a `SceBytes<N>` where a
   codec's `HeapBytes<N>` was asked for converts with `HeapBytes::from_slice(bytes.as_slice())`.
 
+## `sce_forge_runtime::algorithm::within` is gone (ADR 0086 §7.4)
+
+Landing: the commit that adds this section.
+
+- `within(items, capacity)` held a list an algorithm returned to the bound of the `Vec` a Rust machine kept it in. A
+  machine now keeps it in a `BoundedList<T, N>`, and generated code copies it with
+  `BoundedList::from_slice(list.as_slice())?`, whose type holds the bound and whose `CapacityExceeded` converts into
+  `AlgorithmError::CapacityExceeded` through `?`, the failure `within` answered. No generated code calls `within`.
+- Code of a consumer's own that called it writes the same: `BoundedList::<T, N>::from_slice(items)?` where the place's
+  type names `N`, or `if items.len() > capacity { return Err(AlgorithmError::CapacityExceeded) }` where only a number
+  is known.
+
