@@ -192,7 +192,7 @@ pub(crate) fn source_case(
     let mut bindings = Vec::new();
     let literal = parts_literal(plan, path, source, held, &mut bindings)?;
     let mut fresh = 0;
-    let checks = plan
+    let mut checks: Vec<(String, String)> = plan
         .elements
         .iter()
         .map(|element| {
@@ -200,6 +200,12 @@ pub(crate) fn source_case(
             Ok((element.field.id.clone(), holds))
         })
         .collect::<Result<_, String>>()?;
+    checks.extend(plan.groups().iter().map(|group| {
+        (
+            gates_label(group),
+            group_equal(group, path, "&decoded", "&parts"),
+        )
+    }));
     Ok(SourceCase {
         bindings,
         literal,
@@ -209,8 +215,33 @@ pub(crate) fn source_case(
 
 /// Refuse what a literal does not spell yet.
 fn spelled(plan: &EncodePlan<'_>) -> Result<(), String> {
-    if !plan.groups().is_empty() {
-        return Err("a gate group is not spelled as a literal yet".to_string());
+    for group in plan.groups() {
+        let label = gates_label(group);
+        if group.aligned.is_some() {
+            return Err(format!(
+                "the group `{label}` holds two lists of one count, which is not spelled as a \
+                 literal yet"
+            ));
+        }
+        if group
+            .gates
+            .iter()
+            .any(|g| !matches!(g, GateVar::Flag { .. }))
+        {
+            return Err(format!(
+                "the group `{label}` is decided by a flag input or a chain's membership, which \
+                 is not spelled as a literal yet"
+            ));
+        }
+        if let Some(field) = plan.model.fields.iter().find(|f| {
+            group.arms.iter().any(|a| a.fields.contains(&f.id)) && child_alias(f).is_some()
+        }) {
+            return Err(format!(
+                "the group `{label}` holds `{}`, a body or a list, which is not spelled as a \
+                 literal yet",
+                field.id
+            ));
+        }
     }
     if !plan.arms.is_empty() {
         return Err("a variant is not spelled as a literal yet".to_string());
@@ -242,15 +273,24 @@ fn parts_literal(
     let object = source
         .as_object()
         .ok_or_else(|| "a source is a JSON object".to_string())?;
-    if let Some(extra) = object
-        .keys()
-        .find(|key| !plan.elements.iter().any(|e| &e.field.id == *key))
-    {
+    if let Some(extra) = object.keys().find(|key| {
+        !plan.elements.iter().any(|e| &e.field.id == *key)
+            && !plan.groups().iter().any(|g| &gates_label(g) == *key)
+    }) {
         return Err(format!(
             "the source states `{extra}`, which the value does not present"
         ));
     }
     let mut members = Vec::new();
+    for group in plan.groups() {
+        let label = gates_label(group);
+        let value = object
+            .get(&label)
+            .ok_or_else(|| format!("the source states no `{label}`"))?;
+        let spelled = group_literal(plan, path, group, value, held, bindings)
+            .map_err(|e| format!("`{label}`: {e}"))?;
+        members.push(format!("{}: {spelled}", group_accessor(group)));
+    }
     for element in &plan.elements {
         let id = &element.field.id;
         let value = object
@@ -275,6 +315,71 @@ fn parts_literal(
         members.push(format!("{}: {spelled}", filters::to_snake_case(id.clone())));
     }
     Ok(format!("{} {{ {} }}", path.parts(), members.join(", ")))
+}
+
+/// The value of the gate group `group` a source states as `{"arm": i, ..}`, its
+/// members by id, or `null` where the value holds no arm (ADR 0081 §5): the
+/// group's type, its arm for a group of several, each member as the arm holds
+/// it, and `Option` for a group a value may hold none of.
+fn group_literal(
+    plan: &EncodePlan<'_>,
+    path: &CodecPath,
+    group: &GateGroup,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+    bindings: &mut Vec<String>,
+) -> Result<String, String> {
+    if json.is_null() {
+        return if group.absent.is_some() {
+            Ok("None".to_string())
+        } else {
+            Err("the value holds an arm of it always".to_string())
+        };
+    }
+    let object = json
+        .as_object()
+        .ok_or_else(|| "a group is a JSON object or `null`".to_string())?;
+    let arm = object
+        .get("arm")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|i| group.arms.get(usize::try_from(i).ok()?))
+        .ok_or_else(|| "a group states `arm`, the index of one of its arms".to_string())?;
+    if let Some(extra) = object
+        .keys()
+        .find(|key| *key != "arm" && !arm.fields.contains(key))
+    {
+        return Err(format!("the arm holds no `{extra}`"));
+    }
+    let mut members = Vec::new();
+    for id in &arm.fields {
+        let field = plan
+            .model
+            .fields
+            .iter()
+            .find(|f| &f.id == id)
+            .ok_or_else(|| format!("the codec has no field `{id}`"))?;
+        let value = object
+            .get(id)
+            .ok_or_else(|| format!("the arm states no `{id}`"))?;
+        let one = literal_value(&plan.value(field), value, held, bindings)
+            .map_err(|e| format!("`{id}`: {e}"))?;
+        members.push(format!("{}: {one}", filters::to_snake_case(id.clone())));
+    }
+    let ty = format!("{}::{}", path.module, group_type(&path.type_name, group));
+    let value = if group.is_sum() {
+        format!(
+            "{ty}::{} {{ {} }}",
+            group_arm_name(group, arm),
+            members.join(", ")
+        )
+    } else {
+        format!("{ty} {{ {} }}", members.join(", "))
+    };
+    Ok(if group.absent.is_some() {
+        format!("Some({value})")
+    } else {
+        value
+    })
 }
 
 /// A name for the next binding of a byte case.
@@ -435,6 +540,17 @@ fn element_equal(
 
 /// A `bool` expression that holds when `a` and `b`, references to two values
 /// of the codec `plan` at `path`, present the same elements.
+/// A `bool` expression that holds when `a` and `b`, references to two sources
+/// of the codec at `path`, hold the same arm of `group` with the same members.
+/// A group holds no body or list ([`spelled`]), so its value compares whole.
+fn group_equal(group: &GateGroup, path: &CodecPath, a: &str, b: &str) -> String {
+    let accessor = group_accessor(group);
+    format!(
+        "{source}::{accessor}({a}) == {source}::{accessor}({b})",
+        source = path.source()
+    )
+}
+
 fn body_equal(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
@@ -444,11 +560,16 @@ fn body_equal(
     fresh: &mut usize,
 ) -> Result<String, String> {
     spelled(plan)?;
-    let checks = plan
+    let mut checks = plan
         .elements
         .iter()
         .map(|element| element_equal(element, path, a, b, held, fresh))
         .collect::<Result<Vec<_>, _>>()?;
+    checks.extend(
+        plan.groups()
+            .iter()
+            .map(|group| group_equal(group, path, a, b)),
+    );
     // Parenthesised only where they are joined: alone, a check is a block,
     // a `match` or a comparison that needs none.
     Ok(match checks.as_slice() {

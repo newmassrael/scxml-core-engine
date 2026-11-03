@@ -51,10 +51,12 @@ What the model reads so far, and refuses by name past it:
   value, a list as an array of them, and a count or a body's length is derived
   as a byte length is;
 * a field gated on one flag of a carrier (`sce:present-if="c.f"` or `"!c.f"`),
-  present exactly where the gate holds; one element to a flag, since two or
-  more form a group (docs/adr/0065 §6 R4b), which is not read yet. A stated
-  length counts on the side where its content is not, so a stated length with
-  its gated content is a group too.
+  present exactly where the gate holds, its flag derived from its presence;
+* a gate group ([`Group`], docs/adr/0065 §6 R4b, R4c): two or more elements
+  one flag decides, a stated length counting on the side where its content is
+  not, or the fields a disjunction `c.a || c.b` of the codec's own flags
+  decides where no other gate reads them. A group of a flag input or of a
+  chain's membership, or one holding a body or a list, is not read yet.
 
 Each fixture this module writes is listed in FIXTURES with its hand-chosen
 sources; `regenerate` writes them into `numerical_reference.json` under the
@@ -122,12 +124,71 @@ class Flag:
 
 
 @dataclass
-class Gate:
-    """`sce:present-if="carrier.flag"`, or its negation."""
+class Clause:
+    """One flag of a carrier a gate reads, `carrier.flag` or its negation."""
 
     carrier: str
     flag: str
     when_clear: bool
+
+
+@dataclass
+class Gate:
+    """`sce:present-if`: one clause, or a disjunction `a.X || b.Y` of them,
+    and its text as the document writes it."""
+
+    clauses: list[Clause]
+    text: str
+
+    def one(self) -> Clause | None:
+        """The clause of a gate of one flag; `None` for a disjunction."""
+        return self.clauses[0] if len(self.clauses) == 1 else None
+
+    @property
+    def carrier(self) -> str:
+        return self.only().carrier
+
+    @property
+    def flag(self) -> str:
+        return self.only().flag
+
+    @property
+    def when_clear(self) -> bool:
+        return self.only().when_clear
+
+    def only(self) -> Clause:
+        clause = self.one()
+        if clause is None:
+            raise AssertionError(f"`{self.text}` is a disjunction, not one flag")
+        return clause
+
+
+@dataclass
+class Group:
+    """The fields one gate decides, held together (`SCE_FORGE.md` §4.6,
+    docs/adr/0065 §6 R4b, R4c): a member of the source keyed by the gate as
+    the document writes it, whose value is the arm the value holds, `{"arm": i,
+    ...its members}`, or `null` where it may hold none.
+
+    The page names the arms and leaves their order to a case's notation
+    (docs/adr/0081 §5): for one flag, the side where it holds and then the
+    side where it does not, each where it holds an element; for a
+    disjunction, each assignment of its flags that satisfies it, the ones
+    holding fewer flags set first, and among those the one holding the
+    earlier flags the gate names. A disjunction's flags are derived from the
+    arm, and so is one flag."""
+
+    label: str
+    clauses: list[Clause]
+    arms: list[tuple[tuple[bool, ...], list[Field]]]
+    optional: bool
+
+    def members(self) -> list[Field]:
+        """Each element any arm holds, once, in the order the arms hold them."""
+        out: list[Field] = []
+        for _, fields in self.arms:
+            out += [f for f in fields if f not in out]
+        return out
 
 
 @dataclass
@@ -205,20 +266,59 @@ class Codec:
         the encoder sets it from their presence."""
         out: dict[tuple[str, str], list[Field]] = {}
         for f in self.fields:
-            if f.gate is not None and self.presented(f):
+            if f.gate is not None and f.gate.one() is not None and self.presented(f):
                 out.setdefault((f.gate.carrier, f.gate.flag), []).append(f)
         return out
 
-    def decided(self) -> dict[tuple[str, str], list[Field]]:
+    def decided(self) -> dict[tuple[str, str], list[tuple[Field, bool]]]:
         """Each flag a gate of one flag names, and every element of the value
-        its gate decides: the presented fields it gates, and each stated length
-        whose content it gates, which the value holds on the side where the
-        content is not (`SCE_FORGE.md` §4.6, docs/adr/0065 §6 R4b)."""
-        out = {key: list(gated) for key, gated in self.gate_flags().items()}
+        its gate decides with the side it is on, the value of the flag while it
+        is present: the presented fields it gates, and each stated length whose
+        content it gates, which the value holds on the side where the content
+        is not (`SCE_FORGE.md` §4.6, docs/adr/0065 §6 R4b)."""
+        out: dict[tuple[str, str], list[tuple[Field, bool]]] = {}
+        for key, gated in self.gate_flags().items():
+            out[key] = [(f, not f.gate.when_clear) for f in gated]
         for f in self.fields:
             if self.stated(f):
                 for c in self.measured()[f.id]:
-                    out.setdefault((c.gate.carrier, c.gate.flag), []).append(f)
+                    if c.gate.one() is None:
+                        raise Unread(f"{self.name}: `{f.id}` measures content a disjunction gates")
+                    out.setdefault((c.gate.carrier, c.gate.flag), []).append(
+                        (f, c.gate.when_clear)
+                    )
+        return out
+
+    def groups(self) -> list[Group]:
+        """The gate groups of the codec (`SCE_FORGE.md` §4.6, R4b, R4c)."""
+        out = []
+        for (carrier, name), decided in self.decided().items():
+            if len(decided) < 2:
+                continue
+            sides = [
+                (side, [f for f, s in decided if s == side])
+                for side in (True, False)
+                if any(s == side for _, s in decided)
+            ]
+            out.append(
+                Group(
+                    label=f"{carrier}.{name}",
+                    clauses=[Clause(carrier, name, False)],
+                    arms=[((side,), fields) for side, fields in sides],
+                    optional=len(sides) == 1,
+                )
+            )
+        disjunctions: dict[str, list[Field]] = {}
+        for f in self.fields:
+            if f.gate is not None and f.gate.one() is None:
+                disjunctions.setdefault(f.gate.text, []).append(f)
+        for label, fields in disjunctions.items():
+            clauses = fields[0].gate.clauses
+            n = len(clauses)
+            assignments = [tuple(bool(v >> i & 1) for i in range(n)) for v in range(1, 1 << n)]
+            assignments.sort(key=lambda values: (sum(values), tuple(not v for v in values)))
+            arms = [(values, list(fields)) for values in assignments]
+            out.append(Group(label=label, clauses=list(clauses), arms=arms, optional=True))
         return out
 
     def check(self) -> None:
@@ -226,11 +326,27 @@ class Codec:
         for (carrier, name), decided in self.decided().items():
             if self.flag(carrier, name).width != 1:
                 raise Unread(f"{self.name}: a gate on the {name} flag, wider than one bit")
-            if len(decided) > 1:
-                raise Unread(
-                    f"{self.name}: the gate {carrier}.{name} decides "
-                    f"{', '.join(g.id for g in decided)}, a group"
-                )
+        one_flag = {(c.carrier, c.flag) for f in self.fields if f.gate for c in f.gate.clauses
+                    if f.gate.one() is not None}
+        for f in self.fields:
+            if f.gate is None or f.gate.one() is not None:
+                continue
+            for c in f.gate.clauses:
+                if c.when_clear or self.flag(c.carrier, c.flag).width != 1:
+                    raise Unread(f"{self.name}: the disjunction `{f.gate.text}` is not of set flags")
+                if (c.carrier, c.flag) in one_flag or any(
+                    g.gate is not None and g.gate.one() is None and g.gate.text != f.gate.text
+                    and any((d.carrier, d.flag) == (c.carrier, c.flag) for d in g.gate.clauses)
+                    for g in self.fields
+                ):
+                    raise Unread(
+                        f"{self.name}: another gate reads a flag of `{f.gate.text}`, so it is "
+                        "a check and not a group"
+                    )
+        for group in self.groups():
+            for member in group.members():
+                if member.child is not None:
+                    raise Unread(f"{self.name}: a group holding `{member.id}`, a body or a list")
         for (carrier, name) in self.gate_flags():
             if f"{carrier}.{name}" in self.measured():
                 raise Unread(f"{self.name}: {carrier}.{name} is derived by two kinds")
@@ -259,11 +375,17 @@ def read_gate(stem: str, node) -> Gate | None:
     if present_if is None:
         return None
     text = present_if.strip()
-    when_clear = text.startswith("!")
-    carrier, _, flag = text.lstrip("!").partition(".")
-    if not flag or "|" in text or "&" in text or "(" in text:
-        raise Unread(f"{stem}: gate {present_if!r} is not one flag of a carrier")
-    return Gate(carrier.strip(), flag.strip(), when_clear)
+    if "&" in text or "(" in text:
+        raise Unread(f"{stem}: gate {present_if!r} is not flags of a carrier joined by ||")
+    clauses = []
+    for part in text.split("||"):
+        part = part.strip()
+        when_clear = part.startswith("!")
+        carrier, _, flag = part.lstrip("!").partition(".")
+        if not flag:
+            raise Unread(f"{stem}: gate {present_if!r} names a flag of no carrier")
+        clauses.append(Clause(carrier.strip(), flag.strip(), when_clear))
+    return Gate(clauses, " || ".join(f"{c.carrier}.{c.flag}" for c in clauses))
 
 
 def read_held(stem: str, node, kind: str, imports: dict[str, Codec]) -> Field:
@@ -407,9 +529,13 @@ def read_vle(frame: bytes, at: int) -> tuple[int, int]:
 
 
 def gate_holds(codec: Codec, gate: Gate, carriers: dict[str, int]) -> bool:
-    flag = codec.flag(gate.carrier, gate.flag)
-    set_ = (carriers[gate.carrier] >> flag.bit) & 1 == 1
-    return set_ != gate.when_clear
+    """Whether some clause of `gate` holds of the carriers read so far."""
+    for clause in gate.clauses:
+        flag = codec.flag(clause.carrier, clause.flag)
+        set_ = (carriers[clause.carrier] >> flag.bit) & 1 == 1
+        if set_ != clause.when_clear:
+            return True
+    return False
 
 
 def content(f: Field, value) -> bytes:
@@ -473,9 +599,34 @@ def encode(codec: Codec, source: dict) -> bytes:
     the fields that share a byte packed into it."""
     if not isinstance(source, dict):
         raise ValueError(f"{codec.name}: a source is a JSON object")
-    presented = [f.id for f in codec.fields if codec.presented(f)]
+    groups = codec.groups()
+    grouped = {m.id for g in groups for m in g.members()}
+    presented = [f.id for f in codec.fields if codec.presented(f) and f.id not in grouped]
+    presented += [g.label for g in groups]
     if sorted(source) != sorted(presented):
         raise ValueError(f"{codec.name}: a source states {presented}, not {sorted(source)}")
+    # A group's arm says each of its members, the others absent, and the flags
+    # of a disjunction: the value of each while the value holds the arm.
+    source = dict(source)
+    forced: dict[tuple[str, str], bool] = {}
+    for group in groups:
+        held_arm = source.pop(group.label)
+        for m in group.members():
+            source[m.id] = None
+        values = tuple(False for _ in group.clauses)
+        if held_arm is None:
+            if not group.optional:
+                raise ValueError(f"{codec.name}: `{group.label}` always holds an arm")
+        else:
+            values, fields = group.arms[held_arm["arm"]]
+            if sorted(held_arm) != sorted(["arm"] + [m.id for m in fields]):
+                raise ValueError(f"{codec.name}: arm {held_arm['arm']} of `{group.label}` "
+                                 f"states {sorted(held_arm)}")
+            for m in fields:
+                source[m.id] = held_arm[m.id]
+        if len(group.clauses) > 1:
+            for clause, value in zip(group.clauses, values):
+                forced[(clause.carrier, clause.flag)] = value
     contents = {
         f.id: held(f, source[f.id])
         for f in codec.fields
@@ -489,10 +640,13 @@ def encode(codec: Codec, source: dict) -> bytes:
         for flag in f.flags:
             mask = ((1 << flag.width) - 1) << flag.bit
             gated = codec.gate_flags().get((f.id, flag.name))
-            if gated is not None:
-                (g,) = gated
-                set_ = (source[g.id] is not None) != g.gate.when_clear
-                value = (value & ~mask) | (mask if set_ else 0)
+            if (f.id, flag.name) in forced:
+                value = (value & ~mask) | (mask if forced[(f.id, flag.name)] else 0)
+            elif gated is not None:
+                sets = {(source[g.id] is not None) != g.gate.when_clear for g in gated}
+                if len(sets) > 1:
+                    raise ValueError(f"{codec.name}: the fields `{flag.name}` gates disagree")
+                value = (value & ~mask) | (mask if sets.pop() else 0)
             elif f"{f.id}.{flag.name}" in codec.measured():
                 wire = said_length(codec, f"{f.id}.{flag.name}", contents)
                 if wire is None:
@@ -643,6 +797,18 @@ def decode_at(codec: Codec, frame: bytes, at: int, end: int) -> tuple[dict, int]
             source[f.id] = None
         else:
             source[f.id] = raw[f.id]
+    # A group is the arm its flags say, holding its members; none where every
+    # flag of an optional group says no arm.
+    for group in codec.groups():
+        values = tuple(
+            gate_holds(codec, Gate([clause], clause.flag), carriers) for clause in group.clauses
+        )
+        read = {m.id: source.pop(m.id) for m in group.members()}
+        arm = next((i for i, (v, _) in enumerate(group.arms) if v == values), None)
+        if arm is None:
+            source[group.label] = None
+        else:
+            source[group.label] = {"arm": arm} | {m.id: read[m.id] for m in group.arms[arm][1]}
     return source, at
 
 
@@ -867,6 +1033,54 @@ FIXTURES = {
             ({"time": 0x3FFF, "zid": list(range(16))}, "a two-byte time and a zid at its bound"),
         ],
         "a VLE time, then a zid whose length is derived from it.",
+    ),
+    "codec_ext_encoding_info": Fixture(
+        [
+            ({"combined_id": 0x00, "combined_id.has_schema": {"arm": 1, "schema_size": 0}},
+             "no schema: the value states the size, zero"),
+            ({"combined_id": 0x00, "combined_id.has_schema": {"arm": 1, "schema_size": 7}},
+             "no schema: the size is what the value states"),
+            ({"combined_id": 0x01, "combined_id.has_schema": {"arm": 0, "schema": [1, 2, 3]}},
+             "a schema: has_schema and the size are derived from it"),
+            ({"combined_id": 0x81, "combined_id.has_schema": {"arm": 0, "schema": []}},
+             "an empty schema is present; the carrier takes two VLE bytes"),
+        ],
+        "a length stated where its gated content is absent is held with that content, on the "
+        "side where it is not (R4b): arm 0 holds the schema, arm 1 the size.",
+    ),
+    "codec_present_if_length_ref": Fixture(
+        [
+            ({"flags": 0x00, "flags.has_payload": {"arm": 1, "payload_size": 0}},
+             "no payload, a stated size of zero"),
+            ({"flags": 0x00, "flags.has_payload": {"arm": 1, "payload_size": 9}},
+             "no payload, a stated size of nine"),
+            ({"flags": 0x01, "flags.has_payload": {"arm": 0, "payload": [5, 6]}},
+             "a payload: the size and has_payload are derived"),
+            ({"flags": 0x01, "flags.has_payload": {"arm": 0, "payload": list(range(32))}},
+             "a payload at its bound"),
+        ],
+        "a length stated where its gated content is absent is held with that content, on the "
+        "side where it is not (R4b): arm 0 holds the payload, arm 1 the size.",
+    ),
+    "codec_present_if_disjunction": Fixture(
+        [
+            ({"flags": 0x00, "flags.wants_a || flags.wants_b": None},
+             "neither flag: no seq, the frame is the carrier alone"),
+            ({"flags": 0x01, "flags.wants_a || flags.wants_b": {"arm": 0, "seq": 0x1234}},
+             "wants_a alone: arm 0"),
+            ({"flags": 0x02, "flags.wants_a || flags.wants_b": {"arm": 1, "seq": 5}},
+             "wants_b alone: arm 1"),
+            ({"flags": 0x03, "flags.wants_a || flags.wants_b": {"arm": 2, "seq": 0xFFFF}},
+             "both flags: arm 2"),
+            ({"flags": 0xFC, "flags.wants_a || flags.wants_b": None},
+             "the bits the value presents are kept beside the derived ones"),
+        ],
+        "a disjunction no other gate reads is a group (R4c): an arm for each assignment of its "
+        "flags that satisfies it, the first flag the lowest bit, and the flags derived from it.",
+    ),
+    "codec_chain_depth_entry": Fixture(
+        [({"header": 0x05}, "an id, Z clear"), ({"header": 0x8F}, "id 15 and Z set")],
+        "one header byte, presented whole.",
     ),
     "codec_present_if_negation": Fixture(
         [

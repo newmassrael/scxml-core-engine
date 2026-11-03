@@ -203,6 +203,17 @@ down into each body and entry, since a held codec is presented by an interface a
 list held to a law, a chain that ends on an entry's flag, a codec that takes a flag input, a variant and a group are
 refused by name until their parts land.
 
+*Landed (step 3, fourth part, 2026-11-04): gate groups.* A gate group is the member of `source` keyed by its gate as
+the document writes it (`"flags.has_payload"`, `"flags.wants_a || flags.wants_b"`), whose value is `{"arm": i, ..}`
+with the arm's members, or `null` where the value may hold no arm. The page names the arms and not their order, so
+the notation fixes it: for one flag, the side where it holds and then the side where it does not, each where it holds
+an element; for a disjunction, the assignments of its flags that satisfy it, those with fewer flags set first and among
+them the one setting the earlier flags the gate names. The model forms a group as §4.6 R4b and R4c do (two elements a
+flag decides, a stated length on the side without its content; a disjunction of the codec's own flags no other gate
+reads) and derives every flag of it from the arm. Three codecs gain 13 cases. The literal holds the arm as the plan's
+group type and arm name, and the harness compares a group whole. A group of a flag input or of a chain's membership,
+one holding a body or a list, and one aligning two lists of one count are refused by name.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.

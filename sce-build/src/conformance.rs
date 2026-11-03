@@ -4193,6 +4193,12 @@ mod tests {
             "fixtures::codec_repeat_basic::CodecRepeatBasicParts { frags: \
              ::sce_forge_runtime::codec::Bounded::new(&held_0[..])",
             "fixtures::codec_embed_basic::CodecEmbedBasicParts { tag: 2, locator: &held_0 }",
+            // A gate group: the arm the value holds, and an `Option` of it for
+            // a group the value may hold no arm of.
+            "flags_has_payload: fixtures::codec_present_if_length_ref::\
+             CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size: 9 }",
+            "flags_wants_a_or_wants_b: Some(fixtures::codec_present_if_disjunction::\
+             CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsB { seq: 5 })",
         ] {
             assert!(rust.contains(literal), "the Rust harness lacks `{literal}`");
         }
