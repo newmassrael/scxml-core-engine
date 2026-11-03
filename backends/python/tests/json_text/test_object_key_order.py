@@ -18,6 +18,7 @@ from typing import Any, Dict, List
 
 import pytest
 
+from sce_runtime.event_payload import Raw, list_json, record_json, value_json
 from sce_runtime.scripting.i_script_engine import ScriptValue
 
 # The repository root, from this file's own location: the shared table is
@@ -50,4 +51,35 @@ def test_the_members_of_an_object_are_written_in_the_one_order_every_engine_writ
     case: Dict[str, Any],
 ) -> None:
     written = ScriptValue.of(_evaluated(case["params"])).to_json_literal()
+    assert written == case["data"]
+
+
+def _typed_json(value: Any) -> Raw:
+    """``value`` spelled through the typed payload writers, one call per
+    constructor, as a generated raise spells a value of its type: an object as a
+    record, an array as a list, anything else as a value of a scalar type."""
+    if isinstance(value, dict):
+        return record_json({name: _typed_json(member) for name, member in value.items()})
+    if isinstance(value, list):
+        return list_json(value, _typed_json)
+    return value_json(value)
+
+
+def _records() -> List[Dict[str, Any]]:
+    """The cases a record is written for: a case whose name repeats is a
+    `<send>`'s list of params, which only the parameter writer collects, and a
+    record holds each field once."""
+    cases = [case for case in _load()
+             if len({name for name, _ in case["params"]}) == len(case["params"])]
+    assert len(cases) >= 10, f"the table produced only {len(cases)} case(s) a record is written for"
+    return cases
+
+
+@pytest.mark.parametrize("case", _records(), ids=lambda case: case["name"])
+def test_a_record_and_a_list_are_written_in_the_one_order_every_engine_writes(
+    case: Dict[str, Any],
+) -> None:
+    """The typed writers a generated raise spells a record and a list with
+    (docs/adr/0086, section 5.3) are held to the same table, at every depth."""
+    written = record_json({name: _typed_json(value) for name, value in case["params"]})
     assert written == case["data"]

@@ -665,6 +665,85 @@ mod tests {
 
     const DEFAULTS: &str = r#"{"layout":"week","count":"7","urgent":true}"#;
 
+    /// `value` spelled through the typed payload writers, one call per
+    /// constructor, as a generated inject seam spells a value of its type: an
+    /// object as a record ([`record_json`]), an array as a list ([`list_json`]),
+    /// a text by [`quote`], a number and a truth value as written.
+    fn typed_json(value: &crate::json::Value) -> String {
+        use crate::json::Value;
+        match value {
+            Value::Null => "null".to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Number(n) => n.clone(),
+            Value::Text(t) => quote(t),
+            Value::Array(items) => list_json(items, typed_json),
+            Value::Object(members) => record_json(
+                members
+                    .iter()
+                    .map(|(id, member)| (id.as_str(), typed_json(member)))
+                    .collect(),
+            ),
+        }
+    }
+
+    /// tests/json_text/object_key_order.json, written by the typed writers a
+    /// generated inject seam spells a record and a list with (docs/adr/0086,
+    /// section 5.3), at every depth: the same order as every engine's
+    /// `_event.data` (ARCHITECTURE.md, "JSON Object Key Order"). A case whose
+    /// name repeats is a `<send>`'s list of params, which only the parameter
+    /// writer collects: a record holds each field once.
+    #[test]
+    fn a_record_and_a_list_are_written_in_the_one_order_every_engine_writes() {
+        use crate::json::{parse, Value};
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/json_text/object_key_order.json"
+        );
+        let table = std::fs::read_to_string(path).expect("the shared key-order table");
+        let table = parse(&table).expect("the table is JSON");
+        let Some(Value::Array(cases)) = table.member("cases") else {
+            panic!("the table has cases");
+        };
+        let mut written = 0;
+        for case in cases {
+            let (Some(Value::Text(name)), Some(Value::Text(data)), Some(Value::Array(params))) = (
+                case.member("name"),
+                case.member("data"),
+                case.member("params"),
+            ) else {
+                panic!("a case has a name, params and data");
+            };
+            let members: Vec<(&str, &Value)> = params
+                .iter()
+                .map(|pair| match pair {
+                    Value::Array(pair) => match pair.as_slice() {
+                        [Value::Text(id), value] => (id.as_str(), value),
+                        _ => panic!("{name}: a param is a [name, value] pair"),
+                    },
+                    _ => panic!("{name}: a param is a [name, value] pair"),
+                })
+                .collect();
+            let mut ids: Vec<&str> = members.iter().map(|(id, _)| *id).collect();
+            ids.sort_unstable();
+            ids.dedup();
+            if ids.len() < members.len() {
+                continue;
+            }
+            let text = record_json(
+                members
+                    .iter()
+                    .map(|(id, value)| (*id, typed_json(value)))
+                    .collect(),
+            );
+            assert_eq!(&text, data, "{name}");
+            written += 1;
+        }
+        assert!(
+            written >= 10,
+            "the table lost the cases a record is written for: {written}"
+        );
+    }
+
     #[test]
     fn a_field_the_delivery_lacks_is_read_out_of_the_defaults() {
         let fields = PayloadFields::decode_with_defaults(r#"{"level": 4}"#, DEFAULTS)

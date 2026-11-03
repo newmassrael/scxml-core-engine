@@ -16,6 +16,14 @@ func repositoryRoot(file: String = #filePath) -> URL {
     return url
 }
 
+/// The text of one shared table, `tests/<table>`, for a test that reads it with this
+/// runtime's own parser, which keeps an object's members in the order they are written.
+func sharedTableText(_ table: String) throws -> String {
+    try String(
+        contentsOf: repositoryRoot().appendingPathComponent("tests").appendingPathComponent(table),
+        encoding: .utf8)
+}
+
 /// The cases of one shared table, `tests/<table>`.
 func sharedCases(_ table: String) throws -> [[String: Any]] {
     let data = try Data(contentsOf: repositoryRoot().appendingPathComponent("tests").appendingPathComponent(table))

@@ -28,6 +28,7 @@
 #include <map>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <set>
 #include <string>
 #include <variant>
 #include <vector>
@@ -168,6 +169,70 @@ TEST(JsonText, TheCoreWritesObjectMembersInTheOneOrder) {
         EXPECT_EQ(SCE::EventDataHelper::buildJsonFromTypedParams(evaluated), row.at("data").get<std::string>())
             << row.at("name").get<std::string>();
     }
+}
+
+namespace {
+
+// `value` spelled through the typed payload writers, one call per constructor, as a
+// generated raise spells a value of its type: an object as a record, an array as a
+// list, anything else as a value of a scalar type.
+std::string typedJson(const nlohmann::json &value) {
+    using Fields = SCE::Common::EventPayloadFields;
+    if (value.is_object()) {
+        std::vector<std::pair<std::string, std::string>> members;
+        for (const auto &member : value.items()) {
+            members.emplace_back(member.key(), typedJson(member.value()));
+        }
+        return Fields::record(std::move(members));
+    }
+    if (value.is_array()) {
+        const std::vector<nlohmann::json> items(value.begin(), value.end());
+        return Fields::list(items, [](const nlohmann::json &item) { return typedJson(item); });
+    }
+    if (value.is_string()) {
+        return Fields::json(value.get<std::string>());
+    }
+    if (value.is_boolean()) {
+        return Fields::json(value.get<bool>());
+    }
+    if (value.is_number_unsigned()) {
+        return Fields::json(value.get<uint64_t>());
+    }
+    if (value.is_number_integer()) {
+        return Fields::json(value.get<int64_t>());
+    }
+    if (value.is_number_float()) {
+        return Fields::json(value.get<double>());
+    }
+    return "null";
+}
+
+}  // namespace
+
+// The typed writers a generated raise spells a record and a list with (docs/adr/0086,
+// section 5.3) are held to the same table, at every depth. A case whose name repeats
+// is a `<send>`'s list of params, which only the parameter writer collects: a record
+// holds each field once.
+TEST(JsonText, ARecordAndAListAreWrittenInTheOneOrder) {
+    std::ifstream file(SCE_JSON_KEY_ORDER_TABLE);
+    const auto table = nlohmann::json::parse(file);
+    size_t written = 0;
+    for (const auto &row : table.at("cases")) {
+        std::vector<std::pair<std::string, std::string>> members;
+        std::set<std::string> names;
+        for (const auto &pair : row.at("params")) {
+            const auto name = pair.at(0).get<std::string>();
+            names.insert(name);
+            members.emplace_back(name, typedJson(pair.at(1)));
+        }
+        if (names.size() < members.size()) {
+            continue;
+        }
+        EXPECT_EQ(SCE::Common::EventPayloadFields::record(std::move(members)), row.at("data").get<std::string>())
+            << row.at("name").get<std::string>();
+        ++written;
+    }
+    EXPECT_GE(written, 10u) << "the table lost the cases a record is written for";
 }
 
 namespace {

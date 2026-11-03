@@ -904,12 +904,19 @@ held to it:
 
 | Engine | Writer | Reader of the table |
 |--------|--------|---------------------|
-| C++ | `EventDataHelper::buildJsonFromTypedParams` (nlohmann's `json`, a sorted map) | `tests/common/JsonTextTest.cpp` |
-| Rust | `helpers::event_data::build_json_from_typed_params`, `script_value_to_json` | `backends/rust/runtime/src/helpers/event_data.rs` |
-| Go | `BuildJSONFromTypedParams`, `ScriptValueToJSON` | `backends/go/runtime/event_data_key_order_test.go` |
-| Python | `ScriptValue.to_json_literal` (no parameter builder yet) | `backends/python/tests/json_text/test_object_key_order.py` |
-| Kotlin | `buildJsonFromParams`, `valueToJson`, `Json.writeCanonical`; order is `Json.compareKeys` | `backends/kotlin/tests/.../runtime/EventDataKeyOrderTest.kt` |
-| C11 | a script-engine machine reads a payload (`sce_payload_*`) and writes no parameter object; a `sce-static` machine writes a flat object of scalars through `sce_forge_wire_pair` (`sce/forge/wire.h`), whose pairs the generator lists sorted by name once, since a pair a failed value leaves out leaves the others' order as it was. A name that repeats is one array: the generator lists a name's pairs together in document order and the writer turns the second value of a key into the array it joins | `sce-build/tests/a_c_machines_event_data_follows_the_shared_key_order.rs` (the table's flat cases, read from the generated source) and `backends/c/tests/unit/forge_wire_repeat_test.c` (the table's repeated-name case, written) |
+| C++ | `EventDataHelper::buildJsonFromTypedParams` (nlohmann's `json`, a sorted map); a typed record and list, `EventPayloadFields::record` and `list` (`common/EventPayloadLift.h`) | `tests/common/JsonTextTest.cpp` |
+| Rust | `helpers::event_data::build_json_from_typed_params`, `script_value_to_json`; a typed record and list, `event_payload::record_json` and `list_json` | `backends/rust/runtime/src/helpers/event_data.rs`, `backends/rust/runtime/src/event_payload.rs` |
+| Go | `BuildJSONFromTypedParams`, `ScriptValueToJSON`; a typed record and list, `RecordJSON` and `ListJSON` | `backends/go/runtime/event_data_key_order_test.go` |
+| Python | `ScriptValue.to_json_literal` (no parameter builder yet); a typed record and list, `event_payload.record_json` and `list_json` | `backends/python/tests/json_text/test_object_key_order.py` |
+| Kotlin | `buildJsonFromParams`, `valueToJson`, `Json.writeCanonical`; a typed record and list, `EventPayload.recordJson` and `listJson`; order is `Json.compareKeys` | `backends/kotlin/tests/.../runtime/EventDataKeyOrderTest.kt` |
+| Swift | a typed record and list, `recordJSON` and `listJSON` (`SceRuntime/EventPayload.swift`) | `backends/swift/runtime/Tests/SceRuntimeTests/JsonTests.swift` |
+| C11 | a script-engine machine reads a payload (`sce_payload_*`) and writes no parameter object; a `sce-static` machine writes a flat object of scalars through `sce_forge_wire_pair` (`sce/forge/wire.h`), whose pairs the generator lists sorted by name once, since a pair a failed value leaves out leaves the others' order as it was. A name that repeats is one array: the generator lists a name's pairs together in document order and the writer turns the second value of a key into the array it joins. A typed record or list inside a value is opened and closed at any depth (`sce_forge_wire_pair_open`, `_member_open`, `_element_open`, `sce_forge_wire_close`), and the generator lists a record's members sorted by name the same way | `sce-build/tests/a_c_machines_event_data_follows_the_shared_key_order.rs` (the table's flat cases, read from the generated source) and `backends/c/tests/unit/forge_wire_repeat_test.c` (the table's repeated-name case, written) |
+
+Each typed writer (a record and a list, docs/adr/0086 section 5.3) is held to the
+table's cases whose names do not repeat, every object of them written as a record
+and every array as a list at every depth: a record holds each field once, and a
+name that repeats is a `<send>`'s list of params, which only the parameter writer
+collects.
 
 Do NOT write a new object writer in a template or a backend; call the engine's
 writer above, so a new engine arrives with the order already decided. A runtime

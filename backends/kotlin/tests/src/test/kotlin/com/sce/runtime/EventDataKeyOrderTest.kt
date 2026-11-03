@@ -81,6 +81,40 @@ class EventDataKeyOrderTest {
         }
     }
 
+    /**
+     * [value] spelled through the typed payload writers, one call per constructor, as a
+     * generated raise spells a value of its type: an object as a record, an array as a
+     * list, a number as written, anything else as a value of a scalar type.
+     */
+    private fun typedJson(value: Any?): EventPayload.Raw = when (value) {
+        is Map<*, *> -> EventPayload.recordJson(value.entries.associate { (k, v) -> k as String to typedJson(v) })
+        is List<*> -> EventPayload.listJson(value) { typedJson(it) }
+        is Json.Number -> EventPayload.Raw(value.text)
+        else -> EventPayload.valueJson(value)
+    }
+
+    // The typed writers a generated raise spells a record and a list with
+    // (docs/adr/0086, section 5.3) are held to the same table, at every depth. A
+    // case whose name repeats is a `<send>`'s list of params, which only the
+    // parameter writer collects: a record holds each field once.
+    @Test
+    fun `a record and a list are written in the one order every engine writes`() {
+        val table = Json.parse(File("tests/json_text/object_key_order.json").readText()) as Map<*, *>
+        var written = 0
+        for (case in table["cases"] as List<*>) {
+            val fields = case as Map<*, *>
+            val params = (fields["params"] as List<*>).map { pair ->
+                val (name, value) = pair as List<*>
+                (name as String) to value
+            }
+            if (params.map { it.first }.toSet().size < params.size) continue
+            val text = EventPayload.recordJson(params.associate { (name, value) -> name to typedJson(value) }).json
+            assertEquals(fields["data"] as String, text, fields["name"] as String)
+            written++
+        }
+        assertTrue(written >= 10, "the table lost the cases a record is written for: $written")
+    }
+
     // `JSON.stringify` writes an integer-like key before any other, whatever the
     // text says, so an object a script engine keeps comes back in an order of
     // the engine's choosing. What the runtime writes is the table's order, and

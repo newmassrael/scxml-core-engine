@@ -22,6 +22,65 @@ import Testing
     }
 }
 
+/// `value` spelled through the typed payload writers, one call per constructor, as a
+/// generated raise spells a value of its type: an object as a record, an array as a
+/// list, a text quoted, a number as written.
+private func typedJSON(_ value: JSONValue) -> String {
+    switch value {
+    case .object(let members):
+        return recordJSON(members.map { PayloadPair.json($0.key, rawJSON: typedJSON($0.value)) })
+    case .array(let items):
+        return listJSON(items, typedJSON)
+    case .text(let text):
+        return quoteJSON(text)
+    case .number(let number):
+        return number
+    case .bool(let truth):
+        return truth ? "true" : "false"
+    case .null:
+        return "null"
+    }
+}
+
+// The members of a JSON object written into `_event.data` come in one order on every
+// engine (ARCHITECTURE.md, "JSON Object Key Order"). The typed writers a generated
+// raise spells a record and a list with (docs/adr/0086, section 5.3) are held to
+// tests/json_text/object_key_order.json, at every depth. A case whose name repeats is
+// a `<send>`'s list of params, which only the parameter writer collects: a record
+// holds each field once.
+@Test func aRecordAndAListAreWrittenInTheOneOrderEveryEngineWrites() throws {
+    let table = try parseJSON(try sharedTableText("json_text/object_key_order.json"))
+    guard case .array(let cases)? = table.member("cases") else {
+        Issue.record("the table has cases")
+        return
+    }
+    var written = 0
+    for c in cases {
+        guard case .text(let name)? = c.member("name"), case .text(let data)? = c.member("data"),
+            case .array(let params)? = c.member("params")
+        else {
+            Issue.record("a case has a name, params and data")
+            return
+        }
+        var members: [PayloadPair] = []
+        var names = Set<String>()
+        for pair in params {
+            guard case .array(let parts) = pair, parts.count == 2, case .text(let id) = parts[0] else {
+                Issue.record("\(name): a param is a [name, value] pair")
+                return
+            }
+            names.insert(id)
+            members.append(PayloadPair.json(id, rawJSON: typedJSON(parts[1])))
+        }
+        if names.count < members.count {
+            continue
+        }
+        #expect(recordJSON(members) == data, "\(name)")
+        written += 1
+    }
+    #expect(written >= 10, "the table lost the cases a record is written for: \(written)")
+}
+
 @Test func anObjectThatRepeatsAFieldNameIsRefused() {
     for text in [#"{"a":1,"a":2}"#, #"{"outer":{"a":1,"b":2,"a":3}}"#, #"[{"a":1,"a":1}]"#] {
         do {
