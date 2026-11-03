@@ -713,6 +713,47 @@ fn a_document_from_memory_that_starts_another_is_refused_by_name() {
     );
 }
 
+/// A string's bound a deployment may move (`sce:limit`) is held by every
+/// expression that writes the string, at the number the build gave the name.
+/// The attributes that declare it stay as the author wrote them and are carried
+/// by nothing more in an ecmascript document, the name as the bound it names is,
+/// so the lowered document reads again and lowers to itself.
+#[test]
+fn a_named_bound_is_held_by_the_expressions_and_the_lowered_document_reads_again() {
+    let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
+  <datamodel>
+    <data id="long" sce:type="string" sce:capacity="16" expr="'abcdef'"/>
+    <data id="named" sce:type="string" sce:capacity="4" sce:limit="named_text" expr="''"/>
+  </datamodel>
+  <state id="s"><transition event="go" type="internal"><assign location="named" expr="long"/></transition></state>
+</scxml>"#;
+    let limits = sce_build::limits::Limits::none()
+        .with("named_text", 8)
+        .expect("a limit");
+    let _scope = sce_build::limits::scope(&limits);
+    let lowered = lower_source(document, "named").expect("lowers");
+    let parsed = roxmltree::Document::parse(&lowered).expect("well-formed");
+    let assigned: Vec<&str> = parsed
+        .descendants()
+        .filter(|n| n.is_element() && n.tag_name().name() == "assign")
+        .filter_map(|n| n.attribute("expr"))
+        .collect();
+    assert_eq!(
+        assigned,
+        ["SceStatic.bounded(long, 8)"],
+        "the bound is the number the build gave the name: {lowered}"
+    );
+    assert!(
+        lowered.contains(r#"sce:limit="named_text""#),
+        "the author's attributes are kept: {lowered}"
+    );
+    assert_eq!(
+        lower_source(&lowered, "named").expect("the lowered document reads again"),
+        lowered,
+        "lowering is idempotent"
+    );
+}
+
 /// A string a `namelist` hands a child is handed as the Interpreter holds it,
 /// with no expression to carry the bound the child declared for it, so the
 /// bound would go unkept: refused by name, where a `<param>` carries it.

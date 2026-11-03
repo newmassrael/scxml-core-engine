@@ -25,7 +25,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --test a_static_datamodel_lowers_for_the_interpreter
-mutation_targets sce-build/src/forge/static_js.rs sce-build/src/forge/static_lowering.rs
+mutation_targets sce-build/src/forge/static_js.rs sce-build/src/forge/static_lowering.rs sce-build/src/parser.rs
 mutation_oracles sce-build/tests/a_static_datamodel_lowers_for_the_interpreter.rs
 
 # A `<send>` that carries a `<param>` is refused again, as it was before the
@@ -248,6 +248,15 @@ mutation_case "the candidates of a candidate are not lowered" <<'PY'
 edit("sce-build/src/forge/static_js.rs",
      "                    pending.push_back((next, name));\n",
      "                    let _ = (next, name);\n")
+PY
+
+# The `sce:limit` beside a string's `sce:capacity` is left unread under the
+# ecmascript data model a lowered document declares, so the document the lowering
+# writes is refused when it is read again.
+mutation_case "a named bound is unread in the lowered document" <<'PY'
+edit("sce-build/src/parser.rs",
+     "                \"limit\",\n                \"it names the bound sce:capacity declares",
+     "                \"limit-unread\",\n                \"it names the bound sce:capacity declares")
 PY
 
 # One document is asked for and the set is handed back as its first: the

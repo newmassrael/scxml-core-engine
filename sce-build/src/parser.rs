@@ -3596,6 +3596,19 @@ impl SCXMLParser {
                 Some(name) => crate::limits::resolve(name.trim(), written),
                 None => written,
             });
+        // The name is the bound's, so it is carried where the bound is: under any
+        // data model but sce-static the `sce:capacity` above is read and carried by
+        // nothing, and so is the `sce:limit` that names it. A document lowered for
+        // the Interpreter keeps both as its author wrote them, with the number the
+        // build resolved already in every expression that holds a value to it.
+        if model.datamodel != Datamodel::SceStatic {
+            crate::sce_attr::acknowledge(
+                data,
+                "limit",
+                "it names the bound sce:capacity declares, which only sce-static carries; \
+                 under any other data model both are the authoring tool's declaration",
+            );
+        }
         // Whether the host sees the variable; `enforce_static_datamodel` has
         // already refused a direction this data model gives no meaning to.
         let direction = (model.datamodel == Datamodel::SceStatic).then(|| {
