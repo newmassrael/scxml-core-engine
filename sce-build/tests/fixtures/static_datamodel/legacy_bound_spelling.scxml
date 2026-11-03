@@ -2,11 +2,10 @@
 <!--
   `event_batch_item.scxml` with its outermost bounds written as the attributes the
   bracket replaces (docs/adr/0086, sections 1.3 and 14.1): `sce:max-size` on the text
-  and the byte string, `sce:max-count` on the list. Each is read as the bracket it is
-  a synonym of and reported as `validation/bound-attribute-superseded` with its
-  rewrite; under the same name the schema generates what `event_batch_item.scxml`
-  generates. The legacy spelling is this document's subject, so it is kept here on
-  purpose and nowhere else in the tree.
+  and the byte string, `sce:max-count` on the list, each read as its bracket and
+  reported as `validation/bound-attribute-superseded`. Under the same name it generates
+  what `event_batch_item.scxml` generates, byte for byte, so each element stands on
+  the line it stands on there; the legacy spelling is kept here and nowhere else.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
