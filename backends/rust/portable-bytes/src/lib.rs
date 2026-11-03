@@ -235,15 +235,18 @@ macro_rules! byte_view_parity {
             }
         }
 
+        // The storage's own slice view, as `Deref` reads it: the inherent
+        // `as_slice` of a heap or inline list asks `T: Clone`, which equality
+        // does not, so naming it here would resolve to another method.
         impl<T: PartialEq, const N: usize> PartialEq<&[T]> for $storage<T, N> {
             fn eq(&self, other: &&[T]) -> bool {
-                self.as_slice() == *other
+                self.0.as_slice() == *other
             }
         }
 
         impl<T: PartialEq, const N: usize, const M: usize> PartialEq<&[T; M]> for $storage<T, N> {
             fn eq(&self, other: &&[T; M]) -> bool {
-                self.as_slice() == other.as_slice()
+                self.0.as_slice() == other.as_slice()
             }
         }
     };
