@@ -1347,18 +1347,28 @@ fn render_with_options(
     // that declares no `error.execution` has no enum variant to name, and an
     // event nothing can match would be discarded on arrival anyway.
     let raises_error = model.events.contains("error.execution");
+    // The host's interface is a symbol of the machine like any other, so C11's
+    // suite prefix nests it as it nests the machine's struct, enums and
+    // functions: two machines of one name under two prefixes are two tables,
+    // and a program can hold both. A child's table is nested the same way, as
+    // C++ qualifies it with the namespace a prefix nests the child in.
+    let interface = interface_name(lang, &format!("{symbol_prefix}{machine_name}"));
+    let nesting = match lang {
+        Language::C11 => symbol_prefix,
+        Language::Rust
+        | Language::Cpp
+        | Language::Kotlin
+        | Language::Go
+        | Language::Python
+        | Language::Swift => namespace_prefix,
+    };
 
     // A child that declares acts is built with a host its parent's own host
     // answers (docs/adr/0005, decision 6), so the parent has a host to take one
     // from even when it declares no act itself. Read before the walk below
     // borrows `model` for the actions, and written on each invoke so the
     // template that starts the child reads the call and not a name.
-    let child_hosts = lower_child_hosts(
-        model,
-        lang,
-        namespace_prefix,
-        &interface_name(lang, machine_name),
-    );
+    let child_hosts = lower_child_hosts(model, lang, nesting, &interface);
     let mut calls = CallRendering {
         lang,
         machine_name,
@@ -1414,7 +1424,7 @@ fn render_with_options(
         payload_events,
         ..
     } = calls;
-    let name = interface_name(lang, machine_name);
+    let name = interface;
     let operation_names: Vec<String> = sigs
         .keys()
         .map(|n| method_name(lang, n))
@@ -1484,18 +1494,19 @@ fn machine_token(lang: Language, child_name: &str) -> String {
 /// The name of the interface of the host a child is built with, as the parent's
 /// interface spells it: the child's own interface name, and — where a machine
 /// lives in a namespace of its own, as C++'s does — qualified by that namespace,
-/// which a parent in another one cannot reach by the bare name.
-fn child_interface_type(lang: Language, child_name: &str, namespace_prefix: &str) -> String {
+/// which a parent in another one cannot reach by the bare name. `nesting` is
+/// what nests the child's names: C++'s namespace segment, or C11's symbol
+/// prefix, which the child's own symbols carry as the parent's do.
+fn child_interface_type(lang: Language, child_name: &str, nesting: &str) -> String {
     let bare = interface_name(lang, &machine_token(lang, child_name));
     match lang {
-        Language::Cpp => format!("::SCE::Generated::{namespace_prefix}{child_name}::{bare}"),
+        Language::Cpp => format!("::SCE::Generated::{nesting}{child_name}::{bare}"),
         // A sibling module of the parent's, as the machine names the child it
         // starts (`super::<child>_sm::<Child>Policy`).
         Language::Rust => format!("super::{child_name}_sm::{bare}"),
+        Language::C11 => interface_name(lang, &format!("{nesting}{child_name}")),
         // The child's machine is a file of the one module the parent is in.
-        Language::Kotlin | Language::Go | Language::Python | Language::C11 | Language::Swift => {
-            bare
-        }
+        Language::Kotlin | Language::Go | Language::Python | Language::Swift => bare,
     }
 }
 
@@ -1508,7 +1519,7 @@ fn child_interface_type(lang: Language, child_name: &str, namespace_prefix: &str
 fn lower_child_hosts(
     model: &mut SCXMLModel,
     lang: Language,
-    namespace_prefix: &str,
+    nesting: &str,
     parent_interface: &str,
 ) -> Vec<ChildHost> {
     let mut hosts: BTreeMap<String, ChildHost> = BTreeMap::new();
@@ -1516,7 +1527,7 @@ fn lower_child_hosts(
     let mut declare = |operation: String, child_name: &str| -> (String, String) {
         let call = call_expression(lang, &operation, &[]);
         let host = ChildHost {
-            child_interface: child_interface_type(lang, child_name, namespace_prefix),
+            child_interface: child_interface_type(lang, child_name, nesting),
             operation: operation.clone(),
         };
         let host_type = match lang {
@@ -3201,6 +3212,12 @@ mod tests {
             child_interface: child_interface_type(Language::C11, "worker", ""),
         }];
         assert_eq!(children[0].child_interface, "worker_actions_t");
+        // Under a suite prefix the child's table is nested as its other
+        // symbols are (`--c-symbol-prefix`).
+        assert_eq!(
+            child_interface_type(Language::C11, "worker", "suite_"),
+            "suite_worker_actions_t"
+        );
         let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
         sigs.insert("reset_slot".to_string(), Vec::new());
         let out = build_interface(Language::C11, "m_actions_t", &sigs, &children, false);
