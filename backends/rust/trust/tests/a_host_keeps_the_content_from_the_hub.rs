@@ -15,7 +15,7 @@
 use sce_rust_mesh::endpoint::{Admission, Sealer};
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
 use sce_rust_trust::message::{self, Link};
-use sce_rust_trust::{encoding, GrantError, Identity, RotateError, Trust};
+use sce_rust_trust::{encoding, GrantError, Identity, RotateError, Sent, Trust};
 use serde_json::{json, Value};
 
 const CALENDAR: &str = "home";
@@ -482,4 +482,54 @@ fn a_member_taken_off_opens_nothing_written_after_the_next_epoch() {
         one_held_already.receive_grant(&clash.grants[0].1),
         Err(GrantError::EpochTaken)
     );
+}
+
+/// A host whose list is keyed by a group its device is in signs no write of its person's while the
+/// log names no epoch: the write waits and is not sent in the clear, and once the log begins an
+/// epoch whose key the host holds it is signed, sealed under it. A host that says nothing of a
+/// group writes in the clear before any epoch, as the log lets it.
+#[test]
+fn a_host_keyed_by_a_group_signs_no_write_before_the_log_names_an_epoch() {
+    let none = list(0);
+    let mut plain = host_in(&none, Some((1, 1)), &[]);
+    let clear = send(&mut plain, &titled(1, 1000, "milk"));
+    assert_eq!(text_of(&clear), "milk", "no group and no epoch: the clear");
+
+    let mut grouped = host_in(&none, Some((1, 1)), &[]);
+    grouped.keyed_by_a_group();
+    match grouped.keep_sent("record_list.write", &titled(1, 1000, "milk")) {
+        Sent::Waiting(why) => assert!(why.contains("names no epoch"), "{why}"),
+        other => panic!("expected the write to wait, got {other:?}"),
+    }
+    let refused = try_send(&mut grouped, &titled(1, 2000, "eggs"));
+    assert!(
+        matches!(&refused, Err(why) if why.contains("names no epoch")),
+        "{refused:?}"
+    );
+    assert!(grouped.signed_operations().is_empty(), "nothing signed");
+
+    // The log names the group's first epoch: the write waits for its key, then is signed sealed.
+    grouped
+        .administer(
+            &admin(),
+            Body::MlsEpoch {
+                epoch: 1,
+                commit: [7; 32],
+            },
+        )
+        .unwrap();
+    assert!(grouped.sign_waiting().is_empty(), "no key of epoch 1 yet");
+    grouped.set_epoch_key(1, [5; 32]);
+    let waited = grouped.sign_waiting();
+    assert_eq!(waited.taken.len(), 1, "{waited:?}");
+    let signed = grouped.signed_operations();
+    assert_eq!(signed.len(), 1);
+    let sealed = text_of(&signed[0].1);
+    assert!(!sealed.contains("milk"), "sealed: {sealed}");
+    let mut bob = host_in(&grouped.entries(), Some((2, 2)), &[(1, 5)]);
+    let told = bob
+        .admit("server", "record_list.write", &signed[0].1)
+        .unwrap()
+        .unwrap();
+    assert_eq!(text_of(&told), "milk", "opened under the key of epoch 1");
 }

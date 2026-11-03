@@ -179,6 +179,10 @@ struct State {
     /// The keys of the epochs this host holds. A host that holds any keeps the content of every
     /// write from the hub, and takes no write that is not sealed.
     epoch_keys: BTreeMap<u32, secrecy::EpochKey>,
+    /// Whether this host's list is keyed by a group this host's device is in
+    /// ([`Trust::keyed_by_a_group`]): its person's writes are sealed from the first, and none is
+    /// signed while the log names no epoch.
+    keyed_by_a_group: bool,
     /// The events that arrive with no signature and make a copy forget, which this host does
     /// not take ([`UNSIGNED_REFUSED`], and [`Trust::allow_unsigned`]).
     unsigned_refused: Vec<String>,
@@ -251,6 +255,7 @@ impl Trust {
                 evicted: Vec::new(),
                 restored: Vec::new(),
                 epoch_keys: BTreeMap::new(),
+                keyed_by_a_group: false,
                 unsigned_refused: UNSIGNED_REFUSED.iter().map(|e| e.to_string()).collect(),
             })),
         }
@@ -595,6 +600,19 @@ impl Trust {
     /// [`Self::confirm_own_chain`] ends the wait.
     pub fn await_own_chain(&self) {
         self.state().awaiting_own_chain = true;
+    }
+
+    /// This host's list is keyed by a group its device is in (an MLS group, `sce-rust-mls`): its
+    /// person's writes are sealed from the first, and none is signed while the log names no epoch.
+    /// The log alone decides whether the content of a write that arrives is sealed (from the entry
+    /// that begins the first epoch), and a list keyed by its group names its first epoch when it is
+    /// opened, before anything is written; what this adds is the device's own side of it, for a
+    /// log that names no epoch yet while the group exists (a list opened by a core whose opening
+    /// named none): a write of this host's person waits ([`Sent::Waiting`]) until the log names an epoch
+    /// and this host holds its key, and is not signed in the clear. It is the host's to say, since
+    /// only the host knows it holds the group's device; nothing that arrives is judged by it.
+    pub fn keyed_by_a_group(&self) {
+        self.state().keyed_by_a_group = true;
     }
 
     /// Whether this host's person signs nothing new until their own chain is read back
@@ -2072,6 +2090,19 @@ fn log_not_begun(event: &str) -> String {
     format!("{event}: the membership log has not begun")
 }
 
+/// Whether this host's list is keyed by a group its device is in and the log names no epoch of it
+/// yet ([`Trust::keyed_by_a_group`]): what its person's write waits for, and is not signed before.
+fn names_no_epoch_of_its_group(state: &State) -> bool {
+    state.keyed_by_a_group && state.log.epoch() == 0
+}
+
+/// Why a write is not signed yet: the list is keyed by its group and the log names no epoch.
+fn no_epoch_of_the_group(event: &str) -> String {
+    format!(
+        "{event}: the list is keyed by its group and the membership log names no epoch of it yet, and a write is sealed from the first"
+    )
+}
+
 /// Why a write is not sealed yet: the host holds no key of the epoch the log is in.
 fn no_key_of_the_epoch(event: &str, epoch: u32) -> String {
     format!(
@@ -2156,8 +2187,9 @@ enum Readiness {
 
 /// Whether this host's person may sign `event` as a new operation now: the person is a member the
 /// log the host holds lets write, with the key the host signs with; the device is not waiting for
-/// its own chain; and, for a write of a list that keeps its content, the host holds the key of the
-/// epoch the log is in. What a round can change is [`Readiness::NotYet`]; what only a later entry of
+/// its own chain; for a write of a list keyed by a group the host's device is in, the log names an
+/// epoch ([`Trust::keyed_by_a_group`]); and, for a write of a list that keeps its content, the host
+/// holds the key of the epoch the log is in. What a round can change is [`Readiness::NotYet`]; what only a later entry of
 /// an administrator's could, and a device that may never sign again, is [`Readiness::Never`].
 fn readiness(state: &State, event: &str) -> Readiness {
     let Some((node, identity)) = state.own.as_ref() else {
@@ -2201,6 +2233,9 @@ fn readiness(state: &State, event: &str) -> Readiness {
         role if role < WRITER => Readiness::Never(format!(
             "{event}: node {node} may not write (role {role} at entry {tip})"
         )),
+        _ if event == WRITE_EVENT && names_no_epoch_of_its_group(state) => {
+            Readiness::NotYet(no_epoch_of_the_group(event))
+        }
         _ if event == WRITE_EVENT
             && state.keeps_content()
             && !state.epoch_keys.contains_key(&state.log.epoch()) =>
@@ -2421,6 +2456,9 @@ fn seal_write(state: &mut State, data: &str) -> Result<Sealed, String> {
     let stamp = message::write_stamp(&visible).map_err(|_| malformed())?;
     if let Some(reason) = another_content_signed(state, signing.author, &stamp, &held) {
         return Err(reason);
+    }
+    if names_no_epoch_of_its_group(state) {
+        return Err(no_epoch_of_the_group(event));
     }
     let mut wire = visible.clone();
     if state.keeps_content() {
