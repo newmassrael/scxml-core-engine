@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 24f1c455257ea04f598b006a589c3dea642c1ea2e58b2dcf4b49b8cebf3f207e
+// source-hash: 6fe63bbaa76604f09a48d24750e75e0a784e90fcb598cdca75c3ac643915bb8d
 // SCE-MAP: schema_echo.scxml:8 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -17,6 +17,9 @@ public enum SchemaEcho {
 
     /// The revision of the schema (`sce:revision`, 1 when the document declares none).
     public static let revision: UInt32 = 1
+
+    /// The most UTF-8 bytes `tag` holds (`sce:max-size`), as this build resolved it.
+    public static let tagMaxSize: UInt32 = 32
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order,
