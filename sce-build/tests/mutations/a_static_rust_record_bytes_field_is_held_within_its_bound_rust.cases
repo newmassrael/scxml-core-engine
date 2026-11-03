@@ -48,6 +48,6 @@ PY
 
 mutation_case "a saved record's bytes past the bound are read back" <<'PY'
 edit("backends/rust/runtime/src/saved_state.rs",
-     "    bounded_bytes(\n        record_member(value, record, name)?,\n        &format!(\"{record}.{name}\"),\n        capacity,\n    )",
-     "    bounded_bytes(\n        record_member(value, record, name)?,\n        &format!(\"{record}.{name}\"),\n        usize::MAX,\n    )")
+     "    bounded_bytes(\n        record_member(value, record, name)?,\n        &format!(\"{record}.{name}\"),\n    )\n}",
+     "    bounded_bytes(\n        record_member(value, record, name)?,\n        &format!(\"{record}.{name}\"),\n    )\n    .or_else(|_| Ok(crate::SceBytes::<N>::new()))\n}")
 PY

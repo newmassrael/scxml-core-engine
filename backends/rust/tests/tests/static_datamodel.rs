@@ -1749,7 +1749,7 @@ fn optional_records() -> [StaticOptionalDueRecord; 2] {
         StaticOptionalDueRecord {
             id: 2,
             due: None,
-            title: Some("later".to_string()),
+            title: Some(sce_portable_bytes::SceString::from_text("later").expect("fits")),
             status: Some(StaticOptionalStatusEnum::InProgress),
         },
     ]
@@ -1842,7 +1842,7 @@ fn a_state_saved_before_the_widening_restores_with_every_value_present() {
     let item = StaticOptionalDueRecord {
         id: 2,
         due: Some(3),
-        title: Some("first".to_string()),
+        title: Some(sce_portable_bytes::SceString::from_text("first").expect("fits")),
         status: Some(StaticOptionalStatusEnum::Open),
     };
     assert_eq!(data.items, &[item.clone()]);
@@ -1893,7 +1893,7 @@ const FORMAT1_OPTIONAL_RECORD: &str = include_str!(
 fn item(id: u32, title: &str, count: i32) -> StaticOptionalRecordItemRecord {
     StaticOptionalRecordItemRecord {
         id,
-        title: title.to_string(),
+        title: sce_portable_bytes::SceString::from_text(title).expect("fits"),
         count,
     }
 }

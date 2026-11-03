@@ -582,6 +582,18 @@ pub(crate) fn rust_bounded_list(elem: &str, max: u32) -> String {
     format!("{RUST_PORTABLE}::BoundedList<{elem}, {max}>")
 }
 
+/// The type a Rust machine holds a text of at most `max` bytes in, every place
+/// alike (docs/adr/0086, section 7.4).
+pub(crate) fn rust_text_type(max: u32) -> String {
+    format!("{RUST_PORTABLE}::SceString<{max}>")
+}
+
+/// The type a Rust machine holds a byte string of at most `max` bytes in,
+/// every place alike (docs/adr/0086, section 7.4).
+pub(crate) fn rust_bytes_type(max: u32) -> String {
+    format!("{RUST_PORTABLE}::SceBytes<{max}>")
+}
+
 /// The empty list a Rust machine starts a list variable at, its element and
 /// bound taken from the place ([`rust_bounded_list`]).
 pub(crate) const RUST_EMPTY_LIST: &str = "::sce_portable_bytes::BoundedList::new()";
@@ -592,10 +604,10 @@ impl ComposedSpelling for RustComposed<'_> {
     }
     // The portable bounded storage, `N` on the type (docs/adr/0086, section 7.1).
     fn text_type(&self, max: u32) -> String {
-        format!("{RUST_PORTABLE}::SceString<{max}>")
+        rust_text_type(max)
     }
     fn bytes_type(&self, max: u32) -> String {
-        format!("{RUST_PORTABLE}::SceBytes<{max}>")
+        rust_bytes_type(max)
     }
     fn optional_type(&self, elem: &str) -> String {
         format!("Option<{elem}>")

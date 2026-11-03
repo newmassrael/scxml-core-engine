@@ -1512,7 +1512,7 @@ impl<T: SavedValue> SavedValue for Option<T> {
 /// A saved value that may be absent, read back: absent from `null`, and
 /// otherwise the value `present` reads — what a value held to a bound, which
 /// [`SavedValue`] cannot carry, is read with when it is optional
-/// (`optional(value, |v| bounded_string(v, what, 16))`).
+/// (`optional(value, |v| bounded_bytes::<16>(v, what))`).
 pub fn optional<T>(
     value: &Value,
     present: impl FnOnce(&Value) -> Result<T, StateRefusal>,
@@ -1544,36 +1544,31 @@ pub fn record_field<T: SavedValue>(
 }
 
 /// The string field `name` of a saved record `value`, read back only if it holds
-/// no more than the `capacity` UTF-8 bytes its schema bounds it by
-/// ([`bounded_string`]) — a record never holds more, and a restored one must not
-/// be the first to.
-pub fn record_bounded_string(
+/// no more than the `N` UTF-8 bytes its type bounds it by ([`bounded_string`]) —
+/// a record never holds more, and a restored one must not be the first to.
+pub fn record_bounded_string<const N: usize>(
     value: &Value,
     record: &str,
     name: &str,
-    capacity: usize,
-) -> Result<String, StateRefusal> {
+) -> Result<sce_portable_bytes::SceString<N>, StateRefusal> {
     bounded_string(
         record_member(value, record, name)?,
         &format!("{record}.{name}"),
-        capacity,
     )
 }
 
 /// The byte-string field `name` of a saved record `value`, read back only if it is
-/// Latin-1 text of no more than the `capacity` bytes its schema bounds it by
+/// Latin-1 text of no more than the `N` bytes its type bounds it by
 /// ([`bounded_bytes`]) — a record never holds more, and a restored one must not be
 /// the first to.
-pub fn record_bounded_bytes(
+pub fn record_bounded_bytes<const N: usize>(
     value: &Value,
     record: &str,
     name: &str,
-    capacity: usize,
-) -> Result<Vec<u8>, StateRefusal> {
+) -> Result<crate::SceBytes<N>, StateRefusal> {
     bounded_bytes(
         record_member(value, record, name)?,
         &format!("{record}.{name}"),
-        capacity,
     )
 }
 
@@ -1631,18 +1626,33 @@ impl<T: SavedValue, const N: usize> SavedValue for crate::BoundedList<T, N> {
     }
 }
 
-/// A saved string `value`, read back only if it holds no more than the
-/// `capacity` UTF-8 bytes the machine bounds it by — a machine never holds more,
-/// and a restored one must not be the first to.
-pub fn bounded_string(value: &Value, what: &str, capacity: usize) -> Result<String, StateRefusal> {
-    let text = String::from_saved(value, what)?;
-    if text.len() > capacity {
-        return Err(StateRefusal::new(format!(
-            "'{what}' holds {} UTF-8 bytes, past the {capacity} it is bounded by",
+/// A saved string `value`, read back only if it holds no more than the `N`
+/// UTF-8 bytes its type bounds it by (docs/adr/0086, section 7.4) — a machine
+/// never holds more, and a restored one must not be the first to.
+pub fn bounded_string<const N: usize>(
+    value: &Value,
+    what: &str,
+) -> Result<sce_portable_bytes::SceString<N>, StateRefusal> {
+    let Value::Text(text) = value else {
+        return Err(not_a(value, what, "a text"));
+    };
+    sce_portable_bytes::SceString::<N>::from_text(text).map_err(|_| {
+        StateRefusal::new(format!(
+            "'{what}' holds {} UTF-8 bytes, past the {N} it is bounded by",
             text.len()
-        )));
+        ))
+    })
+}
+
+/// A text a machine holds (docs/adr/0086, section 7.4), written as the text
+/// and read back held to its bound ([`bounded_string`]).
+impl<const N: usize> SavedValue for sce_portable_bytes::SceString<N> {
+    fn to_saved(&self) -> Value {
+        Value::Text(self.as_str().to_string())
     }
-    Ok(text)
+    fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
+        bounded_string(value, what)
+    }
 }
 
 /// A byte string as a saved state writes it: its byte-exact Latin-1 text, each
@@ -1654,10 +1664,14 @@ pub fn bytes_to_saved(bytes: &[u8]) -> Value {
 }
 
 /// A saved byte string `value`, read back only if it is Latin-1 text of no more
-/// than the `capacity` bytes the machine bounds it by ([`bytes_to_saved`]) — a
-/// machine never holds more, and a restored one must not be the first to. A
-/// character past U+00FF is no byte, and is refused rather than truncated.
-pub fn bounded_bytes(value: &Value, what: &str, capacity: usize) -> Result<Vec<u8>, StateRefusal> {
+/// than the `N` bytes its type bounds it by ([`bytes_to_saved`], docs/adr/0086,
+/// section 7.4) — a machine never holds more, and a restored one must not be
+/// the first to. A character past U+00FF is no byte, and is refused rather than
+/// truncated.
+pub fn bounded_bytes<const N: usize>(
+    value: &Value,
+    what: &str,
+) -> Result<crate::SceBytes<N>, StateRefusal> {
     let text = String::from_saved(value, what)?;
     let bytes = text
         .chars()
@@ -1670,13 +1684,12 @@ pub fn bounded_bytes(value: &Value, what: &str, capacity: usize) -> Result<Vec<u
             })
         })
         .collect::<Result<Vec<u8>, StateRefusal>>()?;
-    if bytes.len() > capacity {
-        return Err(StateRefusal::new(format!(
-            "'{what}' holds {} bytes, past the {capacity} it is bounded by",
+    crate::SceBytes::<N>::from_slice(&bytes).map_err(|_| {
+        StateRefusal::new(format!(
+            "'{what}' holds {} bytes, past the {N} it is bounded by",
             bytes.len()
-        )));
-    }
-    Ok(bytes)
+        ))
+    })
 }
 
 /// The wall clock now, in milliseconds since the Unix epoch: what a host that
@@ -3847,11 +3860,13 @@ mod tests {
         assert!(Option::<u8>::from_saved(&Value::Number("256".to_string()), "level").is_err());
         assert!(Option::<i64>::from_saved(&Value::Number("5".to_string()), "due").is_err());
         // A value read by a function of its own: a text held to its bound.
-        let read = |value: &Value| optional(value, |v| bounded_string(v, "title", 4));
+        let read = |value: &Value| optional(value, |v| bounded_string::<4>(v, "title"));
         assert_eq!(read(&Value::Null).expect("absent"), None);
         assert_eq!(
-            read(&Value::Text("abcd".to_string())).expect("fits"),
-            Some("abcd".to_string())
+            read(&Value::Text("abcd".to_string()))
+                .expect("fits")
+                .as_deref(),
+            Some("abcd")
         );
         let past = read(&Value::Text("abcde".to_string())).expect_err("past the bound");
         assert!(past.reason().contains("past the 4"), "{past}");
@@ -3878,8 +3893,8 @@ mod tests {
             f64::from_saved(&Value::Null, "ratio").expect_err("float64"),
             bool::from_saved(&Value::Null, "late").expect_err("bool"),
             String::from_saved(&Value::Null, "title").expect_err("string"),
-            bounded_string(&Value::Null, "label", 8).expect_err("a bounded string"),
-            bounded_bytes(&Value::Null, "frame", 8).expect_err("a byte string"),
+            bounded_string::<8>(&Value::Null, "label").expect_err("a bounded string"),
+            bounded_bytes::<8>(&Value::Null, "frame").expect_err("a byte string"),
             Vec::<u8>::from_saved(&Value::Null, "levels").expect_err("a list"),
             record_field::<i64>(
                 &json::parse(r#"{"due":null}"#).expect("JSON"),
@@ -3917,7 +3932,7 @@ mod tests {
     #[derive(Debug, Clone, PartialEq)]
     struct Item {
         id: u32,
-        title: String,
+        title: sce_portable_bytes::SceString<8>,
     }
 
     impl SavedValue for Item {
@@ -3930,7 +3945,7 @@ mod tests {
         fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
             Ok(Self {
                 id: record_field(value, what, "id")?,
-                title: record_bounded_string(value, what, "title", 8)?,
+                title: record_bounded_string(value, what, "title")?,
             })
         }
     }
@@ -3942,7 +3957,7 @@ mod tests {
     fn an_optional_record_is_saved_as_null_or_as_the_record_it_holds() {
         let item = Item {
             id: 2,
-            title: "beta".to_string(),
+            title: sce_portable_bytes::SceString::<8>::from_text("beta").expect("fits"),
         };
         assert_eq!(None::<Item>.to_saved(), Value::Null);
         assert_eq!(Some(item.clone()).to_saved(), item.to_saved());

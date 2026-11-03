@@ -41,7 +41,4 @@ edit(LIB,
 edit(LIB,
      r'''Ok(Self(alloc::string::String::from(s)))''',
      r'''Ok(Self(alloc::string::String::from(s), core::marker::PhantomData))''')
-edit(LIB,
-     r'''Self(alloc::string::String::from(prefix_within(s, N)))''',
-     r'''Self(alloc::string::String::from(prefix_within(s, N)), core::marker::PhantomData)''')
 PY

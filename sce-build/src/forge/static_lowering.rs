@@ -3041,18 +3041,12 @@ impl StaticTarget for RustTarget {
                 .map(|f| {
                     let read =
                         format!("{from}.{}", event_schema_field_ident(&f.id, Language::Rust));
-                    // The algorithm's text is held within the field's bound by
-                    // construction, so the machine's `String` takes it whole.
+                    // The algorithm's text is the machine's own type, the
+                    // field's `SceString<N>` (docs/adr/0086, section 7.4), so
+                    // the machine takes a copy of it as it is.
                     spec.record_field_crossing(self, f, &read, Crossing::FromAlgorithm, |read| {
-                        match &f.sce_type {
-                            EntryType::Scalar(SceType::String) => {
-                                format!("{read}.as_str().to_string()")
-                            }
-                            EntryType::Optional {
-                                elem: SceType::String,
-                            } => format!(
-                                "{read}.as_ref().map(|sce_present| sce_present.as_str().to_string())"
-                            ),
+                        match f.sce_type.present_type() {
+                            SceType::String => format!("{read}.clone()"),
                             _ => read.to_string(),
                         }
                     })
@@ -3329,9 +3323,18 @@ impl StaticTarget for RustTarget {
             .fields
             .iter()
             .map(|field| {
-                let present = match field.sce_type.present_type() {
-                    SceType::Enum(reference) => enum_types[&reference.alias].clone(),
-                    other => crate::forge::generator::rust_type(other).to_string(),
+                // A text and a byte string are held in the one type of each,
+                // the field's bound in it (docs/adr/0086, section 7.4), as a
+                // variable of the same type is ([`Self::string_storage`]).
+                let present = match (field.sce_type.present_type(), field.max_size) {
+                    (SceType::Enum(reference), _) => enum_types[&reference.alias].clone(),
+                    (SceType::String, Some(bound)) => {
+                        crate::forge::composed_lowering::rust_text_type(bound)
+                    }
+                    (SceType::Bytes, Some(bound)) => {
+                        crate::forge::composed_lowering::rust_bytes_type(bound)
+                    }
+                    (other, _) => crate::forge::generator::rust_type(other).to_string(),
                 };
                 // An optional field is held in the optional type over its present
                 // value's (docs/adr/0055).
@@ -3438,9 +3441,10 @@ impl StaticTarget for RustTarget {
     }
     // The start site holds the id it generates in the `String` local
     // `generated_invoke_id` (`defer_scxml_invoke_fn`), which it goes on to
-    // start the child under, so the variable takes a copy.
+    // start the child under, so the variable takes a copy, in its own
+    // `SceString<N>` ([`Self::string_storage`]).
     fn generated_invoke_id(&self) -> Option<&'static str> {
-        Some("generated_invoke_id.clone()")
+        Some("::sce_portable_bytes::SceString::held(&generated_invoke_id)")
     }
     // A closed set of unit variants, so `Copy` and `Eq` by the policy every
     // repr-tagged enum takes. Its saved form is written beside the machine's
@@ -3558,19 +3562,47 @@ impl StaticTarget for RustTarget {
             empty: self.list_empty(),
         }
     }
-    // Answers through `?`, like every checked helper: the statement runs in a
-    // closure that returns the failure before it writes.
+    // The text copied into the place's own `SceString<N>`, whose constructor
+    // refuses past `N` (docs/adr/0086, section 7.4). Answers through `?`, like
+    // every checked helper: the statement runs in a closure that returns the
+    // failure (`CapacityExceeded`, converted into the algorithm's capacity
+    // failure) before it writes.
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
-        format!("sce_forge_runtime::algorithm::bounded({value}, {capacity})?")
+        format!("::sce_portable_bytes::SceString::<{capacity}>::from_text(&{value})?")
     }
-    // The one helper counts the bytes of whatever it is handed, a `String`'s
-    // UTF-8 and a `Vec<u8>`'s alike. A `Vec<u8>` is bounded where it is written and
-    // saved as its Latin-1 text; a record's field is the same, in a record that is
-    // `Clone` and not `Copy` ([`owns_a_buffer`]); a payload's is the `&[u8]` the
-    // payload channel borrows, copied into the `Vec<u8>` of the variable or the
-    // record's field it is written to, under that place's bound.
+    // ... and a byte string into the place's own `SceBytes<N>`: a variable's, a
+    // record's field (in a record that is `Clone` and not `Copy`,
+    // [`owns_a_buffer`]), or one a payload carried, under that place's bound.
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
-        self.bounded_string(value, capacity)
+        format!("::sce_portable_bytes::SceBytes::<{capacity}>::from_slice(&{value})?")
+    }
+    // A text variable is held in the one text type, its bound in the type
+    // (docs/adr/0086, section 7.4), and lent to a host as the `&str` it
+    // derefs to. The initial value is a literal the judge held to the bound.
+    // Nothing to declare: the type is the portable crate's.
+    fn string_storage(&self, capacity: u32, init: &str) -> Option<StringStorage> {
+        Some(StringStorage {
+            ty: crate::forge::composed_lowering::rust_text_type(capacity),
+            def: String::new(),
+            init: self.record_string_literal(capacity, init),
+            view: "str".to_string(),
+        })
+    }
+    // ... and a byte string in the one byte-string type, lent as `[u8]`.
+    fn bytes_storage(&self, capacity: u32, init: &str) -> Option<StringStorage> {
+        Some(StringStorage {
+            ty: crate::forge::composed_lowering::rust_bytes_type(capacity),
+            def: String::new(),
+            init: self.record_bytes_literal(capacity, init),
+            view: "[u8]".to_string(),
+        })
+    }
+    // A literal the judge held to the bound, so the copy cannot cut it.
+    fn record_string_literal(&self, bound: u32, literal: &str) -> String {
+        format!("::sce_portable_bytes::SceString::<{bound}>::held(&{literal})")
+    }
+    fn record_bytes_literal(&self, bound: u32, value: &str) -> String {
+        format!("::sce_portable_bytes::SceBytes::<{bound}>::held(&{value})")
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
@@ -3584,10 +3616,25 @@ impl StaticTarget for RustTarget {
         format!("{target}.{field} = {value};")
     }
     // The count is the engine's the action is handed, and the id a `SceString`,
-    // which the variable's `String` takes by `to_string` whatever the runtime's
-    // string type is.
+    // which a `String` takes by `to_string` whatever the runtime's string type
+    // is.
     fn fresh_send_id(&self) -> String {
         "engine.next_auto_send_id().to_string()".to_string()
+    }
+    // A string variable holds the id in its own `SceString<N>`
+    // ([`Self::string_storage`]); an id longer than the variable's bound is
+    // held to it as `SceString::held` holds a text, cut at a character
+    // boundary.
+    fn assign_fresh_send_id(&self, target: &str, is_string: bool) -> String {
+        let id = self.fresh_send_id();
+        if is_string {
+            self.assign_string(
+                target,
+                &format!("::sce_portable_bytes::SceString::held(&{id})"),
+            )
+        } else {
+            self.assign(target, &id)
+        }
     }
     // Debug formatting, as the script-engine arm of the same template logs a
     // value: a record has no `Display`, and one spelling serves every type. An
@@ -5631,7 +5678,8 @@ impl<'t> TypeDeclarations<'t> {
     /// The type a string variable is held in ([`StaticTarget::string_storage`]),
     /// declared the first time any variable names it.
     fn string_storage(&mut self, storage: &StringStorage) {
-        if self.declared.insert(storage.ty.clone()) {
+        // A target whose storage is a library's type declares nothing.
+        if !storage.def.is_empty() && self.declared.insert(storage.ty.clone()) {
             self.type_defs.push(storage.def.clone());
         }
     }
@@ -16259,7 +16307,10 @@ mod tests {
         assert_eq!(field("due").ty, "Option<i64>");
         assert_eq!(field("due").init, "None");
         assert_eq!(field("other").init, "Some(7)");
-        assert_eq!(field("title").ty, "Option<String>");
+        assert_eq!(
+            field("title").ty,
+            "Option<::sce_portable_bytes::SceString<4>>"
+        );
         assert_eq!(field("title").saved_kind, "optional");
         assert!(
             lowered.saved_shape.is_some(),
@@ -16282,7 +16333,7 @@ mod tests {
         assert_eq!(write[0].native_code, "self.due = None;");
         assert!(
             write[1].native_code.contains(
-                "self.title = Some(sce_forge_runtime::algorithm::bounded(\"abc\".to_string(), 4)?);"
+                "self.title = Some(::sce_portable_bytes::SceString::<4>::from_text(&\"abc\".to_string())?);"
             ),
             "{}",
             write[1].native_code

@@ -3845,10 +3845,12 @@ refused it by name. `static_donedata_content` holds every backend to it, and
 `a_donedata_content_is_the_text_it_spells_and_no_engine_reads_it` reads the generated
 machines.
 
-Rust writes a string into a variable owned — `"busy".to_string()`, and a read
-of another variable cloned — because a string inside an expression is borrowed
-and a field holds a `String`; a string handed to a host action stays borrowed
-(`&str`). Kotlin has one `String` for both.
+Rust holds a string variable in a `SceString<N>`, its bound in its type
+(docs/adr/0086, section 7.4), and writes one through that type's checked
+constructor — `SceString::<N>::from_text(&"busy".to_string())?`, a read of another
+variable copied the same way — so a text past the bound fails the assignment as
+any other failure does; a string handed to a host action stays borrowed (`&str`).
+Kotlin has one `String` for both.
 
 **Generated send ids.** A `<send>` with an `idlocation` has the machine generate
 its id (§scxml-6.2.4), and the document keeps it in a variable a later `<cancel
@@ -4556,7 +4558,7 @@ bytes, not characters. `scenarios/static_record_string.json` holds this on every
 backend: Rust, Kotlin, Go, Python, C++ and C11.
 
 Each holds the field as the value its language holds a string in. In Rust the record
-is a struct that owns a `String` and so is `Clone` and not `Copy`, a host reads a
+is a struct that owns a `SceString<N>` and so is `Clone` and not `Copy`, a host reads a
 published one through a borrow, and a copy of one — an append, an assignment from
 another record — is a clone. In Kotlin the record is the immutable data class it
 already is, so a copy is the same value, and a saved string is read back through the
@@ -4580,8 +4582,9 @@ scanning their directory), under the same bound.
 
 An imported algorithm takes and gives back such a record and a list of them
 (State an algorithm takes and gives back, below). Its own record holds the text in a
-buffer of the same bound — in Rust the runtime's bounded text, a `String` under
-`alloc` and a fixed `heapless::String<N>` on the no-alloc profile, and in C11 the very
+buffer of the same bound — in Rust the one text type `SceString<N>`, the very type the
+machine's record holds it in, a `String` under `alloc` and a fixed `heapless::String<N>`
+on the no-alloc profile, its bound hard on both, and in C11 the very
 `sce_static_string_<N>_t` the record above holds it in — and the adapter copies the
 field across, so the text the algorithm returns is within the bound the machine's
 variable holds. What an algorithm does with the text is limited to a copy from a
@@ -4612,7 +4615,8 @@ variable, a concatenation — is refused where it would be held as bytes, since 
 backend takes a text for a byte string. A saved state writes it as its byte-exact
 Latin-1 text, each byte the character of that code point, and reads it back only as
 Latin-1 text of at most the bound: a character past U+00FF is no byte and is refused,
-not cut. **Rust** holds a `bytes` variable as a `Vec<u8>`, **Kotlin** as a `ByteArray`,
+not cut. **Rust** holds a `bytes` variable as a `SceBytes<N>`, its bound in its type
+(docs/adr/0086, section 7.4), **Kotlin** as a `ByteArray`,
 **Go** as a `[]byte`, **Python** as a `bytes`, **C++** as a `std::vector<uint8_t>` and
 **C11** as a buffer of the bound and the length it holds
 (`scenarios/static_bytes.json`), and the **Interpreter**'s data model, which holds no
@@ -4654,7 +4658,7 @@ it names.
 A Kotlin machine holds a copy of the array a host raised the event with
 (`SceChecked.bounded`), so a host that kept the array and wrote into it changes nothing
 of what the machine read; a Go machine does the same (`BoundedBytes`), a Rust machine
-copies the borrowed bytes into the `Vec<u8>` it writes them to, and a Python machine keeps
+copies the borrowed bytes into the `SceBytes<N>` it writes them to, and a Python machine keeps
 the host's `bytes` itself, which nothing can write into. A C11 payload holds its bytes as
 an array of the schema's bound and the length beside it, which an expression reads as the
 view a byte string held by the machine is read as. A Kotlin record that holds a byte string compares
@@ -5008,7 +5012,7 @@ nothing else, and the call a value of the enum it answers). The machine declares
 functions for each such enum, `<MachineEnum>ToDocument` and `<MachineEnum>FromDocument`,
 the crossing an algorithm's adapter makes, and each argument and value crosses through
 them; C holds the document's own type and passes it as it is. A text is handed as it
-is (a Rust machine lends its `String` as `&str`), so a validator compares the text
+is (a Rust machine lends its `SceString<N>` as `&str`), so a validator compares the text
 itself. Refused where the callee is imported: an enum the statechart does not import
 from the same document, or an open one; a text output, which a call answers with no
 bound; a lookup keyed by a text, which no backend's table compares alike; and a byte

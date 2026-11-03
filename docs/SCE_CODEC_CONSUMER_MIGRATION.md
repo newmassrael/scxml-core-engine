@@ -923,3 +923,27 @@ Landing: the commit that adds this section.
   type names `N`, or `if items.len() > capacity { return Err(AlgorithmError::CapacityExceeded) }` where only a number
   is known.
 
+## A Rust machine holds a text and a byte string in their bounded types (ADR 0086 §7.4)
+
+Landing: the commit that adds this section; the Rust trees are regenerated after it.
+
+- A generated Rust `sce-static` machine holds a `string[N]` variable, and a record's `string[N]` field, in
+  `sce_portable_bytes::SceString<N>`, where it held a `String`, and a `bytes[N]` variable or field in
+  `sce_portable_bytes::SceBytes<N>`, where it held a `Vec<u8>`, an optional one in `Option` of the same. The published
+  `<Machine>Data` struct, the machine's records and a child's `<Machine>InvokeParams` change with them. A reader that
+  answers `&str` or `&[u8]` is unchanged.
+- A text compares with a `&str`, a `str`, a `String` and a text of any bound in either order (`data.title == "beta"`,
+  `"beta" == data.title`); a byte string compares with a slice, an array reference and a byte string of any bound. A
+  value a consumer builds for one of these places is `SceString::from_text("beta")?` or `SceBytes::from_slice(b"..")?`,
+  each refusing past the place's bound, or `held` for a value already within it.
+- A text and a list format with `{:?}` as the text and the elements do (`"beta"`, `[1, 2]`), so a machine's log
+  reads as it did.
+- `sce_rust_runtime::saved_state::{bounded_string, bounded_bytes, record_bounded_string, record_bounded_bytes}` take
+  no capacity argument and answer the bounded type the caller names, refusing past its bound as they did; a saved
+  state is unchanged on the wire. `SceString<N>` is a `SavedValue`.
+- `sce_forge_runtime::algorithm::bounded` is gone: no generated code calls it. Write `SceString::<N>::from_text(text)?`
+  or `SceBytes::<N>::from_slice(bytes)?`, whose `CapacityExceeded` converts into `AlgorithmError::CapacityExceeded`
+  through `?`, the failure `bounded` answered.
+- An event payload's struct, and a host-run invocation's request and result, keep their text as
+  `sce_rust_runtime::SceString` in this landing.
+

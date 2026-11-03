@@ -392,8 +392,29 @@ type BoundedListStorage<T, const N: usize> = heapless::Vec<T, N>;
 /// composition, `BoundedList<BoundedList<SceString<8>, 4>, 3>`, each level
 /// holding its own bound.
 #[repr(transparent)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct BoundedList<T, const N: usize>(BoundedListStorage<T, N>);
+
+/// Formatted as the elements are, `[1, 2]`: a machine logs a list as it logs
+/// any value, and the bound is the type's, not the value's.
+impl<T: core::fmt::Debug, const N: usize> core::fmt::Debug for BoundedList<T, N> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Debug::fmt(self.0.as_slice(), f)
+    }
+}
+
+/// Two lists are equal when they hold equal elements in one order, whatever
+/// their bounds: a machine compares a byte string it holds with one a payload
+/// carried, each of its own bound.
+impl<T: PartialEq<U>, U, const N: usize, const M: usize> PartialEq<BoundedList<U, M>>
+    for BoundedList<T, N>
+{
+    fn eq(&self, other: &BoundedList<U, M>) -> bool {
+        self.0.as_slice() == other.0.as_slice()
+    }
+}
+
+impl<T: Eq, const N: usize> Eq for BoundedList<T, N> {}
 
 /// A byte string of at most `N` bytes, `N` a hard bound on every profile
 /// (docs/adr/0086, section 7.4): the one type of a `bytes[N]`, a [`BoundedList`]
@@ -478,6 +499,22 @@ impl<T: Clone, const N: usize> BoundedList<T, N> {
             return Err(CapacityExceeded);
         }
         Self::try_from_iter(items.iter().cloned())
+    }
+
+    /// The elements of `items`, which the caller has already held to `N`: a
+    /// byte-string literal the build judged against the place's bound. Total,
+    /// as [`SceString::held`] is: past `N` the elements after the bound are
+    /// left out rather than reported. Use [`Self::from_slice`] for elements
+    /// nothing has judged.
+    pub fn held(items: &[T]) -> Self {
+        let mut list = Self::new();
+        for item in items.iter().take(N) {
+            // At most `N` elements are taken, so no push is refused.
+            if list.push(item.clone()).is_err() {
+                break;
+            }
+        }
+        list
     }
 
     /// Append `items`, refused whole where the list would pass `N`: either every
@@ -572,8 +609,59 @@ type SceStringStorage<const N: usize> = heapless::String<N>;
 /// `N`, so a text that exists is one of its type. A codec's frame keeps its own
 /// storage profiles ([`HeapStr`], [`InlineStr`]).
 #[repr(transparent)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct SceString<const N: usize>(SceStringStorage<N>);
+
+/// Formatted as the text is, `"abc"`: a machine logs a text as it logs any
+/// value.
+impl<const N: usize> core::fmt::Debug for SceString<N> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Debug::fmt(self.as_str(), f)
+    }
+}
+
+/// Two texts are equal when they hold the same bytes, whatever their bounds: a
+/// machine compares a text it holds with one a payload carried, or with a
+/// literal, each of its own bound.
+impl<const N: usize, const M: usize> PartialEq<SceString<M>> for SceString<N> {
+    fn eq(&self, other: &SceString<M>) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl<const N: usize> Eq for SceString<N> {}
+
+impl<const N: usize> PartialEq<str> for SceString<N> {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl<const N: usize> PartialEq<SceString<N>> for str {
+    fn eq(&self, other: &SceString<N>) -> bool {
+        self == other.as_str()
+    }
+}
+
+impl<const N: usize> PartialEq<SceString<N>> for &str {
+    fn eq(&self, other: &SceString<N>) -> bool {
+        *self == other.as_str()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<const N: usize> PartialEq<alloc::string::String> for SceString<N> {
+    fn eq(&self, other: &alloc::string::String) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<const N: usize> PartialEq<SceString<N>> for alloc::string::String {
+    fn eq(&self, other: &SceString<N>) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
 
 impl<const N: usize> SceString<N> {
     /// The bound the type declares, in UTF-8 bytes.
@@ -923,6 +1011,27 @@ mod tests {
         assert_eq!(wide, &[0u8, 255]);
         assert!(wide.extend_from_slice(&[1, 2]).is_ok());
         assert_eq!(wide.push(3), Err(CapacityExceeded));
+    }
+
+    // A text and a byte string compare with one of another bound and with a
+    // plain text in either order, a literal judged at build time is held
+    // whole, and each is formatted as its value is, so a machine logs it so.
+    #[test]
+    fn values_compare_across_bounds_and_format_as_their_contents() {
+        let short = SceString::<4>::from_text("ab").expect("fits");
+        let long = SceString::<8>::from_text("ab").expect("fits");
+        assert!(short == long);
+        assert!("ab" == short);
+        assert!(short == *"ab");
+        assert!(short != SceString::<8>::from_text("abc").expect("fits"));
+        let small = SceBytes::<2>::from_slice(&[1, 2]).expect("fits");
+        let wide = SceBytes::<4>::from_slice(&[1, 2]).expect("fits");
+        assert!(small == wide);
+        assert_eq!(SceBytes::<2>::held(&[7, 8, 9]), &[7u8, 8]);
+        use core::fmt::Write;
+        let mut out = heapless::String::<32>::new();
+        assert!(write!(out, "{short:?} {small:?}").is_ok());
+        assert_eq!(out.as_str(), "\"ab\" [1, 2]");
     }
 
     // A list of values that are not `Copy` compares with a slice and an array

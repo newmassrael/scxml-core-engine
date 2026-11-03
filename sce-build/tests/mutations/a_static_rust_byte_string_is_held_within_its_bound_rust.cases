@@ -58,8 +58,8 @@ PY
 
 mutation_case "a saved byte string past the bound is read back" <<'PY'
 edit("backends/rust/runtime/src/saved_state.rs",
-     "    if bytes.len() > capacity {\n        return Err(StateRefusal::new(format!(\n            \"'{what}' holds {} bytes, past the {capacity} it is bounded by\",",
-     "    if false && bytes.len() > capacity {\n        return Err(StateRefusal::new(format!(\n            \"'{what}' holds {} bytes, past the {capacity} it is bounded by\",")
+     "    crate::SceBytes::<N>::from_slice(&bytes).map_err(|_| {",
+     "    Ok::<crate::SceBytes<N>, StateRefusal>(crate::SceBytes::<N>::held(&bytes)).map_err(|_| {")
 PY
 
 mutation_case "a character past U+00FF is cut to a byte" <<'PY'

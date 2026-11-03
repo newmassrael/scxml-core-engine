@@ -141,18 +141,6 @@ pub fn narrow<T: CheckedInt + TryFrom<S>, S: CheckedInt>(v: S) -> Result<T, Algo
     T::try_from(v).map_err(|_| AlgorithmError::Overflow)
 }
 
-/// `value`, handed back, when it holds no more than `capacity` bytes — the
-/// bound a string variable of a `sce-static` machine declares, counted in UTF-8
-/// bytes, and the bound a byte string declares, counted in bytes — and a
-/// capacity failure otherwise. Counted in bytes, not characters, as every
-/// backend counts them, so a machine holds the same value wherever it runs.
-pub fn bounded<S: AsRef<[u8]>>(value: S, capacity: u32) -> Result<S, AlgorithmError> {
-    if value.as_ref().len() > capacity as usize {
-        return Err(AlgorithmError::CapacityExceeded);
-    }
-    Ok(value)
-}
-
 /// The value a reading found, or an out-of-range failure when it found none:
 /// the variant an enum's `from_underlying` found for a number, which is what
 /// `<alias>.fromNumber(n)` answers (SCE_FORGE.md §4.12, "An enum value in a
@@ -199,22 +187,20 @@ mod tests {
         assert_eq!(at(&[7u16; 256], 255u16), Ok(7));
     }
 
+    // A machine's text is held to its bytes, not its characters, by the type it
+    // is copied into, and the refusal threads the same `?` as an overflow.
     #[test]
-    fn a_string_is_held_to_its_bytes_not_its_characters() {
-        assert_eq!(bounded("abcd", 4), Ok("abcd"));
-        assert_eq!(bounded("abcde", 4), Err(AlgorithmError::CapacityExceeded));
-        // Two characters, four bytes: it fits a bound of four and not of three.
-        assert_eq!(bounded("\u{e9}\u{e9}", 4), Ok("\u{e9}\u{e9}"));
-        assert_eq!(
-            bounded("\u{e9}\u{e9}", 3),
-            Err(AlgorithmError::CapacityExceeded)
-        );
+    fn a_text_past_its_bound_in_bytes_fails_as_capacity() {
+        fn held<const N: usize>(text: &str) -> Result<(), AlgorithmError> {
+            sce_portable_bytes::SceString::<N>::from_text(text)?;
+            Ok(())
+        }
+        assert_eq!(held::<4>("\u{e9}\u{e9}"), Ok(()));
         // Two characters, five bytes: a count of characters would let it pass.
         assert_eq!(
-            bounded("\u{e9}\u{20ac}", 4),
+            held::<4>("\u{e9}\u{20ac}"),
             Err(AlgorithmError::CapacityExceeded)
         );
-        assert_eq!(bounded("", 1), Ok(""));
     }
 
     #[test]
