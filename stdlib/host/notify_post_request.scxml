@@ -17,9 +17,9 @@
        name="notify_post_request"
        sce:event-name="host.notify.post.request">
   <datamodel>
-    <data id="id" sce:type="string" sce:max-size="64" sce:direction="in"/>
-    <data id="title" sce:type="string" sce:max-size="128" sce:direction="in"/>
-    <data id="body" sce:type="string" sce:max-size="512" sce:direction="in"/>
+    <data id="id" sce:type="string[64]" sce:direction="in"/>
+    <data id="title" sce:type="string[128]" sce:direction="in"/>
+    <data id="body" sce:type="string[512]" sce:direction="in"/>
     <data id="at_ms" sce:type="int64" sce:direction="in"/>
   </datamodel>
 </scxml>

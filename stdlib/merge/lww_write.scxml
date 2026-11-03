@@ -30,10 +30,10 @@
   <sce:signature>
     <sce:param name="cells" type="list&lt;record:Cell&gt;"/>
     <sce:param name="write" type="record:Cell"/>
-    <sce:return type="list&lt;record:Cell&gt;" may-fail="true" returns-max-size="256"/>
+    <sce:return type="list&lt;record:Cell&gt;[256]" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Cell&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;record:Cell&gt;[256]"/>
     <sce:var name="held" type="bool" init="false"/>
     <sce:var name="incoming" type="record:Hlc">
       <sce:set name="wallTime" expr="write.wallTime"/>

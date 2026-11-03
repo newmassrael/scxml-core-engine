@@ -57,7 +57,7 @@
     <sce:param name="versions" type="list&lt;record:Version&gt;"/>
     <sce:param name="batch" type="uint64"/>
     <sce:param name="floor" type="uint64"/>
-    <sce:return type="list&lt;record:Step&gt;" returns-max-size="256" may-fail="true"/>
+    <sce:return type="list&lt;record:Step&gt;[256]" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:require cond="batch !== 0"/>
@@ -68,7 +68,7 @@
       </sce:if>
     </sce:foreach>
     <sce:require cond="members &lt;= 256"/>
-    <sce:var name="out" type="list&lt;record:Step&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;record:Step&gt;[256]"/>
     <sce:foreach item="v" in="versions">
       <sce:if cond="v.batchId === batch">
         <sce:var name="first" type="bool" init="true"/>

@@ -15,6 +15,6 @@
   <datamodel>
     <data id="id" sce:type="uint64" sce:direction="in"/>
     <data id="field" sce:type="uint64" sce:direction="in"/>
-    <data id="text" sce:type="string" sce:max-size="32" sce:direction="in"/>
+    <data id="text" sce:type="string[32]" sce:direction="in"/>
   </datamodel>
 </scxml>

@@ -13,6 +13,6 @@
        name="notify_cancel_request"
        sce:event-name="host.notify.cancel.request">
   <datamodel>
-    <data id="id" sce:type="string" sce:max-size="64" sce:direction="in"/>
+    <data id="id" sce:type="string[64]" sce:direction="in"/>
   </datamodel>
 </scxml>

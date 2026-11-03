@@ -31,7 +31,7 @@
     <sce:param name="window" type="list&lt;record:Id&gt;"/>
     <sce:param name="id" type="record:Id"/>
     <sce:param name="capacity" type="uint32"/>
-    <sce:return type="list&lt;record:Id&gt;" returns-max-size="256" may-fail="true"/>
+    <sce:return type="list&lt;record:Id&gt;[256]" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:require cond="capacity &gt; 0 &amp;&amp; len(window) &lt;= capacity"/>
@@ -41,7 +41,7 @@
         <sce:assign target="held" expr="true"/>
       </sce:if>
     </sce:foreach>
-    <sce:var name="out" type="list&lt;record:Id&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;record:Id&gt;[256]"/>
     <sce:var name="skip" type="uint32" init="held || len(window) &lt; capacity ? 0 : 1"/>
     <sce:var name="i" type="uint32" init="0"/>
     <sce:foreach item="kept" in="window">

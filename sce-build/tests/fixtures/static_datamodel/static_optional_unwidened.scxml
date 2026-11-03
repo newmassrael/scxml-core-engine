@@ -20,7 +20,7 @@
   <datamodel>
     <data id="due" sce:type="int64" expr="12" sce:direction="out"/>
     <data id="other" sce:type="int64" expr="7" sce:direction="out"/>
-    <data id="title" sce:type="string" sce:capacity="16" expr="'later'" sce:direction="out"/>
+    <data id="title" sce:type="string[16]" expr="'later'" sce:direction="out"/>
     <data id="status" sce:type="enum:Status" expr="Status.in_progress" sce:direction="out"/>
     <data id="item" sce:type="record:Due" sce:direction="out">
       <sce:set name="id" expr="2"/>
@@ -28,12 +28,12 @@
       <sce:set name="title" expr="'first'"/>
       <sce:set name="status" expr="Status.open"/>
     </data>
-    <data id="items" sce:type="list&lt;record:Due&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="items" sce:type="list&lt;record:Due&gt;[3]" sce:direction="out"/>
     <data id="days" sce:type="int64" expr="0" sce:direction="out"/>
     <data id="following" sce:type="int64" expr="0" sce:direction="out"/>
     <data id="late" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="early" sce:type="bool" expr="false" sce:direction="out"/>
-    <data id="label" sce:type="string" sce:capacity="16" expr="''" sce:direction="out"/>
+    <data id="label" sce:type="string[16]" expr="''" sce:direction="out"/>
     <data id="plain" sce:type="enum:Status" expr="Status.open" sce:direction="out"/>
     <data id="kept" sce:type="int64" expr="0" sce:direction="out"/>
     <data id="listed" sce:type="int64" expr="0" sce:direction="out"/>
@@ -42,7 +42,7 @@
     <data id="absent" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="statusDone" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="echoed" sce:type="int64" expr="0" sce:direction="out"/>
-    <data id="echoTitle" sce:type="string" sce:capacity="16" expr="'echo'" sce:direction="out"/>
+    <data id="echoTitle" sce:type="string[16]" expr="'echo'" sce:direction="out"/>
     <data id="echoStatus" sce:type="enum:Status" expr="Status.done" sce:direction="out"/>
     <data id="fallbacks" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>

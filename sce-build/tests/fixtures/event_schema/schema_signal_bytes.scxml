@@ -13,6 +13,6 @@
        sce:kind="event-schema"
        sce:event-name="signal.received">
   <datamodel>
-    <data id="raw" sce:type="bytes" sce:direction="in" sce:max-size="8"/>
+    <data id="raw" sce:type="bytes[8]" sce:direction="in"/>
   </datamodel>
 </scxml>

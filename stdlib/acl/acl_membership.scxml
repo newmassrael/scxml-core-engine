@@ -27,10 +27,10 @@
   <sce:signature>
     <sce:param name="edges" type="list&lt;record:Edge&gt;"/>
     <sce:param name="user" type="uint32"/>
-    <sce:return type="list&lt;uint32&gt;" returns-max-size="256" may-fail="true"/>
+    <sce:return type="list&lt;uint32&gt;[256]" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="found" type="list&lt;uint32&gt;" capacity="256"/>
+    <sce:var name="found" type="list&lt;uint32&gt;[256]"/>
     <sce:var name="next" type="uint32" init="0"/>
     <sce:var name="current" type="uint32" init="user"/>
     <sce:var name="more" type="bool" init="user !== 0"/>

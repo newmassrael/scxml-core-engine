@@ -26,10 +26,10 @@
   <sce:import kind="event-schema" src="sce:std/host/clock_now_result.scxml" as="ClockNowResult"/>
   <sce:import kind="event-schema" src="sce:std/host/clock_zone_result.scxml" as="ClockZoneResult"/>
   <datamodel>
-    <data id="outcome" sce:type="string" sce:capacity="24" expr="''" sce:direction="out"/>
+    <data id="outcome" sce:type="string[24]" expr="''" sce:direction="out"/>
     <data id="utc_ms" sce:type="int64" expr="0" sce:direction="out"/>
     <data id="monotonic_ms" sce:type="int64" expr="0" sce:direction="out"/>
-    <data id="zone_id" sce:type="string" sce:capacity="64" expr="''" sce:direction="out"/>
+    <data id="zone_id" sce:type="string[64]" expr="''" sce:direction="out"/>
     <data id="utc_offset_s" sce:type="int32" expr="0" sce:direction="out"/>
   </datamodel>
 

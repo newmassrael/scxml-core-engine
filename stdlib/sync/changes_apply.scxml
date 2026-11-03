@@ -42,7 +42,7 @@
   <sce:signature>
     <sce:param name="state" type="list&lt;record:Held&gt;"/>
     <sce:param name="log" type="list&lt;record:Change&gt;"/>
-    <sce:return type="list&lt;record:Held&gt;" returns-max-size="256" may-fail="true"/>
+    <sce:return type="list&lt;record:Held&gt;[256]" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:var name="prevItem" type="uint64" init="0"/>
@@ -57,7 +57,7 @@
       <sce:require cond="row0.token &gt;= prevToken &amp;&amp; row0.op &gt;= 1 &amp;&amp; row0.op &lt;= 3"/>
       <sce:assign target="prevToken" expr="row0.token"/>
     </sce:foreach>
-    <sce:var name="out" type="list&lt;record:Held&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;record:Held&gt;[256]"/>
     <!-- The next item to answer: the least item above the last one answered
          that its last row, or failing one `state`, leaves present. -->
     <sce:var name="last" type="uint64" init="0"/>

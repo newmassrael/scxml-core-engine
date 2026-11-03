@@ -28,10 +28,10 @@
     <sce:param name="values" type="list&lt;record:Value&gt;"/>
     <sce:param name="id" type="uint64"/>
     <sce:param name="field" type="uint64"/>
-    <sce:return type="list&lt;record:Value&gt;" may-fail="true" returns-max-size="512" sce:limit="merge_values"/>
+    <sce:return type="list&lt;record:Value&gt;[merge_values=512]" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Value&gt;" capacity="512" sce:limit="merge_values"/>
+    <sce:var name="out" type="list&lt;record:Value&gt;[merge_values=512]"/>
     <sce:var name="started" type="bool" init="false"/>
     <sce:var name="lastWall" type="int64" init="0"/>
     <sce:var name="lastCounter" type="uint32" init="0"/>

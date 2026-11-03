@@ -38,7 +38,7 @@
       <sce:set name="month" expr="1"/>
       <sce:set name="dayOfMonth" expr="1"/>
     </data>
-    <data id="days" sce:type="list&lt;record:Day&gt;" sce:capacity="3"/>
+    <data id="days" sce:type="list&lt;record:Day&gt;[3]"/>
     <data id="cursor" sce:type="int32" expr="0" sce:direction="out"/>
     <data id="day" sce:type="uint8" expr="0" sce:direction="out"/>
     <data id="year" sce:type="uint16" expr="0" sce:direction="out"/>

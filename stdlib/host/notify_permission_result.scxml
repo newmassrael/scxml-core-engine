@@ -15,7 +15,7 @@
        name="notify_permission_result"
        sce:event-name="host.notify.permission.result">
   <datamodel>
-    <data id="error" sce:type="string" sce:max-size="24" sce:direction="in"/>
-    <data id="state" sce:type="string" sce:max-size="16" sce:direction="in"/>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
+    <data id="state" sce:type="string[16]" sce:direction="in"/>
   </datamodel>
 </scxml>

@@ -11,7 +11,7 @@
        sce:kind="event-schema"
        sce:event-name="fragment.received">
   <datamodel>
-    <data id="payload" sce:type="bytes" sce:direction="in" sce:max-size="64"/>
+    <data id="payload" sce:type="bytes[64]" sce:direction="in"/>
     <data id="offset" sce:type="uint32" sce:direction="in"/>
   </datamodel>
 </scxml>

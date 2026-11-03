@@ -27,7 +27,7 @@
   <sce:import kind="algorithm" src="algorithm_ledger_bump.scxml" as="Bump"/>
   <sce:import kind="algorithm" src="algorithm_ledger_ids.scxml" as="IdSum"/>
   <datamodel>
-    <data id="entries" sce:type="list&lt;record:Entry&gt;" sce:capacity="8" sce:direction="out"/>
+    <data id="entries" sce:type="list&lt;record:Entry&gt;[8]" sce:direction="out"/>
     <data id="total" sce:type="record:Total" sce:direction="out">
       <sce:set name="count" expr="0"/>
       <sce:set name="sum" expr="0"/>
@@ -36,7 +36,7 @@
       <sce:set name="id" expr="0"/>
       <sce:set name="amount" expr="0"/>
     </data>
-    <data id="ids" sce:type="list&lt;uint32&gt;" sce:capacity="8" sce:direction="out"/>
+    <data id="ids" sce:type="list&lt;uint32&gt;[8]" sce:direction="out"/>
     <data id="idsum" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="large" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>

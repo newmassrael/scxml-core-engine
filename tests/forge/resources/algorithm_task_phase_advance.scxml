@@ -19,10 +19,10 @@
   <sce:import kind="enum" src="enum_task_phase.scxml" as="Phase"/>
   <sce:signature>
     <sce:param name="tasks" type="list&lt;record:Task&gt;"/>
-    <sce:return type="list&lt;record:Task&gt;" may-fail="true" returns-max-size="4"/>
+    <sce:return type="list&lt;record:Task&gt;[4]" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Task&gt;" capacity="4"/>
+    <sce:var name="out" type="list&lt;record:Task&gt;[4]"/>
     <sce:foreach item="t" in="tasks">
       <sce:var name="next" type="record:Task">
         <sce:set name="taskId" expr="t.taskId"/>

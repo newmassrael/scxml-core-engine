@@ -27,8 +27,8 @@
       <sce:set name="month" expr="1"/>
       <sce:set name="dayOfMonth" expr="1"/>
     </data>
-    <data id="days" sce:type="list&lt;record:Day&gt;" sce:capacity="3" sce:direction="out"/>
-    <data id="copies" sce:type="list&lt;record:Day&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="days" sce:type="list&lt;record:Day&gt;[3]" sce:direction="out"/>
+    <data id="copies" sce:type="list&lt;record:Day&gt;[3]" sce:direction="out"/>
     <data id="total" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>

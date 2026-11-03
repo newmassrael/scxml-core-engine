@@ -17,8 +17,8 @@
   <sce:import kind="event-schema" src="schema_framed.scxml" as="Framed"/>
   <sce:import kind="event-schema" src="schema_framed_relayed.scxml" as="Relayed"/>
   <datamodel>
-    <data id="held" sce:type="bytes" sce:capacity="8" expr="'ab'" sce:direction="out"/>
-    <data id="echo" sce:type="bytes" sce:capacity="8" expr="''" sce:direction="out"/>
+    <data id="held" sce:type="bytes[8]" expr="'ab'" sce:direction="out"/>
+    <data id="echo" sce:type="bytes[8]" expr="''" sce:direction="out"/>
     <data id="relays" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>

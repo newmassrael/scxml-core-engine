@@ -15,10 +15,10 @@
   <sce:signature>
     <sce:param name="pending" type="list&lt;record:Slot&gt;"/>
     <sce:param name="next" type="uint64"/>
-    <sce:return type="list&lt;record:Slot&gt;" returns-max-size="256"/>
+    <sce:return type="list&lt;record:Slot&gt;[256]"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Slot&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;record:Slot&gt;[256]"/>
     <sce:foreach item="slot" in="pending">
       <sce:if cond="slot.seq &gt;= next">
         <sce:append target="out" expr="slot"/>

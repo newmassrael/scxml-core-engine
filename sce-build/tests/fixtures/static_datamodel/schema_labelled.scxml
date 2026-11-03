@@ -13,6 +13,6 @@
        sce:event-name="labelled.taken">
   <datamodel>
     <data id="sensor" sce:type="uint8" sce:direction="in"/>
-    <data id="label" sce:type="string" sce:max-size="8" sce:direction="in"/>
+    <data id="label" sce:type="string[8]" sce:direction="in"/>
   </datamodel>
 </scxml>

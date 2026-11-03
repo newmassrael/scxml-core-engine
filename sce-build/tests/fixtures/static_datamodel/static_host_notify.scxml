@@ -28,13 +28,13 @@
   <sce:import kind="event-schema" src="sce:std/host/notify_cancel_request.scxml" as="NotifyCancelRequest"/>
   <sce:import kind="event-schema" src="sce:std/host/notify_cancel_result.scxml" as="NotifyCancelResult"/>
   <datamodel>
-    <data id="id" sce:type="string" sce:capacity="64" expr="''"/>
-    <data id="title" sce:type="string" sce:capacity="128" expr="''"/>
-    <data id="body" sce:type="string" sce:capacity="512" expr="''"/>
+    <data id="id" sce:type="string[64]" expr="''"/>
+    <data id="title" sce:type="string[128]" expr="''"/>
+    <data id="body" sce:type="string[512]" expr="''"/>
     <data id="at_ms" sce:type="int64" expr="0"/>
-    <data id="outcome" sce:type="string" sce:capacity="24" expr="''" sce:direction="out"/>
-    <data id="permission" sce:type="string" sce:capacity="16" expr="''" sce:direction="out"/>
-    <data id="status" sce:type="string" sce:capacity="16" expr="''" sce:direction="out"/>
+    <data id="outcome" sce:type="string[24]" expr="''" sce:direction="out"/>
+    <data id="permission" sce:type="string[16]" expr="''" sce:direction="out"/>
+    <data id="status" sce:type="string[16]" expr="''" sce:direction="out"/>
     <data id="existed" sce:type="bool" expr="false" sce:direction="out"/>
   </datamodel>
 

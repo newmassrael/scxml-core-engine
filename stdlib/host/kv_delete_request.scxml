@@ -12,6 +12,6 @@
        name="kv_delete_request"
        sce:event-name="host.kv.delete.request">
   <datamodel>
-    <data id="key" sce:type="string" sce:max-size="256" sce:direction="in"/>
+    <data id="key" sce:type="string[256]" sce:direction="in"/>
   </datamodel>
 </scxml>

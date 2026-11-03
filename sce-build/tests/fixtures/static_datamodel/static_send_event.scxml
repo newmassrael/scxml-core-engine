@@ -16,7 +16,7 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="static_send_event">
   <datamodel>
-    <data id="name" sce:type="string" sce:capacity="16" expr="'ping'"/>
+    <data id="name" sce:type="string[16]" expr="'ping'"/>
     <data id="scale" sce:type="uint32" expr="3"/>
     <data id="pings" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="pongs" sce:type="uint32" expr="0" sce:direction="out"/>

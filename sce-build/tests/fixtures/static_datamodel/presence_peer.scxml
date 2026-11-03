@@ -62,8 +62,8 @@
     <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="ttl" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="lease" sce:type="uint32" expr="0" sce:direction="out"/>
-    <data id="online" sce:type="list&lt;record:Seen&gt;" sce:capacity="128" sce:direction="out"/>
-    <data id="rebuilt" sce:type="list&lt;record:Seen&gt;" sce:capacity="128"/>
+    <data id="online" sce:type="list&lt;record:Seen&gt;[128]" sce:direction="out"/>
+    <data id="rebuilt" sce:type="list&lt;record:Seen&gt;[128]"/>
     <data id="entry" sce:type="record:Seen">
       <sce:set name="client" expr="0"/>
       <sce:set name="last" expr="0"/>

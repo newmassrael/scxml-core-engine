@@ -28,7 +28,7 @@
   <sce:import kind="algorithm" src="algorithm_item_status_count.scxml" as="CountStatus"/>
   <sce:import kind="algorithm" src="algorithm_item_status_of.scxml" as="StatusOf"/>
   <datamodel>
-    <data id="items" sce:type="list&lt;record:Item&gt;" sce:capacity="4" sce:direction="out"/>
+    <data id="items" sce:type="list&lt;record:Item&gt;[4]" sce:direction="out"/>
     <data id="draft" sce:type="record:Item">
       <sce:set name="id" expr="0"/>
       <sce:set name="status" expr="Status.open"/>

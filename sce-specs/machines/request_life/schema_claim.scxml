@@ -13,7 +13,7 @@
        name="schema_claim"
        sce:event-name="claim">
   <datamodel>
-    <data id="holder" sce:type="string" sce:max-size="64" sce:direction="in"/>
+    <data id="holder" sce:type="string[64]" sce:direction="in"/>
     <data id="ttl" sce:type="uint64" sce:direction="in"/>
     <data id="resume" sce:type="bool" sce:direction="in"/>
     <data id="offeredMatches" sce:type="bool" sce:direction="in"/>

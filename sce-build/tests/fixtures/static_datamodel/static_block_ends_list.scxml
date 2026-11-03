@@ -17,7 +17,7 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="waiting" datamodel="sce-static" name="static_block_ends_list">
   <datamodel>
-    <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="2" sce:direction="out"/>
+    <data id="picked" sce:type="list&lt;uint8&gt;[2]" sce:direction="out"/>
     <data id="afterAppend" sce:type="uint8" expr="0" sce:direction="out"/>
     <data id="errors" sce:type="uint8" expr="0" sce:direction="out"/>
   </datamodel>

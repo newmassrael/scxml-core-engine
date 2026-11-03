@@ -39,17 +39,17 @@
   <sce:import kind="event-schema" src="sce:std/host/kv_next_key_request.scxml" as="KvNextKeyRequest"/>
   <sce:import kind="event-schema" src="sce:std/host/kv_next_key_result.scxml" as="KvNextKeyResult"/>
   <datamodel>
-    <data id="key" sce:type="string" sce:capacity="256" expr="''"/>
-    <data id="value" sce:type="string" sce:capacity="4096" expr="''"/>
-    <data id="after" sce:type="string" sce:capacity="256" expr="''"/>
-    <data id="prefix" sce:type="string" sce:capacity="256" expr="''"/>
-    <data id="outcome" sce:type="string" sce:capacity="24" expr="''" sce:direction="out"/>
+    <data id="key" sce:type="string[256]" expr="''"/>
+    <data id="value" sce:type="string[4096]" expr="''"/>
+    <data id="after" sce:type="string[256]" expr="''"/>
+    <data id="prefix" sce:type="string[256]" expr="''"/>
+    <data id="outcome" sce:type="string[24]" expr="''" sce:direction="out"/>
     <data id="found" sce:type="bool" expr="false" sce:direction="out"/>
-    <data id="got" sce:type="string" sce:capacity="4096" expr="''" sce:direction="out"/>
+    <data id="got" sce:type="string[4096]" expr="''" sce:direction="out"/>
     <data id="replaced" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="existed" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="next_found" sce:type="bool" expr="false" sce:direction="out"/>
-    <data id="next" sce:type="string" sce:capacity="256" expr="''" sce:direction="out"/>
+    <data id="next" sce:type="string[256]" expr="''" sce:direction="out"/>
   </datamodel>
 
   <state id="idle">

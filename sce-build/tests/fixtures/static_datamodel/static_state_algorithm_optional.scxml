@@ -28,7 +28,7 @@
   <sce:import kind="algorithm" src="algorithm_goal_undated.scxml" as="Undated"/>
   <sce:import kind="algorithm" src="algorithm_goal_day_sum.scxml" as="DaySum"/>
   <datamodel>
-    <data id="goals" sce:type="list&lt;record:Goal&gt;" sce:capacity="4" sce:direction="out"/>
+    <data id="goals" sce:type="list&lt;record:Goal&gt;[4]" sce:direction="out"/>
     <data id="draft" sce:type="record:Goal">
       <sce:set name="id" expr="0"/>
       <sce:set name="day" expr="null"/>

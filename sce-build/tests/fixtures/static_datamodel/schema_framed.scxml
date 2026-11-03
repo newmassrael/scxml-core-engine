@@ -13,6 +13,6 @@
        sce:event-name="framed.taken">
   <datamodel>
     <data id="sensor" sce:type="uint8" sce:direction="in"/>
-    <data id="frame" sce:type="bytes" sce:max-size="8" sce:direction="in"/>
+    <data id="frame" sce:type="bytes[8]" sce:direction="in"/>
   </datamodel>
 </scxml>

@@ -19,7 +19,7 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="working" datamodel="sce-static" name="static_child_host_hybrid">
   <datamodel>
-    <data id="pick" sce:type="string" sce:capacity="48" expr="'static_hosted_first.scxml'"/>
+    <data id="pick" sce:type="string[48]" expr="'static_hosted_first.scxml'"/>
     <data id="completed" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="working">

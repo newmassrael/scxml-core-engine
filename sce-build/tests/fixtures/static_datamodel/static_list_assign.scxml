@@ -23,9 +23,9 @@
   <sce:import kind="algorithm" src="algorithm_day_run.scxml" as="Range"/>
   <sce:import kind="algorithm" src="algorithm_day_repeat.scxml" as="Repeat"/>
   <datamodel>
-    <data id="shown" sce:type="list&lt;uint8&gt;" sce:capacity="8" sce:direction="out"/>
+    <data id="shown" sce:type="list&lt;uint8&gt;[8]" sce:direction="out"/>
     <data id="first" sce:type="uint8" expr="10" sce:direction="out"/>
-    <data id="few" sce:type="list&lt;uint8&gt;" sce:capacity="4" sce:direction="out"/>
+    <data id="few" sce:type="list&lt;uint8&gt;[4]" sce:direction="out"/>
     <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="size" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>

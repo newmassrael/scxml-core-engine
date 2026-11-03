@@ -21,8 +21,8 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="static_string_capacity">
   <datamodel>
-    <data id="title" sce:type="string" sce:capacity="4" expr="'ab'" sce:direction="out"/>
-    <data id="body" sce:type="string" sce:capacity="16" expr="'hello'" sce:direction="out"/>
+    <data id="title" sce:type="string[4]" expr="'ab'" sce:direction="out"/>
+    <data id="body" sce:type="string[16]" expr="'hello'" sce:direction="out"/>
     <data id="copied" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="measured" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>

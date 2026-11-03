@@ -30,7 +30,7 @@
     <data id="id" sce:type="uint32" sce:direction="in"/>
     <data id="field" sce:type="uint16" sce:direction="in"/>
     <data id="value" sce:type="int64" sce:direction="in"/>
-    <data id="text" sce:type="string" sce:max-size="96" sce:limit="merge_text" sce:direction="in"/>
+    <data id="text" sce:type="string[merge_text=96]" sce:direction="in"/>
     <data id="wallTime" sce:type="int64" sce:direction="in"/>
     <data id="counter" sce:type="uint32" sce:direction="in"/>
     <data id="nodeId" sce:type="uint64" sce:direction="in"/>

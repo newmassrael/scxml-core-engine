@@ -30,8 +30,8 @@
       <sce:set name="sensor" expr="1"/>
       <sce:set name="label" expr="'a'"/>
     </data>
-    <data id="note" sce:type="string" sce:capacity="16" expr="'hello'" sce:direction="out"/>
-    <data id="labels" sce:type="list&lt;record:Labelled&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="note" sce:type="string[16]" expr="'hello'" sce:direction="out"/>
+    <data id="labels" sce:type="list&lt;record:Labelled&gt;[3]" sce:direction="out"/>
     <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="idle">

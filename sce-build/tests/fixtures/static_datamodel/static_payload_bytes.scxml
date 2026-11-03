@@ -28,8 +28,8 @@
       <sce:set name="sensor" expr="1"/>
       <sce:set name="frame" expr="'ab'"/>
     </data>
-    <data id="held" sce:type="bytes" sce:capacity="4" expr="'z'" sce:direction="out"/>
-    <data id="frames" sce:type="list&lt;record:Framed&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="held" sce:type="bytes[4]" expr="'z'" sce:direction="out"/>
+    <data id="frames" sce:type="list&lt;record:Framed&gt;[3]" sce:direction="out"/>
     <data id="size" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="matches" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="misses" sce:type="uint32" expr="0" sce:direction="out"/>

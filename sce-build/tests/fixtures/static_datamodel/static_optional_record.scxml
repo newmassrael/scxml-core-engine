@@ -34,8 +34,8 @@
       <sce:set name="title" expr="'draft'"/>
       <sce:set name="count" expr="0"/>
     </data>
-    <data id="items" sce:type="list&lt;record:Item&gt;" sce:capacity="3" sce:direction="out"/>
-    <data id="title" sce:type="string" sce:capacity="16" expr="''" sce:direction="out"/>
+    <data id="items" sce:type="list&lt;record:Item&gt;[3]" sce:direction="out"/>
+    <data id="title" sce:type="string[16]" expr="''" sce:direction="out"/>
     <data id="count" sce:type="int32" expr="0" sce:direction="out"/>
     <data id="shown" sce:type="int32" expr="0" sce:direction="out"/>
     <data id="known" sce:type="bool" expr="false" sce:direction="out"/>

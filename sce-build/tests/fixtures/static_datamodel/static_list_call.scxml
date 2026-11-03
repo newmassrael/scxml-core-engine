@@ -16,8 +16,8 @@
   <sce:import kind="algorithm" src="algorithm_ledger_has.scxml" as="Has"/>
   <sce:import kind="algorithm" src="algorithm_ids_above.scxml" as="Above"/>
   <datamodel>
-    <data id="entries" sce:type="list&lt;record:Entry&gt;" sce:capacity="8" sce:direction="out"/>
-    <data id="ids" sce:type="list&lt;uint32&gt;" sce:capacity="8" sce:direction="out"/>
+    <data id="entries" sce:type="list&lt;record:Entry&gt;[8]" sce:direction="out"/>
+    <data id="ids" sce:type="list&lt;uint32&gt;[8]" sce:direction="out"/>
     <data id="line" sce:type="record:Entry" sce:direction="out">
       <sce:set name="id" expr="0"/>
       <sce:set name="amount" expr="0"/>

@@ -17,7 +17,7 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="static_send_type">
   <datamodel>
-    <data id="kind" sce:type="string" sce:capacity="64" expr="'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"/>
+    <data id="kind" sce:type="string[64]" expr="'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'"/>
     <data id="landed" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refused" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>

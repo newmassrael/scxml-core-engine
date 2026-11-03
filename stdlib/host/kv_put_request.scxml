@@ -13,7 +13,7 @@
        name="kv_put_request"
        sce:event-name="host.kv.put.request">
   <datamodel>
-    <data id="key" sce:type="string" sce:max-size="256" sce:direction="in"/>
-    <data id="value" sce:type="string" sce:max-size="4096" sce:direction="in"/>
+    <data id="key" sce:type="string[256]" sce:direction="in"/>
+    <data id="value" sce:type="string[4096]" sce:direction="in"/>
   </datamodel>
 </scxml>

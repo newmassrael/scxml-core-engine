@@ -23,7 +23,7 @@
       <sce:set name="layout" expr="ViewMode.month"/>
       <sce:set name="zoom" expr="1"/>
     </data>
-    <data id="seen" sce:type="list&lt;record:View&gt;" sce:capacity="4" sce:direction="out"/>
+    <data id="seen" sce:type="list&lt;record:View&gt;[4]" sce:direction="out"/>
     <data id="updates" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="agendas" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="others" sce:type="uint32" expr="0" sce:direction="out"/>

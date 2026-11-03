@@ -17,8 +17,8 @@
        name="clock_zone_result"
        sce:event-name="host.clock.zone.result">
   <datamodel>
-    <data id="error" sce:type="string" sce:max-size="24" sce:direction="in"/>
-    <data id="zone_id" sce:type="string" sce:max-size="64" sce:direction="in"/>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
+    <data id="zone_id" sce:type="string[64]" sce:direction="in"/>
     <data id="utc_offset_s" sce:type="int32" sce:direction="in"/>
   </datamodel>
 </scxml>

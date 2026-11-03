@@ -269,22 +269,22 @@
          lists of entries, of values and of the digest are as large as the standard
          algorithms that return them, which carry the same names, so a build that gives
          a name a number moves the machine and the algorithms together. -->
-    <data id="adds" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:limit="merge_entries" sce:direction="out"/>
-    <data id="tombstones" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:limit="merge_entries" sce:direction="out"/>
-    <data id="one" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:limit="merge_entries"/>
-    <data id="stable" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:limit="merge_entries"/>
+    <data id="adds" sce:type="list&lt;record:Entry&gt;[merge_entries=1024]" sce:direction="out"/>
+    <data id="tombstones" sce:type="list&lt;record:Entry&gt;[merge_entries=1024]" sce:direction="out"/>
+    <data id="one" sce:type="list&lt;record:Entry&gt;[merge_entries=1024]"/>
+    <data id="stable" sce:type="list&lt;record:Entry&gt;[merge_entries=1024]"/>
     <data id="entry" sce:type="record:Entry">
       <sce:set name="element" expr="0"/>
       <sce:set name="wallTime" expr="0"/>
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="values" sce:type="list&lt;record:Value&gt;" sce:capacity="512" sce:limit="merge_values" sce:direction="out"/>
+    <data id="values" sce:type="list&lt;record:Value&gt;[merge_values=512]" sce:direction="out"/>
     <!-- The text a person types, held to the 32 bytes a person writes (record_edit), the
          bound `shared_typed_text` names: a write has room for more, for what a host puts
          there when it keeps the content from the hub (record_write), and a text past the
          bound that a person typed is refused as one past the room. -->
-    <data id="typed" sce:type="string" sce:capacity="32" sce:limit="shared_typed_text" expr="''"/>
+    <data id="typed" sce:type="string[shared_typed_text=32]" expr="''"/>
     <data id="held" sce:type="record:Value">
       <sce:set name="id" expr="0"/>
       <sce:set name="field" expr="0"/>
@@ -294,7 +294,7 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="digest" sce:type="list&lt;record:Node&gt;" sce:capacity="2048" sce:limit="merge_digest" sce:direction="out"/>
+    <data id="digest" sce:type="list&lt;record:Node&gt;[merge_digest=2048]" sce:direction="out"/>
     <data id="mine" sce:type="uint32" expr="0"/>
     <data id="shareId" sce:type="uint32" expr="0"/>
     <data id="shareField" sce:type="uint16" expr="0"/>
@@ -318,7 +318,7 @@
     <data id="pending" sce:type="int64" expr="-1"/>
     <data id="members" sce:type="uint32" expr="0"/>
     <data id="agreeing" sce:type="uint32" expr="0"/>
-    <data id="answers" sce:type="list&lt;record:Answer&gt;" sce:capacity="512" sce:limit="shared_answers"/>
+    <data id="answers" sce:type="list&lt;record:Answer&gt;[shared_answers=512]"/>
     <data id="answer" sce:type="record:Answer">
       <sce:set name="sender" expr="0"/>
       <sce:set name="hash" expr="0"/>
@@ -333,7 +333,7 @@
     <!-- What the host lets each member do (record_list.role), the changes that were
          refused for it (`denied`) and what the change in hand is judged by: whether its
          author may write. -->
-    <data id="roster" sce:type="list&lt;record:Member&gt;" sce:capacity="64" sce:limit="shared_roster"/>
+    <data id="roster" sce:type="list&lt;record:Member&gt;[shared_roster=64]"/>
     <data id="denied" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="forbidden" sce:type="bool" expr="false"/>
     <data id="authorized" sce:type="bool" expr="true"/>
@@ -345,9 +345,9 @@
     <data id="announced" sce:type="uint32" expr="0" sce:direction="out"/>
     <!-- The registers the change in hand moved, by their element, kept until the change
          is told, and whether the one named now is among them already. -->
-    <data id="moved" sce:type="list&lt;uint64&gt;" sce:capacity="64" sce:limit="shared_moved"/>
+    <data id="moved" sce:type="list&lt;uint64&gt;[shared_moved=64]"/>
     <data id="listed" sce:type="bool" expr="false"/>
-    <data id="live" sce:type="list&lt;record:Value&gt;" sce:capacity="512" sce:limit="merge_values"/>
+    <data id="live" sce:type="list&lt;record:Value&gt;[merge_values=512]"/>
     <data id="ordinal" sce:type="uint32" expr="0"/>
     <!-- What a register that holds no value is told as: the number 0, no text and the
          dot of no write, each of its field's own type. -->
@@ -368,7 +368,7 @@
          error.execution is where the change is then refused. What a change is judged by:
          the values it writes over (`gone`), the registers it writes (`writes`), and
          whether the value in hand is in a register it names (`covered`). -->
-    <data id="staged" sce:type="list&lt;record:Part&gt;" sce:capacity="32" sce:limit="shared_staged"/>
+    <data id="staged" sce:type="list&lt;record:Part&gt;[shared_staged=32]"/>
     <data id="holding" sce:type="bool" expr="false"/>
     <data id="closingNow" sce:type="int64" expr="0"/>
     <data id="spoiled" sce:type="bool" expr="false"/>
@@ -392,12 +392,12 @@
          a peer's operation as it arrived (`part`), and the operation in hand (`op`); and
          what a part is judged by: whether the copy holds it already (`already`) and how
          many parts of its change the copy holds (`count`). -->
-    <data id="taking" sce:type="list&lt;record:Part&gt;" sce:capacity="64" sce:limit="shared_parts"/>
+    <data id="taking" sce:type="list&lt;record:Part&gt;[shared_parts=64]"/>
     <data id="took" sce:type="uint32" expr="0"/>
-    <data id="passing" sce:type="list&lt;record:Part&gt;" sce:capacity="64" sce:limit="shared_parts"/>
+    <data id="passing" sce:type="list&lt;record:Part&gt;[shared_parts=64]"/>
     <data id="passed" sce:type="uint32" expr="0"/>
-    <data id="waiting" sce:type="list&lt;record:Part&gt;" sce:capacity="64" sce:limit="shared_parts"/>
-    <data id="kept" sce:type="list&lt;record:Part&gt;" sce:capacity="64" sce:limit="shared_parts"/>
+    <data id="waiting" sce:type="list&lt;record:Part&gt;[shared_parts=64]"/>
+    <data id="kept" sce:type="list&lt;record:Part&gt;[shared_parts=64]"/>
     <data id="part" sce:type="record:Part">
       <sce:set name="kind" expr="0"/>
       <sce:set name="id" expr="0"/>

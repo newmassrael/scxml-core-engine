@@ -33,7 +33,7 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="run" datamodel="sce-static" name="static_invoke_hybrid">
   <datamodel>
-    <data id="pick" sce:type="string" sce:capacity="48" expr="'file:static_hybrid_first.scxml'"/>
+    <data id="pick" sce:type="string[48]" expr="'file:static_hybrid_first.scxml'"/>
     <data id="base" sce:type="uint32" expr="4"/>
     <data id="enabled" sce:type="bool" expr="true"/>
     <data id="completed" sce:type="uint32" expr="0" sce:direction="out"/>

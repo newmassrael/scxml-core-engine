@@ -21,10 +21,10 @@
     <sce:param name="roster" type="list&lt;record:Member&gt;"/>
     <sce:param name="node" type="uint64"/>
     <sce:param name="role" type="uint8"/>
-    <sce:return type="list&lt;record:Member&gt;" returns-max-size="64" sce:limit="shared_roster" may-fail="true"/>
+    <sce:return type="list&lt;record:Member&gt;[shared_roster=64]" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Member&gt;" capacity="64" sce:limit="shared_roster"/>
+    <sce:var name="out" type="list&lt;record:Member&gt;[shared_roster=64]"/>
     <sce:foreach item="m" in="roster">
       <sce:if cond="m.node !== node">
         <sce:append target="out" expr="m"/>

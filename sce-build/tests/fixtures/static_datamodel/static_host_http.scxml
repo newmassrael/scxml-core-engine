@@ -24,14 +24,14 @@
   <sce:import kind="event-schema" src="sce:std/host/http_fetch_request.scxml" as="HttpFetchRequest"/>
   <sce:import kind="event-schema" src="sce:std/host/http_fetch_result.scxml" as="HttpFetchResult"/>
   <datamodel>
-    <data id="method" sce:type="string" sce:capacity="8" expr="''"/>
-    <data id="url" sce:type="string" sce:capacity="2048" expr="''"/>
-    <data id="request_headers" sce:type="string" sce:capacity="2048" expr="''"/>
-    <data id="request_body" sce:type="string" sce:capacity="16384" expr="''"/>
-    <data id="outcome" sce:type="string" sce:capacity="24" expr="''" sce:direction="out"/>
+    <data id="method" sce:type="string[8]" expr="''"/>
+    <data id="url" sce:type="string[2048]" expr="''"/>
+    <data id="request_headers" sce:type="string[2048]" expr="''"/>
+    <data id="request_body" sce:type="string[16384]" expr="''"/>
+    <data id="outcome" sce:type="string[24]" expr="''" sce:direction="out"/>
     <data id="status" sce:type="uint16" expr="0" sce:direction="out"/>
-    <data id="response_headers" sce:type="string" sce:capacity="4096" expr="''" sce:direction="out"/>
-    <data id="response_body" sce:type="string" sce:capacity="16384" expr="''" sce:direction="out"/>
+    <data id="response_headers" sce:type="string[4096]" expr="''" sce:direction="out"/>
+    <data id="response_body" sce:type="string[16384]" expr="''" sce:direction="out"/>
   </datamodel>
 
   <state id="idle">

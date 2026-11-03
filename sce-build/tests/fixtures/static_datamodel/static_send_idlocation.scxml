@@ -25,8 +25,8 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="static_send_idlocation">
   <datamodel>
-    <data id="first" sce:type="string" sce:capacity="32" expr="''"/>
-    <data id="second" sce:type="string" sce:capacity="32" expr="''"/>
+    <data id="first" sce:type="string[32]" expr="''"/>
+    <data id="second" sce:type="string[32]" expr="''"/>
     <data id="scale" sce:type="uint32" expr="3"/>
     <data id="first_fired" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="second_fired" sce:type="uint32" expr="0" sce:direction="out"/>

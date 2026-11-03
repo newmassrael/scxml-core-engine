@@ -90,13 +90,13 @@
          algorithm takes a list of the record of its own schema; what travels is the
          sheet's events, whose payloads are copied into a record of the library's before
          a call and so keep the sheet's names. -->
-    <data id="cells" sce:type="list&lt;record:LwwCell&gt;" sce:capacity="256" sce:direction="out"/>
-    <data id="rows" sce:type="list&lt;record:RgaNode&gt;" sce:capacity="256" sce:direction="out"/>
-    <data id="gone" sce:type="list&lt;record:RgaGone&gt;" sce:capacity="256" sce:direction="out"/>
-    <data id="cols" sce:type="list&lt;record:RgaNode&gt;" sce:capacity="256" sce:direction="out"/>
-    <data id="goneCols" sce:type="list&lt;record:RgaGone&gt;" sce:capacity="256" sce:direction="out"/>
-    <data id="trail" sce:type="list&lt;int64&gt;" sce:capacity="768"/>
-    <data id="shown" sce:type="list&lt;record:Shown&gt;" sce:capacity="256" sce:direction="out"/>
+    <data id="cells" sce:type="list&lt;record:LwwCell&gt;[256]" sce:direction="out"/>
+    <data id="rows" sce:type="list&lt;record:RgaNode&gt;[256]" sce:direction="out"/>
+    <data id="gone" sce:type="list&lt;record:RgaGone&gt;[256]" sce:direction="out"/>
+    <data id="cols" sce:type="list&lt;record:RgaNode&gt;[256]" sce:direction="out"/>
+    <data id="goneCols" sce:type="list&lt;record:RgaGone&gt;[256]" sce:direction="out"/>
+    <data id="trail" sce:type="list&lt;int64&gt;[768]"/>
+    <data id="shown" sce:type="list&lt;record:Shown&gt;[256]" sce:direction="out"/>
     <data id="write" sce:type="record:LwwCell">
       <sce:set name="row" expr="0"/>
       <sce:set name="col" expr="0"/>

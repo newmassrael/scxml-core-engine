@@ -21,14 +21,14 @@
     <sce:param name="pending" type="list&lt;record:Slot&gt;"/>
     <sce:param name="seq" type="uint64"/>
     <sce:param name="now" type="int64"/>
-    <sce:return type="list&lt;record:Slot&gt;" returns-max-size="256"/>
+    <sce:return type="list&lt;record:Slot&gt;[256]"/>
   </sce:signature>
   <sce:body>
     <sce:var name="arrived" type="record:Slot">
       <sce:set name="seq" expr="seq"/>
       <sce:set name="arrivedAtMs" expr="now"/>
     </sce:var>
-    <sce:var name="out" type="list&lt;record:Slot&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;record:Slot&gt;[256]"/>
     <sce:var name="placed" type="bool" init="false"/>
     <sce:foreach item="slot" in="pending">
       <sce:if cond="slot.seq === seq">

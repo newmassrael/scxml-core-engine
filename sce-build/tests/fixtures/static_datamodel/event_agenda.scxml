@@ -85,10 +85,10 @@
     <sce:param name="windowStart" type="int64"/>
     <sce:param name="windowEnd" type="int64"/>
     <sce:param name="skip" type="uint32"/>
-    <sce:return type="list&lt;record:Occurrence&gt;" may-fail="true" returns-max-size="64"/>
+    <sce:return type="list&lt;record:Occurrence&gt;[64]" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Occurrence&gt;" capacity="64"/>
+    <sce:var name="out" type="list&lt;record:Occurrence&gt;[64]"/>
     <sce:var name="emitted" type="int64" init="0"/>
     <sce:var name="day" type="int64" init="86400000"/>
     <sce:var name="skipped" type="int64" init="skip"/>

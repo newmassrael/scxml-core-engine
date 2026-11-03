@@ -23,7 +23,7 @@
     <data id="total" sce:type="float64" expr="0" sce:direction="out"/>
     <data id="tenth" sce:type="float64" expr="0.1"/>
     <data id="drift" sce:type="float64" expr="0" sce:direction="out"/>
-    <data id="samples" sce:type="list&lt;float64&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="samples" sce:type="list&lt;float64&gt;[3]" sce:direction="out"/>
     <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="low">

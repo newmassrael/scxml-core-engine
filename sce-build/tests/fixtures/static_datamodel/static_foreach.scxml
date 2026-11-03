@@ -13,7 +13,7 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="working" datamodel="sce-static" name="static_foreach">
   <datamodel>
-    <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="4" sce:direction="out"/>
+    <data id="picked" sce:type="list&lt;uint8&gt;[4]" sce:direction="out"/>
     <data id="total" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="weighted" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="small" sce:type="uint8" expr="0" sce:direction="out"/>

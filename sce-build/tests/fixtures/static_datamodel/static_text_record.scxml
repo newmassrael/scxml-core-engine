@@ -23,7 +23,7 @@
   <sce:import kind="algorithm" src="sce:std/text/text_slot_retitled.scxml" as="Retitled"/>
   <sce:import kind="algorithm" src="sce:std/text/text_slot_holds.scxml" as="Holds"/>
   <datamodel>
-    <data id="slots" sce:type="list&lt;record:Slot&gt;" sce:capacity="16" sce:direction="out"/>
+    <data id="slots" sce:type="list&lt;record:Slot&gt;[16]" sce:direction="out"/>
     <data id="held" sce:type="record:Slot" sce:direction="out">
       <sce:set name="slot" expr="1"/>
       <sce:set name="version" expr="0"/>

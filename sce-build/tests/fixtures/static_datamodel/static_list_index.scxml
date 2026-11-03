@@ -28,7 +28,7 @@
        version="1.0" initial="reading" datamodel="sce-static" name="static_list_index">
   <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
   <datamodel>
-    <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="picked" sce:type="list&lt;uint8&gt;[3]" sce:direction="out"/>
     <data id="cursor" sce:type="int32" expr="0" sce:direction="out"/>
     <data id="under" sce:type="uint8" expr="0" sce:direction="out"/>
     <data id="first" sce:type="uint8" expr="0" sce:direction="out"/>

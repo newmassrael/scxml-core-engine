@@ -13,7 +13,7 @@
        name="kv_delete_result"
        sce:event-name="host.kv.delete.result">
   <datamodel>
-    <data id="error" sce:type="string" sce:max-size="24" sce:direction="in"/>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
     <data id="existed" sce:type="bool" sce:direction="in"/>
   </datamodel>
 </scxml>

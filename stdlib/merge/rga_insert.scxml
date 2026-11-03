@@ -29,10 +29,10 @@
   <sce:signature>
     <sce:param name="nodes" type="list&lt;record:Node&gt;"/>
     <sce:param name="node" type="record:Node"/>
-    <sce:return type="list&lt;record:Node&gt;" may-fail="true" returns-max-size="256"/>
+    <sce:return type="list&lt;record:Node&gt;[256]" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Node&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;record:Node&gt;[256]"/>
     <sce:var name="held" type="bool" init="false"/>
     <sce:foreach item="probe" in="nodes">
       <sce:if cond="probe.key === node.key">

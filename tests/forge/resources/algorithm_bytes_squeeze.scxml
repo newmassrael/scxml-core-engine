@@ -19,10 +19,10 @@
        sce:kind="algorithm" name="algorithm_bytes_squeeze" version="1.0">
   <sce:signature>
     <sce:param name="data" type="bytes"/>
-    <sce:return type="bytes" returns-max-size="16" may-fail="true"/>
+    <sce:return type="bytes[16]" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="bytes" capacity="16"/>
+    <sce:var name="out" type="bytes[16]"/>
     <sce:foreach item="b" in="data">
       <sce:var name="n" type="uint32" init="len(out)"/>
       <sce:if cond="n === 0 || out[n - 1] !== b">

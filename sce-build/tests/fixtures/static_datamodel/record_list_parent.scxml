@@ -66,7 +66,7 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="others" sce:type="list&lt;record:ToldValue&gt;" sce:capacity="8" sce:direction="out"/>
+    <data id="others" sce:type="list&lt;record:ToldValue&gt;[8]" sce:direction="out"/>
     <data id="other" sce:type="record:ToldValue">
       <sce:set name="id" expr="0"/>
       <sce:set name="field" expr="0"/>

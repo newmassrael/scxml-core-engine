@@ -21,7 +21,7 @@
   <sce:import kind="enum" src="sce:std/shared/record_refusal.scxml" as="Why"/>
   <datamodel>
     <data id="last" sce:type="optional&lt;enum:Why&gt;" expr="null" sce:direction="out"/>
-    <data id="kept" sce:type="list&lt;record:Refused&gt;" sce:capacity="2" sce:direction="out"/>
+    <data id="kept" sce:type="list&lt;record:Refused&gt;[2]" sce:direction="out"/>
     <data id="row" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>

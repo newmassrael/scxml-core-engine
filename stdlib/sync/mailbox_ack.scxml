@@ -24,10 +24,10 @@
   <sce:signature>
     <sce:param name="queue" type="list&lt;record:Slot&gt;"/>
     <sce:param name="acked" type="list&lt;record:Id&gt;"/>
-    <sce:return type="list&lt;record:Slot&gt;" returns-max-size="256"/>
+    <sce:return type="list&lt;record:Slot&gt;[256]"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Slot&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;record:Slot&gt;[256]"/>
     <sce:foreach item="s" in="queue">
       <sce:var name="gone" type="bool" init="false"/>
       <sce:foreach item="a" in="acked">

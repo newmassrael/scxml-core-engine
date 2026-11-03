@@ -23,7 +23,7 @@
        version="1.0" initial="counting" datamodel="sce-static" name="static_donedata_content">
   <datamodel>
     <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
-    <data id="label" sce:type="string" sce:capacity="16" expr="'tally'"/>
+    <data id="label" sce:type="string[16]" expr="'tally'"/>
   </datamodel>
   <state id="counting">
     <transition event="tick" type="internal">

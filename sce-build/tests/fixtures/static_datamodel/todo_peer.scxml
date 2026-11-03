@@ -155,21 +155,21 @@
          lists of entries, of values and of the digest are as large as the standard
          algorithms that return them, which carry the same names, so a build that gives
          a name a number moves the machine and the algorithms together. -->
-    <data id="adds" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:limit="merge_entries" sce:direction="out"/>
-    <data id="tombstones" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:limit="merge_entries" sce:direction="out"/>
-    <data id="one" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:limit="merge_entries"/>
-    <data id="stable" sce:type="list&lt;record:Entry&gt;" sce:capacity="1024" sce:limit="merge_entries"/>
+    <data id="adds" sce:type="list&lt;record:Entry&gt;[merge_entries=1024]" sce:direction="out"/>
+    <data id="tombstones" sce:type="list&lt;record:Entry&gt;[merge_entries=1024]" sce:direction="out"/>
+    <data id="one" sce:type="list&lt;record:Entry&gt;[merge_entries=1024]"/>
+    <data id="stable" sce:type="list&lt;record:Entry&gt;[merge_entries=1024]"/>
     <data id="entry" sce:type="record:Entry">
       <sce:set name="element" expr="0"/>
       <sce:set name="wallTime" expr="0"/>
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="values" sce:type="list&lt;record:Value&gt;" sce:capacity="512" sce:limit="merge_values" sce:direction="out"/>
+    <data id="values" sce:type="list&lt;record:Value&gt;[merge_values=512]" sce:direction="out"/>
     <!-- The text a person types, held to the 32 bytes a person writes (todo_edit): a write
          has room for more, for what a host puts there when it keeps the content from the hub
          (todo_write), and a text past 32 that a person typed is refused as one past the room. -->
-    <data id="typed" sce:type="string" sce:capacity="32" expr="''"/>
+    <data id="typed" sce:type="string[32]" expr="''"/>
     <data id="held" sce:type="record:Value">
       <sce:set name="id" expr="0"/>
       <sce:set name="field" expr="0"/>
@@ -179,7 +179,7 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="digest" sce:type="list&lt;record:Node&gt;" sce:capacity="2048" sce:limit="merge_digest" sce:direction="out"/>
+    <data id="digest" sce:type="list&lt;record:Node&gt;[merge_digest=2048]" sce:direction="out"/>
     <data id="mine" sce:type="uint32" expr="0"/>
     <data id="shareId" sce:type="uint32" expr="0"/>
     <data id="shareField" sce:type="uint16" expr="0"/>
@@ -188,8 +188,8 @@
     <data id="isLive" sce:type="bool" expr="false"/>
     <data id="present" sce:type="bool" expr="false"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
-    <data id="agenda" sce:type="list&lt;record:Occurrence&gt;" sce:capacity="64" sce:direction="out"/>
-    <data id="local" sce:type="list&lt;record:Occurrence&gt;" sce:capacity="64"/>
+    <data id="agenda" sce:type="list&lt;record:Occurrence&gt;[64]" sce:direction="out"/>
+    <data id="local" sce:type="list&lt;record:Occurrence&gt;[64]"/>
     <data id="occ" sce:type="record:Occurrence">
       <sce:set name="id" expr="0"/>
       <sce:set name="start" expr="0"/>
@@ -200,16 +200,16 @@
     <data id="agendaNext" sce:type="uint32" expr="0" sce:direction="out"/>
     <!-- The host's four time zones, a table of transitions each (todo.zone), and the
          table of the zone of the to-do the agenda is asked for. -->
-    <data id="zoneStarts1" sce:type="list&lt;int64&gt;" sce:capacity="64"/>
-    <data id="zoneOffsets1" sce:type="list&lt;int32&gt;" sce:capacity="64"/>
-    <data id="zoneStarts2" sce:type="list&lt;int64&gt;" sce:capacity="64"/>
-    <data id="zoneOffsets2" sce:type="list&lt;int32&gt;" sce:capacity="64"/>
-    <data id="zoneStarts3" sce:type="list&lt;int64&gt;" sce:capacity="64"/>
-    <data id="zoneOffsets3" sce:type="list&lt;int32&gt;" sce:capacity="64"/>
-    <data id="zoneStarts4" sce:type="list&lt;int64&gt;" sce:capacity="64"/>
-    <data id="zoneOffsets4" sce:type="list&lt;int32&gt;" sce:capacity="64"/>
-    <data id="zoneStarts" sce:type="list&lt;int64&gt;" sce:capacity="64"/>
-    <data id="zoneOffsets" sce:type="list&lt;int32&gt;" sce:capacity="64"/>
+    <data id="zoneStarts1" sce:type="list&lt;int64&gt;[64]"/>
+    <data id="zoneOffsets1" sce:type="list&lt;int32&gt;[64]"/>
+    <data id="zoneStarts2" sce:type="list&lt;int64&gt;[64]"/>
+    <data id="zoneOffsets2" sce:type="list&lt;int32&gt;[64]"/>
+    <data id="zoneStarts3" sce:type="list&lt;int64&gt;[64]"/>
+    <data id="zoneOffsets3" sce:type="list&lt;int32&gt;[64]"/>
+    <data id="zoneStarts4" sce:type="list&lt;int64&gt;[64]"/>
+    <data id="zoneOffsets4" sce:type="list&lt;int32&gt;[64]"/>
+    <data id="zoneStarts" sce:type="list&lt;int64&gt;[64]"/>
+    <data id="zoneOffsets" sce:type="list&lt;int32&gt;[64]"/>
     <data id="zoneRows" sce:type="uint32" expr="0"/>
     <data id="split" sce:type="bool" expr="false"/>
     <data id="sched" sce:type="record:Schedule">
@@ -277,7 +277,7 @@
     <data id="pending" sce:type="int64" expr="-1"/>
     <data id="members" sce:type="uint32" expr="0"/>
     <data id="agreeing" sce:type="uint32" expr="0"/>
-    <data id="answers" sce:type="list&lt;record:Answer&gt;" sce:capacity="512"/>
+    <data id="answers" sce:type="list&lt;record:Answer&gt;[512]"/>
     <data id="answer" sce:type="record:Answer">
       <sce:set name="sender" expr="0"/>
       <sce:set name="hash" expr="0"/>
@@ -295,7 +295,7 @@
     <data id="blocked" sce:type="bool" expr="false"/>
     <!-- What the host lets each member do (todo.role), the changes that were refused for it
          (`denied`) and what the change in hand is judged by: whether its author may write. -->
-    <data id="roster" sce:type="list&lt;record:Member&gt;" sce:capacity="64" sce:limit="todo_roster"/>
+    <data id="roster" sce:type="list&lt;record:Member&gt;[todo_roster=64]"/>
     <data id="denied" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="forbidden" sce:type="bool" expr="false"/>
     <data id="authorized" sce:type="bool" expr="true"/>

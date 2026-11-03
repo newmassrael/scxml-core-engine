@@ -14,7 +14,7 @@
        sce:kind="event-schema"
        sce:event-name="signal.received">
   <datamodel>
-    <data id="raw" sce:type="bytes" sce:direction="in" sce:max-size="8"/>
+    <data id="raw" sce:type="bytes[8]" sce:direction="in"/>
     <data id="label" sce:type="string[32]" sce:direction="in"/>
     <data id="count" sce:type="uint32" sce:direction="in"/>
   </datamodel>

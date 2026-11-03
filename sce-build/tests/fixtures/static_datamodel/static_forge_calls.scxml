@@ -46,7 +46,7 @@
     <data id="highs" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="phase" sce:type="enum:Status" expr="Status.open" sce:direction="out"/>
     <data id="weight" sce:type="enum:Level" expr="Level.light" sce:direction="out"/>
-    <data id="customer" sce:type="string" sce:capacity="16" expr="'anna'" sce:direction="out"/>
+    <data id="customer" sce:type="string[16]" expr="'anna'" sce:direction="out"/>
     <data id="known" sce:type="bool" expr="false" sce:direction="out"/>
   </datamodel>
   <state id="run">

@@ -24,6 +24,6 @@
   <datamodel>
     <data id="slot" sce:type="uint32" sce:direction="in"/>
     <data id="version" sce:type="int64" sce:direction="in"/>
-    <data id="text" sce:type="string" sce:max-size="32" sce:direction="in"/>
+    <data id="text" sce:type="string[32]" sce:direction="in"/>
   </datamodel>
 </scxml>

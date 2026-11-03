@@ -19,7 +19,7 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="static_cancel_expr">
   <datamodel>
-    <data id="which" sce:type="string" sce:capacity="8" expr="'a'"/>
+    <data id="which" sce:type="string[8]" expr="'a'"/>
     <data id="scale" sce:type="uint32" expr="3"/>
     <data id="a_fired" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="b_fired" sce:type="uint32" expr="0" sce:direction="out"/>

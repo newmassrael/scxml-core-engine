@@ -18,7 +18,7 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="static_send_target">
   <datamodel>
-    <data id="route" sce:type="string" sce:capacity="24" expr="'#_internal'"/>
+    <data id="route" sce:type="string[24]" expr="'#_internal'"/>
     <data id="landed" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refused" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>

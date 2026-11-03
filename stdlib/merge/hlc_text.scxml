@@ -33,11 +33,11 @@
   <sce:import kind="algorithm" src="sce:std/time/civil_from_days.scxml" as="civil"/>
   <sce:signature>
     <sce:param name="ts" type="record:Hlc"/>
-    <sce:return type="bytes" returns-max-size="46" may-fail="true"/>
+    <sce:return type="bytes[46]" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:require cond="ts.wallTime &gt;= 0 &amp;&amp; ts.wallTime &lt;= 253402300799999 &amp;&amp; ts.counter &lt;= 65535"/>
-    <sce:var name="out" type="bytes" capacity="46"/>
+    <sce:var name="out" type="bytes[46]"/>
     <sce:var name="date" type="record:CivilDate" init="civil(ts.wallTime / 86400000)"/>
     <sce:var name="ms" type="int64" init="ts.wallTime % 86400000"/>
     <!-- Decimal fields, most significant digit first: `value` holds the

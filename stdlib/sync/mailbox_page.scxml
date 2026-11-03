@@ -28,11 +28,11 @@
     <sce:param name="queue" type="list&lt;record:Slot&gt;"/>
     <sce:param name="after" type="int64"/>
     <sce:param name="limit" type="uint32"/>
-    <sce:return type="list&lt;record:Slot&gt;" returns-max-size="256" may-fail="true"/>
+    <sce:return type="list&lt;record:Slot&gt;[256]" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:require cond="limit &gt;= 1 &amp;&amp; limit &lt;= 256"/>
-    <sce:var name="out" type="list&lt;record:Slot&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;record:Slot&gt;[256]"/>
     <sce:var name="taken" type="uint32" init="0"/>
     <sce:var name="prev" type="int64" init="0"/>
     <sce:foreach item="s" in="queue">

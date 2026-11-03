@@ -39,10 +39,10 @@
     <sce:param name="user" type="uint32"/>
     <sce:param name="groups" type="list&lt;uint32&gt;"/>
     <sce:param name="owner" type="uint32"/>
-    <sce:return type="list&lt;uint32&gt;" returns-max-size="256" may-fail="true"/>
+    <sce:return type="list&lt;uint32&gt;[256]" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;uint32&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;uint32&gt;[256]"/>
     <sce:var name="n" type="uint32" init="0"/>
     <sce:foreach item="p" in="tree">
       <!-- The tree's shape: the root first, each parent before its child. -->

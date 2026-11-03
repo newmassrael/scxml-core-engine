@@ -29,10 +29,10 @@
   <sce:signature>
     <sce:param name="cells" type="list&lt;record:Cell&gt;"/>
     <sce:param name="trail" type="list&lt;int64&gt;"/>
-    <sce:return type="list&lt;record:Shown&gt;" may-fail="true" returns-max-size="256"/>
+    <sce:return type="list&lt;record:Shown&gt;[256]" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Shown&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;record:Shown&gt;[256]"/>
     <sce:var name="started" type="bool" init="false"/>
     <sce:var name="lastRow" type="uint64" init="0"/>
     <sce:var name="lastCol" type="uint64" init="0"/>

@@ -34,7 +34,7 @@
     <data id="tenth" sce:type="float32" expr="0.1"/>
     <data id="drift" sce:type="float32" expr="0" sce:direction="out"/>
     <data id="wide" sce:type="float64" expr="0" sce:direction="out"/>
-    <data id="samples" sce:type="list&lt;float32&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="samples" sce:type="list&lt;float32&gt;[3]" sce:direction="out"/>
     <data id="total" sce:type="float32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="idle">

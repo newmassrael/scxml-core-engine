@@ -47,8 +47,8 @@
        name="statechart_static_mesh_request">
   <datamodel>
     <data id="load" sce:type="uint32" expr="3"/>
-    <data id="label" sce:type="string" sce:capacity="16" expr="'idle'"/>
-    <data id="peer" sce:type="string" sce:capacity="16" expr="'#motor'"/>
+    <data id="label" sce:type="string[16]" expr="'idle'"/>
+    <data id="peer" sce:type="string[16]" expr="'#motor'"/>
     <data id="answered" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="failed" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refused" sce:type="uint32" expr="0" sce:direction="out"/>

@@ -23,7 +23,7 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="running" datamodel="sce-static" name="static_invoke_string">
   <datamodel>
-    <data id="lengthy" sce:type="string" sce:capacity="8" expr="'abcdefgh'"/>
+    <data id="lengthy" sce:type="string[8]" expr="'abcdefgh'"/>
     <data id="completed" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>

@@ -13,8 +13,8 @@
        name="kv_get_result"
        sce:event-name="host.kv.get.result">
   <datamodel>
-    <data id="error" sce:type="string" sce:max-size="24" sce:direction="in"/>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
     <data id="found" sce:type="bool" sce:direction="in"/>
-    <data id="value" sce:type="string" sce:max-size="4096" sce:direction="in"/>
+    <data id="value" sce:type="string[4096]" sce:direction="in"/>
   </datamodel>
 </scxml>

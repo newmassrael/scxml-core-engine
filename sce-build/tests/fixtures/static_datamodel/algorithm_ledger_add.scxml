@@ -15,14 +15,14 @@
     <sce:param name="entries" type="list&lt;record:Entry&gt;"/>
     <sce:param name="id" type="uint32"/>
     <sce:param name="amount" type="int32"/>
-    <sce:return type="list&lt;record:Entry&gt;" returns-max-size="8" may-fail="true"/>
+    <sce:return type="list&lt;record:Entry&gt;[8]" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:var name="fresh" type="record:Entry">
       <sce:set name="id" expr="id"/>
       <sce:set name="amount" expr="amount"/>
     </sce:var>
-    <sce:var name="out" type="list&lt;record:Entry&gt;" capacity="8"/>
+    <sce:var name="out" type="list&lt;record:Entry&gt;[8]"/>
     <sce:var name="seen" type="bool" init="false"/>
     <sce:foreach item="e" in="entries">
       <sce:if cond="e.id === id">

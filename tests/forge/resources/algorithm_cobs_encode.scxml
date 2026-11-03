@@ -47,11 +47,11 @@
        version="1.0">
   <sce:signature>
     <sce:param name="data" type="bytes"/>
-    <sce:return type="bytes" returns-max-size="32"/>
+    <sce:return type="bytes[32]"/>
   </sce:signature>
   <sce:body>
     <sce:var name="n" type="uint32" init="len(data)"/>
-    <sce:var name="out" type="bytes" capacity="32"/>
+    <sce:var name="out" type="bytes[32]"/>
     <sce:var name="p" type="uint32" init="0"/>
     <sce:var name="done" type="bool" init="false"/>
     <sce:while cond="done === false">

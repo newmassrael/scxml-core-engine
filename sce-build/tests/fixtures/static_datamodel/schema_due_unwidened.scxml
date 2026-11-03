@@ -17,7 +17,7 @@
   <datamodel>
     <data id="id" sce:type="uint32" sce:direction="in"/>
     <data id="due" sce:type="int64" sce:direction="in"/>
-    <data id="title" sce:type="string" sce:max-size="16" sce:direction="in"/>
+    <data id="title" sce:type="string[16]" sce:direction="in"/>
     <data id="status" sce:type="enum:Status" sce:direction="in"/>
   </datamodel>
 </scxml>

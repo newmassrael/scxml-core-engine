@@ -41,7 +41,7 @@
   <sce:import kind="event-schema" src="host_invoker_lookup_result.scxml" as="LookupResult"/>
   <datamodel>
     <data id="at" sce:type="optional&lt;int64&gt;" expr="null"/>
-    <data id="label" sce:type="optional&lt;string&gt;" sce:capacity="16" expr="null"/>
+    <data id="label" sce:type="optional&lt;string[16]&gt;" expr="null"/>
     <data id="hit" sce:type="optional&lt;bool&gt;" expr="null"/>
     <data id="answered" sce:type="uint8" expr="0" sce:direction="out"/>
     <data id="rows_seen" sce:type="uint8" expr="0" sce:direction="out"/>
@@ -49,7 +49,7 @@
     <data id="at_present" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="at_value" sce:type="int64" expr="0" sce:direction="out"/>
     <data id="label_present" sce:type="bool" expr="false" sce:direction="out"/>
-    <data id="label_value" sce:type="string" sce:capacity="16" expr="''" sce:direction="out"/>
+    <data id="label_value" sce:type="string[16]" expr="''" sce:direction="out"/>
     <data id="hit_known" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="hit_true" sce:type="bool" expr="false" sce:direction="out"/>
   </datamodel>

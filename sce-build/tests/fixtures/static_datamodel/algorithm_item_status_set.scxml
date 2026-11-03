@@ -17,14 +17,14 @@
     <sce:param name="items" type="list&lt;record:Item&gt;"/>
     <sce:param name="id" type="uint32"/>
     <sce:param name="status" type="enum:Status"/>
-    <sce:return type="list&lt;record:Item&gt;" returns-max-size="4" may-fail="true"/>
+    <sce:return type="list&lt;record:Item&gt;[4]" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:var name="moved" type="record:Item">
       <sce:set name="id" expr="id"/>
       <sce:set name="status" expr="status"/>
     </sce:var>
-    <sce:var name="out" type="list&lt;record:Item&gt;" capacity="4"/>
+    <sce:var name="out" type="list&lt;record:Item&gt;[4]"/>
     <sce:foreach item="e" in="items">
       <sce:if cond="e.id === id">
         <sce:append target="out" expr="moved"/>

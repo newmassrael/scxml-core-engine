@@ -19,7 +19,7 @@
   <datamodel>
     <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="small" sce:type="uint8" expr="250"/>
-    <data id="label" sce:type="string" sce:capacity="16" expr="'tally'"/>
+    <data id="label" sce:type="string[16]" expr="'tally'"/>
     <data id="layout" sce:type="enum:ViewMode" expr="ViewMode.month"/>
   </datamodel>
   <state id="counting">

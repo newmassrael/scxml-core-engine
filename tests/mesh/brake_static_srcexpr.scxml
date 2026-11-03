@@ -27,7 +27,7 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" datamodel="sce-static" name="brake_static_srcexpr" initial="idle">
   <datamodel>
-    <data id="peer" sce:type="string" sce:capacity="32" expr="'#motor_static_srcexpr'"/>
+    <data id="peer" sce:type="string[32]" expr="'#motor_static_srcexpr'"/>
     <data id="load" sce:type="uint32" expr="3"/>
     <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>

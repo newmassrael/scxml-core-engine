@@ -24,10 +24,10 @@
   <sce:signature>
     <sce:param name="gone" type="list&lt;record:Gone&gt;"/>
     <sce:param name="removal" type="record:Gone"/>
-    <sce:return type="list&lt;record:Gone&gt;" may-fail="true" returns-max-size="256"/>
+    <sce:return type="list&lt;record:Gone&gt;[256]" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;record:Gone&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;record:Gone&gt;[256]"/>
     <sce:var name="held" type="bool" init="false"/>
     <sce:foreach item="g" in="gone">
       <sce:append target="out" expr="g"/>

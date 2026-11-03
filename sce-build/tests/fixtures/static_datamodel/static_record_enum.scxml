@@ -19,7 +19,7 @@
       <sce:set name="layout" expr="ViewMode.month"/>
       <sce:set name="zoom" expr="1"/>
     </data>
-    <data id="seen" sce:type="list&lt;record:View&gt;" sce:capacity="4" sce:direction="out"/>
+    <data id="seen" sce:type="list&lt;record:View&gt;[4]" sce:direction="out"/>
     <data id="weeks" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="flips" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="leads" sce:type="uint32" expr="0" sce:direction="out"/>

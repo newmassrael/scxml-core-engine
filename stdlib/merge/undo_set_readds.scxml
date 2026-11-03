@@ -27,11 +27,11 @@
   <sce:signature>
     <sce:param name="batchTombstones" type="list&lt;record:Entry&gt;"/>
     <sce:param name="live" type="list&lt;record:Entry&gt;"/>
-    <sce:return type="list&lt;uint64&gt;" returns-max-size="256" may-fail="true"/>
+    <sce:return type="list&lt;uint64&gt;[256]" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:require cond="len(batchTombstones) &lt;= 256"/>
-    <sce:var name="out" type="list&lt;uint64&gt;" capacity="256"/>
+    <sce:var name="out" type="list&lt;uint64&gt;[256]"/>
     <sce:foreach item="t" in="batchTombstones">
       <sce:var name="held" type="bool" init="false"/>
       <sce:foreach item="l" in="live">

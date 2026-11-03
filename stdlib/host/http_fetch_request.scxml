@@ -16,9 +16,9 @@
        name="http_fetch_request"
        sce:event-name="host.http.fetch.request">
   <datamodel>
-    <data id="method" sce:type="string" sce:max-size="8" sce:direction="in"/>
-    <data id="url" sce:type="string" sce:max-size="2048" sce:direction="in"/>
-    <data id="headers" sce:type="string" sce:max-size="2048" sce:direction="in"/>
-    <data id="body" sce:type="string" sce:max-size="16384" sce:direction="in"/>
+    <data id="method" sce:type="string[8]" sce:direction="in"/>
+    <data id="url" sce:type="string[2048]" sce:direction="in"/>
+    <data id="headers" sce:type="string[2048]" sce:direction="in"/>
+    <data id="body" sce:type="string[16384]" sce:direction="in"/>
   </datamodel>
 </scxml>

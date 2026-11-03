@@ -28,10 +28,10 @@
     <sce:param name="interval" type="int64"/>
     <sce:param name="window_start" type="int64"/>
     <sce:param name="window_end" type="int64"/>
-    <sce:return type="list&lt;int64&gt;" returns-max-size="366" may-fail="true"/>
+    <sce:return type="list&lt;int64&gt;[366]" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="out" type="list&lt;int64&gt;" capacity="366"/>
+    <sce:var name="out" type="list&lt;int64&gt;[366]"/>
     <sce:var name="d" type="int64" init="window_start &gt; dtstart ? window_start : dtstart"/>
     <sce:while cond="d &lt; window_end" max-iter="366">
       <sce:var name="weekday" type="int64" init="(d + 3) % 7"/>

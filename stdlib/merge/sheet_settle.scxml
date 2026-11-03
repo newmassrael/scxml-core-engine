@@ -74,10 +74,10 @@
     <sce:param name="gone" type="list&lt;record:Gone&gt;"/>
     <sce:param name="cols" type="list&lt;record:Node&gt;"/>
     <sce:param name="goneCols" type="list&lt;record:Gone&gt;"/>
-    <sce:return type="list&lt;int64&gt;" may-fail="true" returns-max-size="768"/>
+    <sce:return type="list&lt;int64&gt;[768]" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="trail" type="list&lt;int64&gt;" capacity="768"/>
+    <sce:var name="trail" type="list&lt;int64&gt;[768]"/>
     <sce:var name="moving" type="bool" init="true"/>
     <sce:var name="passes" type="int64" init="0"/>
     <sce:while cond="moving &amp;&amp; passes &lt;= len(cells)">

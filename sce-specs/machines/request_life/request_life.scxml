@@ -35,10 +35,10 @@
   <sce:import kind="event-schema" src="schema_cancel.scxml" as="Cancel"/>
   <sce:import kind="event-schema" src="schema_supersede.scxml" as="Supersede"/>
   <datamodel>
-    <data id="holder" sce:type="string" sce:capacity="64" expr="''" sce:direction="out"/>
+    <data id="holder" sce:type="string[64]" expr="''" sce:direction="out"/>
     <data id="attempt" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="expiresAt" sce:type="uint64" expr="0" sce:direction="out"/>
-    <data id="outcome" sce:type="string" sce:capacity="64" expr="''" sce:direction="out"/>
+    <data id="outcome" sce:type="string[64]" expr="''" sce:direction="out"/>
     <data id="verdict" sce:type="enum:Verdict" expr="Verdict.unanswered" sce:direction="out"/>
   </datamodel>
 
