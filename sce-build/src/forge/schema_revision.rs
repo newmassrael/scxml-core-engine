@@ -156,6 +156,41 @@ pub fn defaults_wire(schema: &EntrySchema) -> Option<String> {
     }
 }
 
+/// [`defaults_wire`] of a schema whose fields are of any type of the language
+/// (docs/adr/0086, section 10): a field one entry holds takes its default as
+/// [`default_wire`] spells it, a list a later revision added reads as the
+/// empty list `[]`, and an optional value one added declares no default and
+/// reads absent, `null`. A record a later revision added is refused where the
+/// schema is parsed, since no literal spells one.
+pub fn composed_defaults_wire(
+    schema: &crate::forge::model::EventSchemaModel<ValueType>,
+) -> Option<String> {
+    let members: Vec<String> = schema
+        .fields
+        .iter()
+        .filter(|f| f.since.is_some())
+        .filter_map(|f| {
+            let default = match f.entry_field() {
+                Ok(entry) => default_wire(&entry)?,
+                Err(_) => match &f.sce_type {
+                    ValueType::List { .. } => "[]".to_string(),
+                    ValueType::Optional { .. } => "null".to_string(),
+                    ValueType::Scalar(_)
+                    | ValueType::Text { .. }
+                    | ValueType::Bytes { .. }
+                    | ValueType::Record { .. } => return None,
+                },
+            };
+            Some(format!("{}:{default}", json_text(&f.id)))
+        })
+        .collect();
+    if members.is_empty() {
+        None
+    } else {
+        Some(format!("{{{}}}", members.join(",")))
+    }
+}
+
 /// What the revision rules read of a field's type: the enum a present value of
 /// it is a value of, if it is one. A field of a value type that holds a list or
 /// a record declares no default (the parser refuses one), so only a leaf or an
@@ -698,8 +733,10 @@ pub fn enum_documents(model: &crate::model::SCXMLModel, base_dir: &Path) -> Enum
                 let mut fields = BTreeMap::new();
                 for field in &schema.fields {
                     // An optional enum field holds a value of its document when
-                    // present (docs/adr/0055).
-                    let Some(reference) = field.sce_type.present_enum() else {
+                    // present (docs/adr/0055), and a list of an enum holds values
+                    // of it at any depth (docs/adr/0086): a field's type has one
+                    // leaf.
+                    let Some(reference) = field.sce_type.enum_leaf() else {
                         continue;
                     };
                     let Some(enum_import) = parsed

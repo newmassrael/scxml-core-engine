@@ -17,6 +17,7 @@ pub mod codec_size;
 pub mod codec_totality;
 pub mod codegen_markers;
 pub mod codegen_matrix;
+pub mod composed_lowering;
 pub mod const_fold;
 pub mod content_line_codec;
 pub mod content_line_enum;
