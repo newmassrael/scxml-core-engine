@@ -1,0 +1,58 @@
+# Mutation cases for "a statechart reads a composed value at any depth"
+# (docs/adr/0086, section 6).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_statechart_reads_a_composed_value_at_any_depth.cases
+#
+# A place a statechart reads (a variable, the payload, a loop's item and the
+# fields, elements and present values after it) is typed by walking the one
+# value type; a list taken whole is held to "fits"; a composed value is no
+# operand; what no backend lowers is refused at the gate every route asks.
+# Each case takes one of those away and has to turn the suite red on its own.
+
+mutation_tests -p sce-build --features cli --test a_statechart_reads_a_composed_value_at_any_depth
+mutation_targets sce-build/src/forge/types.rs sce-build/src/forge/static_datamodel.rs sce-build/src/forge/expr.rs sce-build/src/analyzer.rs
+
+# A path past a name is typed by nothing: every deep read is a value of no
+# type, which stands anywhere (a number where a bool is expected).
+mutation_case "a place past its name is untyped" <<'PY'
+edit("sce-build/src/forge/types.rs",
+     r'''        self.value_of(name).map_or(InferredType::Unknown, |place| {
+            InferredType::of_value(&place.ty)
+        })''',
+     r'''        self.value_of(name)
+            .map_or(InferredType::Unknown, |_| InferredType::Unknown)''')
+PY
+
+# A list is taken whole whatever its type: three items go into a list of two.
+mutation_case "a list copy is not held to fits" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     r'''        list_fits(&held.ty, list, &names).map_err(|misfit| {''',
+     r'''        let _ = &names;
+        Ok::<(), crate::forge::value_type::Misfit>(()).map_err(|misfit| {''')
+PY
+
+# A composed value stands as an operand: two lists are compared.
+mutation_case "a composed value is an operand" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     r'''    if stands == ReadThrough::Operand {''',
+     r'''    if stands == ReadThrough::Operand && false {''')
+PY
+
+# A loop walks only a list variable: a list the payload holds is refused.
+mutation_case "a loop walks no list the payload holds" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     r'''        let Some(element) = ctx.value_of(array).and_then(|list| list.element()) else {''',
+     r'''        let Some(element) = self
+            .list_var(array)
+            .and_then(|_| ctx.value_of(array))
+            .and_then(|list| list.element())
+        else {''')
+PY
+
+# No gate decides what is lowered: a composed read reaches the backends.
+mutation_case "the gate lets a composed read through" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     r'''    crate::forge::event_schema_check::check_composed_uses(model, diag_label)?;''',
+     r'''    let _ = crate::forge::event_schema_check::check_composed_uses;''')
+PY
