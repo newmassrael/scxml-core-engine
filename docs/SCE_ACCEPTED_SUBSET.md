@@ -4711,6 +4711,29 @@ lowering holds an enum value as the variant's declared name, a string
 (`ViewMode.month` lowers to `'month'`), so it compares, stores and logs as
 the generated backends do and replays the same scenario.
 
+**A bound is written in the type.** Every text, byte string and list states its
+bound in brackets after the type it bounds, at every depth: `string[8]`,
+`bytes[64]`, `list<int64>[16]` (in XML `list&lt;int64&gt;[16]`), and
+`string[name_len=8]` for a bound whose number a build moves with `--limit
+name_len=N` (docs/adr/0086, section 1). An event schema's field, a variable, and
+an algorithm's return and local are read through that one grammar. The attributes
+that stated the outermost bound before, `sce:capacity` here, `sce:max-size` and
+`sce:max-count` on an event schema's field, and an algorithm's `capacity` and
+`returns-max-size`, each with the `sce:limit` beside it, are read as the bracket
+they are a synonym of, and reported by `check` and `generate` as
+`validation/bound-attribute-superseded` with the rewrite (`move_bound_into_type`);
+the run succeeds, and `--lint` refuses it. `sce-codegen bound-spelling <document>`
+prints the document so rewritten. A bracket and an attribute that bound the same
+type are refused as `validation/incompatible-attributes`, even when the numbers
+agree. A text, byte string or list with no bound is refused at the place in the
+type that lacks it, an event schema's field included; so is a bracket on a type
+with no length and an optional inside an optional. A parameter writes no bound: it
+is a view of its argument and holds the argument's. A composition a position does
+not lower yet (a list of texts, a list in an event schema's field, an optional
+list) is refused there by name as `generate/unsupported-feature`. The paragraphs
+below name the attribute spelling where they were written with it; the bracket
+states the same bound.
+
 **String variables.** `sce:type="string"` holds text, and declares the most
 UTF-8 **bytes** it ever holds with `sce:capacity`, a whole number of at least one
 that fits 32 bits. The bound is required — a machine holds the same value
