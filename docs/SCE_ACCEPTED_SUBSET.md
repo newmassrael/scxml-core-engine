@@ -8684,10 +8684,14 @@ the command line: the declaration is inside the source set the machine's
 machine, and a header that names a hash names the table that came with it.
 `docs/SCE_TRANSITION_TABLE.md` states what an entry holds and how each backend
 spells it. The table is bound to that hash by `generate`, `orchestrate` and
-`generate-w3c`; a route that has no hash to give it (the library entry points,
-a set compile given none) refuses the document with
-`generate/source-hash-unavailable` rather than return the machine without the
-table, by the same check that refuses a transition function there (§2.21).
+`generate-w3c`, a document's own and an in-line child's alike: a child
+(`<invoke><content><scxml sce:transition-table="emit">`) is a machine of the run
+written beside its parent's, and its table is in its machine, with the hash its
+machine's header carries. A route that has no hash to give it (the library
+entry points, a set compile given none) refuses the document, or the document
+whose in-line child declares it, with `generate/source-hash-unavailable` rather
+than return the machine without the table, by the same check that refuses a
+transition function there (§2.21).
 
 Nothing in a machine reads the table. A document that does not declare it
 generates byte-identical files to what it generated before the attribute
@@ -8712,10 +8716,18 @@ table of §2.20 is bound on the same three routes by the same call. A root
 declares the function wherever it stands: an in-line child
 (`<invoke><content><scxml sce:transition-function="emit">`) is judged with the
 document that holds it and generated with its own function beside its machine,
-named after its stem. The library entry points compute no hash and so refuse a
-document that declares the function, with `generate/source-hash-unavailable`
-naming the declaration, the entry and `sce-codegen generate`, rather than
-return the machine without it.
+named after its stem. Each of the three routes writes an in-line child's
+machine beside its parent's, at every depth, through one preparation
+(`sce_build::carried_children`), so the child's machine and function are the
+same files whichever route wrote them; `orchestrate` lists them in its manifest,
+and refuses a set in which an in-line child's file is a file another document
+of the set writes (`manifest/artifact-path-collision`). The C++ conformance
+suite takes a fixture's in-line children from the fixture's own `generate`,
+which writes them as it writes any document's. The library entry points compute
+no hash and so refuse a document that declares the function, or whose in-line
+child does, with `generate/source-hash-unavailable` naming the declaration,
+the entry and `sce-codegen generate`, rather than return the machine without
+it.
 
 The boundary is stated by meaning. A document is a transition function when
 every macrostep is exactly one microstep and one leaf state fixes the

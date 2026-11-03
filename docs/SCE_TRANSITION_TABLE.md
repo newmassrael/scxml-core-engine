@@ -19,6 +19,24 @@ what they were before the attribute existed. A C++, C or Rust program that never
 table carries none of it, under the conditions [What it costs a program](#what-it-costs-a-program)
 states and measures.
 
+## Every route that writes the machine binds the table
+
+The table carries the digest of the run that wrote it, so it is written by each route that writes
+drift-headed files, bound to the digest those files' headers carry (`sce_build::bind_run_digest`):
+`sce-codegen generate`, `orchestrate` for each document of the set, and `generate-w3c` for each
+fixture. An in-line child (`<invoke><content><scxml sce:transition-table="emit">`) declares it as a
+root does: its machine is a file of the run beside its parent's, at any depth, on all three routes,
+and its table is in its machine with the hash its machine's header carries. The three prepare the
+child through one library operation (`sce_build::carried_children`), so a child's table is the same
+whichever route wrote it. The C++ conformance suite takes a fixture's in-line children from the
+fixture's own `generate`. `check` renders the table where `generate` and `orchestrate` would, a
+child's included, and writes nothing.
+
+The library entry points compute no digest, so they cannot write the table: a document that
+declares it, or whose in-line child does, is refused there with `generate/source-hash-unavailable`
+rather than handed back as a machine without it, and `compile_scxml_with_imports` writes it when the
+caller gives it `ForgeCompileOptions::source_hash` (SCE Accepted Subset §2.20).
+
 ## What an entry holds
 
 | Field | Meaning |
@@ -165,7 +183,12 @@ NULL and its count zero. Those programs skip on a host without the toolchain; th
 run by the Swift lane (`scripts/gate swift-backend`), on the release `bx.toml` pins and with a skip
 refused. The same file asks each source for the annotation literal
 its language needs, which a read-back cannot, since it unescapes what the template wrote (a bare `$`
-in Kotlin reads back as a `$` and is read by the compiler as an interpolation).
+in Kotlin reads back as a `$` and is read by the compiler as an interpolation). The same file holds
+every route to the table, in every backend it writes: `orchestrate` for a document of a set,
+`generate-w3c` for a fixture (C11 is refused by the route), an in-line child's table under
+`generate` and `orchestrate`, and under `generate-w3c` on every backend whose suite takes the child
+from it (all but C++), each read back and held to the export with the hash of its own file's header;
+and `check` accepting a child's declaration on a document and on a set.
 
 `sce-build/tests/mutations/the_emitted_transition_table_equals_the_export.cases` makes each backend's
 table wrong once in a mutation round, and C's presence flag once more, so the tests above are known

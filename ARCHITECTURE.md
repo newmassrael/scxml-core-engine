@@ -452,6 +452,18 @@ W3C SCXML 3.11 history states implemented as hybrid: static structure with runti
 | `<invoke contentExpr="expr"/>` | AOT parent + Interpreter child | ~100KB |
 | `<invoke srcexpr="pathVar"/>` | Interpreter only | ~200KB |
 
+**In-line children** (`<content><scxml>`, and a standard statechart named by `sce:std/...`):
+the parser carries the child's document on its `<invoke>`, and the parent's machine names the
+child's machine (`<parent>__sce_synth_invoke__<id>`, SCE_MESH.md §9.6.6), so a route that writes
+the parent writes the child, at every depth, beside it. The child is prepared once, by
+`sce_build::carried_children` (analysed, given the host's declarations, bound to the run's
+digest), and emitted by `sce_build::emit_carried_children` (its artifacts, placed in the parent's
+package): `generate`, `check` (which renders and writes nothing), the library entry points and
+the document-set compile `orchestrate` calls all go through it, so a child is one machine
+whichever route wrote it. `generate-w3c` takes the same prepared child and renders it through its
+own backend, as it renders each fixture, because the suite packages every machine of a test
+itself.
+
 **Hybrid Invoke** (`contentExpr`):
 - AOT parent evaluates expression via JSEngine/LuaEngine
 - Creates Interpreter child at runtime via `StateMachine::createFromSCXMLString()`
