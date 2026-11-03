@@ -64,13 +64,16 @@ sce-codegen generate resources/XXX/testXXX.scxml -o /tmp/test_verify/ -l cpp
    is why the parity that used to be checked is now a property of the loop.
 
    Nor is there a list of the files a fixture's generation writes. The route
-   asks `sce-codegen --plan generate` for each generation when the tree is
-   configured (`cmake/SCECodegenPlan.cmake`) and declares the answer: the
-   machine, every child an inline `<invoke>` synthesizes, the machine of every
-   child document the fixture holds (a sub-fixture, a hybrid invoke's stub),
-   and anything a declaration adds, such as the header of a declared
-   transition function. A child document the generation writes and the
-   fixture does not hold stops the configuration, naming how to track it.
+   asks `sce-codegen --plan --plan-children generate` of the fixture when the
+   tree is configured (`cmake/SCECodegenPlan.cmake`) and declares the answer:
+   the machine, every child an inline `<invoke>` synthesizes, and anything a
+   declaration adds, such as the header of a declared transition function,
+   then the generation of every child document the fixture's generation
+   writes or stages, each declared from the plan that answer holds for it. A
+   sub-fixture the author wrote beside the fixture is staged from
+   `resources/<id>/`; a hybrid invoke's stub is written by the fixture's
+   generation and planned from the text it would write, so nothing of it is
+   tracked (`hybrid_stubs_are_written_only_by_the_generator`).
 
    ⚠ This step used to say to hand-write one call per test and to remove the
    id from `W3C_INTERPRETER_ONLY_TESTS`. Measured 2026-09-11 and all three
