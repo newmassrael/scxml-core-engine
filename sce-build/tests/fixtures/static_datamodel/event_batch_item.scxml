@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One item of a batch (docs/adr/0086, section 14.1): a record of a number of each
+  width class, a bounded text, a value of an enum, a value that may be absent, a
+  bounded byte string and a bounded list of bounded texts, so a record holds a
+  list. Every bound is written in the type it bounds. Held by `event_batch.scxml`'s
+  `items`. `legacy_bound_spelling.scxml` is this schema with its outermost bounds
+  written as the attributes they replace.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_batch_item"
+       sce:event-name="batch.item">
+  <sce:import src="enum_signal_level.scxml" kind="enum" as="SignalLevel"/>
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="amount" sce:type="int64" sce:direction="in"/>
+    <data id="label" sce:type="string[8]" sce:direction="in"/>
+    <data id="level" sce:type="enum:SignalLevel" sce:direction="in"/>
+    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+    <data id="blob" sce:type="bytes[4]" sce:direction="in"/>
+    <data id="tags" sce:type="list&lt;string[8]&gt;[4]" sce:direction="in"/>
+  </datamodel>
+</scxml>

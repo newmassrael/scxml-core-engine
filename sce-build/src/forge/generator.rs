@@ -640,10 +640,24 @@ pub struct ImportContext {
     /// nothing. `None` for every other import. Not template context.
     #[serde(skip)]
     pub transform_state_read: Option<crate::forge::previous_value::FirstRead>,
-    /// For an imported `sce:kind="event-schema"`: the record type an
-    /// algorithm's `record:<alias>` names. `None` for every other import.
+    /// For an imported `sce:kind="event-schema"` each of whose fields is one
+    /// entry: the record type an algorithm's `record:<alias>` names. `None` for
+    /// every other import, and for a schema whose field is a composition
+    /// ([`Self::record_composed`]).
     #[serde(skip)]
     pub record: Option<RecordImport>,
+    /// For an imported `sce:kind="event-schema"`: the record as the one type
+    /// grammar reads it, every field of any type and the scope its own document
+    /// names types in (docs/adr/0086). What a type that holds the record is
+    /// sized by ([`import_type_scope`]). `None` for every other import.
+    #[serde(skip)]
+    pub record_type: Option<crate::forge::value_type::ScopedRecord>,
+    /// For an imported `sce:kind="event-schema"` whose field is a list, a
+    /// record or an optional over either: the sentence an algorithm that names
+    /// the record is refused by, since no algorithm holds such a record yet
+    /// (docs/adr/0086, section 7.3). `None` for every other import.
+    #[serde(skip)]
+    pub record_composed: Option<String>,
 
     /// For an imported algorithm whose signature has a record slot or an
     /// optional slot (docs/adr/0055) and no list slot: the whole signature,
@@ -1306,6 +1320,8 @@ fn resolve_single_import(
         enum_from_number: String::new(),
         transform_state_read: None,
         record: None,
+        record_type: None,
+        record_composed: None,
         enum_slots: None,
     }
 }
@@ -3480,37 +3496,33 @@ fn c11_found_reading(name: &str, value: &str, params: &str, about: &str, body: &
     )
 }
 
-/// The enums an event schema's fields name, as the schema's imports resolve
-/// them: what the size of its payload reads (docs/adr/0086, section 2). No
-/// record is resolved here: no event schema's field holds a record yet (the
-/// parser refuses a composition by name), and a record's own fields name enums
-/// by the aliases of its own document, which these imports do not carry.
-struct SchemaImportTypes<'a>(&'a [ImportContext]);
-
-impl SchemaImportTypes<'_> {
-    fn enum_import(&self, alias: &str) -> Option<&ImportContext> {
-        self.0.iter().find(|i| i.kind == "enum" && i.alias == alias)
+/// The enums and records a document's aliases name, as its imports resolved
+/// them: what the size of a type the document writes reads (docs/adr/0086,
+/// section 2). Each record carries the scope of its own document
+/// ([`ImportContext::record_type`]), so its fields are sized by the enums and
+/// records its own aliases name. An enum declares at least one variant, so an
+/// import that carries none, or no underlying type, was not read from its
+/// document, and is left out: a type that names it has no size.
+fn import_type_scope(imports: &[ImportContext]) -> crate::forge::value_type::TypeScope {
+    use crate::forge::value_type::{ScopedEnum, TypeScope};
+    let mut scope = TypeScope::default();
+    for import in imports {
+        if import.kind == "enum" && !import.enum_variants.is_empty() {
+            if let Some(underlying) = &import.enum_underlying {
+                scope.enums.insert(
+                    import.alias.clone(),
+                    ScopedEnum {
+                        names: import.enum_variants.clone(),
+                        underlying: underlying.clone(),
+                    },
+                );
+            }
+        }
+        if let Some(record) = &import.record_type {
+            scope.records.insert(import.alias.clone(), record.clone());
+        }
     }
-}
-
-impl crate::forge::value_type::TypeEnv for SchemaImportTypes<'_> {
-    fn record_fields(
-        &self,
-        _alias: &str,
-    ) -> Option<Vec<(String, crate::forge::value_type::ValueType)>> {
-        None
-    }
-    /// An enum declares at least one variant, so an import that carries none
-    /// was not read from its document, and its names are not known.
-    fn enum_names(&self, alias: &str) -> Option<Vec<String>> {
-        self.enum_import(alias)
-            .map(|i| i.enum_variants.clone())
-            .filter(|names| !names.is_empty())
-    }
-    fn enum_underlying(&self, alias: &str) -> Option<SceType> {
-        self.enum_import(alias)
-            .and_then(|i| i.enum_underlying.clone())
-    }
+    scope
 }
 
 fn render_event_schema(
@@ -3519,6 +3531,22 @@ fn render_event_schema(
     imports: &[ImportContext],
     _lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
+    // Each field's type as the one type grammar reads it (docs/adr/0086,
+    // section 1): what the unit's sizes are computed from.
+    let typed: Vec<(String, crate::forge::value_type::ValueType)> = m
+        .fields
+        .iter()
+        .map(|f| (f.id.clone(), f.sce_type.clone()))
+        .collect();
+    // The unit's struct spells each field as one entry: a field that is a list, a
+    // record or an optional over either is refused by name (docs/adr/0086,
+    // section 7.3).
+    let m = &m.entry_schema().map_err(|composed| {
+        ForgeError::from(GenerateError::unsupported(composed.sentence(
+            &m.name,
+            &format!("the {} schema unit", _lang.canonical_name()),
+        )))
+    })?;
     // A field that may be absent (docs/adr/0055) is held in the backend's
     // optional type over its present value's where an algorithm's record holds
     // one on that backend ([`algorithm_optional_spelled`]), the struct an
@@ -3733,28 +3761,6 @@ fn render_event_schema(
     ctx.insert("schema_revision".into(), m.revision().into());
     // C has no namespace: the unit's constants carry the schema's name.
     ctx.insert("c_const_prefix".into(), to_upper_snake(&m.name).into());
-    // Each field's type as the one type grammar reads it (docs/adr/0086,
-    // section 1): what the unit's sizes are computed from.
-    let typed: Vec<(String, crate::forge::value_type::ValueType)> = m
-        .fields
-        .iter()
-        .map(|f| {
-            crate::forge::value_type::ValueType::of_field(
-                &f.sce_type,
-                f.max_size,
-                f.limit.as_deref(),
-            )
-            .map(|ty| (f.id.clone(), ty))
-            .ok_or_else(|| {
-                ForgeError::from(GenerateError::unsupported(format!(
-                    "{}: the field `{}` is a text or a byte string that states no bound, and \
-                     every text and byte string of an event schema states one (docs/adr/0086, \
-                     section 1.4)",
-                    m.name, f.id
-                )))
-            })
-        })
-        .collect::<Result<_, ForgeError>>()?;
     // The outer bound of each field that has a length, as the build resolved it
     // (`[name=N]`, so `--limit` moves the constant with the buffer), named after
     // the field: the most bytes of a text or a byte string (`<FIELD>_MAX_SIZE`),
@@ -3792,7 +3798,7 @@ fn render_event_schema(
     // section 2.2). What a host sizes a buffer the event's data is written into
     // by, and a C11 machine its slot.
     let data_max_len =
-        crate::forge::value_type::payload_json_max_len(&typed, &SchemaImportTypes(imports))
+        crate::forge::value_type::payload_json_max_len(&typed, &import_type_scope(imports))
             .map_err(|refusal| {
                 ForgeError::from(GenerateError::unsupported(format!(
                     "{}: the largest payload of the event has no size the build can compute: \
@@ -4263,7 +4269,7 @@ match event {{\n{lift_arms}            _ => {{}}\n        }}\n        Ok(())\n  
 /// primitive fields only, so no enum-alias arm is hit. An optional field
 /// (docs/adr/0055) is the backend's optional type over the type its present
 /// value is ([`rust_record_present_type`]).
-fn rust_record_field_type(l: &LangCtx, f: &SchemaField) -> String {
+fn rust_record_field_type(l: &LangCtx, f: &EntryField) -> String {
     let present = rust_record_present_type(l, f);
     match f.sce_type {
         // An optional field is held in the backend's one optional type over its
@@ -4278,7 +4284,7 @@ fn rust_record_field_type(l: &LangCtx, f: &SchemaField) -> String {
 /// The Rust type a present value of one field of a typed record is generated as
 /// ([`rust_record_field_type`]): the field's own type, or the type an optional
 /// field holds when it is present.
-fn rust_record_present_type(l: &LangCtx, f: &SchemaField) -> String {
+fn rust_record_present_type(l: &LangCtx, f: &EntryField) -> String {
     match f.sce_type.present_type() {
         SceType::Bytes => {
             let cap = crate::forge::limits::resolve_bytes_max(f.max_size);
@@ -4336,7 +4342,7 @@ fn rust_enum_lift(
 }
 
 /// [`rust_record_field_type`] for a caller outside this module.
-pub(crate) fn rust_record_type(f: &SchemaField) -> String {
+pub(crate) fn rust_record_type(f: &EntryField) -> String {
     rust_record_field_type(&LangCtx::primitive(crate::generator::Language::Rust), f)
 }
 
@@ -4347,7 +4353,7 @@ pub(crate) fn rust_record_type(f: &SchemaField) -> String {
 /// ⚠ JSON has no byte string, so a `bytes` field rides as its byte-exact
 /// Latin-1 text (`PayloadFields::bytes` reads it back the same way), and a
 /// text is quoted and escaped.
-pub(crate) fn rust_record_wire(fields: &[SchemaField], receiver: &str, indent: &str) -> String {
+pub(crate) fn rust_record_wire(fields: &[EntryField], receiver: &str, indent: &str) -> String {
     rust_record_wire_of(fields, receiver, indent, &[])
 }
 
@@ -4355,7 +4361,7 @@ pub(crate) fn rust_record_wire(fields: &[SchemaField], receiver: &str, indent: &
 /// (`static_enums`): it rides as the variant's declared name, quoted, as a
 /// saved state holds it.
 fn rust_record_wire_of(
-    fields: &[SchemaField],
+    fields: &[EntryField],
     receiver: &str,
     indent: &str,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
@@ -4489,7 +4495,7 @@ pub(crate) struct C11RecordWire {
     pub args: String,
 }
 
-pub(crate) fn c11_record_wire(fields: &[SchemaField], receiver: &str) -> C11RecordWire {
+pub(crate) fn c11_record_wire(fields: &[EntryField], receiver: &str) -> C11RecordWire {
     c11_record_wire_of(fields, receiver, &[])
 }
 
@@ -4498,7 +4504,7 @@ pub(crate) fn c11_record_wire(fields: &[SchemaField], receiver: &str) -> C11Reco
 /// state holds it. A value no variant names is one the writer refuses, as it
 /// refuses a real that is not finite.
 fn c11_record_wire_of(
-    fields: &[SchemaField],
+    fields: &[EntryField],
     receiver: &str,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> C11RecordWire {
@@ -4669,7 +4675,7 @@ if (_name_{id} == NULL) {{\n        return false;\n    }}\n"
 /// byte string, as a record's field is, and the element's own type otherwise —
 /// the machine's type for an enum. What [`crate::forge::static_lowering::optional_present`]
 /// answers for the C11 target, so a payload's field and a record's are one type.
-fn c11_optional_present(l: &LangCtx, elem: &SceType, f: &SchemaField) -> String {
+fn c11_optional_present(l: &LangCtx, elem: &SceType, f: &EntryField) -> String {
     match (elem, f.max_size) {
         (SceType::String, Some(bound)) => {
             crate::forge::static_lowering::c_string_storage_type(bound)
@@ -4681,7 +4687,7 @@ fn c11_optional_present(l: &LangCtx, elem: &SceType, f: &SchemaField) -> String 
 
 /// [`c11_payload_field_decl`] for a caller outside this module, which has no
 /// [`LangCtx`] of its own: the primitive C11 context.
-pub(crate) fn c11_record_field_decl(f: &SchemaField) -> String {
+pub(crate) fn c11_record_field_decl(f: &EntryField) -> String {
     c11_payload_field_decl(&LangCtx::primitive(crate::generator::Language::C11), f)
 }
 
@@ -4695,7 +4701,7 @@ pub(crate) fn c11_record_field_decl(f: &SchemaField) -> String {
 /// the native guard reads `<id>` and `<id>_len` (see the C bytes-equality
 /// lowering in [`crate::forge::expr`]). RFC §bytesguard-3 B4. Every other field type
 /// is a self-contained scalar via [`LangCtx::type_name`].
-fn c11_payload_field_decl(l: &LangCtx, f: &SchemaField) -> String {
+fn c11_payload_field_decl(l: &LangCtx, f: &EntryField) -> String {
     // An optional field (docs/adr/0055) is the struct `sce/forge/optional.h`
     // declares over its present value's type, which a text holds in the buffer of
     // its bound, so a record taken whole from the payload holds the same type.
@@ -4791,7 +4797,7 @@ return false;\n        }}\n    }}\n",
 /// is carried by every delivery. The payload was zeroed before the lift, so an
 /// absent field's value is zero, as an absent value always is.
 fn c11_optional_payload_read(
-    f: &SchemaField,
+    f: &EntryField,
     elem: &SceType,
     event: &str,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
@@ -5182,7 +5188,7 @@ pub struct GoEventPayload {
 /// a field that was widened in its schema cannot keep being read at the old
 /// width — the generated call stops compiling instead.
 fn go_payload_reader(
-    f: &SchemaField,
+    f: &EntryField,
     obj: &str,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> String {
@@ -5215,7 +5221,7 @@ fn go_payload_present_type(
 /// [`go_payload_reader`] of the present value of `f`: the call that reads it at
 /// the width its schema declares.
 fn go_payload_present_reader(
-    f: &SchemaField,
+    f: &EntryField,
     obj: &str,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> String {
@@ -5311,7 +5317,7 @@ pub(crate) fn go_payload_wire_value(ty: &SceType, value: &str) -> String {
 /// ⚠ JSON has no byte string, so a `bytes` field rides as its byte-exact
 /// Latin-1 text and `sce.PayloadBytes` reads it back the same way.
 fn go_payload_data_value(
-    f: &SchemaField,
+    f: &EntryField,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> String {
     let present = |value: &str| go_payload_wire_value(f.sce_type.present_type(), value);
@@ -5589,7 +5595,7 @@ pub struct SwiftEventPayload {
 /// carries the type, so a field widened in its schema cannot keep being read at the
 /// old width.
 fn swift_payload_reader(
-    f: &SchemaField,
+    f: &EntryField,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> String {
     let present = swift_payload_present_reader(f, static_enums);
@@ -5610,7 +5616,7 @@ fn swift_payload_reader(
 
 /// [`swift_payload_reader`] of the present value of `f`.
 fn swift_payload_present_reader(
-    f: &SchemaField,
+    f: &EntryField,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> String {
     let id = &f.id;
@@ -5647,7 +5653,7 @@ fn swift_payload_present_reader(
 
 /// The `PayloadPair` that spells one EventSchema field for the inject seam's `data`,
 /// the wire the script engine binds `_event.data` from.
-pub(crate) fn swift_payload_pair(f: &SchemaField) -> String {
+pub(crate) fn swift_payload_pair(f: &EntryField) -> String {
     let id = &f.id;
     // An optional field is written as `null` where it is absent and as its present
     // value's wire value where it is present, the key always written
@@ -5906,7 +5912,7 @@ fn cpp_event_enum_value(event: &str) -> String {
 /// The width comes from the field's own declared type (the out-parameter), so a
 /// field that was widened in its schema cannot keep being read at the old
 /// width — the generated call stops compiling instead.
-fn cpp_payload_reader(f: &SchemaField, into: &str) -> String {
+fn cpp_payload_reader(f: &EntryField, into: &str) -> String {
     let id = &f.id;
     // An optional field's present value is read at its element's width, into
     // the local the lift holds it in ([`cpp_payload_field_lift`]).
@@ -5938,7 +5944,7 @@ fn cpp_payload_reader(f: &SchemaField, into: &str) -> String {
 /// held. A delivery that lacks the key of either is refused, since every field
 /// of the first revision is carried.
 fn cpp_payload_field_lift(
-    f: &SchemaField,
+    f: &EntryField,
     present: &str,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> String {
@@ -5977,7 +5983,7 @@ payload.{id} = held;\n            \
 /// is named by its id: a present value at the spelling its type deserves, and an
 /// optional one (docs/adr/0055) as `null` where it is absent, the key always
 /// written.
-pub(crate) fn cpp_payload_data_item(f: &SchemaField) -> String {
+pub(crate) fn cpp_payload_data_item(f: &EntryField) -> String {
     let id = &f.id;
     // An enum rides as the name its document declares for the value, which the
     // enum's `sceLogName` answers; a 64-bit integer as the text of its digits.
@@ -6265,7 +6271,7 @@ pub struct KotlinEventPayload {
 /// The width is in the method name rather than in a cast, so a field that was
 /// widened in its schema cannot keep being read at the old width — the
 /// generated call stops compiling instead.
-fn kotlin_payload_reader(f: &SchemaField, l: &LangCtx) -> String {
+fn kotlin_payload_reader(f: &EntryField, l: &LangCtx) -> String {
     let present = kotlin_payload_present_reader(f, l);
     match &f.sce_type {
         EntryType::Scalar(_) => present,
@@ -6280,7 +6286,7 @@ fn kotlin_payload_reader(f: &SchemaField, l: &LangCtx) -> String {
 
 /// [`kotlin_payload_reader`] of the present value of `f`: the call that reads it
 /// at the width its schema declares.
-fn kotlin_payload_present_reader(f: &SchemaField, l: &LangCtx) -> String {
+fn kotlin_payload_present_reader(f: &EntryField, l: &LangCtx) -> String {
     let id = &f.id;
     let present = f.sce_type.present_type();
     // An enum is the machine's own, lifted from the variant's declared name; a
@@ -27973,7 +27979,7 @@ pub fn generate_swift_with_imports(
 pub(crate) fn unlowered_in_part(
     doc: &ForgeDocument,
     imports: &[ForgeImport],
-    schema_fields: &dyn Fn(&ForgeImport) -> Option<SchemaFields>,
+    schema_fields: &dyn Fn(&ForgeImport) -> Option<EntryFields>,
     import_unlowered: &dyn Fn(&ForgeImport) -> Option<String>,
 ) -> Vec<(crate::generator::Language, String)> {
     use crate::generator::Language;
@@ -28011,7 +28017,7 @@ pub(crate) fn unlowered_in_part(
 pub(crate) fn swift_unlowered_construct(
     m: &AlgorithmModel,
     imports: &[ForgeImport],
-    schema_fields: &dyn Fn(&ForgeImport) -> Option<SchemaFields>,
+    schema_fields: &dyn Fn(&ForgeImport) -> Option<EntryFields>,
     import_unlowered: &dyn Fn(&ForgeImport) -> Option<String>,
 ) -> Option<String> {
     let views: Vec<SwiftImport> = imports
@@ -28507,6 +28513,17 @@ fn swift_event_schema_unlowered(m: &EventSchemaModel, imports: &[ImportContext])
     if let Some(import) = imports.iter().find(|i| i.kind != "enum") {
         return Some(format!("the <sce:import as=\"{}\">", import.alias));
     }
+    // A field that is a list, a record or an optional over either is a type of the
+    // language the Swift unit does not spell yet (docs/adr/0086, section 7.3).
+    let m = match m.entry_schema() {
+        Ok(m) => m,
+        Err(composed) => {
+            return Some(format!(
+                "the field `{}`, a `{}`,",
+                composed.field, composed.composition.place
+            ))
+        }
+    };
     swift_schema_fields_unlowered(m.fields.iter().map(|f| {
         let enum_unlowered = match f.sce_type.present_type() {
             SceType::Enum(reference) => imports
@@ -28567,7 +28584,7 @@ pub(crate) struct SwiftImport {
 /// What an import of an algorithm names, as far as the Swift backend writes it.
 pub(crate) enum SwiftImportKind {
     /// An event schema, with its fields: the unit a record of it is typed by.
-    Schema(SchemaFields),
+    Schema(EntryFields),
     /// An algorithm, called as a static member of the enum its own unit declares. The
     /// unit exists only when the callee is itself written for Swift, so `unlowered`
     /// says what of the callee is not (`None` when all of it is): a caller is refused
@@ -28584,7 +28601,7 @@ pub(crate) enum SwiftImportKind {
 /// The `(id, type, enum)` fields of an event schema, in declaration order: for a field
 /// of an enum, `enum` says what of that enum the Swift backend does not write
 /// ([`swift_schema_fields_unlowered`]).
-pub(crate) type SchemaFields = Vec<(String, EntryType, Option<String>)>;
+pub(crate) type EntryFields = Vec<(String, EntryType, Option<String>)>;
 
 /// The imports a generation resolved, as the Swift lowering reads them.
 fn swift_imports_of_context(imports: &[ImportContext]) -> Vec<SwiftImport> {
@@ -33874,7 +33891,7 @@ fn c11_schema_field_optional(
     l: &LangCtx,
     imports: &[ImportContext],
     elem: &SceType,
-    field: &SchemaField,
+    field: &EntryField,
 ) -> Result<C11OptionalElem, ForgeError> {
     match (elem, field.max_size) {
         (SceType::String, Some(bound)) => {
@@ -34000,9 +34017,14 @@ fn resolve_record<'i>(
             .into(),
         )
     };
-    let record = imports
-        .iter()
-        .find(|imp| imp.alias == alias)
+    let import = imports.iter().find(|imp| imp.alias == alias);
+    // A schema whose field is a list, a record or an optional over either is a
+    // record no algorithm holds yet, refused by name (docs/adr/0086, section 7.3).
+    if let Some(composed) = import.and_then(|imp| imp.record_composed.as_ref()) {
+        return Err(WrittenAt::value(spelling)
+            .place_reporting(GenerateError::unsupported(composed.clone()).into()));
+    }
+    let record = import
         .and_then(|imp| imp.record.as_ref())
         .ok_or_else(|| refuse(format!("an import `{alias}` of kind event-schema")))?;
     // A schema with no field is a contract about an event that carries no
@@ -41359,8 +41381,8 @@ mod tests {
     /// present value as its own wire spelling; a field of `T` is as it was.
     #[test]
     fn a_python_payload_holds_an_optional_field_as_none_or_its_value() {
-        use crate::forge::model::{Direction, EntryType, EventSchemaModel, SchemaField};
-        let field = |id: &str, sce_type: EntryType, max_size: Option<u32>| SchemaField {
+        use crate::forge::model::{Direction, EntryField, EntrySchema, EntryType};
+        let field = |id: &str, sce_type: EntryType, max_size: Option<u32>| EntryField {
             id: id.to_string(),
             sce_type,
             direction: Direction::In,
@@ -41386,7 +41408,7 @@ mod tests {
         };
         model.imported_event_schemas.insert(
             "due.set".to_string(),
-            EventSchemaModel {
+            EntrySchema {
                 name: "schema_due".to_string(),
                 event_name: "due.set".to_string(),
                 fields: vec![
@@ -41819,6 +41841,8 @@ mod tests {
             enum_from_number: String::new(),
             transform_state_read: None,
             record: None,
+            record_type: None,
+            record_composed: None,
             enum_slots: None,
         }
     }
@@ -42711,6 +42735,8 @@ mod tests {
                 enum_from_number: String::new(),
                 transform_state_read: None,
                 record: None,
+                record_type: None,
+                record_composed: None,
                 enum_slots: None,
             },
             ImportContext {
@@ -42771,6 +42797,8 @@ mod tests {
                 enum_from_number: String::new(),
                 transform_state_read: None,
                 record: None,
+                record_type: None,
+                record_composed: None,
                 enum_slots: None,
             },
         ];

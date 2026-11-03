@@ -5,7 +5,7 @@
 // schema visibility resolver.
 //
 // Resolves `_event.data.<field>` member-access expressions in transition
-// `cond` attributes against the [`EventSchemaModel`] declared for the
+// `cond` attributes against the [`EntrySchema`] declared for the
 // transition's `event`. Unknown fields surface as
 // `validation/cross-kind-field-not-found` (with did-you-mean candidates
 // drawn from the schema's declared field names). Type mismatches in
@@ -60,9 +60,7 @@ use crate::forge::expr::{
     ExprKind, ExprTarget, TypedExpr, UnaryOp,
 };
 use crate::forge::expression_site::ExpressionSite;
-use crate::forge::model::{
-    EntryType, EnumModel, EventSchemaModel, ForgeKind, SceType, SchemaField,
-};
+use crate::forge::model::{EntryField, EntrySchema, EntryType, EnumModel, ForgeKind, SceType};
 use crate::forge::types::{InferredType, TypeCtx};
 use crate::model::{Action, Param, SCXMLModel, Transition};
 
@@ -80,7 +78,7 @@ pub(crate) const EVENT_DATA_PATH: &str = "_event.data";
 
 /// Per-statechart schema-visibility resolution — resolve
 /// a statechart's `<sce:import>` declarations into the per-statechart
-/// `event_name → EventSchemaModel` map consumed by the receive-side
+/// `event_name → EntrySchema` map consumed by the receive-side
 /// and send-side validators.
 ///
 /// `event_schemas_by_doc_name` is the orchestrator's build-wide
@@ -110,7 +108,7 @@ pub(crate) const EVENT_DATA_PATH: &str = "_event.data";
 ///     and silently skips the second (the pipeline-level rejection
 ///     is the load-bearing diagnostic).
 ///
-/// Returns the per-statechart `event_name → EventSchemaModel` view.
+/// Returns the per-statechart `event_name → EntrySchema` view.
 /// Empty when the statechart declares no event-schema imports (the
 /// schemaless-fallback path keeps cost at zero).
 /// Each `<sce:import kind="event-schema">` of `scxml` whose document was
@@ -119,8 +117,8 @@ pub(crate) const EVENT_DATA_PATH: &str = "_event.data";
 /// about which schemas a statechart imports.
 fn imported_schemas<'a>(
     scxml: &'a SCXMLModel,
-    event_schemas_by_doc_name: &'a BTreeMap<String, EventSchemaModel>,
-) -> impl Iterator<Item = (&'a str, &'a EventSchemaModel)> {
+    event_schemas_by_doc_name: &'a BTreeMap<String, EntrySchema>,
+) -> impl Iterator<Item = (&'a str, &'a EntrySchema)> {
     scxml
         .forge_imports
         .iter()
@@ -138,8 +136,8 @@ fn imported_schemas<'a>(
 /// variables are typed by these (SCE Accepted Subset §2.15).
 pub fn resolve_imported_records(
     scxml: &SCXMLModel,
-    event_schemas_by_doc_name: &BTreeMap<String, EventSchemaModel>,
-) -> BTreeMap<String, EventSchemaModel> {
+    event_schemas_by_doc_name: &BTreeMap<String, EntrySchema>,
+) -> BTreeMap<String, EntrySchema> {
     let mut resolved = BTreeMap::new();
     for (alias, schema) in imported_schemas(scxml, event_schemas_by_doc_name) {
         resolved
@@ -153,14 +151,14 @@ pub fn resolve_imported_records(
 ///
 /// A schema with no field is a contract about an event that carries no data
 /// (or nothing settled), and no backend emits a payload struct for it
-/// ([`EventSchemaModel::carries_payload`]) — so there is no record type for
+/// ([`EntrySchema::carries_payload`]) — so there is no record type for
 /// the variable to have. Judged at the import seam, next to the resolution
 /// that finds the schema, and not in the static data model's own pass: the
 /// same alias reaches a host-run request and an algorithm's local by other
 /// routes, each refusing in its own words, and this is the statechart's.
 pub fn check_records_carry_payload(
     scxml: &SCXMLModel,
-    records: &BTreeMap<String, EventSchemaModel>,
+    records: &BTreeMap<String, EntrySchema>,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     let variables = scxml.variables.iter().chain(
@@ -214,9 +212,9 @@ pub fn check_records_carry_payload(
 
 pub fn resolve_imported_event_schemas(
     scxml: &SCXMLModel,
-    event_schemas_by_doc_name: &BTreeMap<String, EventSchemaModel>,
-) -> BTreeMap<String, EventSchemaModel> {
-    let mut resolved: BTreeMap<String, EventSchemaModel> = BTreeMap::new();
+    event_schemas_by_doc_name: &BTreeMap<String, EntrySchema>,
+) -> BTreeMap<String, EntrySchema> {
+    let mut resolved: BTreeMap<String, EntrySchema> = BTreeMap::new();
     for (_, schema) in imported_schemas(scxml, event_schemas_by_doc_name) {
         // First occurrence wins; the per-statechart duplicate-event-
         // name case is rejected upstream as `validation/incompatible-
@@ -434,7 +432,7 @@ pub fn name_schema_enums(model: &mut SCXMLModel) {
 ///     visible without being fatal.
 pub fn lower_typed_guard(
     cond: &str,
-    schema: &EventSchemaModel,
+    schema: &EntrySchema,
     accessor: &str,
     target: ExprTarget,
 ) -> Result<String, crate::forge::expr::Refusal> {
@@ -455,7 +453,7 @@ pub fn lower_typed_guard(
 /// [`TypeCtx`] borrows its keys. The one registration of a typed payload,
 /// shared by [`lower_typed_guard`] and the static data model's scope
 /// ([`crate::forge::type_ctx::StaticScope`]).
-pub(crate) fn event_payload_paths(schema: &EventSchemaModel) -> Vec<(String, InferredType)> {
+pub(crate) fn event_payload_paths(schema: &EntrySchema) -> Vec<(String, InferredType)> {
     schema
         .fields
         .iter()
@@ -494,7 +492,7 @@ pub(crate) fn event_payload_paths(schema: &EventSchemaModel) -> Vec<(String, Inf
 ///
 /// This is the single eligibility rule shared by the engine-need
 /// analyzer and the codegen path so the two never disagree.
-pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
+pub fn schema_is_native_payload_eligible(schema: &EntrySchema) -> bool {
     // An optional field (docs/adr/0055) has no native payload type yet either:
     // the struct would need a carrier for absence, which is each backend's step
     // to declare, so a schema that holds one keeps the dynamic baseline.
@@ -552,7 +550,7 @@ pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
 ///     barrier ahead of it, so a malformed `bytes` guard must be classed
 ///     non-native here, independent of the receive-side validator that
 ///     separately rejects the same forms in the forge codegen path.
-pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool {
+pub fn guard_is_native_lowerable(cond: &str, schema: &EntrySchema) -> bool {
     if !schema_is_native_payload_eligible(schema) {
         return false;
     }
@@ -583,7 +581,7 @@ pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool 
 /// `bytes` field are transparently recursed/accepted — the
 /// pure-typed-payload check (c) has already excluded everything but typed
 /// fields, literals, and operators.
-fn bytes_comparisons_are_native_representable(ast: &TypedExpr, schema: &EventSchemaModel) -> bool {
+fn bytes_comparisons_are_native_representable(ast: &TypedExpr, schema: &EntrySchema) -> bool {
     match &ast.kind {
         ExprKind::Binary { op, left, right } => {
             for (field_side, other) in [(left, right), (right, left)] {
@@ -798,7 +796,7 @@ fn cond_is_pure_typed_payload(expr: &TypedExpr) -> bool {
 /// Per-statechart receive-side typecheck.
 ///
 /// `imported_schemas` maps SCXML event names (e.g. `"job.completed"`) to
-/// their parsed [`EventSchemaModel`]. The orchestrator builds this map
+/// their parsed [`EntrySchema`]. The orchestrator builds this map
 /// via [`resolve_imported_event_schemas`] from the per-statechart
 /// `<sce:import>` declarations.
 ///
@@ -823,7 +821,7 @@ fn cond_is_pure_typed_payload(expr: &TypedExpr) -> bool {
 /// the offending file.
 pub fn check(
     scxml: &SCXMLModel,
-    imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    imported_schemas: &BTreeMap<String, EntrySchema>,
     imported_enums: &BTreeMap<String, EnumModel>,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
@@ -850,7 +848,7 @@ pub fn check(
 
 fn check_transition(
     transition: &Transition,
-    imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    imported_schemas: &BTreeMap<String, EntrySchema>,
     imported_enums: &BTreeMap<String, EnumModel>,
     statechart_name: &str,
     diag_label: &str,
@@ -910,7 +908,7 @@ fn check_transition(
 /// access, additionally verify primitive-literal type compatibility.
 fn walk_for_event_data_refs(
     expr: &TypedExpr,
-    schema: &EventSchemaModel,
+    schema: &EntrySchema,
     imported_enums: &BTreeMap<String, EnumModel>,
     transition: &Transition,
     statechart_name: &str,
@@ -1139,8 +1137,8 @@ fn is_event_data_object(expr: &TypedExpr) -> bool {
 /// walker — this helper is purely for downstream typecheck dispatch).
 fn extract_event_data_field<'s>(
     expr: &TypedExpr,
-    schema: &'s EventSchemaModel,
-) -> Option<&'s SchemaField> {
+    schema: &'s EntrySchema,
+) -> Option<&'s EntryField> {
     let ExprKind::Member { object, property } = &expr.kind else {
         return None;
     };
@@ -1155,7 +1153,7 @@ fn extract_event_data_field<'s>(
 /// candidates drawn from the schema's declared field names. `reference`
 /// is the `_event.data.<field>` access as the guard spells it.
 fn resolve_field(
-    schema: &EventSchemaModel,
+    schema: &EntrySchema,
     field_name: &str,
     reference: Option<Written<'_>>,
     transition: &Transition,
@@ -1203,7 +1201,7 @@ fn resolve_field(
 /// existing typed-expression pipeline catches deeper mismatches at
 /// codegen).
 fn check_comparison_type(
-    field: &SchemaField,
+    field: &EntryField,
     other_operand: &TypedExpr,
     imported_enums: &BTreeMap<String, EnumModel>,
     transition: &Transition,
@@ -1337,7 +1335,7 @@ fn classify_bytes_comparison(op: BinOp, other: &TypedExpr) -> BytesComparisonFor
 /// are the comparison operator and the partner operand of `field`, and
 /// `operator` is that operator as the guard spells it.
 fn reject_non_representable_bytes(
-    field: &SchemaField,
+    field: &EntryField,
     op: BinOp,
     operator: Option<Written<'_>>,
     other: &TypedExpr,
@@ -1789,7 +1787,7 @@ fn located_expr_on_transition(
 /// Walks every `<send event="X">` / `<raise event="X">` executable-
 /// content action reachable from the SCXML's state graph and verifies
 /// each `<param name="F" expr="..."/>` against the imported
-/// [`EventSchemaModel`] for `X`:
+/// [`EntrySchema`] for `X`:
 ///
 /// * `<param name="F">` whose `F` is not a declared field on the
 ///   schema → [`ValidationError::EventPayloadFieldUnknown`] with the
@@ -1818,7 +1816,7 @@ fn located_expr_on_transition(
 /// or the first failing diagnostic.
 pub fn check_send_side(
     scxml: &SCXMLModel,
-    imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    imported_schemas: &BTreeMap<String, EntrySchema>,
     imported_enums: &BTreeMap<String, EnumModel>,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
@@ -1889,7 +1887,7 @@ pub fn check_send_side(
 /// still surfaces for typecheck.
 fn walk_actions(
     actions: &[Action],
-    imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    imported_schemas: &BTreeMap<String, EntrySchema>,
     imported_enums: &BTreeMap<String, EnumModel>,
     statechart_name: &str,
     diag_label: &str,
@@ -1926,7 +1924,7 @@ fn walk_actions(
 /// schema (schemaless fallback).
 fn check_send_action(
     action: &Action,
-    imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    imported_schemas: &BTreeMap<String, EntrySchema>,
     imported_enums: &BTreeMap<String, EnumModel>,
     statechart_name: &str,
     diag_label: &str,
@@ -1974,7 +1972,7 @@ fn check_send_action(
 fn check_send_param(
     param: &Param,
     action: &Action,
-    schema: &EventSchemaModel,
+    schema: &EntrySchema,
     imported_enums: &BTreeMap<String, EnumModel>,
     statechart_name: &str,
     diag_label: &str,
@@ -2154,8 +2152,8 @@ mod tests {
     use crate::forge::error::ExprError;
     use crate::forge::model::{Direction, EnumModel, EnumRef, EnumVariant, SceType};
 
-    fn field(id: &str, ty: SceType) -> SchemaField {
-        SchemaField {
+    fn field(id: &str, ty: SceType) -> EntryField {
+        EntryField {
             id: id.to_string(),
             sce_type: EntryType::Scalar(ty),
             direction: Direction::In,
@@ -2176,8 +2174,8 @@ mod tests {
         }
     }
 
-    fn schema(event: &str, fields: Vec<SchemaField>) -> EventSchemaModel {
-        EventSchemaModel {
+    fn schema(event: &str, fields: Vec<EntryField>) -> EntrySchema {
+        EntrySchema {
             name: format!("{event}_schema"),
             event_name: event.to_string(),
             fields,
@@ -2223,12 +2221,12 @@ mod tests {
         }
     }
 
-    fn run(schema: EventSchemaModel, cond: &str) -> Result<(), Located<ForgeError>> {
+    fn run(schema: EntrySchema, cond: &str) -> Result<(), Located<ForgeError>> {
         run_with_enums(schema, cond, BTreeMap::new())
     }
 
     fn run_with_enums(
-        schema: EventSchemaModel,
+        schema: EntrySchema,
         cond: &str,
         enums: BTreeMap<String, EnumModel>,
     ) -> Result<(), Located<ForgeError>> {
@@ -2252,10 +2250,7 @@ mod tests {
     /// it. [`run`] hands in an already-parsed AST, so it cannot see how
     /// the validator treats a `cond` that does not parse — which is
     /// exactly where the typed path used to lose its diagnostic.
-    fn run_check_transition(
-        schema: EventSchemaModel,
-        cond: &str,
-    ) -> Result<(), Located<ForgeError>> {
+    fn run_check_transition(schema: EntrySchema, cond: &str) -> Result<(), Located<ForgeError>> {
         let transition = Transition {
             event: schema.event_name.clone(),
             cond: cond.to_string(),

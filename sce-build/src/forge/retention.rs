@@ -43,12 +43,12 @@ struct RetainedField<'a> {
     initial: Option<&'a str>,
     initial_spelling: Option<&'a AttributeSpelling>,
     retained: bool,
-    ty: &'a SceType,
+    ty: SceType,
 }
 
 impl<'a> RetainedField<'a> {
     /// `field`, whose initial value is a value of `ty`.
-    fn of<T>(field: &'a ForgeField<T>, ty: &'a SceType) -> Self {
+    fn of<T>(field: &'a ForgeField<T>, ty: SceType) -> Self {
         Self {
             id: &field.id,
             initial: field.initial.as_deref(),
@@ -60,7 +60,7 @@ impl<'a> RetainedField<'a> {
 
     /// A field of a kind whose fields are scalar by contract.
     fn scalar(field: &'a ForgeField) -> Self {
-        Self::of(field, &field.sce_type)
+        Self::of(field, field.sce_type.clone())
     }
 }
 
@@ -89,11 +89,15 @@ fn fields_of(doc: &ForgeDocument) -> Vec<RetainedField<'_>> {
             .map(RetainedField::scalar)
             .collect(),
         // An optional field's initial value is a value it holds when present
-        // (docs/adr/0055).
+        // (docs/adr/0055). A field whose type is a composition holds no one
+        // value an initial value states, and the parser refuses one on it.
         ForgeDocument::EventSchema(m) => m
             .fields
             .iter()
-            .map(|f| RetainedField::of(f, f.sce_type.present_type()))
+            .filter_map(|f| {
+                let (entry, _) = f.sce_type.entry().ok()?;
+                Some(RetainedField::of(f, entry.present_type().clone()))
+            })
             .collect(),
         _ => Vec::new(),
     }
@@ -170,7 +174,7 @@ pub fn check(
                 col,
             ))
         };
-        match field.ty {
+        match &field.ty {
             SceType::Enum(eref) => {
                 // An unreadable import is silent here; see
                 // `import_source::parse_quietly`.

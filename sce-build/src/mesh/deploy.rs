@@ -7459,7 +7459,7 @@ pub fn validate_event_schemas_cross_machine(
     // comparison worth making.
     let mut machine_to_schemas: BTreeMap<
         &str,
-        &BTreeMap<String, crate::forge::model::EventSchemaModel>,
+        &BTreeMap<String, crate::forge::model::EntrySchema>,
     > = BTreeMap::new();
     for (machine_name, scxml) in &machine_to_scxml {
         machine_to_schemas.insert(*machine_name, &scxml.imported_event_schemas);

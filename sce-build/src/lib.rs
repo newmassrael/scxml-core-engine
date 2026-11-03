@@ -7199,8 +7199,29 @@ fn validate_and_enrich_imports(
             // `record:<alias>` names (SCE_FORGE.md §4.12). Its struct name
             // and its fields are captured here, where the schema is in hand,
             // so the algorithm renders against them without reopening it.
-            if let forge::model::ForgeDocument::EventSchema(sm) = &doc {
-                ctx.record = Some(forge::generator::RecordImport {
+            if let forge::model::ForgeDocument::EventSchema(full) = &doc {
+                // The schema's own imports are written relative to it.
+                let schema_base = source.path.parent().unwrap_or(base_dir);
+                // The record as the one type grammar reads it, sized in its own
+                // document's scope wherever a type holds it (docs/adr/0086).
+                ctx.record_type = Some(forge::import_source::scoped_record(
+                    &source.path,
+                    full,
+                    &parsed.imports,
+                    schema_base,
+                ));
+                // An algorithm holds a record one entry per field: a schema whose
+                // field is a list, a record or an optional over either is named
+                // here and refused by name where an algorithm names it
+                // (docs/adr/0086, section 7.3).
+                let sm = match full.entry_schema() {
+                    Ok(sm) => Some(sm),
+                    Err(composed) => {
+                        ctx.record_composed = Some(composed.sentence(&full.name, "an algorithm"));
+                        None
+                    }
+                };
+                ctx.record = sm.map(|sm| forge::generator::RecordImport {
                     qualified_type: forge::generator::event_schema_payload_type(
                         &sm.name, *language,
                     ),
@@ -7220,7 +7241,7 @@ fn validate_and_enrich_imports(
                                     forge::model::SceType::Enum(reference) => {
                                         forge::static_imports::swift_enum_field_unlowered(
                                             &parsed.imports,
-                                            source.path.parent().unwrap_or(base_dir),
+                                            schema_base,
                                             &reference.alias,
                                         )
                                     }

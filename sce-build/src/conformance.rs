@@ -2835,7 +2835,7 @@ fn enum_carrier(
 /// An event-schema document, and each enum it imports by the alias it imports it
 /// under ([`read_event_schema`]).
 type EventSchemaAndEnums = (
-    crate::forge::model::EventSchemaModel,
+    crate::forge::model::EntrySchema,
     std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
 );
 
@@ -2864,6 +2864,12 @@ fn read_event_schema(path: &Path, label: &str) -> Result<EventSchemaAndEnums, St
             path.display()
         ));
     };
+    // The harness builds and compares a record one field at a time, each one
+    // value: a field that is a list, a record or an optional over either is
+    // refused by name.
+    let model = model
+        .entry_schema()
+        .map_err(|composed| composed.sentence(label, "the conformance harness"))?;
     let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
     let mut enums = std::collections::BTreeMap::new();
     for import in imports.iter().filter(|i| i.kind == ForgeKind::Enum) {

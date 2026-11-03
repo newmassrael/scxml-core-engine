@@ -21,7 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
-use crate::forge::model::{EventSchemaModel, SceType};
+use crate::forge::model::{EntrySchema, SceType};
 use crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM;
 use crate::model::{Invoke, SCXMLModel, UnsupportedInvokeInfo};
 
@@ -29,7 +29,7 @@ use crate::model::{Invoke, SCXMLModel, UnsupportedInvokeInfo};
 /// `imported_records`, the alias → schema map its imports resolved to.
 pub fn validate(
     model: &SCXMLModel,
-    imported_records: &BTreeMap<String, EventSchemaModel>,
+    imported_records: &BTreeMap<String, EntrySchema>,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     // The per-state lists, in document order: they are authoritative, and
@@ -169,7 +169,7 @@ pub fn is_completion_binding(event: &str) -> bool {
 /// The invoke's `<param>`s against the fields of `schema`, one each.
 fn check_request(
     info: &UnsupportedInvokeInfo,
-    schema: &EventSchemaModel,
+    schema: &EntrySchema,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     let refuse = |at: &Option<SourceLocation>, detail: String, observed: &str| {
@@ -269,7 +269,7 @@ fn check_request(
 /// Why the text literal `value` cannot be `field`'s value, if it cannot —
 /// the judgement the runtimes' start sites make on an evaluated text, made
 /// here on the one text known before run time.
-fn literal_misfit(value: &str, field: &crate::forge::model::SchemaField) -> Option<String> {
+fn literal_misfit(value: &str, field: &crate::forge::model::EntryField) -> Option<String> {
     // A text is a present value of the field (docs/adr/0055), so it is judged
     // against what a present value is.
     match field.sce_type.present_type() {

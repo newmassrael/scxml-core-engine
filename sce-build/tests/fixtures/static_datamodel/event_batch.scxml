@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A batch sent as one event (docs/adr/0086, section 14.1): a list of records, each
+  of which holds a list (`event_batch_item.scxml`), under a bound a build may move
+  (`batch_items`); a list of lists; a list of values of an enum; a list of values
+  that may be absent; a list that may be absent; a bounded text; and a list the
+  second revision added, which a delivery of the first reads as empty. Every bound
+  is written in the type it bounds.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_batch"
+       sce:event-name="batch.sent"
+       sce:revision="2">
+  <sce:import src="enum_signal_level.scxml" kind="enum" as="SignalLevel"/>
+  <sce:import src="event_batch_item.scxml" kind="event-schema" as="Item"/>
+  <datamodel>
+    <data id="items" sce:type="list&lt;record:Item&gt;[batch_items=3]" sce:direction="in"/>
+    <data id="grid" sce:type="list&lt;list&lt;uint8&gt;[2]&gt;[2]" sce:direction="in"/>
+    <data id="levels" sce:type="list&lt;enum:SignalLevel&gt;[2]" sce:direction="in"/>
+    <data id="maybe" sce:type="list&lt;optional&lt;uint16&gt;&gt;[2]" sce:direction="in"/>
+    <data id="spare" sce:type="optional&lt;list&lt;uint8&gt;[2]&gt;" sce:direction="in"/>
+    <data id="note" sce:type="string[4]" sce:direction="in"/>
+    <data id="late" sce:type="list&lt;uint8&gt;[2]" sce:direction="in" sce:since="2"/>
+  </datamodel>
+</scxml>

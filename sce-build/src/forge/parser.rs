@@ -12,7 +12,7 @@ use crate::forge::error::{
 };
 use crate::forge::expression_site::{ExpressionSite, WrittenAt};
 use crate::forge::model::*;
-use crate::forge::value_type::{Bound, Composition, TypeRefusal, WrittenType};
+use crate::forge::value_type::{Bound, Composition, TypeRefusal, ValueType, WrittenType};
 use crate::read_ledger;
 use crate::DocumentLabel;
 
@@ -11490,7 +11490,42 @@ fn read_field_revision(
         // An optional field a later revision added may leave its default out:
         // a delivery written before the field existed said nothing of it, which
         // is what absent means, and it reads absent (docs/adr/0055, section 4).
-        (Some(_), None) if field.sce_type.optional_elem().is_some() => {}
+        (Some(_), None) if matches!(field.sce_type, ValueType::Optional { .. }) => {}
+        // A list a later revision added reads empty from an earlier delivery, the
+        // one value meaning the sender said nothing (docs/adr/0086, section 10.2).
+        (Some(_), None) if matches!(field.sce_type, ValueType::List { .. }) => {}
+        // A record has no literal a delivery that lacks it could take: one a later
+        // revision adds is an optional record, which reads absent.
+        (Some(added), None) if matches!(field.sce_type, ValueType::Record { .. }) => {
+            return Err(located(
+                data,
+                doc_name,
+                ValidationError::AttributeRuleViolated {
+                    element,
+                    attr: "sce:since".into(),
+                    value: added.to_string(),
+                    rule: "a field of the first revision, or one a delivery that lacks it \
+                           can read — a record has no literal default, so a record a later \
+                           revision adds is declared optional<record:…> and reads absent"
+                        .into(),
+                },
+            ));
+        }
+        (Some(_), Some(value)) if matches!(field.sce_type, ValueType::List { .. }) => {
+            return Err(located(
+                data,
+                doc_name,
+                ValidationError::AttributeRuleViolated {
+                    element,
+                    attr: "sce:default".into(),
+                    value: value.to_string(),
+                    rule: "no default on a list — a list a later revision added reads empty \
+                           from a delivery that lacks it, the one value meaning the sender \
+                           said nothing (docs/adr/0086, section 10.2)"
+                        .into(),
+                },
+            ));
+        }
         (None, Some(value)) => {
             return Err(located(
                 data,
@@ -11518,8 +11553,26 @@ fn read_field_revision(
         }
         (Some(_), Some(value)) => {
             // A default is a value of what the field holds when present: absence
-            // is never spelled by one (docs/adr/0055).
-            if let Err(unfit) = wire_of(field.sce_type.present_type(), field.max_size, value) {
+            // is never spelled by one (docs/adr/0055). A literal is one value of a
+            // leaf; a composition has none to write.
+            let (entry, bound) = field.sce_type.entry().map_err(|composition| {
+                located(
+                    data,
+                    doc_name,
+                    ValidationError::AttributeRuleViolated {
+                        element: element.clone(),
+                        attr: "sce:default".into(),
+                        value: value.to_string(),
+                        rule: format!(
+                            "a literal of a number, bool, enum, string or bytes — `{}` is a \
+                             {}, which no literal spells",
+                            composition.place, composition.constructor
+                        ),
+                    },
+                )
+            })?;
+            let bound = bound.map(|b| b.max).or(field.max_size);
+            if let Err(unfit) = wire_of(entry.present_type(), bound, value) {
                 let error = match unfit {
                     Unfit::Rule(rule) => ValidationError::AttributeRuleViolated {
                         element,
@@ -11541,8 +11594,12 @@ fn read_field_revision(
     // Read only on an optional field (docs/adr/0055, section 6): written on a
     // field of `T`, nothing reads it, and the parse refuses it as unread.
     let optional_since = match field.sce_type {
-        EntryType::Optional { .. } => read_optional_since(data, &element, since, latest, doc_name)?,
-        EntryType::Scalar(_) => None,
+        ValueType::Optional { .. } => read_optional_since(data, &element, since, latest, doc_name)?,
+        ValueType::Scalar(_)
+        | ValueType::Text { .. }
+        | ValueType::Bytes { .. }
+        | ValueType::Record { .. }
+        | ValueType::List { .. } => None,
     };
     field.since = since;
     field.optional_since = optional_since;
@@ -12364,23 +12421,22 @@ fn legacy_number(
 }
 
 /// Read an event schema's field's `sce:type` through the one type grammar
-/// (docs/adr/0086, section 1): its type, the bound of its text or byte string
-/// and the name of that bound.
+/// (docs/adr/0086, section 1): its type, every bound inside it.
 ///
 /// The outermost bound is the bracket, or its legacy synonym, `sce:max-size`
 /// on a text or a byte string and `sce:max-count` on a list, with the
 /// `sce:limit` beside it. Every text, byte string and list is bounded, the
-/// field's own included (section 1.4). A composition — a list, a record, an
-/// optional over either — is a type of the language that no backend lowers in
-/// a field yet, and is refused by name. A `sce:max-size` beside a type with no
-/// length is kept as the field's bound, as it always was; its rule is the
-/// validators'.
+/// field's own included (section 1.4). Every type of the grammar is a field's
+/// type: a position that does not lower a composition yet refuses it where it
+/// reads the schema (section 7.3), not here. A `sce:max-size` beside a type
+/// with no length is handed back with the `sce:limit` beside it, kept as the
+/// field's bound as it always was; its rule is the validators'.
 fn read_schema_value_type(
     data: &roxmltree::Node,
     doc_name: &str,
     element: &str,
     text: &str,
-) -> Result<(EntryType, Option<u32>, Option<String>), Located<ForgeError>> {
+) -> Result<(ValueType, Option<u32>, Option<String>), Located<ForgeError>> {
     let written = read_written_type(
         data,
         doc_name,
@@ -12406,24 +12462,12 @@ fn read_schema_value_type(
     };
     let (written, unplaced) =
         fold_legacy_bound(data, doc_name, element, ("sce:type", text), written, legacy)?;
-    if let Err(refusal) = written.clone().bounded() {
-        return Err(type_rule_refusal(
-            data, doc_name, element, "sce:type", text, &refusal,
-        ));
-    }
-    let (field_type, bound) = written.as_field_type().map_err(|composition| {
-        composition_refusal(
-            data,
-            doc_name,
-            element,
-            "an event schema's field",
-            &composition,
-        )
+    let value_type = written.bounded().map_err(|refusal| {
+        type_rule_refusal(data, doc_name, element, "sce:type", text, &refusal)
     })?;
-    Ok(match (bound, unplaced) {
-        (Some(bound), _) => (field_type, Some(bound.max), bound.limit),
-        (None, Some(legacy)) => (field_type, Some(legacy.resolved()), legacy.limit),
-        (None, None) => (field_type, None, None),
+    Ok(match unplaced {
+        Some(legacy) => (value_type, Some(legacy.resolved()), legacy.limit),
+        None => (value_type, None, None),
     })
 }
 
@@ -12978,7 +13022,15 @@ fn parse_forge_field(
     // The name itself, kept beside the bound it names, so the generated code names
     // the bound and a statechart reads it by name (docs/adr/0050).
     let limit = max_size.and_then(|_| sce_attr(data, "limit").map(|name| name.trim().to_string()));
-    parse_field_body(data, doc_name, id, sce_type, &present, max_size, limit)
+    parse_field_body(
+        data,
+        doc_name,
+        id,
+        sce_type,
+        Some(&present),
+        max_size,
+        limit,
+    )
 }
 
 /// Parse a field of an event schema from a `<data>` element: what
@@ -12988,7 +13040,10 @@ fn parse_forge_field(
 ///
 /// An optional field declares no `sce:quantity`: a quantity scales a number
 /// every value of the field holds, and a value of an optional field may be
-/// absent, so a field that would be both is refused on the attribute.
+/// absent, so a field that would be both is refused on the attribute. A field
+/// whose type is a composition (a list, a record, an optional over either)
+/// holds no one value a quantity scales or a retained initial value states, so
+/// it declares none of those attributes either.
 fn parse_schema_field(
     data: &roxmltree::Node,
     doc_name: &str,
@@ -12996,7 +13051,33 @@ fn parse_schema_field(
     let (id, type_str) = field_id_and_type(data, doc_name)?;
     let (sce_type, max_size, limit) =
         read_schema_value_type(data, doc_name, &format!("field '{id}'"), &type_str)?;
-    if let (Some(_), Some(quantity)) = (sce_type.optional_elem(), sce_attr(data, "quantity")) {
+    let present = match sce_type.entry() {
+        Ok((entry, _)) => Some(entry.present_type().clone()),
+        Err(_) => {
+            let one_value = ["quantity", "scale", "offset", "retain", "initial"];
+            if let Some((attr, value)) = one_value
+                .iter()
+                .find_map(|attr| sce_attr(data, attr).map(|value| (*attr, value)))
+            {
+                return Err(located(
+                    data,
+                    doc_name,
+                    ValidationError::AttributeRuleViolated {
+                        element: format!("field '{id}'"),
+                        attr: format!("sce:{attr}"),
+                        value,
+                        rule: format!(
+                            "a field that holds one value — `{type_str}` is a list, a record \
+                             or an optional one, which holds no one value a quantity scales \
+                             or an initial value states"
+                        ),
+                    },
+                ));
+            }
+            None
+        }
+    };
+    if let (ValueType::Optional { .. }, Some(quantity)) = (&sce_type, sce_attr(data, "quantity")) {
         return Err(located(
             data,
             doc_name,
@@ -13010,8 +13091,15 @@ fn parse_schema_field(
             },
         ));
     }
-    let present = sce_type.present_type().clone();
-    parse_field_body(data, doc_name, id, sce_type, &present, max_size, limit)
+    parse_field_body(
+        data,
+        doc_name,
+        id,
+        sce_type,
+        present.as_ref(),
+        max_size,
+        limit,
+    )
 }
 
 /// A field's `id` and its `sce:type` as written, each refused by name when
@@ -13060,16 +13148,18 @@ fn field_id_and_type(
 /// Everything a field declares besides its id, its type and its bound, read the
 /// same for every kind. `present` is the type a present value of the field is —
 /// the declared type itself for every kind but an event schema's optional field —
-/// which the quantity and the retained initial value are judged against.
-/// `max_size` and `limit` are the field's bound as its kind reads it: an event
-/// schema's from its type (docs/adr/0086), every other kind's from
-/// `sce:max-size`.
+/// which the quantity and the retained initial value are judged against; `None`
+/// for an event schema's field whose type is a composition, which holds no one
+/// value and whose caller has refused those attributes on it.
+/// `max_size` and `limit` are a bound beside the type as its kind reads it: an
+/// event schema's legacy `sce:max-size` on a type with no length (its bounds are
+/// in its type, docs/adr/0086), every other kind's `sce:max-size`.
 fn parse_field_body<T>(
     data: &roxmltree::Node,
     doc_name: &str,
     id: String,
     sce_type: T,
-    present: &SceType,
+    present: Option<&SceType>,
     max_size: Option<u32>,
     limit: Option<String>,
 ) -> Result<ForgeField<T>, Located<ForgeError>> {
@@ -13098,7 +13188,10 @@ fn parse_field_body<T>(
 
     let expr = data.attribute("expr").map(|s| s.to_string());
     let expr_spelling = AttributeSpelling::of(data, None, "expr");
-    let quantity = parse_quantity_attrs(data, doc_name, &format!("field '{id}'"), present)?;
+    let quantity = match present {
+        Some(present) => parse_quantity_attrs(data, doc_name, &format!("field '{id}'"), present)?,
+        None => None,
+    };
 
     // Whitespace-separated, like every other list-valued SCE attribute
     // in the tree (`sce:req`, `sce:unresolved-candidates`) — one
@@ -13114,8 +13207,10 @@ fn parse_field_body<T>(
         .map(|s| s.split_whitespace().map(str::to_string).collect())
         .unwrap_or_default();
 
-    let (retain, initial) =
-        parse_retention_attrs(data, doc_name, &format!("field '{id}'"), present)?;
+    let (retain, initial) = match present {
+        Some(present) => parse_retention_attrs(data, doc_name, &format!("field '{id}'"), present)?,
+        None => (None, None),
+    };
     let initial_spelling = AttributeSpelling::of(data, Some(SCE_NAMESPACE), "initial");
 
     Ok(ForgeField {

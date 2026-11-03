@@ -1007,9 +1007,10 @@ impl Direction {
 /// A typed data field common to all kinds.
 ///
 /// `T` is what its `sce:type` declares: a scalar ([`SceType`]) on every kind
-/// but the event schema, whose field may be optional ([`SchemaField`],
-/// docs/adr/0055). A position that is scalar by contract keeps the scalar
-/// type, so it never meets a case it would only have to refuse.
+/// but the event schema, whose field is of any value type ([`SchemaField`],
+/// docs/adr/0086), and seen as one entry ([`EntryField`]) by a lowering that
+/// holds no composition. A position that is scalar by contract keeps the
+/// scalar type, so it never meets a case it would only have to refuse.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ForgeField<T = SceType> {
@@ -1128,9 +1129,61 @@ pub struct ForgeField<T = SceType> {
     pub default_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
-/// A field of an event schema: typed by [`EntryType`], a scalar or an optional
-/// scalar (docs/adr/0055).
-pub type SchemaField = ForgeField<EntryType>;
+/// A field of an event schema: of any type of the one type grammar, every
+/// bound inside it (docs/adr/0086, section 1).
+pub type SchemaField = ForgeField<crate::forge::value_type::ValueType>;
+
+/// A field seen as one entry, a scalar or an optional scalar (docs/adr/0055),
+/// its text's or byte string's bound in [`ForgeField::max_size`] and
+/// [`ForgeField::limit`]: what a lowering that holds no list, record or nested
+/// optional reads an event schema's field as ([`SchemaField::entry_field`]).
+pub type EntryField = ForgeField<EntryType>;
+
+impl SchemaField {
+    /// The field as one entry, or the composition it is: what a lowering that
+    /// holds no composition yet reads the field through, and refuses it by.
+    ///
+    /// The bound of a text or a byte string moves from the type to
+    /// [`ForgeField::max_size`] and [`ForgeField::limit`], where the leaf
+    /// lowerings read it; a legacy `sce:max-size` beside a type with no length
+    /// stays where the parse left it.
+    pub fn entry_field(&self) -> Result<EntryField, ComposedField> {
+        let (entry, bound) = self.sce_type.entry().map_err(|composition| ComposedField {
+            field: self.id.clone(),
+            composition,
+        })?;
+        let mut field = self.with_type(entry);
+        if let Some(bound) = bound {
+            field.max_size = Some(bound.max);
+            field.limit = bound.limit.clone();
+        }
+        Ok(field)
+    }
+}
+
+/// A field of an event schema whose type is a composition a lowering does not
+/// hold yet: the field and the part of its type that is composed. Refused by
+/// name, with `generate/unsupported-feature`, where that lowering reads the
+/// schema (docs/adr/0086, section 7.3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComposedField {
+    /// The field's id.
+    pub field: String,
+    /// The composed part of its type.
+    pub composition: crate::forge::value_type::Composition,
+}
+
+impl ComposedField {
+    /// The refusal's sentence: the schema `schema`'s field and the composed
+    /// part of its type, which `position` does not lower yet.
+    pub fn sentence(&self, schema: &str, position: &str) -> String {
+        format!(
+            "{schema}: the field `{}` holds `{}`, a type of the language, and {position} does \
+             not lower its {} yet (docs/adr/0086, section 7.3)",
+            self.field, self.composition.place, self.composition.constructor
+        )
+    }
+}
 
 impl<T> ForgeField<T> {
     /// The same field declared `sce_type`: everything else it says is kept.
@@ -1506,12 +1559,17 @@ pub struct EnumModel {
 /// `validation/event-schema-on-builtin-event`.
 ///
 /// Each field uses [`ForgeField`] with `Direction::In` (payload is the
-/// receiver's read-only view). `sce_type` may be a primitive
-/// (Uint8/Int32/Float64/Bool/String/Bytes) or [`SceType::Enum`]
-/// referring to an imported `sce:kind="enum"` document.
+/// receiver's read-only view).
+///
+/// `T` is the type a field is read as: the one value type in the document
+/// itself ([`SchemaField`]), and one entry ([`EntryField`]) in the view of a
+/// lowering that holds no composition yet ([`EntrySchema`],
+/// [`Self::entry_schema`]), which every such lowering takes at the place it
+/// reads the schema, so that it refuses a composition there by name and no
+/// reader past it meets a case it would only have to refuse.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
-pub struct EventSchemaModel {
+pub struct EventSchemaModel<T = crate::forge::value_type::ValueType> {
     /// Symbol name for the schema document — drives symbol mangling
     /// and import-table lookup. For the top-level surface form this is
     /// the document's basename (e.g. `job_completed_schema`); for the
@@ -1529,12 +1587,12 @@ pub struct EventSchemaModel {
     /// `direction` is `Direction::In` (payload is the receiver's
     /// read-only view); the parser enforces this so authors cannot
     /// declare an `out`-direction field that would have no meaning on
-    /// the receive side. `sce_type` may be a primitive
-    /// (Uint8/Int32/Float64/Bool/String/Bytes) or
-    /// [`SceType::Enum`] referring to an imported `sce:kind="enum"`
-    /// document, or an optional value of either ([`EntryType`],
-    /// docs/adr/0055).
-    pub fields: Vec<SchemaField>,
+    /// the receive side. `sce_type` is a type of the one type grammar
+    /// (docs/adr/0086): a number, `bool`, an enum of an imported
+    /// `sce:kind="enum"` document, a bounded text or byte string, a record of
+    /// an imported event schema, a bounded list or an optional value of any of
+    /// them.
+    pub fields: Vec<ForgeField<T>>,
     /// `<datamodel sce:payload="none"/>`: the specification says the event
     /// carries no data, so the schema declares no field on purpose.
     ///
@@ -1575,7 +1633,51 @@ pub struct EventSchemaModel {
     pub source_location: Option<SourceLocation>,
 }
 
+/// An event schema as a lowering that holds no composition reads it: each field
+/// one entry ([`EventSchemaModel::entry_schema`]).
+pub type EntrySchema = EventSchemaModel<EntryType>;
+
+impl EntrySchema {
+    /// The first field that may be absent (docs/adr/0055), if any: what a
+    /// lowering that does not hold an optional value yet refuses the schema by.
+    pub fn first_optional_field(&self) -> Option<&EntryField> {
+        self.fields
+            .iter()
+            .find(|f| f.sce_type.optional_elem().is_some())
+    }
+}
+
 impl EventSchemaModel {
+    /// The schema with each field seen as one entry, or the first field, in
+    /// declaration order, whose type is a composition: the view a lowering
+    /// that holds no list, record or nested optional yet takes where it reads
+    /// the schema, refusing the composition there by name (docs/adr/0086,
+    /// section 7.3).
+    pub fn entry_schema(&self) -> Result<EntrySchema, ComposedField> {
+        Ok(EventSchemaModel {
+            name: self.name.clone(),
+            event_name: self.event_name.clone(),
+            fields: self
+                .fields
+                .iter()
+                .map(SchemaField::entry_field)
+                .collect::<Result<_, _>>()?,
+            payload_none: self.payload_none,
+            datamodel_markers: self.datamodel_markers.clone(),
+            revision: self.revision,
+            source_location: self.source_location.clone(),
+        })
+    }
+
+    /// Whether a field of the schema may be absent anywhere inside its type
+    /// (docs/adr/0055): what a unit that declares the backend's optional type
+    /// asks.
+    pub fn holds_optional(&self) -> bool {
+        self.fields.iter().any(|f| f.sce_type.holds_optional())
+    }
+}
+
+impl<T> EventSchemaModel<T> {
     /// Whether the schema declares a payload any consumer can name: a struct
     /// with fields, which a `record:<alias>` or a host-run request and
     /// result are made of.
@@ -1587,14 +1689,6 @@ impl EventSchemaModel {
     /// name that struct asks this first and refuses in its own words.
     pub fn carries_payload(&self) -> bool {
         !self.fields.is_empty()
-    }
-
-    /// The first field that may be absent (docs/adr/0055), if any: what a
-    /// lowering that does not hold an optional value yet refuses the schema by.
-    pub fn first_optional_field(&self) -> Option<&SchemaField> {
-        self.fields
-            .iter()
-            .find(|f| f.sce_type.optional_elem().is_some())
     }
 
     /// The revision of the schema this document is: what `sce:revision`
@@ -1614,7 +1708,9 @@ impl EventSchemaModel {
                 .iter()
                 .any(|f| f.since.is_some() || f.default.is_some())
     }
+}
 
+impl EventSchemaModel {
     /// W3C SCXML built-in event-name prefixes that an EventSchema may
     /// not declare against. Centralised here so the parse-time guard
     /// and any cross-kind binding pass agree on the closed set without

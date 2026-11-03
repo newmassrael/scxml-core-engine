@@ -742,7 +742,7 @@ impl Holds {
     /// `sce-static`) holds a value that is never absent.
     pub fn of_variable(
         ty: Option<&crate::forge::model::AlgorithmValueType>,
-        records: &BTreeMap<String, crate::forge::model::EventSchemaModel>,
+        records: &BTreeMap<String, crate::forge::model::EntrySchema>,
     ) -> Self {
         use crate::forge::model::AlgorithmValueType;
         // A record of an alias the document does not import has no field to
@@ -769,7 +769,7 @@ impl Holds {
 
     /// The record `schema` declares: a field of `optional<T>` holds `null`, and
     /// every other field a value that is never absent.
-    pub fn of_schema(schema: &crate::forge::model::EventSchemaModel) -> Self {
+    pub fn of_schema(schema: &crate::forge::model::EntrySchema) -> Self {
         Self::Record(
             schema
                 .fields

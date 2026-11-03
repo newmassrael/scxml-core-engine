@@ -124,12 +124,14 @@ pub(crate) fn swift_enum_field_unlowered(
 
 /// [`record_identity`], and the fields of the schema it names, each with the
 /// `sce:max-size` the schema declares on it and the enum document an enum field
-/// holds.
+/// holds; or, in place of the fields, the refusal of a schema whose field is a
+/// list, a record or an optional over either, which a record crossing between a
+/// statechart and an algorithm does not hold yet (docs/adr/0086, section 7.3).
 fn record_schema(
     imports: &[ForgeImport],
     base_dir: &Path,
     alias: &str,
-) -> Option<(RecordId, Vec<SchemaField>)> {
+) -> Option<(RecordId, Result<Vec<SchemaField>, String>)> {
     let import = imports
         .iter()
         .find(|i| i.alias == alias && i.kind == ForgeKind::EventSchema)?;
@@ -138,11 +140,21 @@ fn record_schema(
     let ForgeDocument::EventSchema(schema) = &parsed.document else {
         return None;
     };
+    let id = RecordId::intern(&crate::forge::stdlib::identity(&source.path), &schema.name);
+    let schema = match schema.entry_schema() {
+        Ok(schema) => schema,
+        Err(composed) => {
+            return Some((
+                id,
+                Err(composed.sentence(&schema.name, "a record a statechart hands to a call")),
+            ))
+        }
+    };
     // The schema's own imports are written relative to the schema.
     let schema_base = source.path.parent().unwrap_or(base_dir);
     Some((
-        RecordId::intern(&crate::forge::stdlib::identity(&source.path), &schema.name),
-        schema
+        id,
+        Ok(schema
             .fields
             .iter()
             .map(|f| SchemaField {
@@ -162,7 +174,7 @@ fn record_schema(
                     _ => None,
                 },
             })
-            .collect(),
+            .collect()),
     ))
 }
 
@@ -206,7 +218,7 @@ fn swift_callee_unlowered_at(
         algorithm,
         imports,
         &|imp| {
-            let (_, fields) = record_schema(imports, base_dir, &imp.alias)?;
+            let fields = record_schema(imports, base_dir, &imp.alias)?.1.ok()?;
             Some(
                 fields
                     .into_iter()
@@ -366,6 +378,7 @@ fn value_signature(
     let record = |alias: &str| -> Result<String, String> {
         let (id, fields) = record_schema(callee_imports, callee_base, alias)
             .ok_or_else(|| format!("its record `{alias}` is a schema this call cannot resolve"))?;
+        let fields = fields?;
         // A record is copied into the algorithm's own type and back, field by field; the
         // fields of a number or a truth value copy the same way on every backend, a
         // string the schema bounds is held within the same bound on both sides, and an
@@ -695,7 +708,9 @@ pub(crate) fn resolve(
                 &parsed.document,
                 &parsed.imports,
                 &|imp| {
-                    let (_, fields) = record_schema(&parsed.imports, callee_base, &imp.alias)?;
+                    let fields = record_schema(&parsed.imports, callee_base, &imp.alias)?
+                        .1
+                        .ok()?;
                     Some(
                         fields
                             .into_iter()

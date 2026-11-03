@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  `event_batch_item.scxml` with its outermost bounds written as the attributes the
+  bracket replaces (docs/adr/0086, sections 1.3 and 14.1): `sce:max-size` on the text
+  and the byte string, `sce:max-count` on the list. Each is read as the bracket it is
+  a synonym of and reported as `validation/bound-attribute-superseded` with its
+  rewrite; under the same name the schema generates what `event_batch_item.scxml`
+  generates. The legacy spelling is this document's subject, so it is kept here on
+  purpose and nowhere else in the tree.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="legacy_bound_spelling"
+       sce:event-name="batch.item">
+  <sce:import src="enum_signal_level.scxml" kind="enum" as="SignalLevel"/>
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="amount" sce:type="int64" sce:direction="in"/>
+    <data id="label" sce:type="string" sce:max-size="8" sce:direction="in"/>
+    <data id="level" sce:type="enum:SignalLevel" sce:direction="in"/>
+    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+    <data id="blob" sce:type="bytes" sce:max-size="4" sce:direction="in"/>
+    <data id="tags" sce:type="list&lt;string[8]&gt;" sce:max-count="4" sce:direction="in"/>
+  </datamodel>
+</scxml>

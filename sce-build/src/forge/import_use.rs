@@ -170,19 +170,9 @@ impl Names {
         }
     }
 
+    /// A field names what its type names, and what its expression reads.
     fn field(&mut self, field: &ForgeField) -> Result<(), ForgeError> {
-        self.typed_field(field, &field.sce_type)
-    }
-
-    /// A field names what `present`, the type a present value of it is, names,
-    /// and what its expression reads. An event schema's optional field names
-    /// what its element names (docs/adr/0055).
-    fn typed_field<T>(
-        &mut self,
-        field: &ForgeField<T>,
-        present: &SceType,
-    ) -> Result<(), ForgeError> {
-        self.ty(present);
+        self.ty(&field.sce_type);
         self.opt_expr(field.expr.as_deref(), field.expr_spelling.as_ref())
     }
 
@@ -444,10 +434,20 @@ impl Names {
                 self.name(&m.element_type);
                 Ok(())
             }
-            ForgeDocument::EventSchema(m) => m
-                .fields
-                .iter()
-                .try_for_each(|f| self.typed_field(f, f.sce_type.present_type())),
+            // A field's type names each enum and each record it holds, at every
+            // depth (docs/adr/0086): a record's import is otherwise used nowhere
+            // a value is read.
+            ForgeDocument::EventSchema(m) => m.fields.iter().try_for_each(|f| {
+                for alias in f
+                    .sce_type
+                    .enum_aliases()
+                    .into_iter()
+                    .chain(f.sce_type.record_aliases())
+                {
+                    self.name(alias);
+                }
+                self.opt_expr(f.expr.as_deref(), f.expr_spelling.as_ref())
+            }),
             // A timer names events, a buffer pool sizes storage, an enum
             // lists values and a feature model lists features: none of them
             // reads another document.

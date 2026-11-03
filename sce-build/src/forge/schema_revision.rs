@@ -38,9 +38,10 @@ use std::path::Path;
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
 use crate::forge::model::{
-    EntryType, EnumModel, EnumVariant, EventSchemaModel, ForgeDocument, NumericLiteral,
-    ParsedForge, SceType, SchemaField,
+    EntryField, EntrySchema, EntryType, EnumModel, EnumRef, EnumVariant, ForgeDocument,
+    NumericLiteral, ParsedForge, SceType,
 };
+use crate::forge::value_type::ValueType;
 
 /// Why a default is no value of its field.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,7 +126,7 @@ pub fn wire_of(ty: &SceType, max_size: Option<u32>, text: &str) -> Result<String
 /// added that declares none, which reads absent (docs/adr/0055, section 4).
 /// `None` for any other field that declares no default, or one whose default
 /// is no value of it (which the parser refuses).
-pub fn default_wire(field: &SchemaField) -> Option<String> {
+pub fn default_wire(field: &EntryField) -> Option<String> {
     match field.default.as_deref() {
         // A default is a value of what the field holds when present, never a
         // spelling of absence (docs/adr/0055).
@@ -141,7 +142,7 @@ pub fn default_wire(field: &SchemaField) -> Option<String> {
 /// JSON object keyed by field id in the schema's order — what a generated
 /// lift reads a field the delivery lacks out of. `None` when no field of the
 /// schema was added after the first revision, which leaves the lift as it is.
-pub fn defaults_wire(schema: &EventSchemaModel) -> Option<String> {
+pub fn defaults_wire(schema: &EntrySchema) -> Option<String> {
     let members: Vec<String> = schema
         .fields
         .iter()
@@ -155,19 +156,50 @@ pub fn defaults_wire(schema: &EventSchemaModel) -> Option<String> {
     }
 }
 
+/// What the revision rules read of a field's type: the enum a present value of
+/// it is a value of, if it is one. A field of a value type that holds a list or
+/// a record declares no default (the parser refuses one), so only a leaf or an
+/// optional leaf has an enum here.
+pub trait PresentEnum {
+    /// The enum a present value of the type is a value of, or `None`.
+    fn present_enum(&self) -> Option<&EnumRef>;
+}
+
+impl PresentEnum for EntryType {
+    fn present_enum(&self) -> Option<&EnumRef> {
+        match self.present_type() {
+            SceType::Enum(reference) => Some(reference),
+            _ => None,
+        }
+    }
+}
+
+impl PresentEnum for ValueType {
+    fn present_enum(&self) -> Option<&EnumRef> {
+        match self {
+            ValueType::Scalar(SceType::Enum(reference)) => Some(reference),
+            ValueType::Optional { elem } => match &**elem {
+                ValueType::Scalar(SceType::Enum(reference)) => Some(reference),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
 /// Refuse an enum default no variant of the field's enum declares.
 ///
 /// `variants_of` answers the variants of the enum a field names by its alias,
 /// or `None` when the alias names no readable enum — which the import pass
 /// reports in its own words, so it is skipped here.
-pub fn check_schema(
-    schema: &EventSchemaModel,
+pub fn check_schema<T: PresentEnum>(
+    schema: &crate::forge::model::EventSchemaModel<T>,
     variants_of: &dyn Fn(&str) -> Option<Vec<String>>,
     document: &str,
 ) -> Result<(), Located<ForgeError>> {
     for field in &schema.fields {
-        let (SceType::Enum(reference), Some(value)) =
-            (field.sce_type.present_type(), field.default.as_deref())
+        let (Some(reference), Some(value)) =
+            (field.sce_type.present_enum(), field.default.as_deref())
         else {
             continue;
         };
@@ -282,7 +314,7 @@ pub struct DeclaredType {
 
 impl DeclaredType {
     /// How `field` declares its type.
-    pub fn of(field: &SchemaField) -> Self {
+    pub fn of(field: &EntryField) -> Self {
         Self {
             sce_type: field.sce_type.as_attr(),
             optional_since: field.optional_since,
@@ -328,7 +360,7 @@ pub enum EnumDivergence {
 
 /// The revision a field belongs to: the one its `sce:since` names, and the first
 /// for a field that declares none.
-pub fn added_at(field: &SchemaField) -> u32 {
+pub fn added_at(field: &EntryField) -> u32 {
     field.since.unwrap_or(1)
 }
 
@@ -338,7 +370,7 @@ pub fn added_at(field: &SchemaField) -> u32 {
 /// every other. A widening is the one change of type a revision may make, so
 /// this is the only way a field of one schema is declared otherwise at an
 /// earlier revision.
-pub fn field_at(field: &SchemaField, revision: u32) -> std::borrow::Cow<'_, SchemaField> {
+pub fn field_at(field: &EntryField, revision: u32) -> std::borrow::Cow<'_, EntryField> {
     match (&field.sce_type, field.optional_since) {
         (EntryType::Optional { elem }, Some(widened)) if revision < widened => {
             let mut before = field.clone();
@@ -444,13 +476,13 @@ fn parting<'a, T>(
 /// `None` when they are revisions of one schema; otherwise the first divergence,
 /// the first schema's fields judged before the second's, each in declaration order,
 /// so the same pair always answers the same.
-pub fn divergence(first: &EventSchemaModel, second: &EventSchemaModel) -> Option<Divergence> {
+pub fn divergence(first: &EntrySchema, second: &EntrySchema) -> Option<Divergence> {
     parting(
         (first.fields.as_slice(), first.revision()),
         (second.fields.as_slice(), second.revision()),
-        |f: &SchemaField| f.id.as_str(),
+        |f: &EntryField| f.id.as_str(),
         added_at,
-        |(one, one_revision): (&SchemaField, u32), (other, other_revision): (&SchemaField, u32)| {
+        |(one, one_revision): (&EntryField, u32), (other, other_revision): (&EntryField, u32)| {
             // Alike as declared, or alike at the revision of the one whose
             // schema predates the other's widening of the field.
             declared_alike(one, other)
@@ -482,9 +514,9 @@ pub fn divergence(first: &EventSchemaModel, second: &EventSchemaModel) -> Option
 /// imports, not the alias a machine reads it by. A field one side holds no
 /// document for is not judged here: the import pass reports it.
 pub fn divergence_with_enums(
-    first: &EventSchemaModel,
+    first: &EntrySchema,
     first_enums: &BTreeMap<String, EnumDocument>,
-    second: &EventSchemaModel,
+    second: &EntrySchema,
     second_enums: &BTreeMap<String, EnumDocument>,
 ) -> Option<Divergence> {
     divergence(first, second).or_else(|| {
@@ -621,7 +653,7 @@ pub fn enum_documents(model: &crate::model::SCXMLModel, base_dir: &Path) -> Enum
                 for field in &schema.fields {
                     // An optional enum field holds a value of its document when
                     // present (docs/adr/0055).
-                    let SceType::Enum(reference) = field.sce_type.present_type() else {
+                    let Some(reference) = field.sce_type.present_enum() else {
                         continue;
                     };
                     let Some(enum_import) = parsed
@@ -688,7 +720,7 @@ pub fn enum_divergence(first: &EnumModel, second: &EnumModel) -> Option<EnumDive
 /// Whether two fields of one id are declared alike: the whole field, as the forge
 /// model serialises it (positions are not serialised, so where it is written does
 /// not count), but for the alias of the enum it holds ([`unaliased`]).
-fn declared_alike(one: &SchemaField, other: &SchemaField) -> bool {
+fn declared_alike(one: &EntryField, other: &EntryField) -> bool {
     match (
         serde_json::to_value(unaliased(one)),
         serde_json::to_value(unaliased(other)),
@@ -703,7 +735,7 @@ fn declared_alike(one: &SchemaField, other: &SchemaField) -> bool {
 /// schema as two statecharts read it, each naming the field's enum as it holds
 /// it (docs/adr/0054) — may name one enum two ways. Which enum a field holds is
 /// its document, which [`divergence_with_enums`] compares.
-fn unaliased(field: &SchemaField) -> std::borrow::Cow<'_, SchemaField> {
+fn unaliased(field: &EntryField) -> std::borrow::Cow<'_, EntryField> {
     if !matches!(field.sce_type.present_type(), SceType::Enum(_)) {
         return std::borrow::Cow::Borrowed(field);
     }
@@ -726,8 +758,8 @@ mod tests {
     use super::*;
     use crate::forge::model::{Direction, EnumRef};
 
-    fn field(id: &str, ty: SceType, since: Option<u32>, default: Option<&str>) -> SchemaField {
-        SchemaField {
+    fn field(id: &str, ty: SceType, since: Option<u32>, default: Option<&str>) -> EntryField {
+        EntryField {
             id: id.to_string(),
             sce_type: EntryType::Scalar(ty),
             direction: Direction::In,
@@ -748,8 +780,8 @@ mod tests {
         }
     }
 
-    fn schema(fields: Vec<SchemaField>) -> EventSchemaModel {
-        EventSchemaModel {
+    fn schema(fields: Vec<EntryField>) -> EntrySchema {
+        EntrySchema {
             name: "schema_revised".to_string(),
             event_name: "reading.revised".to_string(),
             fields,
@@ -846,7 +878,7 @@ mod tests {
     /// The model a payload builder is handed: one imported schema for
     /// `reading.revised`, whose channel the event itself opens (as a host
     /// action reading a field of it would).
-    fn model_importing(revised: EventSchemaModel) -> crate::model::SCXMLModel {
+    fn model_importing(revised: EntrySchema) -> crate::model::SCXMLModel {
         let mut model = crate::model::SCXMLModel {
             name: "revised".to_string(),
             ..Default::default()
@@ -917,22 +949,22 @@ mod tests {
     }
 
     /// `schema_revised` at `revision`, declaring `fields`.
-    fn at_revision(revision: u32, fields: Vec<SchemaField>) -> EventSchemaModel {
-        EventSchemaModel {
+    fn at_revision(revision: u32, fields: Vec<EntryField>) -> EntrySchema {
+        EntrySchema {
             revision: Some(revision),
             ..schema(fields)
         }
     }
 
-    fn level() -> SchemaField {
+    fn level() -> EntryField {
         field("level", SceType::Uint8, None, None)
     }
 
-    fn layout() -> SchemaField {
+    fn layout() -> EntryField {
         field("layout", view_mode(), Some(2), Some("week"))
     }
 
-    fn urgent() -> SchemaField {
+    fn urgent() -> EntryField {
         field("urgent", SceType::Bool, Some(3), Some("true"))
     }
 
@@ -1061,7 +1093,7 @@ mod tests {
 
     /// `field` as `optional<T>` of its type, widened by revision `widened`
     /// (`None`: optional from the revision that added it).
-    fn optional(mut field: SchemaField, widened: Option<u32>) -> SchemaField {
+    fn optional(mut field: EntryField, widened: Option<u32>) -> EntryField {
         let EntryType::Scalar(present) = field.sce_type.clone() else {
             panic!("an optional field is made from a field of T");
         };
@@ -1595,7 +1627,7 @@ mod tests {
     /// `level` of the first revision and then `added`, read as the parser
     /// reads it: the schema, or the refusal's validation error, boxed as the
     /// parser hands it over (the error is past `clippy::result_large_err`).
-    fn parse_schema(root: &str, added: &str) -> Result<EventSchemaModel, Box<ValidationError>> {
+    fn parse_schema(root: &str, added: &str) -> Result<EntrySchema, Box<ValidationError>> {
         let xml = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -1613,7 +1645,9 @@ mod tests {
         };
         match crate::forge::parser::parse_forge_with_imports(&xml, label) {
             Ok(Some(parsed)) => match parsed.document {
-                ForgeDocument::EventSchema(schema) => Ok(schema),
+                ForgeDocument::EventSchema(schema) => Ok(schema
+                    .entry_schema()
+                    .expect("each field of the schema is one entry")),
                 other => panic!("read as another kind: {other:?}"),
             },
             Ok(None) => panic!("not read as a forge document"),
@@ -2059,7 +2093,7 @@ mod tests {
 
     /// The committed event schema `name`, valid where the grammar is checked
     /// and read as the forge parser reads it.
-    fn committed_schema(name: &str) -> EventSchemaModel {
+    fn committed_schema(name: &str) -> EntrySchema {
         let file = format!("{name}.scxml");
         let content = std::fs::read_to_string(fixtures().join(&file)).expect("the schema");
         // The grammar on its own, so a skipped validation cannot pass as one.
@@ -2079,7 +2113,9 @@ mod tests {
             .unwrap_or_else(|e| panic!("{file} parses as a forge document: {e:?}"))
             .unwrap_or_else(|| panic!("{file} is a forge document"));
         match parsed.document {
-            ForgeDocument::EventSchema(schema) => schema,
+            ForgeDocument::EventSchema(schema) => schema
+                .entry_schema()
+                .unwrap_or_else(|composed| panic!("{file}: {composed:?}")),
             other => panic!("{file} read as another kind: {other:?}"),
         }
     }

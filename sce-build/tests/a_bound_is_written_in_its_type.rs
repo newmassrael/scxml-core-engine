@@ -16,8 +16,10 @@
 //!   as `validation/incompatible-attributes`, even when the numbers agree.
 //! * A text, byte string or list that states no bound is refused at the place
 //!   in the type that lacks it, an event schema's top-level field included.
-//! * A composition no backend lowers in a position yet is refused there by
-//!   name, `generate/unsupported-feature`, never as a rule of the grammar.
+//! * An event schema's field holds every type of the grammar, a composition
+//!   included; a position that does not lower one yet refuses it by name where
+//!   it reads it, `generate/unsupported-feature`, never as a rule of the
+//!   grammar.
 //! * `check` and `generate` report each legacy bound as
 //!   `validation/bound-attribute-superseded` and succeed; `--lint` refuses it;
 //!   `sce-codegen bound-spelling` prints the document with the bound in its
@@ -30,6 +32,7 @@ use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::forge::error::{ForgeError, Located};
 use sce_build::forge::model::{AlgorithmStmt, EntryType, ForgeDocument, SceType};
 use sce_build::forge::parser::parse_forge;
+use sce_build::forge::value_type::{Bound, ValueType};
 use sce_build::DocumentLabel;
 
 fn codegen() -> Command {
@@ -93,14 +96,7 @@ struct Written {
     /// The outermost bounded type, as `(text without its bracket, bracket)`,
     /// or `None` for a type with no length.
     outer: Option<(String, String)>,
-    /// A leaf, or an optional over a scalar, a text or a byte string: what an
-    /// event schema's field holds in this build.
-    field_lowered: bool,
     depth: usize,
-}
-
-fn is_record(text: &str) -> bool {
-    text.starts_with("record:")
 }
 
 /// Every written type up to depth 3: each text, byte string and list once with
@@ -116,7 +112,6 @@ fn written_types() -> Vec<Written> {
                 well_formed: true,
                 inner_bounded: true,
                 outer: takes_bound.then(|| (leaf.to_string(), bracket.to_string())),
-                field_lowered: !is_record(leaf),
                 depth: 1,
             });
         }
@@ -132,7 +127,6 @@ fn written_types() -> Vec<Written> {
                 well_formed: inner.well_formed && !inner.text.starts_with("optional<"),
                 inner_bounded: inner.inner_bounded,
                 outer: inner.outer.clone(),
-                field_lowered: inner.depth == 1 && !is_record(&inner.text),
                 depth,
             });
             for bracket in ["[3]", ""] {
@@ -146,7 +140,6 @@ fn written_types() -> Vec<Written> {
                     well_formed: inner.well_formed,
                     inner_bounded: inner_stated,
                     outer: Some((format!("list<{}>", inner.text), bracket.to_string())),
-                    field_lowered: false,
                     depth,
                 });
             }
@@ -195,14 +188,20 @@ fn expected(w: &Written, spelling: Spelling) -> Verdict {
     if !(outer_stated && w.inner_bounded) {
         return Verdict::Refused("validation/attribute-rule-violated");
     }
-    if !w.field_lowered {
-        return Verdict::Refused("generate/unsupported-feature");
-    }
+    // Every type of the grammar is a field's type, a composition included
+    // (docs/adr/0086, section 7.3: a position that does not lower one refuses
+    // it where it reads the schema, not where the schema is read).
     Verdict::Held {
         bound: match (&w.outer, spelling) {
             (None, _) => None,
             (Some(_), Spelling::Legacy) => Some(5),
-            (Some(_), _) => Some(8),
+            (Some((_, bracket)), _) => Some(
+                bracket
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .parse()
+                    .expect("the enumeration writes a number"),
+            ),
         },
     }
 }
@@ -240,7 +239,10 @@ fn spelled(w: &Written, spelling: Spelling) -> Option<String> {
 fn verdict_of(document: &str) -> Verdict {
     match parse_forge(document, label()) {
         Ok(Some(ForgeDocument::EventSchema(schema))) => Verdict::Held {
-            bound: schema.fields[0].max_size,
+            bound: schema.fields[0]
+                .sce_type
+                .outermost_bound()
+                .map(|(bound, _)| bound.max),
         },
         Ok(other) => panic!("not an event schema: {other:?}"),
         Err(refusal) => Verdict::Refused(match code_of(&refusal).as_str() {
@@ -295,7 +297,6 @@ fn every_constructor_at_every_depth_is_read_as_the_oracle_says() {
         "validation/invalid-attribute",
         "validation/attribute-rule-violated",
         "validation/incompatible-attributes",
-        "generate/unsupported-feature",
     ] {
         assert!(
             seen.get(verdict).is_some_and(|n| *n > 0),
@@ -306,6 +307,7 @@ fn every_constructor_at_every_depth_is_read_as_the_oracle_says() {
 
 #[test]
 fn a_field_holds_the_same_type_whichever_spelling_states_its_bound() {
+    // The bound is part of the type the field holds, and nowhere beside it.
     let field = |document: &str| match parse_forge(document, label()) {
         Ok(Some(ForgeDocument::EventSchema(schema))) => {
             let f = &schema.fields[0];
@@ -318,21 +320,30 @@ fn a_field_holds_the_same_type_whichever_spelling_states_its_bound() {
             "string[12]",
             "string",
             r#"sce:max-size="12""#,
-            EntryType::Scalar(SceType::String),
+            ValueType::Text { max: Bound::of(12) },
         ),
         (
             "optional<bytes[4]>",
             "optional<bytes>",
             r#"sce:max-size="4""#,
-            EntryType::Optional {
-                elem: SceType::Bytes,
+            ValueType::Optional {
+                elem: Box::new(ValueType::Bytes { max: Bound::of(4) }),
+            },
+        ),
+        (
+            "list<string[8]>[3]",
+            "list<string[8]>",
+            r#"sce:max-count="3""#,
+            ValueType::List {
+                elem: Box::new(ValueType::Text { max: Bound::of(8) }),
+                max: Bound::of(3),
             },
         ),
     ] {
         let from_bracket = field(&schema_with(bracket, ""));
         let from_legacy = field(&schema_with(legacy, extra));
         assert_eq!(from_bracket, from_legacy, "{bracket} and {legacy} {extra}");
-        assert_eq!(from_bracket.0, held);
+        assert_eq!(from_bracket, (held, None, None));
     }
     // A named bound: `[name=N]`, or `sce:limit` beside the attribute.
     let named = field(&schema_with("string[probe_text=12]", ""));
@@ -341,8 +352,23 @@ fn a_field_holds_the_same_type_whichever_spelling_states_its_bound() {
         r#"sce:max-size="12" sce:limit="probe_text""#,
     ));
     assert_eq!(named, legacy);
-    assert_eq!(named.1, Some(12));
-    assert_eq!(named.2.as_deref(), Some("probe_text"));
+    assert_eq!(
+        named.0,
+        ValueType::Text {
+            max: Bound::named("probe_text", 12)
+        }
+    );
+    // The leaf view a lowering that holds no composition reads the field
+    // through carries the bound and its name beside the entry type.
+    let Ok(Some(ForgeDocument::EventSchema(schema))) =
+        parse_forge(&schema_with("string[probe_text=12]", ""), label())
+    else {
+        panic!("not a schema")
+    };
+    let entry = schema.fields[0].entry_field().expect("one entry");
+    assert_eq!(entry.sce_type, EntryType::Scalar(SceType::String));
+    assert_eq!(entry.max_size, Some(12));
+    assert_eq!(entry.limit.as_deref(), Some("probe_text"));
 }
 
 #[test]

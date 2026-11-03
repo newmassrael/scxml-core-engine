@@ -356,6 +356,15 @@ impl Imports {
             .find(|context| context.alias == alias)
             .and_then(|context| context.record.as_ref())
     }
+
+    /// Why the schema the import `alias` names is no record an algorithm holds
+    /// yet, when its field is a composition ([`ImportContext::record_composed`]).
+    fn record_composed(&self, alias: &str) -> Option<&str> {
+        self.contexts
+            .iter()
+            .find(|context| context.alias == alias)
+            .and_then(|context| context.record_composed.as_deref())
+    }
 }
 
 /// What a buffer local holds: the elements it is appended to with.
@@ -553,6 +562,12 @@ impl Body<'_> {
     /// The record type the schema `alias` names, or the refusal that says it
     /// is not one this body imports.
     fn record_import(&self, alias: &str) -> Result<&RecordImport, GenerateError> {
+        // A schema whose field is a list, a record or an optional over either is
+        // a record no algorithm holds yet, refused by name (docs/adr/0086,
+        // section 7.3).
+        if let Some(composed) = self.imports.record_composed(alias) {
+            return Err(GenerateError::unsupported(composed.to_string()));
+        }
         self.imports.record(alias).ok_or_else(|| {
             refuse(
                 self.algorithm,

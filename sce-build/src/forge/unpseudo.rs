@@ -625,11 +625,16 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
     parse_typed_field(line, SceType::from_attr)
 }
 
-/// [`parse_field`] for a field of an event schema, whose type may be
-/// `optional<T>` (docs/adr/0055), written as one word as the renderer writes
-/// it.
+/// [`parse_field`] for a field of an event schema, whose type is any type of
+/// the one type grammar, every bound inside it (docs/adr/0086), written as one
+/// word as the renderer writes it.
 fn parse_schema_field(line: &Line<'_>) -> Result<SchemaField, ParseError> {
-    parse_typed_field(line, EntryType::from_attr)
+    parse_typed_field(line, |word| {
+        crate::forge::value_type::WrittenType::read(word)
+            .ok()?
+            .bounded()
+            .ok()
+    })
 }
 
 /// A field line, its type read by `read_type`.

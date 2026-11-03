@@ -27,7 +27,7 @@ use crate::forge::expr::{
     transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal,
     RUST_LIST_DESTINATION,
 };
-use crate::forge::model::{EntryType, EnumModel, EventSchemaModel, SceType, SchemaField};
+use crate::forge::model::{EntryField, EntrySchema, EntryType, EnumModel, SceType};
 use crate::forge::narrowing::{Chain, Facts, Writes};
 use crate::forge::static_datamodel::{indexed_element, is_null_literal, proving};
 use crate::forge::type_ctx::{
@@ -533,7 +533,7 @@ fn generated_callee(
 /// every backend. One with a byte string field, or a string with no bound, is refused
 /// where the algorithm is imported ([`crate::forge::static_imports`]), as is one whose
 /// enum is not the document the statechart holds the field in.
-fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EventSchemaModel> {
+fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EntrySchema> {
     // An optional field is held in the optional type of the machine's record and the
     // algorithm's, which an adapter copies where it is present
     // (docs/adr/0055), where the backend spells an algorithm's optional value of its
@@ -582,7 +582,7 @@ fn enum_crossing_function_names(ty: &str) -> (String, String) {
 /// be absent over an element Swift does not spell (a byte string). `None` for a field
 /// it writes. The one answer for a record a machine holds and for an event's payload,
 /// which are the same struct of the same fields.
-fn swift_field_unwritten(field: &crate::forge::model::SchemaField) -> Option<&'static str> {
+fn swift_field_unwritten(field: &crate::forge::model::EntryField) -> Option<&'static str> {
     if matches!(
         &field.sce_type,
         EntryType::Optional { elem }
@@ -689,7 +689,7 @@ pub struct AdapterSpec<'a> {
     pub callee: &'a StaticCallee,
     pub params: Vec<AdapterParam<'a>>,
     /// Every schema the document imports, by the alias it imports it under.
-    pub schemas: &'a std::collections::BTreeMap<String, EventSchemaModel>,
+    pub schemas: &'a std::collections::BTreeMap<String, EntrySchema>,
     /// The alias of the schema of the event each payload is held as: the payload
     /// struct of an argument held as `p` is that event's.
     pub payload_events: &'a std::collections::BTreeMap<String, String>,
@@ -736,7 +736,7 @@ impl AdapterSpec<'_> {
     fn record_field_crossing(
         &self,
         target: &dyn StaticTarget,
-        field: &crate::forge::model::SchemaField,
+        field: &crate::forge::model::EntryField,
         value: &str,
         crossing: Crossing,
         text: impl FnOnce(&str) -> String,
@@ -808,7 +808,7 @@ pub enum Crossing {
 /// records of a list, a slot holds — each a value an adapter maps by declared name.
 fn crossing_enums(
     value: &crate::forge::type_ctx::StaticValueSignature,
-    records: &std::collections::BTreeMap<String, EventSchemaModel>,
+    records: &std::collections::BTreeMap<String, EntrySchema>,
 ) -> BTreeSet<String> {
     let mut aliases = BTreeSet::new();
     for slot in value.params.iter().chain(value.ret.iter()) {
@@ -1090,7 +1090,7 @@ pub trait StaticTarget {
     fn payload_optional_read(
         &self,
         _accessor: &str,
-        _field: &SchemaField,
+        _field: &EntryField,
         _variants: &[&str],
     ) -> Option<String> {
         None
@@ -1343,7 +1343,7 @@ pub trait StaticTarget {
     fn payload_revised_read(
         &self,
         _accessor: &str,
-        _field: &SchemaField,
+        _field: &EntryField,
         _variants: &[&str],
         _default: &str,
     ) -> Option<String> {
@@ -1390,7 +1390,7 @@ pub trait StaticTarget {
         &self,
         ty: &str,
         alias: &str,
-        schema: &EventSchemaModel,
+        schema: &EntrySchema,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String;
     /// The identifier of schema field `id` on the record type.
@@ -1444,13 +1444,13 @@ pub trait StaticTarget {
     /// through, when it is not the record's own type (see [`StaticField::view`]):
     /// a record that owns text is lent, not moved out of the machine, as a string
     /// is. `None` for a record that is plain data and is read by value.
-    fn record_view(&self, _ty: &str, _schema: &EventSchemaModel) -> Option<String> {
+    fn record_view(&self, _ty: &str, _schema: &EntrySchema) -> Option<String> {
         None
     }
     /// A record `value` — a record variable or a loop's record item, named — as
     /// the copy a list or another variable holds: the name itself for a record
     /// that is plain data, and a clone of it for one that owns text.
-    fn record_copy(&self, value: &str, _schema: &EventSchemaModel) -> String {
+    fn record_copy(&self, value: &str, _schema: &EntrySchema) -> String {
         value.to_string()
     }
     /// The statements `parts`, each lowered from an action that can fail, as the one
@@ -1480,7 +1480,7 @@ pub trait StaticTarget {
     /// an element is not that composition — a Rust record that owns text is cloned
     /// out of the list by reference, and one that is plain data is read by value —
     /// spells its own. `None` for a target that reads no element whole.
-    fn record_element(&self, list: &str, index: &str, schema: &EventSchemaModel) -> Option<String> {
+    fn record_element(&self, list: &str, index: &str, schema: &EntrySchema) -> Option<String> {
         self.record_at(list, index)
             .map(|element| self.record_copy(&element, schema))
     }
@@ -1923,11 +1923,11 @@ impl KotlinTarget {
     /// the record with a copy of each, which is what a host is handed: the machine
     /// never writes into an array, and a host that did would change the value
     /// behind the bound the machine keeps (docs/adr/0005, decision 2).
-    fn record_bytes_members(&self, ty: &str, schema: &EventSchemaModel) -> String {
+    fn record_bytes_members(&self, ty: &str, schema: &EntrySchema) -> String {
         if !holds_bytes(schema) {
             return String::new();
         }
-        let is_bytes = |field: &crate::forge::model::SchemaField| {
+        let is_bytes = |field: &crate::forge::model::EntryField| {
             matches!(field.sce_type.present_type(), SceType::Bytes)
         };
         let equal: Vec<String> = schema
@@ -2366,7 +2366,7 @@ impl StaticTarget for KotlinTarget {
         &self,
         ty: &str,
         alias: &str,
-        schema: &EventSchemaModel,
+        schema: &EntrySchema,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
         let params: Vec<String> = schema
@@ -3259,7 +3259,7 @@ impl StaticTarget for RustTarget {
         &self,
         ty: &str,
         alias: &str,
-        schema: &EventSchemaModel,
+        schema: &EntrySchema,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
         let derives = if owns_a_buffer(schema) {
@@ -3293,11 +3293,11 @@ impl StaticTarget for RustTarget {
     }
     // A record that owns a buffer is `Clone` only, so a host is lent it and the
     // snapshot clones it, as it does a string.
-    fn record_view(&self, ty: &str, schema: &EventSchemaModel) -> Option<String> {
+    fn record_view(&self, ty: &str, schema: &EntrySchema) -> Option<String> {
         owns_a_buffer(schema).then(|| ty.to_string())
     }
     // ... and a copy of one is a clone.
-    fn record_copy(&self, value: &str, schema: &EventSchemaModel) -> String {
+    fn record_copy(&self, value: &str, schema: &EntrySchema) -> String {
         if owns_a_buffer(schema) {
             format!("{value}.clone()")
         } else {
@@ -3308,7 +3308,7 @@ impl StaticTarget for RustTarget {
     // record that owns text is read by reference and cloned out of the list, one
     // that is plain data is `Copy` and read by value, through the runtime's own
     // checked read of an index.
-    fn record_element(&self, list: &str, index: &str, schema: &EventSchemaModel) -> Option<String> {
+    fn record_element(&self, list: &str, index: &str, schema: &EntrySchema) -> Option<String> {
         Some(if owns_a_buffer(schema) {
             format!("sce_forge_runtime::algorithm::at_ref(&{list}, {index})?.clone()")
         } else {
@@ -3747,7 +3747,7 @@ fn variable_bounds(
 /// has none, and was refused where the record was declared.
 fn record_field_bounds<'a>(
     variables: &'a [crate::model::Variable],
-    records: &'a std::collections::BTreeMap<String, EventSchemaModel>,
+    records: &'a std::collections::BTreeMap<String, EntrySchema>,
     kind: fn(&SceType) -> bool,
 ) -> impl Iterator<Item = (String, u32)> + 'a {
     variables.iter().flat_map(move |v| {
@@ -3978,7 +3978,7 @@ type OptionalPlaces = std::collections::BTreeMap<String, OptionalPlace>;
 /// variable of a scalar element, and each optional field of a record variable.
 fn optional_places(
     variables: &[crate::model::Variable],
-    records: &std::collections::BTreeMap<String, EventSchemaModel>,
+    records: &std::collections::BTreeMap<String, EntrySchema>,
     target: &dyn StaticTarget,
     machine: &str,
 ) -> OptionalPlaces {
@@ -4025,7 +4025,7 @@ fn optional_places(
 #[derive(Debug, Clone)]
 struct OptionalRecordPlace {
     alias: String,
-    schema: EventSchemaModel,
+    schema: EntrySchema,
     present: String,
 }
 
@@ -4036,7 +4036,7 @@ type OptionalRecordPlaces = std::collections::BTreeMap<String, OptionalRecordPla
 /// The optional record variables of `variables` ([`OptionalRecordPlaces`]).
 fn optional_record_places(
     variables: &[crate::model::Variable],
-    records: &std::collections::BTreeMap<String, EventSchemaModel>,
+    records: &std::collections::BTreeMap<String, EntrySchema>,
     target: &dyn StaticTarget,
     machine: &str,
 ) -> OptionalRecordPlaces {
@@ -5387,7 +5387,7 @@ impl<'t> TypeDeclarations<'t> {
     /// document the schema imports, named as the machine holds that enum
     /// (docs/adr/0054), and is refused naming the field when the target has no
     /// type for it.
-    fn record(&mut self, alias: &str, schema: &EventSchemaModel) -> Result<String, GenerateError> {
+    fn record(&mut self, alias: &str, schema: &EntrySchema) -> Result<String, GenerateError> {
         let mut enum_types = std::collections::BTreeMap::new();
         for field in &schema.fields {
             if let SceType::Enum(reference) = field.sce_type.present_type() {
@@ -5875,7 +5875,7 @@ fn enum_type_by_document(
 /// is of: its revision, the digest of each revision past the first, and the
 /// fields those revisions added with their defaults. Its holders are the
 /// caller's to add.
-fn record_lineage(model: &SCXMLModel, schema: &EventSchemaModel) -> SavedRecordLineage {
+fn record_lineage(model: &SCXMLModel, schema: &EntrySchema) -> SavedRecordLineage {
     let revision = schema.revision();
     SavedRecordLineage {
         event: schema.event_name.clone(),
@@ -5919,7 +5919,7 @@ fn record_lineage(model: &SCXMLModel, schema: &EventSchemaModel) -> SavedRecordL
 /// the variant names of its enum. Not a field's default or `since`: a saved
 /// state holds a value for each field and names neither, so two builds that
 /// agree on what a revision holds agree on its digest.
-fn revision_digest(model: &SCXMLModel, schema: &EventSchemaModel, at: u32) -> String {
+fn revision_digest(model: &SCXMLModel, schema: &EntrySchema, at: u32) -> String {
     use sha2::{Digest, Sha256};
     use std::fmt::Write as _;
 
@@ -6236,7 +6236,7 @@ fn initial_value(
 
 /// A `sce-static` document's record variables, each with the alias it is
 /// declared under and the schema that alias names.
-type RecordVars = std::collections::BTreeMap<String, (String, EventSchemaModel)>;
+type RecordVars = std::collections::BTreeMap<String, (String, EntrySchema)>;
 
 /// A `sce-static` document's list variables, each with its element type and
 /// its declared capacity.
@@ -6259,7 +6259,7 @@ struct Rewrites<'m> {
     records: RecordVars,
     /// Every schema the document imports, by alias — what the fields of a
     /// record a loop walks are read from.
-    schemas: std::collections::BTreeMap<String, EventSchemaModel>,
+    schemas: std::collections::BTreeMap<String, EntrySchema>,
     /// The enum each variable declared `enum:<alias>` holds, and each enum field
     /// of a record variable by its `<id>.<field>` path — what tells an enum
     /// value from a number where a `<param>` is spelled for the wire.
@@ -6293,7 +6293,7 @@ struct Rewrites<'m> {
     scope: &'m StaticScope,
     /// The schema of the payload of the transition the walk is in
     /// ([`Self::open_payload`]), which `_event.data` is a record of.
-    payload_schema: std::cell::RefCell<Option<EventSchemaModel>>,
+    payload_schema: std::cell::RefCell<Option<EntrySchema>>,
     /// The names ([`crate::forge::type_ctx::state_call_name`]) of the calls of an
     /// algorithm with state in a slot the walk has lowered: the adapters to declare.
     state_calls: std::cell::RefCell<BTreeSet<String>>,
@@ -6338,7 +6338,7 @@ impl Rewrites<'_> {
     /// declared (`None` for a walk that has none in scope): the enum fields it
     /// holds are values of the enums the schema names, and the payload taken
     /// whole is a record of its fields.
-    fn open_payload(&self, schema: Option<&EventSchemaModel>) {
+    fn open_payload(&self, schema: Option<&EntrySchema>) {
         *self.payload_enum_paths.borrow_mut() = schema
             .map(|schema| {
                 crate::forge::static_datamodel::enum_fields(
@@ -6509,7 +6509,7 @@ impl Rewrites<'_> {
     /// ([`crate::forge::static_datamodel`]), so `None` is a lowering this walk
     /// lacks and not a mistake in the document.
     fn content_fields(&self, written: &str) -> Option<Vec<String>> {
-        let ids = |schema: &EventSchemaModel| schema.fields.iter().map(|f| f.id.clone()).collect();
+        let ids = |schema: &EntrySchema| schema.fields.iter().map(|f| f.id.clone()).collect();
         if let Some((_, schema)) = self.records.get(written) {
             return Some(ids(schema));
         }
@@ -7092,7 +7092,7 @@ impl StaticTarget for CppTarget {
         &self,
         ty: &str,
         alias: &str,
-        schema: &EventSchemaModel,
+        schema: &EntrySchema,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
         let fields: String = schema
@@ -7628,7 +7628,7 @@ fn unlowered_invoke(
 }
 
 /// Whether a record of `schema` has a byte-string field ([`StaticField::holds_bytes`]).
-fn holds_bytes(schema: &EventSchemaModel) -> bool {
+fn holds_bytes(schema: &EntrySchema) -> bool {
     schema
         .fields
         .iter()
@@ -7637,7 +7637,7 @@ fn holds_bytes(schema: &EventSchemaModel) -> bool {
 
 /// Whether a record of `schema` owns a buffer — has a `string` or a `bytes` field —
 /// which a target that holds plain data by value must hold otherwise.
-fn owns_a_buffer(schema: &EventSchemaModel) -> bool {
+fn owns_a_buffer(schema: &EntrySchema) -> bool {
     schema
         .fields
         .iter()
@@ -8274,17 +8274,17 @@ impl StaticTarget for GoTarget<'_> {
         &self,
         ty: &str,
         alias: &str,
-        schema: &EventSchemaModel,
+        schema: &EntrySchema,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
         let go_present =
-            |field: &crate::forge::model::SchemaField| match field.sce_type.present_type() {
+            |field: &crate::forge::model::EntryField| match field.sce_type.present_type() {
                 SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                 other => crate::forge::generator::go_type(other).to_string(),
             };
         // An optional field is held in the optional type over its present
         // value's (docs/adr/0055).
-        let go_field_type = |field: &crate::forge::model::SchemaField| {
+        let go_field_type = |field: &crate::forge::model::EntryField| {
             let present = go_present(field);
             match field.sce_type {
                 EntryType::Optional { .. } => self
@@ -9243,7 +9243,7 @@ impl StaticTarget for PythonTarget {
         &self,
         ty: &str,
         alias: &str,
-        schema: &EventSchemaModel,
+        schema: &EntrySchema,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
         let fields: String = schema
@@ -9763,7 +9763,7 @@ fn c_saved_read(
 /// written as `null` or as its present value, and a field a later revision added
 /// taken at its default from a record saved before it (docs/adr/0044).
 fn c_record_saved_members(
-    schema: &EventSchemaModel,
+    schema: &EntrySchema,
     enum_types: &std::collections::BTreeMap<String, String>,
     target: &CTarget,
 ) -> (String, String) {
@@ -10833,7 +10833,7 @@ impl StaticTarget for CTarget {
         &self,
         ty: &str,
         alias: &str,
-        schema: &EventSchemaModel,
+        schema: &EntrySchema,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
         let fields: String = schema
@@ -12519,18 +12519,18 @@ impl StaticTarget for SwiftTarget {
         &self,
         ty: &str,
         alias: &str,
-        schema: &EventSchemaModel,
+        schema: &EntrySchema,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
         // A field of the present type, spelled as the machine holds it.
         let present_of =
-            |field: &crate::forge::model::SchemaField| match field.sce_type.present_type() {
+            |field: &crate::forge::model::EntryField| match field.sce_type.present_type() {
                 SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                 other => crate::forge::generator::swift_type(other).to_string(),
             };
         // A field that may be absent is the optional type over its present value's
         // (docs/adr/0055), the type an expression reads it as.
-        let held_of = |field: &crate::forge::model::SchemaField| {
+        let held_of = |field: &crate::forge::model::EntryField| {
             let present = present_of(field);
             match &field.sce_type {
                 EntryType::Optional { .. } => self
@@ -12959,7 +12959,7 @@ pub(crate) struct StaticArgument {
 /// that does not lower the model.
 pub(crate) fn lower_static_argument(
     scope: &StaticScope,
-    event: Option<(&str, &EventSchemaModel)>,
+    event: Option<(&str, &EntrySchema)>,
     arg: &crate::model::Param,
     lang: Language,
     proven: &Facts,
@@ -13058,7 +13058,7 @@ fn renames<'a>(
 fn payload_record_value(
     machine: &str,
     alias: &str,
-    schema: &EventSchemaModel,
+    schema: &EntrySchema,
     target: &dyn StaticTarget,
     lower: &dyn Fn(&str, InferredType) -> Result<Receiving, GenerateError>,
 ) -> Result<Receiving, GenerateError> {
@@ -13139,7 +13139,7 @@ fn payload_record_value(
 /// ([`StaticTarget::payload_revised_read`]).
 fn payload_enum_reads(
     target: &dyn StaticTarget,
-    schema: Option<&EventSchemaModel>,
+    schema: Option<&EntrySchema>,
     accessor: &str,
     enums: &std::collections::BTreeMap<String, EnumModel>,
 ) -> Vec<(String, String)> {
@@ -14348,7 +14348,7 @@ fn lower_element_fields(
     action: &mut Action,
     list: &str,
     index: &str,
-    schema: &EventSchemaModel,
+    schema: &EntrySchema,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
@@ -17165,6 +17165,7 @@ mod tests {
         else {
             panic!("an event schema")
         };
+        let schema = schema.entry_schema().expect("each field is one entry");
         let def = CppTarget.record_def("MDueRecord", "Due", &schema, &Default::default());
         assert!(def.contains("    uint32_t id;\n"), "{def}");
         assert!(def.contains("    std::optional<int64_t> due;\n"), "{def}");

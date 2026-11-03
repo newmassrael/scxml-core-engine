@@ -2122,7 +2122,7 @@ pub struct InvokeSessionCommon {
 #[derive(Debug, Clone, Default)]
 pub struct ChildReceives {
     /// The schema the child declares for each event, by event name.
-    pub schemas: std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    pub schemas: std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
     /// For each of those events, the enum each enum field of its schema holds,
     /// by field id.
     pub enums: std::collections::BTreeMap<
@@ -4012,13 +4012,13 @@ pub struct SCXMLModel {
     /// serialized into the manifest.
     #[serde(skip)]
     pub imported_event_schemas:
-        std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+        std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
     /// The same imported event-schemas keyed by import alias — what a
     /// `record:<alias>` variable of a `sce-static` document names (SCE
     /// Accepted Subset §2.15). Resolved with [`Self::imported_event_schemas`]
     /// and, like it, empty without sibling files and not serialized.
     #[serde(skip)]
-    pub imported_records: std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    pub imported_records: std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
     /// The enums a `sce-static` document imports, keyed by import alias — what
     /// an `enum:<alias>` variable names and an `<alias>.<variant>` expression
     /// refers to (SCE Accepted Subset §2.15). Resolved where the document is

@@ -641,7 +641,7 @@ fn absent_handed_to_a_present_start(
 /// that happens to share its inferred type.
 pub(crate) fn enum_variables(
     scope: &StaticScope,
-    records: &std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    records: &std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
 ) -> std::collections::BTreeMap<String, String> {
     let mut held = std::collections::BTreeMap::new();
     for var in &scope.variables {
@@ -703,7 +703,7 @@ pub(crate) fn enum_variables(
 /// a value of it may be absent and its present value is the value of the enum
 /// (docs/adr/0055, [`crate::forge::static_enum::present_value_path`]).
 fn enum_field_aliases(
-    schema: &crate::forge::model::EventSchemaModel,
+    schema: &crate::forge::model::EntrySchema,
 ) -> impl Iterator<Item = (String, &str)> {
     use crate::forge::model::{EntryType, SceType};
     schema
@@ -727,7 +727,7 @@ fn enum_field_aliases(
 /// its `<holder>.<field>` path and the alias of the enum it holds.
 pub(crate) fn enum_fields(
     holder: &str,
-    schema: &crate::forge::model::EventSchemaModel,
+    schema: &crate::forge::model::EntrySchema,
 ) -> Vec<(String, String)> {
     enum_field_aliases(schema)
         .map(|(field, alias)| (format!("{holder}.{field}"), alias.to_string()))
@@ -824,7 +824,7 @@ struct Judge<'a> {
     held_enums: &'a std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
     /// The schemas the document imports, by alias — the fields of a record a
     /// loop walks are read from them.
-    schemas: &'a std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    schemas: &'a std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
     /// The record items of the `<foreach>`es the walk is inside, each with the
     /// alias of the schema it holds — a record an append may take by name.
     loop_records: std::cell::RefCell<Vec<(String, String)>>,
@@ -836,7 +836,7 @@ struct Judge<'a> {
     payload_enum_paths: std::cell::RefCell<Vec<(String, String)>>,
     /// The schema of the payload of the transition the walk is in, which
     /// `_event.data` taken whole is a record of.
-    payload_schema: std::cell::RefCell<Option<crate::forge::model::EventSchemaModel>>,
+    payload_schema: std::cell::RefCell<Option<crate::forge::model::EntrySchema>>,
     /// Every item and index of the `<foreach>`es the walk is inside: values
     /// the loop binds and the body reads, and does not write.
     loop_names: std::cell::RefCell<Vec<String>>,
@@ -862,7 +862,7 @@ struct Judge<'a> {
 /// declares for it (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions").
 struct Receivers<'a> {
     /// The schemas this document imports, by the event each declares.
-    own_schemas: &'a std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    own_schemas: &'a std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
     /// The enums this document holds values of, by the name it holds each by
     /// ([`SCXMLModel::held_enums`]): what an enum field of one of its own schemas
     /// holds, and what an enum value of it is.
@@ -957,7 +957,7 @@ impl SentValue<'_> {
     /// the narrowing is the sender's to write (docs/adr/0050).
     fn misfit(
         &self,
-        field: &crate::forge::model::SchemaField,
+        field: &crate::forge::model::EntryField,
         field_enum: Option<&crate::forge::model::EnumModel>,
     ) -> Option<Misfit> {
         use crate::forge::model::SceType;
@@ -1288,7 +1288,7 @@ impl<'a> Judge<'a> {
     /// whole is a record of. Each field names its enum as this document holds
     /// the enum document the schema imports (docs/adr/0054), so a value of it is
     /// compared and assigned with a value of that same document's enum alone.
-    fn open_payload(&self, schema: Option<&crate::forge::model::EventSchemaModel>) {
+    fn open_payload(&self, schema: Option<&crate::forge::model::EntrySchema>) {
         *self.payload_enum_paths.borrow_mut() = schema
             .map(|schema| enum_fields(crate::forge::event_schema_check::EVENT_DATA_PATH, schema))
             .unwrap_or_default();
@@ -1559,7 +1559,7 @@ impl<'a> Judge<'a> {
         &self,
         var: &Variable,
         alias: &str,
-        schema: &crate::forge::model::EventSchemaModel,
+        schema: &crate::forge::model::EntrySchema,
     ) -> Result<(), Located<ForgeError>> {
         use crate::forge::model::SceType;
         // An optional text is bounded as the value it holds when present is
@@ -1845,7 +1845,7 @@ impl<'a> Judge<'a> {
         ctx: &TypeCtx<'_>,
         var: &Variable,
         alias: &str,
-        records: &std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+        records: &std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
     ) -> Result<(), Located<ForgeError>> {
         // An alias the parser admitted names an import; without sibling
         // files to read it has no schema here, and nothing to judge against.
@@ -1939,7 +1939,7 @@ impl<'a> Judge<'a> {
         ctx: &TypeCtx<'_>,
         var: &Variable,
         alias: &str,
-        records: &std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+        records: &std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
     ) -> Result<(), Located<ForgeError>> {
         let spelling = var.expr_spelling.as_ref();
         if !is_null_literal(&var.expr) {
@@ -2060,7 +2060,7 @@ impl<'a> Judge<'a> {
         &self,
         var: &Variable,
         alias: &str,
-        schema: &crate::forge::model::EventSchemaModel,
+        schema: &crate::forge::model::EntrySchema,
     ) -> Result<(), Located<ForgeError>> {
         for field in &schema.fields {
             let crate::forge::model::SceType::Enum(reference) = field.sce_type.present_type()
@@ -2103,7 +2103,7 @@ impl<'a> Judge<'a> {
         &self,
         var: &Variable,
         alias: &str,
-        schema: &crate::forge::model::EventSchemaModel,
+        schema: &crate::forge::model::EntrySchema,
     ) -> Result<(), Located<ForgeError>> {
         for field in &schema.fields {
             let crate::forge::model::SceType::Enum(reference) = field.sce_type.present_type()
@@ -2629,7 +2629,7 @@ impl<'a> Judge<'a> {
     /// names no record: a record variable, a loop's record item, or the payload
     /// of the transition's event when that event declares a schema.
     fn content_fields(&self, written: &str) -> Option<Vec<String>> {
-        let ids = |schema: &crate::forge::model::EventSchemaModel| {
+        let ids = |schema: &crate::forge::model::EntrySchema| {
             schema.fields.iter().map(|f| f.id.clone()).collect()
         };
         let by_alias = |alias: &str| self.schemas.get(alias).map(ids);
@@ -2961,12 +2961,12 @@ impl<'a> Judge<'a> {
         param: &WireParam<'_>,
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
-        use crate::forge::model::{EnumModel, SceType, SchemaField};
+        use crate::forge::model::{EntryField, EnumModel, SceType};
         let written = param.written;
         if action.event.is_empty() || param.name.is_empty() || written.trim().is_empty() {
             return Ok(());
         }
-        let mut readers: Vec<(String, &SchemaField, Option<&EnumModel>)> = Vec::new();
+        let mut readers: Vec<(String, &EntryField, Option<&EnumModel>)> = Vec::new();
         if let Some(schema) = self.receivers.own_schemas.get(&action.event) {
             if let Some(field) = schema.fields.iter().find(|f| f.id == param.name) {
                 let held = match field.sce_type.present_type() {
@@ -3104,7 +3104,7 @@ impl<'a> Judge<'a> {
         &self,
         ctx: &TypeCtx<'_>,
         param: &Param,
-        request: &crate::forge::model::EventSchemaModel,
+        request: &crate::forge::model::EntrySchema,
         element: &str,
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
@@ -3826,7 +3826,7 @@ impl<'a> Judge<'a> {
             let payload = self.payload_schema.borrow();
             let record = self.schemas.get(alias);
             if let (Some(payload), Some(record)) = (payload.as_ref(), record) {
-                let shape = |schema: &crate::forge::model::EventSchemaModel| {
+                let shape = |schema: &crate::forge::model::EntrySchema| {
                     let mut fields: Vec<_> = schema
                         .fields
                         .iter()

@@ -47,7 +47,7 @@ use crate::forge::error::{
 };
 use crate::forge::event_schema_check::schema_is_native_payload_eligible;
 use crate::forge::generator::host_param_type;
-use crate::forge::model::{EntryType, EventSchemaModel, ForgeKind, SceType};
+use crate::forge::model::{EntrySchema, EntryType, ForgeKind, SceType};
 use crate::generator::Language;
 use crate::model::{Action, Param, SCXMLModel};
 use std::collections::{BTreeMap, BTreeSet};
@@ -281,7 +281,7 @@ enum PayloadScope<'a> {
     /// EventSchema (if any) are in scope, so arguments are permitted.
     Transition {
         event: &'a str,
-        schema: Option<&'a EventSchemaModel>,
+        schema: Option<&'a EntrySchema>,
         /// The fields of the payload proven present where the action stands
         /// (docs/adr/0055): those the transition's `cond` tests, less each
         /// one an action before it writes.
@@ -294,13 +294,13 @@ enum PayloadScope<'a> {
 
 /// Validate every `<sce:action>` in `scxml` against the v1 contract.
 ///
-/// `imported_schemas` is the per-statechart `event → EventSchemaModel` view
+/// `imported_schemas` is the per-statechart `event → EntrySchema` view
 /// (the same map [`crate::forge::event_schema_check::check`] consumes).
 /// Returns the first failing diagnostic; `Ok(())` when there are no native
 /// actions or all satisfy the contract.
 pub fn validate(
     scxml: &SCXMLModel,
-    imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    imported_schemas: &BTreeMap<String, EntrySchema>,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     let signatures = collect_signatures(scxml, imported_schemas, diag_label)?;
@@ -336,7 +336,7 @@ const OPTIONAL_PREFIX: &str = "optional<";
 /// registered at its first call site and every later call held to it.
 fn collect_signatures(
     scxml: &SCXMLModel,
-    imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    imported_schemas: &BTreeMap<String, EntrySchema>,
     diag_label: &str,
 ) -> Result<SignatureTable, Located<ForgeError>> {
     // Document-wide signature table: a `name` that recurs — on any transition
@@ -965,7 +965,7 @@ fn register_signature(
 /// consistency check. A no-argument action returns an empty signature.
 fn validate_args(
     action: &Action,
-    schema: Option<&EventSchemaModel>,
+    schema: Option<&EntrySchema>,
     event: &str,
     diag_label: &str,
 ) -> Result<Vec<String>, Located<ForgeError>> {
@@ -1122,7 +1122,7 @@ struct PayloadBinding<'a> {
     event: &'a str,
     /// The triggering event's imported EventSchema (guaranteed present for an
     /// arg-bearing action by [`validate`]).
-    schema: Option<&'a EventSchemaModel>,
+    schema: Option<&'a EntrySchema>,
 }
 
 /// The host-facing spelling of an operation name, in the target language's own
@@ -2564,7 +2564,7 @@ fn rust_recording_host(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::model::{Direction, EntryType, SchemaField};
+    use crate::forge::model::{Direction, EntryField, EntryType};
     use crate::parser::SCXMLParser;
 
     fn parse(scxml: &str) -> SCXMLModel {
@@ -2573,12 +2573,12 @@ mod tests {
 
     /// One schema with a bytes + uint32 payload, keyed by event name — the
     /// shape `validate` resolves arguments against.
-    fn fragment_schema() -> BTreeMap<String, EventSchemaModel> {
-        let schema = EventSchemaModel {
+    fn fragment_schema() -> BTreeMap<String, EntrySchema> {
+        let schema = EntrySchema {
             name: "FragmentSchema".to_string(),
             event_name: "fragment.received".to_string(),
             fields: vec![
-                SchemaField {
+                EntryField {
                     id: "payload".to_string(),
                     sce_type: EntryType::Scalar(SceType::Bytes),
                     direction: Direction::In,
@@ -2597,7 +2597,7 @@ mod tests {
                     default: None,
                     default_spelling: None,
                 },
-                SchemaField {
+                EntryField {
                     id: "offset".to_string(),
                     sce_type: EntryType::Scalar(SceType::Uint32),
                     direction: Direction::In,

@@ -35,7 +35,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::filters;
 use crate::forge::error::GenerateError;
-use crate::forge::model::{EntryType, EventSchemaModel, SceType, SchemaField};
+use crate::forge::model::{EntryField, EntrySchema, EntryType, SceType};
 use crate::generator::Language;
 use crate::model::{Invoke, SCXMLModel};
 
@@ -49,8 +49,8 @@ pub struct TypedHostInvoke<'m> {
     /// ([`crate::model::invoke_identifier`]): distinct ids, distinct names.
     /// [`Self::invoke_id`] is what the host is told at run time.
     pub field_suffix: &'m str,
-    pub request: Option<&'m EventSchemaModel>,
-    pub result: Option<&'m EventSchemaModel>,
+    pub request: Option<&'m EntrySchema>,
+    pub result: Option<&'m EntrySchema>,
 }
 
 /// The typed host-run invokes of `model`, in document order.
@@ -108,7 +108,7 @@ fn by_type<'a, 'm>(
 /// takes and the sentence that type's documentation opens with.
 fn records_of<'m>(
     invoke: &TypedHostInvoke<'m>,
-) -> [(Option<&'m EventSchemaModel>, &'static str, &'static str); 2] {
+) -> [(Option<&'m EntrySchema>, &'static str, &'static str); 2] {
     [
         (
             invoke.request,
@@ -135,7 +135,7 @@ pub enum RequestFieldSpelling {
 /// field every record carries, and the backend's one optional type over it for
 /// a field that may be absent (docs/adr/0055, section 5). Only a result holds
 /// the second kind ([`typed_invoke::validate`](crate::forge::typed_invoke::validate)).
-fn record_field_type(lang: Language, f: &SchemaField, present: &str) -> String {
+fn record_field_type(lang: Language, f: &EntryField, present: &str) -> String {
     match &f.sce_type {
         EntryType::Scalar(_) => present.to_string(),
         EntryType::Optional { .. } => crate::forge::generator::optional_of(lang, present)
@@ -152,7 +152,7 @@ fn record_field_type(lang: Language, f: &SchemaField, present: &str) -> String {
 /// A typed request holds no optional field (`typed_invoke::validate` refuses
 /// one by name, docs/adr/0055), so every request field read in this module is
 /// the scalar a present value of it is.
-fn request_field_spelling(f: &SchemaField) -> RequestFieldSpelling {
+fn request_field_spelling(f: &EntryField) -> RequestFieldSpelling {
     RequestFieldSpelling::Scalar(match f.sce_type.present_type() {
         SceType::Uint8 => "Uint8",
         SceType::Uint16 => "Uint16",
@@ -1172,7 +1172,7 @@ pub fn render_cpp(model: &SCXMLModel) -> CppHostInvokerInterface {
     // The type a present value of `f` is held in: what a request's reader
     // names (`requestField<T>`), and what the optional type of a result's
     // field wraps.
-    let cpp_type = |f: &SchemaField| crate::forge::generator::cpp_type(f.sce_type.present_type());
+    let cpp_type = |f: &EntryField| crate::forge::generator::cpp_type(f.sce_type.present_type());
     for invoke in &typed {
         let pascal = filters::to_pascal_case(invoke.field_suffix.to_string());
         for (record, what, role) in records_of(invoke) {
@@ -1688,7 +1688,7 @@ fn python_spelling(spelling: RequestFieldSpelling) -> String {
 }
 
 /// The Swift expression reading `f` out of the checked request `start`.
-fn swift_request_reader(f: &SchemaField) -> String {
+fn swift_request_reader(f: &EntryField) -> String {
     let id = &f.id;
     let integer = |ty: &str| format!("start.requestInteger(\"{id}\", as: {ty}.self)");
     match f.sce_type.present_type() {
@@ -1712,7 +1712,7 @@ fn swift_request_reader(f: &SchemaField) -> String {
 }
 
 /// The Go expression reading `f` out of the checked request `start`.
-fn go_request_reader(f: &SchemaField) -> String {
+fn go_request_reader(f: &EntryField) -> String {
     let id = &f.id;
     let present = f.sce_type.present_type();
     let ty = crate::forge::generator::go_type(present);

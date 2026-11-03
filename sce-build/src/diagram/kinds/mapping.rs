@@ -99,8 +99,9 @@ pub fn enumeration(m: &EnumModel, lexicon: &Lexicon, page: Page) -> Result<Vec<P
     )
 }
 
-/// An event schema: the fields the event carries and their types, and the
-/// bound of each that has one.
+/// An event schema: the fields the event carries and their types, each bound
+/// in the type it bounds (docs/adr/0086), as `string[64]` or
+/// `list<uint8>[4]`.
 pub fn event_schema(
     m: &EventSchemaModel,
     lexicon: &Lexicon,
@@ -109,26 +110,14 @@ pub fn event_schema(
     if m.fields.is_empty() {
         return Ok(Vec::new());
     }
-    let bounded = m.fields.iter().any(|f| f.max_size.is_some());
-    let mut head = vec![
+    let head = vec![
         Cell::prose(say(lexicon, Phrase::Field)?),
         Cell::prose(say(lexicon, Phrase::Type)?),
     ];
-    if bounded {
-        head.push(Cell::mono("max_size"));
-    }
     let rows = m
         .fields
         .iter()
-        .map(|f| {
-            let mut row = vec![Cell::mono(f.id.clone()), Cell::mono(f.sce_type.as_attr())];
-            if bounded {
-                row.push(Cell::mono(
-                    f.max_size.map(|n| n.to_string()).unwrap_or_default(),
-                ));
-            }
-            row
-        })
+        .map(|f| vec![Cell::mono(f.id.clone()), Cell::mono(f.sce_type.to_string())])
         .collect();
     let table = Table {
         heading: Cell::mono(m.event_name.clone()),
@@ -263,7 +252,7 @@ mod tests {
         }
         assert!(
             !words.contains(&"max_size"),
-            "no bound column when none is bounded"
+            "a bound is written in its type, not in a column of its own"
         );
     }
 

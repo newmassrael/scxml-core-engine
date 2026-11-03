@@ -522,7 +522,8 @@ fn statechart_due(data: &str, body: &str) -> String {
 
 #[test]
 fn a_schema_field_holds_an_optional_scalar_and_the_forge_ast_spells_it() {
-    use sce_build::forge::model::{EntryType, ForgeDocument};
+    use sce_build::forge::model::ForgeDocument;
+    use sce_build::forge::value_type::{Bound, ValueType};
     let parsed = sce_build::forge::parser::parse_forge_with_imports(
         SCHEMA_DUE,
         sce_build::DocumentLabel::symmetric("schema_item_due"),
@@ -540,25 +541,26 @@ fn a_schema_field_holds_an_optional_scalar_and_the_forge_ast_spells_it() {
             .map(|f| f.sce_type.clone())
             .unwrap_or_else(|| panic!("the field `{id}` is read"))
     };
-    assert_eq!(declared("id"), EntryType::Scalar(SceType::Uint32));
+    assert_eq!(declared("id"), ValueType::Scalar(SceType::Uint32));
     assert_eq!(
         declared("due"),
-        EntryType::Optional {
-            elem: SceType::Int64
+        ValueType::Optional {
+            elem: Box::new(ValueType::Scalar(SceType::Int64))
         }
     );
+    // The bound `sce:max-size` states is the bound of the text the optional
+    // holds, inside the type (docs/adr/0086).
     assert_eq!(
         declared("title"),
-        EntryType::Optional {
-            elem: SceType::String
+        ValueType::Optional {
+            elem: Box::new(ValueType::Text { max: Bound::of(16) })
         }
     );
     assert!(
         matches!(
-            declared("status"),
-            EntryType::Optional {
-                elem: SceType::Enum(_)
-            }
+            &declared("status"),
+            ValueType::Optional { elem }
+                if matches!(**elem, ValueType::Scalar(SceType::Enum(_)))
         ),
         "an optional enum field: {:?}",
         declared("status")
@@ -578,7 +580,7 @@ fn a_schema_field_holds_an_optional_scalar_and_the_forge_ast_spells_it() {
     assert_eq!(spelled("due"), serde_json::json!({ "optional": "int64" }));
     assert_eq!(
         spelled("title"),
-        serde_json::json!({ "optional": "string" })
+        serde_json::json!({ "optional": { "string": 16 } })
     );
 }
 

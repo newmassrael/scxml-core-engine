@@ -35,6 +35,8 @@
 
 use std::fmt;
 
+use serde::Serialize;
+
 use crate::forge::model::{AlgorithmValueType, EntryType, ListElemType, OptionalElemType, SceType};
 
 /// A bound written in a type: the most elements of a list, or the most bytes of
@@ -72,6 +74,31 @@ impl fmt::Display for Bound {
     }
 }
 
+/// A bound crosses the forge-AST as the number the build holds: the name a
+/// build may move it by is the document's, not the IR's, as a field's
+/// `sce:limit` is (docs/adr/0050), so a bound is one shape whichever spelling
+/// the document wrote it in (docs/adr/0086, section 13).
+impl Serialize for Bound {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u32(self.max)
+    }
+}
+
+#[cfg(test)]
+impl schemars::JsonSchema for Bound {
+    fn schema_name() -> String {
+        "Bound".to_string()
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        <u32 as schemars::JsonSchema>::json_schema(generator)
+    }
+}
+
 /// A type of the grammar, generic over what stands where a bound is written:
 /// [`Bound`] in a [`ValueType`], whose every bound is stated, and
 /// `Option<Bound>` in a [`WrittenType`], a type as written before a legacy
@@ -80,21 +107,46 @@ impl fmt::Display for Bound {
 /// One constructor per line of the grammar. `Scalar` holds a fixed-width
 /// number, `bool` or a value of an enum, never `string` or `bytes`: a text and a
 /// byte string are `Text` and `Bytes`, whose bound is part of them.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Serialized untagged, as the model's other types are: a scalar is the bare
+/// string it always was (`"int64"`), and each other constructor an object
+/// keyed by its own name, its bound beside it: `{"string": 8}`,
+/// `{"bytes": 4}`, `{"optional": "int64"}`, `{"record": "Item"}`,
+/// `{"list": "uint8", "max": 2}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[cfg_attr(test, schemars(rename = "ValueType"))]
+#[serde(untagged)]
 pub enum TypeOf<B> {
     /// A fixed-width number, `bool`, or `enum:<alias>`.
     Scalar(SceType),
     /// `string[B]`: a UTF-8 text of at most `max` bytes.
-    Text { max: B },
+    Text {
+        #[serde(rename = "string")]
+        max: B,
+    },
     /// `bytes[B]`: a byte string of at most `max` bytes.
-    Bytes { max: B },
+    Bytes {
+        #[serde(rename = "bytes")]
+        max: B,
+    },
     /// `optional<T>`: absent, or a value of `elem`. `elem` is never itself
     /// optional.
-    Optional { elem: Box<TypeOf<B>> },
+    Optional {
+        #[serde(rename = "optional")]
+        elem: Box<TypeOf<B>>,
+    },
     /// `record:<alias>`: a value of the struct the aliased event schema declares.
-    Record { alias: String },
+    Record {
+        #[serde(rename = "record")]
+        alias: String,
+    },
     /// `list<T>[B]`: an ordered sequence of at most `max` values of `elem`.
-    List { elem: Box<TypeOf<B>>, max: B },
+    List {
+        #[serde(rename = "list")]
+        elem: Box<TypeOf<B>>,
+        max: B,
+    },
 }
 
 /// A type whose every bound is stated: what a position holds.
@@ -499,30 +551,46 @@ impl WrittenType {
     }
 }
 
+/// The scalar a leaf of a value type is read as, with the bound of a text or a
+/// byte string, or `None` for a type that is not one leaf.
+fn value_leaf(ty: &ValueType) -> Option<(SceType, Option<&Bound>)> {
+    match ty {
+        ValueType::Scalar(t) => Some((t.clone(), None)),
+        ValueType::Text { max } => Some((SceType::String, Some(max))),
+        ValueType::Bytes { max } => Some((SceType::Bytes, Some(max))),
+        ValueType::Optional { .. } | ValueType::Record { .. } | ValueType::List { .. } => None,
+    }
+}
+
 impl ValueType {
-    /// The type an event schema's field declares, from the model's reading of
-    /// it: its scalar or optional scalar, and the bound and limit name beside
-    /// it that the field's text or byte string states. `None` for a text or a
-    /// byte string with no bound, which no event schema of the language holds
-    /// (docs/adr/0086, section 1.4).
-    pub fn of_field(ty: &EntryType, max_size: Option<u32>, limit: Option<&str>) -> Option<Self> {
-        let bound = || {
-            max_size.map(|max| Bound {
-                max,
-                limit: limit.map(str::to_string),
-            })
-        };
-        let leaf = |t: &SceType| match t {
-            SceType::String => bound().map(|max| Self::Text { max }),
-            SceType::Bytes => bound().map(|max| Self::Bytes { max }),
-            other => Some(Self::Scalar(other.clone())),
-        };
-        match ty {
-            EntryType::Scalar(t) => leaf(t),
-            EntryType::Optional { elem } => leaf(elem).map(|elem| Self::Optional {
-                elem: Box::new(elem),
-            }),
+    /// The type seen as one entry: a scalar, a text or a byte string, or an
+    /// optional one, with the bound of its text or byte string. The leaf view
+    /// a lowering that holds no list, record or nested optional reads an event
+    /// schema's field through; any other type is a composition, named so that
+    /// such a lowering refuses it by name (docs/adr/0086, section 7.3).
+    pub fn entry(&self) -> Result<(EntryType, Option<&Bound>), Composition> {
+        if let Some((t, max)) = value_leaf(self) {
+            return Ok((EntryType::Scalar(t), max));
         }
+        match self {
+            Self::Optional { elem } => value_leaf(elem)
+                .map(|(t, max)| (EntryType::Optional { elem: t }, max))
+                .ok_or_else(|| Composition::of(&**elem)),
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::Record { .. }
+            | Self::List { .. } => Err(Composition::of(self)),
+        }
+    }
+
+    /// Whether a value of the type may be absent anywhere inside it: the type
+    /// is `optional<…>` or holds one at some depth. What a unit that declares
+    /// the backend's optional type asks.
+    pub fn holds_optional(&self) -> bool {
+        let mut found = false;
+        self.walk(&mut |ty| found |= matches!(ty, Self::Optional { .. }));
+        found
     }
 
     /// The bound of the outermost text, byte string or list of the type, seen
@@ -751,21 +819,6 @@ fn leaf(ty: &WrittenType) -> Option<(SceType, Option<Bound>)> {
 }
 
 impl WrittenType {
-    /// The type as an event schema's field holds it today: a scalar, a text or
-    /// a byte string, or an optional one, with the bound of its text. Any other
-    /// type is a composition the field's lowerings do not hold yet.
-    pub fn as_field_type(&self) -> Result<(EntryType, Option<Bound>), Composition> {
-        if let Some((t, max)) = leaf(self) {
-            return Ok((EntryType::Scalar(t), max));
-        }
-        match self {
-            Self::Optional { elem } => leaf(elem)
-                .map(|(t, max)| (EntryType::Optional { elem: t }, max))
-                .ok_or_else(|| Composition::of(&**elem)),
-            _ => Err(Composition::of(self)),
-        }
-    }
-
     /// The type as a statechart's variable and an algorithm's slot hold it
     /// today: a scalar, a text or a byte string; a record; a list of fixed-width
     /// numbers, `bool` or records; an optional scalar, text, byte string or
@@ -836,6 +889,68 @@ pub trait TypeEnv {
     /// The underlying type of the enum `alias` names: what its value is on a
     /// CBOR wire.
     fn enum_underlying(&self, alias: &str) -> Option<SceType>;
+    /// The environment the fields of the record `alias` names are read in: the
+    /// record's own document, whose aliases name its enums and records, and
+    /// which need not be the aliases of the document that names the record.
+    /// `None` when the record's fields are read here, as a table that holds
+    /// one set of aliases answers.
+    fn record_scope(&self, _alias: &str) -> Option<&dyn TypeEnv> {
+        None
+    }
+    /// What tells the record `alias` names from every other, across the
+    /// documents its fields are read in: what a record that holds itself is
+    /// found by. The alias itself where one set of aliases is read.
+    fn record_key(&self, alias: &str) -> String {
+        alias.to_string()
+    }
+}
+
+/// An enum, as a size reads it: the declared names of its variants and its
+/// underlying type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopedEnum {
+    pub names: Vec<String>,
+    pub underlying: SceType,
+}
+
+/// A record, as a size reads it: the document it is (its identity), its fields
+/// in the schema's order, and the scope its own document names types in.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ScopedRecord {
+    pub identity: String,
+    pub fields: Vec<(String, ValueType)>,
+    pub scope: TypeScope,
+}
+
+/// The enums and records one document's aliases name, each record with the
+/// scope of its own document: the environment a type of that document is
+/// sized in ([`TypeEnv`]). A record's fields are read with its own document's
+/// aliases, at every depth, so a record that names its enum `Level` is sized
+/// by its enum whatever the document that holds the record calls it.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TypeScope {
+    pub enums: std::collections::BTreeMap<String, ScopedEnum>,
+    pub records: std::collections::BTreeMap<String, ScopedRecord>,
+}
+
+impl TypeEnv for TypeScope {
+    fn record_fields(&self, alias: &str) -> Option<Vec<(String, ValueType)>> {
+        self.records.get(alias).map(|r| r.fields.clone())
+    }
+    fn enum_names(&self, alias: &str) -> Option<Vec<String>> {
+        self.enums.get(alias).map(|e| e.names.clone())
+    }
+    fn enum_underlying(&self, alias: &str) -> Option<SceType> {
+        self.enums.get(alias).map(|e| e.underlying.clone())
+    }
+    fn record_scope(&self, alias: &str) -> Option<&dyn TypeEnv> {
+        self.records.get(alias).map(|r| &r.scope as &dyn TypeEnv)
+    }
+    fn record_key(&self, alias: &str) -> String {
+        self.records
+            .get(alias)
+            .map_or_else(|| alias.to_string(), |r| r.identity.clone())
+    }
 }
 
 /// Why a type has no size the build can compute.
@@ -995,9 +1110,10 @@ fn size(
             }
         }
         ValueType::Record { alias } => {
-            if records.iter().any(|r| r == alias) {
+            let record_key = env.record_key(alias);
+            if records.iter().any(|r| *r == record_key) {
                 let mut cycle = records.clone();
-                cycle.push(alias.clone());
+                cycle.push(record_key);
                 return Err(SizeError::ContainsItself { cycle });
             }
             let fields = env
@@ -1005,7 +1121,9 @@ fn size(
                 .ok_or_else(|| SizeError::Unresolved {
                     alias: alias.clone(),
                 })?;
-            records.push(alias.clone());
+            // The record's fields name types by its own document's aliases.
+            let inner = env.record_scope(alias).unwrap_or(env);
+            records.push(record_key);
             let n = fields.len() as u64;
             let mut total = match measure {
                 // The braces and a comma between each two members.
@@ -1021,7 +1139,7 @@ fn size(
                         cbor_head_len(len) + len
                     }
                 };
-                total = add(add(total, key)?, size(field, measure, env, records)?)?;
+                total = add(add(total, key)?, size(field, measure, inner, records)?)?;
             }
             records.pop();
             Ok(total)
@@ -1064,6 +1182,16 @@ pub fn payload_json_max_len(
         fn enum_underlying(&self, alias: &str) -> Option<SceType> {
             self.env.enum_underlying(alias)
         }
+        fn record_scope(&self, alias: &str) -> Option<&dyn TypeEnv> {
+            if alias.is_empty() {
+                None
+            } else {
+                self.env.record_scope(alias)
+            }
+        }
+        fn record_key(&self, alias: &str) -> String {
+            self.env.record_key(alias)
+        }
     }
     json_max_len(
         &ValueType::Record {
@@ -1078,17 +1206,27 @@ pub fn payload_json_max_len(
 /// not: the aliases on the way, `alias` first and last. A record whose alias the
 /// environment does not resolve is no cycle here; its refusal is the import's.
 pub fn contains_itself(alias: &str, env: &dyn TypeEnv) -> Option<Vec<String>> {
-    fn visit(alias: &str, env: &dyn TypeEnv, path: &mut Vec<String>) -> Option<Vec<String>> {
-        if let Some(at) = path.iter().position(|a| a == alias) {
-            let mut cycle = path[at..].to_vec();
+    // `path` holds each record on the way by its key ([`TypeEnv::record_key`]),
+    // which tells two records apart across the documents their aliases are
+    // read in, and by the alias the cycle is reported by.
+    fn visit(
+        alias: &str,
+        env: &dyn TypeEnv,
+        path: &mut Vec<(String, String)>,
+    ) -> Option<Vec<String>> {
+        let key = env.record_key(alias);
+        if let Some(at) = path.iter().position(|(k, _)| *k == key) {
+            let mut cycle: Vec<String> = path[at..].iter().map(|(_, a)| a.clone()).collect();
             cycle.push(alias.to_string());
             return Some(cycle);
         }
         let fields = env.record_fields(alias)?;
-        path.push(alias.to_string());
+        // The record's fields name records by its own document's aliases.
+        let scope = env.record_scope(alias).unwrap_or(env);
+        path.push((key, alias.to_string()));
         for (_, ty) in &fields {
             for inner in ty.record_aliases() {
-                if let Some(cycle) = visit(inner, env, path) {
+                if let Some(cycle) = visit(inner, scope, path) {
                     return Some(cycle);
                 }
             }
@@ -1620,23 +1758,23 @@ mod tests {
     // ── The narrowing onto today's lowerings ──────────────────────────────
 
     #[test]
-    fn a_field_holds_a_leaf_or_an_optional_leaf_and_names_any_composition() {
-        let read = |t: &str| WrittenType::read(t).unwrap();
+    fn an_entry_is_a_leaf_or_an_optional_leaf_and_names_any_composition() {
+        let read = |t: &str| WrittenType::read(t).unwrap().bounded().unwrap();
         assert_eq!(
-            read("string[8]").as_field_type(),
-            Ok((EntryType::Scalar(SceType::String), Some(Bound::of(8))))
+            read("string[8]").entry(),
+            Ok((EntryType::Scalar(SceType::String), Some(&Bound::of(8))))
         );
         assert_eq!(
-            read("optional<bytes[n=4]>").as_field_type(),
+            read("optional<bytes[n=4]>").entry(),
             Ok((
                 EntryType::Optional {
                     elem: SceType::Bytes
                 },
-                Some(Bound::named("n", 4))
+                Some(&Bound::named("n", 4))
             ))
         );
         assert_eq!(
-            read("enum:Level").as_field_type(),
+            read("enum:Level").entry(),
             Ok((EntryType::Scalar(enum_ty("Level")), None))
         );
         for (text, place, constructor) in [
@@ -1646,7 +1784,7 @@ mod tests {
             ("optional<record:Item>", "record:Item", "record"),
         ] {
             assert_eq!(
-                read(text).as_field_type(),
+                read(text).entry(),
                 Err(Composition {
                     place: place.into(),
                     constructor: constructor.into()
@@ -1654,6 +1792,65 @@ mod tests {
                 "{text}"
             );
         }
+    }
+
+    #[test]
+    fn a_record_is_sized_by_the_enums_its_own_document_names() {
+        let level = |names: &[&str]| ScopedEnum {
+            names: names.iter().map(|n| n.to_string()).collect(),
+            underlying: SceType::Uint8,
+        };
+        let mut item_scope = TypeScope::default();
+        item_scope
+            .enums
+            .insert("Level".into(), level(&["low", "critical"]));
+        // The document that holds the record calls another enum `Level`.
+        let mut outer = TypeScope::default();
+        outer.enums.insert("Level".into(), level(&["a"]));
+        outer.records.insert(
+            "Item".into(),
+            ScopedRecord {
+                identity: "item.scxml".into(),
+                fields: vec![("level".into(), ValueType::Scalar(enum_ty("Level")))],
+                scope: item_scope,
+            },
+        );
+        let item = ValueType::Record {
+            alias: "Item".into(),
+        };
+        // `{"level":"critical"}`: the braces, the quoted key and its colon, and
+        // the longest name of the record's own enum, quoted.
+        assert_eq!(json_max_len(&item, &outer), Ok(2 + (2 + 5 + 1) + (2 + 8)));
+        assert_eq!(cbor_max_len(&item, &outer), Ok(1 + (1 + 5) + 2));
+        assert_eq!(contains_itself("Item", &outer), None);
+    }
+
+    #[test]
+    fn an_optional_is_found_at_every_depth() {
+        let read = |t: &str| WrittenType::read(t).unwrap().bounded().unwrap();
+        assert!(read("optional<int64>").holds_optional());
+        assert!(read("list<optional<uint16>>[2]").holds_optional());
+        assert!(read("list<list<optional<bool>>[2]>[2]").holds_optional());
+        assert!(!read("list<list<uint8>[2]>[2]").holds_optional());
+        assert!(!read("record:Item").holds_optional());
+    }
+
+    #[test]
+    fn a_type_crosses_the_ast_in_one_shape_its_bounds_inside_it() {
+        let read = |t: &str| WrittenType::read(t).unwrap().bounded().unwrap();
+        let json = |t: &str| serde_json::to_value(read(t)).unwrap();
+        assert_eq!(json("int64"), serde_json::json!("int64"));
+        assert_eq!(json("string[n=8]"), serde_json::json!({"string": 8}));
+        assert_eq!(json("bytes[4]"), serde_json::json!({"bytes": 4}));
+        assert_eq!(
+            json("optional<int64>"),
+            serde_json::json!({"optional": "int64"})
+        );
+        assert_eq!(json("record:Item"), serde_json::json!({"record": "Item"}));
+        assert_eq!(
+            json("list<list<string[8]>[4]>[3]"),
+            serde_json::json!({"list": {"list": {"string": 8}, "max": 4}, "max": 3})
+        );
     }
 
     #[test]

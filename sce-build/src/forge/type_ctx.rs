@@ -660,7 +660,7 @@ impl StaticEnum {
 /// already judged the alias against the imports.
 fn static_record_paths<'v>(
     variables: impl IntoIterator<Item = &'v crate::model::Variable>,
-    records: &std::collections::BTreeMap<String, EventSchemaModel>,
+    records: &std::collections::BTreeMap<String, EntrySchema>,
 ) -> Vec<(String, InferredType)> {
     let mut paths = Vec::new();
     for var in variables {
@@ -743,7 +743,7 @@ pub const INDEXED_ELEMENT: &str = "[].";
 /// ([`TypeCtx::string_capacities`]).
 fn static_record_string_bounds<'v>(
     variables: impl IntoIterator<Item = &'v crate::model::Variable>,
-    records: &std::collections::BTreeMap<String, EventSchemaModel>,
+    records: &std::collections::BTreeMap<String, EntrySchema>,
 ) -> Vec<(String, usize)> {
     let mut bounds = Vec::new();
     for var in variables {
@@ -782,7 +782,7 @@ fn static_record_string_bounds<'v>(
 /// `sce:max-size`. An optional text is bounded as the value it holds when
 /// present is (docs/adr/0055). `None` for a field that is no text, or a text
 /// the schema bounds by nothing.
-fn text_field_bound(field: &SchemaField) -> Option<usize> {
+fn text_field_bound(field: &EntryField) -> Option<usize> {
     match (field.sce_type.present_type(), field.max_size) {
         (SceType::String, Some(bound)) => Some(bound as usize),
         _ => None,
@@ -813,7 +813,7 @@ impl LoopVariables {
         item: &str,
         index: Option<&str>,
         elem: &ListElemType,
-        schemas: &std::collections::BTreeMap<String, EventSchemaModel>,
+        schemas: &std::collections::BTreeMap<String, EntrySchema>,
     ) -> Self {
         let (item_ty, paths) = match elem {
             ListElemType::Scalar(ty) => (Some(InferredType::from_sce_type(ty)), Vec::new()),
@@ -1494,7 +1494,7 @@ impl StaticScope {
     /// The dotted paths an expression may read: every record variable's
     /// fields, and `payload`'s `_event.data.<field>` when the expression sits
     /// on a transition whose event carries one.
-    pub fn paths(&self, payload: Option<&EventSchemaModel>) -> Vec<(String, InferredType)> {
+    pub fn paths(&self, payload: Option<&EntrySchema>) -> Vec<(String, InferredType)> {
         let mut paths = self.record_paths.clone();
         if let Some(schema) = payload {
             paths.extend(crate::forge::event_schema_check::event_payload_paths(

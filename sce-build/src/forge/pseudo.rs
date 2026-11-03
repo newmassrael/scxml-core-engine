@@ -1681,8 +1681,10 @@ fn render_event_schema(m: &EventSchemaModel) -> Result<Vec<Node>, Unsupported> {
             provenance: &[],
             unresolved: &m.datamodel_markers,
         });
+        // A field's type as the one type grammar spells it, every bound in its
+        // bracket (docs/adr/0086).
         for f in &m.fields {
-            render_typed_field(f, &f.sce_type.as_attr(), out);
+            render_typed_field(f, &f.sce_type.to_string(), out);
         }
     });
     if let Some(gap) = out.refused {

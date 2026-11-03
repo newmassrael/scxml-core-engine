@@ -13,13 +13,14 @@
 
 use std::path::Path;
 
-use sce_build::forge::model::{EntryType, ForgeDocument, SceType, SchemaField};
+use sce_build::forge::model::{EntryField, EntryType, ForgeDocument, SceType};
 use sce_build::forge::parser::parse_forge_with_imports;
 use sce_build::DocumentLabel;
 use sce_rust_trust::message::{self, Kind, SignedEvent};
 
-/// The event name and the fields a standard schema of the shared list declares.
-fn declared(name: &str) -> (String, Vec<SchemaField>) {
+/// The event name and the fields a standard schema of the shared list declares, each one
+/// entry: the trust layer signs a field one value at a time.
+fn declared(name: &str) -> (String, Vec<EntryField>) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../stdlib/shared")
         .join(format!("{name}.scxml"));
@@ -31,6 +32,9 @@ fn declared(name: &str) -> (String, Vec<SchemaField>) {
     let ForgeDocument::EventSchema(schema) = parsed.document else {
         panic!("{name} is an event schema");
     };
+    let schema = schema
+        .entry_schema()
+        .unwrap_or_else(|composed| panic!("{name}: {composed:?}"));
     (schema.event_name, schema.fields)
 }
 

@@ -121,7 +121,7 @@ use crate::forge::error::{ForgeError, GenerateError, Located};
 use crate::forge::expr::ExprTarget;
 use crate::forge::import_source::ImportSource;
 use crate::forge::model::{
-    EnumModel, ForgeDocument, ForgeImport, ForgeKind, ParsedForge, SceType, SchemaField,
+    EntryField, EnumModel, ForgeDocument, ForgeImport, ForgeKind, ParsedForge, SceType,
 };
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{
@@ -369,7 +369,7 @@ impl StaticTarget for JsTarget {
     fn payload_revised_read(
         &self,
         accessor: &str,
-        field: &SchemaField,
+        field: &EntryField,
         variants: &[&str],
         default: &str,
     ) -> Option<String> {
@@ -391,7 +391,7 @@ impl StaticTarget for JsTarget {
     fn payload_optional_read(
         &self,
         accessor: &str,
-        field: &SchemaField,
+        field: &EntryField,
         variants: &[&str],
     ) -> Option<String> {
         let kind = field_kind(field.sce_type.optional_elem()?, variants)?;
@@ -553,7 +553,7 @@ impl StaticTarget for JsTarget {
         &self,
         _ty: &str,
         _alias: &str,
-        _schema: &crate::forge::model::EventSchemaModel,
+        _schema: &crate::forge::model::EntrySchema,
         _enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
         String::new()
@@ -2291,7 +2291,7 @@ mod tests {
     #[test]
     fn an_optional_payload_field_is_read_as_an_optional_value() {
         let target = JsTarget::new(BTreeMap::new());
-        let field = |id: &str, elem: SceType| SchemaField {
+        let field = |id: &str, elem: SceType| EntryField {
             id: id.to_string(),
             sce_type: crate::forge::model::EntryType::Optional { elem },
             direction: crate::forge::model::Direction::In,

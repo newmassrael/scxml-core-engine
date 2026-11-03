@@ -22,7 +22,7 @@
 //! side effects.
 
 use crate::forge::error::SourceLocation;
-use crate::forge::model::EventSchemaModel;
+use crate::forge::model::EntrySchema;
 use crate::model::{
     Action, DoneData, DoneDataContent, Invoke, InvokeSessionCommon, MeshRpcTarget, SCXMLModel,
     State, Variable,
@@ -462,7 +462,7 @@ fn collect_global_script_causes(model: &SCXMLModel, out: &mut Vec<NeedsScriptEng
 fn collect_state_causes(
     state_id: &str,
     state: &State,
-    schemas: &BTreeMap<String, EventSchemaModel>,
+    schemas: &BTreeMap<String, EntrySchema>,
     static_model: bool,
     out: &mut Vec<NeedsScriptEngineCause>,
 ) {
@@ -504,7 +504,7 @@ fn collect_state_causes(
 
 fn transition_guard_needs_engine(
     trans: &crate::model::Transition,
-    schemas: &BTreeMap<String, EventSchemaModel>,
+    schemas: &BTreeMap<String, EntrySchema>,
 ) -> bool {
     // `check_expression_needs` is the single classifier — it returns
     // `(false, _)` for `cpp:` / `kt:` prefixes and pure-In() predicates,

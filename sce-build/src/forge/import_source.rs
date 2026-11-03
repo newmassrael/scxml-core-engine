@@ -23,7 +23,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::forge::error::{ForgeError, ImportError, Located};
-use crate::forge::model::{ForgeDocument, ForgeImport, ParsedForge};
+use crate::forge::model::{ForgeDocument, ForgeImport, ForgeKind, ParsedForge};
+use crate::forge::value_type::{ScopedEnum, ScopedRecord, TypeScope};
 use crate::DocumentLabel;
 
 /// An imported document's text, and the path it was read from.
@@ -132,4 +133,89 @@ pub fn enum_model(
         ForgeDocument::Enum(e) => Some(e),
         _ => None,
     }
+}
+
+/// The record an event-schema document is, as a type that holds it is sized
+/// (docs/adr/0086, section 2): its identity, its fields of the one value type,
+/// and the scope its own imports (`imports`, written relative to `base_dir`,
+/// the schema's directory) name enums and records in, at every depth.
+pub fn scoped_record(
+    path: &Path,
+    schema: &crate::forge::model::EventSchemaModel,
+    imports: &[ForgeImport],
+    base_dir: &Path,
+) -> ScopedRecord {
+    let mut on_path = vec![path.to_path_buf()];
+    scoped_record_at(path, schema, imports, base_dir, &mut on_path)
+}
+
+fn scoped_record_at(
+    path: &Path,
+    schema: &crate::forge::model::EventSchemaModel,
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    on_path: &mut Vec<PathBuf>,
+) -> ScopedRecord {
+    ScopedRecord {
+        identity: crate::forge::stdlib::identity(path),
+        fields: schema
+            .fields
+            .iter()
+            .map(|f| (f.id.clone(), f.sce_type.clone()))
+            .collect(),
+        scope: type_scope_at(imports, base_dir, on_path),
+    }
+}
+
+/// Each enum and event schema `imports` names (written relative to
+/// `base_dir`), read as a size reads it. Silent as [`parse_quietly`] is: an
+/// import that cannot be read is left out, and a type that names it has no
+/// size, refused where the size is asked. A schema already on the way down is
+/// not read again: a record that holds itself through its documents is an
+/// import cycle, refused where the imports are walked
+/// (`crate::forge::cross_kind_check`).
+fn type_scope_at(
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    on_path: &mut Vec<PathBuf>,
+) -> TypeScope {
+    let mut scope = TypeScope::default();
+    for import in imports {
+        match import.kind {
+            ForgeKind::Enum => {
+                if let Some(ForgeDocument::Enum(model)) =
+                    parse_quietly(base_dir, import).map(|p| p.document)
+                {
+                    scope.enums.insert(
+                        import.alias.clone(),
+                        ScopedEnum {
+                            names: model.variants.iter().map(|v| v.name.clone()).collect(),
+                            underlying: model.underlying_type.clone(),
+                        },
+                    );
+                }
+            }
+            ForgeKind::EventSchema => {
+                let Ok(source) = ImportSource::read(base_dir, import) else {
+                    continue;
+                };
+                if on_path.contains(&source.path) {
+                    continue;
+                }
+                let Ok(Some(parsed)) = source.parse() else {
+                    continue;
+                };
+                let ForgeDocument::EventSchema(schema) = &parsed.document else {
+                    continue;
+                };
+                let dir = source.path.parent().unwrap_or(base_dir);
+                on_path.push(source.path.clone());
+                let record = scoped_record_at(&source.path, schema, &parsed.imports, dir, on_path);
+                on_path.pop();
+                scope.records.insert(import.alias.clone(), record);
+            }
+            _ => {}
+        }
+    }
+    scope
 }

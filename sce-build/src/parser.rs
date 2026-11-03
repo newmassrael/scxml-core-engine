@@ -2207,7 +2207,7 @@ struct MeshRpcInvokeAttrs {
 /// The event schemas and enums a document imports, by the alias it imports
 /// them under, as `SCXMLParser::parse_imported_forge_siblings` resolves them.
 type ImportedSiblings = (
-    BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    BTreeMap<String, crate::forge::model::EntrySchema>,
     BTreeMap<String, crate::forge::model::EnumModel>,
 );
 
@@ -2751,7 +2751,7 @@ impl SCXMLParser {
     {
         use crate::forge::error::{ImportError, Located};
         use crate::forge::model::{ForgeDocument, ForgeKind};
-        let mut schemas: std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel> =
+        let mut schemas: std::collections::BTreeMap<String, crate::forge::model::EntrySchema> =
             std::collections::BTreeMap::new();
         let mut enums: std::collections::BTreeMap<String, crate::forge::model::EnumModel> =
             std::collections::BTreeMap::new();
@@ -2818,8 +2818,24 @@ impl SCXMLParser {
                 ));
             }
             match parsed.document {
+                // A statechart reads an event's data one field at a time, each
+                // field one value: a schema whose field is a list, a record or an
+                // optional over either is a type of the language no statechart
+                // lowers yet, refused by name at the import that names it
+                // (docs/adr/0086, section 7.3).
                 ForgeDocument::EventSchema(schema) => {
-                    schemas.entry(schema.name.clone()).or_insert(schema);
+                    let entries = schema.entry_schema().map_err(|composed| {
+                        Located::new(
+                            crate::forge::error::GenerateError::unsupported(
+                                composed.sentence(&schema.name, "a statechart"),
+                            )
+                            .into(),
+                            diag_label,
+                            import.line,
+                            None,
+                        )
+                    })?;
+                    schemas.entry(entries.name.clone()).or_insert(entries);
                 }
                 ForgeDocument::Enum(em) => {
                     enums.entry(em.name.clone()).or_insert(em);
