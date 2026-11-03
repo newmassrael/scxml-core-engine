@@ -2445,14 +2445,36 @@ SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_root_start_refusal(void)
 {% endif %}
 }
 
-{% if model.emitted_transition_table and model.emitted_transition_table.transitions %}
+{% if model.emitted_transition_table %}
 {# emitted-transition-table:begin #}
+{# The storage lives inside the one function that hands it out, so the table
+   and its strings are referenced from nowhere else: a link that drops what no
+   one references (`-ffunction-sections -fdata-sections -Wl,--gc-sections`)
+   drops the function, then the table, then its strings, from a program that
+   never calls it. Each string is a named object of its own and not a literal,
+   because a compiler gathers a file's literals into one section that any
+   other literal of this file keeps alive; a named object has a section of its
+   own. Names declared in the function cannot meet a name of the machine's.
+   `sce-build/tests/a_program_that_never_names_the_transition_table_carries_none_of_it.rs`
+   measures this. #}
 /* §synth-6.2.6: the transition table the header declares. */
-const {{ csym_prefix }}{{ model.name }}_transition_t {{ csym_prefix }}{{ model.name }}_transitions[{{ csym_prefix | upper }}{{ model.name | upper }}_TRANSITION_COUNT] = {
+SCE_SM_FN const {{ csym_prefix }}{{ model.name }}_transition_t *{{ csym_prefix }}{{ model.name }}_transitions(void) {
+{% if model.emitted_transition_table.transitions %}
 {% for t in model.emitted_transition_table.transitions %}
-    { {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ t.from | to_c11_upper_ident }}, {% if t.to %}{{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ t.to | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT{% endif %}, {% if t.event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ t.event | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE{% endif %}, "{{ t.targets | escape_c }}", "{{ t.events | escape_c }}", {{ t.index }}u, "{{ t.annotation | escape_c }}" },
+    static const char targets_{{ loop.index0 }}[] = "{{ t.targets | escape_c }}";
+    static const char events_{{ loop.index0 }}[] = "{{ t.events | escape_c }}";
+    static const char annotation_{{ loop.index0 }}[] = "{{ t.annotation | escape_c }}";
 {% endfor %}
-};
+    static const {{ csym_prefix }}{{ model.name }}_transition_t transitions[{{ csym_prefix | upper }}{{ model.name | upper }}_TRANSITION_COUNT] = {
+{% for t in model.emitted_transition_table.transitions %}
+        { .from = {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ t.from | to_c11_upper_ident }}, {% if t.to %}.to = {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ t.to | to_c11_upper_ident }}, .has_to = true, {% else %}.to = ({{ csym_prefix }}{{ model.name }}_state_t)0, .has_to = false, {% endif %}{% if t.event %}.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ t.event | to_c11_upper_ident }}, .has_event = true, {% else %}.event = ({{ csym_prefix }}{{ model.name }}_event_t)0, .has_event = false, {% endif %}.targets = targets_{{ loop.index0 }}, .events = events_{{ loop.index0 }}, .index = {{ t.index }}u, .annotation = annotation_{{ loop.index0 }} },
+{% endfor %}
+    };
+    return transitions;
+{% else %}
+    return NULL;
+{% endif %}
+}
 {# emitted-transition-table:end #}
 
 {% endif %}

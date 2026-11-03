@@ -46,8 +46,8 @@ PY
 
 mutation_case "C numbers a transition one past its place in the state" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     '{{ t.index }}u, "{{ t.annotation | escape_c }}"',
-     '{{ t.index + 1 }}u, "{{ t.annotation | escape_c }}"')
+     '.index = {{ t.index }}u, .annotation = annotation_',
+     '.index = {{ t.index + 1 }}u, .annotation = annotation_')
 PY
 
 mutation_case "Rust numbers a transition one past its place in the state" <<'PY'
@@ -97,6 +97,19 @@ mutation_case "Rust writes the target set where the descriptors belong" <<'PY'
 edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
      'events: "{{ t.events | escape_rust }}"',
      'events: "{{ t.targets | escape_rust }}"')
+PY
+
+# ── A presence flag: the half of an absent id that C and Go write themselves ──
+#
+# C and Go have no optional, so an entry says whether `to` holds a value with a flag
+# beside it. A flag that says "absent" beside a target the export names is a table that
+# hides the target from every host that reads the flag first, which is every host that
+# reads it correctly.
+
+mutation_case "C says a transition with a target has none" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     '.has_to = true, ',
+     '.has_to = false, ')
 PY
 
 # ── The `$` of an annotation: written as typed, so the compiler reads it ──

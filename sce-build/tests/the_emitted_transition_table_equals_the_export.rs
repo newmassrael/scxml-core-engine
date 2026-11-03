@@ -283,6 +283,10 @@ fn read_table(lang: &str, source: &str, machine: &str) -> Vec<Entry> {
             ),
             7,
         ),
+        // A value and its presence flag are read as one: an id with `true`, or
+        // the zero of the type with `false`. Any other pairing matches neither,
+        // so the entry goes missing from what is read back. The strings are
+        // named objects, read back through `c11_strings`.
         "c11" => {
             let prefix = Regex::new(r"#define\s+(\w+)_TRANSITION_COUNT\b")
                 .unwrap()
@@ -291,29 +295,52 @@ fn read_table(lang: &str, source: &str, machine: &str) -> Vec<Entry> {
                 .expect("the header defines the transition count");
             (
                 format!(
-                    r"\{{\s*{prefix}_STATE_(\w+),\s*(?:{prefix}_STATE_(\w+)),\s*(?:{prefix}_EVENT_(\w+)),\s*{LITERAL},\s*{LITERAL},\s*(\d+)u,\s*{LITERAL}\s*\}}"
+                    r"\{{\s*\.from = {prefix}_STATE_(\w+),\s*\.to = (?:{prefix}_STATE_(\w+),\s*\.has_to = true|\(\w+_state_t\)0,\s*\.has_to = false),\s*\.event = (?:{prefix}_EVENT_(\w+),\s*\.has_event = true|\(\w+_event_t\)0,\s*\.has_event = false),\s*\.targets = (\w+),\s*\.events = (\w+),\s*\.index = (\d+)u,\s*\.annotation = (\w+)\s*\}}"
                 ),
                 7,
             )
         }
         other => panic!("no reader for {other}"),
     };
+    let strings = if lang == "c11" {
+        c11_strings(source)
+    } else {
+        BTreeMap::new()
+    };
+    let text = |captured: &str| -> String {
+        if lang == "c11" {
+            let literal = strings
+                .get(captured)
+                .unwrap_or_else(|| panic!("c11: no string object named {captured}"));
+            unescape(literal)
+        } else {
+            unescape(captured)
+        }
+    };
     let re = Regex::new(&pattern).unwrap_or_else(|e| panic!("{lang}: {e}"));
     re.captures_iter(source)
         .map(|c| {
             assert_eq!(c.len() - 1, group_count);
-            let none_state = lang == "c11" && opt(&c, 2).as_deref() == Some("COUNT");
-            let none_event = lang == "c11" && opt(&c, 3).as_deref() == Some("NONE");
             Entry {
                 from: c[1].to_string(),
-                to: if none_state { None } else { opt(&c, 2) },
-                event: if none_event { None } else { opt(&c, 3) },
-                targets: unescape(&c[4]),
-                events: unescape(&c[5]),
+                to: opt(&c, 2),
+                event: opt(&c, 3),
+                targets: text(&c[4]),
+                events: text(&c[5]),
                 index: c[6].parse().unwrap(),
-                annotation: unescape(&c[7]),
+                annotation: text(&c[7]),
             }
         })
+        .collect()
+}
+
+/// The string objects the C table's entries name, by name, each with the body of
+/// its literal as written.
+fn c11_strings(source: &str) -> BTreeMap<String, String> {
+    Regex::new(&format!(r"static const char (\w+)\[\] = {LITERAL};"))
+        .unwrap()
+        .captures_iter(source)
+        .map(|c| (c[1].to_string(), c[2].to_string()))
         .collect()
 }
 
@@ -656,17 +683,19 @@ fn an_annotation_round_trips_through_every_backend_unread() {
     }
 }
 
-/// A machine with no transition has a table, and it is empty.
-#[test]
-fn a_machine_without_transitions_has_an_empty_table() {
-    let doc_text = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+/// A machine that declares its table and has no transition.
+const DOC_WITHOUT_TRANSITIONS: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext" sce:transition-table="emit"
        version="1.0" name="ttemit" initial="only" datamodel="null">
   <final id="only"/>
 </scxml>
 "#;
+
+/// A machine with no transition has a table, and it is empty.
+#[test]
+fn a_machine_without_transitions_has_an_empty_table() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let doc = write_doc(dir.path(), doc_text);
+    let doc = write_doc(dir.path(), DOC_WITHOUT_TRANSITIONS);
     for lang in backends() {
         let out = dir.path().join(format!("out_{lang}"));
         generate(lang, &out, &doc);
@@ -1020,12 +1049,12 @@ fn field_conditions(
             "c11" => {
                 from = format!("{at}.from == {upper}_STATE_{}", e.from);
                 to = match &e.to {
-                    Some(s) => format!("{at}.to == {upper}_STATE_{s}"),
-                    None => format!("{at}.to == {upper}_STATE_COUNT"),
+                    Some(s) => format!("{at}.has_to && {at}.to == {upper}_STATE_{s}"),
+                    None => format!("!{at}.has_to"),
                 };
                 event = match &e.event {
-                    Some(v) => format!("{at}.event == {upper}_EVENT_{v}"),
-                    None => format!("{at}.event == {upper}_EVENT_NONE"),
+                    Some(v) => format!("{at}.has_event && {at}.event == {upper}_EVENT_{v}"),
+                    None => format!("!{at}.has_event"),
                 };
                 targets = format!(
                     "strcmp({at}.targets, {}) == 0",
@@ -1285,33 +1314,65 @@ fn the_c_table_compiles_and_holds_the_export() {
     let mut program = format!(
         "#include \"{STEM}_sm.h\"\n#include <stdio.h>\n#include <string.h>\n\nstatic int bad;\n\
          #define EXPECT(cond, what) do {{ if (!(cond)) {{ fprintf(stderr, \"MISMATCH: %s\\n\", what); bad++; }} }} while (0)\n\n\
-         int main(void) {{\n    EXPECT({upper}_TRANSITION_COUNT == {}u, \"entry count\");\n    EXPECT(strcmp({upper}_SOURCE_HASH, {}) == 0, \"source hash\");\n",
+         int main(void) {{\n    const {lower}_transition_t *t = {lower}_transitions();\n    if (t == NULL) {{\n        fprintf(stderr, \"MISMATCH: the table of a machine with transitions is NULL\\n\");\n        return 1;\n    }}\n\
+         \x20   EXPECT(t == {lower}_transitions(), \"the table is one object\");\n    EXPECT({upper}_TRANSITION_COUNT == {}u, \"entry count\");\n    EXPECT(strcmp({upper}_SOURCE_HASH, {}) == 0, \"source hash\");\n",
         spelled.len(),
         literal_of("c11", header["source_hash"].as_str().unwrap()),
     );
-    for (what, cond) in field_conditions("c11", "", &format!("{lower}_transitions"), &spelled) {
+    for (what, cond) in field_conditions("c11", "", "t", &spelled) {
         program.push_str(&format!(
             "    EXPECT({cond}, {});\n",
             literal_of("c11", &what)
         ));
     }
     program.push_str("    return bad ? 1 : 0;\n}\n");
+    build_and_run_c(&gcc, &work, &out, &program, "the generated C table program");
+}
+
+/// A C machine with no transition still declares its table, and hands out no
+/// storage for it: the program names the table without asking whether there is
+/// one, which is what the accessor is for.
+#[test]
+fn the_c_table_of_a_machine_without_transitions_is_null_and_counts_none() {
+    let Some(gcc) = toolchain::locate_any(&["gcc", "cc"]) else {
+        toolchain::skipped(
+            "the_c_table_of_a_machine_without_transitions_is_null_and_counts_none: gcc/cc not on PATH",
+        );
+        return;
+    };
+    let work = scratch("c11_empty_run");
+    let doc = write_doc(&work, DOC_WITHOUT_TRANSITIONS);
+    let out = work.join("out");
+    generate("c11", &out, &doc);
+    let lower = STEM.to_lowercase();
+    let upper = STEM.to_uppercase();
+    let program = format!(
+        "#include \"{STEM}_sm.h\"\n#include <stdio.h>\n\nint main(void) {{\n\
+         \x20   const {lower}_transition_t *t = {lower}_transitions();\n\
+         \x20   if (t != NULL) {{\n        fprintf(stderr, \"MISMATCH: a machine with no transition hands out a table\\n\");\n        return 1;\n    }}\n\
+         \x20   if ({upper}_TRANSITION_COUNT != 0u) {{\n        fprintf(stderr, \"MISMATCH: a machine with no transition counts one\\n\");\n        return 1;\n    }}\n\
+         \x20   return 0;\n}}\n"
+    );
+    build_and_run_c(&gcc, &work, &out, &program, "the empty C table program");
+}
+
+/// Build `program` with the C machine generated into `out`, and run it.
+fn build_and_run_c(gcc: &Path, work: &Path, out: &Path, program: &str, what: &str) {
     let main_path = work.join("check.c");
     std::fs::write(&main_path, program).expect("write the program");
-
     let binary = work.join("check");
-    let mut compile = Command::new(&gcc);
+    let mut compile = Command::new(gcc);
     compile
         .args(["-std=c11", "-I"])
         .arg(repo_root().join("backends/c/runtime/include"))
         .arg("-I")
-        .arg(&out)
+        .arg(out)
         .arg(&main_path)
         .arg(out.join(format!("{STEM}_sm.c")))
         .arg("-o")
         .arg(&binary);
     run_ok(compile, "gcc over the generated machine and the check");
-    run_ok(Command::new(&binary), "the generated C table program");
+    run_ok(Command::new(&binary), what);
 }
 
 /// The generated Swift is built as a package of its own against the real runtime

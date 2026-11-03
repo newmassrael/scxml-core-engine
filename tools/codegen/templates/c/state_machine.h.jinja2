@@ -277,13 +277,17 @@ typedef enum {{ csym_prefix }}{{ model.name }}_event_e {{ csym_prefix }}{{ model
 {# emitted-transition-table:begin #}
 {% set _table = model.emitted_transition_table %}
 /* ── §synth-6.2.6: transition table, because the document declares it ── */
-{# One definition in the `.c`, declared here, for the reason every other piece of
-   this machine's data is: a `static const` array in a header is one copy per
-   translation unit that includes it. A zero-length array is not C, so a machine
-   with no transitions declares the count and no array. #}
+{# The table is handed out by one function, declared for every machine that
+   declares the table, as the transition function hands out its lists: C has no
+   array of length zero, so an array declared here would exist for some machines
+   and not for others, and a consumer would `#if` on the count to name it. The
+   storage is defined once, in the `.c`, for the reason every other piece of this
+   machine's data is: a `static const` array in a header is one copy per
+   translation unit that includes it. #}
 /* The digest of the source set this machine was generated from: the
    `source-hash` of the file's own header, as a value. */
 #define {{ csym_prefix | upper }}{{ model.name | upper }}_SOURCE_HASH "{{ _table.source_hash }}"
+/* How many entries `{{ csym_prefix }}{{ model.name }}_transitions()` points to. */
 #define {{ csym_prefix | upper }}{{ model.name | upper }}_TRANSITION_COUNT {{ _table.transitions | length }}u
 
 /* One transition of this machine, as constant data. Nothing in the machine
@@ -291,28 +295,33 @@ typedef enum {{ csym_prefix }}{{ model.name }}_event_e {{ csym_prefix }}{{ model
    design, does. `from`, `to` and `event` are this header's own enumerators;
    `index` is the transition's position within its state in document order;
    `annotation` is the `sce:req` tokens as written, space-separated and
-   uninterpreted. `to` is `{{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT` and `event` is
-   `{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE` where a transition has no single id in those
-   enumerations: a targetless transition, a first target that is a <history>,
-   an eventless transition, a wildcard or prefix descriptor, or several
-   descriptors. `targets` and `events` are the complete answer there: the
-   whole target set and every descriptor as written, space-separated (`*`, a
-   prefix such as `error.*` and a literal name alike, none resolved), the empty
-   string when the transition has none. `sce-codegen transition-table` lists
-   the same transitions in the same order. */
+   uninterpreted. `has_to` and `has_event` say whether `to` and `event` hold a
+   value; where one is false its value is the zero of its type and means
+   nothing, because the transition has no single id in that enumeration: a
+   targetless transition, a first target that is a <history>, an eventless
+   transition, a wildcard or prefix descriptor, or several descriptors.
+   `targets` and `events` are the complete answer there: the whole target set
+   and every descriptor as written, space-separated (`*`, a prefix such as
+   `error.*` and a literal name alike, none resolved), the empty string when
+   the transition has none. `sce-codegen transition-table` lists the same
+   transitions in the same order. */
 typedef struct {{ csym_prefix }}{{ model.name }}_transition_s {
     {{ csym_prefix }}{{ model.name }}_state_t from;
     {{ csym_prefix }}{{ model.name }}_state_t to;
+    bool has_to;
     {{ csym_prefix }}{{ model.name }}_event_t event;
+    bool has_event;
     const char *targets;
     const char *events;
     uint32_t index;
     const char *annotation;
 } {{ csym_prefix }}{{ model.name }}_transition_t;
-{% if _table.transitions %}
 
-extern const {{ csym_prefix }}{{ model.name }}_transition_t {{ csym_prefix }}{{ model.name }}_transitions[{{ csym_prefix | upper }}{{ model.name | upper }}_TRANSITION_COUNT];
-{% endif %}
+/* Every transition of the machine, in the order `sce-codegen transition-table`
+   lists them: `{{ csym_prefix | upper }}{{ model.name | upper }}_TRANSITION_COUNT` entries of constant
+   storage, which the machine defines once and never writes; NULL for a machine
+   with no transition. */
+const {{ csym_prefix }}{{ model.name }}_transition_t *{{ csym_prefix }}{{ model.name }}_transitions(void);
 {# emitted-transition-table:end #}
 
 {% endif %}
