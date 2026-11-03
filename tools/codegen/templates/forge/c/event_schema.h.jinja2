@@ -17,7 +17,7 @@
 {% if needs_optional %}
 #include "sce/forge/optional.h"  /* a field that may be absent, docs/adr/0055 */
 {% endif %}
-{% for inc in enum_includes %}
+{% for inc in type_includes %}
 #include "{{ inc }}"
 {% endfor %}
 {% if c_text_defs %}
@@ -35,6 +35,15 @@
    struct may leave absent (docs/adr/0055), declared once, under the guard every
    unit that holds one shares, after the buffer and the enum it wraps. #}
 {% for def in optional_defs %}
+{{ def }}
+
+{% endfor %}
+{# Each list, byte string and optional a composed field holds, laid out
+   statically: one type per distinct composition, named by its structure and
+   declared once under a guard named by it, inner before outer, so the same
+   composition is one type across the units of a build (docs/adr/0086,
+   section 7.2). #}
+{% for def in c_composite_defs %}
 {{ def }}
 
 {% endfor %}

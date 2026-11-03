@@ -4731,9 +4731,12 @@ with no length and an optional inside an optional. An algorithm's return and
 local hold their value, so a text or byte string in either states its bound
 (`string[N]`, `optional<bytes[N]>`) or is refused at the type. A parameter is a
 view of its argument, of any bound, and holds the argument's, so its outermost
-type writes none; every bound inside it is stated. A composition a position does
-not lower yet (a list of texts, a list in an event schema's field, an optional
-list) is refused there by name as `generate/unsupported-feature`. The paragraphs
+type writes none; every bound inside it is stated. An event schema's field holds
+any type of the grammar, a list, a record and an optional over either included,
+and its schema unit declares it. A position that does not lower a composition yet
+(a list of texts in a variable, an optional list, a statechart, an algorithm or a
+host that reads a schema whose field is composed) refuses it by name where it
+reads it, as `generate/unsupported-feature`. The paragraphs
 below name the attribute spelling where they were written with it; the bracket
 states the same bound.
 

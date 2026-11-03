@@ -11,7 +11,7 @@
 
 from dataclasses import dataclass
 from typing import Final{{ ", Optional" if needs_optional else "" }}
-{% for imp in python_enum_imports %}
+{% for imp in python_type_imports %}
 {{ imp }}
 {% endfor %}
 

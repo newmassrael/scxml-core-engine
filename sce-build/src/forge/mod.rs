@@ -69,6 +69,7 @@ pub mod review_table;
 pub(crate) mod ring_ops;
 pub mod rust_optional;
 pub mod schema_revision;
+pub(crate) mod schema_unit_type;
 pub mod sourcemap;
 pub mod standard_host;
 pub mod static_datamodel;

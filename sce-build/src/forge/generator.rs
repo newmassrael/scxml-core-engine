@@ -3525,6 +3525,72 @@ fn import_type_scope(imports: &[ImportContext]) -> crate::forge::value_type::Typ
     scope
 }
 
+/// What a schema unit's composed field names from outside its type, as the
+/// unit's language spells it ([`crate::forge::schema_unit_type::UnitNames`]):
+/// a scalar as every field of the unit spells it, a record as the payload type
+/// its event schema's own unit declares, which an algorithm's record names too
+/// ([`event_schema_payload_type`]).
+struct SchemaUnitNames<'a> {
+    l: &'a LangCtx,
+    imports: &'a [ImportContext],
+}
+
+impl crate::forge::schema_unit_type::UnitNames for SchemaUnitNames<'_> {
+    fn scalar(&self, ty: &SceType) -> String {
+        self.l.type_name(ty).into_owned()
+    }
+    fn record(&self, alias: &str) -> Option<String> {
+        self.imports
+            .iter()
+            .find(|i| i.kind == "event-schema" && i.alias == alias)
+            .map(|i| event_schema_payload_type(&i.document_name, self.l.lang))
+    }
+    fn enum_mangle(&self, alias: &str) -> String {
+        self.imports
+            .iter()
+            .find(|i| i.kind == "enum" && i.alias == alias)
+            .map_or_else(
+                || alias.to_string(),
+                |i| filters::to_snake_case(i.document_name.clone()),
+            )
+    }
+}
+
+/// The template keys of a schema unit's field whose type is a composition (a
+/// list, a record, or an optional over either), spelled by its constructors in
+/// the unit's language ([`crate::forge::schema_unit_type::unit_type`],
+/// docs/adr/0086, section 7.1). On C11 the types it names are gathered in
+/// `c11`, declared before the struct. Refused by name where the type names a
+/// record no import of the unit resolves.
+fn composed_schema_field(
+    l: &LangCtx,
+    names: &SchemaUnitNames<'_>,
+    field: &SchemaField,
+    c11: &mut crate::forge::schema_unit_type::C11Declarations,
+) -> Result<serde_json::Value, ForgeError> {
+    use crate::forge::schema_unit_type::{swift_zero, unit_type};
+    let refused = |why: String| {
+        ForgeError::from(GenerateError::unsupported(format!(
+            "the field `{}`: {why}",
+            field.id
+        )))
+    };
+    let spelled = unit_type(l.lang, &field.sce_type, names, c11).map_err(refused)?;
+    Ok(serde_json::json!({
+        "id": field.id,
+        "cpp_type": spelled,
+        "rs_type": spelled,
+        "kt_type": spelled,
+        "go_type": spelled,
+        "swift_type": spelled,
+        "py_type": spelled,
+        "c_type": spelled,
+        "swift_zero": swift_zero(&field.sce_type, names).map_err(refused)?,
+        "go_field_name": event_schema_field_ident(&field.id, crate::generator::Language::Go),
+        "rs_field_name": event_schema_field_ident(&field.id, crate::generator::Language::Rust),
+    }))
+}
+
 fn render_event_schema(
     env: &minijinja::Environment,
     m: &EventSchemaModel,
@@ -3538,21 +3604,17 @@ fn render_event_schema(
         .iter()
         .map(|f| (f.id.clone(), f.sce_type.clone()))
         .collect();
-    // The unit's struct spells each field as one entry: a field that is a list, a
-    // record or an optional over either is refused by name (docs/adr/0086,
-    // section 7.3).
-    let m = &m.entry_schema().map_err(|composed| {
-        ForgeError::from(GenerateError::unsupported(composed.sentence(
-            &m.name,
-            &format!("the {} schema unit", _lang.canonical_name()),
-        )))
-    })?;
+    // Each field seen as one entry where it is one, spelled as the unit has
+    // always spelled an entry; a field that is a list, a record or an optional
+    // over either is `None` here, and is spelled by its constructors
+    // ([`crate::forge::schema_unit_type`], docs/adr/0086, section 7.1).
+    let entries: Vec<Option<EntryField>> = m.fields.iter().map(|f| f.entry_field().ok()).collect();
     // A field that may be absent (docs/adr/0055) is held in the backend's
     // optional type over its present value's where an algorithm's record holds
     // one on that backend ([`algorithm_optional_spelled`]), the struct an
     // algorithm's record is. One of another element has no carrier in this struct
     // yet: refused by name before a field is spelled.
-    if let Some(field) = m.fields.iter().find(|f| {
+    if let Some(field) = entries.iter().flatten().find(|f| {
         f.sce_type.optional_elem().is_some_and(|elem| {
             !algorithm_optional_spelled(_lang, &OptionalElemType::Scalar(elem.clone()))
         })
@@ -3588,10 +3650,16 @@ fn render_event_schema(
     // case name`. The existing fixture never showed it because its one field
     // was already `payload_byte`. Found 2026-09-17 by a conformance fixture
     // with camelCase fields, which is what such a fixture is for.
+    let names = SchemaUnitNames { l: &l, imports };
+    let mut c11_composites = crate::forge::schema_unit_type::C11Declarations::default();
     let fields: Vec<serde_json::Value> = m
         .fields
         .iter()
-        .map(|f| {
+        .zip(&entries)
+        .map(|(field, entry)| {
+            let Some(f) = entry else {
+                return composed_schema_field(&l, &names, field, &mut c11_composites);
+            };
             let resolved = l.type_name(f.sce_type.present_type());
             let go_field_name = event_schema_field_ident(&f.id, crate::generator::Language::Go);
             let rs_field_name = event_schema_field_ident(&f.id, crate::generator::Language::Rust);
@@ -3679,25 +3747,27 @@ fn render_event_schema(
         })
         .collect::<Result<_, ForgeError>>()?;
 
-    // Per-backend enum-import surface. Walk `imports` filtered to Enum
-    // kind; non-Enum imports (Lookup, Codec, Procedure, etc.) cannot
-    // surface as EventSchema fields (the XSD union restricts
-    // `sce:type` to primitives + `enum:<alias>` on EventSchema docs),
-    // so their inclusion would only add dead `#include` / `use`
-    // noise. Each backend extracts the directive from
-    // `ImportContext.include_stmt` / `namespace` / `type_name` —
-    // already populated by `resolve_imports` with the correct
-    // per-language shape.
-    let enum_imports: Vec<&ImportContext> = imports.iter().filter(|i| i.kind == "enum").collect();
+    // Per-backend type-import surface. Walk `imports` filtered to the two
+    // kinds a field's type names: an enum (`enum:<alias>`) and an event schema
+    // whose payload is a record (`record:<alias>`, docs/adr/0086, section
+    // 1.8). No other kind surfaces in a field's type, so its inclusion would
+    // only add dead `#include` / `use` noise. Each backend extracts the
+    // directive from `ImportContext.include_stmt` / `namespace` / `type_name` —
+    // already populated by `resolve_imports` with the correct per-language
+    // shape.
+    let type_imports: Vec<&ImportContext> = imports
+        .iter()
+        .filter(|i| i.kind == "enum" || i.kind == "event-schema")
+        .collect();
 
-    // C++ / C11: per-imported-enum `<snake>.h` include path. The
+    // C++ / C11: per-imported-document `<snake>.h` include path. The
     // `namespace` slot carries the snake-case doc name on every
     // backend except C++ where it is `SCE::Generated::<Pascal>`; for
     // these two backends we derive the include filename from
     // `type_name` (PascalCase doc name) via snake-case conversion so
-    // both arms produce the same `<snake>.h` filename the Enum
-    // generator emits.
-    let enum_includes: Vec<String> = enum_imports
+    // both arms produce the same `<snake>.h` filename the enum and the
+    // event-schema generators emit.
+    let type_includes: Vec<String> = type_imports
         .iter()
         .map(|i| format!("{}.h", filters::to_snake_case(i.type_name.clone())))
         .collect();
@@ -3719,19 +3789,19 @@ fn render_event_schema(
     // siblings through `super::`.
     //
     // A Go statement keeps its leading tab; the template writes its own.
-    let rust_enum_imports: Vec<String> = enum_imports
+    let rust_type_imports: Vec<String> = type_imports
         .iter()
         .map(|i| i.include_stmt.clone())
         .collect();
-    let kotlin_enum_imports: Vec<String> = enum_imports
+    let kotlin_type_imports: Vec<String> = type_imports
         .iter()
         .map(|i| i.include_stmt.clone())
         .collect();
-    let go_enum_imports: Vec<String> = enum_imports
+    let go_type_imports: Vec<String> = type_imports
         .iter()
         .map(|i| i.include_stmt.trim().to_string())
         .collect();
-    let python_enum_imports: Vec<String> = enum_imports
+    let python_type_imports: Vec<String> = type_imports
         .iter()
         .map(|i| i.include_stmt.clone())
         .collect();
@@ -3808,23 +3878,23 @@ fn render_event_schema(
             })?;
     ctx.insert("data_max_len".into(), data_max_len.into());
     ctx.insert("fields".into(), serde_json::json!(fields));
-    // A field that may be absent is held in a type C++'s `<optional>`, C11's
-    // `sce/forge/optional.h` and Python's `typing` declare (docs/adr/0055); Go's
-    // runtime package is read off the text by the render.
-    ctx.insert(
-        "needs_optional".into(),
-        m.first_optional_field().is_some().into(),
-    );
-    // The declaration of each bounded buffer the C11 struct holds a text in,
-    // once per bound, under the guard every header that declares it shares.
-    let text_bounds: std::collections::BTreeSet<u32> = m
-        .fields
+    // A field that may be absent, at any depth of its type, is held in a type
+    // C++'s `<optional>`, C11's `sce/forge/optional.h` and Python's `typing`
+    // declare (docs/adr/0055); Go's runtime package is read off the text by the
+    // render.
+    ctx.insert("needs_optional".into(), m.holds_optional().into());
+    // The declaration of each bounded buffer the C11 struct holds a text in, a
+    // field's own or one a composition holds, once per bound, under the guard
+    // every header that declares it shares.
+    let mut text_bounds: std::collections::BTreeSet<u32> = entries
         .iter()
+        .flatten()
         .filter_map(|f| match (f.sce_type.present_type(), f.max_size) {
             (SceType::String, Some(bound)) => Some(bound),
             _ => None,
         })
         .collect();
+    text_bounds.extend(c11_composites.texts.iter().copied());
     let c_text_defs: Vec<String> = text_bounds
         .iter()
         .map(|&bound| crate::forge::static_lowering::c_string_storage_def(bound))
@@ -3836,7 +3906,7 @@ fn render_event_schema(
     // shares (docs/adr/0055, step 9), after the buffers and the enums they wrap.
     let mut optional_defs = std::collections::BTreeSet::new();
     if _lang == crate::generator::Language::C11 {
-        for f in &m.fields {
+        for f in entries.iter().flatten() {
             if let EntryType::Optional { elem } = &f.sce_type {
                 if let Some(def) = c11_schema_field_optional(&l, imports, elem, f)?.declaration {
                     optional_defs.insert(def);
@@ -3848,29 +3918,39 @@ fn render_event_schema(
         "optional_defs".into(),
         serde_json::json!(optional_defs.into_iter().collect::<Vec<_>>()),
     );
-    ctx.insert("enum_includes".into(), serde_json::json!(enum_includes));
+    // The type of each composition a C11 field holds, inner before outer
+    // ([`crate::forge::schema_unit_type::C11Declarations`]).
     ctx.insert(
-        "rust_enum_imports".into(),
-        serde_json::json!(rust_enum_imports),
+        "c_composite_defs".into(),
+        serde_json::json!(c11_composites.defs),
+    );
+    ctx.insert("type_includes".into(), serde_json::json!(type_includes));
+    ctx.insert(
+        "rust_type_imports".into(),
+        serde_json::json!(rust_type_imports),
     );
     ctx.insert(
-        "kotlin_enum_imports".into(),
-        serde_json::json!(kotlin_enum_imports),
+        "kotlin_type_imports".into(),
+        serde_json::json!(kotlin_type_imports),
     );
-    ctx.insert("go_enum_imports".into(), serde_json::json!(go_enum_imports));
+    ctx.insert("go_type_imports".into(), serde_json::json!(go_type_imports));
     ctx.insert(
-        "python_enum_imports".into(),
-        serde_json::json!(python_enum_imports),
+        "python_type_imports".into(),
+        serde_json::json!(python_type_imports),
     );
     l.insert_imports(&mut ctx, imports);
 
     if matches!(l.lang, crate::generator::Language::Rust) {
         use crate::rust_derive_policy::RustDeriveCategory;
         // Plain data — every field fixed-width, `bool` or an enum — is
-        // `Copy` as well (the record rule's schema, SCE_FORGE.md §4.12).
-        let plain = m.fields.iter().all(|f| {
-            crate::forge::model::AlgorithmValueType::list_elem_admitted(f.sce_type.present_type())
-                || matches!(f.sce_type.present_type(), SceType::Enum(_))
+        // `Copy` as well (the record rule's schema, SCE_FORGE.md §4.12). A
+        // composition holds a list, a record or a value of one, and is not.
+        let plain = entries.iter().all(|entry| {
+            entry.as_ref().is_some_and(|f| {
+                crate::forge::model::AlgorithmValueType::list_elem_admitted(
+                    f.sce_type.present_type(),
+                ) || matches!(f.sce_type.present_type(), SceType::Enum(_))
+            })
         });
         let category = if plain {
             RustDeriveCategory::EventSchemaPlainPayload
@@ -28508,31 +28588,47 @@ fn swift_event_schema_refusal(m: &EventSchemaModel, construct: &str) -> String {
 /// field of an enum Swift does not write, a field that may be absent, and a name
 /// Swift reserves are named here until each is spelled.
 fn swift_event_schema_unlowered(m: &EventSchemaModel, imports: &[ImportContext]) -> Option<String> {
-    // The one kind of document a schema imports is an enum, the type a field holds a
-    // value in.
-    if let Some(import) = imports.iter().find(|i| i.kind != "enum") {
+    // The two kinds of document a schema imports are an enum, the type a field holds
+    // a value in, and an event schema, the record a field holds (docs/adr/0086,
+    // section 1.8).
+    if let Some(import) = imports
+        .iter()
+        .find(|i| i.kind != "enum" && i.kind != "event-schema")
+    {
         return Some(format!("the <sce:import as=\"{}\">", import.alias));
     }
-    // A field that is a list, a record or an optional over either is a type of the
-    // language the Swift unit does not spell yet (docs/adr/0086, section 7.3).
-    let m = match m.entry_schema() {
-        Ok(m) => m,
-        Err(composed) => {
-            return Some(format!(
-                "the field `{}`, a `{}`,",
-                composed.field, composed.composition.place
-            ))
-        }
+    // What of the enum `alias` names the Swift backend does not write.
+    let enum_unlowered = |alias: &str| {
+        imports.iter().find(|i| i.alias == alias).map_or_else(
+            || Some("an enum it does not import".to_string()),
+            |import| import.swift_unlowered.clone(),
+        )
     };
-    swift_schema_fields_unlowered(m.fields.iter().map(|f| {
+    // A field that is a list, a record or an optional over either is spelled by
+    // its constructors ([`crate::forge::schema_unit_type`]): its name is a member
+    // of the struct, and each enum it holds, at any depth, is held in the unit of
+    // that enum.
+    for f in m.fields.iter().filter(|f| f.sce_type.entry().is_err()) {
+        if crate::reader_names::is_reserved_word(crate::generator::Language::Swift, &f.id) {
+            return Some(format!("the field `{}`, a name Swift reserves,", f.id));
+        }
+        if let Some(why) = f
+            .sce_type
+            .enum_aliases()
+            .into_iter()
+            .find_map(enum_unlowered)
+        {
+            return Some(format!("the field `{}` of an enum with {why}", f.id));
+        }
+    }
+    let entries: Vec<EntryField> = m
+        .fields
+        .iter()
+        .filter_map(|f| f.entry_field().ok())
+        .collect();
+    swift_schema_fields_unlowered(entries.iter().map(|f| {
         let enum_unlowered = match f.sce_type.present_type() {
-            SceType::Enum(reference) => imports
-                .iter()
-                .find(|i| i.alias == reference.alias)
-                .map_or_else(
-                    || Some("an enum it does not import".to_string()),
-                    |import| import.swift_unlowered.clone(),
-                ),
+            SceType::Enum(reference) => enum_unlowered(&reference.alias),
             _ => None,
         };
         (f.id.as_str(), &f.sce_type, enum_unlowered)
