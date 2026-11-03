@@ -406,29 +406,24 @@ fn every_backend_writes_a_64_bit_result_field_as_the_text_of_its_digits() {
     );
 }
 
-/// A text with no `sce:max-size` has no buffer for the C11 struct that holds an
-/// optional one, so C11 refuses it by name, as it refuses it in a payload; every
-/// other backend holds it.
+/// A text that states no bound is no type of the language (docs/adr/0086,
+/// section 1.4): the record is refused where its schema is read, on every
+/// backend alike, at the type that lacks the bound, before any backend is asked
+/// to hold it.
 #[test]
-fn c11_refuses_an_optional_text_that_declares_no_bound_and_the_others_hold_it() {
-    let (ok, said, _) = run("generate", "c11", &machine("ecmascript"), UNBOUNDED_ANSWER);
-    assert!(
-        !ok,
-        "C11 has no buffer for an unbounded optional text:\n{said}"
-    );
-    assert!(
-        said.contains("generate/unsupported-feature")
-            && said.contains("an optional value has no c11 lowering yet")
-            && said.contains("no sce:max-size"),
-        "refused by name:\n{said}"
-    );
-    for language in ["rust", "cpp", "kotlin", "go", "python"] {
+fn an_optional_text_that_declares_no_bound_is_refused_on_every_backend() {
+    for language in ["c11", "rust", "cpp", "kotlin", "go", "python"] {
         let (ok, said, _) = run(
             "generate",
             language,
             &machine("ecmascript"),
             UNBOUNDED_ANSWER,
         );
-        assert!(ok, "{language} holds an unbounded optional text:\n{said}");
+        assert!(!ok, "{language}: the text states no bound:\n{said}");
+        assert!(
+            said.contains("validation/attribute-rule-violated")
+                && said.contains("`string` has no bound"),
+            "{language}: refused at the type that lacks the bound:\n{said}"
+        );
     }
 }

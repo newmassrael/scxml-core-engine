@@ -11,6 +11,6 @@
        sce:kind="event-schema"
        sce:event-name="error.execution">
   <datamodel>
-    <data id="reason" sce:type="string" sce:direction="in"/>
+    <data id="reason" sce:type="string[64]" sce:direction="in"/>
   </datamodel>
 </scxml>

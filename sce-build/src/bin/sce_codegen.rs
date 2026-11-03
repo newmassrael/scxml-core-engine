@@ -5879,8 +5879,6 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 }
                 Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
             };
-            // Read, and reported: fatal only under `--lint`.
-            report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
 
             // `--strict-unresolved` reaches the forge pipeline too. It did
             // not until 2026-09-18: a forge document carrying
@@ -6052,7 +6050,6 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             // the lints for the same reason they are: `generate` runs it
             // at the matching point in its own pass.
             report_refused_expressions(&model, scxml_path, lint, error_format);
-            report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
 
             // SCE Protocol-Synthesis RFC §synth-5-O — not a lint: an IR
             // node reaching codegen without a source coordinate emits a
@@ -6209,6 +6206,11 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         }
     }
 
+    // A run that reaches its manifest reports every bound the document wrote
+    // as an attribute, with the rewrite; fatal only under `--lint`. Here and
+    // not where the document is read, so a refused run carries its refusal
+    // alone.
+    report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
     outln!(
         "{}",
         build_manifest(&report, ManifestKind::Check, Some(verdicts), None, lexicon).to_line()
@@ -6738,8 +6740,6 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 }
                 Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
             };
-            // Read, and reported: fatal only under `--lint`, as `check` does.
-            report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
 
             // `--strict-unresolved` on the GENERATE route. The check also
             // sits in `cmd_check`'s forge arm; both are needed and neither
@@ -6883,6 +6883,9 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                     report.needs_script_engine = Some(false);
                     report.needs_event_scheduler = Some(false);
                     report.formatter = cpp_formatter.used();
+                    // A run that succeeds reports what it read and the
+                    // rewrite; fatal only under `--lint`, as `check` does.
+                    report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
                     return report;
                 }
                 Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
@@ -7252,7 +7255,6 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     // Always reported, fatal only under `--lint` — see the `check` call
     // site for why the flag is the one that decides.
     report_refused_expressions(&model, scxml_path, lint, error_format);
-    report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
 
     // SCE Protocol-Synthesis RFC §synth-5-O — see the `check` call site.
     // Runs before `resolve_source_path` so a `None` cannot leak into the
@@ -7801,6 +7803,9 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     }
 
     report.formatter = cpp_formatter.used();
+    // A run that succeeds reports what it read and the rewrite; fatal only
+    // under `--lint`, as `check` does.
+    report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
     report
 }
 
@@ -13596,9 +13601,10 @@ fn cmd_bound_spelling(scxml_path: &str, error_format: ErrorFormat) {
 /// writes one is built; the record tells its author the rewrite, which
 /// `sce-codegen bound-spelling` prints. `--lint` is the flag that separates the
 /// author who has no reason to carry one, as for a refused expression
-/// ([`report_refused_expressions`]). Called by `check` and `generate` at the
-/// same point of each pipeline, once the document has parsed, so a document
-/// the parser refuses reports its refusal first.
+/// ([`report_refused_expressions`]). Called by `check` and `generate` where a
+/// run that succeeds reaches its manifest, on both pipelines, so a refused run
+/// carries its refusal alone and a run that succeeds carries these records and
+/// its manifest (SCE_ERROR_CONTRACT.md section 1).
 fn report_superseded_bounds(content: &str, document: &str, lint: bool, error_format: ErrorFormat) {
     let superseded = sce_build::forge::bound_spelling::superseded(content, document);
     if superseded.is_empty() {

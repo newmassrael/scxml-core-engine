@@ -12,6 +12,7 @@ use crate::forge::error::{
 };
 use crate::forge::expression_site::{ExpressionSite, WrittenAt};
 use crate::forge::model::*;
+use crate::forge::value_type::{Bound, Composition, TypeRefusal, WrittenType};
 use crate::read_ledger;
 use crate::DocumentLabel;
 
@@ -2019,8 +2020,7 @@ fn parse_cbor_entry(
     // A bare type is an entry that must be present and `optional<T>` one that may
     // be absent (docs/adr/0055, section 8); `sce_type` is the type a present value
     // is, which every rule below is held to.
-    let field_type =
-        read_schema_field_type(node, doc, format!("entry '{id}'"), "sce:type", &type_text)?;
+    let field_type = read_entry_type(node, doc, format!("entry '{id}'"), "sce:type", &type_text)?;
     let sce_type = field_type.present_type().clone();
     let admitted = sce_type.is_unsigned()
         || matches!(
@@ -2337,8 +2337,7 @@ fn parse_content_line_entry(
     // A bare type is an entry that must be present and `optional<T>` one that may
     // be absent (docs/adr/0055, section 8); `sce_type` is the type a present value
     // is, which every rule below is held to.
-    let field_type =
-        read_schema_field_type(node, doc, format!("entry '{id}'"), "sce:type", &type_text)?;
+    let field_type = read_entry_type(node, doc, format!("entry '{id}'"), "sce:type", &type_text)?;
     let sce_type = field_type.present_type().clone();
     // An `enum:<alias>` entry is read by the grammar above, so an alias that names
     // no enum import is reported as that. It is written and read by the text its
@@ -8430,13 +8429,27 @@ fn parse_algorithm_signature(
                         },
                     )
                 })?;
-                let sce_type = read_algorithm_value_type(
-                    &child,
-                    doc_name,
-                    format!("<sce:param name=\"{name}\">"),
-                    "type",
-                    type_str,
-                )?;
+                let element = format!("<sce:param name=\"{name}\">");
+                let (sce_type, bound) =
+                    read_algorithm_slot_type(&child, doc_name, &element, type_str, None)?;
+                // A parameter is a view of its argument and holds the
+                // argument's bound (SCE_FORGE.md §4.12): a bound written on it
+                // would be read by nothing (docs/adr/0086, section 1.2).
+                if let Some(bound) = bound {
+                    return Err(located(
+                        &child,
+                        doc_name,
+                        ValidationError::AttributeRuleViolated {
+                            element,
+                            attr: "type".into(),
+                            value: type_as_written(&child, "type", type_str),
+                            rule: format!(
+                                "no bound — a parameter is a view of its argument and holds the \
+                                 argument's, so the {bound} written here would be read by nothing"
+                            ),
+                        },
+                    ));
+                }
                 // A `list<T>` parameter is a read-only view of the caller's
                 // elements (SCE_FORGE.md §4.12): read by index, `len` and
                 // `<sce:foreach>`, and refused as an assignment or append
@@ -8460,15 +8473,19 @@ fn parse_algorithm_signature(
                     ));
                 }
                 seen_return = true;
+                // The bound of a buffer return: its bracket, or the legacy
+                // `returns-max-size` beside it (docs/adr/0086, section 1.3).
+                let mut return_bound: Option<Bound> = None;
                 if let Some(type_str) = child.attribute("type") {
-                    let sce_type = read_algorithm_value_type(
+                    let (sce_type, bound) = read_algorithm_slot_type(
                         &child,
                         doc_name,
-                        "<sce:return>".into(),
-                        "type",
+                        "<sce:return>",
                         type_str,
+                        Some("returns-max-size"),
                     )?;
                     return_type = Some(sce_type);
+                    return_bound = bound;
                 }
                 // The integer arithmetic contract (SCE_FORGE.md §3.4.1): the
                 // declaration a caller reads to know the algorithm can fail.
@@ -8502,8 +8519,11 @@ fn parse_algorithm_signature(
                 // ⚠ Only the first half was judged, after the body was read
                 // and at the body's row; a `returns-max-size` on a scalar
                 // return was accepted and dropped (measured 2026-09-23).
+                //
+                // The bound is the type's own (docs/adr/0086): its bracket, or the
+                // legacy attribute folded into it where the type is read.
                 let buffer_return = return_type.as_ref().filter(|t| t.is_append_buffer());
-                match (buffer_return, child.attribute("returns-max-size")) {
+                match (buffer_return, return_bound) {
                     (Some(ret), None) => {
                         return Err(located(
                             &child,
@@ -8514,18 +8534,30 @@ fn parse_algorithm_signature(
                             },
                         ));
                     }
-                    (Some(ret), Some(_)) => {
-                        returns_max_size = read_unsigned_attr(
+                    (Some(_), Some(bound)) => {
+                        returns_max_size = Some(bound.max);
+                        returns_limit = bound.limit;
+                    }
+                    (None, None) if child.attribute("returns-max-size").is_none() => {}
+                    // A bracket on a return that is no buffer: nothing holds it.
+                    (None, Some(bound)) if child.attribute("returns-max-size").is_none() => {
+                        let type_str = child.attribute("type").unwrap_or_default();
+                        return Err(located(
                             &child,
                             doc_name,
-                            &format!("<sce:return type=\"{}\">", ret.as_attr()),
-                            ("returns-max-size", false),
-                            UnsignedInt::Positive,
-                        )?;
-                        returns_limit = sce_attr(&child, "limit");
+                            ValidationError::AttributeRuleViolated {
+                                element: "<sce:return>".into(),
+                                attr: "type".into(),
+                                value: type_as_written(&child, "type", type_str),
+                                rule: format!(
+                                    "no bound — {bound} bounds a bytes or list<T> return only, \
+                                     and this return is none"
+                                ),
+                            },
+                        ));
                     }
-                    (None, None) => {}
-                    (None, Some(stray)) => {
+                    (None, _) => {
+                        let stray = child.attribute("returns-max-size").unwrap_or_default();
                         return Err(located(
                             &child,
                             doc_name,
@@ -8990,12 +9022,14 @@ fn parse_algorithm_stmt(
         "var" => {
             let name = require_attr(node, "name", "<sce:var>", doc_name)?;
             let type_str = require_attr(node, "type", "<sce:var>", doc_name)?;
-            let sce_type = read_algorithm_value_type(
+            // The bound of a buffer local: its bracket, or the legacy
+            // `capacity` beside it (docs/adr/0086, section 1.3).
+            let (sce_type, bound) = read_algorithm_slot_type(
                 node,
                 doc_name,
-                format!("<sce:var name=\"{name}\">"),
-                "type",
+                &format!("<sce:var name=\"{name}\">"),
                 &type_str,
+                Some("capacity"),
             )?;
             // A record local is built whole from one `<sce:set>` per schema
             // field, or received whole from a call's `init` (SCE_FORGE.md
@@ -9096,14 +9130,7 @@ fn parse_algorithm_stmt(
                     ));
                 }
                 let element = format!("<sce:var name=\"{name}\" type=\"{buffer_attr}\">");
-                let capacity = read_unsigned_attr(
-                    node,
-                    doc_name,
-                    &element,
-                    ("capacity", false),
-                    UnsignedInt::Positive,
-                )?;
-                if capacity.is_none() {
+                let Some(bound) = bound else {
                     return Err(located(
                         node,
                         doc_name,
@@ -9112,9 +9139,25 @@ fn parse_algorithm_stmt(
                             attr: "capacity".into(),
                         },
                     ));
-                }
-                (None, capacity)
+                };
+                (None, Some(bound))
             } else {
+                // A bracket on a local that is no buffer: nothing holds it.
+                if let (Some(bound), None) = (&bound, node.attribute("capacity")) {
+                    return Err(located(
+                        node,
+                        doc_name,
+                        ValidationError::AttributeRuleViolated {
+                            element: format!("<sce:var name=\"{name}\">"),
+                            attr: "type".into(),
+                            value: type_as_written(node, "type", &type_str),
+                            rule: format!(
+                                "no bound — {bound} bounds a bytes or list<T> buffer only, and \
+                                 this local is none"
+                            ),
+                        },
+                    ));
+                }
                 if let Some(stray) = node.attribute("capacity") {
                     return Err(located(
                         node,
@@ -9140,11 +9183,11 @@ fn parse_algorithm_stmt(
                 sce_type,
                 init,
                 init_spelling: AttributeSpelling::of(node, None, "init"),
-                capacity,
+                capacity: capacity.as_ref().map(|bound| bound.max),
                 capacity_spelling: AttributeSpelling::of(node, None, "capacity"),
-                // Named only beside a bound: `read_unsigned_attr` took the number the
+                // Named only beside a bound: the type's reader took the number the
                 // build gave the name, and the name is kept for whoever reads the model.
-                limit: capacity.and_then(|_| sce_attr(node, "limit")),
+                limit: capacity.and_then(|bound| bound.limit),
             })
         }
         "assign" => {
@@ -11923,9 +11966,10 @@ pub(crate) fn read_type_attr(
     text: &str,
 ) -> Result<SceType, Located<ForgeError>> {
     // An optional value (docs/adr/0055) is read where a `sce-static`
-    // statechart's variable is ([`read_static_value_type`]), where an event
-    // schema's field is ([`read_schema_field_type`]) and where an algorithm's
-    // parameter, return and local are ([`read_algorithm_value_type`]); every
+    // statechart's variable is ([`read_static_variable_type`]), where an event
+    // schema's field is ([`read_schema_value_type`]), where a codec's entry is
+    // ([`read_entry_type`]) and where an algorithm's
+    // parameter, return and local are ([`read_algorithm_slot_type`]); every
     // position that reads its type here takes none, and says so by name rather
     // than offering the scalars as if the type were misspelled.
     if text.trim().starts_with(AlgorithmValueType::OPTIONAL_PREFIX) {
@@ -11967,163 +12011,15 @@ pub(crate) fn read_type_attr(
     })
 }
 
-/// Read an algorithm param / local / return `type=`: a scalar or a value of
-/// an imported enum in [`TypeGrammar::ScalarOrEnumRef`], `record:<alias>`, or
-/// `list<T>` over an admitted scalar `T`
-/// ([`AlgorithmValueType::list_elem_admitted`]) or a record.
-///
-/// A scalar goes through [`read_type_attr`] unchanged, so a misspelled
-/// scalar is refused with the same candidates it always was, the document's
-/// enums among them, as for a field. A value of an enum crosses to and from
-/// a `sce-static` statechart by its declared name (SCE_FORGE.md §4.12); a
-/// list element stays in [`TypeGrammar::Scalar`], as the grammar's list
-/// pattern does. The list form is a pattern rather than a value, so a list
-/// over an element it cannot hold is refused as a rule violation that names
-/// the rule.
-///
-/// `optional<T>` (docs/adr/0055) is read over every element a statechart's
-/// variable holds one of: a scalar, a value of an enum or a record; see
-/// [`read_algorithm_optional`].
-pub(crate) fn read_algorithm_value_type(
-    node: &roxmltree::Node,
-    doc_name: &str,
-    element: String,
-    attr: &str,
-    text: &str,
-) -> Result<AlgorithmValueType, Located<ForgeError>> {
-    if text.trim().starts_with(AlgorithmValueType::OPTIONAL_PREFIX) {
-        return read_algorithm_optional(node, doc_name, element, attr, text);
-    }
-    if let Some(alias) = text.trim().strip_prefix(AlgorithmValueType::RECORD_PREFIX) {
-        return read_record_alias(node, doc_name, element, attr, text, alias)
-            .map(|alias| AlgorithmValueType::Record { alias });
-    }
-    let Some(inner) = text
-        .trim()
-        .strip_prefix(AlgorithmValueType::LIST_PREFIX)
-        .and_then(|t| t.strip_suffix('>'))
-    else {
-        return read_type_attr(
-            node,
-            doc_name,
-            TypeGrammar::ScalarOrEnumRef,
-            element,
-            attr,
-            text,
-        )
-        .map(AlgorithmValueType::Scalar);
-    };
-    // A list holds no optional element (docs/adr/0055): its bound in elements
-    // is a bound in bytes only while each element is one value of its width.
-    if inner
-        .trim()
-        .starts_with(AlgorithmValueType::OPTIONAL_PREFIX)
-    {
-        return Err(located(
-            node,
-            doc_name,
-            ValidationError::AttributeRuleViolated {
-                element,
-                attr: attr.into(),
-                value: value_as_written(node, attr, text),
-                rule: "a list element is a fixed-width number, a bool or a record, never an \
-                       optional value — a list of values that may be absent is a list of \
-                       records with an optional field"
-                    .into(),
-            },
-        ));
-    }
-    // A list of records (SCE_FORGE.md §4.12): the element is judged by the
-    // record rule, so a list of records is exactly as closed as one record.
-    if let Some(alias) = inner.trim().strip_prefix(AlgorithmValueType::RECORD_PREFIX) {
-        return read_record_alias(node, doc_name, element, attr, text, alias).map(|alias| {
-            AlgorithmValueType::List {
-                elem: ListElemType::Record { alias },
-            }
-        });
-    }
-    let elem = read_type_attr(
-        node,
-        doc_name,
-        TypeGrammar::Scalar,
-        element.clone(),
-        attr,
-        inner.trim(),
-    )?;
-    if !AlgorithmValueType::list_elem_admitted(&elem) {
-        return Err(located(
-            node,
-            doc_name,
-            ValidationError::AttributeRuleViolated {
-                element,
-                attr: attr.into(),
-                value: value_as_written(node, attr, text),
-                rule: "a list element is a fixed-width number or bool — a string or bytes \
-                       element has a length of its own, so a bounded list of them has no size \
-                       to declare"
-                    .into(),
-            },
-        ));
-    }
-    Ok(AlgorithmValueType::List {
-        elem: ListElemType::Scalar(elem),
-    })
-}
-
-/// Read an algorithm's `optional<T>` (docs/adr/0055): a parameter, a return or
-/// a local that may be absent, over every element a statechart's variable holds
-/// one of — a number, a `bool`, a text, a byte string, a value of an enum the
-/// document imports, or a record of an event schema it imports.
-///
-/// What may stand inside is read as a statechart's variable reads it
-/// ([`read_optional_elem`]), so a misspelled element, an alias nothing imports,
-/// a list and a nested optional are refused with the same candidates. Which of
-/// the elements a backend spells in an algorithm's slots is that backend's, and
-/// each that does not yet refuses one by name where it renders it
-/// ([`crate::forge::generator::algorithm_optional_spelled`]).
-fn read_algorithm_optional(
-    node: &roxmltree::Node,
-    doc_name: &str,
-    element: String,
-    attr: &str,
-    text: &str,
-) -> Result<AlgorithmValueType, Located<ForgeError>> {
-    read_optional_elem(node, doc_name, element, attr, text, OptionalElems::OrRecord)
-        .map(|elem| AlgorithmValueType::Optional { elem })
-}
-
-/// Read a `sce-static` statechart variable's `sce:type`: what
-/// [`read_algorithm_value_type`] reads — a scalar or a value of an imported
-/// enum, `record:<alias>`, `list<T>` — and `optional<T>` (docs/adr/0055) over a
-/// scalar, a value of an imported enum or a record of an imported event schema.
-///
-/// What may stand inside `optional<…>` is a closed set the document decides (its
-/// enum and event-schema imports), so anything else written there — a misspelled
-/// scalar, an alias nothing imports, a list, another optional — is refused with
-/// that set as its candidates, each spelled as the whole type. A nested optional
-/// has no carrier that holds two absences apart, and a list is a variable, never
-/// a value, whose resting state, empty, is its own.
-pub(crate) fn read_static_value_type(
-    node: &roxmltree::Node,
-    doc_name: &str,
-    element: String,
-    attr: &str,
-    text: &str,
-) -> Result<AlgorithmValueType, Located<ForgeError>> {
-    if !text.trim().starts_with(AlgorithmValueType::OPTIONAL_PREFIX) {
-        return read_algorithm_value_type(node, doc_name, element, attr, text);
-    }
-    read_optional_elem(node, doc_name, element, attr, text, OptionalElems::OrRecord)
-        .map(|elem| AlgorithmValueType::Optional { elem })
-}
-
-/// Read an event schema's field's `sce:type` ([`FieldType`]): what
+/// Read a CBOR or content-line codec entry's `sce:type` ([`FieldType`]): what
 /// [`read_type_attr`] reads in [`TypeGrammar::ScalarOrEnumRef`], and
 /// `optional<T>` (docs/adr/0055) over a scalar or a value of an imported enum.
-/// A schema has no record fields, so no record stands inside either; anything
-/// else written there is refused as [`read_static_value_type`] refuses it, with
-/// the closed set as its candidates.
-pub(crate) fn read_schema_field_type(
+///
+/// An entry describes a field of a foreign protocol's frame, not a value of the
+/// language (docs/adr/0086, section 1.7): it takes no record, no list and no
+/// bracket, and its bound is its codec's `sce:max-size`. Anything else written
+/// there is refused with the closed set of entry types as its candidates.
+pub(crate) fn read_entry_type(
     node: &roxmltree::Node,
     doc_name: &str,
     element: String,
@@ -12240,37 +12136,414 @@ fn optional_elem_refusal(
     )
 }
 
-/// The alias of a `record:<alias>` type — a record, or a list's record
-/// element — judged against this document's event-schema imports, the way
-/// `enum:<alias>` is. What the schema's fields are is judged where the
-/// import is resolved, since only there is the schema read. `text` is the
-/// whole `type=` value, which is what a refusal reports.
-fn read_record_alias(
+// ── The one type grammar where a value is declared (docs/adr/0086) ─────────
+
+/// A bound a position wrote as an attribute before the type held it
+/// (docs/adr/0086, section 1.3): the attribute as a refusal names it, the
+/// number it states as written, and the name of the `sce:limit` beside it.
+pub(crate) struct LegacyBound {
+    pub(crate) attr: String,
+    pub(crate) max: u32,
+    pub(crate) limit: Option<String>,
+}
+
+impl LegacyBound {
+    /// The number the build holds: the one written, or the one the build gave
+    /// the name ([`crate::limits`]).
+    fn resolved(&self) -> u32 {
+        match &self.limit {
+            Some(name) => crate::limits::resolve(name, self.max),
+            None => self.max,
+        }
+    }
+}
+
+/// `attr` of `node` as the document spells it, its prefix read as the SCE
+/// namespace: the record's `actual` for a refusal of a type, which a
+/// consumer finds on the record's line (SCE_ERROR_CONTRACT.md §3.1.1) only in
+/// the spelling the document wrote (`list&lt;int64&gt;[4]`).
+fn type_as_written(node: &roxmltree::Node, attr: &str, decoded: &str) -> String {
+    let spelling = match attr.strip_prefix("sce:") {
+        Some(local) => AttributeSpelling::of(node, Some(SCE_NAMESPACE), local),
+        None => AttributeSpelling::of(node, None, attr),
+    };
+    spelling
+        .and_then(|spelling| {
+            spelling
+                .locate(0..decoded.len())
+                .map(|written| written.text.to_string())
+        })
+        .unwrap_or_else(|| decoded.to_string())
+}
+
+/// The refusal of a type whose text breaks a rule of the grammar, naming the
+/// place in the type that breaks it.
+fn type_rule_refusal(
     node: &roxmltree::Node,
     doc_name: &str,
-    element: String,
+    element: &str,
     attr: &str,
     text: &str,
-    alias: &str,
-) -> Result<String, Located<ForgeError>> {
-    let alias = alias.trim();
-    let schemas = import_aliases_of(node, ForgeKind::EventSchema);
-    if schemas.iter().any(|a| a == alias) {
-        return Ok(alias.to_string());
-    }
-    Err(located(
+    refusal: &TypeRefusal,
+) -> Located<ForgeError> {
+    located(
+        node,
+        doc_name,
+        ValidationError::AttributeRuleViolated {
+            element: element.to_string(),
+            attr: attr.into(),
+            value: type_as_written(node, attr, text),
+            rule: refusal.rule(),
+        },
+    )
+}
+
+/// The refusal of a word that names no type, with the scalars and the
+/// document's enums as its candidates, as [`read_type_attr`] offers them.
+fn unknown_type_refusal(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    attr: &str,
+    text: &str,
+) -> Located<ForgeError> {
+    let mut allowed = SceType::scalar_attr_names();
+    allowed.extend(
+        enum_import_aliases(node)
+            .iter()
+            .map(|alias| format!("enum:{alias}")),
+    );
+    located(
         node,
         doc_name,
         ValidationError::InvalidAttribute {
-            element,
+            element: element.to_string(),
             attr: attr.into(),
             value: text.to_string(),
-            allowed: schemas
-                .iter()
-                .map(|a| format!("{}{a}", AlgorithmValueType::RECORD_PREFIX))
-                .collect(),
+            allowed,
         },
-    ))
+    )
+}
+
+/// The refusal of a type the position's lowerings do not hold yet, by name
+/// (docs/adr/0086, section 7.3): the grammar takes it, and no backend lowers
+/// it in this position.
+fn composition_refusal(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    position: &str,
+    composition: &Composition,
+) -> Located<ForgeError> {
+    located(
+        node,
+        doc_name,
+        crate::forge::error::GenerateError::unsupported(format!(
+            "{element}: `{}` in {position} is a type of the language, and no backend lowers \
+             its {} there yet",
+            composition.place, composition.constructor
+        )),
+    )
+}
+
+/// Read `text`, the type-valued `attr` of a position that declares a value,
+/// through the one type grammar ([`WrittenType::read`]), and judge every alias
+/// it names, at every depth, against the document's imports.
+///
+/// A refusal of a type written as `optional<…>` whose inside names no type, or
+/// is itself optional, offers every type the position could have written
+/// inside it (`admitted`), as [`read_optional_elem`] does for an entry; a word
+/// that names no type elsewhere offers the scalars and the document's enums; a
+/// record alias no import declares offers the document's records. Every other
+/// breach of the grammar is refused naming the place in the type
+/// ([`TypeRefusal::rule`]).
+fn read_written_type(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    attr: &str,
+    text: &str,
+    admitted: OptionalElems,
+) -> Result<WrittenType, Located<ForgeError>> {
+    let optional = text.trim().starts_with(AlgorithmValueType::OPTIONAL_PREFIX);
+    let written = WrittenType::read(text).map_err(|refusal| match refusal {
+        TypeRefusal::Unknown { .. } | TypeRefusal::NestedOptional { .. } if optional => {
+            optional_elem_refusal(node, doc_name, element.to_string(), attr, text, admitted)
+        }
+        TypeRefusal::Unknown { .. } => unknown_type_refusal(node, doc_name, element, attr, text),
+        other => type_rule_refusal(node, doc_name, element, attr, text, &other),
+    })?;
+    let enums = enum_import_aliases(node);
+    let records = import_aliases_of(node, ForgeKind::EventSchema);
+    let unknown_enum = written
+        .enum_aliases()
+        .into_iter()
+        .any(|alias| !enums.iter().any(|e| e.as_str() == alias));
+    let unknown_record = written
+        .record_aliases()
+        .into_iter()
+        .any(|alias| !records.iter().any(|r| r.as_str() == alias));
+    if optional && (unknown_enum || unknown_record) {
+        return Err(optional_elem_refusal(
+            node,
+            doc_name,
+            element.to_string(),
+            attr,
+            text,
+            admitted,
+        ));
+    }
+    if unknown_record {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: element.to_string(),
+                attr: attr.into(),
+                value: text.to_string(),
+                allowed: records
+                    .iter()
+                    .map(|alias| format!("{}{alias}", AlgorithmValueType::RECORD_PREFIX))
+                    .collect(),
+            },
+        ));
+    }
+    if unknown_enum {
+        return Err(unknown_type_refusal(node, doc_name, element, attr, text));
+    }
+    Ok(written)
+}
+
+/// `written` with the bound `legacy` states folded in as the bracket on its
+/// outermost bounded type (docs/adr/0086, section 1.3), and each named bound
+/// at the number the build gives its name.
+///
+/// A type that already writes that bracket is refused
+/// (`validation/incompatible-attributes`): one bound, one spelling, even when
+/// the numbers agree. A legacy bound beside a type with no length is handed
+/// back unplaced, for the position to judge as it judged the attribute before
+/// the type held bounds.
+fn fold_legacy_bound(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    (attr, text): (&str, &str),
+    written: WrittenType,
+    legacy: Option<LegacyBound>,
+) -> Result<(WrittenType, Option<LegacyBound>), Located<ForgeError>> {
+    let resolve =
+        |ty: WrittenType| ty.resolve_limits(&mut |name, n| crate::limits::resolve(name, n));
+    let Some(legacy) = legacy else {
+        return Ok((resolve(written), None));
+    };
+    let bound = Bound {
+        max: legacy.max,
+        limit: legacy.limit.clone(),
+    };
+    match written.clone().with_outer_bound(bound) {
+        Ok(folded) => Ok((resolve(folded), None)),
+        Err(TypeRefusal::BothForms { place }) => Err(located(
+            node,
+            doc_name,
+            ValidationError::IncompatibleAttributes {
+                element: element.to_string(),
+                detail: format!(
+                    "{} and the bracket of `{place}` in {attr}=\"{text}\" each state the same \
+                     bound: one bound, one spelling, even when the numbers agree; keep the \
+                     bracket and remove {}",
+                    legacy.attr, legacy.attr
+                ),
+            },
+        )),
+        Err(_) => Ok((resolve(written), Some(legacy))),
+    }
+}
+
+/// A positive whole number of 32 bits, as a legacy bound is written; the
+/// refusal names the attribute.
+fn legacy_number(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    attr: &str,
+    value: &str,
+) -> Result<u32, Located<ForgeError>> {
+    parse_int(value).filter(|n| *n > 0).ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::AttributeRuleViolated {
+                element: element.to_string(),
+                attr: attr.into(),
+                value: value.to_string(),
+                rule: "a positive integer that fits in 32 bits".into(),
+            },
+        )
+    })
+}
+
+/// Read an event schema's field's `sce:type` through the one type grammar
+/// (docs/adr/0086, section 1): its type, the bound of its text or byte string
+/// and the name of that bound.
+///
+/// The outermost bound is the bracket, or its legacy synonym, `sce:max-size`
+/// on a text or a byte string and `sce:max-count` on a list, with the
+/// `sce:limit` beside it. Every text, byte string and list is bounded, the
+/// field's own included (section 1.4). A composition — a list, a record, an
+/// optional over either — is a type of the language that no backend lowers in
+/// a field yet, and is refused by name. A `sce:max-size` beside a type with no
+/// length is kept as the field's bound, as it always was; its rule is the
+/// validators'.
+fn read_schema_value_type(
+    data: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    text: &str,
+) -> Result<(FieldType, Option<u32>, Option<String>), Located<ForgeError>> {
+    let written = read_written_type(
+        data,
+        doc_name,
+        element,
+        "sce:type",
+        text,
+        OptionalElems::Scalar,
+    )?;
+    let bound_attr = match written.outermost_bounded() {
+        Some(WrittenType::List { .. }) => "max-count",
+        _ => "max-size",
+    };
+    let legacy = match sce_attr(data, bound_attr) {
+        None => None,
+        Some(value) => {
+            let attr = format!("sce:{bound_attr}");
+            Some(LegacyBound {
+                max: legacy_number(data, doc_name, element, &attr, &value)?,
+                attr,
+                limit: sce_attr(data, "limit").map(|name| name.trim().to_string()),
+            })
+        }
+    };
+    let (written, unplaced) =
+        fold_legacy_bound(data, doc_name, element, ("sce:type", text), written, legacy)?;
+    if let Err(refusal) = written.clone().bounded() {
+        return Err(type_rule_refusal(
+            data, doc_name, element, "sce:type", text, &refusal,
+        ));
+    }
+    let (field_type, bound) = written.as_field_type().map_err(|composition| {
+        composition_refusal(
+            data,
+            doc_name,
+            element,
+            "an event schema's field",
+            &composition,
+        )
+    })?;
+    Ok(match (bound, unplaced) {
+        (Some(bound), _) => (field_type, Some(bound.max), bound.limit),
+        (None, Some(legacy)) => (field_type, Some(legacy.resolved()), legacy.limit),
+        (None, None) => (field_type, None, None),
+    })
+}
+
+/// Read a `sce-static` statechart variable's `sce:type` through the one type
+/// grammar (docs/adr/0086, section 1): its type and its outermost bound, the
+/// bracket or its legacy synonym `sce:capacity` with the `sce:limit` beside
+/// it. Every bound inside the type is stated; whether the outermost one is, is
+/// judged where the variable's other rules are (`enforce_static_datamodel`),
+/// and is checked again here. A composition no variable lowers yet is refused
+/// by name.
+pub(crate) fn read_static_variable_type(
+    data: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    text: &str,
+) -> Result<(AlgorithmValueType, Option<Bound>), Located<ForgeError>> {
+    let written = read_written_type(
+        data,
+        doc_name,
+        element,
+        "sce:type",
+        text,
+        OptionalElems::OrRecord,
+    )?;
+    // `sce:capacity` is the synonym only where the type has a length to bound;
+    // anywhere else it is refused where the variable's rules are.
+    let capacity = written
+        .outermost_bounded()
+        .and(crate::sce_attr::read(data, "capacity"));
+    let legacy = match capacity {
+        None => None,
+        Some(value) => Some(LegacyBound {
+            max: legacy_number(data, doc_name, element, "sce:capacity", value)?,
+            attr: "sce:capacity".into(),
+            limit: sce_attr(data, "limit").map(|name| name.trim().to_string()),
+        }),
+    };
+    let (written, _) =
+        fold_legacy_bound(data, doc_name, element, ("sce:type", text), written, legacy)?;
+    if let Err(refusal) = written.clone().bounded() {
+        return Err(type_rule_refusal(
+            data, doc_name, element, "sce:type", text, &refusal,
+        ));
+    }
+    written.as_algorithm_type().map_err(|composition| {
+        composition_refusal(
+            data,
+            doc_name,
+            element,
+            "a statechart's variable",
+            &composition,
+        )
+    })
+}
+
+/// Read an algorithm's parameter, return or local `type=` through the one
+/// type grammar (docs/adr/0086, section 1): its type and its outermost bound,
+/// the bracket or `legacy`, the attribute that stated it before. Every bound
+/// inside the type is stated; the outermost one is the position's to require.
+/// A composition no algorithm lowers yet is refused by name.
+fn read_algorithm_slot_type(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    text: &str,
+    legacy: Option<&str>,
+) -> Result<(AlgorithmValueType, Option<Bound>), Located<ForgeError>> {
+    let written = read_written_type(
+        node,
+        doc_name,
+        element,
+        "type",
+        text,
+        OptionalElems::OrRecord,
+    )?;
+    // The attribute is a synonym only where the type has a length to bound;
+    // anywhere else it is left to the position's own rule of where it stands.
+    let legacy = match (legacy, written.outermost_bounded()) {
+        (Some(attr), Some(_)) => read_unsigned_written(
+            node,
+            doc_name,
+            element,
+            (attr, false),
+            UnsignedInt::Positive,
+        )?
+        .map(|max| LegacyBound {
+            attr: attr.to_string(),
+            max,
+            limit: sce_attr(node, "limit").map(|name| name.trim().to_string()),
+        }),
+        _ => None,
+    };
+    let (written, _) = fold_legacy_bound(node, doc_name, element, ("type", text), written, legacy)?;
+    if let Some(refusal) = written.unbounded_inside() {
+        return Err(type_rule_refusal(
+            node, doc_name, element, "type", text, &refusal,
+        ));
+    }
+    written.as_algorithm_type().map_err(|composition| {
+        composition_refusal(node, doc_name, element, "an algorithm", &composition)
+    })
 }
 
 /// `node`'s unprefixed attribute `attr`, whose decoded value is `decoded`,
@@ -12669,12 +12942,31 @@ fn parse_forge_field(
         &type_str,
     )?;
     let present = sce_type.clone();
-    parse_field_body(data, doc_name, id, sce_type, &present)
+    // Bounded-bytes contract: an optional cap on a bytes-typed slot. Parsed for
+    // every field; the validator pass decides whether to flag it on a non-bytes
+    // field.
+    //
+    // `sce:limit` beside it names the bound for the deployment (`crate::limits`):
+    // the number a build gives the name replaces the one written. Read only beside
+    // a `sce:max-size`, as a statechart reads it only beside a capacity: one
+    // written alone names no bound and is left unread, which the read ledger
+    // refuses.
+    let max_size = sce_attr(data, "max-size")
+        .and_then(|s| parse_int(&s))
+        .map(|written| match sce_attr(data, "limit") {
+            Some(name) => crate::limits::resolve(name.trim(), written),
+            None => written,
+        });
+    // The name itself, kept beside the bound it names, so the generated code names
+    // the bound and a statechart reads it by name (docs/adr/0050).
+    let limit = max_size.and_then(|_| sce_attr(data, "limit").map(|name| name.trim().to_string()));
+    parse_field_body(data, doc_name, id, sce_type, &present, max_size, limit)
 }
 
 /// Parse a field of an event schema from a `<data>` element: what
-/// [`parse_forge_field`] reads, typed by [`read_schema_field_type`], so the
-/// field may be optional (docs/adr/0055).
+/// [`parse_forge_field`] reads, typed through the one type grammar
+/// ([`read_schema_value_type`], docs/adr/0086), so the field may be optional
+/// (docs/adr/0055) and its bound is written in its type.
 ///
 /// An optional field declares no `sce:quantity`: a quantity scales a number
 /// every value of the field holds, and a value of an optional field may be
@@ -12684,13 +12976,8 @@ fn parse_schema_field(
     doc_name: &str,
 ) -> Result<SchemaField, Located<ForgeError>> {
     let (id, type_str) = field_id_and_type(data, doc_name)?;
-    let sce_type = read_schema_field_type(
-        data,
-        doc_name,
-        format!("field '{id}'"),
-        "sce:type",
-        &type_str,
-    )?;
+    let (sce_type, max_size, limit) =
+        read_schema_value_type(data, doc_name, &format!("field '{id}'"), &type_str)?;
     if let (Some(_), Some(quantity)) = (sce_type.optional_elem(), sce_attr(data, "quantity")) {
         return Err(located(
             data,
@@ -12706,7 +12993,7 @@ fn parse_schema_field(
         ));
     }
     let present = sce_type.present_type().clone();
-    parse_field_body(data, doc_name, id, sce_type, &present)
+    parse_field_body(data, doc_name, id, sce_type, &present, max_size, limit)
 }
 
 /// A field's `id` and its `sce:type` as written, each refused by name when
@@ -12752,16 +13039,21 @@ fn field_id_and_type(
     Ok((id, type_str))
 }
 
-/// Everything a field declares besides its id and its type, read the same for
-/// every kind. `present` is the type a present value of the field is — the
-/// declared type itself for every kind but an event schema's optional field —
+/// Everything a field declares besides its id, its type and its bound, read the
+/// same for every kind. `present` is the type a present value of the field is —
+/// the declared type itself for every kind but an event schema's optional field —
 /// which the quantity and the retained initial value are judged against.
+/// `max_size` and `limit` are the field's bound as its kind reads it: an event
+/// schema's from its type (docs/adr/0086), every other kind's from
+/// `sce:max-size`.
 fn parse_field_body<T>(
     data: &roxmltree::Node,
     doc_name: &str,
     id: String,
     sce_type: T,
     present: &SceType,
+    max_size: Option<u32>,
+    limit: Option<String>,
 ) -> Result<ForgeField<T>, Located<ForgeError>> {
     let dir_str = sce_attr(data, "direction").ok_or_else(|| {
         located(
@@ -12789,24 +13081,6 @@ fn parse_field_body<T>(
     let expr = data.attribute("expr").map(|s| s.to_string());
     let expr_spelling = AttributeSpelling::of(data, None, "expr");
     let quantity = parse_quantity_attrs(data, doc_name, &format!("field '{id}'"), present)?;
-    // Bounded-bytes contract: optional cap
-    // on bytes-typed slots. Parsed for every field; the validator
-    // pass decides whether to flag it on a non-bytes field.
-    //
-    // `sce:limit` beside it names the bound for the deployment (`crate::limits`): the
-    // number a build gives the name replaces the one written, so a record's text and
-    // the text an event carries into it move with the lists that hold them. Read only
-    // beside a `sce:max-size`, as a statechart reads it only beside a capacity: one
-    // written alone names no bound and is left unread, which the read ledger refuses.
-    let max_size = sce_attr(data, "max-size")
-        .and_then(|s| parse_int(&s))
-        .map(|written| match sce_attr(data, "limit") {
-            Some(name) => crate::limits::resolve(name.trim(), written),
-            None => written,
-        });
-    // The name itself, kept beside the bound it names, so the generated code names
-    // the bound and a statechart reads it by name (docs/adr/0050).
-    let limit = max_size.and_then(|_| sce_attr(data, "limit").map(|name| name.trim().to_string()));
 
     // Whitespace-separated, like every other list-valued SCE attribute
     // in the tree (`sce:req`, `sce:unresolved-candidates`) — one
@@ -13138,6 +13412,23 @@ fn read_unsigned_attr(
     (attr, namespaced): (&str, bool),
     admits: UnsignedInt,
 ) -> Result<Option<u32>, Located<ForgeError>> {
+    Ok(
+        read_unsigned_written(node, doc_name, element, (attr, namespaced), admits)?
+            .map(|written| under_the_deployments_limit(node, attr, written)),
+    )
+}
+
+/// The number [`read_unsigned_attr`] reads, as written: before the build gives
+/// a name the bound carries its number. What a bound folded into a type takes,
+/// whose names are resolved with the type's own
+/// ([`crate::forge::value_type::WrittenType::resolve_limits`]).
+fn read_unsigned_written(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    (attr, namespaced): (&str, bool),
+    admits: UnsignedInt,
+) -> Result<Option<u32>, Located<ForgeError>> {
     let raw = if namespaced {
         crate::sce_attr::read(node, attr)
     } else {
@@ -13177,7 +13468,7 @@ fn read_unsigned_attr(
             },
         )
     })?;
-    Ok(Some(under_the_deployments_limit(node, attr, written)))
+    Ok(Some(written))
 }
 
 /// The bound `node` is built with: the number it wrote, or the number the build

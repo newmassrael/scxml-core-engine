@@ -377,6 +377,17 @@ impl WrittenType {
         }
     }
 
+    /// The outermost text, byte string or list of the type, seen through every
+    /// `optional<…>`, or `None` for a type with no length: the type a legacy
+    /// attribute bounds, and so which attribute a position reads for it.
+    pub fn outermost_bounded(&self) -> Option<&Self> {
+        match self {
+            Self::Text { .. } | Self::Bytes { .. } | Self::List { .. } => Some(self),
+            Self::Optional { elem } => elem.outermost_bounded(),
+            Self::Scalar(_) | Self::Record { .. } => None,
+        }
+    }
+
     /// The same type with `bound` as the bound of its outermost bounded type:
     /// the reading of a legacy attribute as the bracket it is a synonym of.
     ///

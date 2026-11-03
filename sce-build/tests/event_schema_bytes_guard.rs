@@ -261,7 +261,7 @@ fn c11_typed_payload_preserves_values_and_rejects_overflow() {
     std::fs::write(dir.join("schema.scxml"), r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" name="sample_schema" sce:kind="event-schema" sce:event-name="sample.received">
 <datamodel>
 <data id="raw" sce:type="bytes" sce:direction="in" sce:max-size="512"/>
-<data id="label" sce:type="string" sce:direction="in"/>
+<data id="label" sce:type="string[1024]" sce:direction="in"/>
 <data id="ratio" sce:type="float64" sce:direction="in"/>
 <data id="count" sce:type="uint32" sce:direction="in"/>
 </datamodel></scxml>"#).unwrap();

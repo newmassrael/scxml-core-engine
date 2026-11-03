@@ -425,8 +425,9 @@ const SCHEMA_HLC: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-/// An event-schema with a `string` field that declares no `sce:max-size`,
-/// which a record cannot carry: its text has no buffer size to be held in.
+/// An event-schema with a `string` field that states no bound, which is no type
+/// of the language (docs/adr/0086, section 1.4): refused where the schema is
+/// read, at the field's type, before any record of it is named.
 const SCHEMA_NAMED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="event-schema" name="probe_schema_named" sce:event-name="named.thing">
   <datamodel>
@@ -459,22 +460,6 @@ const SCHEMA_SHORT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   <datamodel>
     <data id="label" sce:type="string" sce:max-size="4" sce:direction="in"/>
   </datamodel>
-</scxml>
-"#;
-
-/// A record parameter typed by a schema whose `string` field has no bound —
-/// refused at the `type` that names it (SCE_FORGE.md §4.12).
-const RECORD_STRING_FIELD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_string_field" version="1.0">
-  <sce:import kind="event-schema" src="probe_schema_named.scxml" as="Named"/>
-  <sce:signature>
-    <sce:param name="n"
-               type="record:Named"/>
-    <sce:return type="uint8"/>
-  </sce:signature>
-  <sce:body>
-    <sce:return expr="0"/>
-  </sce:body>
 </scxml>
 "#;
 
@@ -820,7 +805,6 @@ const SUPPORT: &[(&str, &str)] = &[
     ("probe_record_text_used.scxml", RECORD_TEXT_USED),
     ("probe_list_callee.scxml", LIST_CALLEE),
     ("probe_schema_hlc.scxml", SCHEMA_HLC),
-    ("probe_schema_named.scxml", SCHEMA_NAMED),
     ("probe_schema_blob.scxml", SCHEMA_BLOB),
     ("probe_schema_text.scxml", SCHEMA_TEXT),
     ("probe_schema_short.scxml", SCHEMA_SHORT),
@@ -1002,13 +986,15 @@ const CASES: &[Case] = &[
         col: 29,
         actual: Some("days"),
     },
+    // A record's text that states no bound: the schema is refused where it is
+    // read, at the field's type (docs/adr/0086, section 1.4).
     Case {
-        file: "probe_record_string_field.scxml",
-        document: RECORD_STRING_FIELD,
+        file: "probe_schema_named.scxml",
+        document: SCHEMA_NAMED,
         code: "validation/attribute-rule-violated",
-        line: 6,
+        line: 4,
         col: 22,
-        actual: Some("record:Named"),
+        actual: Some("string"),
     },
     Case {
         file: "probe_record_bytes_field.scxml",

@@ -128,73 +128,53 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <!-- SCE Forge Section 4.12: an algorithm parameter, return or local — a
-       scalar `sceType`, a value of an imported enum (`enum:<alias>`, as a
-       field's `sceTypeOrEnumRef` writes it), a record, or `list<T>`, a
-       bounded buffer of scalars or of records. Authored as
-       `list&lt;int64&gt;` / `list&lt;record:Hlc&gt;` in XML. The pattern is
-       lexical, as `sceTypeOrEnumRef`'s is: it admits `list<>` over any
-       `sceType` or record, and the parser (`read_algorithm_value_type`)
-       refuses what v1 does not take — a `string`/`bytes` element, a record
-       or enum alias the document does not import — with a diagnostic that
-       names the rule rather than an enumeration. A list holds no enum
-       element: the pattern below names none. It also admits `list<optional<E>>`
-       over the elements an optional takes, which the parser refuses by name
-       (docs/adr/0055: a list holds no optional element), for the reason it
-       admits `list<string>`: a type composed of well-formed spellings is
-       refused by the rule it breaks, and only a misspelled keyword is the
-       schema's to refuse. An algorithm's slot admits `optional<T>` for the
-       same reason; the parser refuses it by name until the step of
-       docs/adr/0055 that lets an algorithm hold one. -->
-  <xs:simpleType name="algorithmValueType">
-    <xs:union memberTypes="sce:sceTypeOrEnumRef sce:optionalValueType">
-      <xs:simpleType>
-        <xs:restriction base="xs:string">
-          <xs:pattern value="list&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|record:[A-Za-z_][A-Za-z0-9_]*|optional&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|enum:[A-Za-z_][A-Za-z0-9_]*|record:[A-Za-z_][A-Za-z0-9_]*)\s*&gt;)\s*&gt;"/>
-        </xs:restriction>
-      </xs:simpleType>
-      <!-- `record:<alias>` — the struct an imported event-schema declares.
-           Lexical, as `enum:<alias>` is: the parser judges the alias
-           against the document's imports and the schema's fields. -->
-      <xs:simpleType>
-        <xs:restriction base="xs:string">
-          <xs:pattern value="record:[A-Za-z_][A-Za-z0-9_]*"/>
-        </xs:restriction>
-      </xs:simpleType>
-    </xs:union>
-  </xs:simpleType>
+  <!-- docs/adr/0086, section 1: the one type grammar of every position that
+       declares a value: an event schema's field, a `sce-static` statechart's
+       variable, an algorithm's parameter, return and local.
 
-  <!-- docs/adr/0055: `optional<T>`, a value that is either absent or a value
-       of `T` — a scalar `sceType`, a value of an imported enum or a record of
-       an imported event schema. Authored as `optional&lt;int64&gt;` in XML.
-       Lexical, as the list pattern is: the parser
-       (`read_static_value_type`) judges the alias against the document's
-       imports, and refuses a nested optional and a list inside one with the
-       set that may stand there. The pattern therefore admits one level of
-       either inside (`optional<optional<E>>`, `optional<list<E>>`): a type
-       composed of well-formed spellings is refused by the rule it breaks, by
-       name, as `list<string>` is, and only a misspelled keyword is the
-       schema's to refuse. A `sce-static` statechart's variable holds one, and
-       an event schema's field holds one over a scalar or an imported enum
-       (`read_schema_field_type`), as does an entry of a `cbor` or
-       `content-line` codec (section 8 of the ADR: the type says an entry may
-       be absent); every other position's parser refuses it by name. -->
-  <xs:simpleType name="optionalValueType">
+         T ::= uint8 | uint16 | uint32 | uint64 | int8 | int16 | int32 | int64
+             | float32 | float64 | bool | enum:<alias> | string[B] | bytes[B]
+             | optional<T> | record:<alias> | list<T>[B]
+         B ::= <positive integer> | <limit name>=<positive integer>
+
+       Every constructor takes every type, and a bound is written in the type it
+       bounds, at every depth: `list&lt;string[8]&gt;[4]` in XML is at most 4
+       texts of at most 8 bytes, and `string[merge_text=96]` a text whose bound
+       a build moves with `limit merge_text=N`. The grammar is recursive, which
+       no pattern of XSD 1.0 matches, so the type is a lexical string of the
+       type alphabet here, and the parser (`forge::value_type::WrittenType`,
+       read by each position's reader) judges its structure with a diagnostic
+       that names the rule and the place in the type: a misspelled keyword, a
+       bracket on a type with no length, an optional inside an optional, a
+       text, byte string or list with no bound, an alias the document does not
+       import. Only a character outside the alphabet is the schema's to refuse.
+
+       What each position holds of the grammar is its reader's to say: a codec's
+       entry stays a scalar or an optional scalar (`read_entry_type`), and a
+       composition no backend lowers in a position yet is refused there by name
+       (`generate/unsupported-feature`), never by this declaration. -->
+  <xs:simpleType name="valueTypeExpression">
     <xs:restriction base="xs:string">
-      <xs:pattern value="optional&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|enum:[A-Za-z_][A-Za-z0-9_]*|record:[A-Za-z_][A-Za-z0-9_]*|(optional|list)&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|enum:[A-Za-z_][A-Za-z0-9_]*|record:[A-Za-z_][A-Za-z0-9_]*)\s*&gt;)\s*&gt;"/>
+      <xs:pattern value="\s*[A-Za-z_][A-Za-z0-9_:&lt;&gt;\[\]=.\-\s]*"/>
     </xs:restriction>
   </xs:simpleType>
 
-  <!-- The global `sce:type` — every type grammar a `<data>` may be written in:
-       a field's (`sceTypeOrEnumRef`, and `optional<T>` on an event schema's
-       field), and under `datamodel="sce-static"` a statechart variable's,
-       which adds `list<T>`, `record:<alias>` and `optional<T>` (SCE Accepted
-       Subset §2.15, docs/adr/0055). One global attribute cannot be narrowed
-       by where it sits in XSD 1.0, so each position's parser holds it to that
-       position's grammar (`read_type_attr`, `read_schema_field_type`,
-       `read_algorithm_value_type`, `read_static_value_type`). -->
+  <!-- An algorithm's parameter, return and local (SCE Forge Section 4.12):
+       the one type grammar above. -->
+  <xs:simpleType name="algorithmValueType">
+    <xs:union memberTypes="sce:sceTypeOrEnumRef sce:valueTypeExpression"/>
+  </xs:simpleType>
+
+  <!-- The global `sce:type`: every grammar a `<data>` may be written in, a
+       field's of a kind that holds scalars (`sceTypeOrEnumRef`), a codec
+       entry's, and the one type grammar of an event schema's field and of a
+       `sce-static` statechart's variable (SCE Accepted Subset §2.15,
+       docs/adr/0086). One global attribute cannot be narrowed by where it sits
+       in XSD 1.0, so each position's parser holds it to that position's
+       grammar (`read_type_attr`, `read_entry_type`, and the one grammar's
+       readers of a field, a variable and an algorithm's slot). -->
   <xs:simpleType name="dataValueType">
-    <xs:union memberTypes="sce:sceTypeOrEnumRef sce:algorithmValueType"/>
+    <xs:union memberTypes="sce:sceTypeOrEnumRef sce:valueTypeExpression"/>
   </xs:simpleType>
 
   <!-- SCE Forge Section 3.3: Data flow direction -->
@@ -300,14 +280,23 @@
        rule judges its own value and refuses it with its own diagnostic (a
        positive u32 for both, the list rule also refusing it off a list).
        Typing it here would refuse a malformed or zero value with a schema
-       error first, and the rules' refusals would never be reached. -->
+       error first, and the rules' refusals would never be reached.
+       On a variable it is the legacy spelling of the bracket on the outermost
+       type it bounds (`list&lt;int64&gt;[16]`, docs/adr/0086 section 1.3): read
+       as that bracket, reported with `validation/bound-attribute-superseded`,
+       and refused beside a bracket that states the same bound. On `<scxml>` it
+       is the queue's depth, which is no value type and stays. -->
   <xs:attribute name="capacity" type="xs:string"/>
   <!-- `sce:limit="name"` beside a `capacity` or a `returns-max-size`: the name a
        build gives another number for (the `limit` option of `sce-codegen`, one
        `name=N` each), so that the
        bounds that have to move together (a list variable and the algorithm that
        returns it) are one name wherever they are written. The number written is
-       the bound when a build gives none. -->
+       the bound when a build gives none.
+       On a value type it is the legacy spelling of a named bracket,
+       `[name=N]` (docs/adr/0086 section 1.3): read with the bound attribute
+       beside it as that bracket, and reported with
+       `validation/bound-attribute-superseded`. -->
   <xs:attribute name="limit" type="xs:NCName"/>
   <!-- `sce:interface="closed"` on a statechart's `<scxml>`: every event
        crossing it is one an imported event-schema declares (SCE Accepted
@@ -575,6 +564,11 @@
       </xs:restriction>
     </xs:simpleType>
   </xs:attribute>
+  <!-- A content-line entry's count beside `sce:repeated`, which belongs to its
+       codec and stays. On an event schema's `list<T>` field it is the legacy
+       spelling of the bracket on the list (`list&lt;T&gt;[N]`, docs/adr/0086
+       section 1.3): read as that bracket and reported with
+       `validation/bound-attribute-superseded`. -->
   <xs:attribute name="max-count" type="xs:positiveInteger"/>
   <!-- Section 4.6: a CBOR codec entry's map key — 0..23, a one-byte head. -->
   <xs:attribute name="key">
@@ -598,6 +592,13 @@
   <xs:attribute name="bit-offset" type="xs:nonNegativeInteger"/>
   <xs:attribute name="bit-size" type="sce:bitSizeType"/>
   <xs:attribute name="endian" type="sce:endianType"/>
+  <!-- A codec field's bound, which describes a foreign frame's layout (ADR
+       0077) and stays. On an event schema's text or byte string field it is
+       the legacy spelling of the bracket on the outermost type it bounds
+       (`string[N]`, `optional&lt;bytes[N]&gt;`, docs/adr/0086 section 1.3):
+       read as that bracket, reported with
+       `validation/bound-attribute-superseded`, and refused beside a bracket
+       that states the same bound. -->
   <xs:attribute name="max-size" type="xs:nonNegativeInteger"/>
   <xs:attribute name="length" type="xs:nonNegativeInteger"/>
   <xs:attribute name="length-field" type="xs:string"/>
@@ -1563,7 +1564,10 @@
       <!-- SCE byte-buffer-build (SCE_FORGE.md §4.12): fixed output-buffer
            capacity for a `type="bytes"` or `type="list<T>"` return. Required
            by the parser when the return is a buffer (the no-alloc profile's
-           bound); refused otherwise. Mirrors `<sce:helper returns-max-size>`. -->
+           bound); refused otherwise. Mirrors `<sce:helper returns-max-size>`.
+           The legacy spelling of the bracket on the return's type
+           (`bytes[64]`, docs/adr/0086 section 1.3): read as that bracket and
+           reported with `validation/bound-attribute-superseded`. -->
       <xs:attribute name="returns-max-size" type="xs:positiveInteger"/>
       <xs:attribute ref="sce:limit"/>
       <!-- The integer arithmetic contract (SCE_FORGE.md §3.4.1): an
@@ -1627,6 +1631,10 @@
       <xs:attribute name="name" type="xs:NCName" use="required"/>
       <xs:attribute name="type" type="sce:algorithmValueType" use="required"/>
       <xs:attribute name="init" type="xs:string"/>
+      <!-- The legacy spelling of the bracket on the buffer's type
+           (`bytes[64]`, `list&lt;int64&gt;[16]`, docs/adr/0086 section 1.3):
+           read as that bracket and reported with
+           `validation/bound-attribute-superseded`. -->
       <xs:attribute name="capacity" type="xs:positiveInteger"/>
       <xs:attribute ref="sce:limit"/>
     </xs:complexType>

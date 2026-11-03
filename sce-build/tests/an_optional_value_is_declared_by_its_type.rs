@@ -333,14 +333,27 @@ fn an_optional_of_an_optional_is_refused_naming_what_may_stand_inside() {
 }
 
 #[test]
-fn an_optional_list_is_refused_naming_what_may_stand_inside() {
+fn an_optional_list_states_its_bound_and_is_refused_by_name_until_it_is_lowered() {
+    // A list is a type like any other, so an optional one is a type of the
+    // language (docs/adr/0086, section 1), and states its bound as every list
+    // does.
     check_refuses(
         &statechart(
             r#"<data id="days" sce:type="optional&lt;list&lt;int64&gt;&gt;" expr="null"/>"#,
             "",
         ),
-        "validation/invalid-attribute",
-        "optional<record:Move>",
+        "scxml/static-datamodel-rule",
+        "list<T>[N]",
+    );
+    // Bounded, it is a composition no variable lowers yet: refused by name
+    // (section 7.3), not as a rule of the grammar.
+    check_refuses(
+        &statechart(
+            r#"<data id="days" sce:type="optional&lt;list&lt;int64&gt;[4]&gt;" expr="null"/>"#,
+            "",
+        ),
+        "generate/unsupported-feature",
+        "`list<int64>[4]` in a statechart's variable is a type of the language",
     );
 }
 
@@ -359,14 +372,16 @@ fn an_alias_the_document_does_not_import_is_refused() {
 }
 
 #[test]
-fn a_list_holds_no_optional_element() {
+fn a_list_of_optional_values_is_refused_by_name_until_it_is_lowered() {
+    // `list<optional<T>>` is a type of the language (docs/adr/0086, section 1):
+    // a composition no variable lowers yet, refused by name (section 7.3).
     check_refuses(
         &statechart(
             r#"<data id="days" sce:type="list&lt;optional&lt;int64&gt;&gt;" sce:capacity="4"/>"#,
             "",
         ),
-        "validation/attribute-rule-violated",
-        "never an optional value",
+        "generate/unsupported-feature",
+        "`optional<int64>` in a statechart's variable is a type of the language",
     );
 }
 

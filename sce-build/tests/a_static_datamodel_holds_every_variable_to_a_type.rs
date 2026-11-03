@@ -476,8 +476,10 @@ fn every_language_holds_a_record_string_field() {
 #[test]
 fn a_record_string_field_the_schema_does_not_bound_is_refused_by_every_language() {
     // No default stands in for a bound the author did not write: the machine
-    // would fail a value at run time for a limit nobody declared. The refusal is
-    // the data model's, so it is the same wherever the record would be held.
+    // would fail a value at run time for a limit nobody declared. A text that
+    // states no bound is no type of the language (docs/adr/0086, section 1.4), so
+    // the schema is refused where it is read, at the type, the same wherever the
+    // record would be held.
     let schema = label_schema("");
     let siblings = [("schema_label.scxml", schema.as_str())];
     for (held, document) in &labelled_documents() {
@@ -485,10 +487,9 @@ fn a_record_string_field_the_schema_does_not_bound_is_refused_by_every_language(
             let (ok, out) = check_in(lang, document, &siblings);
             assert!(!ok, "{lang}, {held}: the field has no bound:\n{out}");
             assert!(
-                out.contains("scxml/static-datamodel-rule")
-                    && out.contains("the field `label` of record:Label is a string")
-                    && out.contains("sce:max-size"),
-                "{lang}, {held}: expected the data model's refusal naming the field:\n{out}"
+                out.contains("validation/attribute-rule-violated")
+                    && out.contains("`string` has no bound"),
+                "{lang}, {held}: expected the refusal at the field's type:\n{out}"
             );
         }
     }
@@ -656,15 +657,20 @@ fn every_language_holds_a_byte_string_in_every_place() {
 #[test]
 fn a_byte_string_with_no_bound_is_refused_by_every_language() {
     // No default stands in for a bound the author did not write, as for a string
-    // (docs/adr/0005, decision 2). The refusal is the data model's, so it is the
-    // same wherever the value would be held.
+    // (docs/adr/0005, decision 2). A variable's is the data model's refusal; a
+    // schema's byte string that states no bound is no type of the language
+    // (docs/adr/0086, section 1.4), refused where the schema is read, so the same
+    // wherever the value would be held.
     let unbounded_schema = frame_schema("");
     let siblings = [("schema_frame.scxml", unbounded_schema.as_str())];
+    let bounded_schema = frame_schema(r#"sce:max-size="8""#);
+    let bounded_siblings = [("schema_frame.scxml", bounded_schema.as_str())];
     let documents = [
         (
             "a bytes variable",
             holding_frame(r#"<data id="frame" sce:type="bytes" expr="'ab'"/>"#),
-            "a bytes variable declares the most bytes it holds with sce:capacity",
+            &bounded_siblings,
+            "a bytes variable declares the most bytes it holds in its type",
         ),
         (
             "a record with a bytes field",
@@ -674,12 +680,13 @@ fn a_byte_string_with_no_bound_is_refused_by_every_language() {
       <sce:set name="frame" expr="'ab'"/>
     </data>"#,
             ),
-            "the field `frame` of record:Frame is a byte string its schema does not bound",
+            &siblings,
+            "`bytes` has no bound",
         ),
     ];
-    for (held, document, expected) in &documents {
+    for (held, document, beside, expected) in &documents {
         for lang in bytes_languages() {
-            let (ok, out) = check_in(lang, document, &siblings);
+            let (ok, out) = check_in(lang, document, *beside);
             assert!(!ok, "{lang}, {held}: the value has no bound:\n{out}");
             assert!(
                 out.contains(expected),

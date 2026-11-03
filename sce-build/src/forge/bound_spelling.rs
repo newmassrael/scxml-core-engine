@@ -59,7 +59,7 @@ impl Site {
     /// the position states none for a type of that constructor.
     fn bound_attr(self, ty: &WrittenType) -> Option<(Option<&'static str>, &'static str)> {
         match self {
-            Self::SchemaField => match outermost_bounded(ty)? {
+            Self::SchemaField => match ty.outermost_bounded()? {
                 WrittenType::List { .. } => Some((Some(SCE_NAMESPACE), "max-count")),
                 _ => Some((Some(SCE_NAMESPACE), "max-size")),
             },
@@ -67,16 +67,6 @@ impl Site {
             Self::Local => Some((None, "capacity")),
             Self::Return => Some((None, "returns-max-size")),
         }
-    }
-}
-
-/// The outermost text, byte string or list of `ty`, seen through every
-/// `optional<…>`: what a legacy attribute bounds.
-fn outermost_bounded(ty: &WrittenType) -> Option<&WrittenType> {
-    match ty {
-        WrittenType::Text { .. } | WrittenType::Bytes { .. } | WrittenType::List { .. } => Some(ty),
-        WrittenType::Optional { elem } => outermost_bounded(elem),
-        WrittenType::Scalar(_) | WrittenType::Record { .. } => None,
     }
 }
 

@@ -14,6 +14,6 @@
   <datamodel>
     <data id="total" sce:type="uint32" sce:direction="in"/>
     <data id="ok" sce:type="bool" sce:direction="in"/>
-    <data id="tag" sce:type="string" sce:direction="in"/>
+    <data id="tag" sce:type="string[32]" sce:direction="in"/>
   </datamodel>
 </scxml>

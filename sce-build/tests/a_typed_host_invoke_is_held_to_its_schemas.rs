@@ -21,7 +21,7 @@ const REQUEST_SCHEMA: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
        sce:kind="event-schema"
        sce:event-name="perm.request">
   <datamodel>
-    <data id="scope" sce:type="string" sce:direction="in"/>
+    <data id="scope" sce:type="string[64]" sce:direction="in"/>
     <data id="retries" sce:type="int32" sce:direction="in"/>
   </datamodel>
 </scxml>"#;

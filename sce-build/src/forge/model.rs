@@ -4704,10 +4704,10 @@ impl AlgorithmValueType {
     /// Read the `type=` spelling [`Self::as_attr`] writes: a scalar
     /// [`SceType`] keyword, `list<T>` over an admitted element, `record:<alias>`
     /// or `optional<T>` over a scalar or a record. `None` for anything else.
-    /// The document parser reads the same grammar through
-    /// `parser::read_algorithm_value_type` and `parser::read_static_value_type`,
-    /// which add the refusals a document needs; this is the plain inverse for
-    /// text SCE wrote itself.
+    /// The document parser reads a document's types through the one type
+    /// grammar ([`crate::forge::value_type`], docs/adr/0086), which adds the
+    /// bounds and the refusals a document needs; this is the plain inverse for
+    /// text SCE wrote itself, which carries no bound.
     pub fn from_attr(s: &str) -> Option<Self> {
         let s = s.trim();
         if let Some(inner) = Self::optional_inner(s) {
@@ -4890,7 +4890,9 @@ impl FieldType {
     /// `enum:<alias>`, or `optional<T>` over one. `None` for anything else, a
     /// list, a record and a nested optional among them. The plain inverse for
     /// text SCE wrote itself; a document's `sce:type` is read by
-    /// `parser::read_schema_field_type`, which adds the refusals a document needs.
+    /// `parser::read_entry_type` for a codec's entry and through the one type
+    /// grammar for a schema's field ([`crate::forge::value_type`]), which add the
+    /// refusals a document needs.
     pub fn from_attr(s: &str) -> Option<Self> {
         match AlgorithmValueType::optional_inner(s) {
             Some(inner) => SceType::from_attr(inner.trim()).map(|elem| Self::Optional { elem }),

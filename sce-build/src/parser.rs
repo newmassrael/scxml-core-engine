@@ -986,14 +986,25 @@ fn enforce_static_datamodel(
                     (!written.is_empty()).then(|| written.to_string()),
                 ));
             }
+            // The type as the one type grammar reads it (docs/adr/0086). A text
+            // that is no type is the variable's reader's to refuse, by name; the
+            // rules below are of the shapes it can be.
+            let written = crate::sce_attr::read(&node, "type")
+                .and_then(|t| crate::forge::value_type::WrittenType::read(t).ok());
+            // The outermost bound written in the type's bracket, which states
+            // what `sce:capacity` states (docs/adr/0086, section 1.3).
+            let bracket = written
+                .as_ref()
+                .and_then(|w| w.outer_bound())
+                .is_some_and(Option::is_some);
             // A record variable is built whole from its `<sce:set>`
             // children, as an algorithm's record local is (SCE_FORGE.md
             // §4.12): those children are its initial value, so it takes no
             // `expr`, and they are not the untyped content refused below.
-            let is_record = crate::sce_attr::read(&node, "type").is_some_and(|t| {
-                t.trim()
-                    .starts_with(crate::forge::model::AlgorithmValueType::RECORD_PREFIX)
-            });
+            let is_record = matches!(
+                written,
+                Some(crate::forge::value_type::WrittenType::Record { .. })
+            );
             if is_record {
                 if let Some((written, pos)) = attribute_as_written(&node, "expr") {
                     return Err(refused(
@@ -1023,10 +1034,10 @@ fn enforce_static_datamodel(
             // a bound instead of an initial value. The bound is the one the
             // machine keeps on every backend, so it is required, and it
             // means nothing on any other variable.
-            let is_list = crate::sce_attr::read(&node, "type").is_some_and(|t| {
-                t.trim()
-                    .starts_with(crate::forge::model::AlgorithmValueType::LIST_PREFIX)
-            });
+            let is_list = matches!(
+                written,
+                Some(crate::forge::value_type::WrittenType::List { .. })
+            );
             let capacity = attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "capacity");
             if is_list {
                 if let Some((written, pos)) = attribute_as_written(&node, "expr") {
@@ -1050,12 +1061,14 @@ fn enforce_static_datamodel(
                     ));
                 }
                 match capacity {
+                    None if bracket => {}
                     None => {
                         return Err(refused(
                             element_row(&node),
                             format!("<data id=\"{id}\">"),
-                            "a list variable declares the most elements it holds with \
-                             sce:capacity",
+                            "a list variable declares the most elements it holds in its type, \
+                             list<T>[N] (or with sce:capacity, the attribute that stated it \
+                             before)",
                             &node,
                             Some(name.to_string()),
                         ))
@@ -1093,24 +1106,32 @@ fn enforce_static_datamodel(
             //
             // An optional text or byte string (docs/adr/0055) is bounded as the
             // value it holds when present is.
-            let bounded = match crate::sce_attr::read(&node, "type").map(|written| {
-                crate::forge::model::AlgorithmValueType::optional_inner(written)
-                    .unwrap_or(written)
-                    .trim()
-            }) {
-                Some("string") => Some(("string", "UTF-8 bytes")),
-                Some("bytes") => Some(("bytes", "bytes")),
+            //
+            // Seen through every `optional<…>`, the type a bound bounds; a list
+            // inside an optional is a list the variable holds, bounded the same.
+            let bounded = match written.as_ref().and_then(|w| w.outermost_bounded()) {
+                Some(crate::forge::value_type::WrittenType::Text { .. }) => {
+                    Some(("string", "UTF-8 bytes", "string[N]"))
+                }
+                Some(crate::forge::value_type::WrittenType::Bytes { .. }) => {
+                    Some(("bytes", "bytes", "bytes[N]"))
+                }
+                Some(crate::forge::value_type::WrittenType::List { .. }) => {
+                    Some(("list", "elements", "list<T>[N]"))
+                }
                 _ => None,
             };
-            if let Some((kind, unit)) = bounded {
+            if let Some((kind, unit, form)) = bounded {
                 match capacity {
+                    None if bracket => {}
                     None => {
                         return Err(refused(
                             element_row(&node),
                             format!("<data id=\"{id}\">"),
                             &format!(
-                                "a {kind} variable declares the most {unit} it holds with \
-                                 sce:capacity"
+                                "a {kind} variable declares the most {unit} it holds in its \
+                                 type, {form} (or with sce:capacity, the attribute that \
+                                 stated it before)"
                             ),
                             &node,
                             Some(name.to_string()),
@@ -3606,19 +3627,21 @@ impl SCXMLParser {
         // is an `optional<T>` variable (docs/adr/0055), which holds what may
         // stand inside it to the scalars and the enums and records the document
         // imports.
+        //
+        // The type is read through the one type grammar (docs/adr/0086): its
+        // outermost bound is its bracket, or `sce:capacity` beside it, the
+        // attribute that stated it before the type held bounds.
         let element = format!("<data id=\"{id}\">");
-        let value_type = crate::sce_attr::read(data, "type")
+        let declared = crate::sce_attr::read(data, "type")
             .filter(|_| model.datamodel == Datamodel::SceStatic)
             .map(|text| {
-                crate::forge::parser::read_static_value_type(
-                    data,
-                    source_name,
-                    element.clone(),
-                    "sce:type",
-                    text,
-                )
+                crate::forge::parser::read_static_variable_type(data, source_name, &element, text)
             })
             .transpose()?;
+        let (value_type, bound) = match declared {
+            Some((value_type, bound)) => (Some(value_type), bound),
+            None => (None, None),
+        };
         let record_fields = if value_type
             .as_ref()
             .and_then(crate::forge::model::AlgorithmValueType::record_alias)
@@ -3628,26 +3651,27 @@ impl SCXMLParser {
         } else {
             Vec::new()
         };
-        // A list's declared bound; `enforce_static_datamodel` has already
-        // required it on a list and refused it anywhere else.
+        // A list's, a text's or a byte string's declared bound; `enforce_static_datamodel`
+        // has already required it on each and refused `sce:capacity` anywhere else.
         //
-        // `sce:limit` names it for the deployment: the number the build gave the name
-        // replaces the one written (`crate::limits`), here and in every document that
-        // names the same bound, so a list the machine holds and the algorithm that
+        // A named bound (`[name=N]`, or `sce:limit` beside `sce:capacity`) is the
+        // number the build gave the name (`crate::limits`), here and in every document
+        // that names the same bound, so a list the machine holds and the algorithm that
         // returns it grow together.
-        let capacity = crate::sce_attr::read(data, "capacity")
-            .filter(|_| model.datamodel == Datamodel::SceStatic)
-            .and_then(|text| text.trim().parse::<u32>().ok().filter(|n| *n > 0))
-            .map(|written| match crate::sce_attr::read(data, "limit") {
-                Some(name) => crate::limits::resolve(name.trim(), written),
-                None => written,
-            });
-        // The name is the bound's, so it is carried where the bound is: under any
-        // data model but sce-static the `sce:capacity` above is read and carried by
-        // nothing, and so is the `sce:limit` that names it. A document lowered for
-        // the Interpreter keeps both as its author wrote them, with the number the
-        // build resolved already in every expression that holds a value to it.
+        let capacity = bound.as_ref().map(|bound| bound.max);
+        let limit = bound.and_then(|bound| bound.limit);
+        // The bound is carried where the type is: under any data model but sce-static
+        // the `sce:capacity` an authoring tool writes is carried by nothing, and so is
+        // the `sce:limit` that names it. A document lowered for the Interpreter keeps
+        // both as its author wrote them, with the number the build resolved already in
+        // every expression that holds a value to it.
         if model.datamodel != Datamodel::SceStatic {
+            crate::sce_attr::acknowledge(
+                data,
+                "capacity",
+                "it is the bound of a sce-static variable's type, which only sce-static \
+                 carries; under any other data model it is the authoring tool's declaration",
+            );
             crate::sce_attr::acknowledge(
                 data,
                 "limit",
@@ -3694,9 +3718,7 @@ impl SCXMLParser {
             value_type_spelling: AttributeSpelling::of(data, Some(SCE_NAMESPACE), "type"),
             record_fields,
             capacity,
-            limit: capacity.and_then(|_| {
-                crate::sce_attr::read(data, "limit").map(|name| name.trim().to_string())
-            }),
+            limit,
             direction,
             // The analyzer names readers, once it knows which variables
             // have one (`reader_names::assign`).
