@@ -12,8 +12,10 @@ import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ChannelResult
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -24,7 +26,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.selects.onTimeout
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.yield
 
 // Process-wide counter for scriptSessionId allocation. Using hashCode() here
@@ -232,10 +235,20 @@ data class EventMetadata(
  * state and running a transition's content do ([onEntry], [onExit],
  * [executeTransitionContent], [executeHistoryDefaultContent]).
  *
- * Threading model:
- *   - Microstep loop runs on [Dispatchers.Default] (never blocks UI)
- *   - State observation via [currentState] (StateFlow, Compose-ready)
- *   - [send] is non-suspending (Channel.UNLIMITED, always succeeds)
+ * Threading: the rule is ARCHITECTURE.md "Engine Threading" (docs/adr/0083).
+ * This engine's owner is the thread that drives it in the synchronous mode
+ * ([initialize], [enterAt] or a restore records it), and in the coroutine mode
+ * ([start]) its own loop, which runs on [Dispatchers.Default] holding the
+ * engine's macrostep lock. Its owner-thread operations are [tick] and
+ * [advanceTimeMs], raising an external event ([send], [sendEventByName]),
+ * ending or cancelling a host-run invocation ([completeHostInvoke],
+ * [failHostInvoke], [completeHostInvokeIn], [failHostInvokeIn],
+ * [cancelHostInvoke]) and applying a Mesh delivery ([applyMeshCalls],
+ * [applyMeshCall]); one called from another thread fails and names [inbox],
+ * the handle another thread uses instead. In the coroutine mode [send] and
+ * [sendEventByName] called off the loop are that inbox's post of an external
+ * event, which they always were there. State is observed through
+ * [currentState] (a StateFlow) from any thread.
  *
  * W3C SCXML Appendix D: the microstep — selection, conflict removal, the exit
  * and entry sets — is [Microstep]'s, the one transcription every machine
@@ -682,13 +695,196 @@ abstract class StateMachineEngine<S : State, E : Event>(
         }
     }
 
+    // --- The inbox and the owner (ARCHITECTURE.md "Engine Threading") ---
+
     /**
-     * §scxml-3.12.1: Event channel (FIFO, unbounded).
+     * The inbox (docs/adr/0083): what other threads post, in the order it was
+     * taken. Unbounded, so a post never blocks and is refused only once the
+     * channel is closed ([closeInbox]). In the coroutine mode the loop suspends
+     * on it, which is how a post wakes the loop; in the synchronous mode the
+     * owner takes what it holds at each macrostep boundary. Either way what is
+     * taken is applied by [drainInbox] before the external queue is consulted.
      *
-     * Channel.UNLIMITED ensures [send] never blocks and never drops events.
-     * Recreated on each [start] to support stop/start cycles.
+     * Replaced only when a closed one is opened again ([openInbox]), so what is
+     * posted before a run starts is kept for that run. Volatile because the
+     * posting threads read the field.
      */
-    private var eventChannel = Channel<QueuedEvent<E>>(Channel.UNLIMITED)
+    @Volatile
+    private var eventChannel = Channel<InboxInput<E>>(Channel.UNLIMITED)
+
+    /** Whether [eventChannel] was closed, by [stop] or by the run reaching a top-level `<final>`. */
+    @Volatile
+    private var inboxClosed = false
+
+    /** What [EngineInbox.wakeWith] installed. */
+    @Volatile
+    private var inboxWaker: (() -> Unit)? = null
+
+    /**
+     * This engine's inbox: the handle a thread that does not own the engine
+     * posts external events, host-run invocations' endings and Mesh deliveries
+     * through. Thread-safe; everything else of the engine that changes its state
+     * is an owner-thread operation (ARCHITECTURE.md "Engine Threading").
+     */
+    val inbox: EngineInbox<E> = object : EngineInbox<E> {
+        override fun post(input: InboxInput<E>): Boolean = postToInbox(input)
+
+        override fun wakeWith(waker: (() -> Unit)?) {
+            inboxWaker = waker
+        }
+    }
+
+    /** Who owns this engine now: nobody, its own coroutine loop, or one thread. */
+    private sealed interface Confinement {
+        /** Not running: never started, or stopped. */
+        data object Unowned : Confinement
+
+        /** The coroutine mode: the loop, which holds [macrostepLock] whenever it touches the engine. */
+        data object OwnLoop : Confinement
+
+        /** The synchronous mode: the thread that started the run. */
+        class OwnerThread(val thread: Any) : Confinement
+    }
+
+    @Volatile
+    private var confinement: Confinement = Confinement.Unowned
+
+    /** Whether this session runs a loop of its own, so another session's owner reaches it only by its inbox. */
+    private val runsItsOwnLoop: Boolean
+        get() = confinement == Confinement.OwnLoop
+
+    /** Make the thread calling this the owner of a run of the synchronous mode. */
+    private fun ownByThisThread() {
+        confinement = Confinement.OwnerThread(currentThreadIdentity())
+    }
+
+    /** Whether the caller is this engine's owner, or the engine has none. */
+    private fun isOwnerHere(): Boolean = when (val confined = confinement) {
+        Confinement.Unowned -> true
+        Confinement.OwnLoop -> holdsMacrostepLock(macrostepLock)
+        is Confinement.OwnerThread -> confined.thread === currentThreadIdentity()
+    }
+
+    /**
+     * Refuse [operation], an owner-thread operation, on a thread that does not
+     * own this engine.
+     *
+     * @throws IllegalStateException naming the inbox the caller should post to.
+     */
+    private fun requireOwner(operation: String) {
+        check(isOwnerHere()) {
+            "$operation is an owner-thread operation of this engine and was called from a thread " +
+                "that does not own it (ARCHITECTURE.md \"Engine Threading\"): call it from the thread " +
+                "driving the engine, or post the input from this thread through the engine's inbox " +
+                "(`inbox.post`)"
+        }
+    }
+
+    /**
+     * Whether an external event raised by [operation] on this thread joins the
+     * external queue at once (the owner raises it) or is posted to the inbox (the
+     * coroutine mode off its loop, or an engine not running yet).
+     *
+     * @throws IllegalStateException in the synchronous mode, off the owner thread.
+     */
+    private fun raisesOnOwner(operation: String): Boolean = when (confinement) {
+        Confinement.Unowned -> false
+        Confinement.OwnLoop -> holdsMacrostepLock(macrostepLock)
+        is Confinement.OwnerThread -> {
+            requireOwner(operation)
+            true
+        }
+    }
+
+    /** [EngineInbox.post]: take [input] unless the inbox is closed, and wake the owner. */
+    private fun postToInbox(input: InboxInput<E>): Boolean {
+        if (!eventChannel.trySend(input).isSuccess) return false
+        inboxWaker?.invoke()
+        return true
+    }
+
+    /** Open the inbox for a run that is starting, if the last run closed it. */
+    private fun openInbox() {
+        if (!inboxClosed) return
+        eventChannel = Channel(Channel.UNLIMITED)
+        inboxClosed = false
+    }
+
+    /** Close the inbox: every post from now on is refused. */
+    private fun closeInbox() {
+        eventChannel.close()
+        inboxClosed = true
+    }
+
+    /**
+     * The macrostep boundary's half of the inbox (docs/adr/0083): apply, on the
+     * owner, everything posted so far, in the order it was taken, each by the
+     * owner-thread operation of the same name ([applyInboxInput]). Called before
+     * the external queue is consulted, so what was posted joins it behind what
+     * the macrostep that just ended queued.
+     */
+    private fun drainInbox() {
+        while (true) {
+            val input = eventChannel.tryReceive().getOrNull() ?: return
+            applyInboxInput(input)
+        }
+    }
+
+    /** Apply one posted [input] by the operation a direct call on the owner makes. */
+    private fun applyInboxInput(input: InboxInput<E>) {
+        when (input) {
+            is InboxInput.ExternalEvent -> send(input.event, input.metadata)
+            is InboxInput.ExternalEventByName -> sendEventByName(input.name, input.metadata)
+            is InboxInput.HostInvokeEnding -> applyHostInvokeEnding(input)
+            is InboxInput.MeshDelivery -> applyMeshDelivery(input)
+        }
+    }
+
+    /** A posted [ending], applied by the call the host would have made on the owner. */
+    private fun applyHostInvokeEnding(ending: InboxInput.HostInvokeEnding) {
+        val sessionId = ending.sessionId
+        if (sessionId == null) {
+            if (ending.done) {
+                completeHostInvoke(
+                    ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin, ending.originType,
+                )
+            } else {
+                failHostInvoke(
+                    ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin, ending.originType,
+                )
+            }
+        } else if (ending.done) {
+            completeHostInvokeIn(
+                sessionId, ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin,
+                ending.originType,
+            )
+        } else {
+            failHostInvokeIn(
+                sessionId, ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin,
+                ending.originType,
+            )
+        }
+    }
+
+    /**
+     * A posted Mesh [delivery], applied with [applyMeshCall] on the session it
+     * names: this one, a descendant this owner drives, or, for a descendant
+     * running a loop of its own, handed to that session's inbox. A session the
+     * tree no longer holds takes nothing.
+     */
+    private fun applyMeshDelivery(delivery: InboxInput.MeshDelivery) {
+        val sessionId = delivery.sessionId
+        if (sessionId == null) {
+            applyMeshCall(delivery.call)
+            return
+        }
+        val holder = sessionReached(sessionId) ?: return
+        if (holder !== this && holder.runsItsOwnLoop) {
+            holder.postToInbox(delivery)
+        } else {
+            holder.applyMeshCall(delivery.call)
+        }
+    }
 
     /**
      * §scxml-3.12.1: Internal events from <raise> are processed
@@ -996,9 +1192,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Apply what arrived for this machine on the router its parent gave it, in
      * the order the router released it ([applyMeshCall]). The parent calls it
      * each time it drives this child, before the child's macrostep. Does nothing
-     * for a machine given no router.
+     * for a machine given no router. An owner-thread operation; a router that
+     * receives on a thread of its own posts each call to the tree's [inbox] as an
+     * [InboxInput.MeshDelivery] naming the session instead.
      */
     fun applyMeshCalls() {
+        requireOwner("applyMeshCalls")
         val router = installedMesh ?: return
         for (call in router.takeCalls()) {
             applyMeshCall(call)
@@ -1013,9 +1212,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * check. An answer carries `_event.origin` `mesh://<source>` and origin type
      * `sce:mesh-rpc` (SCE_MESH.md §mesh-9.5); a deadline the requester reached
      * itself has no peer to name, and carries neither. The one body a host
-     * core's top-level machine and a child session are told through.
+     * core's top-level machine and a child session are told through. An
+     * owner-thread operation, posted from another thread as an
+     * [InboxInput.MeshDelivery].
      */
     fun applyMeshCall(call: MeshCall) {
+        requireOwner("applyMeshCall")
         when (call) {
             is MeshCall.Raise -> sendEventByName(call.name, call.metadata)
             is MeshCall.EndInvoke -> {
@@ -1496,6 +1698,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * for another party it can name — as a Mesh router's `sce:mesh-rpc`
      * stands for the peer that answered (`mesh://<peer>`, SCE_MESH.md
      * §mesh-9.5). Empty keeps what every host completion has carried.
+     *
+     * An owner-thread operation: a host whose invocation finishes on a thread
+     * of its own posts an [InboxInput.HostInvokeEnding] to [inbox] instead, and
+     * the owner applies it with this call at its next macrostep boundary.
      */
     fun completeHostInvoke(
         processorType: String,
@@ -1504,7 +1710,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
         doneData: String,
         origin: String = "",
         originType: String = "",
-    ): Boolean = endHostInvoke(processorType, invokeId, token, failed = false, doneData, origin, originType)
+    ): Boolean {
+        requireOwner("completeHostInvoke")
+        return endHostInvoke(processorType, invokeId, token, failed = false, doneData, origin, originType)
+    }
 
     /**
      * §scxml-6.4: a host-run invocation failed; raise its
@@ -1515,7 +1724,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * only while start [token] is still running, ending the invocation, so a
      * run ends once — by success, failure or deadline, whichever comes first.
      * Returns `false`, raising nothing, for an invocation that was cancelled,
-     * already ended, or restarted since.
+     * already ended, or restarted since. An owner-thread operation, posted from
+     * another thread as [completeHostInvoke] is.
      */
     fun failHostInvoke(
         processorType: String,
@@ -1524,7 +1734,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
         errorData: String,
         origin: String = "",
         originType: String = "",
-    ): Boolean = endHostInvoke(processorType, invokeId, token, failed = true, errorData, origin, originType)
+    ): Boolean {
+        requireOwner("failHostInvoke")
+        return endHostInvoke(processorType, invokeId, token, failed = true, errorData, origin, originType)
+    }
 
     /**
      * [completeHostInvoke] for an invocation of the session [sessionId], this
@@ -1536,6 +1749,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *
      * `false`, raising nothing, for a session the tree does not hold and for a
      * start that session is not running.
+     *
+     * An owner-thread operation, posted from another thread as an
+     * [InboxInput.HostInvokeEnding] naming the session. In the coroutine mode a
+     * child session runs a loop of its own and is its own owner, so an ending
+     * for it or for a session below it is handed to that child's inbox, and the
+     * answer is whether that inbox took it; the token check is made there.
      */
     fun completeHostInvokeIn(
         sessionId: String,
@@ -1545,8 +1764,22 @@ abstract class StateMachineEngine<S : State, E : Event>(
         doneData: String,
         origin: String = "",
         originType: String = "",
-    ): Boolean = sessionHolding(sessionId)
-        ?.completeHostInvoke(processorType, invokeId, token, doneData, origin, originType) ?: false
+    ): Boolean {
+        requireOwner("completeHostInvokeIn")
+        return endHostInvokeIn(
+            InboxInput.HostInvokeEnding(
+                sessionId = sessionId,
+                processorType = processorType,
+                invokeId = invokeId,
+                token = token,
+                done = true,
+                data = doneData,
+                origin = origin,
+                originType = originType,
+            ),
+            sessionId,
+        )
+    }
 
     /** [failHostInvoke] for an invocation of the session [sessionId], as [completeHostInvokeIn] ends one. */
     fun failHostInvokeIn(
@@ -1557,22 +1790,65 @@ abstract class StateMachineEngine<S : State, E : Event>(
         errorData: String,
         origin: String = "",
         originType: String = "",
-    ): Boolean = sessionHolding(sessionId)
-        ?.failHostInvoke(processorType, invokeId, token, errorData, origin, originType) ?: false
+    ): Boolean {
+        requireOwner("failHostInvokeIn")
+        return endHostInvokeIn(
+            InboxInput.HostInvokeEnding(
+                sessionId = sessionId,
+                processorType = processorType,
+                invokeId = invokeId,
+                token = token,
+                done = false,
+                data = errorData,
+                origin = origin,
+                originType = originType,
+            ),
+            sessionId,
+        )
+    }
 
     /**
-     * The running session named [id] in the tree this machine is the root of: this
-     * machine, or a descendant whose id is its parent's and a `.` in front of the
-     * rest (the ids being tree paths, docs/adr/0045). A child that has ended is no
-     * session the tree holds.
+     * The one body behind [completeHostInvokeIn] and [failHostInvokeIn]: [ending]
+     * on the session [sessionId] names, from this session's owner.
      */
-    private fun sessionHolding(id: String): StateMachineEngine<*, *>? {
+    private fun endHostInvokeIn(ending: InboxInput.HostInvokeEnding, sessionId: String): Boolean {
+        val holder = sessionReached(sessionId) ?: return false
+        if (holder !== this && holder.runsItsOwnLoop) return holder.postToInbox(ending)
+        return holder.endHostInvoke(
+            ending.processorType,
+            ending.invokeId,
+            ending.token,
+            failed = !ending.done,
+            ending.data,
+            ending.origin,
+            ending.originType,
+        )
+    }
+
+    /**
+     * The running session named [id] in the tree this machine is the root of, as
+     * far as this session's owner reaches: this machine, or a descendant whose id
+     * is its parent's and a `.` in front of the rest (the ids being tree paths,
+     * docs/adr/0045). A child that has ended is no session the tree holds.
+     *
+     * A child that runs a loop of its own (the coroutine mode) is another owner,
+     * so the walk stops at it: it is answered for its own id and for every id
+     * below it, and nothing of its own state is read here. Its id was given where
+     * it was built ([adoptChild]), before its loop started.
+     */
+    private fun sessionReached(id: String): StateMachineEngine<*, *>? {
         val own = sessionIdentity
         if (own == id) return this
         if (own.isEmpty() || !id.startsWith("$own.")) return null
         for (entry in activeInvokes.values) {
-            if (entry.child.isInFinalState) continue
-            entry.child.sessionHolding(id)?.let { return it }
+            val child = entry.child
+            if (child.isInFinalState) continue
+            if (!child.runsItsOwnLoop) {
+                child.sessionReached(id)?.let { return it }
+                continue
+            }
+            val childId = child.assignedSessionId ?: continue
+            if (id == childId || id.startsWith("$childId.")) return child
         }
         return null
     }
@@ -1625,9 +1901,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * invocation is still running and stays silent when it never started or
      * already completed. Public because the exit chain is not the only way an
      * invocation ends — a host that tears its own session down needs to say
-     * so.
+     * so. An owner-thread operation.
      */
     fun cancelHostInvoke(processorType: String, invokeId: String): Boolean {
+        requireOwner("cancelHostInvoke")
         // One a restore re-armed and has not started again was never started by
         // this engine, so there is nothing to tell the host to stop.
         restoredHostInvokes.removeAll { it.request.processorType == processorType && it.request.invokeId == invokeId }
@@ -2166,9 +2443,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * that does. It matters only in the synchronous mode
      * ([initialize] + [tick]): there `scheduleSend` records into a time-ordered
      * queue that nothing drains unless the host calls [tick], so a host that
-     * never does waits forever with no error and no warning. Under
-     * [start] each delayed send is its own coroutine and fires on its own, so
-     * the host has nothing to arrange.
+     * never does waits forever with no error and no warning. Under [start] the
+     * engine's own loop waits for the earliest waiting send and performs it, in
+     * the same coroutine and under the same lock as every other macrostep
+     * ([awaitNextExternalEvent]), so the host has nothing to arrange.
      *
      * `open` with a `false` default rather than `abstract` so a hand-written
      * machine keeps compiling; every generated machine declares it.
@@ -2420,44 +2698,46 @@ abstract class StateMachineEngine<S : State, E : Event>(
     // --- Event Submission ---
 
     /**
-     * Submit an event to the state machine (non-suspending, fire-and-forget).
+     * Raise [event] on the external queue (non-suspending, fire-and-forget).
      *
-     * Succeeds while the SM is running (Channel.UNLIMITED, never drops).
-     * After the SM reaches a final state, the channel is closed and events
-     * are silently discarded (SM no longer processes events per §scxml-3.7).
+     * An owner-thread operation in the synchronous mode. In the coroutine mode,
+     * called off the engine's loop, it posts the event to [inbox], as it always
+     * put it on the loop's channel; a host that needs to know whether it was
+     * taken posts it there itself. After the machine reaches a final state the
+     * event is not queued (§scxml-3.7) and is counted instead
+     * ([unseenExternalEvents]).
      */
     fun send(event: E) {
-        if (isInFinalState) {
-            // The queue this would join is one nothing will drain again, and
-            // in coroutine mode the channel is already closed — `trySend`
-            // would answer failure to a caller that discards it. Counted
-            // instead, at the door, for the same reason the loop counts what
-            // it abandons. See [unseenExternalEvents].
-            noteUnseenEvent(event)
-            return
-        }
-        if (syncMode) {
-            externalEventQueue.addLast(QueuedEvent(event))
-        } else {
-            eventChannel.trySend(QueuedEvent(event))
-        }
+        send(event, EventMetadata.EMPTY)
     }
 
     /**
-     * §scxml-5.10: Submit an event with metadata (type, data, sendid, etc.).
+     * §scxml-5.10: [send] with metadata (type, data, sendid, etc.).
      *
      * Used by generated send actions that need to attach event metadata.
      */
     fun send(event: E, metadata: EventMetadata) {
+        raiseExternal(event, metadata, raisesOnOwner("send"))
+    }
+
+    /**
+     * The one body of every external raise: on the owner, onto the external
+     * queue; off it ([onOwner] false), into the inbox.
+     */
+    private fun raiseExternal(event: E, metadata: EventMetadata, onOwner: Boolean) {
         if (isInFinalState) {
-            // Same refusal as the overload above, same reason it is counted.
+            // The queue this would join is one nothing will drain again, and
+            // the inbox is already closed, which would answer failure to a
+            // caller that discards it. Counted instead, at the door, for the
+            // same reason the loop counts what it abandons. See
+            // [unseenExternalEvents].
             noteUnseenEvent(event)
             return
         }
-        if (syncMode) {
+        if (onOwner) {
             externalEventQueue.addLast(QueuedEvent(event, metadata))
         } else {
-            eventChannel.trySend(QueuedEvent(event, metadata))
+            postToInbox(InboxInput.ExternalEvent(event, metadata))
         }
     }
 
@@ -2502,11 +2782,16 @@ abstract class StateMachineEngine<S : State, E : Event>(
     fun start(scope: CoroutineScope) {
         if (job != null) return  // Already started
 
-        // R3 fix: Recreate channel for stop/start reuse
-        eventChannel = Channel<QueuedEvent<E>>(Channel.UNLIMITED)
+        // A run that follows a stop, or one that ended, gets an open inbox; what
+        // was posted before this first run is kept for it.
+        openInbox()
 
         // R2 fix: Store scope for delayed send support
         engineScope = scope
+
+        // The loop owns the engine from here: every stretch of it holds
+        // [macrostepLock], which is what an owner-thread operation checks.
+        confinement = Confinement.OwnLoop
 
         beginRun()
         job = scope.launch(Dispatchers.Default) {
@@ -2571,6 +2856,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun initialize() {
         syncMode = true
+        // The thread that starts a synchronous run is its owner (ARCHITECTURE.md
+        // "Engine Threading"), and the run takes what was posted before it.
+        ownByThisThread()
+        openInbox()
         // §scxml-3.13: entering the initial configuration is one turn, and the
         // `<onentry>` handlers it runs arm their `<send delay>`s against one
         // instant — see [beginTurn] for what reading the clock per `<send>`
@@ -2657,6 +2946,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // The synchronous door, like [initialize] — a host that resumes drives
         // the machine on with [processEventSync] / [tick], and both read this.
         syncMode = true
+        // The thread that resumes the machine is its owner from here, as the one
+        // that initializes it is.
+        ownByThisThread()
+        openInbox()
 
         // §scxml-5.3: the datamodel is declared before anything can read it.
         // This is not a state entry action — `<datamodel>` holds `<data>`, not
@@ -2677,6 +2970,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val endedHere = isFinalState(current) && parentOf(current) == null
         terminalState = if (endedHere) current else null
         isInFinalState = endedHere
+        // A run that has ended takes no input, as one that ends here does.
+        if (endedHere) closeInbox()
 
         return ConfigurationRejection.NONE
     }
@@ -3473,8 +3768,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * §scxml-6.2: Single tick — poll scheduler, tick children, process events.
      * Call repeatedly for tests with delayed sends (C++ tick() pattern).
+     *
+     * An owner-thread operation; it is also where what was posted to [inbox]
+     * since the last call is applied, at the macrostep boundaries it reaches.
      */
     fun tick() {
+        requireOwner("tick")
         if (isInFinalState) return
         // §scxml-3.13: one turn, one reading. Everything below judges due
         // against the instant this tick began, and everything the macrosteps
@@ -3581,6 +3880,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * (§scxml-6.4).
      */
     fun advanceTimeMs(ms: Long) {
+        // Before the clock moves: a refused call must leave the engine's time as it was.
+        requireOwner("advanceTimeMs")
         require(ms >= 0L) { "advanceTimeMs requires a non-negative delta: $ms" }
         val manual = clock as? ManualClock
             ?: error(
@@ -4286,7 +4587,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // whatever the host put on the external queue ends with it.
                 // That is the clause: a machine that reached a top-level final
                 // state has exited the interpreter. Saying nothing about it is
-                // not the clause — see [unseenExternalEvents].
+                // not the clause — see [unseenExternalEvents]. What was posted
+                // before the run ended is applied as a direct call would be now:
+                // an event joins the count, an ending finds its invocation over.
+                drainInbox()
                 recordUnseenExternalEvents()
                 // The last boundary was published when the final state was
                 // reached (flushPendingFinalState), before the exit emptied
@@ -4296,6 +4600,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // §scxml-D-mainEventLoop: the macrostep is complete — the point just
             // before the external dequeue.
             macrostepSettled()
+            // What other threads posted since the last boundary joins the external
+            // queue here, in the order it was posted (docs/adr/0083).
+            drainInbox()
             if (externalEventQueue.isEmpty()) break
             // Every macrostep this loop runs ends, so [MAX_MACROSTEP_MICROSTEPS]
             // bounds none of this: a machine that sends itself an external event
@@ -4397,8 +4704,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * Stop the event processing loop.
      *
-     * Cancels the coroutine and closes the event channel.
-     * The engine can be restarted with [start].
+     * Cancels the coroutine and closes the inbox: a post after this is refused,
+     * and one taken and not yet applied is discarded with the queues. The engine
+     * has no owner afterwards, and can be restarted with [start] or [initialize].
      *
      * It does not return while the coroutine is in the middle of a macrostep:
      * cancelling does not interrupt one, and the teardown below clears the state
@@ -4420,7 +4728,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // already ended has an empty configuration and exits nothing.
             exitInterpreter()
             engineScope = null
-            eventChannel.close()
+            closeInbox()
             // §scxml-6.4: Cancel all active invokes
             for ((_, entry) in activeInvokes) {
                 // Cut off before the stop, as in [cancelInvoke].
@@ -4446,6 +4754,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             externalEventQueue.clear()
             scheduledSends.clear()
             syncMode = false
+            confinement = Confinement.Unowned
             completion = CompletableDeferred()
         }
     }
@@ -5054,12 +5363,16 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * SCXML Event I/O Processor, as the Rust door (`raise_external_by_name`) raises
      * one, so a queue saved after it reads the same on both backends and a child
      * the event is forwarded to is handed an exact copy of it.
+     *
+     * An owner-thread operation as [send] is, and off the coroutine mode's loop
+     * a post to [inbox] as [send] is.
      */
     fun sendEventByName(name: String, metadata: EventMetadata = EventMetadata.external()) {
+        val onOwner = raisesOnOwner("sendEventByName")
         // §scxml-5.10: what this machine is told the event is called is a fact about
         // THIS machine's names — an arrival name the caller's metadata carries was
         // matched against the caller's, and says nothing here.
-        resolveArrivingEvent(name)?.let { send(it, metadata.copy(name = arrivalNameOf(it, name))) }
+        resolveArrivingEvent(name)?.let { raiseExternal(it, metadata.copy(name = arrivalNameOf(it, name)), onOwner) }
     }
 
     // --- Event Data Helpers ---
@@ -5359,7 +5672,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * delivers is an event of the external queue: when one comes due it is
      * handed to the caller, one at a time, because the macrostep an earlier send
      * starts may `<cancel>` a later one that has not been taken yet.
+     *
+     * The channel it waits on is the inbox (docs/adr/0083): what another thread
+     * posted is applied at the top of each pass, at the macrostep boundary and
+     * before the external queue is consulted ([drainInbox]), and the input the
+     * wait itself received is applied first, being the oldest.
      */
+    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun awaitNextExternalEvent(): QueuedEvent<E>? {
         val running = currentCoroutineContext()
         while (true) {
@@ -5369,25 +5688,46 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // outside it, so a host that stops this engine waits for a macrostep
             // and never for a deadline.
             var ended = false
-            // A due send promoted below, taken in the turn it was promoted for.
-            val promoted = underMacrostepLock(running) {
+            // The head of the external queue once what was posted has joined it:
+            // a due send promoted below, an event the last macrostep queued, or one
+            // a post carried.
+            val next = underMacrostepLock(running) {
                 ended = isInFinalState
+                // A run that has ended applies what was posted before it ended
+                // as a direct call would be: an event is counted as unseen, an
+                // ending finds its invocation cancelled.
+                drainInbox()
                 if (ended) null else externalEventQueue.removeFirstOrNull()
             }
             if (ended) return null
-            if (promoted != null) return promoted
+            if (next != null) return next
             // A loop that never suspends cannot be cancelled by [stop], and one
             // whose sends re-arm themselves at the same instant never suspends.
             yield()
             val due = underMacrostepLock(running) { scheduledSends.firstOrNull()?.fireTimeMs }
-            val received = if (due == null) {
-                eventChannel.receiveCatching()
+            val inboxChannel = eventChannel
+            val received: ChannelResult<InboxInput<E>>? = if (due == null) {
+                inboxChannel.receiveCatching()
             } else {
                 val waitMs = due - clock.elapsedMs()
-                if (waitMs > 0) withTimeoutOrNull(waitMs) { eventChannel.receiveCatching() } else null
+                // A select rather than a receive under a timeout: a receive that
+                // the timeout cancels after it took an input loses that input,
+                // and an input here may be a host-run invocation's ending. A
+                // select takes the input or times out, never both.
+                if (waitMs > 0) {
+                    select<ChannelResult<InboxInput<E>>?> {
+                        inboxChannel.onReceiveCatching { it }
+                        onTimeout(waitMs) { null }
+                    }
+                } else {
+                    null
+                }
             }
             if (received != null) {
-                return received.getOrNull()
+                // Closed: the run has ended or the engine was stopped.
+                val input = received.getOrNull() ?: return null
+                underMacrostepLock(running) { applyInboxInput(input) }
+                continue
             }
             underMacrostepLock(running) {
                 val opened = beginTurn()
@@ -5514,9 +5854,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
             // §scxml-6.4: Notify invoke monitors that this SM completed
             if (!completion.isCompleted) completion.complete(Unit)
-            // §scxml-3.7: Close event channel to terminate event loop coroutine.
-            // After reaching final state, no further events are processed.
-            eventChannel.close()
+            // §scxml-3.7: close the inbox, which ends the coroutine mode's loop.
+            // After reaching final state, no further input is taken.
+            closeInbox()
         }
     }
 

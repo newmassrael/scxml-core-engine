@@ -24,3 +24,17 @@ package com.sce.runtime
  * module's warnings-as-errors build refuses.
  */
 internal expect fun <T> withMacrostepLock(lock: Any, block: () -> T): T
+
+/**
+ * Whether the calling thread is inside [withMacrostepLock] of [lock]: the test
+ * a coroutine-mode engine makes of its owner, since its loop is the owner and
+ * runs every stretch holding that lock, on whichever thread the dispatcher gives
+ * it (ARCHITECTURE.md "Engine Threading").
+ */
+internal expect fun holdsMacrostepLock(lock: Any): Boolean
+
+/**
+ * The thread running the caller, compared by identity only: the owner a
+ * synchronous-mode engine records when the thread driving it starts it.
+ */
+internal expect fun currentThreadIdentity(): Any

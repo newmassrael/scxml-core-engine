@@ -18,11 +18,22 @@
 package com.sce.integration
 
 import com.sce.integration.static_invoke_tree.StaticInvokeTreeStateMachine
+import com.sce.runtime.EventMetadata
+import com.sce.runtime.InboxInput
 import com.sce.runtime.Json
 import com.sce.runtime.ManualClock
+import com.sce.runtime.MeshCall
 import com.sce.runtime.SavedInvokes
 import com.sce.runtime.SavedState
 import com.sce.runtime.StateMachineEngine
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -163,6 +174,83 @@ class AChildSessionsHostInvocationIsServedByTheTreesHostTest {
             assertEquals(1u, restored.stamps)
         } finally {
             restored.cleanup()
+        }
+    }
+
+    /** The ending of [request] a host posts, and a Mesh delivery of `question` for `worker`. */
+    private fun postsFor(request: StateMachineEngine.HostInvokeRequest): List<InboxInput<Nothing>> = listOf(
+        InboxInput.HostInvokeEnding(
+            sessionId = request.sessionId,
+            processorType = clock,
+            invokeId = "clock",
+            token = request.token,
+            done = true,
+            data = now,
+        ),
+        InboxInput.MeshDelivery(MeshCall.Raise("question", EventMetadata.external()), sessionId = worker),
+    )
+
+    /**
+     * docs/adr/0083: what a host's own thread has for a child session is posted to
+     * the inbox of the machine the host holds, naming the session. The root applies
+     * it at its next macrostep boundary with the call the host would have made on
+     * the owner (`completeHostInvokeIn`, `applyMeshCall` on the child), and the
+     * child takes the events when its parent next drives it.
+     */
+    @Test
+    fun whatAnotherThreadPostsForAChildReachesItThroughTheRootsInbox() {
+        val (sm, starts) = started()
+        try {
+            intoSecond(sm)
+            val request = starts.only()
+            var taken = emptyList<Boolean>()
+            val host = Thread { taken = postsFor(request).map { sm.inbox.post(it) } }
+            host.start()
+            host.join(10_000)
+            assertEquals(listOf(true, true), taken, "the root's inbox refused a post")
+
+            repeat(3) { sm.tick() }
+            assertEquals(1u, sm.stamps, "the child took done.invoke.clock and told its parent, once")
+            assertEquals(1u, sm.answers, "the child took the Mesh delivery and answered its parent, once")
+            assertFalse(
+                sm.completeHostInvokeIn(worker, clock, "clock", request.token, now),
+                "the posted ending did not end the start",
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * In the coroutine mode the child runs a loop of its own and is its own owner:
+     * the root's loop does not reach into it, but hands what was posted for it to
+     * the child's inbox, and the child applies it on its loop.
+     */
+    @Test
+    fun whatIsPostedForAChildRunningItsOwnLoopIsHandedToThatChild() = runBlocking {
+        val sm = StaticInvokeTreeStateMachine(sessionId = root)
+        sm.clock = ManualClock(0)
+        val asked = CompletableDeferred<StateMachineEngine.HostInvokeRequest>()
+        sm.registerInvoker(clock) { event ->
+            event.start?.let { asked.complete(it) }
+            null
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            sm.start(scope)
+            // Off the root's loop, a raise by name is a post to its inbox.
+            sm.sendEventByName("go")
+            val request = withTimeout(8_000) { asked.await() }
+            assertEquals(worker, request.sessionId, "the request names the child session that made it")
+            for (input in postsFor(request)) assertTrue(sm.inbox.post(input), "the root's inbox refused a post")
+
+            val settled = withTimeout(8_000) {
+                sm.snapshot.first { it.data.stamps == 1u && it.data.answers == 1u }
+            }
+            assertEquals(1u, settled.data.stamps)
+        } finally {
+            sm.stop()
+            scope.cancel()
         }
     }
 
