@@ -4,15 +4,23 @@ The procedure for registering a W3C conformance fixture. `CLAUDE.md` points
 here so that the steps are read when a fixture is being added, not on every
 session.
 
-## Step 1: Verify Static Code Generation
+## Step 1: Commit the SCXML and verify static code generation
+
+Every backend generates a fixture from its committed SCXML, never from the TXML:
+`sce-codegen generate-w3c` reads `resources/XXX/testXXX.scxml` and nothing else, and the C++ and C11
+CMake route (`cmake/SCEStaticW3CTest.cmake`) reads the same file when the tree is configured and
+stops the configuration of a registered fixture that has none. So the conversion is committed, beside
+the TXML it came from, and so is the conversion of every sub-fixture the document starts by `src`
+(`testXXXsub1.txml` becomes `testXXXsub1.scxml`): the route stages each child document the generator
+names from the fixture's directory.
 
 ```bash
-# Convert TXML to SCXML
-mkdir -p /tmp/test_verify
-build/tools/txml_converter/txml-converter resources/XXX/testXXX.txml /tmp/test_verify/testXXX.scxml
+# Convert TXML to SCXML, into the fixture's directory, and commit the result
+build/tools/txml_converter/txml-converter resources/XXX/testXXX.txml resources/XXX/testXXX.scxml
 
 # Try static code generation
-sce-codegen generate /tmp/test_verify/testXXX.scxml -o /tmp/test_verify/ -l cpp
+mkdir -p /tmp/test_verify
+sce-codegen generate resources/XXX/testXXX.scxml -o /tmp/test_verify/ -l cpp
 
 # Emits ONE JSON manifest line to stdout, e.g.:
 #   {"v":1,"kind":"generate","artifacts":[{"path":".../testXXX_sm.h"}, ...],"needs_script_engine":false,"needs_event_scheduler":false}
@@ -54,6 +62,15 @@ sce-codegen generate /tmp/test_verify/testXXX.scxml -o /tmp/test_verify/ -l cpp
    `foreach` over that list, with no filter. A fixture in the registry and
    absent from the build is therefore not a state this tree can reach, which
    is why the parity that used to be checked is now a property of the loop.
+
+   Nor is there a list of the files a fixture's generation writes. The route
+   asks `sce-codegen --plan generate` for each generation when the tree is
+   configured (`cmake/SCECodegenPlan.cmake`) and declares the answer: the
+   machine, every child an inline `<invoke>` synthesizes, the machine of every
+   child document the fixture holds (a sub-fixture, a hybrid invoke's stub),
+   and anything a declaration adds, such as the header of a declared
+   transition function. A child document the generation writes and the
+   fixture does not hold stops the configuration, naming how to track it.
 
    ⚠ This step used to say to hand-write one call per test and to remove the
    id from `W3C_INTERPRETER_ONLY_TESTS`. Measured 2026-09-11 and all three

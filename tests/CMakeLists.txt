@@ -2136,8 +2136,8 @@ add_dependencies(txml_converter_tests sce_runtime)
 # ============================================================================
 # 9. W3C SCXML Compliance Tests (SOLID Architecture) - Native builds only
 # ============================================================================
-# WASM builds: W3C tests require txml-converter (Native-only tool) for
-# TXML → SCXML conversion and sce-codegen for C++ code generation.
+# WASM builds: W3C tests require sce-codegen (a Native-only tool), which plans
+# and generates the C++ code of each fixture from its committed SCXML.
 
 if(NOT EMSCRIPTEN)
 # This section defines W3C SCXML conformance tests that run on both:
@@ -2912,7 +2912,7 @@ message(STATUS "Saved W3C_AOT_TESTS list to ${_W3C_AOT_TESTS_LIST_FILE}")
 endif()  # NOT EMSCRIPTEN - W3C SCXML test generation (sce_generate_static_w3c_test calls)
 
 # WASM: Use pre-generated AOT test headers and test list from Native build
-# ARCHITECTURE.md: WASM builds cannot run txml-converter (requires filesystem operations)
+# WASM builds cannot run sce-codegen, a Native tool, to plan or generate them
 if(EMSCRIPTEN)
     # Point to Native build's generated headers
     # NOTE: Requires Native build to be run first to generate AOT test headers

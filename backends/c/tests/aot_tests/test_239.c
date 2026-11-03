@@ -19,9 +19,9 @@
 //
 // W3C SCXML 6.4 — markup parity between `src=` (external file) and
 // inline `<content>`. test239sub1.scxml is an author-supplied sibling
-// (resources/239/test239sub1.scxml); cmake auto-discovery
-// (`SCEStaticW3CTest.cmake` test${N}sub*.txml glob, landed alongside
-// test226/276) stages it as a separate child SM source. Both invokes
+// (resources/239/test239sub1.scxml); the parent's `sce-codegen --plan
+// generate` names it, and `SCEStaticW3CTest.cmake` stages it beside the
+// parent and generates it as a separate child SM source. Both invokes
 // converge on the same shape: child's initial state IS a top-level
 // `<final>`, so each spawn raises `done.invoke` immediately during
 // `execute_pending_invokes`, walking parent s01→s02→pass before the

@@ -4,14 +4,18 @@
 //! §scxml-6.4 — every hybrid `<invoke>` in the W3C corpus has its stub child
 //! tracked beside it, and each tracked stub is what code generation writes.
 //!
-//! The W3C harnesses (C++ and C11) find a hybrid invoke's stub by globbing the
-//! resource directory at configure time, so the stub has to be there before
-//! any code is generated. Code generation used to keep it there by writing
-//! into the source tree on every C11 run. It now writes its output where
-//! output goes, and this test is what keeps the tracked copies true:
+//! The W3C harnesses (C++ and C11, `cmake/SCEStaticW3CTest.cmake`) ask the
+//! generator, as the tree is configured, which files each generation writes,
+//! and a parent's answer names its stub. The stub's own machine has to be
+//! planned and declared before anything is built, so it is read from the copy
+//! tracked beside its parent and staged into the output directory, where the
+//! parent's generation then rewrites it byte for byte. Code generation used to
+//! keep the stub in the source tree by writing there on every C11 run. It now
+//! writes its output where output goes, and this test is what keeps the
+//! tracked copies true:
 //!
-//! * a hybrid invoke with no tracked stub would configure with no child and
-//!   fail to link, on the first build of a fresh clone;
+//! * a hybrid invoke with no tracked stub stops the configuration, since its
+//!   child's outputs cannot be planned before the build has run;
 //! * a tracked stub that differs from `HybridInvokeInfo::stub_document` is a
 //!   child the build compiles and the generator no longer describes;
 //! * a tracked stub no invoke asks for is a document nothing reads.

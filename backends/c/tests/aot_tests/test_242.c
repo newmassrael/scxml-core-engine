@@ -28,11 +28,12 @@
 // `<content>` for invoked services of the SCXML processor type. Three
 // children share the same shape (initial state IS a top-level `<final>`
 // so `done.invoke` fires synchronously during `execute_pending_invokes`):
-// test242sub1.scxml is author-supplied (cmake `test${N}sub*.txml` glob),
+// test242sub1.scxml is author-supplied (staged beside the parent by
+// cmake because the parent's `sce-codegen --plan generate` names it),
 // the two `<content>` blocks are parser-extracted via the §9.6.6
 // synth-invoke rule into `test242__sce_synth_invoke__invoke_{1,2}.scxml`
-// (cmake `test${N}__sce_synth_invoke__*.scxml` glob). All three feed the
-// same downstream codegen path.
+// (written by the parent's own generation, and declared from the same
+// plan). All three feed the same downstream codegen path.
 //
 // Because each spawn raises `done.invoke` inside the same macrostep, s0
 // transitions to s02 before timeout1 fires; s02 transitions to pass

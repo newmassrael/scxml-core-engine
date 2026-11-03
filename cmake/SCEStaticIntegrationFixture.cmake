@@ -27,113 +27,13 @@ if(NOT SCE_CODEGEN)
         "SCEStaticW3CTest.cmake first (it resolves the binary).")
 endif()
 
-# _sce_plan_integration_fixture:
-#   Ask the generator which files generating one fixture produces.
-#
-#   A build system has to declare a command's outputs before the command has
-#   run, and the files a document produces are not all files its author wrote:
-#   an inline `<invoke>` becomes a child document with a machine of its own
-#   (`<stem>__sce_synth_invoke__<id>`), and an `<invoke>` that names its target
-#   through an expression brings a stub or a candidate with it. They used to be
-#   listed by hand at every call site. A list kept beside the document is a
-#   second copy of what the document says, and it fell behind it: six fixtures
-#   were registered with none of the children their documents synthesize, and
-#   the depfile the generator writes then named files no rule declared —
-#   "depfile mentions ... as an output, but no such output was declared",
-#   which ninja raises on the rebuild of a directory that a fresh build never
-#   reads back, and which a newer CMake let through. The answer now comes from
-#   `sce-codegen --plan generate`, the same generation run in memory with the
-#   same arguments, so there is nothing to keep in step.
-#
-# Args:
-#   PREFIX      Names the variables set in the caller's scope:
-#                 <PREFIX>_FILES   the file names (not paths) the run produces,
-#                                  in the order it produced them — every one
-#                                  lands directly in OUTPUT_DIR
-#                 <PREFIX>_SYNTH   the document name of each synthesized child,
-#                                  `<stem>__sce_synth_invoke__<id>`
-#                 <PREFIX>_HYBRID  the document name of each other child
-#                                  document the run leaves beside the parent —
-#                                  a stub for an `<invoke srcexpr>`, or a
-#                                  candidate the document declares — which each
-#                                  needs a machine generated from it
-#   STEM, OUTPUT_DIR, LANGUAGE, SCXML, INPUT_ROOT
-#               What the real run is given. SCXML must exist now: it is the
-#               staged copy, made at configure time for this reason, or the
-#               library name of a standard statechart (`sce:std/...`), which the
-#               generator reads from the library it embeds. An empty INPUT_ROOT
-#               passes no `--input-root`, as the real run of a library name does.
-#   ARGN        The rest of the real run's arguments that change what it emits
-#               (`--host-processor` …). Formatting and depfile arguments are
-#               left out: they change bytes, never which files.
-#
-# `sce_sourcemap.json` is left out of the answer. Every fixture writes it, to
-# the one name, in the one directory they share, so no command can own it — two
-# commands declaring one file as an output is an error of its own.
-function(_sce_plan_integration_fixture PREFIX STEM OUTPUT_DIR LANGUAGE SCXML INPUT_ROOT)
-    set(_INPUT_ROOT_ARGS "")
-    if(INPUT_ROOT)
-        set(_INPUT_ROOT_ARGS --input-root "${INPUT_ROOT}")
-    endif()
-    execute_process(
-        COMMAND "${SCE_CODEGEN}" --plan generate "${SCXML}"
-                -l "${LANGUAGE}" -o "${OUTPUT_DIR}"
-                ${_INPUT_ROOT_ARGS}
-                ${ARGN}
-        RESULT_VARIABLE _PLAN_RESULT
-        OUTPUT_VARIABLE _PLAN_OUTPUT
-        ERROR_VARIABLE _PLAN_ERROR
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    if(NOT _PLAN_RESULT EQUAL 0)
-        message(FATAL_ERROR
-            "sce-codegen --plan generate failed for the integration fixture "
-            "${STEM} (${LANGUAGE}), so its outputs cannot be declared. "
-            "A sce-codegen older than --plan answers with a usage error: "
-            "rebuild it from this tree.\n${_PLAN_ERROR}")
-    endif()
-
-    set(_FILES "")
-    set(_SYNTH "")
-    set(_HYBRID "")
-    string(REPLACE "\n" ";" _PLANNED "${_PLAN_OUTPUT}")
-    foreach(_PATH ${_PLANNED})
-        get_filename_component(_NAME "${_PATH}" NAME)
-        if("${_NAME}" STREQUAL "sce_sourcemap.json")
-            continue()
-        endif()
-        file(RELATIVE_PATH _RELATIVE "${OUTPUT_DIR}" "${_PATH}")
-        if("${_RELATIVE}" MATCHES "/")
-            message(FATAL_ERROR
-                "sce-codegen --plan generate for ${STEM} (${LANGUAGE}) names ${_PATH}, "
-                "which is not directly in ${OUTPUT_DIR}: this function declares the "
-                "outputs of a flat output directory")
-        endif()
-        list(APPEND _FILES "${_NAME}")
-        if("${_NAME}" MATCHES "\\.scxml$")
-            get_filename_component(_DOCUMENT "${_NAME}" NAME_WE)
-            if("${_DOCUMENT}" MATCHES "__sce_synth_invoke__")
-                list(APPEND _SYNTH "${_DOCUMENT}")
-            else()
-                list(APPEND _HYBRID "${_DOCUMENT}")
-            endif()
-        endif()
-    endforeach()
-
-    # What `--plan` answers depends on the generator as much as on the
-    # document, so a rebuilt generator reconfigures the tree. It already
-    # regenerates every fixture (each command DEPENDS on it); this is the
-    # declaration of what those regenerations are allowed to produce.
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SCE_CODEGEN}")
-
-    set(${PREFIX}_FILES "${_FILES}" PARENT_SCOPE)
-    set(${PREFIX}_SYNTH "${_SYNTH}" PARENT_SCOPE)
-    set(${PREFIX}_HYBRID "${_HYBRID}" PARENT_SCOPE)
-endfunction()
+# Which files a fixture's generation writes is asked of the generator
+# (`sce_codegen_plan`), by the same helper the W3C route asks it through.
+include(${CMAKE_CURRENT_LIST_DIR}/SCECodegenPlan.cmake)
 
 # _sce_refuse_children_arguments:
 #   The synth-invoke children and hybrid stubs of a fixture are derived from the
-#   generator (`_sce_plan_integration_fixture`), so a call that still lists them
+#   generator (`sce_codegen_plan`), so a call that still lists them
 #   is asking for the second copy this file no longer keeps — and would be
 #   ignored without a word if it were not refused.
 function(_sce_refuse_children_arguments FUNCTION STEM)
@@ -168,7 +68,7 @@ endfunction()
 # per stub or candidate of an `<invoke>` that names its target through an
 # expression (docs/SCE_ACCEPTED_SUBSET.md §2.13) — is not named by the caller.
 # It is asked of the generator when the tree is configured
-# (`_sce_plan_integration_fixture`), and every file of the answer is declared
+# (`sce_codegen_plan`), and every file of the answer is declared
 # as an output of the command that writes it. The hybrid children are generated
 # by a command of their own, without `--parent-stem`: the parent emits
 # `::SCE::Generated::<name>::<name>`, the plain namespace codegen gives a
@@ -210,7 +110,6 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
     file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
     set(STAGED_SCXML "${OUTPUT_DIR}/${STEM}.scxml")
-    set(PARENT_HEADER "${OUTPUT_DIR}/${STEM}_sm.h")
 
     # Step 1: stage the fixture into OUTPUT_DIR so synth-invoke children
     # land in OUTPUT_DIR rather than polluting the read-only source tree
@@ -241,19 +140,13 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
     #
     # The header is the OUTPUT because the depfile's one target is the primary
     # artefact, and ninja needs that to be the edge's FIRST output.
-    _sce_plan_integration_fixture(_PLAN "${STEM}" "${OUTPUT_DIR}" cpp
-        "${STAGED_SCXML}" "${FIXTURE_ROOT}")
-    if(NOT "${STEM}_sm.h" IN_LIST _PLAN_FILES)
-        message(FATAL_ERROR
-            "sce-codegen --plan generate for ${STEM} does not name ${STEM}_sm.h, "
-            "the file its generate command is declared to produce")
-    endif()
-    set(_PARENT_BYPRODUCTS "")
-    foreach(_FILE ${_PLAN_FILES})
-        if(NOT "${_FILE}" STREQUAL "${STEM}_sm.h")
-            list(APPEND _PARENT_BYPRODUCTS "${OUTPUT_DIR}/${_FILE}")
-        endif()
-    endforeach()
+    sce_codegen_plan(_PLAN
+        STEM "${STEM}"
+        DOCUMENT "${STAGED_SCXML}"
+        OUTPUT_DIR "${OUTPUT_DIR}"
+        LANGUAGE cpp
+        INPUT_ROOT "${FIXTURE_ROOT}")
+    list(GET _PLAN_OUTPUTS 0 PARENT_HEADER)
 
     # Formatting happens inside sce-codegen, with the pinned clang-format, on
     # the parent and the synth children it emits alike — see SCEClangFormat.cmake.
@@ -265,29 +158,27 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
     # silently — measured, by editing a template and watching zero of the
     # generated headers change. `SCECodegen.cmake` has always done this;
     # this generator had not.
-    set(_PARENT_DEPFILE "${PARENT_HEADER}.d")
-
     add_custom_command(
-        OUTPUT "${PARENT_HEADER}"
+        OUTPUT ${_PLAN_OUTPUTS}
         COMMAND "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
                 -l cpp -o "${OUTPUT_DIR}"
                 --input-root "${FIXTURE_ROOT}"
-                --write-deps "${_PARENT_DEPFILE}"
+                --write-deps "${_PLAN_DEPFILE}"
                 ${_FORMAT_ARGS}
         DEPENDS "${STAGED_SCXML}" "${SCE_CODEGEN}"
-        DEPFILE "${_PARENT_DEPFILE}"
-        BYPRODUCTS ${_PARENT_BYPRODUCTS}
-        COMMENT "Generating C++ integration parent: ${STEM}_sm.h"
+        DEPFILE "${_PLAN_DEPFILE}"
+        ${_PLAN_BYPRODUCTS_ARG}
+        COMMENT "Generating C++ integration parent: ${STEM}"
         VERBATIM
     )
 
-    set(_ALL_HEADERS "${PARENT_HEADER}")
-    foreach(_CHILD ${_PLAN_SYNTH})
-        list(APPEND _ALL_HEADERS "${OUTPUT_DIR}/${_CHILD}_sm.h")
-    endforeach()
+    # The parent's header and every header its generation writes beside it:
+    # each synthesized child's, and the transition function's when the document
+    # declares one.
+    set(_ALL_HEADERS ${_PLAN_HEADERS})
 
     # Hybrid children are generated without `--parent-stem`; see above.
-    foreach(_HYBRID ${_PLAN_HYBRID})
+    foreach(_HYBRID ${_PLAN_CHILDREN})
         set(_HYBRID_SCXML "${OUTPUT_DIR}/${_HYBRID}.scxml")
         set(_HYBRID_HEADER "${OUTPUT_DIR}/${_HYBRID}_sm.h")
         set(_HYBRID_INL "${OUTPUT_DIR}/${_HYBRID}_sm.inl")
@@ -302,8 +193,13 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
         # and starts nothing.
         set(_HYBRID_PLAN_SYNTH "")
         if(EXISTS "${FIXTURE_ROOT}/${_HYBRID}.scxml")
-            _sce_plan_integration_fixture(_HYBRID_PLAN "${_HYBRID}" "${OUTPUT_DIR}" cpp
-                "${FIXTURE_ROOT}/${_HYBRID}.scxml" "${FIXTURE_ROOT}" --as-child)
+            sce_codegen_plan(_HYBRID_PLAN
+                STEM "${_HYBRID}"
+                DOCUMENT "${FIXTURE_ROOT}/${_HYBRID}.scxml"
+                OUTPUT_DIR "${OUTPUT_DIR}"
+                LANGUAGE cpp
+                INPUT_ROOT "${FIXTURE_ROOT}"
+                ARGS --as-child)
         endif()
         # One the parent's own generation already declares is its, not this one's.
         if(_HYBRID_PLAN_SYNTH AND _PLAN_SYNTH)
@@ -353,7 +249,7 @@ endfunction()
 #               `${SCE_C_INTEGRATION_GENERATED_DIR}`).
 #
 # The fixture's synth-invoke and hybrid children are derived, as the cpp
-# variant's are: see `_sce_plan_integration_fixture`.
+# variant's are: see `sce_codegen_plan`.
 #
 # Side effects:
 #   - Sets `INTEGRATION_C_TEST_${STEM}_SOURCES` (PARENT_SCOPE) to the
@@ -439,9 +335,6 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
 
     file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
-    set(PARENT_HEADER "${OUTPUT_DIR}/${STEM}_sm.h")
-    set(PARENT_SOURCE "${OUTPUT_DIR}/${STEM}_sm.c")
-
     if(_STANDARD)
         # Generated by its library name; a rebuilt generator is a changed library.
         set(STAGED_SCXML "${FIXTURE}")
@@ -469,27 +362,25 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
     # see the cpp generator above for why they are declared here and not
     # by a command of their own, and why the declaration is the generator's
     # answer and not a list.
-    _sce_plan_integration_fixture(_PLAN "${STEM}" "${OUTPUT_DIR}" c11
-        "${STAGED_SCXML}" "${FIXTURE_ROOT}" ${_HOST_PROCESSOR_ARGS})
-    foreach(_NAMED "${STEM}_sm.h" "${STEM}_sm.c")
-        if(NOT "${_NAMED}" IN_LIST _PLAN_FILES)
-            message(FATAL_ERROR
-                "sce-codegen --plan generate for ${STEM} does not name ${_NAMED}, "
-                "a file its generate command is declared to produce")
-        endif()
-    endforeach()
+    sce_codegen_plan(_PLAN
+        STEM "${STEM}"
+        DOCUMENT "${STAGED_SCXML}"
+        OUTPUT_DIR "${OUTPUT_DIR}"
+        LANGUAGE c11
+        INPUT_ROOT "${FIXTURE_ROOT}"
+        ARGS ${_HOST_PROCESSOR_ARGS})
+    list(GET _PLAN_OUTPUTS 0 PARENT_HEADER)
+    list(GET _PLAN_OUTPUTS 1 PARENT_SOURCE)
     # A document two fixtures start a child from (the candidates a hybrid `<invoke>` chooses
     # among, which the generation of whoever starts them writes beside it) is the same file
     # whoever writes it, so the first fixture to declare it owns it: two commands declaring one
     # file as an output is an error of its own, and the second writes the same bytes.
     get_property(_DECLARED GLOBAL PROPERTY SCE_C_INTEGRATION_DECLARED_OUTPUTS)
     set(_PARENT_BYPRODUCTS "")
-    foreach(_FILE ${_PLAN_FILES})
-        if(NOT "${_FILE}" STREQUAL "${STEM}_sm.h"
-           AND NOT "${_FILE}" STREQUAL "${STEM}_sm.c"
-           AND NOT "${OUTPUT_DIR}/${_FILE}" IN_LIST _DECLARED)
-            list(APPEND _PARENT_BYPRODUCTS "${OUTPUT_DIR}/${_FILE}")
-            set_property(GLOBAL APPEND PROPERTY SCE_C_INTEGRATION_DECLARED_OUTPUTS "${OUTPUT_DIR}/${_FILE}")
+    foreach(_FILE ${_PLAN_BYPRODUCTS})
+        if(NOT "${_FILE}" IN_LIST _DECLARED)
+            list(APPEND _PARENT_BYPRODUCTS "${_FILE}")
+            set_property(GLOBAL APPEND PROPERTY SCE_C_INTEGRATION_DECLARED_OUTPUTS "${_FILE}")
         endif()
     endforeach()
 
@@ -498,36 +389,31 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
     # manual `rm` of the generated `.c` to get a template fix compiled.
     #
     # The header comes first in OUTPUT because it is the depfile's one
-    # target. With the source first, ninja on CMake 3.x read the depfile as
-    # describing another edge ("expected depfile ... to mention '_sm.c', got
-    # '_sm.h'") and regenerated every C11 parent on every build.
-    set(_PARENT_DEPFILE "${PARENT_SOURCE}.d")
-
+    # target (`sce_codegen_plan` says why).
     add_custom_command(
-        OUTPUT "${PARENT_HEADER}" "${PARENT_SOURCE}"
+        OUTPUT ${_PLAN_OUTPUTS}
         COMMAND "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
                 -l c11 -o "${OUTPUT_DIR}"
                 ${_INPUT_ROOT_ARGS}
                 ${_HOST_PROCESSOR_ARGS}
-                --write-deps "${_PARENT_DEPFILE}"
+                --write-deps "${_PLAN_DEPFILE}"
         DEPENDS ${_STAGED_DEPENDS} "${SCE_CODEGEN}"
-        DEPFILE "${_PARENT_DEPFILE}"
+        DEPFILE "${_PLAN_DEPFILE}"
         BYPRODUCTS ${_PARENT_BYPRODUCTS}
-        COMMENT "Generating C11 integration parent: ${STEM}_sm.c"
+        COMMENT "Generating C11 integration parent: ${STEM}"
         VERBATIM
     )
 
-    set(_ALL_SOURCES "${PARENT_SOURCE}")
-    set(_ALL_HEADERS "${PARENT_HEADER}")
-    foreach(_CHILD ${_PLAN_SYNTH})
-        list(APPEND _ALL_SOURCES "${OUTPUT_DIR}/${_CHILD}_sm.c")
-        list(APPEND _ALL_HEADERS "${OUTPUT_DIR}/${_CHILD}_sm.h")
-    endforeach()
+    # The parent's machine and every translation unit and header its generation
+    # writes beside it: each synthesized child's, and the transition function's
+    # when the document declares one.
+    set(_ALL_SOURCES ${_PLAN_SOURCES})
+    set(_ALL_HEADERS ${_PLAN_HEADERS})
 
     # Hybrid children, without `--parent-stem` for the reason the cpp
     # generator above states: the parent names the child by the plain
     # symbol codegen gives a document of that name.
-    foreach(_HYBRID ${_PLAN_HYBRID})
+    foreach(_HYBRID ${_PLAN_CHILDREN})
         set(_HYBRID_SCXML "${OUTPUT_DIR}/${_HYBRID}.scxml")
         set(_HYBRID_HEADER "${OUTPUT_DIR}/${_HYBRID}_sm.h")
         set(_HYBRID_SOURCE "${OUTPUT_DIR}/${_HYBRID}_sm.c")
@@ -542,8 +428,13 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
         # nothing.
         set(_HYBRID_PLAN_SYNTH "")
         if(EXISTS "${FIXTURE_ROOT}/${_HYBRID}.scxml")
-            _sce_plan_integration_fixture(_HYBRID_PLAN "${_HYBRID}" "${OUTPUT_DIR}" c11
-                "${FIXTURE_ROOT}/${_HYBRID}.scxml" "${FIXTURE_ROOT}" --as-child)
+            sce_codegen_plan(_HYBRID_PLAN
+                STEM "${_HYBRID}"
+                DOCUMENT "${FIXTURE_ROOT}/${_HYBRID}.scxml"
+                OUTPUT_DIR "${OUTPUT_DIR}"
+                LANGUAGE c11
+                INPUT_ROOT "${FIXTURE_ROOT}"
+                ARGS --as-child)
         endif()
         # One the parent's own generation already declares is its, not this one's.
         if(_HYBRID_PLAN_SYNTH AND _PLAN_SYNTH)

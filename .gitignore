@@ -253,11 +253,13 @@ MODULE.bazel.lock
 # `-o` (and `--deploy <path>` parent when distinct) on every run, so a
 # leak into a tracked dir is pollution, not signal. Exception:
 # `resources/<num>/test<num>__sce_synth_invoke__*.scxml` files stay
-# tracked because `cmake/SCEStaticW3CTest.cmake:373` glob-discovers
-# them at *configure time* (before the build-time parent codegen has
-# a chance to re-materialise them under OUTPUT_DIR); a CMake refactor
-# that pre-computes the child list from the parent SCXML at configure
-# time would let the corpus join the rest of this rule.
+# tracked. The W3C CMake route no longer reads them: it asks
+# `sce-codegen --plan generate` for a fixture's children when the tree is
+# configured (cmake/SCECodegenPlan.cmake). What still reads them is
+# `committed_sourcemap_drift`, which resolves every document a committed
+# sidecar names through the tracked `.scxml` index and regenerates from
+# it; once it takes a synthesized child from its parent instead, the
+# corpus joins the rest of this rule.
 **/*__sce_synth_invoke__*.scxml
 !resources/*/*__sce_synth_invoke__*.scxml
 

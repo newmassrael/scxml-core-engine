@@ -1,5 +1,5 @@
 # SCE Static W3C Test Code Generation
-# Generates C++ state machine code from W3C SCXML test suite
+# Generates C++ and C11 state machine code from the W3C SCXML test suite
 #
 # Requires sce-codegen (Rust binary).
 # Build: cargo build --bin sce-codegen --features cli -p sce-build
@@ -30,6 +30,10 @@ include(${CMAKE_CURRENT_LIST_DIR}/SCEClangFormat.cmake)
 # profile_directory` is the check that now sees this shape.
 include(${CMAKE_CURRENT_LIST_DIR}/SCEFindCodegen.cmake)
 message(STATUS "SCE: Using code generator: ${SCE_CODEGEN}")
+
+# Which files a generation writes is asked of the generator, in one place for
+# this route and the integration route alike.
+include(${CMAKE_CURRENT_LIST_DIR}/SCECodegenPlan.cmake)
 
 # sce_generate_aot_test_header: Generate AOT test header (TestXXX.h) from a template
 #
@@ -86,11 +90,203 @@ function(sce_generate_aot_test_header TEST_NUM TEST_TYPE)
     message(STATUS "Generated AOT test header: Test${TEST_NUM}.h")
 endfunction()
 
+# _sce_generate_w3c_fixture: generate every machine one W3C fixture needs, in
+#   one language
+#
+# A fixture is its committed document, `resources/<id>/test<id>.scxml`, and
+# the child documents it starts. What its generation writes is not named here:
+# it is asked of the generator (`sce_codegen_plan`), for the fixture's document
+# and then for each child document that answer names, and every file of each
+# answer is declared as an output of the command that writes it. A document
+# that starts a child by `src`, a hybrid `<invoke>` with its stub, an inline
+# `<invoke>` with the machine synthesized from it, a declared transition
+# function with its header: each is in the answer because the generation
+# writes it, so a declaration a document adds tomorrow is declared with it.
+#
+# ── Read at configure time, from the committed document ────────────────
+#
+# The plan has to be asked before anything is built, so the documents are
+# read where they are committed, and staged into OUTPUT_DIR as the tree is
+# configured (`configure_file`, so an edit reconfigures it, which is when the
+# plan is asked again). Each document is planned in place, beside the child
+# documents it starts, and generated from its staged copy: every file a
+# generation writes lands in OUTPUT_DIR under the same name whichever copy it
+# read, and the staged copy is the one whose directory the generated machine
+# resolves a `<data src>` against at run time, which is why the sidecar
+# `test<id>.txt` is staged beside it.
+#
+# A child document the fixture holds in RESOURCE_DIR is staged beside its
+# parent before the parent is generated, and is an input of both: the parent
+# reads it to learn what the child sends it, and its own machine is generated
+# from it. That covers the author's sub-fixtures and the stubs of hybrid
+# invokes, which the corpus tracks beside their parents
+# (`hybrid_stubs_are_tracked_as_generated` holds each stub to the text the
+# generation writes, so the parent's rewrite of its staged copy changes no
+# byte). A child document the fixture does not hold is one only a generation
+# writes, and its machine's outputs cannot be planned before the build has
+# run, so it stops the configuration.
+#
+# ── One owner per generated file ──────────────────────────────────────
+#
+# Until 2026-08-13 the children were emitted by a generated CMake script the
+# parent rule invoked, reading a list the generator wrote. That script was a
+# second producer ninja could not see: its outputs were declared nowhere, and
+# it re-emitted files that DID have rules, rewriting them after ninja had
+# recorded those rules' depfiles, so eight rules regenerated on every build,
+# forever. The hand-kept lists that replaced it were the next second copy:
+# they named the files a fixture's generation wrote as the corpus stood, and a
+# document declaring something new wrote a file no rule owned. Every file here
+# now has the one command that writes it, and that command's declaration is
+# the generator's own answer.
+#
+# Args:
+#   TEST_NUM     The fixture id.
+#   OUTPUT_DIR   Where the machines are written, shared by every fixture of
+#                the language.
+#   LANGUAGE     cpp or c11.
+#   CHILD_ARGS   What a child document's generation is given beside what the
+#                fixture's own is (the C++ child is generated `--as-child`).
+#   FORMAT_ARGS  What every generation is given that changes bytes, never
+#                which files.
+#
+# Sets in the caller's scope:
+#   _W3C_FIXTURE_HEADERS  every header any of the fixture's generations writes
+#   _W3C_FIXTURE_SOURCES  every C translation unit any of them writes
+function(_sce_generate_w3c_fixture TEST_NUM OUTPUT_DIR LANGUAGE)
+    cmake_parse_arguments(PARSE_ARGV 3 _FIX "" "" "CHILD_ARGS;FORMAT_ARGS")
+    if(_FIX_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR
+            "_sce_generate_w3c_fixture(${TEST_NUM}): unexpected argument(s): "
+            "${_FIX_UNPARSED_ARGUMENTS}")
+    endif()
+
+    # §synth-6.2.6 source-hash root. Every generation passes
+    # `--input-root "${RESOURCE_DIR}"` because its input is STAGED into
+    # OUTPUT_DIR, and OUTPUT_DIR is shared by every registered test. Without
+    # the override the hash root defaults to the input file's parent — the
+    # shared output directory — which is wrong twice over: the digest then
+    # covers ~250 unrelated fixtures instead of this test's inputs, and the
+    # walk reads a directory that sibling targets are concurrently writing
+    # into, so `read_dir` can list a file that `fs::read` no longer finds and
+    # the build dies on a race. `resources/${TEST_NUM}/` is tracked and no
+    # build step writes to it, so the source set is quiescent by construction.
+    # Same pattern as SCEStaticIntegrationFixture.cmake's FIXTURE_ROOT.
+    set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
+    set(_STEM "test${TEST_NUM}")
+
+    # The committed document is what every backend generates from
+    # (`sce-codegen generate-w3c` reads it and nothing else), and what this
+    # route generates from. There is no second way to reach a fixture's SCXML
+    # here: converting the TXML at build time was one, kept behind the
+    # committed document after every registered fixture had one, and it ran
+    # for no fixture.
+    if(NOT EXISTS "${RESOURCE_DIR}/${_STEM}.scxml")
+        message(FATAL_ERROR
+            "W3C test ${TEST_NUM} is registered, and resources/${TEST_NUM}/${_STEM}.scxml "
+            "is not committed. Every registered fixture is generated from its committed "
+            "SCXML: convert its TXML (with any sub-fixture beside it) and commit the "
+            "result, as docs/SCE_W3C_TEST_REGISTRATION.md Step 1 says.")
+    endif()
+
+    file(MAKE_DIRECTORY "${OUTPUT_DIR}")
+    configure_file("${RESOURCE_DIR}/${_STEM}.scxml" "${OUTPUT_DIR}/${_STEM}.scxml" COPYONLY)
+    # W3C SCXML 5.3.1: `<data src="file:test<id>.txt">` is read beside the
+    # document, at generation and by the machine at run time.
+    set(_SIDECARS "")
+    if(EXISTS "${RESOURCE_DIR}/${_STEM}.txt")
+        configure_file("${RESOURCE_DIR}/${_STEM}.txt" "${OUTPUT_DIR}/${_STEM}.txt" COPYONLY)
+        list(APPEND _SIDECARS "${OUTPUT_DIR}/${_STEM}.txt")
+    endif()
+
+    set(_HEADERS "")
+    set(_SOURCES "")
+    set(_DECLARED "")
+    set(_VISITED "")
+    set(_PENDING "${_STEM}")
+    list(LENGTH _PENDING _LEFT)
+    while(_LEFT GREATER 0)
+        list(POP_FRONT _PENDING _MACHINE)
+        list(APPEND _VISITED "${_MACHINE}")
+
+        if("${_MACHINE}" STREQUAL "${_STEM}")
+            set(_ARGS "")
+            set(_INPUTS "${OUTPUT_DIR}/${_MACHINE}.scxml" ${_SIDECARS})
+        else()
+            set(_ARGS ${_FIX_CHILD_ARGS})
+            set(_INPUTS "${OUTPUT_DIR}/${_MACHINE}.scxml")
+        endif()
+
+        sce_codegen_plan(_PLAN
+            STEM "${_MACHINE}"
+            DOCUMENT "${RESOURCE_DIR}/${_MACHINE}.scxml"
+            OUTPUT_DIR "${OUTPUT_DIR}"
+            LANGUAGE ${LANGUAGE}
+            INPUT_ROOT "${RESOURCE_DIR}"
+            CHILDREN_HELD_IN "${RESOURCE_DIR}"
+            ARGS ${_ARGS})
+
+        # W3C SCXML 6.4: every child document a machine starts needs a machine
+        # of its own, generated from the copy staged beside it.
+        foreach(_CHILD ${_PLAN_CHILDREN})
+            if(NOT "${OUTPUT_DIR}/${_CHILD}.scxml" IN_LIST _PLAN_STAGED)
+                message(FATAL_ERROR
+                    "W3C test ${TEST_NUM}: generating ${_MACHINE} (${LANGUAGE}) writes the "
+                    "child document ${_CHILD}.scxml, which resources/${TEST_NUM}/ does not "
+                    "hold, so the outputs of its own generation cannot be planned before "
+                    "the build has run. A hybrid `<invoke>`'s stub is tracked beside its "
+                    "parent: write it with UPDATE_EXPECT=1 cargo test -p sce-build --test "
+                    "hybrid_stubs_are_tracked_as_generated, review it, and commit it.")
+            endif()
+            if(NOT "${_CHILD}" IN_LIST _VISITED AND NOT "${_CHILD}" IN_LIST _PENDING)
+                list(APPEND _PENDING "${_CHILD}")
+            endif()
+        endforeach()
+
+        # Two commands declaring one file is two producers of it, which is the
+        # shape this route was rebuilt to remove.
+        foreach(_FILE ${_PLAN_OUTPUTS} ${_PLAN_BYPRODUCTS})
+            if("${_FILE}" IN_LIST _DECLARED)
+                message(FATAL_ERROR
+                    "W3C test ${TEST_NUM}: ${_FILE} is planned by two of its generations "
+                    "(the second is ${_MACHINE}, ${LANGUAGE}); one file has one producer")
+            endif()
+            list(APPEND _DECLARED "${_FILE}")
+        endforeach()
+
+        # `--write-deps` + DEPFILE: the generated source depends on every
+        # jinja2 template that rendered it, not just on the SCXML. Without it a
+        # template edit leaves the artefact stale and the build reuses it
+        # silently.
+        add_custom_command(
+            OUTPUT ${_PLAN_OUTPUTS}
+            COMMAND "${SCE_CODEGEN}" generate "${OUTPUT_DIR}/${_MACHINE}.scxml"
+                    -l ${LANGUAGE} -o "${OUTPUT_DIR}"
+                    --input-root "${RESOURCE_DIR}"
+                    --write-deps "${_PLAN_DEPFILE}"
+                    ${_ARGS}
+                    ${_FIX_FORMAT_ARGS}
+            DEPENDS ${_INPUTS} ${_PLAN_STAGED} "${SCE_CODEGEN}"
+            DEPFILE "${_PLAN_DEPFILE}"
+            ${_PLAN_BYPRODUCTS_ARG}
+            COMMENT "Generating ${LANGUAGE} code for W3C test ${TEST_NUM}: ${_MACHINE}"
+            VERBATIM
+        )
+
+        list(APPEND _HEADERS ${_PLAN_HEADERS})
+        list(APPEND _SOURCES ${_PLAN_SOURCES})
+        list(LENGTH _PENDING _LEFT)
+    endwhile()
+
+    set(_W3C_FIXTURE_HEADERS "${_HEADERS}" PARENT_SCOPE)
+    set(_W3C_FIXTURE_SOURCES "${_SOURCES}" PARENT_SCOPE)
+endfunction()
+
 # sce_generate_static_w3c_test: Generate C++ code for a single W3C test
 #
-# This does NOT create executable - just generates C++ header from TXML
-# Automatically discovers and processes sub SCXML files (e.g., test226sub1.txml)
-#
+# This does NOT create an executable: it declares the generation of the
+# fixture's machines (`_sce_generate_w3c_fixture`) and appends every header
+# they write to GENERATED_W3C_HEADERS, which `w3c_test_cli` lists so that each
+# is generated before any unit including it is compiled.
 function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     # Parse optional TYPE parameter (SIMPLE, SCHEDULED, HTTP)
     cmake_parse_arguments(_SWT "" "TYPE" "" ${ARGN})
@@ -106,235 +302,14 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     # 2. Auto-generate TestXXX.h from template if not exists
     sce_generate_aot_test_header(${TEST_NUM} "${_SWT_TYPE}")
 
-    # §synth-6.2.6 source-hash root. Every codegen call below passes
-    # `--input-root "${RESOURCE_DIR}"` because the inputs are STAGED into
-    # OUTPUT_DIR, and OUTPUT_DIR is shared by every registered test. Without
-    # the override the hash root defaults to the input file's parent — the
-    # shared output directory — which is wrong twice over: the digest then
-    # covers ~250 unrelated fixtures instead of this test's inputs, and the
-    # walk reads a directory that sibling targets are concurrently staging
-    # into, so `read_dir` can list a file that `fs::read` no longer finds and
-    # the build dies on a race. `resources/${TEST_NUM}/` is tracked and no
-    # build step writes to it, so the source set is quiescent by construction.
-    # Same pattern as SCEStaticIntegrationFixture.cmake's FIXTURE_ROOT.
-    set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
-    set(TXML_FILE "${RESOURCE_DIR}/test${TEST_NUM}.txml")
-    set(SCXML_FILE "${OUTPUT_DIR}/test${TEST_NUM}.scxml")
-    set(GENERATED_HEADER "${OUTPUT_DIR}/test${TEST_NUM}_sm.h")
-    set(GENERATED_INL "${OUTPUT_DIR}/test${TEST_NUM}_sm.inl")
-
-    # Check if main TXML file exists
-    if(NOT EXISTS "${TXML_FILE}")
-        message(WARNING "TXML file not found: ${TXML_FILE} - Skipping test ${TEST_NUM}")
-        return()
-    endif()
-
-    # Auto-discover sub SCXML files (e.g., test226sub1.txml, test226sub2.txml)
-    # W3C SCXML 6.2/6.4: Sub SCXML files are child state machines invoked by parent
-    file(GLOB SUB_TXML_FILES "${RESOURCE_DIR}/test${TEST_NUM}sub*.txml")
-    set(SUB_SCXML_DEPENDENCIES "")
-    set(SUB_HEADER_DEPENDENCIES "")
-
-    foreach(SUB_TXML_FILE ${SUB_TXML_FILES})
-        get_filename_component(SUB_TXML_NAME "${SUB_TXML_FILE}" NAME_WE)
-        set(SUB_SCXML_FILE "${OUTPUT_DIR}/${SUB_TXML_NAME}.scxml")
-        set(SUB_HEADER_FILE "${OUTPUT_DIR}/${SUB_TXML_NAME}_sm.h")
-
-        # Convert sub TXML to SCXML (without pass/fail validation via filename detection)
-        add_custom_command(
-            OUTPUT "${SUB_SCXML_FILE}"
-            COMMAND txml-converter "${SUB_TXML_FILE}" "${SUB_SCXML_FILE}"
-            DEPENDS txml-converter "${SUB_TXML_FILE}"
-            COMMENT "Converting ${SUB_TXML_NAME}.txml to SCXML (sub state machine)"
-            VERBATIM
-        )
-
-        # Generate C++ code for sub SCXML (as invoked child)
-        set(SUB_INL_FILE "${OUTPUT_DIR}/${SUB_TXML_NAME}_sm.inl")
-        # Formatted inside sce-codegen with the pinned clang-format — see
-        # SCEClangFormat.cmake.
-        sce_codegen_format_args(_FORMAT_ARGS)
-        add_custom_command(
-            OUTPUT "${SUB_HEADER_FILE}"
-            COMMAND "${SCE_CODEGEN}" generate "${SUB_SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d" ${_FORMAT_ARGS}
-            DEPENDS "${SUB_SCXML_FILE}" "${SCE_CODEGEN}"
-            DEPFILE "${SUB_HEADER_FILE}.d"
-            BYPRODUCTS "${SUB_INL_FILE}"
-            COMMENT "Generating C++ code: ${SUB_TXML_NAME}_sm.h + .inl"
-            VERBATIM
-        )
-
-        # Add sub SCXML to dependencies and headers
-        list(APPEND SUB_SCXML_DEPENDENCIES "${SUB_SCXML_FILE}")
-        list(APPEND SUB_HEADER_DEPENDENCIES "${SUB_HEADER_FILE}")
-        # Update both local scope (for line 228) and parent scope (for caller)
-        list(APPEND GENERATED_W3C_HEADERS "${SUB_HEADER_FILE}")
-        set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} PARENT_SCOPE)
-    endforeach()
-
-    # Step 1: TXML -> SCXML conversion with name attribute
-    # ARCHITECTURE.MD: CMake portability - Use ${CMAKE_COMMAND} instead of bash
-    # Check if SCXML file already exists in resources (for tests with direct SCXML, e.g., test513)
-    set(RESOURCE_SCXML "${RESOURCE_DIR}/test${TEST_NUM}.scxml")
-    if(EXISTS "${RESOURCE_SCXML}")
-        # Check if .txt file exists (only some tests have external data files)
-        set(RESOURCE_TXT "${RESOURCE_DIR}/test${TEST_NUM}.txt")
-        if(EXISTS "${RESOURCE_TXT}")
-            # Use existing SCXML file + copy .txt file
-            add_custom_command(
-                OUTPUT "${SCXML_FILE}"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-                COMMAND ${CMAKE_COMMAND} -E copy "${RESOURCE_SCXML}" "${SCXML_FILE}"
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_TXT}" "${OUTPUT_DIR}/test${TEST_NUM}.txt"
-                DEPENDS "${RESOURCE_SCXML}" ${SUB_SCXML_DEPENDENCIES}
-                COMMENT "Using existing SCXML: test${TEST_NUM}.scxml"
-                VERBATIM
-            )
-        else()
-            # Use existing SCXML file only (no .txt file)
-            add_custom_command(
-                OUTPUT "${SCXML_FILE}"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-                COMMAND ${CMAKE_COMMAND} -E copy "${RESOURCE_SCXML}" "${SCXML_FILE}"
-                DEPENDS "${RESOURCE_SCXML}" ${SUB_SCXML_DEPENDENCIES}
-                COMMENT "Using existing SCXML: test${TEST_NUM}.scxml"
-                VERBATIM
-            )
-        endif()
-    else()
-        # TXML -> SCXML conversion + name attribute fix
-        set(RESOURCE_TXT "${RESOURCE_DIR}/test${TEST_NUM}.txt")
-        if(EXISTS "${RESOURCE_TXT}")
-            add_custom_command(
-                OUTPUT "${SCXML_FILE}"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-                COMMAND txml-converter "${TXML_FILE}" "${SCXML_FILE}"
-                COMMAND "${SCE_CODEGEN}" fix-scxml-name "${SCXML_FILE}" "test${TEST_NUM}"
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_TXT}" "${OUTPUT_DIR}/test${TEST_NUM}.txt"
-                DEPENDS txml-converter "${TXML_FILE}" ${SUB_SCXML_DEPENDENCIES}
-                COMMENT "Converting TXML to SCXML: test${TEST_NUM}.txml"
-                VERBATIM
-            )
-        else()
-            add_custom_command(
-                OUTPUT "${SCXML_FILE}"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-                COMMAND txml-converter "${TXML_FILE}" "${SCXML_FILE}"
-                COMMAND "${SCE_CODEGEN}" fix-scxml-name "${SCXML_FILE}" "test${TEST_NUM}"
-                DEPENDS txml-converter "${TXML_FILE}" ${SUB_SCXML_DEPENDENCIES}
-                COMMENT "Converting TXML to SCXML: test${TEST_NUM}.txml"
-                VERBATIM
-            )
-        endif()
-    endif()
-
-    # Step 2: SCXML -> C++ code generation (parent + children)
-    #
-    # ── One owner per generated file ──────────────────────────────────
-    #
-    # Until 2026-08-13 the children were emitted by a generated CMake script
-    # the parent rule invoked (`process_children_<N>.cmake`), reading a
-    # `_children.txt` the generator wrote. That script was a second producer
-    # ninja could not see: its outputs were declared nowhere, so nothing
-    # rebuilt them when their inputs changed, and it re-emitted files that
-    # DID have rules — rewriting them after ninja had recorded those rules'
-    # depfiles. `ninja -d explain` reported `stored deps info out of date`
-    # and eight rules regenerated on every build, forever, forcing a relink
-    # whose binary differed in 40 bytes with every object byte-identical.
-    #
-    # The three child kinds have three different natural owners, and once
-    # each is named the script has nothing left to do:
-    #
-    #   `test<N>sub*`              own rule (above) — an author-supplied
-    #                              sibling fixture, reached by
-    #                              `<invoke src="file:...">`.
-    #   `__sce_synth_invoke__*`    THE PARENT RULE. The parent's own
-    #                              generation materialises these; measured,
-    #                              `generate test239.scxml` emits
-    #                              `test239__sce_synth_invoke__invoke_1_sm.h`
-    #                              beside its own header. So they are its
-    #                              byproducts, not a separate step's output.
-    #   `test<N>_hybrid*`          own rule (below). Measured: the parent
-    #                              does NOT emit these — `generate
-    #                              test216.scxml` produces `test216_sm.h`
-    #                              alone — so they are the one kind that
-    #                              genuinely needs a producer of its own.
-    #
-    # All three are discoverable at configure time from RESOURCE_DIR, which
-    # is what makes declaring them possible: the synth-invoke and hybrid
-    # documents are committed there, exactly as the C11 path below relies
-    # on (the hybrid stubs held to the generator by
-    # `hybrid_stubs_are_tracked_as_generated`).
-    #
-    # W3C SCXML 6.2/6.4: the parent header depends on child headers.
-
-    # Synth-invoke children: byproducts of the parent's own generation.
-    # Declared so ninja knows who makes them and stops treating them as
-    # files that appeared from nowhere.
-    #
-    # A document declaring `sce:transition-function="emit"` would add
-    # `<stem>_transition_function.h` beside each machine, which this list does
-    # not name. No conformance document declares it, and
-    # `no_document_the_conformance_cmake_route_reads_declares_the_function`
-    # (sce-build/tests/no_conformance_document_declares_the_transition_function.rs)
-    # holds that, here and on the C11 route below.
-    file(GLOB _CPP_SYNTH_FILES
-        "${RESOURCE_DIR}/test${TEST_NUM}__sce_synth_invoke__*.scxml")
-    set(_CPP_PARENT_BYPRODUCTS "")
-    foreach(_CPP_SYNTH ${_CPP_SYNTH_FILES})
-        get_filename_component(_CPP_SYNTH_NAME "${_CPP_SYNTH}" NAME_WE)
-        list(APPEND _CPP_PARENT_BYPRODUCTS
-            "${OUTPUT_DIR}/${_CPP_SYNTH_NAME}_sm.h"
-            "${OUTPUT_DIR}/${_CPP_SYNTH_NAME}_sm.inl")
-    endforeach()
-
-    # Hybrid `<invoke srcexpr=...>` stubs: the one child kind with no other
-    # producer. Staged then generated, mirroring the sub-fixture rules above
-    # and the C11 path below, so it too is a declared output with a depfile.
-    file(GLOB _CPP_HYBRID_FILES "${RESOURCE_DIR}/test${TEST_NUM}_hybrid*.scxml")
-    foreach(_CPP_HYBRID ${_CPP_HYBRID_FILES})
-        get_filename_component(_CPP_HYBRID_NAME "${_CPP_HYBRID}" NAME_WE)
-        set(_CPP_HYBRID_SCXML "${OUTPUT_DIR}/${_CPP_HYBRID_NAME}.scxml")
-        set(_CPP_HYBRID_HEADER "${OUTPUT_DIR}/${_CPP_HYBRID_NAME}_sm.h")
-        set(_CPP_HYBRID_INL "${OUTPUT_DIR}/${_CPP_HYBRID_NAME}_sm.inl")
-
-        add_custom_command(
-            OUTPUT "${_CPP_HYBRID_SCXML}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E copy "${_CPP_HYBRID}" "${_CPP_HYBRID_SCXML}"
-            DEPENDS "${_CPP_HYBRID}"
-            COMMENT "Staging hybrid child SCXML: ${_CPP_HYBRID_NAME}.scxml"
-            VERBATIM
-        )
-        sce_codegen_format_args(_FORMAT_ARGS)
-        add_custom_command(
-            OUTPUT "${_CPP_HYBRID_HEADER}"
-            COMMAND "${SCE_CODEGEN}" generate "${_CPP_HYBRID_SCXML}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${_CPP_HYBRID_HEADER}.d" ${_FORMAT_ARGS}
-            DEPENDS "${_CPP_HYBRID_SCXML}" "${SCE_CODEGEN}"
-            DEPFILE "${_CPP_HYBRID_HEADER}.d"
-            BYPRODUCTS "${_CPP_HYBRID_INL}"
-            COMMENT "Generating C++ code: ${_CPP_HYBRID_NAME}_sm.h + .inl"
-            VERBATIM
-        )
-
-        list(APPEND SUB_HEADER_DEPENDENCIES "${_CPP_HYBRID_HEADER}")
-        list(APPEND GENERATED_W3C_HEADERS "${_CPP_HYBRID_HEADER}")
-        set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} PARENT_SCOPE)
-    endforeach()
-
+    # 3. The machines. Formatted inside sce-codegen with the pinned
+    # clang-format — see SCEClangFormat.cmake.
     sce_codegen_format_args(_FORMAT_ARGS)
-    add_custom_command(
-        OUTPUT "${GENERATED_HEADER}"
-        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_HEADER}.d" ${_FORMAT_ARGS}
-        DEPENDS "${SCXML_FILE}" ${SUB_HEADER_DEPENDENCIES} "${SCE_CODEGEN}"
-        DEPFILE "${GENERATED_HEADER}.d"
-        BYPRODUCTS "${GENERATED_INL}" ${_CPP_PARENT_BYPRODUCTS}
-        COMMENT "Generating C++ code: test${TEST_NUM}_sm.h + .inl"
-        VERBATIM
-    )
+    _sce_generate_w3c_fixture(${TEST_NUM} "${OUTPUT_DIR}" cpp
+        CHILD_ARGS --as-child
+        FORMAT_ARGS ${_FORMAT_ARGS})
 
-    # Add to parent scope variable (update both local and parent scopes)
-    list(APPEND GENERATED_W3C_HEADERS "${GENERATED_HEADER}")
+    list(APPEND GENERATED_W3C_HEADERS ${_W3C_FIXTURE_HEADERS})
     set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} PARENT_SCOPE)
 endfunction()
 
@@ -353,15 +328,17 @@ endfunction()
 
 # sce_generate_static_w3c_c_test: Generate C11 code for a single W3C test
 #
-# RFC §5.J.1 sibling of `sce_generate_static_w3c_test`. Produces a `.h` + `.c`
-# pair under OUTPUT_DIR via `sce-codegen -l c11`. When the fixture carries
-# `<invoke>` elements, sce-build pre-emits the inline `<content><scxml>...`
-# children as separate `test${N}__sce_synth_invoke__*.scxml` files
-# alongside `resources/${N}/test${N}.scxml` (parser §9.6.6 rule 3 default
-# = local extraction). The function discovers those siblings via
-# `file(GLOB)` and emits a per-child `_sm.{h,c}` pair — the parent SM
-# `_sm.c` includes each child's `_sm.h` and embeds the child as a struct
-# member (see `tools/codegen/templates/c/state_machine.h.jinja2`).
+# RFC §5.J.1 sibling of `sce_generate_static_w3c_test`. Declares the
+# generation of the fixture's machines with `sce-codegen -l c11`
+# (`_sce_generate_w3c_fixture`), and sets
+# `W3C_C_AOT_TEST_${TEST_NUM}_SOURCES` (PARENT_SCOPE) to every translation
+# unit and header those generations write: the fixture's machine and each
+# child's, synthesized from an inline `<invoke>` or generated from a child
+# document of its own. The caller compiles them into the fixture binary; the
+# parent's machine includes each child's header and embeds the child as a
+# struct member (see `tools/codegen/templates/c/state_machine.h.jinja2`), and
+# listing the headers makes each child's generation precede the compilation of
+# the unit that includes it.
 #
 # Optional flag NEEDS_LUA: append the test to W3C_C_AOT_TESTS_NEEDS_LUA so
 # the caller can conditionally `target_link_libraries(... lua54)` only for
@@ -383,16 +360,18 @@ endfunction()
 # Independent of NEEDS_LUA / NEEDS_DOM — combined freely as the fixture
 # requires.
 #
-# Optional flag NEEDS_INVOKE: append the test to W3C_C_AOT_TESTS_NEEDS_INVOKE
-# so the caller can iterate the per-test child source list set by this
-# function (`W3C_C_AOT_TEST_${TEST_NUM}_CHILD_SOURCES`) and link those
-# child `_sm.c` translation units into the fixture binary. The parent's
-# generated `_sm.h` already pulls in the child's `_sm.h` via
-# `state_machine.h.jinja2` so child types are visible in the parent's
-# struct. Independent of the other NEEDS_* flags — combined freely.
-#
+# There is no flag for a fixture that starts children: which children a
+# fixture's machine starts is the generator's answer, and the sources above
+# carry them whether or not the call says so.
 function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
-    cmake_parse_arguments(_SWCT "NEEDS_LUA;NEEDS_DOM;NEEDS_HTTP;NEEDS_INVOKE" "" "" ${ARGN})
+    cmake_parse_arguments(_SWCT "NEEDS_LUA;NEEDS_DOM;NEEDS_HTTP" "" "" ${ARGN})
+    if(_SWCT_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR
+            "sce_generate_static_w3c_c_test(${TEST_NUM}): unexpected argument(s): "
+            "${_SWCT_UNPARSED_ARGUMENTS}. NEEDS_INVOKE is gone: the children a "
+            "fixture's machine starts are read from `sce-codegen --plan generate`, "
+            "not flagged here. Remove it from the call.")
+    endif()
 
     # Accumulate test number into W3C_C_AOT_TESTS so the caller can iterate.
     list(APPEND W3C_C_AOT_TESTS ${TEST_NUM})
@@ -409,230 +388,9 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         list(APPEND W3C_C_AOT_TESTS_NEEDS_HTTP ${TEST_NUM})
         set(W3C_C_AOT_TESTS_NEEDS_HTTP ${W3C_C_AOT_TESTS_NEEDS_HTTP} PARENT_SCOPE)
     endif()
-    if(_SWCT_NEEDS_INVOKE)
-        list(APPEND W3C_C_AOT_TESTS_NEEDS_INVOKE ${TEST_NUM})
-        set(W3C_C_AOT_TESTS_NEEDS_INVOKE ${W3C_C_AOT_TESTS_NEEDS_INVOKE} PARENT_SCOPE)
-    endif()
 
-    # §synth-6.2.6 source-hash root. Every codegen call below passes
-    # `--input-root "${RESOURCE_DIR}"` because the inputs are STAGED into
-    # OUTPUT_DIR, and OUTPUT_DIR is shared by every registered test. Without
-    # the override the hash root defaults to the input file's parent — the
-    # shared output directory — which is wrong twice over: the digest then
-    # covers ~250 unrelated fixtures instead of this test's inputs, and the
-    # walk reads a directory that sibling targets are concurrently staging
-    # into, so `read_dir` can list a file that `fs::read` no longer finds and
-    # the build dies on a race. `resources/${TEST_NUM}/` is tracked and no
-    # build step writes to it, so the source set is quiescent by construction.
-    # Same pattern as SCEStaticIntegrationFixture.cmake's FIXTURE_ROOT.
-    set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
-    set(TXML_FILE "${RESOURCE_DIR}/test${TEST_NUM}.txml")
-    set(SCXML_FILE "${OUTPUT_DIR}/test${TEST_NUM}.scxml")
-    set(GENERATED_HEADER "${OUTPUT_DIR}/test${TEST_NUM}_sm.h")
-    set(GENERATED_SOURCE "${OUTPUT_DIR}/test${TEST_NUM}_sm.c")
+    _sce_generate_w3c_fixture(${TEST_NUM} "${OUTPUT_DIR}" c11)
 
-    # W3C SCXML 6.4: discover synthesised invoke children. sce-build extracts
-    # inline `<content><scxml>...</scxml></content>` into sibling files at
-    # parse time (see parser.rs §9.6.6 rule 3) so each child is statically
-    # codegen-able. The pattern matches `test${N}__sce_synth_invoke__*.scxml`;
-    # `file(GLOB)` runs at configure time, so the parent's add_executable
-    # below sees all child sources without a re-glob trigger.
-    # Synth-invoke children are the PARENT's own output, so they are named as
-    # its byproducts and given no rules of their own.
-    #
-    # They used to have two: a staging copy of the committed `.scxml` and a
-    # generate rule for the SM. Measured 2026-08-14 by running the generator
-    # on `resources/247/test247.scxml` into an empty directory — one parent
-    # invocation writes `test247__sce_synth_invoke__invoke_0.scxml`,
-    # `_sm.h` AND `_sm.c`. Every one of those three was also the OUTPUT of a
-    # rule here, and because the parent DEPENDS on the child headers it runs
-    # LAST and rewrites them after ninja has recorded the child rule's deps.
-    # The result was 41 generated headers reporting `stored deps info out of
-    # date` on every build, forever — the same shape
-    # `build_writes_and_undeclared_outputs` removed from the C++ tree, left
-    # behind on this one. The cpp path above already carries the fix; this is
-    # it in C11's alphabet, where the difference is that a child here is a
-    # `.c` to compile rather than a header to include.
-    file(GLOB _SYNTH_INVOKE_FILES
-        "${RESOURCE_DIR}/test${TEST_NUM}__sce_synth_invoke__*.scxml")
-    set(_CHILD_GENERATED_SOURCES "")
-    set(_C_PARENT_BYPRODUCTS "")
-    foreach(_SYNTH_FILE ${_SYNTH_INVOKE_FILES})
-        get_filename_component(_CHILD_NAME "${_SYNTH_FILE}" NAME_WE)
-        list(APPEND _C_PARENT_BYPRODUCTS
-            "${OUTPUT_DIR}/${_CHILD_NAME}.scxml"
-            "${OUTPUT_DIR}/${_CHILD_NAME}_sm.h"
-            "${OUTPUT_DIR}/${_CHILD_NAME}_sm.c")
-        # Still compiled into the test binary. A byproduct is marked
-        # GENERATED and carries the producing edge, and the executable
-        # already lists the parent's `_sm.c` — the one invocation that makes
-        # both — so the ordering is the build graph's rather than a comment's.
-        list(APPEND _CHILD_GENERATED_SOURCES "${OUTPUT_DIR}/${_CHILD_NAME}_sm.c")
-    endforeach()
-
-    # W3C SCXML 6.4 (test226/276): discover author-supplied sibling sub-fixture
-    # TXML files. These are referenced by the parent via `<invoke src="file:test${N}sub1.scxml">`
-    # rather than inline `<content>`, so sce-build sees them as external paths
-    # and the parent's generated `_sm.h` `#include`s the child's `_sm.h`.
-    # Mirrors the C++ path's `test${N}sub*.txml` discovery (line 137 above) —
-    # convert TXML→SCXML, then codegen the C11 SM. Glob runs at configure
-    # time so the parent's add_executable below sees the staged files.
-    file(GLOB _SUB_TXML_FILES "${RESOURCE_DIR}/test${TEST_NUM}sub*.txml")
-    foreach(_SUB_TXML ${_SUB_TXML_FILES})
-        get_filename_component(_SUB_NAME "${_SUB_TXML}" NAME_WE)
-        set(_SUB_SCXML "${OUTPUT_DIR}/${_SUB_NAME}.scxml")
-        set(_SUB_HEADER "${OUTPUT_DIR}/${_SUB_NAME}_sm.h")
-        set(_SUB_SOURCE "${OUTPUT_DIR}/${_SUB_NAME}_sm.c")
-
-        add_custom_command(
-            OUTPUT "${_SUB_SCXML}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-            COMMAND txml-converter "${_SUB_TXML}" "${_SUB_SCXML}"
-            DEPENDS txml-converter "${_SUB_TXML}"
-            COMMENT "Converting ${_SUB_NAME}.txml to SCXML (C11 sub-fixture)"
-            VERBATIM
-        )
-        add_custom_command(
-            OUTPUT "${_SUB_HEADER}" "${_SUB_SOURCE}"
-            COMMAND "${SCE_CODEGEN}" generate "${_SUB_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_SUB_SOURCE}.d"
-            DEPENDS "${_SUB_SCXML}" "${SCE_CODEGEN}"
-            DEPFILE "${_SUB_SOURCE}.d"
-            COMMENT "Generating C11 code: ${_SUB_NAME}_sm.{h,c}"
-            VERBATIM
-        )
-
-        list(APPEND _CHILD_GENERATED_SOURCES "${_SUB_SOURCE}")
-    endforeach()
-
-    # W3C SCXML 6.4 (test216/530): hybrid `<invoke srcexpr=...>` /
-    # `<invoke><content expr=...>` children. Each hybrid invoke's
-    # immediate-final stub is TRACKED in RESOURCE_DIR as
-    # `test${N}_hybrid*.scxml`, which is what lets the configure-time GLOB
-    # below find it before anything is generated;
-    # `hybrid_stubs_are_tracked_as_generated` holds every tracked stub to
-    # `HybridInvokeInfo::stub_document`, the text code generation writes.
-    # Code generation itself writes the stub into its `-o` directory, never
-    # beside the source. Each stub is staged into OUTPUT_DIR and codegen'd
-    # as a child SM the same way inline-content children are handled, so
-    # the parent's `_sm.h` `#include` resolves and the hybrid arm in
-    # `invoke_methods.jinja2`'s `execute_pending_invokes` has a real symbol
-    # to call into.
-    file(GLOB _HYBRID_STUB_FILES "${RESOURCE_DIR}/test${TEST_NUM}_hybrid*.scxml")
-    foreach(_HYBRID_STUB ${_HYBRID_STUB_FILES})
-        get_filename_component(_HYBRID_NAME "${_HYBRID_STUB}" NAME_WE)
-        set(_HYBRID_SCXML "${OUTPUT_DIR}/${_HYBRID_NAME}.scxml")
-        set(_HYBRID_HEADER "${OUTPUT_DIR}/${_HYBRID_NAME}_sm.h")
-        set(_HYBRID_SOURCE "${OUTPUT_DIR}/${_HYBRID_NAME}_sm.c")
-
-        add_custom_command(
-            OUTPUT "${_HYBRID_SCXML}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E copy "${_HYBRID_STUB}" "${_HYBRID_SCXML}"
-            DEPENDS "${_HYBRID_STUB}"
-            COMMENT "Staging hybrid invoke stub: ${_HYBRID_NAME}.scxml (C11)"
-            VERBATIM
-        )
-        add_custom_command(
-            OUTPUT "${_HYBRID_HEADER}" "${_HYBRID_SOURCE}"
-            COMMAND "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_HYBRID_SOURCE}.d"
-            DEPENDS "${_HYBRID_SCXML}" "${SCE_CODEGEN}"
-            DEPFILE "${_HYBRID_SOURCE}.d"
-            COMMENT "Generating C11 code: ${_HYBRID_NAME}_sm.{h,c}"
-            VERBATIM
-        )
-
-        list(APPEND _CHILD_GENERATED_SOURCES "${_HYBRID_SOURCE}")
-    endforeach()
-
-    set(W3C_C_AOT_TEST_${TEST_NUM}_CHILD_SOURCES "${_CHILD_GENERATED_SOURCES}" PARENT_SCOPE)
-
-    # Allow either `resources/${N}/test${N}.scxml` (already-converted SCXML)
-    # or `resources/${N}/test${N}.txml` (TXML pending conversion). Most W3C
-    # fixtures ship as TXML; the SCXML path catches a small set of hand-edited
-    # documents (e.g. test513 in C++).
-    set(RESOURCE_SCXML "${RESOURCE_DIR}/test${TEST_NUM}.scxml")
-    set(RESOURCE_TXT "${RESOURCE_DIR}/test${TEST_NUM}.txt")
-    set(_TXT_COPY_CMD)
-    if(EXISTS "${RESOURCE_TXT}")
-        # W3C SCXML 5.3.1: <data src="file:test${N}.txt"> reads its sidecar at
-        # codegen time via the `read_data_src` filter (sce-build/src/filters.rs).
-        # Mirror the C++ harness's behaviour (lines 195/220 above) by copying
-        # the sidecar alongside the generated SCXML so the codegen base_path
-        # resolves the file under ${OUTPUT_DIR}.
-        set(_TXT_COPY_CMD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${RESOURCE_TXT}" "${OUTPUT_DIR}/test${TEST_NUM}.txt"
-        )
-    endif()
-    if(EXISTS "${RESOURCE_SCXML}")
-        add_custom_command(
-            OUTPUT "${SCXML_FILE}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E copy "${RESOURCE_SCXML}" "${SCXML_FILE}"
-            ${_TXT_COPY_CMD}
-            DEPENDS "${RESOURCE_SCXML}"
-            COMMENT "Using existing SCXML: test${TEST_NUM}.scxml (C11)"
-            VERBATIM
-        )
-    elseif(EXISTS "${TXML_FILE}")
-        add_custom_command(
-            OUTPUT "${SCXML_FILE}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-            COMMAND txml-converter "${TXML_FILE}" "${SCXML_FILE}"
-            COMMAND "${SCE_CODEGEN}" fix-scxml-name "${SCXML_FILE}" "test${TEST_NUM}"
-            ${_TXT_COPY_CMD}
-            DEPENDS txml-converter "${TXML_FILE}"
-            COMMENT "Converting TXML to SCXML: test${TEST_NUM}.txml (C11)"
-            VERBATIM
-        )
-    else()
-        message(WARNING "Neither TXML nor SCXML found for test${TEST_NUM} — Skipping")
-        return()
-    endif()
-
-    # Collect child header outputs so the parent's codegen depends on them
-    # — when the parent's `_sm.h` `#include`s the child's `_sm.h` (driven
-    # by `state_machine.h.jinja2` when `model.invokes | scxml_family` is
-    # non-empty), the build graph must materialise the child header
-    # before the parent compilation that consumes it. Equally important
-    # for `collect_child_to_parent_events` — sce-build's parser scans the
-    # child SCXML at parent codegen time to populate
-    # `child_has_send_to_parent` / `child_datamodel_vars`, so the child
-    # SCXML must exist at the OUTPUT_DIR path before parent codegen runs.
-    # Both synth-invoke (inline) and sibling-sub (test226/276 author-
-    # supplied) shapes are tracked here so neither shape silently regens
-    # the parent against a stale or absent child model.
-    # Synth children are deliberately absent from this list: the parent makes
-    # them, so depending on them would be the parent waiting for itself.
-    set(_CHILD_HEADER_DEPS "")
-    foreach(_SUB_TXML ${_SUB_TXML_FILES})
-        get_filename_component(_SUB_NAME "${_SUB_TXML}" NAME_WE)
-        list(APPEND _CHILD_HEADER_DEPS "${OUTPUT_DIR}/${_SUB_NAME}_sm.h")
-    endforeach()
-    foreach(_HYBRID_STUB ${_HYBRID_STUB_FILES})
-        get_filename_component(_HYBRID_NAME "${_HYBRID_STUB}" NAME_WE)
-        list(APPEND _CHILD_HEADER_DEPS "${OUTPUT_DIR}/${_HYBRID_NAME}_sm.h")
-    endforeach()
-
-    # The keyword only when there is something to name: a bare `BYPRODUCTS`
-    # with no values is a configure error, and most fixtures carry no
-    # synth-invoke child at all.
-    set(_C_PARENT_BYPRODUCTS_ARG "")
-    if(_C_PARENT_BYPRODUCTS)
-        set(_C_PARENT_BYPRODUCTS_ARG BYPRODUCTS ${_C_PARENT_BYPRODUCTS})
-    endif()
-    add_custom_command(
-        OUTPUT "${GENERATED_HEADER}" "${GENERATED_SOURCE}"
-        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_SOURCE}.d"
-        DEPENDS "${SCXML_FILE}" "${SCE_CODEGEN}" ${_CHILD_HEADER_DEPS}
-        DEPFILE "${GENERATED_SOURCE}.d"
-        ${_C_PARENT_BYPRODUCTS_ARG}
-        COMMENT "Generating C11 code: test${TEST_NUM}_sm.{h,c}"
-        VERBATIM
-    )
-
-    list(APPEND GENERATED_W3C_C_HEADERS "${GENERATED_HEADER}")
-    list(APPEND GENERATED_W3C_C_SOURCES "${GENERATED_SOURCE}")
-    set(GENERATED_W3C_C_HEADERS ${GENERATED_W3C_C_HEADERS} PARENT_SCOPE)
-    set(GENERATED_W3C_C_SOURCES ${GENERATED_W3C_C_SOURCES} PARENT_SCOPE)
+    set(W3C_C_AOT_TEST_${TEST_NUM}_SOURCES
+        ${_W3C_FIXTURE_SOURCES} ${_W3C_FIXTURE_HEADERS} PARENT_SCOPE)
 endfunction()
