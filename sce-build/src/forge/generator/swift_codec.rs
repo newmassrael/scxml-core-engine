@@ -83,8 +83,7 @@ pub(super) fn unlowered(
 ///
 /// It is a struct with one property per entry, so an entry may not be named for a member the struct
 /// has. An entry that is an enumeration is read as its carrier and converted by the enum's own
-/// `fromUnderlying`; an open enum, whose unit Swift does not write, is named where the import that
-/// says so is read ([`crate::forge::cbor_codec`]).
+/// `fromUnderlying`, which for an open enum is total ([`crate::forge::cbor_codec`]).
 pub(super) fn cbor_unlowered(m: &CodecModel) -> Option<String> {
     for e in &m.cbor_entries {
         if MEMBERS.contains(&e.id.as_str()) {

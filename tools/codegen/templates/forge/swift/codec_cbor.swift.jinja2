@@ -88,7 +88,10 @@ public struct {{ struct_name }}: Equatable, Sendable {
             case {{ e.key }}:
                 // A key given twice is not one map entry.
                 if {{ e.name }}_held != nil { throw CodecError.cborMalformed }
-{% if e.kind == "enum" %}
+{% if e.kind == "enum" and e.enum_is_open %}
+                // An open enum holds any number its carrier does, so every number is a value.
+                {{ e.name }}_held = {{ e.enum_from_underlying }}({{ e.carrier_type }}(truncatingIfNeeded: try Cbor.readUintUpto(&reader, {{ e.max }})))
+{% elif e.kind == "enum" %}
                 // A closed enum holds only the numbers it declares.
                 guard let declared = {{ e.enum_from_underlying }}({{ e.carrier_type }}(truncatingIfNeeded: try Cbor.readUintUpto(&reader, {{ e.max }}))) else {
                     throw CodecError.cborOutOfRange

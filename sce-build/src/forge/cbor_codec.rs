@@ -399,23 +399,6 @@ fn render_swift(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Swift, imports);
-    // An open enum is a struct over its carrier that holds any number, whose conversion is total; the
-    // codec reads a closed enum's `fromUnderlying` and refuses a number no variant declares, and has
-    // no reading of the other.
-    for e in &m.cbor_entries {
-        if let SceType::Enum(r) = e.present_type() {
-            if l.enum_is_open(&r.alias) {
-                return Err(ForgeError::from(GenerateError::unsupported_at(
-                    format!(
-                        "codec '{}': CBOR entry '{}' names the open enum '{}', which has no Swift \
-                         lowering yet",
-                        m.name, e.id, r.alias
-                    ),
-                    m.source_location.clone(),
-                )));
-            }
-        }
-    }
     // Owned values, as every Swift codec holds them: a text string is a `String` and a byte string a
     // `[UInt8]`. A required entry starts at its type's zero, an enum at its first declared variant,
     // and is filled in by decode; an optional one starts absent, so `{Name}()` is the infallible
@@ -439,9 +422,13 @@ fn render_swift(
             .into();
             // The common context spells the conversion of an enum's value as the variable `v`; the
             // Swift template names the value it writes `value`.
-            if matches!(e.present_type(), SceType::Enum(_)) {
+            if let SceType::Enum(r) = e.present_type() {
                 entry["enum_to_underlying"] =
                     l.codec_carrier_expr(e.present_type(), "value").into();
+                // An open enum is a struct over its carrier that holds any number, whose
+                // `fromUnderlying` is total; a closed enum answers nil for a number no variant
+                // declares, which a decode refuses.
+                entry["enum_is_open"] = l.enum_is_open(&r.alias).into();
             }
             // A negative number is no CBOR unsigned integer, which encode refuses and does not wrap.
             entry["signed"] = matches!(

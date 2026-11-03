@@ -824,16 +824,19 @@ fn a_chain_closed_by_an_entry_flag_is_read_until_an_entry_clears_it() {
         code.contains("public var extensions: [CodecZenohExtEntry]? = nil"),
         "a gated chain is optional: {code}"
     );
+    // The protocol states no depth for the extensions, so the walk is not counted: it ends on the
+    // entry that clears the flag, and an entry that promises another the frame lacks is a read the
+    // frame is too short for. With no depth there is no entry one past it to refuse.
     assert!(
-        code.contains("let entry = try CodecZenohExtEntry.decode(&reader)\n                extensions_more = entry.Z\n                extensions_items.append(entry)\n                if !extensions_more { break }"),
+        code.contains("while true {\n                let entry = try CodecZenohExtEntry.decode(&reader)\n                extensions_more = entry.Z\n                extensions_items.append(entry)\n                if !extensions_more { break }"),
         "{code}"
     );
     assert!(
-        code.contains("if extensions_more && reader.remaining == 0 {\n                throw CodecError.needMoreBytes\n            }\n            if extensions_more {\n                throw CodecError.tooManyElements\n            }"),
-        "an entry that promises another leaves the frame short, or is one past the depth: {code}"
+        !code.contains("0..<none") && !code.contains("if extensions_more {"),
+        "a chain with no depth states no bound to count to or to refuse past: {code}"
     );
     assert!(
-        code.contains("value.count < 1 || value.count > 4"),
+        code.contains("if let value = self.extensions, value.count < 1 {"),
         "a chain closed by a flag holds at least one entry: {code}"
     );
 }
@@ -1055,6 +1058,59 @@ fn a_cbor_enum_entry_is_read_through_its_carrier_and_refused_when_no_variant_dec
     );
     assert!(
         code.contains("Cbor.writeUint(UInt64(PatternKind.toUnderlying(value)), to: &frame)"),
+        "{code}"
+    );
+}
+
+/// An open enum (`sce:strict-variants="false"`) is a struct over its carrier that holds any number,
+/// so a CBOR entry of one takes every number the carrier holds: the conversion is total, and there
+/// is no number to refuse. The document is written beside the enum it imports.
+#[test]
+fn a_cbor_open_enum_entry_takes_every_number_its_carrier_holds() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::copy(
+        repo_root().join("tests/forge/resources/enum_uds_nrc.scxml"),
+        dir.path().join("enum_uds_nrc.scxml"),
+    )
+    .expect("copy the open enum");
+    let document = dir.path().join("codec_cbor_open.scxml");
+    std::fs::write(
+        &document,
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="codec_cbor_open" version="1.0">
+  <sce:import kind="enum" src="enum_uds_nrc.scxml" as="Nrc"/>
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="status" sce:type="enum:Nrc" sce:key="1" sce:direction="out"/>
+    <data id="detail" sce:type="optional&lt;enum:Nrc&gt;" sce:key="2" sce:direction="out"/>
+  </datamodel>
+</scxml>"#,
+    )
+    .expect("write the codec");
+    let output = compile_forge_file(
+        &document,
+        Language::Swift,
+        &[],
+        &ForgeCompileOptions::default(),
+    )
+    .expect("a CBOR codec with an open enum entry is written");
+    let (_, code) = output
+        .files
+        .into_iter()
+        .next()
+        .expect("a document that is written writes a file");
+    assert!(
+        code.contains(
+            "status_held = EnumUdsNrc.fromUnderlying(UInt8(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 255)))"
+        ),
+        "an open enum entry is every number the carrier holds: {code}"
+    );
+    assert!(
+        !code.contains("guard let declared"),
+        "an open enum has no number to refuse: {code}"
+    );
+    assert!(
+        code.contains("Cbor.writeUint(UInt64(EnumUdsNrc.toUnderlying(value)), to: &frame)"),
         "{code}"
     );
 }
