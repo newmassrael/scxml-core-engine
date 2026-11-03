@@ -1,4 +1,4 @@
-# ADR 0082 — What reaches an engine from outside enters through one inbox, and every host type through one processor door
+# ADR 0083 — What reaches an engine from outside enters through one inbox, and every host type through one processor door
 
 - Status: Accepted (2026-11-03). The owner asked for the most long-term correct, textbook structure with cost ignored,
   took the recommendation of that day (one processor door shared by both engines, the Mesh request as one row of it,
@@ -174,8 +174,8 @@ child). §1 and §19 of SCE_MESH.md are corrected to say so.
 `sce-codegen lower` lets a host-run `<invoke>` and a Mesh request through, lowering their `<param>` and `namelist`
 expressions as it lowers a `<send>`'s. The `sce-static` scenarios that use a host-run invocation
 (`tests/host_features/scenarios/static_host_{clock,http,kv,notify}.json`) join the Interpreter replay, with the
-standard host (`StandardHost.h`) registered on the Interpreter as it is on the generated engine. The bounded-string `namelist` refusal stays, since it is
-about what the Interpreter cannot carry, not about the door.
+standard host (`StandardHost.h`) registered on the Interpreter as it is on the generated engine. The bounded-string
+`namelist` refusal stays, since it is about what the Interpreter cannot carry, not about the door.
 
 ### D8. The Interpreter's own threading becomes the rule's
 

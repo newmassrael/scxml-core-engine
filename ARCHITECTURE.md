@@ -1167,7 +1167,7 @@ engine has its driver; the Python one is
 
 ### Engine Threading (Single Source of Truth)
 
-Decided by `docs/adr/0082-what-reaches-an-engine-from-outside-enters-through-one-inbox-and-one-processor-door.md`.
+Decided by `docs/adr/0083-what-reaches-an-engine-from-outside-enters-through-one-inbox-and-one-processor-door.md`.
 This section states the rule. Each runtime's own documentation names its
 owner-thread operations and its inbox handle and points here; it does not
 restate the rule.
