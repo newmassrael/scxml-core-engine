@@ -442,6 +442,28 @@ impl Device {
         self.stage(pending)
     }
 
+    /// The commit that adds and removes no one and renews this device's own leaf (a self-update,
+    /// RFC 9420 section 12.4), made here and not merged: it moves the group to the next epoch with
+    /// fresh secrets, and the administrator appends the entry that names `commit_hash`, then
+    /// [`Self::merge_pending`]. What gives a group of one an epoch the log names: the epoch the
+    /// group is made at has no commit, and so no entry of the log can name it.
+    pub fn stage_update(&mut self) -> Result<Pending, MlsError> {
+        if self.pending.is_some() {
+            return Err(MlsError::PendingCommit);
+        }
+        let group = self.group.as_mut().ok_or(MlsError::NoGroup)?;
+        let bundle = group
+            .self_update(&self.provider, &self.signer, LeafNodeParameters::default())
+            .map_err(lib)?;
+        let pending = Pending {
+            commit: bundle.into_commit().to_bytes().map_err(lib)?,
+            welcome: None,
+            commit_hash: [0; 32],
+            epoch: group.epoch().as_u64() + 1,
+        };
+        self.stage(pending)
+    }
+
     fn stage(&mut self, mut pending: Pending) -> Result<Pending, MlsError> {
         pending.commit_hash = commit_hash(&pending.commit);
         self.pending = Some(pending.clone());

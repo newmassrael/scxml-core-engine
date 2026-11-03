@@ -623,6 +623,17 @@ impl Member {
         self.finish(administrator, entries, pending)
     }
 
+    /// The administrator's change that adds and takes off no one: a commit of the device's own leaf
+    /// ([`Device::stage_update`]) that moves the group to the next epoch with fresh secrets, the
+    /// entry that names it, and the merge. What a list keyed by its group makes when it is opened:
+    /// the epoch the group is made at has no commit for an entry to name, so a group of one has no
+    /// epoch the log begins until this, and nothing written before an epoch is sealed. What it
+    /// returns is for the relay: the commit, and no Welcome.
+    pub fn update(&mut self, administrator: &Identity) -> Result<Issued, MlsError> {
+        let pending = self.device.stage_update()?;
+        self.finish(administrator, Vec::new(), pending)
+    }
+
     fn append(&self, administrator: &Identity, body: Body) -> Result<Entry, MlsError> {
         self.trust
             .administer(administrator, body)
@@ -729,6 +740,59 @@ mod tests {
         assert_eq!(again.refused, held.refused);
         assert_eq!(again.overflowed, held.overflowed);
         assert_eq!(again.held_to_bytes(), kept);
+    }
+
+    /// A group of one is given an epoch the log names: the commit renews the device's own leaf,
+    /// the entry names it, and the trust holds the key of the epoch. A commit the log refuses to
+    /// name is given up, and the next one is made from where the group was.
+    #[test]
+    fn a_group_of_one_is_given_an_epoch_the_log_names_and_its_key() {
+        use sce_rust_trust::membership::Profile;
+
+        let administrator = Identity::from_seed([9; 32]);
+        let person = Identity::from_seed([1; 32]);
+        let trust = Trust::open(LIST);
+        trust
+            .administer(
+                &administrator,
+                Body::Genesis {
+                    administrators: vec![administrator.public()],
+                    quorum: 1,
+                    profile: Profile::Untrusted,
+                },
+            )
+            .unwrap();
+        trust
+            .administer(&administrator, trust.grant_body(1, 3, person.public()))
+            .unwrap();
+
+        let mut alone = Member::new(
+            Device::new(LIST, 1, Identity::from_seed([1; 32])),
+            trust.clone(),
+            1,
+        );
+        assert_eq!(alone.update(&administrator), Err(MlsError::NoGroup));
+        assert_eq!(trust.epoch(), 0, "nothing written");
+
+        let mut held = Member::new(Device::new(LIST, 1, person), trust.clone(), 1);
+        held.device_mut().create_group().unwrap();
+        let issued = held.update(&administrator).unwrap();
+        assert_eq!(issued.epoch, 1);
+        assert_eq!(issued.welcome, None, "no one was added");
+        assert_eq!(issued.entries.len(), 1, "the entry that names the commit");
+        assert_eq!(trust.epoch(), 1);
+        assert_eq!(trust.commit_of(1), Some(crate::commit_hash(&issued.commit)));
+        assert_eq!(held.device().epoch(), Ok(1));
+        assert_eq!(trust.epochs(), vec![1]);
+
+        // A key that is no administrator's: the log refuses the entry, the commit is given up, and
+        // the group and the log stay at epoch 1 for the next one.
+        let refused = held.update(&Identity::from_seed([8; 32]));
+        assert!(matches!(refused, Err(MlsError::NotInLog(_))), "{refused:?}");
+        assert_eq!(trust.epoch(), 1);
+        assert_eq!(held.device().epoch(), Ok(1));
+        assert_eq!(held.update(&administrator).unwrap().epoch, 2);
+        assert_eq!(trust.epochs(), vec![1, 2]);
     }
 
     #[test]
