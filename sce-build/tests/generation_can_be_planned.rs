@@ -289,6 +289,161 @@ fn a_command_the_plan_cannot_serve_refuses_it() {
     );
 }
 
+/// A statechart whose `<invoke>` names its child through an expression, so
+/// its generation writes the stub child document beside the machine, which a
+/// build generates by a command of its own. The committed fixture.
+fn stub_writing_fixture(dir: &Path) -> PathBuf {
+    let stem = "invoke_expression_failure_is_reported";
+    let source = repo_root()
+        .join("integration_resources")
+        .join(stem)
+        .join(format!("{stem}.scxml"));
+    let staged = dir.join(format!("{stem}.scxml"));
+    fs::copy(&source, &staged).expect("stage the fixture");
+    staged
+}
+
+/// A `--plan-children` answer split as a reader splits it: the run's own
+/// paths, and per child document the paths its generation writes.
+type ChildPlans = std::collections::BTreeMap<String, BTreeSet<String>>;
+
+fn split_children(out: &Output) -> (Vec<String>, ChildPlans) {
+    let mut own = Vec::new();
+    let mut children = ChildPlans::new();
+    for line in stdout_lines(out) {
+        match line.split_once('\t') {
+            Some((document, file)) => {
+                children
+                    .entry(document.to_string())
+                    .or_default()
+                    .insert(file.to_string());
+            }
+            None => own.push(line),
+        }
+    }
+    (own, children)
+}
+
+/// The run's own lines are the plan's without the flag, in the same order: a
+/// reader of the plain answer reads the same answer, and the children's
+/// generations come after it.
+#[test]
+fn a_plan_of_children_keeps_the_runs_own_answer() {
+    for language in ["cpp", "c11"] {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let fixture = stub_writing_fixture(tmp.path());
+        let out = tmp.path().join("out");
+
+        let plain = generate(&["--plan"], &fixture, &out, language);
+        let with = generate(&["--plan", "--plan-children"], &fixture, &out, language);
+
+        assert!(plain.status.success(), "{language}: {}", stderr(&plain));
+        assert!(with.status.success(), "{language}: {}", stderr(&with));
+        let (own, children) = split_children(&with);
+        assert_eq!(
+            own,
+            stdout_lines(&plain),
+            "{language}: the run's own lines moved under --plan-children"
+        );
+        let first_child_line = stdout_lines(&with)
+            .iter()
+            .position(|line| line.contains('\t'))
+            .expect("a child generation is planned");
+        assert!(
+            stdout_lines(&with)[first_child_line..]
+                .iter()
+                .all(|line| line.contains('\t')),
+            "{language}: a line of the run's own after a child's"
+        );
+        assert!(
+            !children.is_empty(),
+            "{language}: the stub's generation was not planned"
+        );
+        assert!(
+            !out.exists(),
+            "{language}: the plan of the children wrote the output directory"
+        );
+    }
+}
+
+/// What the plan says a child document's generation writes is what that
+/// generation, run on the document the parent's run wrote, adds to the
+/// directory: the stub is planned from the text the parent's run would write,
+/// with nothing on disk.
+#[test]
+fn a_childs_planned_generation_names_exactly_what_it_writes() {
+    for language in ["cpp", "c11"] {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let fixture = stub_writing_fixture(tmp.path());
+        let planned_into = tmp.path().join("planned");
+        let written_into = tmp.path().join("written");
+
+        let plan = generate(
+            &["--plan", "--plan-children"],
+            &fixture,
+            &planned_into,
+            language,
+        );
+        assert!(plan.status.success(), "{language}: {}", stderr(&plan));
+        let (own, children) = split_children(&plan);
+
+        let parent = generate(&[], &fixture, &written_into, language);
+        assert!(parent.status.success(), "{language}: {}", stderr(&parent));
+        for (document, files) in &children {
+            assert!(
+                own.contains(document),
+                "{language}: {document} is planned as a child and the run does not write it"
+            );
+            let name = Path::new(document)
+                .file_name()
+                .expect("a document name")
+                .to_owned();
+            let before = files_under(&written_into);
+            let child = Command::new(codegen())
+                .arg("generate")
+                .arg(written_into.join(&name))
+                .arg("--as-child")
+                .args(["-l", language, "-o"])
+                .arg(&written_into)
+                .arg("--input-root")
+                .arg(tmp.path())
+                .output()
+                .expect("run sce-codegen");
+            assert!(child.status.success(), "{language}: {}", stderr(&child));
+            let added: BTreeSet<String> = files_under(&written_into)
+                .difference(&before)
+                .cloned()
+                .collect();
+            let named: BTreeSet<String> = files
+                .iter()
+                .map(|file| {
+                    Path::new(file)
+                        .strip_prefix(&planned_into)
+                        .unwrap_or_else(|_| panic!("`{file}` is not under the output directory"))
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .collect();
+            assert_eq!(
+                named, added,
+                "{language}: the plan of {document} names {named:?} and its generation added \
+                 {added:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn children_are_planned_only_inside_a_plan() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let door = write_door(tmp.path());
+    let alone = generate(&["--plan-children"], &door, &tmp.path().join("out"), "cpp");
+    assert!(
+        !alone.status.success(),
+        "--plan-children was accepted without --plan"
+    );
+}
+
 #[test]
 fn a_plan_and_an_assertion_are_not_asked_together() {
     let tmp = tempfile::tempdir().expect("temp dir");

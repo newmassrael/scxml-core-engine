@@ -134,6 +134,15 @@ fn output_mode() -> OutputMode {
     OUTPUT_MODE.get().copied().unwrap_or(OutputMode::Write)
 }
 
+/// Installed once by `main`, beside [`OUTPUT_MODE`]: whether a `--plan` run
+/// also plans the generation of each child document it writes
+/// (`--plan-children`, [`plan_child_generations`]).
+static PLAN_CHILDREN: OnceLock<bool> = OnceLock::new();
+
+fn plans_children() -> bool {
+    output_mode() == OutputMode::Plan && PLAN_CHILDREN.get().copied().unwrap_or(false)
+}
+
 /// The tree an `--assert-unchanged` run would have left behind, held in
 /// memory instead of written: every path the run touched, mapped to the bytes
 /// it would finally hold, or to `None` where the run would have removed it.
@@ -152,6 +161,11 @@ struct PendingTree {
     /// report names them in.
     order: Vec<PathBuf>,
     content: BTreeMap<PathBuf, Option<Vec<u8>>>,
+    /// In a `--plan-children` run, the generation of each child document the
+    /// run wrote, in the order they were planned: the document, and every
+    /// file its generation would produce that no generation before it does
+    /// ([`plan_child_generations`]).
+    generations: Vec<(PathBuf, Vec<PathBuf>)>,
 }
 
 impl PendingTree {
@@ -159,7 +173,16 @@ impl PendingTree {
         Self {
             order: Vec::new(),
             content: BTreeMap::new(),
+            generations: Vec::new(),
         }
+    }
+
+    /// The files this tree holds, in the order the run first produced them:
+    /// every path it touched but the ones it removed.
+    fn produced(&self) -> impl Iterator<Item = &PathBuf> {
+        self.order
+            .iter()
+            .filter(|path| self.content.get(*path).is_some_and(Option::is_some))
     }
 
     fn set(&mut self, path: PathBuf, bytes: Option<Vec<u8>>) {
@@ -323,15 +346,20 @@ fn ensure_output_dir(dir: &Path) -> std::io::Result<()> {
 /// produced them, every file it would have left behind. A file the run removed
 /// is not in the answer — it is not among the files the run produces — and
 /// nothing is judged against the disk, so the run cannot fail for what is or is
-/// not there.
+/// not there. A `--plan-children` run then prints the generation of each child
+/// document the run wrote, one line per file it would produce, as
+/// `<child document>\t<file>`; a line with no tab is always the run's own.
 fn finish_generated_output() {
     match output_mode() {
         OutputMode::Write => return,
         OutputMode::Plan => {
             let tree = std::mem::take(&mut *pending_tree());
-            for path in &tree.order {
-                if tree.content[path].is_some() {
-                    out_line(&path.display().to_string());
+            for path in tree.produced() {
+                out_line(&path.display().to_string());
+            }
+            for (document, files) in &tree.generations {
+                for file in files {
+                    out_line(&format!("{}\t{}", document.display(), file.display()));
                 }
             }
             return;
@@ -790,7 +818,11 @@ fn read_named_document(path: &str) -> std::io::Result<String> {
                 )
             });
     }
-    fs::read_to_string(path)
+    // Through the one place every document is opened (`sce_build::confine`),
+    // as the parse that follows opens it: a document a caller holds in memory
+    // is read from there (`--plan-children` plans a child no generation has
+    // written to disk yet), and one outside a confined folder is not read.
+    sce_build::confine::read_to_string(Path::new(path))
 }
 
 /// Globally-resolved `--workspace-root` override. Mirrors
@@ -1211,6 +1243,12 @@ struct GenerateReport {
     /// The symbols the run's machines emitted, per directory, held for the
     /// caller of [`cmd_generate`] to write once per run ([`write_sourcemaps`]).
     sourcemaps: Vec<SourcemapShare>,
+    /// The child documents this run writes into its output directory for a
+    /// build to generate by a run of their own ([`child_documents`]): a
+    /// hybrid `<invoke>`'s stub, a candidate, a `src` child. Read by
+    /// `--plan-children` ([`plan_child_generations`]), which plans each one's
+    /// generation; nothing else reads it.
+    child_documents: Vec<PathBuf>,
     /// The documents of a `--with-imports` run that were rejected, each
     /// named — see `Manifest::rejected_documents`. Empty on a run of one
     /// document, which says it in [`Self::rejected`].
@@ -1621,6 +1659,22 @@ struct Cli {
     /// the two cannot be combined.
     #[arg(long, global = true, conflicts_with = "assert_unchanged")]
     plan: bool,
+
+    /// With `--plan`: also plan the generation of every child document the
+    /// run writes into its output directory for a build to generate by a
+    /// command of its own (a hybrid `<invoke>`'s stub, a candidate or `src`
+    /// child staged there), and of every child document those write in
+    /// turn, each as `generate <child> --as-child` with the run's language,
+    /// output directory, input root and include directories, the child read
+    /// from the run's own answer and never from disk. After the run's own
+    /// lines, each file such a generation would produce, and no generation
+    /// before it does, is printed as `<child document>\t<file>`.
+    ///
+    /// A stub is written by the run itself, so before this a build could not
+    /// declare what its generation writes until the run had run; the answer
+    /// for it is the generator's, as the answer for the run is.
+    #[arg(long, global = true, requires = "plan")]
+    plan_children: bool,
 
     /// Diagnostic output format on stderr. `human` (default) preserves
     /// the existing CLI text. `json` emits one NDJSON record per error
@@ -3995,6 +4049,7 @@ fn main() {
             });
         }
         let _ = OUTPUT_MODE.set(OutputMode::Plan);
+        let _ = PLAN_CHILDREN.set(cli.plan_children);
     }
     match cli.command {
         Commands::Generate(args) => run_generate(*args, error_format),
@@ -6098,6 +6153,13 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
 /// `--with-imports`, every document a set reaches.
 fn run_generate(args: GenerateArgs, error_format: ErrorFormat) {
     if args.with_imports {
+        if plans_children() {
+            cli_exit(CliError::Usage {
+                detail: "--plan-children plans the child documents of one document's \
+                         generation; a `--with-imports` run generates several"
+                    .to_string(),
+            });
+        }
         cmd_generate_with_imports(args, error_format);
         return;
     }
@@ -6111,10 +6173,110 @@ fn run_generate(args: GenerateArgs, error_format: ErrorFormat) {
         });
     }
     let depfile = args.write_deps.clone();
+    let children_of = plans_children().then(|| args.clone());
     let mut report = cmd_generate(args, error_format);
     write_sourcemaps(std::mem::take(&mut report.sourcemaps));
     write_run_depfile(depfile.as_deref(), &report);
+    if let Some(args) = children_of {
+        plan_child_generations(&args, &report, error_format);
+    }
     emit_generate_manifest(&report);
+}
+
+/// `--plan-children`: after a `--plan` run of `args`, plan the generation of
+/// each child document the run wrote ([`GenerateReport::child_documents`]),
+/// and of each child document those write in turn, and keep each one's files
+/// beside the run's ([`PendingTree::generations`]), for
+/// [`finish_generated_output`] to print after them.
+///
+/// A child's generation is the one a build runs for it: `generate <child>
+/// --as-child`, with the run's language, output directory, include
+/// directories and prefixes, the run's input root (so the source set is one
+/// that is on disk), and none of what describes the run's own document
+/// (its deploy, its variant, its host's declarations, its depfile). The child
+/// is read from what the generations before it produced, held in memory
+/// (`sce_build::confine::with_documents`): a stub exists nowhere else until
+/// the run has run, which is the whole reason a build cannot plan it alone.
+///
+/// Each generation's own tree is kept apart from the run's, so the run's
+/// answer is exactly the files the run writes, as without the flag, and a
+/// file an earlier generation already produces is left out of a later one's:
+/// every file has the one generation that owns it. A child the run names and
+/// wrote no document for is not planned; its generation would have nothing
+/// to read either.
+fn plan_child_generations(args: &GenerateArgs, report: &GenerateReport, error_format: ErrorFormat) {
+    let mut run = std::mem::take(&mut *pending_tree());
+    let document = args.scxml.first().map(String::as_str).unwrap_or_default();
+    let input_root = args.input_root.clone().unwrap_or_else(|| {
+        containing_dir(Path::new(document))
+            .to_string_lossy()
+            .into_owned()
+    });
+    // Every document a generation produced so far, for the next to read.
+    fn hold(tree: &PendingTree, held: &mut BTreeMap<PathBuf, String>) {
+        let documents = tree
+            .produced()
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "scxml")
+            })
+            .filter_map(|path| match tree.content.get(path) {
+                Some(Some(bytes)) => String::from_utf8(bytes.clone())
+                    .ok()
+                    .map(|text| (path.clone(), text)),
+                _ => None,
+            });
+        held.extend(documents);
+    }
+    let mut held: BTreeMap<PathBuf, String> = BTreeMap::new();
+    hold(&run, &mut held);
+    let mut owned: BTreeSet<PathBuf> = run.produced().cloned().collect();
+    let mut pending: std::collections::VecDeque<PathBuf> = report
+        .child_documents
+        .iter()
+        .map(|path| tree_key(path.as_path()))
+        .collect();
+    let mut planned: BTreeSet<PathBuf> = BTreeSet::new();
+    while let Some(child) = pending.pop_front() {
+        if !held.contains_key(&child) || !planned.insert(child.clone()) {
+            continue;
+        }
+        let mut child_args = args.clone();
+        child_args.scxml = vec![child.to_string_lossy().into_owned()];
+        child_args.as_child = true;
+        child_args.parent_stem = None;
+        child_args.write_deps = None;
+        child_args.deploy = None;
+        child_args.transport_only = false;
+        child_args.target_machine = None;
+        child_args.partition = None;
+        child_args.features = None;
+        child_args.host_processor.clear();
+        child_args.host_invoker.clear();
+        child_args.input_root = Some(input_root.clone());
+        child_args.emit_ast = None;
+        child_args.profile = None;
+        child_args.with_imports = false;
+        let mut child_report = sce_build::confine::with_documents(held.clone(), || {
+            cmd_generate(child_args, error_format)
+        });
+        write_sourcemaps(std::mem::take(&mut child_report.sourcemaps));
+        let tree = std::mem::take(&mut *pending_tree());
+        hold(&tree, &mut held);
+        let files: Vec<PathBuf> = tree
+            .produced()
+            .filter(|path| owned.insert((*path).clone()))
+            .cloned()
+            .collect();
+        run.generations.push((child, files));
+        pending.extend(
+            child_report
+                .child_documents
+                .iter()
+                .map(|path| tree_key(path.as_path())),
+        );
+    }
+    *pending_tree() = run;
 }
 
 /// Write the one depfile a `generate` run was asked for (`--write-deps`), from
@@ -7327,6 +7489,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         );
         report.host_processor_causes = model.host_processor_cause_records();
         report.host_duties = sce_build::forge::native_action::host_duty_records(&model);
+        report.child_documents = child_documents(&model, out_path);
         report
             .unreadable_variables
             .clone_from(&model.unreadable_variables);
@@ -7514,6 +7677,25 @@ fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
         }
     }
     children
+}
+
+/// The child documents a run of `model` writes into `output_dir` for a build
+/// to generate by a run of their own: every child its machines start
+/// ([`collect_invoke_child_names`]) but the ones they carry, whose machines
+/// the run itself writes ([`SCXMLModel::inline_child_invokes`]). A child the
+/// run finds no document for is named all the same, and a plan of it finds
+/// none to read ([`plan_child_generations`]).
+fn child_documents(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
+    let carried: BTreeSet<String> = model
+        .inline_child_invokes()
+        .into_iter()
+        .map(|invoke| invoke.child_name.clone())
+        .collect();
+    collect_invoke_child_names(model)
+        .into_iter()
+        .filter(|name| !carried.contains(name))
+        .map(|name| output_dir.join(format!("{name}.scxml")))
+        .collect()
 }
 
 /// §scxml-6.4: Copy external `src="…"` static invoke children from

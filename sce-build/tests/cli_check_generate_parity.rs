@@ -430,6 +430,15 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
          one is, so `check` needs no counterpart",
     ),
     f(
+        "--plan-children",
+        Reach::Emission,
+        Some(&["--plan", "--plan-children"]),
+        "rust",
+        "adds to a plan the files the generation of each child document the \
+         run writes would produce; it reads the document no differently, so \
+         `check` needs no counterpart",
+    ),
+    f(
         "--profile",
         Reach::Verdict,
         None,
