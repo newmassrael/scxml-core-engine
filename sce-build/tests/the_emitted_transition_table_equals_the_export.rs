@@ -14,9 +14,11 @@
 // runs on a host with no toolchain. Where a toolchain is found, the same output is
 // also built in the backend's own toolchain and the table it holds is compared with
 // the export at the level the language allows: C++ by static assertions over every
-// field, Python by importing the module, and Rust, Go, Kotlin and C by building a
-// program against the real runtime and running it. A table that reads back right
-// and does not compile, or compiles to other values, is still wrong.
+// field, Python by importing the module, and Rust, Go, Kotlin, C and Swift by
+// building a program against the real runtime and running it. A table that reads
+// back right and does not compile, or compiles to other values, is still wrong.
+// The Swift program is also run by the Swift lane (`scripts/test_swift_backend.sh`),
+// on the compiler `bx.toml` pins and with a skip refused.
 //
 // Absent the declaration, nothing changes: the generated files are held
 // byte-identical by the committed-tree drift gates, and this file checks that none
@@ -30,14 +32,18 @@ use std::process::{Command, Output, Stdio};
 
 use regex::Regex;
 use sce_build::filters;
-use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::codegen_matrix::emitting_in_part;
 use sce_build::forge::model::ForgeKind;
-use sce_build::generator::Language;
 use sce_build::toolchain;
 
-/// Every backend that emits a machine, by the identifier `generate -l` takes.
+/// Every backend that generates a statechart machine, by the identifier
+/// `generate -l` takes: the ones that write it whole and Swift, which writes it in
+/// part (`codegen_matrix::emitting_in_part`). A machine Swift writes carries the
+/// table its document declares as every other backend's does, so it is held to the
+/// export with them; what Swift refuses of a statechart is refused by name before
+/// any table is written.
 fn backends() -> Vec<&'static str> {
-    emitting(ForgeKind::Statechart)
+    emitting_in_part(ForgeKind::Statechart)
         .map(|language| language.canonical_name())
         .collect()
 }
@@ -269,6 +275,14 @@ fn read_table(lang: &str, source: &str, machine: &str) -> Vec<Entry> {
             ),
             7,
         ),
+        // A case Swift reserves is written in backticks, which are part of the
+        // identifier the source spells.
+        "swift" => (
+            format!(
+                r"{machine}Transition\(\s*from:\s*{machine}State\.([\w`]+),\s*to:\s*(?:{machine}State\.([\w`]+)|nil),\s*event:\s*(?:{machine}Event\.([\w`]+)|nil),\s*targets:\s*{LITERAL},\s*events:\s*{LITERAL},\s*index:\s*(\d+),\s*annotation:\s*{LITERAL},?\s*\)"
+            ),
+            7,
+        ),
         "c11" => {
             let prefix = Regex::new(r"#define\s+(\w+)_TRANSITION_COUNT\b")
                 .unwrap()
@@ -312,6 +326,7 @@ fn generated_source(lang: &str, out: &Path) -> String {
         "go" => &["go"],
         "kotlin" => &["kt"],
         "python" => &["py"],
+        "swift" => &["swift"],
         other => panic!("{other}"),
     };
     let mut files: Vec<PathBuf> = std::fs::read_dir(out)
@@ -346,7 +361,7 @@ fn generate(lang: &str, out: &Path, doc: &Path) {
     );
 }
 
-/// The machine's name as the Rust, Go, Kotlin and Python templates spell it.
+/// The machine's name as the Rust, Go, Kotlin, Python and Swift templates spell it.
 fn machine_name() -> String {
     filters::to_pascal_case(STEM.to_string())
 }
@@ -374,6 +389,10 @@ fn names_of(lang: &str) -> Names {
         "python" => Names {
             state: |s| filters::to_python_const(s.to_string()),
             event: |e| filters::to_python_const(e.to_string()),
+        },
+        "swift" => Names {
+            state: |s| filters::to_swift_variant(s.to_string()),
+            event: |e| filters::to_swift_variant(e.to_string()),
         },
         other => panic!("{other}"),
     }
@@ -501,7 +520,8 @@ fn the_table_is_emitted_only_when_the_document_declares_it() {
     let with_doc = write_doc(&declared, DOC);
     // The one value every backend's table carries and nothing else writes: the
     // hash as a named constant (`SOURCE_HASH`, `<Machine>SourceHash`, the C++
-    // accessor `sourceHash`), distinct from the `source-hash` header comment.
+    // accessor and the Swift constant `sourceHash`), distinct from the
+    // `source-hash` header comment.
     let marker = Regex::new(r"SOURCE_HASH|SourceHash|sourceHash").unwrap();
     for lang in backends() {
         let without = dir.path().join(format!("without_{lang}"));
@@ -571,12 +591,12 @@ fn every_backend_writes_an_annotation_as_the_literal_its_language_needs() {
         annotations.iter().any(|a| a.contains('$')),
         "the document must carry a `$` for this to ask about it"
     );
-    for lang in emitting(ForgeKind::Statechart)
+    for lang in backends()
+        .into_iter()
         // Python: `literal_of` writes no Python literal; its table is held by
         // `the_python_table_imports_and_holds_the_export`, which imports the
         // module and compares the values the literals build.
-        .filter(|language| *language != Language::Python)
-        .map(Language::canonical_name)
+        .filter(|lang| *lang != "python")
     {
         let out = work.join(format!("out_{lang}"));
         generate(lang, &out, &doc);
@@ -672,6 +692,7 @@ fn no_template_reads_transitions_from_the_model() {
         "python/state_machine.py.jinja2",
         "c/state_machine.h.jinja2",
         "c/state_machine.c.jinja2",
+        "swift/state_machine.swift.jinja2",
     ];
     let forbidden = [
         "model.states",
@@ -907,7 +928,7 @@ print(json.dumps({"hash": module.SOURCE_HASH, "table": table}))
 // template escaped wrongly still compiles (Kotlin reads `$x` as an interpolation, and
 // `\x` is an escape in some languages and not in others), and an enumerator that
 // resolves to a different variant than the one spelled is no error. So each of
-// Rust, Go, Kotlin and C is built against its real runtime, the table is read at
+// Rust, Go, Kotlin, C and Swift is built against its real runtime, the table is read at
 // run time, and every field of every entry is compared with the export. The
 // expectation is written here, in the language's own syntax, from the export and the
 // filters, and not by the template under test, the way the C++ assertions are.
@@ -975,6 +996,21 @@ fn field_conditions(
                 event = match &e.event {
                     Some(v) => format!("{at}.event == {machine}Event.{v}"),
                     None => format!("{at}.event == null"),
+                };
+                targets = format!("{at}.targets == {}", literal_of(lang, &e.targets));
+                events = format!("{at}.events == {}", literal_of(lang, &e.events));
+                index = format!("{at}.index == {}", e.index);
+                annotation = format!("{at}.annotation == {}", literal_of(lang, &e.annotation));
+            }
+            "swift" => {
+                from = format!("{at}.from == {machine}State.{}", e.from);
+                to = match &e.to {
+                    Some(s) => format!("{at}.to == {machine}State.{s}"),
+                    None => format!("{at}.to == nil"),
+                };
+                event = match &e.event {
+                    Some(v) => format!("{at}.event == {machine}Event.{v}"),
+                    None => format!("{at}.event == nil"),
                 };
                 targets = format!("{at}.targets == {}", literal_of(lang, &e.targets));
                 events = format!("{at}.events == {}", literal_of(lang, &e.events));
@@ -1276,4 +1312,79 @@ fn the_c_table_compiles_and_holds_the_export() {
         .arg(&binary);
     run_ok(compile, "gcc over the generated machine and the check");
     run_ok(Command::new(&binary), "the generated C table program");
+}
+
+/// The generated Swift is built as a package of its own against the real runtime
+/// (`backends/swift/runtime`), and its table is compared with the export when that
+/// program runs. A field that differs is named in the program's fatal error, which
+/// Swift writes to stderr unbuffered, so the check needs nothing beyond the standard
+/// library and the machine's own file.
+///
+/// The Swift lane runs this test too, on the compiler `bx.toml` pins and with a skip
+/// refused (`scripts/test_swift_backend.sh`, its `transition-outputs` arm).
+#[test]
+fn the_swift_table_compiles_and_holds_the_export() {
+    let Some(swift) = toolchain::locate("swift") else {
+        toolchain::skipped("the_swift_table_compiles_and_holds_the_export: swift not on PATH");
+        return;
+    };
+    let (header, spelled, work, doc) = held_to("swift");
+    let out = work.join("out");
+    generate("swift", &out, &doc);
+    let machine = machine_name();
+
+    let mut program = format!(
+        "func mismatches() -> [String] {{\n    var found: [String] = []\n    func expect(_ ok: Bool, _ what: String) {{\n        if !ok {{\n            found.append(what)\n        }}\n    }}\n\
+         \x20   let t = {machine}Transition.all\n    guard t.count == {} else {{\n        return [\"entry count \\(t.count)\"]\n    }}\n    expect({machine}Transition.sourceHash == {}, \"source hash\")\n",
+        spelled.len(),
+        literal_of("swift", header["source_hash"].as_str().unwrap()),
+    );
+    for (what, cond) in field_conditions("swift", &machine, "t", &spelled) {
+        program.push_str(&format!(
+            "    expect({cond}, {})\n",
+            literal_of("swift", &what)
+        ));
+    }
+    program.push_str(
+        "    return found\n}\n\nlet found = mismatches()\nif !found.isEmpty {\n    let named = found.joined(separator: \"; \")\n    fatalError(\"MISMATCH: \" + named)\n}\n",
+    );
+
+    // An executable target holding every file `generate` wrote and the check, so the
+    // machine is compiled as it is in the packages of the Swift tests: in the Swift 6
+    // language mode, against the runtime's `SceRuntime` product.
+    let project = work.join("project");
+    let sources = project.join("Sources");
+    std::fs::create_dir_all(&sources).expect("create the package sources");
+    for entry in std::fs::read_dir(&out).expect("read the generated files") {
+        let path = entry.expect("an entry").path();
+        if path.extension().and_then(|e| e.to_str()) == Some("swift") {
+            std::fs::copy(&path, sources.join(path.file_name().expect("a file name")))
+                .expect("copy a generated file");
+        }
+    }
+    std::fs::write(sources.join("main.swift"), program).expect("write the program");
+    std::fs::write(
+        project.join("Package.swift"),
+        format!(
+            "// swift-tools-version:6.0\nimport PackageDescription\n\n\
+             let package = Package(\n    name: \"TableCheck\",\n    platforms: [.macOS(.v15), .iOS(.v18)],\n\
+             \x20   dependencies: [.package(path: {:?})],\n    targets: [\n        .executableTarget(\n\
+             \x20           name: \"TableCheck\",\n            dependencies: [.product(name: \"SceRuntime\", package: \"runtime\")],\n\
+             \x20           path: \"Sources\"\n        ),\n    ]\n)\n",
+            repo_root().join("backends/swift/runtime").to_str().unwrap()
+        ),
+    )
+    .expect("write the package manifest");
+
+    // The build directory outlives the scratch folder, so the runtime is compiled once
+    // and not on every run.
+    let build =
+        PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("emitted_transition_table_swift_build");
+    let mut run = Command::new(&swift);
+    run.arg("run")
+        .arg("--package-path")
+        .arg(&project)
+        .arg("--scratch-path")
+        .arg(&build);
+    run_ok(run, "the generated Swift table program");
 }

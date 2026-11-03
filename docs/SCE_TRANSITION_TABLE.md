@@ -54,9 +54,10 @@ The annotation is an opaque token. The generator never reads its shape, so a ste
 | Go | `<Name>Transitions` | `<Name>SourceHash` | `<Name>Transition`; `HasTo` and `HasEvent` say whether `To` and `Event` hold a value; `Targets` and `Events` are strings. |
 | Kotlin | `<Name>Transitions.all` | `<Name>Transitions.SOURCE_HASH` | `<Name>Transition`; `to` and `event` are nullable. |
 | Python | `TRANSITIONS` | `SOURCE_HASH` | `<Name>Transition` (frozen dataclass); `from_state`, and `to` and `event` are `None` when absent. |
+| Swift | `<Name>Transition.all` | `<Name>Transition.sourceHash` | `<Name>Transition` (a `Hashable`, `Sendable` struct); `to` and `event` are optional, `nil` when absent. Each id is written with its type, so a state named `none` is never read as `nil`. |
 
 `targets` and `events` are a string in every backend (`const char*` in C and C++), so the table is
-the same shape in six languages and needs no array of arrays.
+the same shape in seven languages and needs no array of arrays.
 
 The states and events in an entry are that backend's own enumerators, so a consumer compares
 them with the machine it compiled and not with a string.
@@ -85,21 +86,27 @@ takes `--input-root` and `--deploy` and they mean what they mean to `generate`: 
 ## What holds this together
 
 `sce-build/tests/the_emitted_transition_table_equals_the_export.rs` reads each backend's table back
-out of its generated source and compares it with the export of the same document, for all six
+out of its generated source and compares it with the export of the same document, for all seven
 backends, including the identifiers, the whole target set and every descriptor, the hash, and an
 annotation carrying characters a string literal has to escape. Where a toolchain is present each backend's table is also held to the export
 by the language itself: C++ by a static assertion for every field of every entry, Python by importing
-the module, and Rust, Go, Kotlin and C by building a program against the real runtime, running it,
-and comparing every field of every entry. The same file asks each source for the annotation literal
+the module, and Rust, Go, Kotlin, C and Swift by building a program against the real runtime, running it,
+and comparing every field of every entry. Those programs skip on a host without the toolchain; the
+Swift one is also run by the Swift lane (`scripts/gate swift-backend`), on the release `bx.toml` pins
+and with a skip refused. The same file asks each source for the annotation literal
 its language needs, which a read-back cannot, since it unescapes what the template wrote (a bare `$`
 in Kotlin reads back as a `$` and is read by the compiler as an interpolation).
 
 `sce-build/tests/mutations/the_emitted_transition_table_equals_the_export.cases` makes each backend's
 table wrong once in a mutation round, so the tests above are known to be able to fail.
 
+`sce-build/tests/a_backend_holds_what_the_other_backends_hold.rs` reads the table as a capability of
+every backend: one whose own templates hold no `emitted-transition-table` block lacks it, and a
+backend that lacks it is a gap that test names, the same way it names a missing transition function.
+
 `a_computed_event_name_is_matched_like_any_other` declares its table (`sce:transition-table="emit"` on
-its root), so each channel's own build compiles the table in a real machine; its Rust, Go and Kotlin
-trees are committed with it.
+its root), so each channel's own build compiles the table in a real machine; its Rust, Go, Kotlin and
+Swift trees are committed with it.
 
 `sce-build/tests/transition_table_closure.rs` holds the export to the two witnesses `generate`
 wrote for the same document: the `source_hash` of the sourcemap, and its `transition` symbols.

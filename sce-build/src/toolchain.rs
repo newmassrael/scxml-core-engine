@@ -202,6 +202,10 @@ pub const HARNESS_TOOLS: &[(&str, ToolSource)] = &[
     // lane runs the same check on the release `bx.toml` pins, which
     // `scripts/test_swift_backend.sh` puts first on `PATH`.
     ("swiftc", ToolSource::RunnerImage),
+    // `swift` builds a generated Swift machine as a package against the Swift
+    // runtime (the transition table's check); it comes from where `swiftc`
+    // does.
+    ("swift", ToolSource::RunnerImage),
     // Lints one generated file alone, as rustc does when it compiles one:
     // the transition function is held to `clippy::pedantic` this way.
     ("clippy-driver", ToolSource::RustupComponent("clippy")),

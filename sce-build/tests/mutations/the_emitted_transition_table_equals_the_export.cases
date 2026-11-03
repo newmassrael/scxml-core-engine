@@ -3,14 +3,14 @@
 # Run with `scripts/mutate sce-build/tests/mutations/the_emitted_transition_table_equals_the_export.cases`.
 #
 # A document that declares `sce:transition-table="emit"` is generated with each transition of
-# its machine in the source of six backends, and `the_emitted_transition_table_equals_the_export`
+# its machine in the source of seven backends, and `the_emitted_transition_table_equals_the_export`
 # holds every one of them to the export of the same document. A test that has never been
 # made to fail says nothing about whether it could, so each backend's table is made wrong
 # here in the one place that is its own: the line of its template that writes an entry.
 #
-# The first six put the same wrong fact in every backend, the position of the transition
+# The first seven put the same wrong fact in every backend, the position of the transition
 # within its state, which is what a host reads to find the transition again in the design.
-# The seventh is the one reading a table back cannot see. Reading Kotlin's table back
+# The last is the one reading a table back cannot see. Reading Kotlin's table back
 # unescapes what the template wrote, so a `$` left bare reads back as the `$` it should
 # be; it is the Kotlin compiler that reads `$x` as an interpolation of a name that is not
 # there. The escape for `$` is therefore held by a test that asks the source for the
@@ -18,8 +18,9 @@
 # and run where a Kotlin toolchain and the runtime jar are present.
 #
 # The tests that build and run need tools a cargo job does not carry (the Kotlin runtime
-# jar, the Python runtime's Lua binding), and they skip without them, so the cases below
-# are judged by the tests every job can run; the built programs are held by the suite lane.
+# jar, the Python runtime's Lua binding, a Swift toolchain), and they skip without them, so
+# the cases below are judged by the tests every job can run; the built programs are held by
+# the suite lane, and the Swift one by the Swift lane as well.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -31,6 +32,7 @@ mutation_targets tools/codegen/templates/rust/state_machine.rs.jinja2
 mutation_targets tools/codegen/templates/go/state_machine.go.jinja2
 mutation_targets tools/codegen/templates/kotlin/state_machine.kt.jinja2
 mutation_targets tools/codegen/templates/python/state_machine.py.jinja2
+mutation_targets tools/codegen/templates/swift/state_machine.swift.jinja2
 mutation_targets sce-build/src/filters.rs
 mutation_oracles sce-build/tests/the_emitted_transition_table_equals_the_export.rs
 
@@ -72,12 +74,18 @@ edit("tools/codegen/templates/python/state_machine.py.jinja2",
      '{{ t.index + 1 }}, "{{ t.annotation | escape_python }}"')
 PY
 
+mutation_case "Swift numbers a transition one past its place in the state" <<'PY'
+edit("tools/codegen/templates/swift/state_machine.swift.jinja2",
+     'index: {{ t.index }}, annotation: "{{ t.annotation | escape_swift }}"',
+     'index: {{ t.index + 1 }}, annotation: "{{ t.annotation | escape_swift }}"')
+PY
+
 # ── The complete answer where an id is absent: the target set and the descriptors ──
 #
 # `to` and `event` are absent for a first target that is a `<history>` and for a wildcard,
 # a prefix or several descriptors; `targets` and `events` are what a consumer reads there.
 # One case each, in the one backend, because the comparison that holds them is the same
-# code for all six.
+# code for all seven.
 
 mutation_case "Rust writes the descriptors where the target set belongs" <<'PY'
 edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
