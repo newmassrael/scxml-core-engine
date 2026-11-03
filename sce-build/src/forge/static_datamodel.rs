@@ -737,6 +737,52 @@ pub(crate) fn enum_fields(
         .collect()
 }
 
+/// The names one statechart gives the records and enums it imports: two are
+/// one type when the statechart names them by one alias, since each alias
+/// names one document (docs/adr/0086, section 5.1).
+struct StatechartNames;
+
+impl crate::forge::value_type::TypeIdentity for StatechartNames {
+    fn same_record(&self, from: &str, to: &str) -> bool {
+        from == to
+    }
+    fn same_enum(&self, from: &str, to: &str) -> bool {
+        from == to
+    }
+}
+
+/// Whether a list of the type `returned`, named in the statechart's own aliases,
+/// may be taken whole into the list variable `target`: the relation "fits"
+/// (docs/adr/0086, section 5.1), its element the variable's own and its bound at
+/// most the variable's. A variable whose type states no bound holds nothing:
+/// it is judged as a bound of 0, so its element is still judged first.
+fn list_fits(
+    returned: &crate::forge::value_type::ValueType,
+    target: &Variable,
+) -> Result<(), crate::forge::value_type::Misfit> {
+    let held = target.value_type.clone().map(|ty| {
+        if ty.stated_outer_bound().is_some() {
+            ty
+        } else {
+            ty.clone()
+                .with_outer_bound(crate::forge::value_type::Bound::of(0))
+                .unwrap_or(ty)
+        }
+    });
+    match held.map(|ty| ty.bounded()) {
+        Some(Ok(to)) => crate::forge::value_type::fits(returned, &to, &StatechartNames),
+        Some(Err(_)) | None => Err(crate::forge::value_type::Misfit {
+            path: String::new(),
+            from: returned.to_string(),
+            to: target
+                .value_type
+                .as_ref()
+                .map_or_else(String::new, ToString::to_string),
+            why: crate::forge::value_type::MisfitReason::Bound,
+        }),
+    }
+}
+
 /// How a refusal of a string's (or a byte string's) initial value names what
 /// holds it: a variable by its `sce:capacity`, a record's field by the
 /// `sce:max-size` its schema declares.
@@ -1620,41 +1666,49 @@ impl<'a> Judge<'a> {
                 self.diag_label,
             )
         };
-        let held = match list
-            .value_type
-            .as_ref()
-            .and_then(crate::forge::model::AlgorithmValueType::list_elem)
-        {
-            Some(crate::forge::model::AlgorithmValueType::Scalar(elem)) => elem,
-            _ => {
-                return Err(place(format!(
-                    "`{}` returns a list of {}, and `{}` holds records",
-                    callee.alias,
-                    returned.elem.as_attr(),
-                    list.id
-                )))
-            }
+        // The list is taken whole, so the type the call returns fits the
+        // variable's (docs/adr/0086, section 5.1): its element is the list's own,
+        // and the list can hold as many as it may return.
+        let returned_ty = crate::forge::value_type::ValueType::List {
+            elem: Box::new(crate::forge::value_type::ValueType::Scalar(
+                returned.elem.clone(),
+            )),
+            max: crate::forge::value_type::Bound::of(returned.max_size),
         };
-        if *held != returned.elem {
-            return Err(place(format!(
-                "`{}` returns a list of {}, and `{}` holds {}",
-                callee.alias,
-                returned.elem.as_attr(),
-                list.id,
-                held.as_attr()
-            )));
-        }
-        let capacity = list.capacity().unwrap_or(0);
-        if returned.max_size > capacity {
-            return Err(place(format!(
-                "`{}` may return at most {} of {}, and `{}` holds at most {} (its \
-                 sce:capacity)",
-                callee.alias,
-                returned.max_size,
-                returned.elem.as_attr(),
-                list.id,
-                capacity
-            )));
+        match list_fits(&returned_ty, list) {
+            Ok(()) => {}
+            Err(misfit) if misfit.why == crate::forge::value_type::MisfitReason::Bound => {
+                return Err(place(format!(
+                    "`{}` may return at most {} of {}, and `{}` holds at most {} (its \
+                     sce:capacity)",
+                    callee.alias,
+                    returned.max_size,
+                    returned.elem.as_attr(),
+                    list.id,
+                    list.capacity().unwrap_or(0)
+                )));
+            }
+            Err(_) => {
+                let held = list
+                    .value_type
+                    .as_ref()
+                    .and_then(crate::forge::model::AlgorithmValueType::list_elem);
+                return Err(place(match held {
+                    Some(crate::forge::model::AlgorithmValueType::Scalar(held)) => format!(
+                        "`{}` returns a list of {}, and `{}` holds {}",
+                        callee.alias,
+                        returned.elem.as_attr(),
+                        list.id,
+                        held.as_attr()
+                    ),
+                    _ => format!(
+                        "`{}` returns a list of {}, and `{}` holds records",
+                        callee.alias,
+                        returned.elem.as_attr(),
+                        list.id
+                    ),
+                }));
+            }
         }
         let Some(elem) = crate::forge::types::ListElem::of(&returned.elem) else {
             return Err(place(format!(
@@ -1767,13 +1821,34 @@ impl<'a> Judge<'a> {
         };
         // A machine holds the same list wherever it runs: a bound it could pass is
         // refused when the document is built and not by an overflow later.
-        if let Some(max) = value.max_size {
-            let capacity = target.capacity().unwrap_or(0);
-            if max > capacity {
+        // The list the call returns is judged as the type it is, in the
+        // statechart's names, against the variable's (docs/adr/0086, section 5.1);
+        // its element was judged above, so what is left to refuse is its bound. A
+        // bound is declared only beside a list return (`StaticValueSignature`).
+        let returned = match (&value.ret, value.max_size) {
+            (Some(StaticSlot::ScalarList(t)), Some(max)) => {
+                Some((crate::forge::value_type::ValueType::Scalar(t.clone()), max))
+            }
+            (Some(StaticSlot::RecordList(alias)), Some(max)) => Some((
+                crate::forge::value_type::ValueType::Record {
+                    alias: alias.clone(),
+                },
+                max,
+            )),
+            _ => None,
+        };
+        if let Some((elem, max)) = returned {
+            let returned = crate::forge::value_type::ValueType::List {
+                elem: Box::new(elem),
+                max: crate::forge::value_type::Bound::of(max),
+            };
+            if list_fits(&returned, target).is_err() {
                 return Err(place(format!(
-                    "`{}` may return at most {max}, and `{}` holds at most {capacity} (its \
+                    "`{}` may return at most {max}, and `{}` holds at most {} (its \
                      sce:capacity)",
-                    callee.alias, target.id
+                    callee.alias,
+                    target.id,
+                    target.capacity().unwrap_or(0)
                 )));
             }
         }
@@ -4253,6 +4328,52 @@ mod tests {
             expr: expr.to_string(),
             value_type: Some(value_type),
             ..Variable::default()
+        }
+    }
+
+    /// A list a call returns is taken whole into a list variable exactly when
+    /// its element is the variable's and its bound at most the variable's; the
+    /// refusal names the element first and the bound after, as "fits" judges
+    /// them (docs/adr/0086, section 5.1). Every element against every element,
+    /// every returned bound against every variable bound and none.
+    #[test]
+    fn a_returned_list_fits_a_variable_by_its_element_and_its_bound() {
+        use crate::forge::value_type::{Bound, MisfitReason, ValueType};
+        let elements = ["uint8", "int64", "record:Item"];
+        let elem_of = |text: &str| match text.strip_prefix("record:") {
+            Some(alias) => ValueType::Record {
+                alias: alias.to_string(),
+            },
+            None => ValueType::Scalar(SceType::from_attr(text).expect("a scalar")),
+        };
+        for from_elem in elements {
+            for to_elem in elements {
+                for returned_max in [2u32, 4] {
+                    for held_max in [Some(2u32), Some(4), None] {
+                        let returned = ValueType::List {
+                            elem: Box::new(elem_of(from_elem)),
+                            max: Bound::of(returned_max),
+                        };
+                        let to = AlgorithmValueType::List {
+                            elem: Box::new(elem_of(to_elem).written()),
+                            max: held_max.map(Bound::of),
+                        };
+                        let target = variable(to, "");
+                        let got = list_fits(&returned, &target).map_err(|m| (m.why, m.path));
+                        let expected = if from_elem != to_elem {
+                            Err((MisfitReason::Constructor, "/*".to_string()))
+                        } else if held_max.is_some_and(|held| returned_max <= held) {
+                            Ok(())
+                        } else {
+                            Err((MisfitReason::Bound, String::new()))
+                        };
+                        assert_eq!(
+                            got, expected,
+                            "list<{from_elem}>[{returned_max}] into list<{to_elem}>[{held_max:?}]"
+                        );
+                    }
+                }
+            }
         }
     }
 
