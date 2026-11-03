@@ -7259,14 +7259,12 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     // line/col is honest — fabricating `(1, 1)` would misroute consumer
     // repair loops to the top of the source (see
     // `feedback_correctness_before_features`).
-    // out_path is needed early so synth-invoke SCXMLs can be
-    // materialised to `-o` (and to `deploy_dir` when distinct) BEFORE
-    // `inject_partition_context_for` runs. The mesh injector iterates
-    // every machine declared in `deploy.yaml` (including synth-invoke
-    // children) and opens each by name from `deploy_dir`; without a
-    // file on disk the open fails with `Partition context injection
-    // error: SCXML file not found`. The dir is also created here so
-    // the synth write below has somewhere to land.
+    // out_path is needed early: the documents of the in-line children are
+    // held under it (and under `deploy_dir` when distinct) BEFORE
+    // `inject_partition_context_for` runs, which opens every machine
+    // `deploy.yaml` declares (synth-invoke children among them) by name
+    // from `deploy_dir`. The dir is created here so the writes after the
+    // deploy has been applied have somewhere to land.
     let out_path = Path::new(output_dir);
     ensure_output_dir(out_path).unwrap_or_else(|e| {
         error_format.emit_and_exit(
@@ -7278,29 +7276,36 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         )
     });
 
-    // SCE_MESH.md §9.6.6: re-materialise every inline-`<content>`
-    // synth child, at every depth, to `-o` (and `deploy_dir` when
-    // distinct) so a consumer that reads the child as a document finds a
-    // file on disk:
-    // - `inject_partition_context_for` opens every declared machine
-    //   SCXML when `--deploy` is set (reads from `deploy_dir`)
-    // - a build that generates the child as a machine of a deployment of
-    //   its own reads it from the parent's `-o`: the mesh rule-3 override
-    //   in `tests/CMakeLists.txt` (`mesh_synth_invoke_override_e2e_test`)
-    //   generates it with `--deploy` as a remote machine
+    // SCE_MESH.md §9.6.6: the document of every inline-`<content>` synth
+    // child, at every depth, as a document of its own, carrying the same
+    // trailing-newline contract as the sources beside it: it is read back
+    // as a document and by humans.
+    //
+    // Who reads it as a document:
+    // - this run's deploy: `inject_partition_context_for` and the peer
+    //   scans open every machine `deploy.yaml` declares, by name, from
+    //   `deploy_dir`, and a synth child may be one of them;
+    // - the run of the partition a deploy places a child on (§9.6.6 rule
+    //   3), which generates the child's machine from the document this run
+    //   writes into `-o` (`--plan-children` plans it,
+    //   cmake/SCECodegenPlan.cmake).
     // The child's local machine is not one of those reads: this run
-    // writes it (`sce_build::emit_carried_children`, below). The CMake
-    // routes that generate at build time declare the `.scxml` as an
-    // output of this run because `--plan generate` names it
-    // (`cmake/SCECodegenPlan.cmake`), and generate nothing from it.
-    // Pollution of the parent's *source* directory stays closed: the
-    // write targets are caller-controlled (`-o`, `--deploy <path>`),
+    // writes it (`sce_build::emit_carried_children`, below).
+    //
+    // Which documents this run writes is known only once the deploy has been
+    // applied, and the deploy reads them first: so they are held in memory
+    // under the paths it reads them from (`sce_build::confine::hold`), the
+    // deploy is applied, and only then is each written, by the run that owns
+    // it ([`SCXMLModel::carried_documents_written`]). A child below one the
+    // deploy placed on another partition is that partition's run's to write,
+    // with the machine it writes beside it: written here as well, it had two
+    // producers. Pollution of the parent's *source* directory stays closed:
+    // the write targets are caller-controlled (`-o`, `--deploy <path>`),
     // never `scxml_path`'s parent.
-    // Every file this invocation writes that is not a declared
-    // artefact. Collected as they are written, so the depfile filter
-    // cannot fall behind a new side-effect write.
-    let mut self_written: Vec<PathBuf> = Vec::new();
-    let synth_scxml_writes: Vec<(String, String)> = model
+    let deploy_dir: Option<&Path> = deploy_path
+        .map(|deploy_file| Path::new(deploy_file).parent().unwrap_or(Path::new(".")))
+        .filter(|deploy_dir| *deploy_dir != out_path);
+    let carried_documents: Vec<(String, String)> = model
         .inline_child_invokes()
         .into_iter()
         .filter_map(|inv| {
@@ -7308,40 +7313,17 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 if inv.child_name.is_empty() {
                     None
                 } else {
-                    Some((inv.child_name.clone(), xml.to_string()))
+                    Some((
+                        inv.child_name.clone(),
+                        with_trailing_newline(xml).into_owned(),
+                    ))
                 }
             })
         })
         .collect();
-    for (stem, xml) in &synth_scxml_writes {
-        // A synthesised child is an artefact like any other: it is read
-        // back by the next codegen pass and by humans, so it carries
-        // the same trailing-newline contract as the sources beside it.
-        let xml = with_trailing_newline(xml);
-        let xml = xml.as_ref();
-        let dst = out_path.join(format!("{stem}.scxml"));
-        if let Err(e) = try_emit_generated(&dst, xml.as_bytes(), WritePolicy::Always) {
-            eprintln!(
-                "Warning: Cannot write synth SCXML to -o: {}: {e}",
-                dst.display()
-            );
-        }
-        // Recorded so the depfile does not name it. `-o` is frequently
-        // the directory the input was staged into, which puts this file
-        // in the invocation's own source set.
-        self_written.push(dst);
-        if let Some(deploy_file) = deploy_path {
-            let deploy_dir = Path::new(deploy_file).parent().unwrap_or(Path::new("."));
-            if deploy_dir != out_path {
-                let mirror = deploy_dir.join(format!("{stem}.scxml"));
-                if let Err(e) = try_emit_generated(&mirror, xml.as_bytes(), WritePolicy::Always) {
-                    eprintln!(
-                        "Warning: Cannot write synth SCXML to deploy_dir: {}: {e}",
-                        mirror.display()
-                    );
-                }
-                self_written.push(mirror);
-            }
+    for (stem, xml) in &carried_documents {
+        for dir in std::iter::once(out_path).chain(deploy_dir) {
+            sce_build::confine::hold(&dir.join(format!("{stem}.scxml")), xml.clone());
         }
     }
 
@@ -7367,6 +7349,35 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         // otherwise.
         Ok(facts) => report.deploy_facts = facts,
         Err(e) => error_format.emit_and_exit(&e.source, e.stage.error_prefix()),
+    }
+    // The documents this run owns, now that the deploy has said which: every
+    // carried child's whose machine it writes, and every one a deploy placed
+    // on a partition of its own directly below them, which that partition's
+    // run reads. Every file this invocation writes that is not a declared
+    // artefact is collected as it is written, so the depfile filter cannot
+    // fall behind a new side-effect write: `-o` is frequently the directory
+    // the input was staged into, which puts a child's document in the
+    // invocation's own source set.
+    let mut self_written: Vec<PathBuf> = Vec::new();
+    let documents_written: BTreeSet<String> = model
+        .carried_documents_written()
+        .into_iter()
+        .map(|invoke| invoke.child_name.clone())
+        .collect();
+    for (stem, xml) in carried_documents
+        .iter()
+        .filter(|(stem, _)| documents_written.contains(stem))
+    {
+        for dir in std::iter::once(out_path).chain(deploy_dir) {
+            let dst = dir.join(format!("{stem}.scxml"));
+            if let Err(e) = try_emit_generated(&dst, xml.as_bytes(), WritePolicy::Always) {
+                eprintln!(
+                    "Warning: Cannot write synth SCXML to {}: {e}",
+                    dst.display()
+                );
+            }
+            self_written.push(dst);
+        }
     }
     // Which in-line children the deploy placed on a partition of their own is
     // known once it has been applied: their documents were written above, and
@@ -7819,14 +7830,17 @@ fn child_documents(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
 }
 
 /// The documents of the in-line children a run of `model` writes into
-/// `output_dir` and writes no machine of: the ones its deploy placed on a
-/// partition of their own (SCE_MESH.md §9.6.6 rule 3,
+/// `output_dir` ([`SCXMLModel::carried_documents_written`]) and writes no
+/// machine of: the ones its deploy placed on a partition of their own
+/// (SCE_MESH.md §9.6.6 rule 3,
 /// [`sce_build::model::ScxmlInvokeInfo::carries_a_child_written_with_its_parent`]).
 /// Each is a machine of the deploy, generated with it by the run of its
 /// partition from the document this run wrote ([`plan_child_generations`]).
+/// One placed on a partition below another is not among them: the run of
+/// the partition above it writes its document, and names it in turn.
 fn peer_documents(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
     model
-        .inline_child_invokes()
+        .carried_documents_written()
         .into_iter()
         .filter(|invoke| {
             !invoke.carries_a_child_written_with_its_parent() && !invoke.child_name.is_empty()

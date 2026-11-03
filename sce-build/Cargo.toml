@@ -1571,6 +1571,14 @@ name = "a_child_placed_on_another_partition_is_that_partitions_machine"
 path = "tests/a_child_placed_on_another_partition_is_that_partitions_machine.rs"
 required-features = ["cli"]
 
+# The document of a child below one a deploy places on another partition is
+# written by the run of that partition alone. It spawns `sce-codegen
+# generate`, so it carries the `cli` gate.
+[[test]]
+name = "a_child_below_one_on_another_partition_is_written_by_that_partition"
+path = "tests/a_child_below_one_on_another_partition_is_written_by_that_partition.rs"
+required-features = ["cli"]
+
 # A child a document starts by `src` is found from the document that names it,
 # at every depth, and staged with the children it starts by `src`, so the plan
 # of a parent plans the generation of a `src` child's own `src` child. It

@@ -5345,6 +5345,26 @@ impl SCXMLModel {
             }
         })
     }
+    /// The invokes of the in-line children whose documents a run that
+    /// generates this document writes: every child whose machine it writes
+    /// ([`Self::written_carried_origins`]), and every child a deploy placed
+    /// on another partition that this document, or one of those children,
+    /// starts directly, whose document the run of that partition generates
+    /// from. A child below one placed on another partition is not among them:
+    /// its document is written, with its machine, by the run of that
+    /// partition, and written by both it had two producers.
+    pub fn carried_documents_written(&self) -> Vec<&ScxmlInvokeInfo> {
+        self.carried_invokes_with(&true, |&written_here, invoke| {
+            if written_here {
+                Some(invoke.carries_a_child_written_with_its_parent())
+            } else {
+                None
+            }
+        })
+        .into_iter()
+        .map(|(invoke, _)| invoke)
+        .collect()
+    }
     /// The walk [`Self::inline_child_invokes`] and [`Self::carried_origins`]
     /// take, carrying a value down it: each invoke is given what `descend`
     /// makes of the value the machine holding it was given (`from` for this
