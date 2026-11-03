@@ -548,14 +548,17 @@ pub fn composed_parting(
     second: &crate::forge::model::EventSchemaModel,
     field: &str,
 ) -> Divergence {
-    let declared = |schema: &crate::forge::model::EventSchemaModel| {
+    fn declared<'s>(
+        schema: &'s crate::forge::model::EventSchemaModel,
+        field: &str,
+    ) -> Option<&'s crate::forge::model::SchemaField> {
         schema.fields.iter().find(|f| f.id == field)
-    };
+    }
     let as_declared = |f: &crate::forge::model::SchemaField| DeclaredType {
         sce_type: f.sce_type.to_string(),
         optional_since: f.optional_since,
     };
-    match (declared(first), declared(second)) {
+    match (declared(first, field), declared(second, field)) {
         (Some(one), Some(other)) => Divergence::Redeclared {
             field: field.to_string(),
             first: as_declared(one),
