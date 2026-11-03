@@ -193,8 +193,8 @@ impl CodecQosByteOverrides {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecQosByte` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecQosByte`
-/// computes those from what is ([`CodecQosByte::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecQosByteWire::encode_source`]).
 pub trait CodecQosByteSource {
     /// The `qos` field.
     fn qos(&self) -> u8;

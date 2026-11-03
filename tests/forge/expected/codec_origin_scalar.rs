@@ -100,8 +100,8 @@ impl CodecOriginScalar {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecOriginScalar` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecOriginScalar`
-/// computes those from what is ([`CodecOriginScalar::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecOriginScalarWire::encode_source`]).
 pub trait CodecOriginScalarSource {
     /// The `value` field.
     fn value(&self) -> u8;

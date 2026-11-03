@@ -287,8 +287,8 @@ impl<E: super::codec_chain_prev_entry::CodecChainPrevEntrySource + ?Sized> ::sce
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecChainPrevTailGated` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecChainPrevTailGated`
-/// computes those from what is ([`CodecChainPrevTailGated::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecChainPrevTailGatedWire::encode_source`]).
 pub trait CodecChainPrevTailGatedSource {
     /// The `head` field.
     fn head(&self) -> u8;

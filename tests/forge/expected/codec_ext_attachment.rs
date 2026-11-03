@@ -201,8 +201,8 @@ impl<S: CodecExtAttachmentStorage> CodecExtAttachmentIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecExtAttachment` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecExtAttachment`
-/// computes those from what is ([`CodecExtAttachment::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecExtAttachmentWire::encode_source`]).
 pub trait CodecExtAttachmentSource {
     /// The `body` field.
     fn body(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 64>;

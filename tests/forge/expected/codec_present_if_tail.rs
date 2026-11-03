@@ -222,8 +222,8 @@ impl<S: CodecPresentIfTailStorage> CodecPresentIfTailIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecPresentIfTail` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecPresentIfTail`
-/// computes those from what is ([`CodecPresentIfTail::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecPresentIfTailWire::encode_source`]).
 pub trait CodecPresentIfTailSource {
     /// The `flags` field.
     fn flags(&self) -> u8;

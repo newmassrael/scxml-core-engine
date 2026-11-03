@@ -232,8 +232,8 @@ impl<'s, A0: ?Sized, A1: ?Sized, D: ?Sized> CodecVariantDispatchVariantSource<'s
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecVariantDispatch` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecVariantDispatch`
-/// computes those from what is ([`CodecVariantDispatch::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecVariantDispatchWire::encode_source`]).
 pub trait CodecVariantDispatchSource {
     /// The arm of the variant this value holds.
     fn body(&self) -> CodecVariantDispatchVariantSource<'_, impl super::codec_variant_session_open::CodecVariantSessionOpenSource, impl super::codec_variant_session_close::CodecVariantSessionCloseSource, impl super::codec_variant_session_close::CodecVariantSessionCloseSource>;

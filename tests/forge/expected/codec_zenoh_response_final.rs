@@ -243,8 +243,8 @@ impl<S: CodecZenohResponseFinalStorage> CodecZenohResponseFinalIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohResponseFinal` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohResponseFinal`
-/// computes those from what is ([`CodecZenohResponseFinal::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohResponseFinalWire::encode_source`]).
 pub trait CodecZenohResponseFinalSource {
     /// The `header` field.
     fn header(&self) -> u8;

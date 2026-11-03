@@ -304,8 +304,8 @@ impl<S: CodecZenohQueryStorage> CodecZenohQueryIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohQuery` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohQuery`
-/// computes those from what is ([`CodecZenohQuery::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohQueryWire::encode_source`]).
 pub trait CodecZenohQuerySource {
     /// The `header` field.
     fn header(&self) -> u8;

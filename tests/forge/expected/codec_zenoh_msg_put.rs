@@ -308,8 +308,8 @@ impl<S: CodecZenohMsgPutStorage> CodecZenohMsgPutIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohMsgPut` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohMsgPut`
-/// computes those from what is ([`CodecZenohMsgPut::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohMsgPutWire::encode_source`]).
 pub trait CodecZenohMsgPutSource {
     /// The `header` field.
     fn header(&self) -> u8;

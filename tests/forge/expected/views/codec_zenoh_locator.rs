@@ -200,8 +200,8 @@ impl<S: CodecZenohLocatorStorage> CodecZenohLocatorIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohLocator` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohLocator`
-/// computes those from what is ([`CodecZenohLocator::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohLocatorWire::encode_source`]).
 pub trait CodecZenohLocatorSource {
     /// The `locator` field.
     fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 128>;

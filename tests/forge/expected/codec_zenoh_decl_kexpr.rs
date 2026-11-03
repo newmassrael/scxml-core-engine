@@ -182,8 +182,8 @@ impl<S: CodecZenohDeclKexprStorage> CodecZenohDeclKexprIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohDeclKexpr` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohDeclKexpr`
-/// computes those from what is ([`CodecZenohDeclKexpr::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohDeclKexprWire::encode_source`]).
 pub trait CodecZenohDeclKexprSource {
     /// The `id` field.
     fn id(&self) -> u16;

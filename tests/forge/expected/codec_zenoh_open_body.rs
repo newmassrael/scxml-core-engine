@@ -218,8 +218,8 @@ impl<S: CodecZenohOpenBodyStorage> CodecZenohOpenBodyIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohOpenBody` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohOpenBody`
-/// computes those from what is ([`CodecZenohOpenBody::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohOpenBodyWire::encode_source`]).
 pub trait CodecZenohOpenBodySource {
     /// The `lease` field.
     fn lease(&self) -> u64;

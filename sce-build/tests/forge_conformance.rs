@@ -15377,6 +15377,12 @@ warnings = "deny"
             .arg("--quiet")
             .current_dir(&proj_dir)
             .env("CARGO_TARGET_DIR", &workspace_target);
+        // The generated crate's own documentation, every warning an error, as
+        // a consumer's doc lane builds it: a broken link in a generated doc
+        // comment stops it there.
+        if cargo_subcommand == "doc" {
+            cmd.arg("--no-deps").env("RUSTDOCFLAGS", "-D warnings");
+        }
         if profile == RustcProfile::AllocFullDebugInfo {
             cmd.env("CARGO_PROFILE_DEV_DEBUG", "full")
                 .env("CARGO_PROFILE_TEST_DEBUG", "full");
@@ -15396,6 +15402,44 @@ warnings = "deny"
 
     let _ = std::fs::remove_dir_all(&proj_dir);
     Ok(())
+}
+
+/// The generated Rust of a codec of every shape documents with no warning, a
+/// broken intra-doc link among them: a consumer builds its codecs' docs with
+/// `RUSTDOCFLAGS="-D warnings"`, and a link the generator writes to an item
+/// that has moved (a static that went to `{Codec}Wire`) stops it in every file.
+#[test]
+fn the_generated_codecs_document_with_no_broken_link() {
+    use sce_build::generator::Language;
+    let set = [
+        "codec_repeat_elem.scxml",
+        "codec_repeat_basic.scxml",
+        "codec_tlv_entry.scxml",
+        "codec_tlv_chain_basic.scxml",
+        "codec_zenoh_locator.scxml",
+        "codec_embed_basic.scxml",
+        "codec_present_if_basic.scxml",
+        "codec_zenoh_put.scxml",
+        "codec_default_marker_arm_a.scxml",
+        "codec_default_marker_arm_b.scxml",
+        "codec_variant_default_marker.scxml",
+        "codec_cbor_map.scxml",
+        "codec_content_line_event.scxml",
+    ];
+    for views in [false, true] {
+        let mut opts = golden_options(Language::Rust);
+        opts.views = views;
+        let files = generate_files_for_codec_set_with(&resource_dir(), &set, Language::Rust, opts)
+            .expect("the codec set generates");
+        let id = if views {
+            "doc_links_views"
+        } else {
+            "doc_links"
+        };
+        rustc_run_generated_set(files, id, "doc", RustcProfile::Alloc).unwrap_or_else(|e| {
+            panic!("views {views}: the generated docs link what they name:\n{e}")
+        });
+    }
 }
 
 /// The growable profile holds a field in a type that names `{ usize::MAX }` as

@@ -225,8 +225,8 @@ impl<S: CodecTlvChainPresentIfBasicStorage> CodecTlvChainPresentIfBasicIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecTlvChainPresentIfBasic` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecTlvChainPresentIfBasic`
-/// computes those from what is ([`CodecTlvChainPresentIfBasic::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecTlvChainPresentIfBasicWire::encode_source`]).
 pub trait CodecTlvChainPresentIfBasicSource {
     /// The `carrier` field.
     fn carrier(&self) -> u8;

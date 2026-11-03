@@ -182,8 +182,8 @@ pub enum CodecPresentIfDisjunctionFlagsWantsAOrWantsB {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecPresentIfDisjunction` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecPresentIfDisjunction`
-/// computes those from what is ([`CodecPresentIfDisjunction::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecPresentIfDisjunctionWire::encode_source`]).
 pub trait CodecPresentIfDisjunctionSource {
     /// The `flags` field.
     fn flags(&self) -> u8;

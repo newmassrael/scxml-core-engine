@@ -155,8 +155,8 @@ pub struct CodecInitSynBodyS {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecInitSynBody` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecInitSynBody`
-/// computes those from what is ([`CodecInitSynBody::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecInitSynBodyWire::encode_source`]).
 pub trait CodecInitSynBodySource {
     /// The `version` field.
     fn version(&self) -> u8;

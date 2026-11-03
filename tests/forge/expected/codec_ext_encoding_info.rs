@@ -253,8 +253,8 @@ impl<Schema: Default> Default for CodecExtEncodingInfoCombinedIdHasSchema<Schema
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecExtEncodingInfo` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecExtEncodingInfo`
-/// computes those from what is ([`CodecExtEncodingInfo::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecExtEncodingInfoWire::encode_source`]).
 pub trait CodecExtEncodingInfoSource {
     /// The `combined_id` field.
     fn combined_id(&self) -> u32;

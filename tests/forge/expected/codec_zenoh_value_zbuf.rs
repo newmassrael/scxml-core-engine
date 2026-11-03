@@ -275,8 +275,8 @@ impl<Slices: Default, Value: Default> Default for CodecZenohValueZbufAfterShm<Sl
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohValueZbuf` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohValueZbuf`
-/// computes those from what is ([`CodecZenohValueZbuf::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohValueZbufWire::encode_source`]).
 pub trait CodecZenohValueZbufSource {
     /// The fields `after_shm` decides, held together (docs/adr/0065 §6 R4).
     fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 32>>;

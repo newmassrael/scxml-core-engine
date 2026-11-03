@@ -212,8 +212,8 @@ impl CodecChainFlagEntryOverrides {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecChainFlagEntry` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecChainFlagEntry`
-/// computes those from what is ([`CodecChainFlagEntry::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecChainFlagEntryWire::encode_source`]).
 pub trait CodecChainFlagEntrySource {
     /// The `header` field.
     fn header(&self) -> u8;

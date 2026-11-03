@@ -365,8 +365,8 @@ impl<E: super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> ::s
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecChainHasTagged` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecChainHasTagged`
-/// computes those from what is ([`CodecChainHasTagged::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecChainHasTaggedWire::encode_source`]).
 pub trait CodecChainHasTaggedSource {
     /// The `header` field.
     fn header(&self) -> u8;

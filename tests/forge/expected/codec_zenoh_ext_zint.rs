@@ -115,8 +115,8 @@ impl CodecZenohExtZint {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohExtZint` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohExtZint`
-/// computes those from what is ([`CodecZenohExtZint::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohExtZintWire::encode_source`]).
 pub trait CodecZenohExtZintSource {
     /// The `value` field.
     fn value(&self) -> u64;

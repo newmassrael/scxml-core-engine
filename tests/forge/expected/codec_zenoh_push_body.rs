@@ -255,8 +255,8 @@ impl<'s, A0: ?Sized, A1: ?Sized, D: ?Sized> CodecZenohPushBodyVariantSource<'s, 
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohPushBody` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohPushBody`
-/// computes those from what is ([`CodecZenohPushBody::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohPushBodyWire::encode_source`]).
 pub trait CodecZenohPushBodySource {
     /// The `header` field.
     fn header(&self) -> u8;

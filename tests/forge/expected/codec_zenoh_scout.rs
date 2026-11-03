@@ -245,8 +245,8 @@ impl<S: CodecZenohScoutStorage> CodecZenohScoutIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohScout` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohScout`
-/// computes those from what is ([`CodecZenohScout::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohScoutWire::encode_source`]).
 pub trait CodecZenohScoutSource {
     /// The `version` field.
     fn version(&self) -> u8;

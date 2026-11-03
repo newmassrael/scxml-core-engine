@@ -224,8 +224,8 @@ impl CodecChainPrevEntryOverrides {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecChainPrevEntry` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecChainPrevEntry`
-/// computes those from what is ([`CodecChainPrevEntry::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecChainPrevEntryWire::encode_source`]).
 pub trait CodecChainPrevEntrySource {
     /// The `header` field.
     fn header(&self) -> u8;

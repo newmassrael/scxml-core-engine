@@ -271,8 +271,8 @@ impl<S: CodecZenohHelloStorage> CodecZenohHelloIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohHello` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohHello`
-/// computes those from what is ([`CodecZenohHello::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohHelloWire::encode_source`]).
 pub trait CodecZenohHelloSource {
     /// The `version` field.
     fn version(&self) -> u8;

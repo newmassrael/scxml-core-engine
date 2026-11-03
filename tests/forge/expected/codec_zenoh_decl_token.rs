@@ -182,8 +182,8 @@ impl<S: CodecZenohDeclTokenStorage> CodecZenohDeclTokenIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohDeclToken` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohDeclToken`
-/// computes those from what is ([`CodecZenohDeclToken::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohDeclTokenWire::encode_source`]).
 pub trait CodecZenohDeclTokenSource {
     /// The `id` field.
     fn id(&self) -> u32;

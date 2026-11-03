@@ -198,8 +198,8 @@ impl<S: CodecZenohExtZbufStorage> CodecZenohExtZbufIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohExtZbuf` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohExtZbuf`
-/// computes those from what is ([`CodecZenohExtZbuf::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohExtZbufWire::encode_source`]).
 pub trait CodecZenohExtZbufSource {
     /// The `value` field.
     fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32>;

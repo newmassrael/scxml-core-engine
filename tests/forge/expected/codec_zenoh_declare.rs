@@ -264,8 +264,8 @@ impl<S: CodecZenohDeclareStorage> CodecZenohDeclareIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohDeclare` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohDeclare`
-/// computes those from what is ([`CodecZenohDeclare::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohDeclareWire::encode_source`]).
 pub trait CodecZenohDeclareSource {
     /// The `header` field.
     fn header(&self) -> u8;

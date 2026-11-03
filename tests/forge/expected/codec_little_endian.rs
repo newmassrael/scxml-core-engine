@@ -106,8 +106,8 @@ impl CodecLittleEndian {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecLittleEndian` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecLittleEndian`
-/// computes those from what is ([`CodecLittleEndian::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecLittleEndianWire::encode_source`]).
 pub trait CodecLittleEndianSource {
     /// The `sensorId` field.
     fn sensor_id(&self) -> u8;

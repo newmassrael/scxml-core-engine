@@ -202,8 +202,8 @@ impl<S: CodecZenohTimestampStorage> CodecZenohTimestampIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohTimestamp` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohTimestamp`
-/// computes those from what is ([`CodecZenohTimestamp::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohTimestampWire::encode_source`]).
 pub trait CodecZenohTimestampSource {
     /// The `time` field.
     fn time(&self) -> u64;

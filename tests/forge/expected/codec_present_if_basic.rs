@@ -148,8 +148,8 @@ impl CodecPresentIfBasic {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecPresentIfBasic` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecPresentIfBasic`
-/// computes those from what is ([`CodecPresentIfBasic::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecPresentIfBasicWire::encode_source`]).
 pub trait CodecPresentIfBasicSource {
     /// The `flags` field.
     fn flags(&self) -> u8;

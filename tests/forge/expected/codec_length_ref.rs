@@ -205,8 +205,8 @@ impl<S: CodecLengthRefStorage> CodecLengthRefIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecLengthRef` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecLengthRef`
-/// computes those from what is ([`CodecLengthRef::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecLengthRefWire::encode_source`]).
 pub trait CodecLengthRefSource {
     /// The `msgId` field.
     fn msg_id(&self) -> u8;

@@ -219,8 +219,8 @@ impl<S: CodecInitCookieBodyStorage> CodecInitCookieBodyIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecInitCookieBody` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecInitCookieBody`
-/// computes those from what is ([`CodecInitCookieBody::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecInitCookieBodyWire::encode_source`]).
 pub trait CodecInitCookieBodySource {
     /// The `version` field.
     fn version(&self) -> u8;

@@ -249,8 +249,8 @@ impl<'s, A0: ?Sized, D: ?Sized> CodecInitSynEnvelopeVariantSource<'s, A0, D> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecInitSynEnvelope` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecInitSynEnvelope`
-/// computes those from what is ([`CodecInitSynEnvelope::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecInitSynEnvelopeWire::encode_source`]).
 pub trait CodecInitSynEnvelopeSource {
     /// The `header` field.
     fn header(&self) -> u8;

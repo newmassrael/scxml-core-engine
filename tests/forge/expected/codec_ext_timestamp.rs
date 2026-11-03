@@ -207,8 +207,8 @@ impl<S: CodecExtTimestampStorage> CodecExtTimestampIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecExtTimestamp` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecExtTimestamp`
-/// computes those from what is ([`CodecExtTimestamp::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecExtTimestampWire::encode_source`]).
 pub trait CodecExtTimestampSource {
     /// The `time` field.
     fn time(&self) -> u64;

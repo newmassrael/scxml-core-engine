@@ -182,8 +182,8 @@ impl<S: CodecZenohDeclSubscriberStorage> CodecZenohDeclSubscriberIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohDeclSubscriber` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohDeclSubscriber`
-/// computes those from what is ([`CodecZenohDeclSubscriber::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohDeclSubscriberWire::encode_source`]).
 pub trait CodecZenohDeclSubscriberSource {
     /// The `id` field.
     fn id(&self) -> u32;

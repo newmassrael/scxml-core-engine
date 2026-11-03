@@ -101,8 +101,8 @@ impl CodecRepeatElem {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecRepeatElem` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecRepeatElem`
-/// computes those from what is ([`CodecRepeatElem::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecRepeatElemWire::encode_source`]).
 pub trait CodecRepeatElemSource {
     /// The `seq` field.
     fn seq(&self) -> u16;

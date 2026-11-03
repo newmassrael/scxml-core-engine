@@ -100,8 +100,8 @@ impl CodecVariantSessionOpen {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecVariantSessionOpen` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecVariantSessionOpen`
-/// computes those from what is ([`CodecVariantSessionOpen::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecVariantSessionOpenWire::encode_source`]).
 pub trait CodecVariantSessionOpenSource {
     /// The `version` field.
     fn version(&self) -> u16;

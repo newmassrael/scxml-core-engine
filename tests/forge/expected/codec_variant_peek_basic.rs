@@ -183,8 +183,8 @@ impl<'s, A0: ?Sized, A1: ?Sized> CodecVariantPeekBasicVariantSource<'s, A0, A1> 
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecVariantPeekBasic` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecVariantPeekBasic`
-/// computes those from what is ([`CodecVariantPeekBasic::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecVariantPeekBasicWire::encode_source`]).
 pub trait CodecVariantPeekBasicSource {
     /// The arm of the variant this value holds.
     fn body(&self) -> CodecVariantPeekBasicVariantSource<'_, impl super::codec_peek_arm_a::CodecPeekArmASource, impl super::codec_peek_arm_b::CodecPeekArmBSource>;

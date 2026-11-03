@@ -202,8 +202,8 @@ impl<S: CodecChainHasMarkerSliceStorage> CodecChainHasMarkerSliceIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecChainHasMarkerSlice` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecChainHasMarkerSlice`
-/// computes those from what is ([`CodecChainHasMarkerSlice::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecChainHasMarkerSliceWire::encode_source`]).
 pub trait CodecChainHasMarkerSliceSource {
     /// The `kind` field.
     fn kind(&self) -> u16;

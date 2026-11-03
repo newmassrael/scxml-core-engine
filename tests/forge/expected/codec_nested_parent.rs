@@ -236,8 +236,8 @@ impl<S: CodecNestedParentStorage> CodecNestedParentIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecNestedParent` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecNestedParent`
-/// computes those from what is ([`CodecNestedParent::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecNestedParentWire::encode_source`]).
 pub trait CodecNestedParentSource {
     /// The `hdr` field.
     fn hdr(&self) -> u8;

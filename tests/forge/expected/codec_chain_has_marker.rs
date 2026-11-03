@@ -362,8 +362,8 @@ impl CodecChainHasMarkerExtensionsHas0x12Key {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecChainHasMarker` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecChainHasMarker`
-/// computes those from what is ([`CodecChainHasMarker::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecChainHasMarkerWire::encode_source`]).
 pub trait CodecChainHasMarkerSource {
     /// The `header` field.
     fn header(&self) -> u8;

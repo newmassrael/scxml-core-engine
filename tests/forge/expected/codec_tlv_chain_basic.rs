@@ -203,8 +203,8 @@ impl<S: CodecTlvChainBasicStorage> CodecTlvChainBasicIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecTlvChainBasic` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecTlvChainBasic`
-/// computes those from what is ([`CodecTlvChainBasic::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecTlvChainBasicWire::encode_source`]).
 pub trait CodecTlvChainBasicSource {
     /// The `header_flags` field.
     fn header_flags(&self) -> u8;

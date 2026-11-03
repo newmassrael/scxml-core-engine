@@ -201,8 +201,8 @@ impl<S: CodecScoutZidBodyStorage> CodecScoutZidBodyIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecScoutZidBody` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecScoutZidBody`
-/// computes those from what is ([`CodecScoutZidBody::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecScoutZidBodyWire::encode_source`]).
 pub trait CodecScoutZidBodySource {
     /// The `zid` field.
     fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 1>;

@@ -106,8 +106,8 @@ impl CodecSubbyte {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecSubbyte` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecSubbyte`
-/// computes those from what is ([`CodecSubbyte::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecSubbyteWire::encode_source`]).
 pub trait CodecSubbyteSource {
     /// The `priority` field.
     fn priority(&self) -> u8;

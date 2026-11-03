@@ -203,8 +203,8 @@ impl<S: CodecRepeatBasicStorage> CodecRepeatBasicIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecRepeatBasic` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecRepeatBasic`
-/// computes those from what is ([`CodecRepeatBasic::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecRepeatBasicWire::encode_source`]).
 pub trait CodecRepeatBasicSource {
     /// The `frags` field.
     fn frags(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 32>;

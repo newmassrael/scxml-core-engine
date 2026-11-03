@@ -191,8 +191,8 @@ impl<S: CodecUntilEofBasicStorage> CodecUntilEofBasicIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecUntilEofBasic` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecUntilEofBasic`
-/// computes those from what is ([`CodecUntilEofBasic::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecUntilEofBasicWire::encode_source`]).
 pub trait CodecUntilEofBasicSource {
     /// The `msgs` field.
     fn msgs(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone, 64>;

@@ -268,8 +268,8 @@ impl<E: super::codec_chain_flag_entry::CodecChainFlagEntrySource + ?Sized> ::sce
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecRepeatFlagGated` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecRepeatFlagGated`
-/// computes those from what is ([`CodecRepeatFlagGated::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecRepeatFlagGatedWire::encode_source`]).
 pub trait CodecRepeatFlagGatedSource {
     /// The `head` field.
     fn head(&self) -> u8;

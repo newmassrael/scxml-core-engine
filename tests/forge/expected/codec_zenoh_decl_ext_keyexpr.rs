@@ -265,8 +265,8 @@ impl CodecZenohDeclExtKeyexprOverrides {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohDeclExtKeyexpr` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohDeclExtKeyexpr`
-/// computes those from what is ([`CodecZenohDeclExtKeyexpr::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohDeclExtKeyexprWire::encode_source`]).
 pub trait CodecZenohDeclExtKeyexprSource {
     /// The `outer_header` field.
     fn outer_header(&self) -> u8;

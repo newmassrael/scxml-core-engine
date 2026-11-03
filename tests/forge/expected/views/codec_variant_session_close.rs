@@ -101,8 +101,8 @@ impl CodecVariantSessionClose {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecVariantSessionClose` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecVariantSessionClose`
-/// computes those from what is ([`CodecVariantSessionClose::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecVariantSessionCloseWire::encode_source`]).
 pub trait CodecVariantSessionCloseSource {
     /// The `reason` field.
     fn reason(&self) -> u8;

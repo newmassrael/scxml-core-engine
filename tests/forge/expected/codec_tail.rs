@@ -192,8 +192,8 @@ impl<S: CodecTailStorage> CodecTailIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecTail` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecTail`
-/// computes those from what is ([`CodecTail::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecTailWire::encode_source`]).
 pub trait CodecTailSource {
     /// The `msgId` field.
     fn msg_id(&self) -> u8;

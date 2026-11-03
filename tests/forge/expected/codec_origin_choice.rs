@@ -305,8 +305,8 @@ impl<'s, A0: ?Sized, A1: ?Sized, D: ?Sized> CodecOriginChoiceVariantSource<'s, A
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecOriginChoice` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecOriginChoice`
-/// computes those from what is ([`CodecOriginChoice::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecOriginChoiceWire::encode_source`]).
 pub trait CodecOriginChoiceSource {
     /// The arm of the variant this value holds.
     fn body(&self) -> CodecOriginChoiceVariantSource<'_, impl super::codec_origin_leaf::CodecOriginLeafSource, impl super::codec_origin_scalar::CodecOriginScalarSource, impl super::codec_origin_scalar::CodecOriginScalarSource>;

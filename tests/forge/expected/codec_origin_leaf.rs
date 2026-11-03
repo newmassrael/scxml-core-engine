@@ -201,8 +201,8 @@ impl<S: CodecOriginLeafStorage> CodecOriginLeafIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecOriginLeaf` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecOriginLeaf`
-/// computes those from what is ([`CodecOriginLeaf::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecOriginLeafWire::encode_source`]).
 pub trait CodecOriginLeafSource {
     /// The `data` field.
     fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16>;

@@ -235,8 +235,8 @@ impl<S: CodecPresentIfStringStorage> CodecPresentIfStringIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecPresentIfString` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecPresentIfString`
-/// computes those from what is ([`CodecPresentIfString::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecPresentIfStringWire::encode_source`]).
 pub trait CodecPresentIfStringSource {
     /// The `carrier` field.
     fn carrier(&self) -> u8;

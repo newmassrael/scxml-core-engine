@@ -144,8 +144,8 @@ impl CodecChainHasTaggedEntryOverrides {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecChainHasTaggedEntry` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecChainHasTaggedEntry`
-/// computes those from what is ([`CodecChainHasTaggedEntry::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecChainHasTaggedEntryWire::encode_source`]).
 pub trait CodecChainHasTaggedEntrySource {
     /// The `entry_type` field.
     fn entry_type(&self) -> u8;

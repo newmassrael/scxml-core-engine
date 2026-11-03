@@ -3218,8 +3218,8 @@ impl<'a> Plan<'a> {
         format!(
             "// ── Source (ADR 0058) ────────────────────────────────────────────────\n\
              /// What a value of `{name}` says: its presented fields. A length, a count\n\
-             /// or the flag a gated field is announced by is not among them; `{name}`\n\
-             /// computes those from what is ([`{name}::encode_source`]).\n\
+             /// or the flag a gated field is announced by is not among them; the\n\
+             /// encode computes those from what is ([`{name}Wire::encode_source`]).\n\
              pub trait {trait_name} {{\n{items}}}\n\n",
             name = self.name(),
             trait_name = self.trait_name,

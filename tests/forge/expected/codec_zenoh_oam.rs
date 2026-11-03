@@ -397,8 +397,8 @@ impl<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, D: ?Sized> CodecZenohOamVariantSour
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohOam` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohOam`
-/// computes those from what is ([`CodecZenohOam::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohOamWire::encode_source`]).
 pub trait CodecZenohOamSource {
     /// The `header` field.
     fn header(&self) -> u8;

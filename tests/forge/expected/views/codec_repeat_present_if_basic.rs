@@ -237,8 +237,8 @@ impl<S: CodecRepeatPresentIfBasicStorage> CodecRepeatPresentIfBasicIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecRepeatPresentIfBasic` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecRepeatPresentIfBasic`
-/// computes those from what is ([`CodecRepeatPresentIfBasic::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecRepeatPresentIfBasicWire::encode_source`]).
 pub trait CodecRepeatPresentIfBasicSource {
     /// The `carrier` field.
     fn carrier(&self) -> u8;

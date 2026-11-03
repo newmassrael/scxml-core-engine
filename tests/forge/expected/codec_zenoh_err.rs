@@ -319,8 +319,8 @@ impl CodecZenohErrOverrides {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohErr` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohErr`
-/// computes those from what is ([`CodecZenohErr::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohErrWire::encode_source`]).
 pub trait CodecZenohErrSource {
     /// The `header` field.
     fn header(&self) -> u8;

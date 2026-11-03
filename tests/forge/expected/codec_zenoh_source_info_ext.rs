@@ -183,8 +183,8 @@ impl<S: CodecZenohSourceInfoExtStorage> CodecZenohSourceInfoExtIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohSourceInfoExt` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohSourceInfoExt`
-/// computes those from what is ([`CodecZenohSourceInfoExt::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohSourceInfoExtWire::encode_source`]).
 pub trait CodecZenohSourceInfoExtSource {
     /// The `info` field.
     fn info(&self) -> &impl super::codec_zenoh_source_info::CodecZenohSourceInfoSource;

@@ -228,8 +228,8 @@ impl<S: CodecZenohEncodingStorage> CodecZenohEncodingIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohEncoding` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohEncoding`
-/// computes those from what is ([`CodecZenohEncoding::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohEncodingWire::encode_source`]).
 pub trait CodecZenohEncodingSource {
     /// The `packed_id` field.
     fn packed_id(&self) -> u32;

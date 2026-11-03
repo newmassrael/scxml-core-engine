@@ -148,8 +148,8 @@ impl CodecPresentIfNegation {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecPresentIfNegation` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecPresentIfNegation`
-/// computes those from what is ([`CodecPresentIfNegation::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecPresentIfNegationWire::encode_source`]).
 pub trait CodecPresentIfNegationSource {
     /// The `flags` field.
     fn flags(&self) -> u8;

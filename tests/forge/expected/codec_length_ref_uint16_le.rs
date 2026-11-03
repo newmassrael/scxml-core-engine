@@ -201,8 +201,8 @@ impl<S: CodecLengthRefUint16LeStorage> CodecLengthRefUint16LeIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecLengthRefUint16Le` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecLengthRefUint16Le`
-/// computes those from what is ([`CodecLengthRefUint16Le::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecLengthRefUint16LeWire::encode_source`]).
 pub trait CodecLengthRefUint16LeSource {
     /// The `payload` field.
     fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 1024>;

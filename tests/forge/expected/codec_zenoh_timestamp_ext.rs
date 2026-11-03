@@ -183,8 +183,8 @@ impl<S: CodecZenohTimestampExtStorage> CodecZenohTimestampExtIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohTimestampExt` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohTimestampExt`
-/// computes those from what is ([`CodecZenohTimestampExt::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohTimestampExtWire::encode_source`]).
 pub trait CodecZenohTimestampExtSource {
     /// The `ts` field.
     fn ts(&self) -> &impl super::codec_zenoh_timestamp::CodecZenohTimestampSource;

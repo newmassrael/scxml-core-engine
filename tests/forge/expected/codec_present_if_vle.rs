@@ -146,8 +146,8 @@ impl CodecPresentIfVle {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecPresentIfVle` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecPresentIfVle`
-/// computes those from what is ([`CodecPresentIfVle::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecPresentIfVleWire::encode_source`]).
 pub trait CodecPresentIfVleSource {
     /// The `flags` field.
     fn flags(&self) -> u8;

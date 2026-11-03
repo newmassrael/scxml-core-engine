@@ -106,8 +106,8 @@ impl CodecSimpleFrame {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecSimpleFrame` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecSimpleFrame`
-/// computes those from what is ([`CodecSimpleFrame::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecSimpleFrameWire::encode_source`]).
 pub trait CodecSimpleFrameSource {
     /// The `msgId` field.
     fn msg_id(&self) -> u8;

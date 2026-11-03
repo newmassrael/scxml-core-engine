@@ -186,8 +186,8 @@ impl<S: CodecZenohUndeclQueryableStorage> CodecZenohUndeclQueryableIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohUndeclQueryable` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohUndeclQueryable`
-/// computes those from what is ([`CodecZenohUndeclQueryable::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohUndeclQueryableWire::encode_source`]).
 pub trait CodecZenohUndeclQueryableSource {
     /// The `id` field.
     fn id(&self) -> u32;

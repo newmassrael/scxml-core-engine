@@ -356,8 +356,8 @@ impl<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, A3: ?Sized, A4: ?Sized, A5: ?Sized,
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohNetworkEnvelope` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohNetworkEnvelope`
-/// computes those from what is ([`CodecZenohNetworkEnvelope::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohNetworkEnvelopeWire::encode_source`]).
 pub trait CodecZenohNetworkEnvelopeSource {
     /// The arm of the variant this value holds.
     fn body(&self) -> CodecZenohNetworkEnvelopeVariantSource<'_, impl super::codec_zenoh_interest::CodecZenohInterestSource, impl super::codec_zenoh_response_final::CodecZenohResponseFinalSource, impl super::codec_zenoh_response::CodecZenohResponseSource, impl super::codec_zenoh_request::CodecZenohRequestSource, impl super::codec_zenoh_push::CodecZenohPushSource, impl super::codec_zenoh_declare::CodecZenohDeclareSource, impl super::codec_zenoh_oam::CodecZenohOamSource, impl super::codec_zenoh_oam::CodecZenohOamSource>;

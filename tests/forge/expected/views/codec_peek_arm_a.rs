@@ -141,8 +141,8 @@ impl CodecPeekArmAOverrides {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecPeekArmA` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecPeekArmA`
-/// computes those from what is ([`CodecPeekArmA::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecPeekArmAWire::encode_source`]).
 pub trait CodecPeekArmASource {
     /// The `header` field.
     fn header(&self) -> u8;

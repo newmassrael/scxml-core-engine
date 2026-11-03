@@ -215,8 +215,8 @@ impl<S: CodecZenohWireexprStorage> CodecZenohWireexprIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohWireexpr` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohWireexpr`
-/// computes those from what is ([`CodecZenohWireexpr::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohWireexprWire::encode_source`]).
 pub trait CodecZenohWireexprSource {
     /// The `id` field.
     fn id(&self) -> u64;

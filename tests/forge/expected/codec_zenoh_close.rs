@@ -100,8 +100,8 @@ impl CodecZenohClose {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohClose` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohClose`
-/// computes those from what is ([`CodecZenohClose::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohCloseWire::encode_source`]).
 pub trait CodecZenohCloseSource {
     /// The `reason` field.
     fn reason(&self) -> u8;

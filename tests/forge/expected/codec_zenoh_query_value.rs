@@ -236,8 +236,8 @@ impl<E: super::codec_zenoh_value_entry::CodecZenohValueEntrySource + ?Sized> ::s
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohQueryValue` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohQueryValue`
-/// computes those from what is ([`CodecZenohQueryValue::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohQueryValueWire::encode_source`]).
 pub trait CodecZenohQueryValueSource {
     /// The `exts` field.
     fn exts(&self) -> ::sce_forge_runtime::codec::Lawful<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_entry::CodecZenohValueEntrySource> + Clone, 4, 1>, CodecZenohQueryValueExtsLaw>;

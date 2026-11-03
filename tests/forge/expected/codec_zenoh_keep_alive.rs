@@ -98,8 +98,8 @@ impl CodecZenohKeepAlive {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohKeepAlive` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohKeepAlive`
-/// computes those from what is ([`CodecZenohKeepAlive::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohKeepAliveWire::encode_source`]).
 pub trait CodecZenohKeepAliveSource {
 }
 

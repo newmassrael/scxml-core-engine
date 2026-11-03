@@ -425,8 +425,8 @@ impl CodecTransportEnvelopeOverrides {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecTransportEnvelope` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecTransportEnvelope`
-/// computes those from what is ([`CodecTransportEnvelope::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecTransportEnvelopeWire::encode_source`]).
 pub trait CodecTransportEnvelopeSource {
     /// The `header` field.
     fn header(&self) -> u8;

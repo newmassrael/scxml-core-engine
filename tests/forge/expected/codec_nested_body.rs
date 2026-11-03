@@ -199,8 +199,8 @@ impl<S: CodecNestedBodyStorage> CodecNestedBodyIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecNestedBody` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecNestedBody`
-/// computes those from what is ([`CodecNestedBody::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecNestedBodyWire::encode_source`]).
 pub trait CodecNestedBodySource {
     /// The `locs` field.
     fn locs(&self) -> ::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone, 4>;

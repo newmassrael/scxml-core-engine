@@ -258,8 +258,8 @@ impl<Payload: Default> Default for CodecPresentIfLengthRefFlagsHasPayload<Payloa
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecPresentIfLengthRef` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecPresentIfLengthRef`
-/// computes those from what is ([`CodecPresentIfLengthRef::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecPresentIfLengthRefWire::encode_source`]).
 pub trait CodecPresentIfLengthRefSource {
     /// The `flags` field.
     fn flags(&self) -> u8;

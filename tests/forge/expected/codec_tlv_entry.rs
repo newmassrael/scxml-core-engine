@@ -205,8 +205,8 @@ impl<S: CodecTlvEntryStorage> CodecTlvEntryIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecTlvEntry` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecTlvEntry`
-/// computes those from what is ([`CodecTlvEntry::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecTlvEntryWire::encode_source`]).
 pub trait CodecTlvEntrySource {
     /// The `entry_type` field.
     fn entry_type(&self) -> u8;

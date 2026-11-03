@@ -282,8 +282,8 @@ impl<Links: Default, Weights: Default> Default for CodecRepeatUnconditionalCount
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecRepeatUnconditionalCount` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecRepeatUnconditionalCount`
-/// computes those from what is ([`CodecRepeatUnconditionalCount::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecRepeatUnconditionalCountWire::encode_source`]).
 pub trait CodecRepeatUnconditionalCountSource {
     /// The `options` field.
     fn options(&self) -> u8;

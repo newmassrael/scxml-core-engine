@@ -98,8 +98,8 @@ impl CodecZenohExtUnit {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohExtUnit` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohExtUnit`
-/// computes those from what is ([`CodecZenohExtUnit::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohExtUnitWire::encode_source`]).
 pub trait CodecZenohExtUnitSource {
 }
 

@@ -463,8 +463,8 @@ impl CodecZenohResponseOverrides {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohResponse` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohResponse`
-/// computes those from what is ([`CodecZenohResponse::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohResponseWire::encode_source`]).
 pub trait CodecZenohResponseSource {
     /// The `header` field.
     fn header(&self) -> u8;

@@ -197,8 +197,8 @@ impl<S: CodecZenohFragmentStorage> CodecZenohFragmentIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohFragment` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohFragment`
-/// computes those from what is ([`CodecZenohFragment::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohFragmentWire::encode_source`]).
 pub trait CodecZenohFragmentSource {
     /// The `sn` field.
     fn sn(&self) -> u64;

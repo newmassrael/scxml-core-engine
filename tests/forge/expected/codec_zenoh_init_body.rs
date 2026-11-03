@@ -304,8 +304,8 @@ pub struct CodecZenohInitBodyS {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohInitBody` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohInitBody`
-/// computes those from what is ([`CodecZenohInitBody::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohInitBodyWire::encode_source`]).
 pub trait CodecZenohInitBodySource {
     /// The `version` field.
     fn version(&self) -> u8;

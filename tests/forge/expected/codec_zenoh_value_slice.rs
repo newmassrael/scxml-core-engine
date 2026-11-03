@@ -207,8 +207,8 @@ impl<S: CodecZenohValueSliceStorage> CodecZenohValueSliceIn<S> {
 
 // ── Source (ADR 0058) ────────────────────────────────────────────────
 /// What a value of `CodecZenohValueSlice` says: its presented fields. A length, a count
-/// or the flag a gated field is announced by is not among them; `CodecZenohValueSlice`
-/// computes those from what is ([`CodecZenohValueSlice::encode_source`]).
+/// or the flag a gated field is announced by is not among them; the
+/// encode computes those from what is ([`CodecZenohValueSliceWire::encode_source`]).
 pub trait CodecZenohValueSliceSource {
     /// The `kind` field.
     fn kind(&self) -> u8;
