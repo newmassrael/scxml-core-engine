@@ -264,22 +264,27 @@ pub type SendIdString<const N: usize> = ::heapless::String<N>;
 /// infers the cap from the field — `SceBytes::from_slice(&v)?` — instead of
 /// hardcoding it.
 ///
-/// - std / `alloc`: wraps `Vec<u8>` (unbounded, `N` advisory).
+/// It is `sce_portable_bytes::BoundedList<u8, N>`, whose bound is hard on
+/// every profile (docs/adr/0086, section 7.4): `from_slice`, `push` and
+/// `extend_from_slice` refuse past `N`.
+///
+/// - std / `alloc`: the bytes live in a `Vec<u8>`.
 /// - `no_std` build (`--no-default-features`, whose missing `std` feature
-///   leaves `sce-portable-bytes/alloc` off): wraps `heapless::Vec<u8, N>`,
-///   capacity exactly the author's bound; `from_slice` is fallible past `N`.
+///   leaves `sce-portable-bytes/alloc` off): they live in a
+///   `heapless::Vec<u8, N>`, inline.
 ///
 /// Derefs to `[u8]`, so `&payload.<field>` coerces to the `&[u8]` a generated
 /// `Actions` trait method takes regardless of profile.
 pub use sce_portable_bytes::SceBytes;
 
-/// The value of a `list<T>[N]` and of a `string[N]` that a host builds and
-/// hands to a typed send (docs/adr/0086, section 5.4): every constructor
-/// refuses past `N` on every profile, so a value that exists is one of its
-/// type. A generated machine holds every list in a `BoundedList` too, a
-/// variable's, a record's and a payload's (section 7.4), and a payload is read
-/// into one (`event_payload::PayloadValue::list`, where the build has a wire).
-pub use sce_portable_bytes::{BoundedBytes, BoundedList, BoundedText};
+/// The value of a `list<T>[N]` (docs/adr/0086, sections 5.4 and 7.4): every
+/// constructor refuses past `N` on every profile, so a value that exists is one
+/// of its type. A generated machine holds every list in one, a variable's, a
+/// record's and a payload's, and a payload is read into one
+/// (`event_payload::PayloadValue::list`, where the build has a wire). A
+/// `string[N]` is `sce_portable_bytes::SceString<N>`, named by its crate here
+/// because this crate's own `SceString` is the engine's event text.
+pub use sce_portable_bytes::BoundedList;
 
 /// Convert a borrowed `&str` into an owned [`SceString`].
 ///

@@ -1,15 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! Profile-portable owned `bytes` storage shared by the codec runtime
-//! (`sce-forge-runtime` — the `{Codec}Owned` byte fields) and the
-//! statechart-emit runtime (`sce-rust-runtime` — typed `_event.data` byte
-//! payloads). Both are the same concept: an owned byte sequence with a
-//! per-field capacity `N` (the SCXML `sce:max-size`) that must compile on
-//! both the std/alloc and the heap-free no_std profiles. This crate holds
-//! the single definition; both runtimes `pub use` it, so the construction
-//! logic (the fallible no-alloc copy, the advisory-`N` alloc copy) lives in
-//! exactly one place and cannot drift between the two consumers.
+//! Profile-portable owned storage shared by the codec runtime
+//! (`sce-forge-runtime`), the statechart-emit runtime (`sce-rust-runtime`)
+//! and every generated Rust unit, compiling on both the std/alloc and the
+//! heap-free no_std profiles. It holds two families, apart on purpose:
+//!
+//! * **The language's value types** (docs/adr/0086, section 7.4): a text of at
+//!   most `N` UTF-8 bytes, [`SceString`]; a byte string of at most `N` bytes,
+//!   [`SceBytes`]; a list of at most `N` values of any type, [`BoundedList`].
+//!   Each has one name, and its bound is hard on every profile: every
+//!   constructor and every append refuses past `N`, so a value that exists is
+//!   one of its type. Where an allocator is available the elements live on the
+//!   heap, and inline (`heapless`) where none is; the storage decides where,
+//!   never how many. A statechart's variables, records and payloads, a schema
+//!   unit's fields and an algorithm's slots hold these.
+//! * **A codec's storage profiles** ([`HeapList`] / [`InlineList`],
+//!   [`HeapStr`] / [`InlineStr`]): the containers a decoded frame of a protocol
+//!   SCE does not own is held in, whose heap form's `N` is advisory, as the
+//!   protocol's own bound is (docs/adr/0077, section 7). A codec's growable
+//!   profile names `{ usize::MAX }`.
 //!
 //! The storage is generic over its element: [`HeapList`] / [`InlineList`]
 //! hold any `T: Copy`, and the byte types are their `u8` instances. The
@@ -31,8 +41,8 @@
 //! than one name whose meaning flips with a `cfg`. A single binary therefore
 //! holds both storage profiles at once: an application-processor path can
 //! keep growable owned values while a real-time path in the same program
-//! stores its values inline with a hard capacity. [`SceBytes`] is the alias
-//! naming whichever profile is the *default* for the current build, so the
+//! stores its values inline with a hard capacity. [`SceOwnedList`] names
+//! whichever list profile is the *default* for the current build, so the
 //! plain spelling stays correct on both tiers, and the no-alloc tier — where
 //! `HeapBytes` does not exist at all — cannot accidentally name the growable
 //! form.
@@ -99,18 +109,6 @@ pub type SceOwnedList<T, const N: usize> = HeapList<T, N>;
 #[cfg(not(feature = "alloc"))]
 pub type SceOwnedList<T, const N: usize> = InlineList<T, N>;
 
-/// The byte storage profile this build treats as the default: [`HeapBytes`]
-/// where an allocator is available, [`InlineBytes`] on the heap-free tier.
-///
-/// Code that has no reason to pin a profile spells `SceBytes<N>` and follows
-/// the target; code that must not allocate names [`InlineBytes`] explicitly
-/// and keeps that guarantee even in a build where the default is growable.
-#[cfg(feature = "alloc")]
-pub type SceBytes<const N: usize> = HeapBytes<N>;
-/// no-alloc build: the default profile is the fixed-capacity form.
-#[cfg(not(feature = "alloc"))]
-pub type SceBytes<const N: usize> = InlineBytes<N>;
-
 #[cfg(feature = "alloc")]
 impl<T: Clone, const N: usize> HeapList<T, N> {
     /// Copy a borrowed `&[T]` view into the owned form. The heap copy is
@@ -156,15 +154,6 @@ impl<T: Clone, const N: usize> HeapList<T, N> {
         self.0.extend_from_slice(s);
         Ok(())
     }
-
-    /// The elements of a sequence of at most `M` elements, in one of `N`. The
-    /// fit is a build error where it does not hold ([`Fits`]), so nothing is
-    /// refused: the copy of a byte string into a place of a larger bound, which
-    /// the build proved it fits.
-    pub fn widened<const M: usize>(from: &HeapList<T, M>) -> Self {
-        let () = Fits::<M, N>::OK;
-        Self(from.0.clone())
-    }
 }
 
 impl<T: Clone, const N: usize> InlineList<T, N> {
@@ -205,15 +194,6 @@ impl<T: Clone, const N: usize> InlineList<T, N> {
     /// — the bound is checked before copying.
     pub fn extend_from_slice(&mut self, s: &[T]) -> Result<(), CapacityExceeded> {
         self.0.extend_from_slice(s).map_err(|_| CapacityExceeded)
-    }
-
-    /// The elements of a sequence of at most `M` elements, in one of `N`. See
-    /// [`HeapList::widened`].
-    pub fn widened<const M: usize>(from: &InlineList<T, M>) -> Self {
-        let () = Fits::<M, N>::OK;
-        // At most `M <= N` elements, so the copy cannot refuse them; the empty
-        // sequence is the answer for a refusal that cannot occur.
-        Self(heapless::Vec::from_slice(from.as_slice()).unwrap_or_default())
     }
 }
 
@@ -258,11 +238,13 @@ byte_view_parity!(InlineList);
 
 // ── text containers ──────────────────────────────────────────────
 
-/// Growable owned text storage: wraps `String`, so `N` is advisory. `N` still
-/// rides on the type so a hand-assembled owned value infers the cap from the
-/// field it is being placed in, and so the value can be transcoded into
-/// [`InlineStr`] of the matching capacity. No field names `N`, for the reason
-/// [`HeapList`] gives.
+/// Growable owned text storage of a codec's heap profile: wraps `String`, so
+/// `N` is advisory, as a foreign protocol's own bound is. `N` still rides on
+/// the type so a hand-assembled owned value infers the cap from the field it
+/// is being placed in, and so the value can be transcoded into [`InlineStr`]
+/// of the matching capacity. No field names `N`, for the reason [`HeapList`]
+/// gives. A value of the language's `string[N]` is a [`SceString`] instead,
+/// whose bound is hard.
 #[cfg(feature = "alloc")]
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -274,14 +256,6 @@ pub struct HeapStr<const N: usize>(alloc::string::String);
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct InlineStr<const N: usize>(heapless::String<N>);
-
-/// The text storage profile this build treats as the default — the sibling of
-/// [`SceBytes`] for `string` fields.
-#[cfg(feature = "alloc")]
-pub type SceString<const N: usize> = HeapStr<N>;
-/// no-alloc build: the default text profile is the fixed-capacity form.
-#[cfg(not(feature = "alloc"))]
-pub type SceString<const N: usize> = InlineStr<N>;
 
 /// The compile-time judgement that a value of at most `FROM` (bytes of a text
 /// or a byte string, elements of a list) fits a place of `TO`: naming
@@ -335,24 +309,6 @@ impl<const N: usize> HeapStr<N> {
         self.0.push_str(s);
         Ok(())
     }
-
-    /// The text of `s`, which the caller has already held to `N` bytes.
-    ///
-    /// Total: a text past `N` is cut at the last character boundary that fits
-    /// rather than reported, because the callers are the ones that proved the
-    /// fit — a generated body whose every write was judged against this bound,
-    /// and a machine that holds the text within it. Use [`Self::from_text`]
-    /// for text nothing has judged.
-    pub fn held(s: &str) -> Self {
-        Self(alloc::string::String::from(prefix_within(s, N)))
-    }
-
-    /// The text of a buffer of at most `N` bytes, in one of `N`. The fit is a
-    /// build error where it does not hold ([`Fits`]), so nothing is cut.
-    pub fn widened<const M: usize>(from: &HeapStr<M>) -> Self {
-        let () = Fits::<M, N>::OK;
-        Self::held(from.as_str())
-    }
 }
 
 impl<const N: usize> InlineStr<N> {
@@ -374,21 +330,6 @@ impl<const N: usize> InlineStr<N> {
     /// it unescapes it writes through.
     pub fn try_push_str(&mut self, s: &str) -> Result<(), CapacityExceeded> {
         self.0.push_str(s).map_err(|_| CapacityExceeded)
-    }
-
-    /// The text of `s`, which the caller has already held to `N` bytes. See
-    /// [`HeapStr::held`].
-    pub fn held(s: &str) -> Self {
-        // The prefix is at most `N` bytes, so the conversion cannot refuse it;
-        // the empty text is the answer for a refusal that cannot occur.
-        Self(heapless::String::try_from(prefix_within(s, N)).unwrap_or_default())
-    }
-
-    /// The text of a buffer of at most `N` bytes, in one of `N`. See
-    /// [`HeapStr::widened`].
-    pub fn widened<const M: usize>(from: &InlineStr<M>) -> Self {
-        let () = Fits::<M, N>::OK;
-        Self::held(from.as_str())
     }
 }
 
@@ -448,14 +389,19 @@ type BoundedListStorage<T, const N: usize> = heapless::Vec<T, N>;
 /// append of this type refuses more than `N` elements instead, so a value that
 /// exists is one of its type, and a copy into a place of a larger bound is a
 /// conversion that cannot fail ([`Self::widened`]). A nested type is the
-/// composition, `BoundedList<BoundedList<BoundedText<8>, 4>, 3>`, each level
+/// composition, `BoundedList<BoundedList<SceString<8>, 4>, 3>`, each level
 /// holding its own bound.
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoundedList<T, const N: usize>(BoundedListStorage<T, N>);
 
-/// A byte string of at most `N` bytes on every profile: [`BoundedList`] of `u8`.
-pub type BoundedBytes<const N: usize> = BoundedList<u8, N>;
+/// A byte string of at most `N` bytes, `N` a hard bound on every profile
+/// (docs/adr/0086, section 7.4): the one type of a `bytes[N]`, a [`BoundedList`]
+/// of `u8`, so a byte string grows, bounds, widens and reports
+/// [`CapacityExceeded`] as every list does. Inline without an allocator, on the
+/// heap with one. A codec's frame keeps its own storage profiles
+/// ([`HeapBytes`], [`InlineBytes`]).
+pub type SceBytes<const N: usize> = BoundedList<u8, N>;
 
 impl<T, const N: usize> BoundedList<T, N> {
     /// The bound the type declares.
@@ -534,6 +480,19 @@ impl<T: Clone, const N: usize> BoundedList<T, N> {
         Self::try_from_iter(items.iter().cloned())
     }
 
+    /// Append `items`, refused whole where the list would pass `N`: either every
+    /// element is appended or none is. What an algorithm that writes a byte
+    /// string into its caller's destination appends through (docs/adr/0082).
+    pub fn extend_from_slice(&mut self, items: &[T]) -> Result<(), CapacityExceeded> {
+        if self.0.len() + items.len() > N {
+            return Err(CapacityExceeded);
+        }
+        for item in items {
+            self.push(item.clone())?;
+        }
+        Ok(())
+    }
+
     /// The elements of a list of at most `M` elements, in one of `N`: the copy
     /// a machine makes of a list into a place of a larger bound, which its
     /// build proved the list fits (docs/adr/0086, sections 5.1 and 7.4). The
@@ -599,27 +558,30 @@ impl<'a, T, const N: usize> IntoIterator for &'a BoundedList<T, N> {
 
 byte_view_parity!(BoundedList);
 
-/// Where a [`BoundedText`] keeps its bytes, as [`BoundedListStorage`] does.
+/// Where a [`SceString`] keeps its bytes, as [`BoundedListStorage`] does.
 #[cfg(feature = "alloc")]
-type BoundedTextStorage<const N: usize> = alloc::string::String;
+type SceStringStorage<const N: usize> = alloc::string::String;
 #[cfg(not(feature = "alloc"))]
-type BoundedTextStorage<const N: usize> = heapless::String<N>;
+type SceStringStorage<const N: usize> = heapless::String<N>;
 
 /// A text of at most `N` UTF-8 bytes, `N` a hard bound on every profile
-/// (docs/adr/0086, section 5.4): the value of a `string[N]` a host builds. The
-/// sibling of [`BoundedList`] for text; [`SceString`]'s `N` is advisory under
-/// `alloc`, this one's never is.
+/// (docs/adr/0086, sections 5.4 and 7.4): the one type of a `string[N]`, held
+/// by a machine's variables, records and payloads, a schema unit's fields, an
+/// algorithm's slots and a value a host builds alike. The sibling of
+/// [`BoundedList`] for text: every constructor and every append refuses past
+/// `N`, so a text that exists is one of its type. A codec's frame keeps its own
+/// storage profiles ([`HeapStr`], [`InlineStr`]).
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BoundedText<const N: usize>(BoundedTextStorage<N>);
+pub struct SceString<const N: usize>(SceStringStorage<N>);
 
-impl<const N: usize> BoundedText<N> {
+impl<const N: usize> SceString<N> {
     /// The bound the type declares, in UTF-8 bytes.
     pub const CAPACITY: usize = N;
 
     /// The empty text.
     pub fn new() -> Self {
-        Self(BoundedTextStorage::<N>::new())
+        Self(SceStringStorage::<N>::new())
     }
 
     /// Copy `text`, refused when it is more than `N` bytes; nothing is cut.
@@ -653,20 +615,42 @@ impl<const N: usize> BoundedText<N> {
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
+
+    /// The text of `s`, which the caller has already held to `N` bytes.
+    ///
+    /// Total: a text past `N` is cut at the last character boundary that fits
+    /// rather than reported, because the callers are the ones that proved the
+    /// fit — a generated body whose every write was judged against this bound,
+    /// and a literal [`sce_text!`] judged at build time. Use
+    /// [`Self::from_text`] for text nothing has judged.
+    pub fn held(s: &str) -> Self {
+        let mut text = Self::new();
+        // The prefix is at most `N` bytes, so the append cannot refuse it.
+        match text.try_push_str(prefix_within(s, N)) {
+            Ok(()) | Err(CapacityExceeded) => text,
+        }
+    }
+
+    /// The text of a text of at most `M` bytes, in one of `N`. The fit is a
+    /// build error where it does not hold ([`Fits`]), so nothing is cut.
+    pub fn widened<const M: usize>(from: &SceString<M>) -> Self {
+        let () = Fits::<M, N>::OK;
+        Self::held(from.as_str())
+    }
 }
 
-impl<const N: usize> Default for BoundedText<N> {
+impl<const N: usize> Default for SceString<N> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-str_view_parity!(BoundedText);
+str_view_parity!(SceString);
 
-/// A text of the default profile ([`SceString`]) written as a literal, in a
-/// buffer of `$n` bytes. The literal's length against `$n` is judged at build
-/// time, so a literal that does not fit is a compile error where it is
-/// written and the value needs no `Result`.
+/// A text ([`SceString`]) written as a literal, in a buffer of `$n` bytes. The
+/// literal's length against `$n` is judged at build time, so a literal that
+/// does not fit is a compile error where it is written and the value needs no
+/// `Result`.
 #[macro_export]
 macro_rules! sce_text {
     ($n:expr, $lit:literal) => {{
@@ -757,23 +741,35 @@ mod tests {
         assert_eq!(default, &[1i64, -2, 3]);
     }
 
-    // The fixed text profile refuses past its bound on every build and keeps
-    // nothing; the default profile holds what it is given.
+    // The fixed text profile of a codec refuses past its bound on every build
+    // and keeps nothing.
     #[test]
     fn inline_text_is_bounded_and_from_text_reports_it() {
         assert_eq!(InlineStr::<3>::from_text("abc").unwrap().as_str(), "abc");
         assert_eq!(InlineStr::<3>::from_text("abcd"), Err(CapacityExceeded));
-        assert_eq!(SceString::<3>::from_text("ab").unwrap(), "ab");
+    }
+
+    // A codec's heap text keeps its protocol's advisory bound, apart from the
+    // language's text, whose bound is hard on this profile too.
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn a_codec_heap_text_is_advisory_and_the_language_text_is_not() {
+        assert!(HeapStr::<2>::from_text("far past two").is_ok());
+        assert_eq!(
+            SceString::<2>::from_text("far past two"),
+            Err(CapacityExceeded)
+        );
+        assert_eq!(SceBytes::<2>::from_slice(&[1, 2, 3]), Err(CapacityExceeded));
     }
 
     // `held` is total: a text past the bound is cut on a character boundary,
     // never in the middle of one.
     #[test]
     fn held_cuts_at_a_character_boundary() {
-        assert_eq!(InlineStr::<4>::held("ab").as_str(), "ab");
+        assert_eq!(SceString::<4>::held("ab").as_str(), "ab");
         // `é` is two bytes, so three bytes of room keep `aé` and drop the rest.
-        assert_eq!(InlineStr::<3>::held("aéb").as_str(), "aé");
-        assert_eq!(InlineStr::<2>::held("aé").as_str(), "a");
+        assert_eq!(SceString::<3>::held("aéb").as_str(), "aé");
+        assert_eq!(SceString::<2>::held("aé").as_str(), "a");
     }
 
     // A text widens into a buffer at least as large, by type; the literal macro
@@ -827,20 +823,20 @@ mod tests {
         );
     }
 
-    // A bounded text counts UTF-8 bytes, refuses past its bound whole and keeps
-    // what it held when an append would pass it.
+    // A text counts UTF-8 bytes, refuses past its bound whole and keeps what it
+    // held when an append would pass it, on whichever profile this runs under.
     #[test]
-    fn a_bounded_text_refuses_past_its_bound_in_bytes() {
-        assert_eq!(BoundedText::<4>::from_text("abcd").expect("fits"), "abcd");
-        assert_eq!(BoundedText::<4>::from_text("abcde"), Err(CapacityExceeded));
+    fn a_text_refuses_past_its_bound_in_bytes() {
+        assert_eq!(SceString::<4>::from_text("abcd").expect("fits"), "abcd");
+        assert_eq!(SceString::<4>::from_text("abcde"), Err(CapacityExceeded));
         // `é` is two bytes: three characters, five bytes.
-        assert_eq!(BoundedText::<4>::from_text("aéé"), Err(CapacityExceeded));
-        let mut text = BoundedText::<3>::new();
+        assert_eq!(SceString::<4>::from_text("aéé"), Err(CapacityExceeded));
+        let mut text = SceString::<3>::new();
         assert!(text.try_push_str("ab").is_ok());
         assert_eq!(text.try_push_str("cd"), Err(CapacityExceeded));
         assert_eq!(text.as_str(), "ab");
-        assert_eq!(BoundedText::<3>::CAPACITY, 3);
-        assert!(BoundedText::<1>::default().is_empty());
+        assert_eq!(SceString::<3>::CAPACITY, 3);
+        assert!(SceString::<1>::default().is_empty());
     }
 
     // A nested type is the composition, and each level holds its own bound: an
@@ -848,10 +844,10 @@ mod tests {
     // none.
     #[test]
     fn a_nested_bounded_type_holds_each_bound_at_its_own_level() {
-        type Tags = BoundedList<BoundedText<8>, 4>;
-        let tag = BoundedText::<8>::from_text("eight888").expect("eight bytes fit eight");
+        type Tags = BoundedList<SceString<8>, 4>;
+        let tag = SceString::<8>::from_text("eight888").expect("eight bytes fit eight");
         assert_eq!(
-            BoundedText::<8>::from_text("nine99999"),
+            SceString::<8>::from_text("nine99999"),
             Err(CapacityExceeded)
         );
         let tags = Tags::from_slice(&[tag.clone(), tag.clone()]).expect("two fit four");
@@ -916,14 +912,15 @@ mod tests {
         assert_eq!(list.push(10), Err(CapacityExceeded));
     }
 
-    // A byte string widens into a larger bound by type on both storage forms.
+    // A byte string widens into a larger bound by type, and an append past its
+    // bound is refused whole.
     #[test]
-    fn a_byte_string_widens_into_a_larger_bound() {
+    fn a_byte_string_widens_and_refuses_an_append_past_its_bound_whole() {
         let small = SceBytes::<2>::from_slice(&[0, 255]).expect("two fit two");
-        assert_eq!(SceBytes::<4>::widened(&small), &[0u8, 255]);
-        let inline = InlineBytes::<2>::from_slice(&[9]).expect("one fits two");
-        let mut wide = InlineBytes::<3>::widened(&inline);
-        assert_eq!(wide, &[9u8]);
+        let mut wide = SceBytes::<4>::widened(&small);
+        assert_eq!(wide, &[0u8, 255]);
+        assert_eq!(wide.extend_from_slice(&[1, 2, 3]), Err(CapacityExceeded));
+        assert_eq!(wide, &[0u8, 255]);
         assert!(wide.extend_from_slice(&[1, 2]).is_ok());
         assert_eq!(wide.push(3), Err(CapacityExceeded));
     }
@@ -932,8 +929,8 @@ mod tests {
     // of them, as a list of numbers does.
     #[test]
     fn a_list_of_texts_compares_with_a_slice() {
-        let tag = BoundedText::<4>::from_text("ab").expect("fits");
-        let list = BoundedList::<BoundedText<4>, 2>::from_slice(core::slice::from_ref(&tag))
+        let tag = SceString::<4>::from_text("ab").expect("fits");
+        let list = BoundedList::<SceString<4>, 2>::from_slice(core::slice::from_ref(&tag))
             .expect("one fits two");
         assert_eq!(list, &[tag.clone()]);
         assert!(list == &[tag][..]);
@@ -946,8 +943,8 @@ mod tests {
         let mut out = heapless::String::<16>::new();
         let text = SceString::<4>::from_text("ab").expect("fits");
         let inline = InlineStr::<4>::from_text("cd").expect("fits");
-        let bounded = BoundedText::<4>::from_text("é").expect("fits");
-        assert!(write!(out, "{text}{inline}{bounded}").is_ok());
+        let accented = SceString::<4>::from_text("é").expect("fits");
+        assert!(write!(out, "{text}{inline}{accented}").is_ok());
         assert_eq!(out.as_str(), "abcdé");
     }
 

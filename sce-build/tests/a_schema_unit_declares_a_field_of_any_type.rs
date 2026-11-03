@@ -242,7 +242,7 @@ fn every_backend_declares_a_record_that_holds_a_list_of_texts() {
     for (language, fragment) in [
         (
             "rust",
-            "pub tags: ::sce_portable_bytes::BoundedList<::sce_portable_bytes::BoundedText<8>, 4>,",
+            "pub tags: ::sce_portable_bytes::BoundedList<::sce_portable_bytes::SceString<8>, 4>,",
         ),
         ("kotlin", "val tags: List<String>"),
         ("cpp", "std::vector<std::string> tags{};"),

@@ -48,7 +48,7 @@
 
 use core::fmt;
 
-use sce_portable_bytes::{BoundedList, BoundedText};
+use sce_portable_bytes::BoundedList;
 
 /// Why an event's data cannot be read as its schema's fields.
 ///
@@ -453,9 +453,10 @@ impl<'a> PayloadValue<'a> {
 
     /// A text of at most `N` UTF-8 bytes (docs/adr/0086, section 4.4): one past
     /// the bound is refused, at whatever depth it stands, and never cut.
-    pub fn text<const N: usize>(&self) -> Result<BoundedText<N>, PayloadRefusal> {
+    pub fn text<const N: usize>(&self) -> Result<sce_portable_bytes::SceString<N>, PayloadRefusal> {
         let text = self.name()?;
-        BoundedText::<N>::from_text(text).map_err(|_| self.past_bytes(text.len(), N))
+        sce_portable_bytes::SceString::<N>::from_text(text)
+            .map_err(|_| self.past_bytes(text.len(), N))
     }
 
     /// A byte string of at most `N` bytes.
@@ -464,8 +465,8 @@ impl<'a> PayloadValue<'a> {
     /// the inject seam writes, and this reads it back the same way: every one
     /// of the 256 values is one character and back. Printable ASCII — what a
     /// bytes guard compares — is the same bytes under either reading. The bound
-    /// is held here on every profile: [`crate::SceBytes`] holds whatever it is
-    /// given where an allocator is.
+    /// is held before the copy, so a refusal names the length the delivery
+    /// carried, and [`crate::SceBytes`] holds it again on every profile.
     pub fn bytes<const N: usize>(&self) -> Result<crate::SceBytes<N>, PayloadRefusal> {
         let text = match self.value {
             Value::Text(s) => s,

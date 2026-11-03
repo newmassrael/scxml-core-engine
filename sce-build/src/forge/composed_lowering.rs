@@ -669,10 +669,10 @@ impl ComposedSpelling for RustComposed<'_> {
             crate::filters::escape_rust(held.alias.clone())
         )
     }
+    // The runtime's reader answers the portable `SceString<N>` itself, the one
+    // text type (docs/adr/0086, section 7.4).
     fn read_text(&self, max: u32, value: &str) -> String {
-        format!(
-            "{value}.text::<{max}>().map(|text| {RUST_PORTABLE}::SceString::<{max}>::held(text.as_str()))"
-        )
+        format!("{value}.text::<{max}>()")
     }
     // The runtime's reader answers the portable `SceBytes<N>` itself.
     fn read_bytes(&self, max: u32, value: &str) -> String {
@@ -986,10 +986,7 @@ mod tests {
         assert_eq!(read("int64"), "v.signed64()");
         assert_eq!(read("float32"), "v.float32()");
         assert_eq!(read("bool"), "v.truth()");
-        assert_eq!(
-            read("string[8]"),
-            "v.text::<8>().map(|text| ::sce_portable_bytes::SceString::<8>::held(text.as_str()))"
-        );
+        assert_eq!(read("string[8]"), "v.text::<8>()");
         assert_eq!(read("bytes[4]"), "v.bytes::<4>()");
         assert_eq!(read("optional<int64>"), "v.optional(|v| v.signed64())");
         assert_eq!(
@@ -1015,8 +1012,7 @@ mod tests {
         );
         assert!(
             item.ends_with(
-                "tags: r.field(\"tags\").and_then(|v| v.list::<_, 4>(|v| v.text::<8>().map(|text| \
-                 ::sce_portable_bytes::SceString::<8>::held(text.as_str())))? }))"
+                "tags: r.field(\"tags\").and_then(|v| v.list::<_, 4>(|v| v.text::<8>()))? }))"
             ),
             "{item}"
         );

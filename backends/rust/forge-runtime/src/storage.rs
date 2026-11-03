@@ -495,9 +495,10 @@ impl<T, const N: usize> HeldList for heapless::Vec<T, N> {
 
 // ── text containers ──────────────────────────────────────────────
 
-// The containers are `sce-portable-bytes`' (the algorithm kind's record text
-// field is the same type); only the codec's reading of them as a [`SceStr`] is
-// this crate's.
+// The containers are `sce-portable-bytes`'; only the codec's reading of them as
+// a [`SceStr`] is this crate's. `SceString` beside them is the language's text
+// type (an algorithm's record field), hard-bounded on every profile and no
+// codec container (docs/adr/0086, section 7.4).
 #[cfg(feature = "alloc")]
 pub use sce_portable_bytes::HeapStr;
 pub use sce_portable_bytes::{InlineStr, SceString};

@@ -354,7 +354,8 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
 4. **A host's injected value is refused where it is made** (ADR 0077 section 3). Rust holds a list in
    `BoundedList<T, N>`, a new type of `sce-portable-bytes` whose every constructor refuses more than `N` on both
    profiles (`SceOwnedList`'s `N` is advisory under `alloc`), and a text in a type that refuses past its bound; the
-   nested type is the composition of those (`BoundedList<BoundedList<BoundedText<8>, 4>, 3>`). Kotlin and Python check
+   nested type is the composition of those (`BoundedList<BoundedList<SceString<8>, 4>, 3>`; the text type is
+   `SceString<N>` since section 7.4, which folded `BoundedText<N>` into it). Kotlin and Python check
    in the record's constructor (`init`, `__post_init__`), recursively through a generated check per composition. Go,
    C++ and Swift have no checked constructor on a plain struct; the generated `raise_<event>` runs the same generated
    check before it encodes. C11's encode refuses a `len` past a bound at any depth.
@@ -425,6 +426,15 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
      `alloc` and in growable storage on the others, behind one name. A composed value therefore lowers on a machine
      built `--no-std`, and the refusal of a composed read and copy for that profile (`rust no_std`) goes; what is
      still refused there is refused by name for what the profile lacks, the JSON wire (section 3), not for its storage.
+   - **One type for each, hard on every profile** (decided 2026-11-04, after the first reason above was found not to
+     hold for text). Until then `SceString<N>` and `SceBytes<N>` named a codec's storage profiles, whose heap form
+     keeps `N` advisory, beside `BoundedText<N>` and `BoundedBytes<N>`, whose bound was hard: two types for one value
+     type, one of which could hold an illegal value under `alloc`. Now `SceString<N>` is the one text type (what
+     `BoundedText<N>` was, which goes), `SceBytes<N>` the one byte-string type (`BoundedList<u8, N>`, so a byte string
+     bounds and widens as every list does; `BoundedBytes<N>` goes), and every constructor and append of both refuses
+     past `N` on every profile. A codec's frame keeps its own storage profiles (`HeapStr`/`InlineStr`,
+     `HeapBytes`/`InlineBytes`), whose heap form's advisory `N` is the reading of a protocol SCE does not own that
+     section 1.4 keeps for codecs.
 
    The bound refusal stays where the language puts it: an assignment or an `<sce:append>` that would pass a place's
    bound is refused at that statement and raises `error.execution` (section 5, docs/SCE_ACCEPTED_SUBSET.md

@@ -2028,7 +2028,7 @@ Some transforms are runtime, data-dependent `bytes -> bytes` functions whose out
 
 | Backend | Output buffer | Append overflow | Return shape |
 |---------|---------------|-----------------|--------------|
-| Rust | the caller's `&mut SceBytes<N>`, the last parameter, named as the buffer is (no-alloc `heapless::Vec<u8, N>`; `alloc` = `Vec<u8>`, `N` advisory; docs/adr/0082) | `?` on `push` / `extend_from_slice` → `CapacityExceeded` | `Result<(), CapacityExceeded>` |
+| Rust | the caller's `&mut SceBytes<N>`, the last parameter, named as the buffer is (no-alloc `heapless::Vec<u8, N>`; `alloc` = `Vec<u8>`; `N` a hard bound on both, docs/adr/0082 and docs/adr/0086 section 7.4) | `?` on `push` / `extend_from_slice` → `CapacityExceeded` | `Result<(), CapacityExceeded>` |
 | C11 | the caller's `<symbol>_bytes_t { uint8_t bytes[N]; size_t len; } *`, after the declared parameters and named as the buffer is (no malloc; docs/adr/0082) | bounds-check returns `false` past `N`, recording the capacity failure in the caller's record when the algorithm `may-fail` | `bool`, whether it was written; a `may-fail` algorithm also takes the caller's `sce_forge_algorithm_failure_t *`, last |
 | C++ | `std::vector<std::uint8_t>`, `reserve(N)` | grows | `std::vector<std::uint8_t>` |
 | Go | `make([]byte, 0, N)` | grows | `[]byte` |
@@ -2136,7 +2136,7 @@ The fields are written in the SCHEMA's order whatever order the author gave them
 
 | Backend | A `string` field of bound N | Written from a literal | Written from a field | Compared |
 |---------|-----------------------------|------------------------|----------------------|----------|
-| Rust | `sce_portable_bytes::SceString<N>` — fixed-capacity (`heapless::String<N>`) on the no-alloc profile, a `String` (`N` advisory) under `alloc` | `sce_text!(N, "…")`, which compares the literal's length with `N` at build time | `SceString::<N>::widened(&x.text)`, where a source bound past `N` is a build error | `a.text.as_str() == b.text.as_str()` |
+| Rust | `sce_portable_bytes::SceString<N>` — fixed-capacity (`heapless::String<N>`) on the no-alloc profile, a `String` under `alloc`, `N` a hard bound on both (docs/adr/0086, section 7.4) | `sce_text!(N, "…")`, which compares the literal's length with `N` at build time | `SceString::<N>::widened(&x.text)`, where a source bound past `N` is a build error | `a.text.as_str() == b.text.as_str()` |
 | C11 | `sce_static_string_<N>_t` — `{ char data[N + 1]; }`, the type a `sce-static` statechart holds the same text in, declared under one guard by the event-schema header and the machine's, so a record is still copied by assignment | `sce_static_string_<N>_of("…")` | `sce_static_string_<N>_of(x.text.data)` | `strcmp(a.text.data, b.text.data) == 0` |
 | C++ | `std::string` | the literal | `x.text` | `==` |
 | Go | `string` | the literal | `x.Text` | `==` |

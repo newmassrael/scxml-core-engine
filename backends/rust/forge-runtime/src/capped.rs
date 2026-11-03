@@ -10,9 +10,10 @@
 //! `Inline`'s refuse past theirs, so a storing decode reads the frame on past
 //! the limit and answers the capacity last on either kind of node.
 //!
-//! They are apart from `HeapStr<N>` and `HeapBytes<N>`, whose `N` is
-//! advisory: the algorithm kind holds its record fields in those and relies on
-//! that.
+//! They are apart from `HeapStr<N>` and `HeapBytes<N>`, a codec's growable
+//! profile, whose `N` is advisory, and from the language's `SceString<N>` and
+//! `SceBytes<N>`, whose `N` is hard and which hold no codec's frame
+//! (docs/adr/0086, section 7.4).
 
 use crate::bounded::{Entries, Fewest};
 use crate::codec::CodecError;

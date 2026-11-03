@@ -12,7 +12,7 @@
 //!
 //! | Backend | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
 //! |---|---|---|---|---|
-//! | Rust | `BoundedList<T, N>` | `BoundedText<N>` / `BoundedBytes<N>` | `Option<T>` | its payload struct |
+//! | Rust | `BoundedList<T, N>` | `SceString<N>` / `SceBytes<N>` | `Option<T>` | its payload struct |
 //! | Kotlin | `List<T>` | `String` / `ByteArray` | `T?` | its data class |
 //! | C++ | `std::vector<T>` | `std::string` / `std::vector<uint8_t>` | `std::optional<T>` | its struct |
 //! | Go | `[]T` | `string` / `[]byte` | `optional.Of[T]` | its struct |
@@ -22,7 +22,8 @@
 //!
 //! Rust's text, byte string and list inside a composition are the bounded types
 //! of `sce-portable-bytes`, whose every constructor refuses a value past its
-//! bound on every profile (section 5.4). C11 lays every composition out
+//! bound on every profile (sections 5.4 and 7.4), the types a machine holds
+//! the same values in. C11 lays every composition out
 //! statically: each distinct one is one named type, its name mangled from its
 //! structure (`sce_list_3_list_4_string_8_t`), declared once under a guard
 //! named by it, so the same composition is one type across the units of a
@@ -93,10 +94,8 @@ pub(crate) fn unit_type(
     Ok(match lang {
         Language::Rust => match ty {
             ValueType::Scalar(t) => names.scalar(t),
-            ValueType::Text { max } => format!("::sce_portable_bytes::BoundedText<{}>", max.max),
-            ValueType::Bytes { max } => {
-                format!("::sce_portable_bytes::BoundedBytes<{}>", max.max)
-            }
+            ValueType::Text { max } => format!("::sce_portable_bytes::SceString<{}>", max.max),
+            ValueType::Bytes { max } => format!("::sce_portable_bytes::SceBytes<{}>", max.max),
             ValueType::Optional { elem } => format!("Option<{}>", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
             ValueType::List { elem, max } => format!(
@@ -259,7 +258,7 @@ mod tests {
             (
                 Language::Rust,
                 "::sce_portable_bytes::BoundedList<Option<::sce_portable_bytes::BoundedList<\
-                 ::sce_portable_bytes::BoundedText<8>, 4>>, 3>",
+                 ::sce_portable_bytes::SceString<8>, 4>>, 3>",
             ),
             (Language::Kotlin, "List<List<String>?>"),
             (

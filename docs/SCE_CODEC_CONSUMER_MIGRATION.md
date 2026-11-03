@@ -891,3 +891,23 @@ Landing: the commit that adds this section; the Rust trees are regenerated after
 - A saved state is unchanged on the wire. `sce_rust_runtime::saved_state::bounded` reads a list into the
   `BoundedList` its caller names and takes no capacity argument; its bound is the type's.
 
+## A text and a byte string have one type each, bounded on every profile (ADR 0086 §7.4)
+
+Landing: the commit that adds this section.
+
+- `sce_portable_bytes::SceString<N>` is a type of its own, no longer an alias of `HeapStr<N>` (with an allocator) or
+  `InlineStr<N>` (without). `from_text` and `try_push_str` refuse past `N` bytes with `CapacityExceeded` on every
+  profile, where the heap form took any length. `held`, `widened`, `as_str`, `new`, `CAPACITY`, `Display`,
+  `Deref<Target = str>` and `== &str` are as they were. Code that relied on a `SceString<N>` holding more than `N`
+  under `alloc` now meets the refusal: give the place the bound its values need.
+- `sce_portable_bytes::BoundedText<N>` is gone: write `SceString<N>`, whose API it was. `sce_rust_runtime::BoundedText`
+  goes with it, and `PayloadValue::text::<N>()` answers a `SceString<N>`.
+- `sce_portable_bytes::SceBytes<N>` (and `sce_rust_runtime::SceBytes<N>`) is `BoundedList<u8, N>`, no longer an alias
+  of `HeapBytes<N>` / `InlineBytes<N>`. `from_slice`, `push` and `extend_from_slice` refuse past `N` on every profile
+  (an `extend_from_slice` past it appends nothing); `new`, `clear`, `as_slice` and `Deref<Target = [u8]>` are as
+  they were, and `widened` copies one of a smaller bound. `BoundedBytes<N>` is gone: write `SceBytes<N>`.
+- A codec's storage profiles are unchanged: `HeapStr`, `InlineStr`, `HeapBytes` and `InlineBytes` keep their names
+  and their reading (the heap form's `N` advisory, as a foreign protocol's bound is). A codec's owned form never
+  named `SceString` or `SceBytes`, so a codec consumer changes nothing; code that passed a `SceBytes<N>` where a
+  codec's `HeapBytes<N>` was asked for converts with `HeapBytes::from_slice(bytes.as_slice())`.
+

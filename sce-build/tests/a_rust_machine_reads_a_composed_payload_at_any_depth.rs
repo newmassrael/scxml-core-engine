@@ -184,12 +184,12 @@ fn the_lift_reads_each_field_by_its_type_at_every_depth() {
         &[
             r#"PayloadFields::decode_with_defaults(data, "{\"late\":[]}")?"#,
             r#"items: fields.field("items").and_then(|v| v.list::<_, 3>(|v| v.record(None, |r| Ok(BatchReaderItemRecord { id: r.field("id").and_then(|v| v.unsigned::<u32>())?, "#,
-            r#"tags: r.field("tags").and_then(|v| v.list::<_, 4>(|v| v.text::<8>().map(|text| ::sce_portable_bytes::SceString::<8>::held(text.as_str()))))? }))))?,"#,
+            r#"tags: r.field("tags").and_then(|v| v.list::<_, 4>(|v| v.text::<8>()))? }))))?,"#,
             r#"blob: r.field("blob").and_then(|v| v.bytes::<4>())?, "#,
             r#"grid: fields.field("grid").and_then(|v| v.list::<_, 2>(|v| v.list::<_, 2>(|v| v.unsigned::<u8>())))?,"#,
             r#"maybe: fields.field("maybe").and_then(|v| v.list::<_, 2>(|v| v.optional(|v| v.unsigned::<u16>())))?,"#,
             r#"spare: fields.field("spare").and_then(|v| v.optional(|v| v.list::<_, 2>(|v| v.unsigned::<u8>())))?,"#,
-            r#"note: fields.field("note").and_then(|v| v.text::<4>().map(|text| ::sce_portable_bytes::SceString::<4>::held(text.as_str())))?,"#,
+            r#"note: fields.field("note").and_then(|v| v.text::<4>())?,"#,
         ],
     );
 }

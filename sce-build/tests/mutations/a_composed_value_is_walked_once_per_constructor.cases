@@ -55,8 +55,8 @@ PY
 # A text is read with no bound, so a text past it is kept (section 4.4).
 mutation_case "a text is read with no bound" <<'PY'
 edit("sce-build/src/forge/composed_lowering.rs",
-     r'''            "{value}.text::<{max}>().map(|text| {RUST_PORTABLE}::SceString::<{max}>::held(text.as_str()))"''',
-     r'''            "{value}.text::<{}>().map(|text| {RUST_PORTABLE}::SceString::<{max}>::held(text.as_str()))", u32::MAX''')
+     r'''        format!("{value}.text::<{max}>()")''',
+     r'''        format!("{value}.text::<{}>()", u32::MAX)''')
 PY
 
 # A text of a smaller bound is copied into a place of a larger one as though
