@@ -62,8 +62,7 @@ public struct CodecZenohQuery: Equatable, Sendable {
 
     /// On the wire only when `(header & 0x80) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
-    /// Entries of `CodecZenohExtEntry`, one after another, at most none: to the end of the frame. A frame
-    /// with more is refused with `tooManyElements`, as is a value with more at its encode.
+    /// Entries of `CodecZenohExtEntry`, one after another: to the end of the frame. The protocol states no depth.
     public var extensions: [CodecZenohExtEntry]? = nil
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
@@ -99,13 +98,9 @@ public struct CodecZenohQuery: Equatable, Sendable {
         }
         if (frame.header & 0x80) != 0 {
             var extensions_items: [CodecZenohExtEntry] = []
-            for _ in 0..<none {
-                if reader.remaining == 0 { break }
+            while reader.remaining > 0 {
                 let entry = try CodecZenohExtEntry.decode(&reader)
                 extensions_items.append(entry)
-            }
-            if reader.remaining > 0 {
-                throw CodecError.tooManyElements
             }
             frame.extensions = extensions_items
         }

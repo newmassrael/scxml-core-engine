@@ -100,17 +100,30 @@ final class CodecChainUnitTests: XCTestCase {
     }
 
     func testTheEntryAfterTheDepthIsRefusedWhenTheChainStillPromisesMore() {
-        // Four entries, each promising another, where the bound is four, and bytes left after them.
-        var past = SceCursor([0x85, 0x81, 0x81, 0x81, 0x81, 0x02, 0x00])
-        XCTAssertThrowsError(try CodecZenohErr.decode(&past)) { error in
+        // A chain the protocol bounds, here at four (the Zenoh extensions state no bound, so they
+        // are walked to their own end). The head byte, then four entries of a header with its
+        // continuation flag set and a one-byte value, each promising another, and bytes left after.
+        let promising: [UInt8] = [0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01]
+        var past = SceCursor([0x00] + promising + [0x02, 0x00])
+        XCTAssertThrowsError(try CodecChainFlagCarrier.decode(&past)) { error in
             XCTAssertEqual(error as? CodecError, .tooManyElements)
         }
-        XCTAssertEqual(past.remaining, 7)
+        XCTAssertEqual(past.remaining, 11)
         // The same four with nothing after them: the fifth the last promised is simply missing.
-        var short = SceCursor([0x85, 0x81, 0x81, 0x81, 0x81])
-        XCTAssertThrowsError(try CodecZenohErr.decode(&short)) { error in
+        var short = SceCursor([0x00] + promising)
+        XCTAssertThrowsError(try CodecChainFlagCarrier.decode(&short)) { error in
             XCTAssertEqual(error as? CodecError, .needMoreBytes)
         }
+    }
+
+    // The protocol states no depth for the Zenoh extensions, so the chain is walked to the entry
+    // that says it is the last, however many came before: the same bytes that a bound of four
+    // refuses (above) are five entries here.
+    func testAChainTheProtocolGivesNoDepthIsWalkedToItsOwnEnd() throws {
+        var cursor = SceCursor([0x85, 0x81, 0x81, 0x81, 0x81, 0x02, 0x00])
+        let frame = try CodecZenohErr.decode(&cursor)
+        XCTAssertEqual(frame.extensions?.count, 5)
+        XCTAssertEqual(cursor.remaining, 0)
     }
 
     func testAChainClosedByAFlagHoldsAtLeastOneEntryWhenItIsPresent() {

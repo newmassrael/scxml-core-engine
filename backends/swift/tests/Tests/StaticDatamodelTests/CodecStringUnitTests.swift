@@ -52,27 +52,28 @@ final class CodecStringUnitTests: XCTestCase {
     }
 
     func testALengthPastTheBoundIsRefusedBeforeTheBytesAreCut() {
-        // 129 as a variable-length integer: the frame holds none of the bytes it says.
-        var cursor = SceCursor([0x81, 0x01])
+        // 256 as a variable-length integer: past the bound of 255, and the frame holds none of the
+        // bytes it says.
+        var cursor = SceCursor([0x80, 0x02])
         XCTAssertThrowsError(try CodecZenohLocator.decode(&cursor)) { error in
             XCTAssertEqual(error as? CodecError, .lengthOutOfRange)
         }
         XCTAssertEqual(cursor.remaining, 2)
     }
 
-    // 65 characters of two bytes each are 130 bytes: past a bound of 128 bytes, though not of 128
+    // 128 characters of two bytes each are 256 bytes: past a bound of 255 bytes, though not of 255
     // characters.
     func testTheBoundCountsTheBytesOnTheWireAndNotTheCharacters() throws {
-        let text = String(repeating: "\u{E9}", count: 65)
+        let text = String(repeating: "\u{E9}", count: 128)
         var sink = BytesSink()
-        XCTAssertThrowsError(try CodecZenohLocator(locator_len: 130, locator: text).encode(into: &sink)) {
+        XCTAssertThrowsError(try CodecZenohLocator(locator_len: 256, locator: text).encode(into: &sink)) {
             error in
             XCTAssertEqual(error as? CodecError, .lengthOutOfRange)
         }
         XCTAssertEqual(sink.bytes, [], "a refused encode writes nothing")
-        let atTheBound = String(repeating: "a", count: 128)
-        try CodecZenohLocator(locator_len: 128, locator: atTheBound).encode(into: &sink)
-        XCTAssertEqual(sink.bytes.count, 2 + 128, "the size of 128 is two bytes of variable-length integer")
+        let atTheBound = String(repeating: "a", count: 255)
+        try CodecZenohLocator(locator_len: 255, locator: atTheBound).encode(into: &sink)
+        XCTAssertEqual(sink.bytes.count, 2 + 255, "the size of 255 is two bytes of variable-length integer")
     }
 
     func testAGatedTextWithAGatedLengthIsAbsentWhenItsGateIsClosed() throws {

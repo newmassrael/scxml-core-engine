@@ -46,8 +46,8 @@ public struct {{ struct_name }}: Equatable, Sendable {
     /// read from; an encode writes that field as it stands, and the arm after it, so the two are
     /// kept in step by whoever holds the value.
 {% elif f.chain %}
-    /// Entries of `{{ f.chain.element }}`, one after another, at most {{ f.chain.max_depth }}: {% if f.chain.accessor %}until one says it is the last{% else %}to the end of the frame{% endif %}. A frame
-    /// with more is refused with `tooManyElements`, as is a value with more at its encode.
+    /// Entries of `{{ f.chain.element }}`, one after another{% if f.chain.max_depth is not none %}, at most {{ f.chain.max_depth }}{% endif %}: {% if f.chain.accessor %}until one says it is the last{% else %}to the end of the frame{% endif %}.{% if f.chain.max_depth is not none %} A frame
+    /// with more is refused with `tooManyElements`, as is a value with more at its encode.{% else %} The protocol states no depth.{% endif %}{{ '' }}
 {% elif f.embed %}
     /// A `{{ f.embed.element }}` laid in place: it has no bytes of its own, the frame holds its fields
     /// where this field stands{% if f.embed.length %}, read from as many bytes as the document says an earlier field gives it, of which it need not take all{% endif %}.
@@ -156,7 +156,13 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% elif f.chain and f.chain.accessor %}
 {{ pad }}        {{ f.chain.decls }}var {{ f.chain.items }}: [{{ f.chain.element }}] = []
 {{ pad }}        var {{ f.chain.more }} = false
+{# A chain the protocol states no depth of is walked until its own end (docs/adr/0077 §7): every
+   pass reads an entry, so the walk moves on, and a frame that ends first is refused by the read. #}
+{% if f.chain.max_depth is none %}
+{{ pad }}        while true {
+{% else %}
 {{ pad }}        for _ in 0..<{{ f.chain.max_depth }} {
+{% endif %}
 {{ pad }}            let entry = try {{ f.chain.element }}.decode(&reader{{ f.chain.decode_args }})
 {{ pad }}            {{ f.chain.more }} = entry.{{ f.chain.accessor }}
 {{ pad }}            {{ f.chain.items }}.append(entry)
@@ -165,26 +171,34 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% endfor %}
 {{ pad }}            if !{{ f.chain.more }} { break }
 {{ pad }}        }
+{% if f.chain.max_depth is not none %}
 {{ pad }}        if {{ f.chain.more }} && reader.remaining == 0 {
 {{ pad }}            throw CodecError.needMoreBytes
 {{ pad }}        }
 {{ pad }}        if {{ f.chain.more }} {
 {{ pad }}            throw CodecError.tooManyElements
 {{ pad }}        }
+{% endif %}
 {{ pad }}        frame.{{ f.id }} = {{ f.chain.items }}
 {% elif f.chain %}
 {{ pad }}        {{ f.chain.decls }}var {{ f.chain.items }}: [{{ f.chain.element }}] = []
+{% if f.chain.max_depth is none %}
+{{ pad }}        while reader.remaining > 0 {
+{% else %}
 {{ pad }}        for _ in 0..<{{ f.chain.max_depth }} {
 {{ pad }}            if reader.remaining == 0 { break }
+{% endif %}
 {{ pad }}            let entry = try {{ f.chain.element }}.decode(&reader{{ f.chain.decode_args }})
 {{ pad }}            {{ f.chain.items }}.append(entry)
 {% for update in f.chain.updates %}
 {{ pad }}            {{ update }}
 {% endfor %}
 {{ pad }}        }
+{% if f.chain.max_depth is not none %}
 {{ pad }}        if reader.remaining > 0 {
 {{ pad }}            throw CodecError.tooManyElements
 {{ pad }}        }
+{% endif %}
 {{ pad }}        frame.{{ f.id }} = {{ f.chain.items }}
 {% elif f.embed and f.embed.length %}
 {{ pad }}        let {{ f.embed.inner }}_length = {{ f.embed.length }}

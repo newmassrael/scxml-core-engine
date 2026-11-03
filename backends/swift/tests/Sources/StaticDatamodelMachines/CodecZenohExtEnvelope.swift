@@ -18,8 +18,7 @@ public struct CodecZenohExtEnvelope: Equatable, Sendable {
     /// The field at byte 0, big-endian.
     public var header_flags: UInt8 = 0
 
-    /// Entries of `CodecZenohExtEntry`, one after another, at most none: until one says it is the last. A frame
-    /// with more is refused with `tooManyElements`, as is a value with more at its encode.
+    /// Entries of `CodecZenohExtEntry`, one after another: until one says it is the last. The protocol states no depth.
     public var extensions: [CodecZenohExtEntry] = []
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
@@ -43,17 +42,11 @@ public struct CodecZenohExtEnvelope: Equatable, Sendable {
         frame.header_flags = try reader.readInteger(UInt8.self, .big)
         var extensions_items: [CodecZenohExtEntry] = []
         var extensions_more = false
-        for _ in 0..<none {
+        while true {
             let entry = try CodecZenohExtEntry.decode(&reader)
             extensions_more = entry.Z
             extensions_items.append(entry)
             if !extensions_more { break }
-        }
-        if extensions_more && reader.remaining == 0 {
-            throw CodecError.needMoreBytes
-        }
-        if extensions_more {
-            throw CodecError.tooManyElements
         }
         frame.extensions = extensions_items
         cursor = reader

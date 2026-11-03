@@ -15,8 +15,7 @@ public struct CodecZenohQueryValue: Equatable, Sendable {
     /// integer or a field of bytes may take more.
     public static let frameLength = 0
 
-    /// Entries of `CodecZenohValueEntry`, one after another, at most none: until one says it is the last. A frame
-    /// with more is refused with `tooManyElements`, as is a value with more at its encode.
+    /// Entries of `CodecZenohValueEntry`, one after another: until one says it is the last. The protocol states no depth.
     public var exts: [CodecZenohValueEntry] = []
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
@@ -39,18 +38,12 @@ public struct CodecZenohQueryValue: Equatable, Sendable {
         var _prev_exts_after_shm: UInt8 = 0
         var exts_items: [CodecZenohValueEntry] = []
         var exts_more = false
-        for _ in 0..<none {
+        while true {
             let entry = try CodecZenohValueEntry.decode(&reader, after_shm: _prev_exts_after_shm)
             exts_more = entry.Z
             exts_items.append(entry)
             _prev_exts_after_shm = (chainIdentifier(entry.extId) == 4) ? 1 : 0
             if !exts_more { break }
-        }
-        if exts_more && reader.remaining == 0 {
-            throw CodecError.needMoreBytes
-        }
-        if exts_more {
-            throw CodecError.tooManyElements
         }
         frame.exts = exts_items
         cursor = reader
