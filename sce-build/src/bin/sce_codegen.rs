@@ -142,6 +142,27 @@ fn plans_children() -> bool {
     output_mode() == OutputMode::Plan && PLAN_CHILDREN.get().copied().unwrap_or(false)
 }
 
+/// Installed once by `main`, beside [`PLAN_CHILDREN`]: where a `--plan` run
+/// writes the list of the files it read (`--plan-reads`, [`write_plan_reads`]).
+static PLAN_READS: OnceLock<PathBuf> = OnceLock::new();
+
+/// The file a `--plan` run was asked to write what it read into, or `None`
+/// when it was not asked, or the run is no plan.
+fn plan_reads() -> Option<&'static Path> {
+    if output_mode() == OutputMode::Plan {
+        PLAN_READS.get().map(PathBuf::as_path)
+    } else {
+        None
+    }
+}
+
+/// Whether a run records what it read ([`GenerateReport::depfile`]): a run
+/// asked for a depfile (`--write-deps`), and a plan asked for its reads
+/// (`--plan-reads`), which are the prerequisites that depfile would name.
+fn records_reads(depfile_path: Option<&str>) -> bool {
+    depfile_path.is_some() || plan_reads().is_some()
+}
+
 /// The tree an `--assert-unchanged` run would have left behind, held in
 /// memory instead of written: every path the run touched, mapped to the bytes
 /// it would finally hold, or to `None` where the run would have removed it.
@@ -1717,6 +1738,21 @@ struct Cli {
     /// for it is the generator's, as the answer for the run is.
     #[arg(long, global = true, requires = "plan")]
     plan_children: bool,
+
+    /// With `--plan`: also write to FILE, one path per line, every file the
+    /// plan read: the prerequisites a `--write-deps` depfile of the same run
+    /// names (its document, what that document includes and imports, the
+    /// source set its `source-hash` covers, the deploy, the templates and
+    /// this program), less every file the run produces; with
+    /// `--plan-children`, those of every child generation it planned too.
+    ///
+    /// The answer of a plan is a function of what it read and of its
+    /// arguments, so a build that keeps the answer can tell when it is still
+    /// the one the generator would give: when no file of this list is newer
+    /// than the answer. A run that records nothing it read writes no list,
+    /// and an answer without one is never reused.
+    #[arg(long, global = true, requires = "plan", value_name = "FILE")]
+    plan_reads: Option<PathBuf>,
 
     /// Diagnostic output format on stderr. `human` (default) preserves
     /// the existing CLI text. `json` emits one NDJSON record per error
@@ -3586,6 +3622,43 @@ enum Commands {
         #[arg(long, value_name = "KIND", value_parser = registered_kinds())]
         kind: Option<String>,
     },
+    /// Answer many plans at once: run `--plan generate` for each request of
+    /// `--requests`, up to `--jobs` at a time, and keep each answer under
+    /// `--results`.
+    ///
+    /// A build system has to know a generation's outputs when it is
+    /// configured, and asks each one's plan by itself (`--plan generate`, the
+    /// whole generation run in memory). Asked one after another, the plans of
+    /// a tree of a few hundred generations took longer than its build. Each
+    /// request is answered by a run of this program with the request's own
+    /// arguments, the run a build would make for that one plan, so an answer
+    /// here is byte for byte the one that run prints: a process each, and not
+    /// threads of this one, since a generation keeps its output mode, its
+    /// tree of files held in memory and the documents it holds in state of
+    /// its process, and a refused document ends the process that refuses it.
+    ///
+    /// `--requests` holds one request per line: a name, then each argument of
+    /// the run after the program, separated by tabs. The arguments ask one
+    /// plan (`--plan [--plan-children] generate <document> ...`), and nothing
+    /// else is run. For each request, `<results>/<name>.request` keeps its
+    /// line, and then either `<name>.plan` holds what the plan printed, with
+    /// `<name>.reads` the files it read (`--plan-reads`), or `<name>.error`
+    /// holds what the refused run wrote on stderr. A `.plan` is dated when
+    /// its `.request` was written, before the plan read anything, so a file
+    /// the plan read and that changed while it ran is newer than the answer.
+    /// The command fails only when it cannot answer: a refused plan is an
+    /// answer.
+    PlanBatch {
+        /// The requests, one per line: `<name>\t<argument>\t<argument>...`
+        #[arg(long, value_name = "FILE")]
+        requests: String,
+        /// The directory each answer is kept in, under its request's name
+        #[arg(long, value_name = "DIR")]
+        results: String,
+        /// How many plans run at once; one per processor when not given
+        #[arg(short, long, value_name = "N")]
+        jobs: Option<usize>,
+    },
     /// Print the conformance fixture name list from a manifest. Build
     /// systems consume this so they don't need a native JSON parser
     /// (CMake, Gradle, plain Bash) to enumerate fixtures.
@@ -4113,6 +4186,9 @@ fn main() {
         }
         let _ = OUTPUT_MODE.set(OutputMode::Plan);
         let _ = PLAN_CHILDREN.set(cli.plan_children);
+        if let Some(reads) = cli.plan_reads {
+            let _ = PLAN_READS.set(reads);
+        }
     }
     match cli.command {
         Commands::Generate(args) => run_generate(*args, error_format),
@@ -4273,6 +4349,11 @@ fn main() {
             output_dir,
             write_deps,
         } => cmd_generate_conformance(&language, &manifest, &output_dir, write_deps.as_deref()),
+        Commands::PlanBatch {
+            requests,
+            results,
+            jobs,
+        } => cmd_plan_batch(&requests, &results, jobs),
         Commands::ListFixtures(args) => cmd_list_fixtures(&args),
         Commands::CheckAotBriefs {
             manifest,
@@ -4407,6 +4488,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::RequirementClosure { .. }
         | Commands::Unresolved { .. }
         | Commands::Coverage { .. }
+        | Commands::PlanBatch { .. }
         | Commands::ListFixtures(_)
         | Commands::CheckAotBriefs { .. }
         | Commands::CheckQueueHistory { .. }
@@ -6245,10 +6327,22 @@ fn run_generate(args: GenerateArgs, error_format: ErrorFormat) {
     let mut report = cmd_generate(args, error_format);
     write_sourcemaps(std::mem::take(&mut report.sourcemaps));
     write_run_depfile(depfile.as_deref(), &report);
+    let mut read = report.depfile.clone();
     if let Some(args) = children_of {
-        plan_child_generations(&args, &report, error_format);
+        let children_read = plan_child_generations(&args, &report, error_format);
+        read = joined_reads(read, children_read);
     }
+    write_plan_reads(read.as_ref());
     emit_generate_manifest(&report);
+}
+
+/// What two parts of one run read, as one entry. A part that recorded
+/// nothing makes the whole unknown: a list short of what one part read would
+/// let an answer that part changed be reused.
+fn joined_reads(first: Option<DepfileEntry>, second: Option<DepfileEntry>) -> Option<DepfileEntry> {
+    let (mut first, second) = (first?, second?);
+    first.absorb(second);
+    Some(first)
 }
 
 /// How a build generates a child document a run writes, which
@@ -6335,7 +6429,16 @@ impl ChildGeneration {
 /// every file has the one generation that owns it. A child the run names and
 /// wrote no document for is not planned; its generation would have nothing
 /// to read either.
-fn plan_child_generations(args: &GenerateArgs, report: &GenerateReport, error_format: ErrorFormat) {
+///
+/// Returns what every planned generation read ([`GenerateReport::depfile`]),
+/// as one entry, when the run records its reads ([`records_reads`]) and each
+/// of them recorded it: `None` when one did not, since a list short of what
+/// one generation read is no list of what the plan read.
+fn plan_child_generations(
+    args: &GenerateArgs,
+    report: &GenerateReport,
+    error_format: ErrorFormat,
+) -> Option<DepfileEntry> {
     let mut run = std::mem::take(&mut *pending_tree());
     let document = args.scxml.first().map(String::as_str).unwrap_or_default();
     let input_root = args.input_root.clone().unwrap_or_else(|| {
@@ -6378,6 +6481,7 @@ fn plan_child_generations(args: &GenerateArgs, report: &GenerateReport, error_fo
     let mut pending: std::collections::VecDeque<(PathBuf, ChildGeneration)> =
         asked_by(report).into();
     let mut planned: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut read = Some(DepfileEntry::default());
     while let Some((child, kind)) = pending.pop_front() {
         if !held.contains_key(&child) || !planned.insert(child.clone()) {
             continue;
@@ -6386,6 +6490,7 @@ fn plan_child_generations(args: &GenerateArgs, report: &GenerateReport, error_fo
         let mut child_report = sce_build::confine::with_documents(held.clone(), || {
             cmd_generate(child_args, error_format)
         });
+        read = joined_reads(read, child_report.depfile.take());
         write_sourcemaps(std::mem::take(&mut child_report.sourcemaps));
         let tree = std::mem::take(&mut *pending_tree());
         hold(&tree, &mut held);
@@ -6402,6 +6507,7 @@ fn plan_child_generations(args: &GenerateArgs, report: &GenerateReport, error_fo
         pending.extend(asked_by(&child_report));
     }
     *pending_tree() = run;
+    read
 }
 
 /// Write the one depfile a `generate` run was asked for (`--write-deps`), from
@@ -6534,6 +6640,7 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
     // prerequisites every document and template any member read, less every
     // file any member wrote.
     write_run_depfile(args.write_deps.as_deref(), &set);
+    write_plan_reads(set.depfile.as_ref());
     emit_generate_manifest(&set);
 }
 
@@ -6838,7 +6945,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                         write_drift_aware(&path, code, &drift_ctx);
                         report.artifacts.push(path.clone());
                     }
-                    if depfile_path.is_some() {
+                    if records_reads(depfile_path) {
                         // Through `write_depfile`'s entry, not a local
                         // `format!`. The inline version this replaced
                         // named the input `.scxml` and nothing else — no
@@ -7187,7 +7294,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         // which hid it). A stub is not rendered from a template, but the
         // templates stay declared anyway — the depfile has one shape, and a
         // template edit costs a stub regeneration that changes nothing.
-        if depfile_path.is_some() {
+        if records_reads(depfile_path) {
             report.depfile = Some(depfile_entry(DepfileInputs {
                 output_paths: &report.artifacts,
                 template_dir: &template_dir,
@@ -7774,8 +7881,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     // `parse_file` consumed during this invocation, so editing one
     // correctly invalidates `<case>_sm.{h,inl}` artifacts on the next
     // ninja/make run. tc8-harness's CMake glob workaround can be
-    // retired once consumers pick up this flag.
-    if depfile_path.is_some() {
+    // retired once consumers pick up this flag. A plan asked for what it read
+    // (`--plan-reads`) records the same entry: the list it writes is these
+    // prerequisites.
+    if records_reads(depfile_path) {
         report.depfile = Some(depfile_entry(DepfileInputs {
             output_paths: &output_paths,
             template_dir: &template_dir,
@@ -8183,7 +8292,7 @@ fn write_depfile(depfile_path: &str, inputs: DepfileInputs<'_>) {
 /// files are subtracted, so a document one member reads and another member
 /// writes — none, today, but the subtraction is where a cycle would hide —
 /// is not declared as a prerequisite of the edge that writes it.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct DepfileEntry {
     outputs: Vec<PathBuf>,
     self_written: Vec<PathBuf>,
@@ -8310,32 +8419,7 @@ fn write_depfile_entry(depfile_path: &str, entry: &DepfileEntry) {
     if output_mode().holds_in_memory() {
         return;
     }
-    let mut deps = entry.prerequisites.clone();
-
-    // Drop anything this invocation wrote. Its own artefacts as well as
-    // the side-effect writes: both are outputs of this build edge, and
-    // an edge that lists its own output as a prerequisite is a cycle,
-    // not a dependency.
-    let produced: std::collections::HashSet<PathBuf> = entry
-        .outputs
-        .iter()
-        .chain(entry.self_written.iter())
-        .map(|p| depfile_identity(p))
-        .collect();
-    deps.retain(|p| !produced.contains(&depfile_identity(p)));
-
-    // A standard document — the input, or one the input imports — is in the
-    // generator, not on disk, so the generator binary declared above is its
-    // prerequisite. Named here it would be a file that never exists, which a
-    // build system reads as always out of date.
-    deps.retain(|p| !sce_build::forge::stdlib::names_standard(p));
-
-    // Collapse duplicates while preserving first-seen order. The same
-    // canonical path can land in `deps` more than once (e.g. a fragment
-    // pulled in via both `<xi:include>` and `<sce:use>` — pipeline-level
-    // de-dup is the sink's responsibility per parser comment).
-    let mut seen = std::collections::HashSet::new();
-    deps.retain(|p| seen.insert(p.clone()));
+    let deps = depfile_prerequisites(entry);
 
     // One target: the primary artefact, which every route writes first (the
     // header, for the backends that also write a `.inl` or a `.c`).
@@ -8375,6 +8459,66 @@ fn write_depfile_entry(depfile_path: &str, entry: &DepfileEntry) {
             })
         });
     }
+}
+
+/// `--plan-reads`: write what a plan read, one path per line, to the file it
+/// was asked to write it to. The list is the prerequisites the depfile of
+/// the same run would name ([`depfile_prerequisites`]), each made absolute
+/// against the working directory the run was given, so a reader in another
+/// directory reads the same files.
+///
+/// A plan whose generations did not all record what they read (`read` is
+/// `None`) writes no list: an answer without one is never reused, and one
+/// with a list short of a file would be reused after that file changed.
+fn write_plan_reads(read: Option<&DepfileEntry>) {
+    let (Some(path), Some(entry)) = (plan_reads(), read) else {
+        return;
+    };
+    let mut list = String::new();
+    for file in depfile_prerequisites(entry) {
+        let file = std::path::absolute(&file).unwrap_or(file);
+        list.push_str(&file.display().to_string());
+        list.push('\n');
+    }
+    fs::write(path, list).unwrap_or_else(|e| {
+        cli_exit(CliError::WriteOutput {
+            path: path.display().to_string(),
+            source: e,
+        })
+    });
+}
+
+/// The prerequisites `entry` names once what the run produced is taken back
+/// out of it: the depfile's, and a plan's read list ([`write_plan_reads`]),
+/// one list for both.
+fn depfile_prerequisites(entry: &DepfileEntry) -> Vec<PathBuf> {
+    let mut deps = entry.prerequisites.clone();
+
+    // Drop anything this invocation wrote. Its own artefacts as well as
+    // the side-effect writes: both are outputs of this build edge, and
+    // an edge that lists its own output as a prerequisite is a cycle,
+    // not a dependency.
+    let produced: std::collections::HashSet<PathBuf> = entry
+        .outputs
+        .iter()
+        .chain(entry.self_written.iter())
+        .map(|p| depfile_identity(p))
+        .collect();
+    deps.retain(|p| !produced.contains(&depfile_identity(p)));
+
+    // A standard document — the input, or one the input imports — is in the
+    // generator, not on disk, so the generator binary declared above is its
+    // prerequisite. Named here it would be a file that never exists, which a
+    // build system reads as always out of date.
+    deps.retain(|p| !sce_build::forge::stdlib::names_standard(p));
+
+    // Collapse duplicates while preserving first-seen order. The same
+    // canonical path can land in `deps` more than once (e.g. a fragment
+    // pulled in via both `<xi:include>` and `<sce:use>` — pipeline-level
+    // de-dup is the sink's responsibility per parser comment).
+    let mut seen = std::collections::HashSet::new();
+    deps.retain(|p| seen.insert(p.clone()));
+    deps
 }
 
 // ── Subcommand: generate-w3c ────────────────────────────────────
@@ -13922,6 +14066,273 @@ fn locate_workspace_root(explicit: Option<&Path>) -> Option<std::path::PathBuf> 
             return None;
         }
     }
+}
+
+// ── Subcommand: plan-batch ─────────────────────────────────────
+
+/// One request of a `plan-batch` run: the name its answer is kept under, the
+/// arguments of the plan it asks, and its line as the requests gave it.
+struct PlanRequest {
+    name: String,
+    arguments: Vec<String>,
+    line: String,
+}
+
+/// `plan-batch`: answer every request of `requests_path`, up to `jobs` at a
+/// time, each by a run of this program with the request's arguments
+/// ([`answer_plan_request`]), and keep each answer under `results`.
+///
+/// A run of its own per plan, and not a thread of this one: a generation
+/// keeps its output mode ([`OUTPUT_MODE`], [`PLAN_CHILDREN`],
+/// [`PLAN_READS`]) and the tree it holds in memory ([`PENDING_TREE`]) for
+/// the whole process, holds the documents it wrote on its thread
+/// (`sce_build::confine::hold`), and ends the process when it refuses a
+/// document ([`cli_exit`]). Two plans in one process would share all of it,
+/// and a refused one would end the others. A run of its own is also the run
+/// a build makes for one plan, so the answer is that run's, byte for byte.
+fn cmd_plan_batch(requests_path: &str, results: &str, jobs: Option<usize>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let text = fs::read_to_string(requests_path).unwrap_or_else(|source| {
+        cli_exit(CliError::ReadInput {
+            path: requests_path.to_string(),
+            source,
+        })
+    });
+    let requests = plan_requests(&text, requests_path);
+    let results = PathBuf::from(results);
+    fs::create_dir_all(&results).unwrap_or_else(|source| {
+        cli_exit(CliError::CreateOutputDir {
+            path: results.display().to_string(),
+            source,
+        })
+    });
+    let program = std::env::current_exe().unwrap_or_else(|source| {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "plan-batch",
+            detail: format!("cannot find this program to run each plan with: {source}"),
+        })
+    });
+    let jobs = match jobs {
+        Some(0) => cli_exit(CliError::Usage {
+            detail: "plan-batch --jobs 0 would run no plan; give at least 1".to_string(),
+        }),
+        Some(jobs) => jobs,
+        None => std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get),
+    };
+
+    let next = AtomicUsize::new(0);
+    let refused = AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        for _ in 0..jobs.min(requests.len()) {
+            scope.spawn(|| {
+                while let Some(request) = requests.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    if !answer_plan_request(&program, &results, request) {
+                        refused.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            });
+        }
+    });
+    let refused = refused.into_inner();
+    outln!(
+        "plan-batch: {} request(s), {} answered, {refused} refused",
+        requests.len(),
+        requests.len() - refused
+    );
+}
+
+/// The requests of a `plan-batch` run, one per non-empty line of `text`:
+/// `<name>\t<argument>\t<argument>...`. A request that asks anything but one
+/// plan of a generation is refused before any is run, as is a name two
+/// requests with different arguments share; one given twice alike is
+/// answered once.
+fn plan_requests(text: &str, requests_path: &str) -> Vec<PlanRequest> {
+    fn refuse(requests_path: &str, number: usize, why: &str) -> ! {
+        cli_exit(CliError::Usage {
+            detail: format!("plan-batch: line {number} of {requests_path}: {why}"),
+        })
+    }
+    let mut requests: Vec<PlanRequest> = Vec::new();
+    let mut named: BTreeMap<String, usize> = BTreeMap::new();
+    for (index, line) in text.lines().enumerate() {
+        if line.is_empty() {
+            continue;
+        }
+        let number = index + 1;
+        let mut fields = line.split('\t');
+        let name = fields.next().unwrap_or_default().to_string();
+        let arguments: Vec<String> = fields.map(str::to_string).collect();
+        if !is_kept_name(&name) {
+            refuse(
+                requests_path,
+                number,
+                &format!(
+                    "`{name}` cannot name an answer: a name is letters, digits, `_`, `-` and \
+                     `.`, and does not start with `.`"
+                ),
+            );
+        }
+        if let Some(&first) = named.get(&name) {
+            if requests[first].arguments == arguments {
+                continue;
+            }
+            refuse(
+                requests_path,
+                number,
+                &format!("`{name}` names two requests with different arguments"),
+            );
+        }
+        let program = std::iter::once("sce-codegen");
+        match Cli::try_parse_from(program.chain(arguments.iter().map(String::as_str))) {
+            Ok(cli)
+                if cli.plan
+                    && cli.plan_reads.is_none()
+                    && matches!(cli.command, Commands::Generate(_)) => {}
+            Ok(_) => refuse(
+                requests_path,
+                number,
+                "a request asks one plan of a generation (`--plan [--plan-children] \
+                 generate <document> ...`), and the file it reads into is the batch's to \
+                 name (`--plan-reads`)",
+            ),
+            Err(error) => refuse(
+                requests_path,
+                number,
+                &format!(
+                    "its arguments do not parse: {}",
+                    error.render().to_string().trim_end()
+                ),
+            ),
+        }
+        named.insert(name.clone(), requests.len());
+        requests.push(PlanRequest {
+            name,
+            arguments,
+            line: line.to_string(),
+        });
+    }
+    requests
+}
+
+/// Whether `name` can name the files an answer is kept in, in the results
+/// directory and nowhere else.
+fn is_kept_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('.')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+}
+
+/// Answer one request of a `plan-batch` run, by a run of `program` with the
+/// request's arguments and `--plan-reads`, and keep the answer under
+/// `results`: `<name>.request` holds the request's line; then `<name>.plan`
+/// what the plan printed and `<name>.reads` what it read, or `<name>.error`
+/// what the refused run wrote on stderr. Returns whether the plan answered.
+///
+/// The `.plan` is dated when the `.request` was written, by the file system,
+/// which dates the files the plan reads too: a file the plan read that
+/// changed after the plan began is at least as new as the answer, so a
+/// reader that reuses an answer only when every file it read is older never
+/// reuses that one. What was kept from an earlier answer is removed before
+/// the run, so a batch stopped halfway leaves no answer that is not its own.
+fn answer_plan_request(program: &Path, results: &Path, request: &PlanRequest) -> bool {
+    let kept = |extension: &str| results.join(format!("{}.{extension}", request.name));
+    let (plan, reads, error) = (kept("plan"), kept("reads"), kept("error"));
+    let (plan_part, reads_part) = (kept("plan.part"), kept("reads.part"));
+    for stale in [&plan, &plan_part, &reads_part] {
+        remove_kept(stale);
+    }
+    let asked = kept("request");
+    write_kept(&asked, format!("{}\n", request.line).as_bytes());
+    let dated = fs::metadata(&asked)
+        .and_then(|metadata| metadata.modified())
+        .unwrap_or_else(|source| {
+            cli_exit(CliError::ReadInput {
+                path: asked.display().to_string(),
+                source,
+            })
+        });
+
+    let run = std::process::Command::new(program)
+        .arg("--plan-reads")
+        .arg(&reads_part)
+        .args(&request.arguments)
+        .output()
+        .unwrap_or_else(|source| {
+            cli_exit(CliError::ScxmlGenerate {
+                stage: "plan-batch",
+                detail: format!(
+                    "cannot run {} for the request {}: {source}",
+                    program.display(),
+                    request.name
+                ),
+            })
+        });
+    if !run.status.success() {
+        remove_kept(&reads_part);
+        remove_kept(&reads);
+        write_kept(&error, &run.stderr);
+        return false;
+    }
+    remove_kept(&error);
+    match fs::rename(&reads_part, &reads) {
+        Ok(()) => {}
+        // A plan whose generations did not all record what they read wrote
+        // no list, and its answer is not one to reuse.
+        Err(missing) if missing.kind() == std::io::ErrorKind::NotFound => remove_kept(&reads),
+        Err(source) => cli_exit(CliError::WriteOutput {
+            path: reads.display().to_string(),
+            source,
+        }),
+    }
+    write_kept_dated(&plan_part, &run.stdout, dated);
+    fs::rename(&plan_part, &plan).unwrap_or_else(|source| {
+        cli_exit(CliError::WriteOutput {
+            path: plan.display().to_string(),
+            source,
+        })
+    });
+    true
+}
+
+/// Remove a file a `plan-batch` run keeps, when it is there.
+fn remove_kept(path: &Path) {
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(missing) if missing.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => cli_exit(CliError::WriteOutput {
+            path: path.display().to_string(),
+            source,
+        }),
+    }
+}
+
+/// Write a file a `plan-batch` run keeps.
+fn write_kept(path: &Path, bytes: &[u8]) {
+    fs::write(path, bytes).unwrap_or_else(|source| {
+        cli_exit(CliError::WriteOutput {
+            path: path.display().to_string(),
+            source,
+        })
+    });
+}
+
+/// [`write_kept`], dated `dated` rather than when it was written.
+fn write_kept_dated(path: &Path, bytes: &[u8], dated: std::time::SystemTime) {
+    use std::io::Write as _;
+    fs::File::create(path)
+        .and_then(|mut file| {
+            file.write_all(bytes)?;
+            file.set_modified(dated)
+        })
+        .unwrap_or_else(|source| {
+            cli_exit(CliError::WriteOutput {
+                path: path.display().to_string(),
+                source,
+            })
+        });
 }
 
 // ── Subcommand: list-fixtures ──────────────────────────────────

@@ -247,6 +247,14 @@ name = "generation_can_be_planned"
 path = "tests/generation_can_be_planned.rs"
 required-features = ["cli"]
 
+# `--plan-reads` and `plan-batch`, which let a configure keep each plan per
+# state of its inputs and ask many at once. Spawns sce-codegen, so it declares
+# the feature as the target above does.
+[[test]]
+name = "configure_plans_are_kept_and_asked_together"
+path = "tests/configure_plans_are_kept_and_asked_together.rs"
+required-features = ["cli"]
+
 # Requirement-closure RFC Atomic B. Spawns sce-codegen for the same
 # reason the target above does, and carries the same hazard: without
 # the declaration it builds against whatever sce-codegen is lying in

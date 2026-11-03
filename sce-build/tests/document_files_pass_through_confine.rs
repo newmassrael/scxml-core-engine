@@ -188,6 +188,10 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             // named is read through `confine`, so a plan run can answer for a
             // child document it holds in memory.)
             ("replay_scenario", 1),
+            // The requests of a `plan-batch` run, named on its command line:
+            // each is the arguments of a plan, whose run reads its document
+            // through `confine` as any plan does.
+            ("cmd_plan_batch", 1),
         ],
     ),
     (
@@ -203,6 +207,9 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("clean_stale", 9),
             ("cmd_verify", 1),
             ("walk", 2),
+            // The date of the request a `plan-batch` run has just written,
+            // which its answer is dated by.
+            ("answer_plan_request", 1),
         ],
     ),
     (
