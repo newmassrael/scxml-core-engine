@@ -36,11 +36,12 @@ use sce_rust_relay_transport::{Notice, Signal, Transport, TransportError};
 use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{Body, Entry, LogError};
 use sce_rust_trust::message;
-use sce_rust_trust::{Checkpoint, CheckpointError, Head, Sent, TakeError, Trust};
+use sce_rust_trust::{Checkpoint, CheckpointError, Head, Sent, TakeError, Trust, Waited};
 use serde_json::{json, Value};
 
 use crate::driver::drive;
 use crate::hub::Hub;
+use crate::logs::list_digest;
 use crate::protocol::{Code, Record, Request, Response};
 use crate::relay::Relay;
 use crate::store::Store;
@@ -1373,6 +1374,7 @@ impl RoundMachine {
     /// of it.
     fn sign_waiting(&mut self) {
         let waited = self.trust.sign_waiting();
+        note_waited(&self.trust, &waited);
         self.round.taken.extend(waited.taken);
         self.round.held.extend(waited.held);
         self.round.dropped.extend(waited.dropped);
@@ -2052,13 +2054,100 @@ pub enum Kept {
 /// ([`Kept::Held`]), so a host may give it a machine's sends again, as many times as the machine
 /// makes them; one the host may not sign yet is kept until it may ([`Kept::Waiting`]).
 pub fn keep(trust: &Trust, event: &str, data: &str) -> Kept {
-    match trust.keep_sent(event, data) {
+    let kept = match trust.keep_sent(event, data) {
         Sent::Signed => Kept::Taken,
         Sent::Held => Kept::Held,
         Sent::NotSigned => Kept::NotSigned,
         Sent::Waiting(reason) => Kept::Waiting(reason),
         Sent::Refused(reason) => Kept::Refused(reason),
+    };
+    note_kept(trust, event, &kept);
+    kept
+}
+
+/// The word a record names what became of a send by.
+fn kept_word(kept: &Kept) -> &'static str {
+    match kept {
+        Kept::Taken => "taken",
+        Kept::Held => "held",
+        Kept::NotSigned => "not_signed",
+        Kept::Waiting(_) => "waiting",
+        Kept::Refused(_) => "refused",
     }
+}
+
+/// Log what became of a send of the machine ([`keep`]), at `debug`, one record each: the event it
+/// is, the decision, and why when it waits or is refused. The list is named by its digest
+/// ([`list_digest`]), and nothing of what the send carries is written: a reason the trust gives names
+/// an event, a node, a number of a chain, an entry of the log or an epoch, and never content.
+fn note_kept(trust: &Trust, event: &str, kept: &Kept) {
+    let list = list_digest(&trust.list());
+    match kept {
+        Kept::Waiting(reason) | Kept::Refused(reason) => log::debug!(
+            list = list.as_str(),
+            send = event,
+            decision = kept_word(kept),
+            reason = reason.as_str();
+            "send_kept"
+        ),
+        Kept::Taken | Kept::Held | Kept::NotSigned => log::debug!(
+            list = list.as_str(),
+            send = event,
+            decision = kept_word(kept);
+            "send_kept"
+        ),
+    }
+}
+
+/// Log what a round's signing of the sends that waited did ([`Trust::sign_waiting`]): at `debug`,
+/// one record for each send it decided (taken, held, or dropped with why) and one for what still
+/// waits (how many, and why the first does); at `info`, one record of the counts. A signing that
+/// found nothing waiting says nothing. The list is named by its digest, and no send's content is
+/// written.
+fn note_waited(trust: &Trust, waited: &Waited) {
+    if waited.is_empty() && waited.waiting == 0 {
+        return;
+    }
+    let list = list_digest(&trust.list());
+    let decided = waited
+        .taken
+        .iter()
+        .map(|(event, _)| (event, "taken"))
+        .chain(waited.held.iter().map(|(event, _)| (event, "held")));
+    for (event, decision) in decided {
+        log::debug!(
+            list = list.as_str(),
+            send = event.as_str(),
+            decision = decision;
+            "send_waited"
+        );
+    }
+    for (event, _, why) in &waited.dropped {
+        log::debug!(
+            list = list.as_str(),
+            send = event.as_str(),
+            decision = "dropped",
+            reason = why.as_str();
+            "send_waited"
+        );
+    }
+    if let Some(why) = &waited.why_waiting {
+        log::debug!(
+            list = list.as_str(),
+            decision = "waiting",
+            count = waited.waiting,
+            reason = why.as_str();
+            "send_waited"
+        );
+    }
+    log::info!(
+        list = list.as_str(),
+        taken = waited.taken.len(),
+        held = waited.held.len(),
+        dropped = waited.dropped.len(),
+        waiting = waited.waiting;
+        "waiting_signed"
+    );
 }
 
 /// What stands behind the machine of a host that has no hub. The host signs and remembers what the

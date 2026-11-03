@@ -604,3 +604,95 @@ fn a_round_and_a_failure_of_the_core_are_each_one_record_with_no_secret() {
         assert!(!line.contains(&token), "the device's token: {line}");
     }
 }
+
+/// What became of each send of the machine is one record at `debug`, by its event and its decision,
+/// with why when it waits or is refused; and each signing of what waited is one record for each send
+/// it decided and for what still waits, and one of the counts at `info`. A device restored from its
+/// state keeps a new write waiting: the round's first signing, once the logs are level, finds it
+/// still waiting for her chain, and the one after her chain is read back signs it. No record holds
+/// the list's name or what a write carries.
+#[test]
+fn what_becomes_of_each_send_is_logged_by_its_decision_and_never_by_its_content() {
+    capture::start();
+    let shared = relay(Limits::default());
+    let digest = list_digest(LIST);
+    let mut alice = alice();
+    let milk = json!({"id": 1, "field": 1, "value": "0", "text": "buy milk",
+                      "wallTime": "1000", "counter": 0, "nodeId": ALICE.to_string()})
+    .to_string();
+    assert_eq!(alice.outbound(WRITE, &milk), Kept::Taken);
+    assert_eq!(alice.outbound(WRITE, &milk), Kept::Held);
+    let bread = milk.replace("buy milk", "buy bread");
+    assert!(matches!(alice.outbound(WRITE, &bread), Kept::Refused(_)));
+    assert_eq!(
+        alice.outbound("record_list.propose", r#"{"before":"30000"}"#),
+        Kept::NotSigned
+    );
+    run(&mut alice, &mut direct(&shared, ALICE), RoundKind::Sync);
+    let lines: Vec<String> = capture::taken()
+        .into_iter()
+        .map(|taken| taken.line)
+        .collect();
+    let kept = |decision: &str| {
+        format!("event=send_kept list={digest} send=record_list.write decision={decision}")
+    };
+    assert!(lines.contains(&kept("taken")), "{lines:#?}");
+    assert!(lines.contains(&kept("held")), "{lines:#?}");
+    let refused = format!(
+        "{} reason=\"record_list.write: this device signed another content",
+        kept("refused")
+    );
+    assert!(
+        lines.iter().any(|line| line.starts_with(&refused)),
+        "{refused} in {lines:#?}"
+    );
+    assert!(
+        lines.contains(&format!(
+            "event=send_kept list={digest} send=record_list.propose decision=not_signed"
+        )),
+        "{lines:#?}"
+    );
+    assert!(
+        !lines
+            .iter()
+            .any(|line| line.starts_with("event=waiting_signed")),
+        "nothing waited, and nothing is said of it: {lines:#?}"
+    );
+    let mut every = lines;
+
+    let sealed = alice.save_sealed().unwrap();
+    let mut restored = Peer::open(LIST);
+    restored
+        .restore_sealed(ALICE, &sealed.state, &sealed.key)
+        .unwrap();
+    let later = write(2, ALICE, 2000, 2);
+    assert!(matches!(restored.outbound(WRITE, &later), Kept::Waiting(_)));
+    let outcome = run(&mut restored, &mut direct(&shared, ALICE), RoundKind::Sync);
+    assert_eq!(outcome.taken(), vec![(WRITE.to_string(), later)]);
+    let lines: Vec<String> = capture::taken()
+        .into_iter()
+        .map(|taken| taken.line)
+        .collect();
+    let why = "\"record_list.write: this device's state came back from a store that may be behind \
+               what it signed, and it signs nothing new until a round has read its own chain back \
+               from the relay\"";
+    let expected = [
+        format!("{} reason={why}", kept("waiting")),
+        format!("event=send_waited list={digest} decision=waiting count=1 reason={why}"),
+        format!("event=waiting_signed list={digest} taken=0 held=0 dropped=0 waiting=1"),
+        format!("event=send_waited list={digest} send=record_list.write decision=taken"),
+        format!("event=waiting_signed list={digest} taken=1 held=0 dropped=0 waiting=0"),
+    ];
+    for line in &expected {
+        assert!(lines.contains(line), "{line} in {lines:#?}");
+    }
+    every.extend(lines);
+
+    for line in &every {
+        assert!(!line.contains(LIST), "the list's name: {line}");
+        assert!(
+            !line.contains("milk") && !line.contains("bread"),
+            "what a write carries: {line}"
+        );
+    }
+}
