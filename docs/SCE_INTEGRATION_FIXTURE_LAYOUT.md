@@ -734,7 +734,12 @@ reached those children for as long as test216 has been registered; the
 integration macro learned it here, and now learns every child the same way — it
 asks the generator (`sce-codegen --plan generate`, run when the tree is
 configured), which names the stub, the synthesized children and the candidates a
-document declares alike, so a registration lists none of them.
+document declares alike, so a registration lists none of them. What the stub's
+own generation writes is asked in the same answer (`--plan-children`): the
+generator plans the stub from the text the parent's generation would write,
+since no stub is on disk when the tree is configured, and the macro declares
+that generation from the answer (`sce_codegen_plan(<P> FROM <plan> CHILD
+<name>)`) rather than spelling the stub's machine by hand.
 
 Measured 2026-09-20, before the fixture existed: four AOT backends evaluated
 and raised, Kotlin evaluated and raised through its own loader, and Python did

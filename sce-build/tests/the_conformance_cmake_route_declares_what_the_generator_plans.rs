@@ -29,6 +29,14 @@
 //! helper's answer reaches the declaration is held by CMake refusing a command
 //! whose OUTPUT is empty, and by the helper refusing a plan that does not name
 //! the machine.
+//!
+//! The integration route (`cmake/SCEStaticIntegrationFixture.cmake`) is held
+//! to the same rules. It spelled a hybrid child's machine by hand, because the
+//! stub that child is generated from is written by the parent's generation
+//! and so could not be planned before the build ran; the generator now plans
+//! it from the text the parent's generation would write (`--plan-children`),
+//! and the route declares it from that answer
+//! (`sce_codegen_plan(<P> FROM <plan> CHILD <name>)`).
 
 /// The route under test. Compiled in, so an edit to it starts the suite that
 /// judges it (`include-str-coverage` in tools/git-hooks/gate_registry.py).
@@ -436,6 +444,94 @@ fn the_w3c_route_declares_only_what_the_generator_plans() {
          asked about:\n  {}\n\nDeclare each generation's OUTPUT, DEPFILE and byproducts as \
          the variables `sce_codegen_plan` sets (cmake/SCECodegenPlan.cmake).",
         found.join("\n  ")
+    );
+}
+
+#[test]
+fn the_integration_route_declares_only_what_the_generator_plans() {
+    let found = violations(INTEGRATION_ROUTE);
+    assert!(
+        found.is_empty(),
+        "cmake/SCEStaticIntegrationFixture.cmake declares a generated file the generator \
+         was not asked about:\n  {}\n\nDeclare each generation's OUTPUT, DEPFILE and \
+         byproducts as the variables `sce_codegen_plan` sets (cmake/SCECodegenPlan.cmake), \
+         a child document's generation through `sce_codegen_plan(<P> FROM <plan> CHILD \
+         <name>)`.",
+        found.join("\n  ")
+    );
+}
+
+/// The integration route declares the generation of every child document the
+/// parent's generation writes from the plan the parent's answer holds for it,
+/// not from a name it builds: it asks for the children's plans, and each child
+/// command is declared from a plan read FROM that answer.
+#[test]
+fn the_integration_route_declares_each_child_generation_from_the_parents_plan() {
+    let code = cmake_code(INTEGRATION_ROUTE);
+    let plans = invocations(&code, "sce_codegen_plan");
+    let asks_for_children = plans
+        .iter()
+        .filter(|plan| plan.args.iter().any(|arg| arg == "CHILD_GENERATIONS"))
+        .count();
+    let read_from_a_plan = plans
+        .iter()
+        .filter(|plan| plan.args.iter().any(|arg| arg == "FROM"))
+        .count();
+    assert_eq!(
+        asks_for_children, 2,
+        "both of the integration route's generators (C++ and C11) ask for the plans of \
+         the child documents their parent writes"
+    );
+    assert_eq!(
+        read_from_a_plan, 2,
+        "both declare each child's generation from the plan the parent's answer holds"
+    );
+}
+
+/// A child's generation declared from the plan its parent's answer holds is
+/// the shape the integration route uses, and passes.
+#[test]
+fn a_child_generation_declared_from_its_parents_plan_passes() {
+    let child = format!(
+        "{PLANNED_GENERATION}\nforeach(C ${{_PLAN_GENERATIONS}})\n\
+         sce_codegen_plan(_CHILD_PLAN FROM _PLAN CHILD \"${{C}}\")\n\
+         add_custom_command(\n\
+             OUTPUT ${{_CHILD_PLAN_OUTPUTS}}\n\
+             COMMAND \"${{SCE_CODEGEN}}\" generate \"${{_CHILD_PLAN_DOCUMENT}}\" --as-child \
+         --write-deps \"${{_CHILD_PLAN_DEPFILE}}\"\n\
+             DEPENDS ${{_CHILD_PLAN_DEPENDS}} \"${{SCE_CODEGEN}}\"\n\
+             DEPFILE \"${{_CHILD_PLAN_DEPFILE}}\"\n\
+             ${{_CHILD_PLAN_BYPRODUCTS_ARG}}\n\
+             VERBATIM\n\
+         )\nendforeach()\n"
+    );
+    assert_eq!(violations(&child), Vec::<String>::new());
+}
+
+/// A child's machine spelled from its name, which is what the integration
+/// route did before the generator planned a child's generation, is refused.
+#[test]
+fn a_childs_machine_spelled_from_its_name_is_refused() {
+    let hand = format!(
+        "{PLANNED_GENERATION}\nforeach(C ${{_PLAN_CHILDREN}})\n\
+         add_custom_command(\n\
+             OUTPUT \"${{O}}/${{C}}_sm.h\"\n\
+             COMMAND \"${{SCE_CODEGEN}}\" generate \"${{O}}/${{C}}.scxml\" --as-child \
+         --write-deps \"${{O}}/${{C}}_sm.h.d\"\n\
+             DEPENDS \"${{SCE_CODEGEN}}\"\n\
+             DEPFILE \"${{O}}/${{C}}_sm.h.d\"\n\
+             BYPRODUCTS \"${{O}}/${{C}}_sm.inl\"\n\
+             VERBATIM\n\
+         )\nendforeach()\n"
+    );
+    let found = violations(&hand);
+    assert!(
+        found.iter().any(|v| v.contains("`_sm.`")),
+        "a child's machine spelled by hand was not seen: {found:?}"
+    );
+    assert!(
+        found.iter().any(|v| v.contains("declares OUTPUT")),
+        "a child's OUTPUT no plan set was accepted: {found:?}"
     );
 }
 
