@@ -708,6 +708,14 @@ pub enum DiagnosticCode {
     /// document's own rewrite, [`Fix::RewriteCodecFormat`].
     #[serde(rename = "validation/codec-format-superseded")]
     ValidationCodecFormatSuperseded,
+    /// A bound written as an attribute of a declaration rather than in its
+    /// type (docs/adr/0086, section 1.3): read as the bracket on the outermost
+    /// type it bounds, so the record does not stop the run (SCE_ERROR_CONTRACT.md
+    /// section 1) unless `--lint` makes it fatal. `actual` is the attribute as
+    /// written, where the record stands; the fix is the rewrite,
+    /// [`Fix::MoveBoundIntoType`].
+    #[serde(rename = "validation/bound-attribute-superseded")]
+    ValidationBoundAttributeSuperseded,
     /// An element that takes exactly one of several attributes carries none
     /// of them, or more than one. The attributes it takes ride `expected`;
     /// the one written beyond the first is `actual`, absent when none is
@@ -3733,6 +3741,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationInvalidAttribute,
         ValidationAttributeRuleViolated,
         ValidationCodecFormatSuperseded,
+        ValidationBoundAttributeSuperseded,
         ValidationExactlyOneAttribute,
         ValidationSendOperandType,
         ValidationUnexpectedChildElement,
@@ -4464,6 +4473,9 @@ impl DiagnosticCode {
             // the format a CBOR or content-line codec is written in is one
             // of the things.
             ValidationCodecFormatSuperseded => Some("SCE Forge §4.6"),
+            // The ADR that moved every bound into the type states which
+            // attributes are its synonyms and for how long they are read.
+            ValidationBoundAttributeSuperseded => Some("ADR 0086 §1.3"),
             ValidationWrongPipeline => Some("SCE Forge §4"),
 
             // ── Forge expression language (SCE_FORGE.md §3.4) ────
@@ -5363,6 +5375,7 @@ impl DiagnosticCode {
             | ValidationInvalidAttribute
             | ValidationAttributeRuleViolated
             | ValidationCodecFormatSuperseded
+            | ValidationBoundAttributeSuperseded
             | ValidationExactlyOneAttribute
             | ValidationSendOperandType
             | ValidationUnexpectedChildElement
@@ -5852,6 +5865,7 @@ impl DiagnosticCode {
             ValidationInvalidAttribute => "validation/invalid-attribute",
             ValidationAttributeRuleViolated => "validation/attribute-rule-violated",
             ValidationCodecFormatSuperseded => "validation/codec-format-superseded",
+            ValidationBoundAttributeSuperseded => "validation/bound-attribute-superseded",
             ValidationExactlyOneAttribute => "validation/exactly-one-attribute",
             ValidationSendOperandType => "validation/send-operand-type",
             ValidationUnexpectedChildElement => "validation/unexpected-child-element",
@@ -6536,7 +6550,8 @@ impl From<&crate::forge::error::RelatedSite> for Related {
 /// The variant encodes the *shape* of the repair:
 ///
 /// * Deterministic: `AddAttribute`, `RenameDuplicate`, `RemoveFields`,
-///   `ReplaceWith`, `RewriteCodecFormat` — applicable without further judgment.
+///   `ReplaceWith`, `RewriteCodecFormat`, `MoveBoundIntoType` — applicable
+///   without further judgment.
 /// * Choice-based: `ReplaceOneOf`, `AddOneOf` — the producer lists the
 ///   closed candidate set and the consumer (or the human) picks.
 ///
@@ -6600,6 +6615,20 @@ pub enum Fix {
     RewriteCodecFormat {
         format: String,
         entries: Vec<crate::forge::codec_format::EntryRewrite>,
+    },
+
+    /// Move a bound written as an attribute into the type of the declaration
+    /// `element` names (docs/adr/0086, section 1.3): remove every attribute of
+    /// `attrs` (the bound and the `sce:limit` beside it) and write `type` as the
+    /// declaration's type, the bound in its bracket. Deterministic: the
+    /// attribute means exactly what the bracket means, so nothing is the
+    /// consumer's to choose. `sce-codegen bound-spelling <document>` prints the
+    /// document so rewritten.
+    MoveBoundIntoType {
+        element: String,
+        attrs: Vec<String>,
+        #[serde(rename = "type")]
+        sce_type: String,
     },
 }
 
@@ -7334,6 +7363,30 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             key_fragments: vec![
                 crate::forge::codec_format::ATTRIBUTE.to_string(),
                 declared.clone().unwrap_or_default(),
+            ],
+        },
+        // A bound written as an attribute (docs/adr/0086, section 1.3). The
+        // bound attribute as written is `actual`, and it places the record; the
+        // repair is one deterministic edit of the declaration, so it rides `fix`
+        // and `expected` stays absent.
+        ValidationError::BoundAttributeSuperseded {
+            element,
+            attrs,
+            type_attr: _,
+            sce_type,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationBoundAttributeSuperseded,
+            stage: Stage::Validation,
+            expected: None,
+            actual: attrs.first().cloned(),
+            fix: Some(Fix::MoveBoundIntoType {
+                element: element.clone(),
+                attrs: attrs.clone(),
+                sce_type: sce_type.clone(),
+            }),
+            key_fragments: vec![
+                element.clone(),
+                attrs.first().cloned().unwrap_or_default(),
             ],
         },
         // The attributes the element takes one of are what the position
@@ -12860,6 +12913,21 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:ccf50a97e0277909","code":"validation/codec-format-superseded","stage":"validation","spec":"SCE Forge §4.6","message":"this codec document is written in codec format 1 (it declares no sce:codec-format), which is refused and never read: format 2 writes an entry that must be present as its bare type and one that may be absent as optional<T>, and has no sce:required. Rewrite it: declare sce:codec-format=\"2\" on the root, and write the entries' types as kind: uint8, and remove every sce:required; `sce-codegen codec-format <document>` prints the document so rewritten","fix":{"kind":"rewrite_codec_format","format":"2","entries":[{"id":"kind","type":"uint8"}]}}"#,
+            ),
+            (
+                // A bound written as an attribute of an event schema's field
+                // (docs/adr/0086, section 1.3), with the `sce:limit` that names
+                // it: read, and told the rewrite. The bound attribute is
+                // `actual`, which is where the record stands.
+                "forge/bound-attribute-superseded",
+                ValidationError::BoundAttributeSuperseded {
+                    element: "<data id=\"tag\">".into(),
+                    attrs: vec!["sce:max-size".into(), "sce:limit".into()],
+                    type_attr: "sce:type".into(),
+                    sce_type: "string[tag_text=32]".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9383a6c2ea9e2afd","code":"validation/bound-attribute-superseded","stage":"validation","spec":"ADR 0086 §1.3","message":"<data id=\"tag\">: the bound written as sce:max-size is a spelling of the bound the type now carries; write sce:type=\"string[tag_text=32]\" and remove sce:max-size and sce:limit. The attribute is read in this revision of the authoring grammar and refused in the next; `sce-codegen bound-spelling <document>` prints the document so rewritten","actual":"sce:max-size","fix":{"kind":"move_bound_into_type","element":"<data id=\"tag\">","attrs":["sce:max-size","sce:limit"],"type":"string[tag_text=32]"}}"#,
             ),
             (
                 // Exactly one of several attributes, and none written: the
@@ -19261,6 +19329,8 @@ mod tests {
             // The rewrite is one deterministic edit of the document
             // (`Fix::RewriteCodecFormat`), so `expected` is absent.
             | ValidationCodecFormatSuperseded
+            // The same of one declaration (`Fix::MoveBoundIntoType`).
+            | ValidationBoundAttributeSuperseded
             | ValidationUnknownScxmlAttribute
             | ValidationBytesMaxSizeViolation
             | MemPoolTooLarge
@@ -20207,6 +20277,7 @@ mod tests {
                 | ValidationMissingAttribute | ValidationInvalidAttribute
                 | ValidationAttributeRuleViolated
                 | ValidationCodecFormatSuperseded
+                | ValidationBoundAttributeSuperseded
                 | ValidationExactlyOneAttribute
                 | ValidationSendOperandType
                 | ValidationUnexpectedChildElement
@@ -20647,9 +20718,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            492,
+            493,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 492 distinct variants to match the DiagnosticCode \
+             expected 493 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21241,6 +21312,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationInvalidAttribute
             | ValidationAttributeRuleViolated
             | ValidationCodecFormatSuperseded
+            | ValidationBoundAttributeSuperseded
             | ValidationExactlyOneAttribute
             | ValidationSendOperandType
             | ValidationUnexpectedChildElement

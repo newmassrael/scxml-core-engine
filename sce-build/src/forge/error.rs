@@ -692,6 +692,34 @@ pub enum ValidationError {
         entries: Vec<crate::forge::codec_format::EntryRewrite>,
     },
 
+    /// A bound written as an attribute of a declaration rather than in its type
+    /// (docs/adr/0086, section 1.3): `sce:max-size` or `sce:max-count` on an event
+    /// schema's field, `sce:capacity` on a `sce-static` variable, `capacity=` on
+    /// an algorithm's local, `returns-max-size=` on its return, each with the
+    /// `sce:limit` beside it. The attribute is a synonym of the bracket on the
+    /// outermost type it bounds, and is read as one: this is no refusal, and a
+    /// run that reports only it succeeds, unless `--lint` makes it one.
+    ///
+    /// `attrs` are the attributes the rewrite removes, as the document spells
+    /// them, the bound first: the first is the record's `actual`. `type_attr` is
+    /// the attribute that carries the type, as spelled (`sce:type`, `type`), and
+    /// `sce_type` the type with the bound in its bracket (`string[32]`,
+    /// `list<int64>[slots=16]`), which is what the rewrite writes there.
+    #[error(
+        "{element}: the bound written as {} is a spelling of the bound the type now \
+         carries; write {type_attr}=\"{sce_type}\" and remove {}. The attribute is read in \
+         this revision of the authoring grammar and refused in the next; `sce-codegen \
+         bound-spelling <document>` prints the document so rewritten",
+        .attrs.first().map(String::as_str).unwrap_or_default(),
+        .attrs.join(" and ")
+    )]
+    BoundAttributeSuperseded {
+        element: String,
+        attrs: Vec<String>,
+        type_attr: String,
+        sce_type: String,
+    },
+
     /// An element that takes exactly one of several attributes, carrying
     /// none of them or more than one — `<sce:repeat>` with both `count` and
     /// `until-eof`. `alternatives` names every attribute that may stand, as

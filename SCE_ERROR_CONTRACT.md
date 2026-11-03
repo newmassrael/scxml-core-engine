@@ -547,6 +547,7 @@ There is no fallback from `fix` to `expected`.
 | `replace_one_of` | `candidates[]` | Replace `actual` with one of `candidates`. Emitted when the producer knows the closed set of legal values (attribute-value enums, cross-reference resolution, supported language list) but cannot pick a single answer — the consumer or human chooses from the list. |
 | `add_one_of` | `element`, `attrs[]` | Add one of the listed `attrs` to `element`. Used for "require either X or Y" constraints (e.g. `<send>` needs `event` or `eventexpr`). Choice-based. |
 | `rewrite_codec_format` | `format`, `entries[]` (each `id`, `type`) | Rewrite the CBOR or content-line codec document into codec format `format` (ADR 0055 section 8): declare `sce:codec-format="<format>"` on the root, set the `sce:type` of the entry named `id` to `type` for each of `entries`, and remove every `sce:required`. Emitted by `validation/codec-format-superseded` only, where the rewrite is the one format 1 says of each entry: several edits, none of them a choice. `sce-codegen codec-format <document>` prints the document so rewritten. Deterministic. |
+| `move_bound_into_type` | `element`, `attrs[]`, `type` | Move a bound written as an attribute into the type of the declaration `element` names (ADR 0086 section 1.3): remove every attribute of `attrs` (the bound, then the `sce:limit` that names it) and write `type` as the declaration's type, its outermost bound in the bracket (`[N]`, or `[name=N]` where a `sce:limit` named it). Emitted by `validation/bound-attribute-superseded` only, a record that does not stop the run ([§1](#1-streams)): the attribute means exactly what the bracket means, so the edit is no choice. `sce-codegen bound-spelling <document>` prints the document so rewritten. Deterministic. |
 
 The variant name encodes the *shape* of the repair: deterministic
 variants can be applied without further judgment; choice variants
@@ -950,6 +951,7 @@ references against a real document and drift silently.
 | `traceability/state-id-collision` | `generate` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.O |
 | `traceability/symbol-name-exceeds-c-identifier-limit` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |
 | `validation/attribute-rule-violated` | `validation` | no |  |
+| `validation/bound-attribute-superseded` | `validation` | `move_bound_into_type` | ADR 0086 §1.3 |
 | `validation/bytes-comparison-not-equality` | `validation` | no |  |
 | `validation/bytes-max-size-violation` | `validation` | no |  |
 | `validation/codec-format-superseded` | `validation` | `rewrite_codec_format` | SCE Forge §4.6 |
