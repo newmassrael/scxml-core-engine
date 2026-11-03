@@ -1165,6 +1165,55 @@ It sits beside its drivers rather than under
 engine has its driver; the Python one is
 `backends/python/tests/integration/external_chain_is_bounded/`.
 
+### Engine Threading (Single Source of Truth)
+
+Decided by `docs/adr/0082-what-reaches-an-engine-from-outside-enters-through-one-inbox-and-one-processor-door.md`.
+This section states the rule. Each runtime's own documentation names its
+owner-thread operations and its inbox handle and points here; it does not
+restate the rule.
+
+**Status.** The rule is decided, and the runtimes are brought to it in the
+ADR's order of work. Until a runtime's step lands, its existing contract stands
+and is listed in the ADR's Context table. Two of them are known to be broken by
+a host-invoke ending from another thread: Kotlin and the generated C++ engine.
+
+**The invariant.** A macrostep runs to completion: no input is observed in the
+middle of one (§scxml-C-1). Every engine holds it by the same mechanism.
+
+1. **Owner thread.** A session tree (a root and every child session it started)
+   has one owner thread, the thread that drives its event loop. All of the
+   tree's state belongs to it: the configuration, the queues, the data model,
+   the scheduled sends, the running invocations and the child sessions.
+2. **Owner-thread operations.** Every call that changes that state is one:
+   raising an external event, ending a host invocation (completion or failure,
+   in the root or in a named session of the tree), applying a Mesh delivery,
+   pulling the clock (`tick` and its spellings). Each keeps its synchronous
+   outcome. The language enforces confinement where it can (Rust `!Sync`, Swift
+   non-`Sendable`), checks it where it cannot (Kotlin always, C++ in debug
+   builds), and documents it otherwise (Go, Python, C11).
+3. **One inbox per tree.** The only part of an engine that is safe to use from
+   any thread is its inbox: a multi-producer, single-consumer queue. What may be
+   posted is closed: an external event, a host-invoke ending, a Mesh delivery
+   for a session. A post returns whether the inbox took it. A bounded inbox
+   (C11, `no_std` Rust) refuses when full and says so; nothing is dropped
+   silently.
+4. **Draining.** The owner drains the inbox at each macrostep boundary, before
+   the external queue is consulted, in the order the posts linearised. It
+   applies each input by the owner-thread operation of the same name, so a
+   posted input and a direct call cannot differ. An ending for an invocation
+   that was cancelled or started again is refused by the token check either way
+   (§scxml-6.4).
+5. **Waking.** A post wakes the owner through a waker the host installs, or
+   through the runtime's own loop where it has one.
+6. **Timers.** A clock pulled on the owner thread needs no inbox. A timer that
+   fires on another thread posts.
+
+A lock around the engine is not this rule: it makes a host wait for a whole
+macrostep, and a reentrant one lets a handler's own call change the tree in the
+middle of the step. Leaving serialisation to the host is not this rule either:
+it is the Go and Python contract before their step, and SCE's own Mesh deadline
+on the generated C++ engine does not keep it.
+
 ### Event Names at the Door (Single Source of Truth)
 
 An event that arrives BY NAME — a child's `<send target="#_parent">` or autoforward,
