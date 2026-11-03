@@ -297,6 +297,84 @@ and only their order is read.
 Bounds read from the document (ADR 0056's microstep buffers, ADR 0050's send bounds) are those of `D`, which hold
 every variant (§1).
 
+### 10. Lifting the C, C++ and Swift emissions (the design of step 4)
+
+Status of this section: proposed 2026-11-03, under the owner's rule of 2026-10-26.
+
+§9 holds for every backend that keeps the variability: derive each distinct variant, generate it as any document is
+generated, merge the sources, and check the merge build by build against what each variant generates alone. What
+§9 wrote for Rust alone is the *reader* (which lists of the syntax a selector may stand in), the *writer* (how a
+selector is spelled before or around a member) and the *resolver* (how a build reads a selector). The merge is split
+along that line: one language-neutral core (the alignment of members across versions, a shared member written once,
+the rest under the selector of the variants that write them, the merge inside a list the versions share, the
+selectors of §9 and their Espresso cover), and for each backend a reader, a writer and a resolver.
+
+**A reader reads the grammar that decides where a selector may stand, and that grammar exactly.** It is never a
+grammar that approximates the language. A reader that cannot read a variant's source refuses the generation
+(`codegen/feature-lifting-mismatch`): it does not guess.
+
+- **Rust** reads Rust with `syn`, as §9 does: `#[cfg]` stands before an item, a statement, an arm, a field, a
+  variant, a field value or an element.
+- **C and C++** read the *preprocessor's* grammar (ISO C translation phases 1 to 3 and §6.10; the same phases in
+  ISO C++): logical lines after line splicing, preprocessing tokens, comments, and the directive lines. A `#if` is a
+  directive, so this grammar decides exactly where one may stand: at the start of a logical line that is not inside
+  a comment, a raw string literal or the continuation of a directive. The language grammar is not the right reader,
+  and none can be used: SCE's own C and C++ are written with macros the language grammar does not know without
+  their definitions (`SCE_SM_FN static …`, `SCE_C_UNUSED`, `#line` inside a class body). A parser that does not
+  expand them reads 99 syntax errors in one generated C11 file of 1,986 lines and 8 in one C++ `.inl` of 337 lines
+  (tree-sitter-c 0.24.2 and tree-sitter-cpp 0.23.4, measured 2026-11-03 on `session.scxml` with `session-unicast`).
+  A member is a run of whole logical lines whose preprocessing tokens are balanced in `()`, `[]` and `{}`, so
+  every selected group encloses whole token trees: the discipline of Liebig et al. stated on the tokens, which is as
+  far as a grammar that does not expand macros can state it. A directive line is a member of its own and is never
+  cut; a difference inside a `#define` (one variant's mask names a state another's does not) selects the whole
+  directive. The conditional groups a variant writes for itself (`#ifdef __cplusplus`, include guards,
+  `SCE_OWNERSHIP_CHECKED`) are lists: their groups are merged inside, and they are written as the variants write
+  them.
+- **Swift** reads Swift with tree-sitter-swift, whose `#if` positions are Swift's own (a declaration, a member, a
+  statement, a `case` of a `switch`; not an element of an array literal, which Swift refuses too). All 215 generated
+  Swift machines committed in the tree parse with no error node (measured 2026-11-03). A source that does not is
+  refused, and a test holds every committed generated Swift file to parsing with no error node, so a template that
+  writes what this reader cannot read fails there and not in a consumer's build.
+
+**Writers.** Rust writes `#[cfg(P)]` before the member. C and C++ write `#if P` and `#endif` on lines of their own
+around the member, and the alternatives of one slot as one `#if` / `#elif` chain, since exactly one of them is
+compiled in each build (§9: the selectors partition the builds). Swift writes the same with `#if`, `#elseif`,
+`#else` and `#endif`. `P` is the selector of §9 spelled for the backend: `Selector::c` for C and C++
+(`defined(SCE_FEATURE_A) && !defined(SCE_FEATURE_B)`), a Swift compilation condition for Swift
+(`SCE_FEATURE_A && !SCE_FEATURE_B`). A build selects with `-DSCE_FEATURE_<NAME>` in C and C++, and with
+`-D SCE_FEATURE_<NAME>` (SwiftPM `.define`) in Swift.
+
+**Resolvers and the check.** For every build the product line tells apart, the resolver evaluates exactly the
+conditionals whose condition is written over `SCE_FEATURE_` names in the grammar of the selectors, and keeps every
+other directive as written. The check compares the result token for token with the variant's own source resolved
+the same way: preprocessing tokens for C and C++, Swift tokens for Swift, comments aside. The merge is not argued
+correct for these backends any more than for Rust.
+
+**The model guards itself** in every output that keeps the variability (§6), in the file a build of the statechart
+cannot leave out: the header of C11 and C++, the source of Swift. For each edge `a ≤ b`:
+`#if defined(SCE_FEATURE_A) && !defined(SCE_FEATURE_B)` / `#error "…"` / `#endif` in C and C++,
+`#if SCE_FEATURE_A && !SCE_FEATURE_B` / `#error("…")` / `#endif` in Swift. The message is `Refusal::message`.
+
+**The sourcemap is lifted with the source.** A backend that writes `sce_sourcemap.json` writes one for each variant,
+and the variants' maps differ in every row after the first gated element. The output for every build carries one
+map: each row of a variant's map, moved to the line the merge put that line on, with the condition under which the
+row is present (§7). It is not compared as text.
+
+**A build of `sce-build` without the readers.** The C, C++ and Swift readers are native code (the Swift grammar is
+C, as libxml2 is behind the `xsd` feature) and sit behind a default feature of `sce-build`. A build without it
+(`sce-build-wasm`) refuses a gated document for those backends without `--features`, as every backend refused one
+before it kept the variability (`codegen/feature-selection-required`).
+
+**Conformance** is §8's law in each lane. One fixture set (`tests/product_line/`) is read by every lane, so no lane
+keeps a copy: the Rust crate of step 3 moves its two documents there. Each lane builds the output for every build
+once for each configuration of the matrix and the variant of that configuration alone, drives both through every
+run of up to four events, and compares the observations (configuration, host calls, discarded events, end). The
+C11 and C++ lanes build under CMake with `-D`; the Swift lane under SwiftPM with `.define`.
+
+**Order:** the split of the core with Rust as its first instance, changing no output (the Rust lane is the judge);
+C11; C++; Swift. The Swift backend writes no `<sce:action>` today, which the fixture uses: the Swift lane waits for
+that backend gap to be closed, as its own change, rather than holding to a weaker fixture.
+
 ## Consequences
 
 - A consumer gates an element where it is written, and the build proves for every configuration, not a sample, that
