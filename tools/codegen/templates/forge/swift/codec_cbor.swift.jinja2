@@ -31,6 +31,11 @@ Cbor.writeBool(value, to: &frame)
 {%- elif e.kind == "bytes_exact" -%}
 if value.count != {{ e.length }} { throw CodecError.cborWrongLength }
 {{ indent }}Cbor.writeBytes(value, to: &frame)
+{%- elif e.kind == "enum" -%}
+{#- The number the enum declares for the value; a signed carrier's negative one is no CBOR
+    unsigned integer, and `UInt64(...)` would trap on it. #}
+{% if e.carrier_signed %}if ({{ e.enum_to_underlying }}) < 0 { throw CodecError.cborOutOfRange }
+{{ indent }}{% endif %}Cbor.writeUint(UInt64({{ e.enum_to_underlying }}), to: &frame)
 {%- else -%}
 {#- A negative number is no CBOR unsigned integer, and `UInt64(value)` would trap on it. #}
 {% if e.signed %}if value < 0 { throw CodecError.cborOutOfRange }
@@ -83,7 +88,15 @@ public struct {{ struct_name }}: Equatable, Sendable {
             case {{ e.key }}:
                 // A key given twice is not one map entry.
                 if {{ e.name }}_held != nil { throw CodecError.cborMalformed }
+{% if e.kind == "enum" %}
+                // A closed enum holds only the numbers it declares.
+                guard let declared = {{ e.enum_from_underlying }}({{ e.carrier_type }}(truncatingIfNeeded: try Cbor.readUintUpto(&reader, {{ e.max }}))) else {
+                    throw CodecError.cborOutOfRange
+                }
+                {{ e.name }}_held = declared
+{% else %}
                 {{ e.name }}_held = {{ decode_value(e) }}
+{% endif %}
 {% endfor %}
             default:
                 try Cbor.skip(&reader)

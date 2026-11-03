@@ -11,7 +11,12 @@
    compiler alone: the unit's own type is named, which is what the generated file is imported for. #}
 {% if not f.oracle_eligible %}
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+{% if f.cbor %}
+    // A map has no fixed length; the type is named by the initializer every codec offers.
+    _ = {{ f.name | to_pascal_case }}()
+{% else %}
     _ = {{ f.name | to_pascal_case }}.frameLength
+{% endif %}
 {% else %}
     let cases = try oracleCases("{{ f.ref_section }}", "{{ f.name }}")
     #expect(!cases.isEmpty, "{{ f.name }}: the oracle holds no case")

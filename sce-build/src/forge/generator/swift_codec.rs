@@ -82,13 +82,11 @@ pub(super) fn unlowered(
 /// does.
 ///
 /// It is a struct with one property per entry, so an entry may not be named for a member the struct
-/// has, and the entries that are enumerations are named: an enum entry reads its carrier and converts
-/// it to the enum, which the CBOR emitter does not spell for Swift yet.
+/// has. An entry that is an enumeration is read as its carrier and converted by the enum's own
+/// `fromUnderlying`; an open enum, whose unit Swift does not write, is named where the import that
+/// says so is read ([`crate::forge::cbor_codec`]).
 pub(super) fn cbor_unlowered(m: &CodecModel) -> Option<String> {
     for e in &m.cbor_entries {
-        if matches!(e.present_type(), SceType::Enum(_)) {
-            return Some(format!("the CBOR entry '{}', an enum", e.id));
-        }
         if MEMBERS.contains(&e.id.as_str()) {
             return Some(format!(
                 "the CBOR entry '{}', named for a member of the struct",

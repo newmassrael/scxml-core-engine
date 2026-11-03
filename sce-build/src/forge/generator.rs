@@ -32114,7 +32114,9 @@ impl LangCtx {
             crate::generator::Language::C11 => {
                 format!("{}_to_underlying({value})", imported.snake)
             }
-            crate::generator::Language::Swift => no_swift_emitter("LangCtx::codec_carrier_expr"),
+            crate::generator::Language::Swift => {
+                format!("{}.toUnderlying({value})", imported.qualified)
+            }
         }
     }
 
@@ -32161,7 +32163,9 @@ impl LangCtx {
                 format!("{namespace}::from_underlying")
             }
             Language::C11 => format!("{}_from_underlying", imported.snake),
-            Language::Swift => no_swift_emitter("LangCtx::enum_from_underlying"),
+            // The unit's own conversion: the variant that declares the number, and `nil` for a
+            // number no variant declares.
+            Language::Swift => format!("{qualified}.fromUnderlying"),
         }
     }
 

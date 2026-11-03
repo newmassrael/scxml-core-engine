@@ -6024,6 +6024,15 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     #expect(RpcStatus.unavailable.declaredName == "unavailable", "rpc_status.unavailable declared name")
 }
 
+// MARK: - codec: envelope
+
+@Test func envelopeMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    // A map has no fixed length; the type is named by the initializer every codec offers.
+    _ = Envelope()
+}
+
 // MARK: - timer: timer_tester_present
 
 @Test func timerTesterPresentMatchesReference() throws {

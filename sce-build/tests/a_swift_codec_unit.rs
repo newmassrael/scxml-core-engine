@@ -1035,11 +1035,26 @@ fn a_cbor_entry_is_held_to_the_bound_its_document_declares_before_a_byte_is_writ
 }
 
 #[test]
-fn a_cbor_codec_that_has_an_enum_entry_is_refused_by_name() {
-    let refusal = swift_of("stdlib/mesh/envelope.scxml")
-        .expect_err("a CBOR codec with an enum entry is not written");
+fn a_cbor_enum_entry_is_read_through_its_carrier_and_refused_when_no_variant_declares_it() {
+    let code = swift_of("stdlib/mesh/envelope.scxml")
+        .expect("a CBOR codec with a closed enum entry is written");
+    // A required enum starts at the first variant the document declares, and an optional one absent.
     assert!(
-        refusal.contains("an enum") && refusal.contains("has no Swift lowering yet"),
-        "{refusal}"
+        code.contains("\n    public var pattern: PatternKind = PatternKind.fireForget\n"),
+        "{code}"
+    );
+    assert!(
+        code.contains("\n    public var rpc_status: RpcStatus? = nil\n"),
+        "{code}"
+    );
+    // The carrier is read at its own width and converted by the enum's own function, which answers
+    // nil for a number no variant declares: that number is no value of the entry.
+    assert!(
+        code.contains("guard let declared = PatternKind.fromUnderlying(UInt16(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 65535))) else {\n                    throw CodecError.cborOutOfRange\n                }"),
+        "{code}"
+    );
+    assert!(
+        code.contains("Cbor.writeUint(UInt64(PatternKind.toUnderlying(value)), to: &frame)"),
+        "{code}"
     );
 }

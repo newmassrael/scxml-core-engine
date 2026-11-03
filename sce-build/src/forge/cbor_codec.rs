@@ -399,25 +399,50 @@ fn render_swift(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Swift, imports);
+    // An open enum is a struct over its carrier that holds any number, whose conversion is total; the
+    // codec reads a closed enum's `fromUnderlying` and refuses a number no variant declares, and has
+    // no reading of the other.
+    for e in &m.cbor_entries {
+        if let SceType::Enum(r) = e.present_type() {
+            if l.enum_is_open(&r.alias) {
+                return Err(ForgeError::from(GenerateError::unsupported_at(
+                    format!(
+                        "codec '{}': CBOR entry '{}' names the open enum '{}', which has no Swift \
+                         lowering yet",
+                        m.name, e.id, r.alias
+                    ),
+                    m.source_location.clone(),
+                )));
+            }
+        }
+    }
     // Owned values, as every Swift codec holds them: a text string is a `String` and a byte string a
-    // `[UInt8]`. A required entry starts at its type's zero and is filled in by decode; an optional
-    // one starts absent, so `{Name}()` is the infallible initializer every codec offers.
+    // `[UInt8]`. A required entry starts at its type's zero, an enum at its first declared variant,
+    // and is filled in by decode; an optional one starts absent, so `{Name}()` is the infallible
+    // initializer every codec offers.
     let mut ctx = common_context(&l, m, imports, |e| {
         l.type_name(e.present_type()).into_owned()
     })?;
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             entry["default"] = if !e.is_required() {
-                "nil"
+                "nil".to_string()
             } else {
-                match kind(e) {
-                    "bool" => "false",
-                    "text" => "\"\"",
-                    "bytes" | "bytes_exact" => "[]",
-                    _ => "0",
+                match (kind(e), e.present_type()) {
+                    ("bool", _) => "false".to_string(),
+                    ("text", _) => "\"\"".to_string(),
+                    ("bytes" | "bytes_exact", _) => "[]".to_string(),
+                    ("enum", SceType::Enum(r)) => l.enum_default_expr(&r.alias),
+                    _ => "0".to_string(),
                 }
             }
             .into();
+            // The common context spells the conversion of an enum's value as the variable `v`; the
+            // Swift template names the value it writes `value`.
+            if matches!(e.present_type(), SceType::Enum(_)) {
+                entry["enum_to_underlying"] =
+                    l.codec_carrier_expr(e.present_type(), "value").into();
+            }
             // A negative number is no CBOR unsigned integer, which encode refuses and does not wrap.
             entry["signed"] = matches!(
                 e.present_type(),
