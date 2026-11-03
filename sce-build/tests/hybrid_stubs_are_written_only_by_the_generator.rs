@@ -92,7 +92,7 @@ fn no_hybrid_stub_is_tracked() {
             let rel = dir.join(format!("{stub}.scxml"));
             let rel = rel.to_string_lossy();
             assert!(
-                common::repository::paths_git_tracks(&[rel.as_ref()]).is_empty(),
+                common::repository::paths_git_tracks(&[&*rel]).is_empty(),
                 "{rel} is tracked"
             );
         }
@@ -138,10 +138,13 @@ fn the_plan_of_a_fixture_plans_the_generation_of_its_stub() {
             let out = tempfile::tempdir().expect("tempdir");
             let lines = planned(&fixture, language, out.path());
             for stub in &hybrid.stubs {
-                let document = out.path().join(format!("{stub}.scxml"));
-                let document = document.to_string_lossy();
+                let document = out
+                    .path()
+                    .join(format!("{stub}.scxml"))
+                    .to_string_lossy()
+                    .into_owned();
                 assert!(
-                    lines.iter().any(|line| line == document.as_ref()),
+                    lines.contains(&document),
                     "[{language}] the plan of {} does not name {document} among the files \
                      its generation writes:\n{}",
                     hybrid.fixture,
