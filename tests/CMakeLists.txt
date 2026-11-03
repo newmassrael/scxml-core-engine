@@ -889,6 +889,9 @@ add_test(NAME SavedState COMMAND saved_state_test)
 # ============================================================================
 add_executable(event_payload_bytes_test
     common/EventPayloadBytesTest.cpp
+    # A value of any bounded type at its path (docs/adr/0086): the same header, so
+    # the same link rule.
+    common/EventPayloadComposedTest.cpp
 )
 
 target_include_directories(event_payload_bytes_test

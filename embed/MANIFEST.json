@@ -3,7 +3,7 @@
   "embed_version": "2d064d0b42",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 477,
+  "symbol_count": 480,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -184,7 +184,25 @@
       "header": "common/EventPayloadLift.h",
       "kind": "class",
       "members": [],
+      "name": "SCE::Common::EventPayloadBounds"
+    },
+    {
+      "header": "common/EventPayloadLift.h",
+      "kind": "class",
+      "members": [],
       "name": "SCE::Common::EventPayloadFields"
+    },
+    {
+      "header": "common/EventPayloadLift.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Common::EventPayloadValue"
+    },
+    {
+      "header": "common/EventPayloadLift.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Common::detail::EventPayloadScan"
     },
     {
       "header": "common/EventTypeHelper.h",

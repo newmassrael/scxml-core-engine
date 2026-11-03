@@ -5,317 +5,30 @@
 #include "common/JsonText.h"
 #include "common/Latin1Bytes.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace SCE::Common {
 
+namespace detail {
+
 /**
- * @brief Lifting an event's typed `_event.data` view out of the data it carries
+ * @brief The walk over a payload's text that every reader below shares
  *
- * NL→IR Item C1 Path A gives a schema'd event a typed payload that the natively
- * lowered guards read. One producer fills it: the generated `raise<Event>`
- * inject seam. Every other producer — `<send>` with `<param>`, namelist or
- * `<content>`, an invoke forwarding an event either way, autoforward,
- * BasicHTTP, mesh — fills `EventWithMetadata::data`, the wire §scxml-5.10
- * describes and §scxml-B-2-8-1 reads.
- *
- * Until this header the two never met, so the same guard answered differently
- * depending on where its event came from, and a typed payload could not cross
- * an invoke boundary at all. What the lift refuses is what the SCRIPT ENGINE
- * already refuses for the same guard, measured on the same document: no data, a
- * missing field, or a value of another type each give `error.execution` and a
- * guard that does not fire (§scxml-3.13). A native lowering that answered
- * differently would make the optimisation observable, which is the one thing it
- * may not be.
- *
- * ⚠ HEADER-ONLY, and that is a requirement rather than a convenience: a
- * generated C++ machine compiles and LINKS against `sce/include` alone, with no
- * runtime library — `event_schema_bytes_guard.rs` builds one that way and is
- * the gate that says so. The first draft of this header called
- * `EventDataHelper::jsonStringToScriptValue`, which reads the same wire for the
- * script engine, and that one call took the property away: two undefined
- * references at link time for every payload machine. Reuse that cannot be
- * linked is not reuse.
- *
- * ⚠ So the JSON read here is a second reader, and what keeps it from drifting
- * from the engine's is a test rather than a shared symbol: the per-backend
- * `statechart_lifted` gates ask the same five questions of all six backends,
- * and the refusals were measured against the Lua path on the same document.
- *
- * Cross-language siblings: `sce_runtime.event_payload` (Python),
- * `sce.LiftPayload` (Go), `sce/event_payload.h` (C11), whose structure this
- * mirrors.
+ * One class of static functions rather than free ones, so the header's public
+ * surface (embed/MANIFEST.json) names one scanner and not each of its steps.
  */
-class EventPayloadFields {
+class EventPayloadScan {
 public:
-    /**
-     * @brief Read an event's data as the fields it names
-     * @param data The event's `_event.data` wire
-     * @param out Receives the fields when the read succeeds
-     * @return An empty string when `out` was filled, else why it was not
-     *
-     * The JSON read is §scxml-B-2-8-1's second rung, the same rung the script
-     * engine takes for the same string. Nothing is copied: `out` borrows the
-     * characters, so the event record must outlive it — which it does, the lift
-     * runs while the event is being dispatched.
-     */
-    static std::string decode(const std::string &data, EventPayloadFields &out) {
-        out.object_ = nullptr;
-        out.defaults_ = nullptr;
-        const char *p = skipSpace(data.c_str());
-        if (*p == '\0') {
-            return "the event carries no data";
-        }
-        if (*p != '{') {
-            // §scxml-B-2-8-1's other rungs: a bare value or a space-normalized
-            // string names no fields.
-            return "the event's data is not an object of named fields";
-        }
-        out.object_ = p;
-        return {};
-    }
-
-    /**
-     * @brief Read an event's data for a schema a later revision of which added fields
-     * @param data The event's `_event.data` wire
-     * @param defaults The JSON object of those fields' defaults, which the generator
-     *        spells from the schema as a string literal that outlives `out`
-     * @param out Receives the fields when the read succeeds
-     * @return An empty string when `out` was filled, else why it was not
-     *
-     * A field the delivery lacks is read out of `defaults` instead
-     * (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows"). A delivery with
-     * no data at all lacks every field, so it is read as one that names none: a
-     * field of the first revision is then refused by name, and a schema all of
-     * whose fields came later reads its defaults. A field the delivery does carry
-     * is read as it came, and held to its type as any other value is.
-     */
-    static std::string decode(const std::string &data, const char *defaults, EventPayloadFields &out) {
-        out.object_ = nullptr;
-        out.defaults_ = nullptr;
-        if (*skipSpace(data.c_str()) != '\0') {
-            std::string refusal = decode(data, out);
-            if (!refusal.empty()) {
-                return refusal;
-            }
-        }
-        const char *d = skipSpace(defaults);
-        if (*d != '{') {
-            return "the schema's defaults are not a JSON object, which the generator never writes";
-        }
-        out.defaults_ = d;
-        return {};
-    }
-
-    /**
-     * @brief Whether an optional field (docs/adr/0055) is absent
-     *
-     * `null` is the one spelling of absence on the wire, and any other value is a
-     * present one, which the reader of the field's type then reads. A delivery
-     * that lacks the key is refused: a field of the first revision is carried by
-     * every delivery, absent or not, so a missing key is no absent value.
-     */
-    std::string readAbsent(const char *name, bool &absent) const {
-        const char *p = find(name);
-        if (p == nullptr) {
-            return missing(name);
-        }
-        absent = std::string_view(p).substr(0, 4) == "null";
-        return {};
-    }
-
-    std::string readBool(const char *name, bool &out) const {
-        const char *p = find(name);
-        if (p == nullptr) {
-            return missing(name);
-        }
-        if (std::string_view(p).substr(0, 4) == "true") {
-            out = true;
-            return {};
-        }
-        if (std::string_view(p).substr(0, 5) == "false") {
-            out = false;
-            return {};
-        }
-        return std::string("'") + name + "' is not a truth value";
-    }
-
-    std::string readString(const char *name, std::string &out) const {
-        const char *p = find(name);
-        if (p == nullptr) {
-            return missing(name);
-        }
-        std::string text;
-        const std::string refusal = walkText(p, text);
-        if (!refusal.empty()) {
-            return std::string("'") + name + "' " + refusal;
-        }
-        out = std::move(text);
-        return {};
-    }
-
-    /**
-     * @brief A byte-string field
-     *
-     * JSON has no byte string, so the wire carries the byte-exact Latin-1 text
-     * the inject seam writes, and this reads it back the same way: every one of
-     * the 256 values is one character and back (`Latin1Bytes`). A byte above 0x7F
-     * is therefore the two bytes of its character in the text, and is one byte
-     * here; a character past U+00FF is no byte and is refused. Printable ASCII —
-     * what a bytes guard compares — is the same bytes under either reading.
-     */
-    std::string readBytes(const char *name, std::vector<uint8_t> &out) const {
-        std::string text;
-        std::string refusal = readString(name, text);
-        if (!refusal.empty()) {
-            return refusal;
-        }
-        refusal = Latin1Bytes::bytesOf(text, out);
-        if (!refusal.empty()) {
-            return std::string("'") + name + "' " + refusal;
-        }
-        return {};
-    }
-
-    /**
-     * @brief A whole-number field, at the width its schema declares
-     *
-     * ⚠ A truth value is not a number here. JSON spells both, and a schema that
-     * declared `uint32` and received `true` has been handed something its own
-     * type says cannot occur. A value the width cannot hold is refused rather
-     * than wrapped — silently truncating is how a guard on a boundary answers
-     * for a value the document never received.
-     */
-    template <typename T> std::string readInteger(const char *name, T &out) const {
-        static_assert(std::is_integral_v<T>, "readInteger is for whole-number fields");
-        const char *p = find(name);
-        if (p == nullptr) {
-            return missing(name);
-        }
-        bool negative = false;
-        uint64_t magnitude = 0;
-        const std::string refusal = readWhole(p, negative, magnitude);
-        if (!refusal.empty()) {
-            return std::string("'") + name + "' " + refusal;
-        }
-        return fit(name, negative, magnitude, out);
-    }
-
-    /**
-     * @brief A 64-bit whole-number field
-     *
-     * A 64-bit integer crosses as the text of its digits, because a reader that takes
-     * a JSON number through a double carries one past 2^53 with its low bits wrong
-     * and no error. It is read from that text, or from a number exact in a double
-     * (`|n| <= 2^53`); a number past that is refused here on every engine, so the
-     * same payload gives the same field wherever it is read.
-     */
-    template <typename T> std::string readWide(const char *name, T &out) const {
-        static_assert(std::is_integral_v<T> && sizeof(T) == 8, "readWide is for 64-bit whole-number fields");
-        const char *p = find(name);
-        if (p == nullptr) {
-            return missing(name);
-        }
-        bool negative = false;
-        uint64_t magnitude = 0;
-        std::string refusal;
-        if (*p == '"') {
-            refusal = readWholeText(p + 1, std::is_signed_v<T>, negative, magnitude);
-        } else {
-            refusal = readWhole(p, negative, magnitude);
-            if (refusal.empty() && magnitude > (uint64_t{1} << 53) - 1u) {
-                refusal = "is a number past 2^53 - 1, which is not exact everywhere; a 64-bit integer that large is "
-                          "written as a text of its digits";
-            }
-        }
-        if (!refusal.empty()) {
-            return std::string("'") + name + "' " + refusal;
-        }
-        return fit(name, negative, magnitude, out);
-    }
-
-    /** @brief A fractional field, at the width its schema declares */
-    template <typename T> std::string readFloating(const char *name, T &out) const {
-        static_assert(std::is_floating_point_v<T>, "readFloating is for fractional fields");
-        const char *p = find(name);
-        if (p == nullptr) {
-            return missing(name);
-        }
-        if (*p != '-' && (*p < '0' || *p > '9')) {
-            return std::string("'") + name + "' is not a number";
-        }
-        double wide = 0.0;
-        try {
-            wide = std::stod(std::string(p, valueEnd(p) - p));
-        } catch (const std::exception &) {
-            return std::string("'") + name + "' is not a number this width can hold";
-        }
-        // A JSON number is a double wherever it is read, so a float field holds the
-        // single nearest that double, and a number past the largest single does not
-        // fit the field, as a whole number past its width does not. Narrowing it
-        // anyway would be undefined where the double is out of range.
-        if (std::fabs(wide) > static_cast<double>(std::numeric_limits<T>::max())) {
-            return width(name);
-        }
-        out = static_cast<T>(wide);
-        return {};
-    }
-
-    // ── The writing half: the wire an inject seam fills beside the payload ──
-
-    /** @brief One field of the wire, at the spelling its type deserves. */
-    template <typename T> static std::string field(const char *name, const T &value) {
-        if constexpr (std::is_same_v<T, bool>) {
-            return quote(name) + ":" + (value ? "true" : "false");
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            return quote(name) + ":" + quote(value);
-        } else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
-            // See readBytes for why Latin-1.
-            return quote(name) + ":" + quote(Latin1Bytes::textOf(value));
-        } else if constexpr (std::is_floating_point_v<T>) {
-            // The one spelling of a float (ARCHITECTURE.md, "JSON Number
-            // Text"); `%.17g` wrote 0.1 as `0.10000000000000001`. JSON has no
-            // spelling for one that is not finite.
-            const auto number = static_cast<double>(value);
-            return quote(name) + ":" + (std::isfinite(number) ? JsonText::numberText(number) : "null");
-        } else if constexpr (std::is_signed_v<T>) {
-            return quote(name) + ":" + std::to_string(static_cast<long long>(value));
-        } else {
-            return quote(name) + ":" + std::to_string(static_cast<unsigned long long>(value));
-        }
-    }
-
-    /**
-     * @brief An optional field (docs/adr/0055) that is absent: the key is always
-     * written, and `null` is the one spelling of absence.
-     */
-    static std::string absent(const char *name) {
-        return quote(name) + ":null";
-    }
-
-    /** @brief The fields an inject seam was given, as the object they spell. */
-    static std::string wire(std::initializer_list<std::string> fields) {
-        std::string out = "{";
-        bool first = true;
-        for (const auto &f : fields) {
-            if (!first) {
-                out += ',';
-            }
-            first = false;
-            out += f;
-        }
-        out += '}';
-        return out;
-    }
-
-private:
     static const char *skipSpace(const char *p) {
         while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
             p++;
@@ -376,19 +89,25 @@ private:
         return nullptr;
     }
 
-    static const char *valueEnd(const char *p) {
+    /** Past one value: nullptr when a string or a container never closes. */
+    static const char *skipValue(const char *p) {
         if (*p == '"') {
-            const char *after = skipString(p);
-            return after == nullptr ? p : after;
+            return skipString(p);
         }
         if (*p == '{' || *p == '[') {
-            const char *after = skipContainer(p);
-            return after == nullptr ? p : after;
+            return skipContainer(p);
         }
+        // A number, or one of the three keywords. Either way it ends where the next
+        // member does.
         while (*p != '\0' && *p != ',' && *p != '}' && *p != ']') {
             p++;
         }
         return p;
+    }
+
+    static const char *valueEnd(const char *p) {
+        const char *after = skipValue(p);
+        return after == nullptr ? p : after;
     }
 
     /** Whether the JSON string at `p` spells exactly `name`. */
@@ -404,15 +123,6 @@ private:
             name++;
         }
         return *p == '"';
-    }
-
-    /**
-     * The value `name` carries: in the delivery, else in the schema's defaults
-     * when the decode was given them, else nullptr.
-     */
-    const char *find(const char *name) const {
-        const char *delivered = findIn(object_, name);
-        return delivered != nullptr ? delivered : findIn(defaults_, name);
     }
 
     /** The value `name` carries in the object at `object`, or nullptr when it names none. */
@@ -611,8 +321,8 @@ private:
         return {};
     }
 
-    /** Whether a magnitude and sign fit `T`, writing it to `out` when they do. */
-    template <typename T> static std::string fit(const char *name, bool negative, uint64_t magnitude, T &out) {
+    /** Whether a magnitude and sign fit `T`, writing it to `out` when they do; the clause why not. */
+    template <typename T> static std::string fit(bool negative, uint64_t magnitude, T &out) {
         if (negative) {
             if constexpr (std::is_signed_v<T>) {
                 // -(min) does not fit T when min is its floor, so the check is
@@ -620,28 +330,607 @@ private:
                 const uint64_t floorMagnitude =
                     static_cast<uint64_t>(-(static_cast<int64_t>(std::numeric_limits<T>::min()) + 1)) + 1u;
                 if (magnitude > floorMagnitude) {
-                    return width(name);
+                    return "does not fit the width its schema declares";
                 }
                 out = (magnitude == floorMagnitude) ? std::numeric_limits<T>::min()
                                                     : static_cast<T>(-static_cast<int64_t>(magnitude));
                 return {};
             } else {
-                return width(name);
+                return "does not fit the width its schema declares";
             }
         }
         if (magnitude > static_cast<uint64_t>(std::numeric_limits<T>::max())) {
-            return width(name);
+            return "does not fit the width its schema declares";
         }
         out = static_cast<T>(magnitude);
         return {};
     }
 
-    static std::string missing(const char *name) {
-        return std::string("the event's data has no '") + name + "'";
+    /** `segment` below `prefix`, as a JSON Pointer's reference tokens are joined. */
+    static std::string join(const std::string &prefix, const std::string &segment) {
+        return prefix.empty() ? segment : prefix + "/" + segment;
+    }
+};
+
+}  // namespace detail
+
+class EventPayloadFields;
+
+/**
+ * @brief One value of an event's data, at the path through every depth that names it
+ *
+ * The path is a field's name, then each index and field name below it, joined by
+ * `/`. Every reader answers an empty string when it filled `out`, else why it did
+ * not, the path first; `out` is then as it was. Nothing is copied but what a reader
+ * hands back: the value borrows the characters of the event record, which outlives
+ * it while the event is being dispatched.
+ */
+class EventPayloadValue {
+public:
+    EventPayloadValue() = default;
+
+    EventPayloadValue(const char *at, std::string path) : at_(at), path_(std::move(path)) {}
+
+    /** @brief The path that names this value */
+    const std::string &path() const {
+        return path_;
     }
 
-    static std::string width(const char *name) {
-        return std::string("'") + name + "' does not fit the width its schema declares";
+    /** @brief Whether the value is `null`, the one spelling of an absent value */
+    bool isNull() const {
+        return at_ != nullptr && std::string_view(at_).substr(0, 4) == "null" && !isWordCharacter(at_[4]);
+    }
+
+    /** @brief A refusal of this value, saying `what` of it after its path */
+    std::string refuse(const std::string &what) const {
+        return "'" + path_ + "' " + what;
+    }
+
+    std::string readBool(bool &out) const {
+        if (std::string_view(at_).substr(0, 4) == "true" && !isWordCharacter(at_[4])) {
+            out = true;
+            return {};
+        }
+        if (std::string_view(at_).substr(0, 5) == "false" && !isWordCharacter(at_[5])) {
+            out = false;
+            return {};
+        }
+        return wrongKind("is not a truth value");
+    }
+
+    /**
+     * @brief The text the value carries, held to no bound: what an enum's variant is
+     * named by, which its reader matches against the names its enum declares
+     */
+    std::string readName(std::string &out) const {
+        if (*at_ != '"') {
+            return wrongKind("is not a text");
+        }
+        std::string text;
+        const std::string refusal = detail::EventPayloadScan::walkText(at_, text);
+        if (!refusal.empty()) {
+            return refuse(refusal);
+        }
+        out = std::move(text);
+        return {};
+    }
+
+    /**
+     * @brief A text of at most `bound` UTF-8 bytes (docs/adr/0086, section 4.4): one
+     * past the bound is refused, at whatever depth it stands, and never cut
+     */
+    std::string readText(size_t bound, std::string &out) const {
+        std::string text;
+        std::string refusal = readName(text);
+        if (!refusal.empty()) {
+            return refusal;
+        }
+        if (text.size() > bound) {
+            return pastBytes(text.size(), bound);
+        }
+        out = std::move(text);
+        return {};
+    }
+
+    /**
+     * @brief A byte string of at most `bound` bytes
+     *
+     * JSON has no byte string, so the wire carries the byte-exact Latin-1 text
+     * the inject seam writes, and this reads it back the same way: every one of
+     * the 256 values is one character and back (`Latin1Bytes`). A byte above 0x7F
+     * is therefore the two bytes of its character in the text, and is one byte
+     * here; a character past U+00FF is no byte and is refused. Printable ASCII —
+     * what a bytes guard compares — is the same bytes under either reading.
+     */
+    std::string readBytes(size_t bound, std::vector<uint8_t> &out) const {
+        if (*at_ != '"') {
+            return wrongKind("is not a byte string");
+        }
+        std::string text;
+        std::string refusal = readName(text);
+        if (!refusal.empty()) {
+            return refusal;
+        }
+        std::vector<uint8_t> bytes;
+        refusal = Latin1Bytes::bytesOf(text, bytes);
+        if (!refusal.empty()) {
+            return refuse(refusal);
+        }
+        if (bytes.size() > bound) {
+            return pastBytes(bytes.size(), bound);
+        }
+        out = std::move(bytes);
+        return {};
+    }
+
+    /**
+     * @brief A whole number, at the width its type declares
+     *
+     * ⚠ A truth value is not a number here. JSON spells both, and a schema that
+     * declared `uint32` and received `true` has been handed something its own
+     * type says cannot occur. A value the width cannot hold is refused rather
+     * than wrapped — silently truncating is how a guard on a boundary answers
+     * for a value the document never received.
+     */
+    template <typename T> std::string readInteger(T &out) const {
+        static_assert(std::is_integral_v<T>, "readInteger is for whole-number values");
+        if (isNull()) {
+            return wrongKind("is not a number");
+        }
+        bool negative = false;
+        uint64_t magnitude = 0;
+        std::string refusal = detail::EventPayloadScan::readWhole(at_, negative, magnitude);
+        if (refusal.empty()) {
+            refusal = detail::EventPayloadScan::fit(negative, magnitude, out);
+        }
+        return refusal.empty() ? refusal : refuse(refusal);
+    }
+
+    /**
+     * @brief A 64-bit whole number
+     *
+     * A 64-bit integer crosses as the text of its digits, because a reader that takes
+     * a JSON number through a double carries one past 2^53 with its low bits wrong
+     * and no error. It is read from that text, or from a number exact in a double
+     * (`|n| <= 2^53`); a number past that is refused here on every engine, so the
+     * same payload gives the same field wherever it is read.
+     */
+    template <typename T> std::string readWide(T &out) const {
+        static_assert(std::is_integral_v<T> && sizeof(T) == 8, "readWide is for 64-bit whole-number values");
+        if (isNull()) {
+            return wrongKind("is not a number");
+        }
+        bool negative = false;
+        uint64_t magnitude = 0;
+        std::string refusal;
+        if (*at_ == '"') {
+            refusal = detail::EventPayloadScan::readWholeText(at_ + 1, std::is_signed_v<T>, negative, magnitude);
+        } else {
+            refusal = detail::EventPayloadScan::readWhole(at_, negative, magnitude);
+            if (refusal.empty() && magnitude > (uint64_t{1} << 53) - 1u) {
+                refusal = "is a number past 2^53 - 1, which is not exact everywhere; a 64-bit integer that large is "
+                          "written as a text of its digits";
+            }
+        }
+        if (refusal.empty()) {
+            refusal = detail::EventPayloadScan::fit(negative, magnitude, out);
+        }
+        return refusal.empty() ? refusal : refuse(refusal);
+    }
+
+    /** @brief A fractional value, at the width its type declares */
+    template <typename T> std::string readFloating(T &out) const {
+        static_assert(std::is_floating_point_v<T>, "readFloating is for fractional values");
+        if (*at_ != '-' && (*at_ < '0' || *at_ > '9')) {
+            return wrongKind("is not a number");
+        }
+        double wide = 0.0;
+        try {
+            wide = std::stod(std::string(at_, detail::EventPayloadScan::valueEnd(at_) - at_));
+        } catch (const std::exception &) {
+            return refuse("is not a number this width can hold");
+        }
+        // A JSON number is a double wherever it is read, so a float holds the single
+        // nearest that double, and a number past the largest single does not fit,
+        // as a whole number past its width does not. Narrowing it anyway would be
+        // undefined where the double is out of range.
+        if (std::fabs(wide) > static_cast<double>(std::numeric_limits<T>::max())) {
+            return refuse("does not fit the width its schema declares");
+        }
+        out = static_cast<T>(wide);
+        return {};
+    }
+
+    /**
+     * @brief A value of `optional<T>` (docs/adr/0055): absent where the value is
+     * `null`, and otherwise what `read(value, present)` reads, held to `T`
+     */
+    template <typename T, typename Read> std::string readOptional(std::optional<T> &out, Read read) const {
+        if (isNull()) {
+            out.reset();
+            return {};
+        }
+        T present{};
+        std::string refusal = read(*this, present);
+        if (refusal.empty()) {
+            out = std::move(present);
+        }
+        return refusal;
+    }
+
+    /**
+     * @brief A value of `list<T>[bound]`: an array of at most `bound` elements, each
+     * read by `read(element, into)` at the path of its index, in order
+     *
+     * The elements are counted before any is read: an array longer than `bound` is
+     * refused whole, and no element of it is decoded (ADR 0077, section 2).
+     */
+    template <typename T, typename Read> std::string readList(size_t bound, std::vector<T> &out, Read read) const {
+        if (*at_ != '[') {
+            return wrongKind("is not a list");
+        }
+        std::vector<const char *> elements;
+        const char *p = detail::EventPayloadScan::skipSpace(at_ + 1);
+        if (*p != ']') {
+            for (;;) {
+                elements.push_back(p);
+                const char *after = detail::EventPayloadScan::skipValue(p);
+                if (after == nullptr) {
+                    return refuse("is not a list (it ends unclosed)");
+                }
+                p = detail::EventPayloadScan::skipSpace(after);
+                if (*p == ',') {
+                    p = detail::EventPayloadScan::skipSpace(p + 1);
+                    continue;
+                }
+                if (*p == ']') {
+                    break;
+                }
+                return refuse("is not a list");
+            }
+        }
+        if (elements.size() > bound) {
+            return refuse("holds " + std::to_string(elements.size()) + " elements, past the " + std::to_string(bound) +
+                          " its type declares");
+        }
+        std::vector<T> items;
+        items.reserve(elements.size());
+        for (size_t index = 0; index < elements.size(); ++index) {
+            T item{};
+            const std::string refusal = read(
+                EventPayloadValue(elements[index], detail::EventPayloadScan::join(path_, std::to_string(index))), item);
+            if (!refusal.empty()) {
+                return refusal;
+            }
+            items.push_back(std::move(item));
+        }
+        out = std::move(items);
+        return {};
+    }
+
+    /**
+     * @brief A value of a record type: an object whose fields `read(fields)` reads
+     *
+     * `defaults`, for a record whose schema a later revision added fields to, is the
+     * JSON object of their defaults, a literal the generator spells from that schema
+     * and which outlives the read, and a field the value lacks is read out of it
+     * (docs/adr/0086, section 10.3); nullptr for a schema with none.
+     */
+    template <typename Read> std::string readRecord(const char *defaults, Read read) const;
+
+private:
+    /** Whether `c` continues a keyword, so that `nullx` is no `null`. */
+    static bool isWordCharacter(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+    }
+
+    /** The refusal of `null` where the type is not optional, or `otherwise`. */
+    std::string wrongKind(const char *otherwise) const {
+        return refuse(isNull() ? "is null, and its type is not optional" : otherwise);
+    }
+
+    std::string pastBytes(size_t held, size_t bound) const {
+        return refuse("is " + std::to_string(held) + " bytes, past the " + std::to_string(bound) +
+                      " its type declares");
+    }
+
+    const char *at_ = nullptr;
+    std::string path_;
+};
+
+/**
+ * @brief Lifting an event's typed `_event.data` view out of the data it carries
+ *
+ * NL→IR Item C1 Path A gives a schema'd event a typed payload that the natively
+ * lowered guards read. One producer fills it: the generated `raise<Event>`
+ * inject seam. Every other producer — `<send>` with `<param>`, namelist or
+ * `<content>`, an invoke forwarding an event either way, autoforward,
+ * BasicHTTP, mesh — fills `EventWithMetadata::data`, the wire §scxml-5.10
+ * describes and §scxml-B-2-8-1 reads.
+ *
+ * Until this header the two never met, so the same guard answered differently
+ * depending on where its event came from, and a typed payload could not cross
+ * an invoke boundary at all. What the lift refuses is what the SCRIPT ENGINE
+ * already refuses for the same guard, measured on the same document: no data, a
+ * missing field, or a value of another type each give `error.execution` and a
+ * guard that does not fire (§scxml-3.13). A native lowering that answered
+ * differently would make the optimisation observable, which is the one thing it
+ * may not be.
+ *
+ * A field may be of any type of the language (docs/adr/0086): a list of any
+ * type, an optional value, a record, nested to any depth. Each is read as one
+ * `EventPayloadValue` at the path that names it (`value`), and three combinators
+ * walk the constructors that hold other values, each calling the reader of its
+ * part: `readList`, `readOptional` and `readRecord`. A value outside its type is
+ * refused before anything of it is kept, and the refusal names the path through
+ * every depth as a JSON Pointer (RFC 6901): `'items/2/tags/0' is 9 bytes, past
+ * the 8 its type declares`. A key a record's schema does not declare is stepped
+ * over.
+ *
+ * ⚠ HEADER-ONLY, and that is a requirement rather than a convenience: a
+ * generated C++ machine compiles and LINKS against `sce/include` alone, with no
+ * runtime library — `event_schema_bytes_guard.rs` builds one that way and is
+ * the gate that says so. The first draft of this header called
+ * `EventDataHelper::jsonStringToScriptValue`, which reads the same wire for the
+ * script engine, and that one call took the property away: two undefined
+ * references at link time for every payload machine. Reuse that cannot be
+ * linked is not reuse.
+ *
+ * ⚠ So the JSON read here is a second reader, and what keeps it from drifting
+ * from the engine's is a test rather than a shared symbol: the per-backend
+ * `statechart_lifted` gates ask the same five questions of all six backends,
+ * and the refusals were measured against the Lua path on the same document.
+ *
+ * Cross-language siblings: `sce_runtime.event_payload` (Python),
+ * `sce.LiftPayload` (Go), `sce/event_payload.h` (C11), whose structure this
+ * mirrors.
+ */
+class EventPayloadFields {
+public:
+    /**
+     * @brief Read an event's data as the fields it names
+     * @param data The event's `_event.data` wire
+     * @param out Receives the fields when the read succeeds
+     * @return An empty string when `out` was filled, else why it was not
+     *
+     * The JSON read is §scxml-B-2-8-1's second rung, the same rung the script
+     * engine takes for the same string. Nothing is copied: `out` borrows the
+     * characters, so the event record must outlive it — which it does, the lift
+     * runs while the event is being dispatched.
+     */
+    static std::string decode(const std::string &data, EventPayloadFields &out) {
+        out.object_ = nullptr;
+        out.defaults_ = nullptr;
+        out.prefix_.clear();
+        const char *p = detail::EventPayloadScan::skipSpace(data.c_str());
+        if (*p == '\0') {
+            return "the event carries no data";
+        }
+        if (*p != '{') {
+            // §scxml-B-2-8-1's other rungs: a bare value or a space-normalized
+            // string names no fields.
+            return "the event's data is not an object of named fields";
+        }
+        out.object_ = p;
+        return {};
+    }
+
+    /**
+     * @brief Read an event's data for a schema a later revision of which added fields
+     * @param data The event's `_event.data` wire
+     * @param defaults The JSON object of those fields' defaults, which the generator
+     *        spells from the schema as a string literal that outlives `out`
+     * @param out Receives the fields when the read succeeds
+     * @return An empty string when `out` was filled, else why it was not
+     *
+     * A field the delivery lacks is read out of `defaults` instead
+     * (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows"). A delivery with
+     * no data at all lacks every field, so it is read as one that names none: a
+     * field of the first revision is then refused by name, and a schema all of
+     * whose fields came later reads its defaults. A field the delivery does carry
+     * is read as it came, and held to its type as any other value is.
+     */
+    static std::string decode(const std::string &data, const char *defaults, EventPayloadFields &out) {
+        out.object_ = nullptr;
+        out.defaults_ = nullptr;
+        out.prefix_.clear();
+        if (*detail::EventPayloadScan::skipSpace(data.c_str()) != '\0') {
+            std::string refusal = decode(data, out);
+            if (!refusal.empty()) {
+                return refusal;
+            }
+        }
+        return out.takeDefaults(defaults);
+    }
+
+    /**
+     * @brief The value of the field `name`, at its path
+     *
+     * The delivered value, else the default a later revision of the schema gave it,
+     * else a refusal naming the path. A member the schema does not declare is never
+     * asked for, so it is stepped over.
+     */
+    std::string value(const char *name, EventPayloadValue &out) const {
+        const std::string path = detail::EventPayloadScan::join(prefix_, name);
+        const char *p = find(name);
+        if (p == nullptr) {
+            return "the event's data has no '" + path + "'";
+        }
+        out = EventPayloadValue(p, path);
+        return {};
+    }
+
+    /**
+     * @brief Whether an optional field (docs/adr/0055) is absent
+     *
+     * `null` is the one spelling of absence on the wire, and any other value is a
+     * present one, which the reader of the field's type then reads. A delivery
+     * that lacks the key is refused: a field of the first revision is carried by
+     * every delivery, absent or not, so a missing key is no absent value.
+     */
+    std::string readAbsent(const char *name, bool &absent) const {
+        EventPayloadValue v;
+        std::string refusal = value(name, v);
+        if (refusal.empty()) {
+            absent = v.isNull();
+        }
+        return refusal;
+    }
+
+    std::string readBool(const char *name, bool &out) const {
+        EventPayloadValue v;
+        std::string refusal = value(name, v);
+        return refusal.empty() ? v.readBool(out) : refusal;
+    }
+
+    /** @brief A text field, as the text it carries; `EventPayloadValue::readText` holds it to its bound */
+    std::string readString(const char *name, std::string &out) const {
+        EventPayloadValue v;
+        std::string refusal = value(name, v);
+        return refusal.empty() ? v.readName(out) : refusal;
+    }
+
+    /** @brief A byte-string field, held to no bound; `EventPayloadValue::readBytes` holds it to its own */
+    std::string readBytes(const char *name, std::vector<uint8_t> &out) const {
+        EventPayloadValue v;
+        std::string refusal = value(name, v);
+        return refusal.empty() ? v.readBytes(std::numeric_limits<size_t>::max(), out) : refusal;
+    }
+
+    /** @brief A whole-number field, at the width its schema declares (`EventPayloadValue::readInteger`) */
+    template <typename T> std::string readInteger(const char *name, T &out) const {
+        EventPayloadValue v;
+        std::string refusal = value(name, v);
+        return refusal.empty() ? v.readInteger(out) : refusal;
+    }
+
+    /** @brief A 64-bit whole-number field (`EventPayloadValue::readWide`) */
+    template <typename T> std::string readWide(const char *name, T &out) const {
+        EventPayloadValue v;
+        std::string refusal = value(name, v);
+        return refusal.empty() ? v.readWide(out) : refusal;
+    }
+
+    /** @brief A fractional field, at the width its schema declares */
+    template <typename T> std::string readFloating(const char *name, T &out) const {
+        EventPayloadValue v;
+        std::string refusal = value(name, v);
+        return refusal.empty() ? v.readFloating(out) : refusal;
+    }
+
+    // ── The writing half: the wire an inject seam fills beside the payload ──
+
+    /** @brief One value of a scalar type as JSON, at the spelling its type deserves */
+    template <typename T> static std::string json(const T &value) {
+        if constexpr (std::is_same_v<T, bool>) {
+            return value ? "true" : "false";
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            return quote(value);
+        } else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
+            // See EventPayloadValue::readBytes for why Latin-1.
+            return quote(Latin1Bytes::textOf(value));
+        } else if constexpr (std::is_floating_point_v<T>) {
+            // The one spelling of a float (ARCHITECTURE.md, "JSON Number
+            // Text"); `%.17g` wrote 0.1 as `0.10000000000000001`. JSON has no
+            // spelling for one that is not finite.
+            const auto number = static_cast<double>(value);
+            return std::isfinite(number) ? JsonText::numberText(number) : "null";
+        } else if constexpr (std::is_signed_v<T>) {
+            return std::to_string(static_cast<long long>(value));
+        } else {
+            return std::to_string(static_cast<unsigned long long>(value));
+        }
+    }
+
+    /** @brief One field of the wire, at the spelling its type deserves. */
+    template <typename T> static std::string field(const char *name, const T &value) {
+        return quote(name) + ":" + json(value);
+    }
+
+    /** @brief One field of the wire whose value is already JSON: a list or a record its writer spelled */
+    static std::string raw(const char *name, const std::string &json) {
+        return quote(name) + ":" + json;
+    }
+
+    /**
+     * @brief An optional field (docs/adr/0055) that is absent: the key is always
+     * written, and `null` is the one spelling of absence.
+     */
+    static std::string absent(const char *name) {
+        return quote(name) + ":null";
+    }
+
+    /** @brief The fields an inject seam was given, as the object they spell. */
+    static std::string wire(std::initializer_list<std::string> fields) {
+        std::string out = "{";
+        bool first = true;
+        for (const auto &f : fields) {
+            if (!first) {
+                out += ',';
+            }
+            first = false;
+            out += f;
+        }
+        out += '}';
+        return out;
+    }
+
+    /**
+     * @brief One list as JSON (docs/adr/0086, section 3.1): an array of what `write`
+     * spells each element as, in the list's order; the empty list is `[]`
+     */
+    template <typename T, typename Write> static std::string list(const std::vector<T> &items, Write write) {
+        std::string out = "[";
+        for (size_t i = 0; i < items.size(); ++i) {
+            if (i > 0) {
+                out += ',';
+            }
+            out += write(items[i]);
+        }
+        out += ']';
+        return out;
+    }
+
+    /**
+     * @brief One record as JSON: each member a field's id and the JSON of its value,
+     * written ascending by the id's bytes whatever order they are given in
+     * (ARCHITECTURE.md, "JSON Object Key Order", at every depth)
+     */
+    static std::string record(std::vector<std::pair<std::string, std::string>> members) {
+        // `std::string`'s order is its characters' as unsigned bytes.
+        std::sort(members.begin(), members.end(),
+                  [](const auto &left, const auto &right) { return left.first < right.first; });
+        std::string out = "{";
+        for (size_t i = 0; i < members.size(); ++i) {
+            if (i > 0) {
+                out += ',';
+            }
+            out += quote(members[i].first) + ":" + members[i].second;
+        }
+        out += '}';
+        return out;
+    }
+
+private:
+    friend class EventPayloadValue;
+
+    /** Take `defaults` as the schema's defaults, or refuse a text that is no object. */
+    std::string takeDefaults(const char *defaults) {
+        const char *d = detail::EventPayloadScan::skipSpace(defaults);
+        if (*d != '{') {
+            return "the schema's defaults are not a JSON object, which the generator never writes";
+        }
+        defaults_ = d;
+        return {};
+    }
+
+    /**
+     * The value `name` carries: in the delivery, else in the schema's defaults
+     * when the decode was given them, else nullptr.
+     */
+    const char *find(const char *name) const {
+        const char *delivered = detail::EventPayloadScan::findIn(object_, name);
+        return delivered != nullptr ? delivered : detail::EventPayloadScan::findIn(defaults_, name);
     }
 
     static std::string quote(const std::string &text) {
@@ -656,6 +945,73 @@ private:
      * holds; nullptr for a schema no later revision added a field to.
      */
     const char *defaults_ = nullptr;
+
+    /** The path of the record these are the fields of: empty for the payload. */
+    std::string prefix_;
+};
+
+template <typename Read> std::string EventPayloadValue::readRecord(const char *defaults, Read read) const {
+    if (*at_ != '{') {
+        return wrongKind("is not a record");
+    }
+    EventPayloadFields fields;
+    fields.object_ = at_;
+    fields.prefix_ = path_;
+    if (defaults != nullptr) {
+        const std::string refusal = fields.takeDefaults(defaults);
+        if (!refusal.empty()) {
+            return refusal;
+        }
+    }
+    return read(static_cast<const EventPayloadFields &>(fields));
+}
+
+/**
+ * @brief The checks a generated raise runs over a value a host built, before it
+ * encodes the event (docs/adr/0086, section 5.4)
+ *
+ * C++ has no checked constructor on a plain struct, so the raise runs the check its
+ * composition generates, one call per constructor, and refuses the event whole. Each
+ * answers an empty string, or why the value is not one of its type, the path first,
+ * in the words the payload reader uses.
+ */
+class EventPayloadBounds {
+public:
+    static std::string text(const std::string &path, const std::string &value, size_t bound) {
+        return value.size() > bound ? past(path, value.size(), bound) : std::string{};
+    }
+
+    static std::string bytes(const std::string &path, const std::vector<uint8_t> &value, size_t bound) {
+        return value.size() > bound ? past(path, value.size(), bound) : std::string{};
+    }
+
+    /** `each(path, element)` holds each element to its own type, at the path of its index. */
+    template <typename T, typename Each>
+    static std::string list(const std::string &path, const std::vector<T> &items, size_t bound, Each each) {
+        if (items.size() > bound) {
+            return "'" + path + "' holds " + std::to_string(items.size()) + " elements, past the " +
+                   std::to_string(bound) + " its type declares";
+        }
+        for (size_t index = 0; index < items.size(); ++index) {
+            std::string refusal = each(detail::EventPayloadScan::join(path, std::to_string(index)), items[index]);
+            if (!refusal.empty()) {
+                return refusal;
+            }
+        }
+        return {};
+    }
+
+    /** `present(path, value)` holds a present value to its type; an absent one holds nothing to check. */
+    template <typename T, typename Present>
+    static std::string optional(const std::string &path, const std::optional<T> &value, Present present) {
+        return value.has_value() ? present(path, *value) : std::string{};
+    }
+
+private:
+    static std::string past(const std::string &path, size_t held, size_t bound) {
+        return "'" + path + "' is " + std::to_string(held) + " bytes, past the " + std::to_string(bound) +
+               " its type declares";
+    }
 };
 
 }  // namespace SCE::Common
