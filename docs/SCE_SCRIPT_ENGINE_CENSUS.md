@@ -102,7 +102,7 @@ engine-documents 274
 native-prefix-documents 2
 datamodel-variable-init 468
 transition-guard 256
-assign-action 404
+assign-action 406
 child-invoke-needs-script-engine 57
 log-expr 46
 send-param-expr 49
@@ -411,6 +411,13 @@ telling the truth, not the tree getting worse.
   `transition-guard` by six (244 to 250) and `send-dynamic-attr` by six (88 to
   94). The block was re-derived from this test's output, not merged; the two
   floors are a sweep-shrink guard, not a ceiling, and stay where they were.
+  ⚠ **2026-11-03, deliberately:** `tests/integration/inbox_probe.scxml` (one
+  ECMAScript document: the machine appends each event it takes, with its
+  untyped `_event.data`, to one string, so that the order in which the C++
+  engine's inbox applied what other threads posted can be read back; one
+  data item, three assigns; docs/adr/0083) raised `assign-action` by three
+  (403 to 406). `engine-documents` and `datamodel-variable-init` rose too and
+  stayed under their ceilings.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
