@@ -117,4 +117,15 @@ final class ProcedureUnitTests: XCTestCase {
         session.seedAnswer = String(repeating: "x", count: 64)
         XCTAssertEqual(run(&session).finalState, "done")
     }
+
+    // `crossfile_procedure_filter.scxml`: a procedure that imports a low-pass filter holds one, builds
+    // it with the class, and asks it for the next sample in the transition to its final state.
+    func testAProcedureThatHoldsAFilterRunsToItsFinalStateThroughIt() {
+        let procedure = CrossfileProcedureFilter()
+        procedure.setRawSample(1.5)
+        let result = procedure.runToCompletion()
+        XCTAssertTrue(result.completed)
+        XCTAssertEqual(result.finalState, "done")
+        XCTAssertEqual(result.doneData, ["result": "success"])
+    }
 }

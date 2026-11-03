@@ -30745,7 +30745,8 @@ pub(crate) fn swift_procedure_unlowered(
     if let Some(why) = imports
         .iter()
         .find_map(|import| match import.kind.as_str() {
-            "condition" | "lookup" | "transform" | "interpolation" => import
+            // A filter is held as a member and asked for its next sample; the rest are functions.
+            "condition" | "lookup" | "transform" | "interpolation" | "filter" => import
                 .swift_unlowered
                 .as_ref()
                 .map(|why| format!("{} '{}' with {why}", import.kind, import.alias)),
@@ -30804,6 +30805,18 @@ pub(crate) fn swift_procedure_unlowered(
         .map(|f| f.id.as_str())
         .chain(m.internals.iter().map(|f| f.id.as_str()))
         .chain(m.helpers.iter().map(|h| h.name.as_str()));
+    // An import the class holds is a property beside the variables, so its alias is no name the
+    // class has for a member or for a variable.
+    let taken: Vec<String> = names.clone().map(spelled).collect();
+    for import in imports.iter().filter(|import| import.is_stateful) {
+        let alias = spelled(&import.member_name);
+        if SWIFT_PROCEDURE_MEMBERS.contains(&alias.as_str()) || taken.contains(&alias) {
+            return Some(format!(
+                "the <sce:import as=\"{}\">, named for a variable, a helper or a member the class has",
+                import.alias
+            ));
+        }
+    }
     let mut setters: std::collections::BTreeMap<String, &str> = std::collections::BTreeMap::new();
     for name in names {
         if SWIFT_PROCEDURE_MEMBERS.contains(&spelled(name).as_str()) {
@@ -30947,11 +30960,25 @@ fn render_procedure_swift(
         &[],
     )?;
 
+    // An imported unit that keeps state from one call to the next (a filter) is a property of the
+    // class, built with it and called by its alias.
+    let member_imports: Vec<serde_json::Value> = imports
+        .iter()
+        .filter(|import| import.is_stateful)
+        .map(|import| {
+            serde_json::json!({
+                "name": swift_local_spelling(&import.member_name),
+                "type": import.member_type,
+            })
+        })
+        .collect();
+
     let tmpl = env
         .get_template("procedure.swift.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
     let ctx = minijinja::context! {
         class_name => &pascal,
+        member_imports => minijinja::Value::from_serialize(&member_imports),
         state_enum => minijinja::Value::from_serialize(&common.state_enum),
         event_enum => minijinja::Value::from_serialize(&common.event_enum),
         input_fields => minijinja::Value::from_serialize(&input_fields),

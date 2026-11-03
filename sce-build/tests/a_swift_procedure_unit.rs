@@ -173,10 +173,24 @@ fn the_data_of_the_event_is_the_property_the_runtime_holds() {
 }
 
 #[test]
-fn an_import_of_a_kind_that_holds_state_is_refused_by_name() {
-    let refusal = swift_of("tests/forge/resources/crossfile_procedure_filter.scxml")
-        .expect_err("a procedure holds no filter yet");
-    assert!(refusal.contains("an import of filter"), "{refusal}");
+fn an_import_of_a_codec_is_refused_by_name() {
+    let refusal = swift_of("tests/forge/resources/crossfile_procedure_codec.scxml")
+        .expect_err("a procedure holds no codec yet");
+    assert!(
+        refusal.contains("an import of codec") && refusal.contains("has no Swift lowering yet"),
+        "{refusal}"
+    );
+}
+
+#[test]
+fn a_filter_is_a_property_of_the_class_built_with_it_and_called_by_its_alias() {
+    let code = swift_of("tests/forge/resources/crossfile_procedure_filter.scxml")
+        .expect("a procedure that holds a filter is written");
+    assert!(
+        code.contains("\n    private let smoother = FilterLowPass()\n"),
+        "{code}"
+    );
+    assert!(code.contains("smoother.update(rawSample)"), "{code}");
 }
 
 #[test]

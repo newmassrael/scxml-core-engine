@@ -52,6 +52,9 @@ public final class {{ class_name }}: ProcedureStateMachine {
 {% for f in internal_fields %}
     private var {{ f.id }}: {{ f.swift_type }} = {{ f.default_value }}
 {% endfor %}
+{% for imp in member_imports %}
+    private let {{ imp.name }} = {{ imp.type }}()
+{% endfor %}
 {% if helper_fields %}
 
     // <sce:helper> DI closures: each fails fast until the host sets it.
