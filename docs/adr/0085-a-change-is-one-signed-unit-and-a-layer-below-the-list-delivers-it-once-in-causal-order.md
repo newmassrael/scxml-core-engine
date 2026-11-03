@@ -1,9 +1,9 @@
 # ADR 0085 — A change is one signed unit, and a layer below the list delivers it once, whole and in causal order
 
-- Status: Proposed (2026-11-03). Written at the owner's order of that day, which chose this structure over an
+- Status: Accepted (2026-11-03). Written at the owner's order of that day, which chose this structure over an
   earlier draft (recorded in "Alternatives rejected"), under the rule of 2026-10-26 and 2026-10-27: the most
-  long-term correct structure, textbook in its foundations, cost ignored. The draft waits for acceptance; the
-  questions it leaves to the owner are in "Open questions for the owner".
+  long-term correct structure, textbook in its foundations, cost ignored. The owner accepted the draft the same day
+  with the answers recorded in "Owner's answers".
 - Date: 2026-11-03
 - Amends:
   - ADR 0046 sections 1 to 4, 6 and 7: a change of several operations is no longer parts held until whole; it is one
@@ -274,7 +274,7 @@ variables"), and "an event cannot carry a list" (ADR 0042 section 2). `record_ch
 codec, decoded with the bound enforced (ADR 0077), and, under ADR 0044, `sce:since` with the empty list as its only
 default. The trust layer encodes it in `operation_bytes` as its length and then each element's fields in their
 declared order and kinds. The decision needs this and does not specify the grammar change in full: it is a property
-of the toolchain, not of the list, and lands before the list moves (Landing order; Open question 1).
+of the toolchain, not of the list, and lands before the list moves (Landing order; Owner's answers, 1).
 
 ### 7. ADR 0083: the journal, recall and the core, at change units
 
@@ -404,20 +404,25 @@ today's list (parts over a route with no causal layer, the per-part recall) befo
 - **Keep the settle round of hashes.** Agreement on a hash of the state is a stability test for a layer that has no
   vectors; it stalls behind any copy that differs, as case (a) showed.
 
-## Open questions for the owner
+## Owner's answers
 
-1. **The list-valued event field: its own ADR or a section of this one.** It changes the grammar of every event
-   schema and every backend's codec, and its rules (bounds, revisions, defaults, the trust encoding) are not the
-   list's. Recommendation: its own ADR, landed first (Landing order 1), with this ADR citing it.
-2. **The context's form: a version vector (as decided) or explicit dependencies.** Recommendation: the vector, for
-   exact dedup, causal order and stability from one structure, bounded by `shared_roster` (section 3; Alternatives).
-3. **The Mesh hub: retire the machine-level relay (as decided) or keep it with tags carried in the payload.**
-   Keeping it would put the layer's tag into the list's event so that a machine can pass it on, which is the layer
-   leaking upward. Recommendation: retire it; `#people` is a group, and a topic-less transport is forwarded by the
-   Mesh core with tags intact.
-4. **The fold of a deployed list's second-domain history at the protocol cut** (section 8.3), which cuts off a
-   device not yet moved. The alternative is reading both domains for a period, which brings back a second shape and
-   an unordered history. Recommendation: the fold and the cut, announced with the landing (ADR 0078).
-5. **The C11 bound: refuse a small slot at build time (as decided) or let C11 carry large payloads out of line.**
-   Recommendation: the build-time refusal now (it is ADR 0077's rule), and out-of-line payload storage as a C11
-   backend decision of its own if a device needs changes larger than it can slot.
+The draft asked five questions, each with a recommendation. The owner accepted the ADR on 2026-11-03 with every
+recommendation as the answer; the sections named are written to the answers.
+
+1. **The list-valued event field is an ADR of its own, landed first** (Landing order 1). It changes the grammar of
+   every event schema and every backend's codec, and its rules (bounds, revisions, defaults, the trust encoding) are
+   not the list's; section 6 states only what this decision needs of it, and this ADR cites it once it exists. Its
+   number is assigned when it is written.
+2. **The causal context is a version vector**, not a set of explicit dependencies: one structure gives exact dedup,
+   causal order and stability, bounded by `shared_roster` (section 3; "Alternatives rejected").
+3. **The Mesh hub's machine-level relay is retired.** `#people` is one group every copy sends to and reads, and a
+   transport without a topic is forwarded by the Mesh core with the tags intact; carrying the tags in the list's
+   event so that a machine could pass them on would be the layer leaking upward (section 3.2).
+4. **A deployed list's second-domain history is folded once at a hard protocol cut**, announced with the landing
+   (ADR 0078): a device not yet moved is cut off from the list until it moves, and no copy reads both domains for a
+   period (section 8.3).
+5. **The C11 bound is a build-time refusal now** (ADR 0077's rule: a slot smaller than the machine's largest payload
+   is refused when the machine is built). Out-of-line payload storage is not part of this decision; it is a later,
+   separate C11 backend decision, taken only if a device needs changes larger than it can slot (section 5).
+
+No question is left open.
