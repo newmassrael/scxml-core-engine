@@ -290,8 +290,8 @@ const NEWLINE: &str = "\n";
 /// `text` as logical lines of preprocessing tokens (phases 1 to 3). `cpp`
 /// reads C++'s raw string literals, whose text no splice changes.
 fn lex(text: &str, cpp: bool) -> Result<Vec<Line>, String> {
-    // ISO C 5.1.1.2, translation phase 2: a backslash that ends a physical
-    // line joins it to the next.
+    // The second translation phase of ISO C 5.1.1.2: a backslash that ends a
+    // physical line joins it to the next.
     let mut chars: Vec<(usize, char)> = Vec::with_capacity(text.len());
     let mut all = text.char_indices().peekable();
     while let Some((at, c)) = all.next() {
@@ -347,8 +347,8 @@ fn lex(text: &str, cpp: bool) -> Result<Vec<Line>, String> {
                 let next = token(text, &chars, i, cpp)?;
                 let range = at..end_of(next - 1);
                 let spliced: String = chars[i..next].iter().map(|(_, c)| *c).collect();
-                // A raw string is the source's own text: phase 2 is undone in
-                // one ([lex.pptoken]).
+                // A raw string is the source's own text: the splicing of the
+                // second translation phase is undone in one ([lex.pptoken]).
                 let raw = cpp
                     && ["R\"", "LR\"", "uR\"", "UR\"", "u8R\""]
                         .iter()
