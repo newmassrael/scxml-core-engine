@@ -1557,6 +1557,12 @@ private func recordBytes() -> Machine {
     replay("record_list_offline", sharedRecordList(routed: false))
 }
 
+// A statechart that invokes the standard record list by its library name and passes it the host's
+// words (`#_list`), then publishes what the list told it.
+@Test func aParentPassesTheHostsWordsToItsRecordListAndKeepsWhatItIsTold() {
+    replay("record_list_parent", recordListParent())
+}
+
 // A child session that talks to a Mesh peer is given a router of its own by the machine that
 // starts it, and so is the child's own child (SCE_MESH.md, Child Sessions in Mesh).
 @Test func aChildSessionIsGivenAMeshRouterByTheMachineThatStartsIt() {

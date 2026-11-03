@@ -231,6 +231,59 @@ func sharedRecordList(routed: Bool = true) -> Machine {
     )
 }
 
+/// The statechart that keeps a shared record list by invoking the standard one and publishes
+/// what the list told it. No Mesh route is given to the list, so the machine is driven with no
+/// peers: what the list would send a hub is refused where it is made, and the edit runs whole.
+func recordListParent() -> Machine {
+    let policy = RecordListParentPolicy()
+    return drive(
+        policy,
+        variables: [
+            "told": { integer(policy.told) },
+            "shown": {
+                let shown = policy.shown
+                return .object([
+                    (key: "count", value: integer(shown.count)),
+                    (key: "counter", value: integer(shown.counter)),
+                    (key: "field", value: integer(shown.field)),
+                    (key: "id", value: integer(shown.id)),
+                    (key: "nodeId", value: digits(shown.nodeId)),
+                    (key: "text", value: .text(shown.text)),
+                    (key: "value", value: digits(shown.value)),
+                    (key: "wallTime", value: digits(shown.wallTime)),
+                ])
+            },
+            "others": {
+                .array(
+                    policy.others.map {
+                        .object([
+                            (key: "counter", value: integer($0.counter)),
+                            (key: "field", value: integer($0.field)),
+                            (key: "id", value: integer($0.id)),
+                            (key: "nodeId", value: digits($0.nodeId)),
+                            (key: "ordinal", value: integer($0.ordinal)),
+                            (key: "text", value: .text($0.text)),
+                            (key: "value", value: digits($0.value)),
+                            (key: "wallTime", value: digits($0.wallTime)),
+                        ])
+                    })
+            },
+            "refused": {
+                guard let refused = policy.refused else {
+                    return .null
+                }
+                return .object([
+                    (key: "field", value: integer(refused.field)),
+                    (key: "id", value: integer(refused.id)),
+                    (key: "kind", value: .text(refused.kind.declaredName)),
+                    (key: "reason", value: .text(refused.reason.declaredName)),
+                ])
+            },
+            "refusedCount": { integer(policy.refusedCount) },
+        ]
+    )
+}
+
 /// The machine whose child sessions talk to Mesh peers through routers of their own.
 func childMesh() -> Machine {
     let policy = StaticChildMeshPolicy()

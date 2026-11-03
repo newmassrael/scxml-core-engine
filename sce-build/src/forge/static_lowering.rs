@@ -11991,7 +11991,7 @@ impl SwiftTarget {
 impl SwiftTarget {
     /// What of `send` this target has no lowering for yet, described for a refusal:
     /// a processor but the SCXML one and BasicHTTP, and a target but the machine's own
-    /// queues and its parent.
+    /// queues, its parent and the children it invoked.
     fn unlowered_send(send: &Action) -> Option<String> {
         // A processor the host serves owns the whole send, and the machine hands it what the
         // document wrote (§scxml-6.2.5).
@@ -12012,15 +12012,11 @@ impl SwiftTarget {
                 "a <send> that may take the processor type \"{other}\""
             ));
         }
-        // The machine's own external queue, its internal queue, itself by its session
-        // id, and its parent: `#_<invokeid>`, a URL and a Mesh peer are other
+        // The machine's own external queue, its internal queue, itself by its session id, its
+        // parent, and a child it invoked (`#_<invokeid>`, routed to the child that id names
+        // by the same table a computed target is). A URL and a Mesh peer are other
         // transports.
-        let own = |target: &str| {
-            target.is_empty()
-                || target == "#_internal"
-                || target == "#_parent"
-                || target.starts_with("#_scxml_")
-        };
+        let own = |target: &str| target.is_empty() || target.starts_with("#_");
         // A `targetexpr` is held to the routes the document declares (`sce:targets`).
         std::iter::once(send.target.as_str())
             .chain(send.targets.iter().map(String::as_str))
