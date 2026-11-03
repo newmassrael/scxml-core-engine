@@ -3825,6 +3825,7 @@ dependencies = [
 name = "sce-rust-peer"
 version = "0.1.0"
 dependencies = [
+ "log",
  "sce-rust-mls",
  "sce-rust-relay",
  "sce-rust-trust",

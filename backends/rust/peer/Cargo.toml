@@ -26,3 +26,7 @@ sce-rust-trust = { path = "../trust" }
 sce-rust-relay = { path = "../relay" }
 sce-rust-mls = { path = "../mls" }
 serde_json = "1"
+# What the core decides (an exchange ended, what the relay is owed given or kept, a login or a join
+# and how it ended) is a record of the facade, in the relay's form (`sce_rust_relay::logs`); the host
+# installs the sink (the C ABI's `sce_peer_set_log_sink`).
+log = { workspace = true, features = ["kv"] }

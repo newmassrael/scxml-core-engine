@@ -83,8 +83,9 @@ use std::collections::BTreeMap;
 
 use sce_rust_mls::host::Issued;
 use sce_rust_relay::client::{floor_event, keep};
+use sce_rust_relay::logs::list_digest;
 use sce_rust_relay::{
-    CourierState, JoinMachine, JoinStep, LinkError, LoginMachine, LoginStep, Record, Request,
+    Code, CourierState, JoinMachine, JoinStep, LinkError, LoginMachine, LoginStep, Record, Request,
     Response, RoundMachine, Step,
 };
 use sce_rust_trust::backup::{self, Contents};
@@ -1599,6 +1600,7 @@ impl Peer {
                     .map(|member| member.take_round(&round))
                     .unwrap_or_default();
                 if self.group.as_ref().is_some_and(Member::owes_reread) {
+                    log::info!(list = list_digest(&self.list).as_str(); "reread_owed");
                     let state = std::mem::take(&mut self.state);
                     let machine = RoundMachine::start(RoundKind::Reread, state, self.trust.clone());
                     self.running = Some(Box::new(Running {
@@ -1634,38 +1636,63 @@ impl Peer {
             // A failure of the second read is left to the next round, as the group's device leaves
             // it when its host has a link: the commit is still named and still lacking, and it is
             // asked for again.
-            (Purpose::Follow { first, steps }, Err(_)) => Outcome {
-                round: first,
-                reread: None,
-                steps,
-                owed: 0,
-                token: None,
-            },
+            (Purpose::Follow { first, steps }, Err(error)) => {
+                note_failure(&self.list, "reread", &error);
+                Outcome {
+                    round: first,
+                    reread: None,
+                    steps,
+                    owed: 0,
+                    token: None,
+                }
+            }
             (Purpose::Deliver { outcome }, Ok(_)) => {
-                self.owed.remove(0);
+                let given = self.owed.remove(0);
+                log::info!(
+                    list = list_digest(&self.list).as_str(),
+                    publication = publication_word(&given),
+                    left = self.owed.len();
+                    "owed_given"
+                );
                 *outcome
             }
             // What the relay did not take stays owed, and the next round gives it again: a commit
             // the log names and the relay lacks is one no member can apply until it has it.
             (Purpose::Deliver { mut outcome }, Err(error)) => {
+                log::info!(
+                    list = list_digest(&self.list).as_str(),
+                    publication = self.owed.first().map_or("none", publication_word),
+                    owed = self.owed.len(),
+                    failure = failure_word(&error);
+                    "owed_kept"
+                );
                 outcome.round.refused.push(format!(
                     "a commit, Welcome or key the relay is owed was not given: {error:?}"
                 ));
                 outcome.owed = self.owed.len();
+                note_ended(&self.list, "round", &outcome);
                 self.outcome = Some(Ok(*outcome));
                 return;
             }
             (Purpose::Publish, Ok(round)) => {
-                self.outcome = Some(Ok(Outcome {
+                let outcome = Outcome {
                     round,
                     reread: None,
                     steps: Vec::new(),
                     owed: self.owed.len(),
                     token: None,
-                }));
+                };
+                note_ended(&self.list, "publication", &outcome);
+                self.outcome = Some(Ok(outcome));
                 return;
             }
-            (Purpose::Round | Purpose::Publish, Err(error)) => {
+            (purpose @ (Purpose::Round | Purpose::Publish), Err(error)) => {
+                let exchange = if matches!(purpose, Purpose::Round) {
+                    "round"
+                } else {
+                    "publication"
+                };
+                note_failure(&self.list, exchange, &error);
                 self.outcome = Some(Err(error));
                 return;
             }
@@ -1679,6 +1706,12 @@ impl Peer {
     fn deliver(&mut self, mut outcome: Outcome) {
         match self.owed.first() {
             Some(publication) => {
+                log::debug!(
+                    list = list_digest(&self.list).as_str(),
+                    publication = publication_word(publication),
+                    owed = self.owed.len();
+                    "owed_giving"
+                );
                 let state = std::mem::take(&mut self.state);
                 let machine = RoundMachine::publish(publication, state, self.trust.clone());
                 self.running = Some(Box::new(Running {
@@ -1690,10 +1723,87 @@ impl Peer {
             }
             None => {
                 outcome.owed = 0;
+                note_ended(&self.list, "round", &outcome);
                 self.outcome = Some(Ok(outcome));
             }
         }
     }
+}
+
+/// The word a record names a publication by: its kind, and nothing of what it carries.
+fn publication_word(publication: &Publication) -> &'static str {
+    match publication {
+        Publication::KeyPackage(_) => "key_package",
+        Publication::Commit { .. } => "commit",
+        Publication::Welcome { .. } => "welcome",
+        Publication::KeyGrant { .. } => "key_grant",
+        Publication::Checkpoint { .. } => "checkpoint",
+    }
+}
+
+/// The word a record names the failure of an exchange by.
+fn failure_word(error: &CourierError) -> &'static str {
+    match error {
+        CourierError::Link(_) => "link",
+        CourierError::Relay { .. } => "relay",
+        CourierError::Unexpected(_) => "unexpected",
+    }
+}
+
+/// Log the failure of the `exchange` (a round, a publication, a login, a join, a second read) of
+/// the core of `list`: the link's words or the relay's code and reason, which name no secret. An
+/// answer that was not the answer to the request is named by its kind alone: what the core says of
+/// it quotes what the relay gave, which may be a token or what a list holds.
+fn note_failure(list: &str, exchange: &'static str, error: &CourierError) {
+    let list = list_digest(list);
+    match error {
+        CourierError::Link(reason) => log::info!(
+            list = list.as_str(),
+            exchange = exchange,
+            failure = "link",
+            reason = reason.as_str();
+            "exchange_failed"
+        ),
+        CourierError::Relay { code, reason } => {
+            let retry_after_ms = match code {
+                Code::RateLimited { retry_after_ms } => *retry_after_ms,
+                _ => 0,
+            };
+            log::info!(
+                list = list.as_str(),
+                exchange = exchange,
+                failure = "relay",
+                code = code.tag(),
+                retry_after_ms = retry_after_ms,
+                reason = reason.as_str();
+                "exchange_failed"
+            );
+        }
+        CourierError::Unexpected(_) => log::info!(
+            list = list.as_str(),
+            exchange = exchange,
+            failure = "unexpected";
+            "exchange_failed"
+        ),
+    }
+}
+
+/// Log the end of the `exchange` of the core of `list` that came to `outcome`, in counts: the
+/// events for the machine, what the relay was given, the refusals, whether it stalled or the machine
+/// is to be built again, what the relay is still owed, and whether a token came (never which).
+fn note_ended(list: &str, exchange: &'static str, outcome: &Outcome) {
+    log::info!(
+        list = list_digest(list).as_str(),
+        exchange = exchange,
+        events = outcome.events().len(),
+        pushed = outcome.round.pushed,
+        refused = outcome.refused().len(),
+        stalled = outcome.stalled(),
+        rebuild = outcome.rebuild(),
+        owed = outcome.owed,
+        token = outcome.token.is_some();
+        "exchange_ended"
+    );
 }
 
 /// The core is an exchange the driver carries over any link ([`drive`]): the requests are the ones
@@ -1703,12 +1813,21 @@ impl Peer {
 impl Exchange for Peer {
     fn request(&mut self) -> Option<Request> {
         if let Some(asking) = self.asking.as_mut() {
+            let exchange = match asking {
+                Asking::Login(_) => "login",
+                Asking::Join(_) => "join",
+            };
             return match asking.poll() {
                 Ok(request) => Some(request),
                 Err(result) => {
                     self.asking = None;
                     let owed = self.owed.len();
-                    self.outcome = Some(result.map(|token| Outcome::of_exchange(token, owed)));
+                    let outcome = result.map(|token| Outcome::of_exchange(token, owed));
+                    match &outcome {
+                        Ok(ended) => note_ended(&self.list, exchange, ended),
+                        Err(error) => note_failure(&self.list, exchange, error),
+                    }
+                    self.outcome = Some(outcome);
                     None
                 }
             };

@@ -18,6 +18,7 @@ use sce_rust_peer::{
     drive, CourierError, Driven, Kept, Outcome, Peer, PeerError, Profile, RoundKind, Signal,
     Transport, TransportError,
 };
+use sce_rust_relay::logs::{capture, list_digest};
 use sce_rust_relay::{
     Authority, Code, DirectLink, Doorway, Limits, LoginPolicy, MemoryStore, Notice, Relay,
 };
@@ -540,4 +541,66 @@ fn a_core_logs_in_over_a_transport_with_no_token_and_runs_its_rounds_with_the_to
     let read = bob.take_outcome().unwrap().unwrap();
     assert_eq!(read.token, None, "a round earns no token");
     assert!(!read.events().is_empty(), "the roster: {read:?}");
+}
+
+/// What the core decides is one record each, in counts: a round that ended (the events, what the
+/// relay was given, the refusals, what it is still owed), and a round whose link failed (the
+/// link's words), beside the driver's record of the failure. The list is named by its digest, and
+/// no record holds the list's name or the device's token.
+#[test]
+fn a_round_and_a_failure_of_the_core_are_each_one_record_with_no_secret() {
+    capture::start();
+    let shared = relay(Limits::default());
+    let mut alice = alice();
+    let outcome = run(&mut alice, &mut direct(&shared, ALICE), RoundKind::Sync);
+    let digest = list_digest(LIST);
+    let lines: Vec<String> = capture::taken()
+        .into_iter()
+        .map(|taken| taken.line)
+        .collect();
+    let ended = format!(
+        "event=exchange_ended list={digest} exchange=round events={} pushed={} refused=0 \
+         stalled=false rebuild=false owed=0 token=false",
+        outcome.events().len(),
+        outcome.round.pushed
+    );
+    assert!(lines.contains(&ended), "{ended} in {lines:#?}");
+    let mut every = lines;
+
+    let (mut failing, _) = Recording::over(direct(&shared, ALICE));
+    failing.fail_at = Some(1);
+    alice.start(RoundKind::Sync).unwrap();
+    assert_eq!(
+        drive(&mut alice, &mut failing, None, &Signal::new()),
+        Driven::Ended
+    );
+    assert!(matches!(
+        alice.take_outcome(),
+        Some(Err(CourierError::Link(_)))
+    ));
+    let lines: Vec<String> = capture::taken()
+        .into_iter()
+        .map(|taken| taken.line)
+        .collect();
+    assert!(
+        lines.contains(&format!(
+            "event=exchange_failed list={digest} exchange=round failure=link \
+             reason=\"the connection closed\""
+        )),
+        "{lines:#?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.starts_with("event=link_failed op=")
+                && line.ends_with("reason=\"the connection closed\" limited=0")),
+        "the driver's record: {lines:#?}"
+    );
+    every.extend(lines);
+
+    let token = authority().issue(LIST, ALICE, u64::MAX);
+    for line in &every {
+        assert!(!line.contains(LIST), "the list's name: {line}");
+        assert!(!line.contains(&token), "the device's token: {line}");
+    }
 }
