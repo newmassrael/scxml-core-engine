@@ -33,6 +33,7 @@ pub mod ledger;
 pub mod name_oracle;
 pub mod native_oracle;
 pub mod repository;
+pub mod routes;
 pub mod row_oracle;
 pub mod rust_source;
 pub mod source_lexing;

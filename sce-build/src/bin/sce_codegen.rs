@@ -420,7 +420,7 @@ fn emit_batch_failure_ndjson(err: &sce_build::forge::error::Located<ForgeError>)
 }
 use sce_build::forge::drift;
 use sce_build::forge::drift::GeneratedTree;
-use sce_build::generator::{GeneratedOutput, Language};
+use sce_build::generator::Language;
 use sce_build::model::SCXMLModel;
 use sce_build::parser::SCXMLParser;
 
@@ -4484,6 +4484,11 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     accumulate_host_requirements(&mut report, &scxml_path_bufs, &forge_path_bufs);
     report.cite_house_rules(profile.as_ref());
 
+    // A statechart's output is its machine and the machine of every child it
+    // carries, each with what its declarations ask beside it
+    // (`sce_build::emit_carried_children`), so every file the machines name
+    // is written here and listed in the manifest. A file two documents of
+    // the set would both write was refused by the compile.
     for (basename, generated) in &outputs {
         for (file_name, code) in &maybe_format_files(generated.files.clone(), &cpp_formatter) {
             let path = out_root.join(file_name);
@@ -5352,10 +5357,10 @@ fn accumulate_host_requirements(
 /// such a document either. The in-line children of each statechart are
 /// judged with it, by the same call.
 ///
-/// Returns whether any statechart of the set declares what a run's digest
-/// is bound to ([`sce_build::bind_run_digest`]): its transition table or its
-/// transition function. `check` computes the digest `orchestrate` would
-/// embed only for such a set.
+/// Returns whether any statechart of the set, or any child one carries,
+/// declares what a run's digest is bound to ([`sce_build::bind_run_digest`]):
+/// its transition table or its transition function. `check` computes the
+/// digest `orchestrate` would embed only for such a set.
 fn refuse_set_transition_functions(scxml_paths: &[PathBuf], error_format: ErrorFormat) -> bool {
     let mut findings = Vec::new();
     let mut binds_a_digest = false;
@@ -5365,7 +5370,13 @@ fn refuse_set_transition_functions(scxml_paths: &[PathBuf], error_format: ErrorF
         let Ok(mut model) = parser.parse_file(&label) else {
             continue;
         };
-        binds_a_digest |= !sce_build::digest_bound_declarations(&model).is_empty();
+        // The document's own declarations, and every child's it carries: the
+        // set compile writes those children and binds them as it binds the
+        // document (`sce_build::carried_children`).
+        binds_a_digest |= model
+            .with_carried_descendants()
+            .into_iter()
+            .any(|machine| !sce_build::digest_bound_declarations(machine).is_empty());
         analyzer::analyze(&mut model, &label);
         if analyzer::can_generate_static(&model, &label).is_err() {
             continue;
@@ -6044,25 +6055,34 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                     variants: variants.as_ref(),
                     ..Default::default()
                 };
-                let render = |machine: &SCXMLModel, stem: &str| {
-                    sce_build::emit_model_artifacts(
-                        machine,
+                // The machine, then every child it carries, through the
+                // operation `generate` writes them with: a child `generate`
+                // would refuse is this backend's refusal here too. Nothing is
+                // written, so nothing is bound to a digest.
+                let outcome = sce_build::emit_model_artifacts(
+                    &model,
+                    &template_dir,
+                    input_stem,
+                    scxml_path,
+                    *lang,
+                    &emit_options,
+                )
+                .and_then(|_| {
+                    sce_build::emit_carried_children(
+                        &model,
                         &template_dir,
-                        stem,
-                        scxml_path,
-                        *lang,
+                        &sce_build::CarriedChildRun {
+                            document: scxml_path,
+                            language: *lang,
+                            host_processor_types: &host_processor,
+                            host_invoker_types: &host_invoker,
+                            digest: sce_build::RunDigest::NotWritten,
+                        },
+                        &model.name,
                         &emit_options,
                     )
-                    .map(|_| ())
-                };
-                // The machine, then every child it carries, in the order
-                // `generate` writes them: a child `generate` would refuse is
-                // this backend's refusal here too (`carried_children`).
-                let outcome = render(&model, input_stem).and_then(|()| {
-                    carried_children(&model, scxml_path, *lang, &host_processor, &host_invoker)
-                        .iter()
-                        .try_for_each(|(stem, child)| render(child, stem.as_str()))
-                });
+                })
+                .map(|_| ());
                 record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
             }
         }
@@ -6072,61 +6092,6 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         "{}",
         build_manifest(&report, ManifestKind::Check, Some(verdicts), None, lexicon).to_line()
     );
-}
-
-/// Re-address a child's package header to the package `parent` names.
-///
-/// Mirrors `generate-w3c`'s `KotlinBackend::process_child`. A child
-/// derives its package from its own name — `<prefix>.{child}` in Kotlin,
-/// `package {child}` in Go — while the parent refers to the child's
-/// state machine unqualified, so the two have to land in one compilation
-/// unit. `parent` is the package the whole run emits into: a candidate's
-/// in-line child is given the package of the machine that starts the
-/// candidate, not one named after the candidate. The `<prefix>` mirrors
-/// whatever `--kotlin-package-prefix` selected (defaults to
-/// `com.sce.generated` for W3C, `com.sce.integration` for the integration
-/// tree).
-///
-/// Only the child's own machine artifact is re-addressed. A sibling
-/// forge artifact carries a package derived from ITS name, and a
-/// substring replace over every file would re-address any file whose
-/// package merely starts with the child's.
-fn rewrite_child_package(
-    output: &mut GeneratedOutput,
-    lang: Language,
-    stem: &str,
-    parent: &str,
-    kotlin_package_prefix: Option<&str>,
-) {
-    let child_pkg = sce_build::filters::to_snake_case(stem.to_string());
-    let (machine_file, from, to) = match lang {
-        Language::Kotlin => {
-            let prefix = kotlin_package_prefix
-                .unwrap_or(sce_build::generator::KOTLIN_DEFAULT_PACKAGE_PREFIX);
-            (
-                format!("{stem}Sm.kt"),
-                format!("package {prefix}.{child_pkg}"),
-                format!("package {prefix}.{parent}"),
-            )
-        }
-        Language::Go => (
-            format!("{stem}_sm.go"),
-            format!("package {child_pkg}"),
-            format!("package {parent}"),
-        ),
-        // The other four backends carry no package header to re-address:
-        // C++ and C11 scope by namespace/prefix argument, Rust by module
-        // path at the consuming crate, Python by file location. Swift writes
-        // no machine yet, so there is no file to re-address.
-        Language::Rust | Language::Cpp | Language::Python | Language::C11 | Language::Swift => {
-            return
-        }
-    };
-    for (name, code) in output.files.iter_mut() {
-        if *name == machine_file {
-            *code = code.replace(&from, &to);
-        }
-    }
 }
 
 /// `generate`: one document, through [`cmd_generate`], or, with
@@ -7188,15 +7153,15 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     let mut artifact_deps = parser.preprocessor_deps().to_vec();
 
     if !transport_only {
-        // Closure-extracted per-language emit. Used for the parent model
-        // first, then once per inline `<invoke><content>` child so the
-        // synth-invoke `_sm.*` artefacts land next to the parent in
-        // `output_dir`. Before this loop existed the standalone generate
-        // skipped inline children entirely — downstream consumers had to
-        // re-invoke `sce-codegen generate --as-child` per child after the
-        // parser dropped a sibling `.scxml` next to the source. With the
-        // parser purified (no disk side-effect), codegen emit is the
-        // single materialization point for synth children.
+        // One set of emit options, for the document and every child it
+        // carries, so the synth-invoke `_sm.*` artefacts land next to the
+        // parent in `output_dir` rendered as the parent is. Before the
+        // children were emitted here the standalone generate skipped them
+        // entirely — downstream consumers had to re-invoke
+        // `sce-codegen generate --as-child` per child after the parser
+        // dropped a sibling `.scxml` next to the source. With the parser
+        // purified (no disk side-effect), codegen emit is the single
+        // materialization point for synth children.
         //
         // `<sce:capacity>` parsing, the deploy.yaml
         // `default_event_queue_capacity` populator, and the
@@ -7216,60 +7181,60 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         // artifact of every kind the document declares in place, and a
         // second copy of the dispatch here would be a copy that forgets
         // the siblings — which is exactly what this CLI did until the
-        // two met. What stays here is the one thing the library cannot
-        // decide: the `--as-child` package rewrite, below.
+        // two met. Nor are the children here: they are
+        // `sce_build::emit_carried_children`, which `check` and the
+        // document-set compile (`orchestrate`) call too.
         //
-        // The package a machine is placed in, when it is not the one its
-        // own name derives: `adopting_package` for the document, and
-        // `inline_children_package` for every in-line child it starts.
-        // Under `--as-child --parent-stem P` the document is generated into
-        // P's package, and so is each of its in-line children: they are
-        // written beside it and it names their machines unqualified, so a
-        // child left in a package named after the document is a second
-        // package in one directory, which Go refuses and against which
-        // Kotlin cannot resolve the name. Without `--parent-stem` the
+        // What stays here is the one thing the library cannot decide:
+        // `--as-child --parent-stem P`, which generates the document into
+        // P's package, and each of its in-line children with it — they are
+        // written beside it and it names their machines unqualified
+        // (`sce_build::place_in_package`). Without `--parent-stem` the
         // in-line children join the document's own package.
-        let adopting_package = parent_stem.filter(|_| as_child);
-        let inline_children_package = adopting_package.unwrap_or(input_stem);
-        let emit_for_model =
-            |m: &SCXMLModel, stem: &str, m_package: Option<&str>| -> GeneratedOutput {
-                // The engine target is the run's selection, or the backend's
-                // default when the caller did not ask — resolved and refused
-                // already, so reaching here means the backend can emit it.
-                let mut output = sce_build::emit_model_artifacts(
-                    m,
-                    &template_dir,
-                    stem,
-                    scxml_path,
-                    lang,
-                    &sce_build::ModelEmitOptions {
-                        forge: Some(&sce_build::ForgeCompileOptions {
-                            go_module_prefix: go_module_prefix.map(str::to_owned),
-                            const_fold_budget,
-                            owned_origin,
-                            views,
-                            inline_encode,
-                            ..Default::default()
-                        }),
-                        codegen: Some(&sce_build::generator::StatechartCodegenOptions {
-                            no_std,
-                            ..Default::default()
-                        }),
-                        script_engine: script_engine_target,
-                        cpp_namespace_prefix,
-                        kotlin_package_prefix,
-                        c_symbol_prefix,
-                        variants: variants.as_ref(),
-                    },
-                )
-                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
-                if let Some(package) = m_package {
-                    rewrite_child_package(&mut output, lang, stem, package, kotlin_package_prefix);
-                }
-                output
-            };
-
-        let output = emit_for_model(&model, input_stem, adopting_package);
+        let adopter = parent_stem.filter(|_| as_child);
+        let forge_options = sce_build::ForgeCompileOptions {
+            go_module_prefix: go_module_prefix.map(str::to_owned),
+            const_fold_budget,
+            owned_origin,
+            views,
+            inline_encode,
+            ..Default::default()
+        };
+        let codegen_options = sce_build::generator::StatechartCodegenOptions {
+            no_std,
+            ..Default::default()
+        };
+        // The engine target is the run's selection, or the backend's
+        // default when the caller did not ask — resolved and refused
+        // already, so reaching here means the backend can emit it.
+        let emit_options = sce_build::ModelEmitOptions {
+            forge: Some(&forge_options),
+            codegen: Some(&codegen_options),
+            script_engine: script_engine_target,
+            cpp_namespace_prefix,
+            kotlin_package_prefix,
+            c_symbol_prefix,
+            variants: variants.as_ref(),
+        };
+        let mut output = sce_build::emit_model_artifacts(
+            &model,
+            &template_dir,
+            input_stem,
+            scxml_path,
+            lang,
+            &emit_options,
+        )
+        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
+        if let Some(adopter) = adopter {
+            sce_build::place_in_package(
+                &mut output,
+                lang,
+                &model.name,
+                input_stem,
+                adopter,
+                kotlin_package_prefix,
+            );
+        }
         artifact_deps.extend(output.deps);
 
         let files = maybe_format_files(output.files, &cpp_formatter);
@@ -7292,42 +7257,43 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         collect_sourcemap_symbols(&model, &mut sourcemap_acc);
 
         // SCE_MESH.md §9.6.6: emit synth-invoke children alongside the
-        // parent. Mirrors `generate_child_sms` (the W3C unified path) for
-        // the standalone `generate` CLI so a consumer no longer drives a
-        // separate `--as-child` pass per inline `<content>` child.
-        //
-        // Every depth: a child's own in-line children are machines its
-        // machine starts by name, so a run that wrote only the first level
-        // left a package that names a machine nobody wrote. Each is placed
-        // in the package the document's in-line children are placed in.
+        // parent, at every depth, so a consumer no longer drives a separate
+        // `--as-child` pass per inline `<content>` child. The child's
+        // declarations mean what they mean on a root: it was judged with
+        // the parent (`transition_function_findings` asks the in-line
+        // children), and it is bound to the digest its machine's header
+        // carries, this run's, so its transition function and table are
+        // written beside its machine and named after its stem.
         //
         // Synth SCXML was already written to `out_path` (and `deploy_dir`
         // when distinct) earlier in this function, before the
         // mesh-injection chain that depends on the file. No second emit
         // here.
-        for (child_stem, mut child_model) in
-            carried_children(&model, scxml_path, lang, &host_processor, &host_invoker)
-        {
-            // The child's declarations mean what they mean on a root: it was
-            // judged with the parent (`transition_function_findings` asks the
-            // in-line children), and it is bound to the digest its machine's
-            // header carries, this run's, so its transition function and
-            // table are written beside its machine and named after its stem.
-            sce_build::bind_run_digest(&mut child_model, &drift_ctx.header.source_hex());
-            let child_output = emit_for_model(
-                &child_model,
-                child_stem.as_str(),
-                Some(inline_children_package),
-            );
-            artifact_deps.extend(child_output.deps);
-            let child_files = maybe_format_files(child_output.files, &cpp_formatter);
+        let source_hex = drift_ctx.header.source_hex();
+        let children = sce_build::emit_carried_children(
+            &model,
+            &template_dir,
+            &sce_build::CarriedChildRun {
+                document: scxml_path,
+                language: lang,
+                host_processor_types: &host_processor,
+                host_invoker_types: &host_invoker,
+                digest: sce_build::RunDigest::Of(&source_hex),
+            },
+            adopter.unwrap_or(&model.name),
+            &emit_options,
+        )
+        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
+        for sce_build::EmittedChild { child, output } in children {
+            artifact_deps.extend(output.deps);
+            let child_files = maybe_format_files(output.files, &cpp_formatter);
             for (filename, code) in &child_files {
                 let file_path = out_path.join(filename);
                 write_drift_aware(&file_path, code, &drift_ctx);
                 report.artifacts.push(file_path.clone());
                 output_paths.push(file_path);
             }
-            collect_sourcemap_symbols(&child_model, &mut sourcemap_acc);
+            collect_sourcemap_symbols(&child.model, &mut sourcemap_acc);
         }
 
         // Every machine this invocation emitted into `out_path` is now
@@ -7512,77 +7478,6 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
 
     report.formatter = cpp_formatter.used();
     report
-}
-
-/// Every child `model` carries, at any depth, that a run generating it for
-/// `lang` writes beside it, each prepared as that run renders it and paired
-/// with the stem its machine is named by.
-///
-/// A carried child is one written in `<content>` or named by its library name
-/// (`sce:std/...`): the parser holds it in memory
-/// ([`SCXMLModel::inline_child_invokes`]), and its machine is a file of the
-/// run. `generate` writes it and `check` renders it here, through this one
-/// preparation: `check` reaches the verdict `generate` would, and a child
-/// prepared on one route alone is a refusal the other never reports (the
-/// standard list, which calls imported algorithms, refused `generate -l go`
-/// without a module prefix while `check -l go` accepted the document).
-///
-/// The run's digest is not bound here: `generate` binds the digest of the
-/// source set it hashed, which only it computes.
-fn carried_children(
-    model: &SCXMLModel,
-    scxml_path: &str,
-    lang: Language,
-    host_processor: &[String],
-    host_invoker: &[String],
-) -> Vec<(String, SCXMLModel)> {
-    let mut children = Vec::new();
-    for invoke in model.inline_child_invokes() {
-        let Some(child_box) = invoke.inline_child.as_deref() else {
-            continue;
-        };
-        let child_stem = invoke.child_name.as_str();
-        if child_stem.is_empty() {
-            continue;
-        }
-        let mut child_model = child_box.clone();
-        // C11 skips the `has_parent_communication=true` override that the
-        // other backends use under `--as-child`: C11 child templates
-        // auto-detect parent communication from the model, and the override
-        // would break that detection.
-        if lang != Language::C11 {
-            child_model.has_parent_communication = true;
-        }
-        let synthetic_path = Path::new(scxml_path)
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join(format!("{child_stem}.scxml"));
-        analyzer::analyze(&mut child_model, &synthetic_path.to_string_lossy());
-        // docs/adr/0045: the host's declaration is the tree's. The host
-        // serves its invoke types to every session its machine starts (the
-        // invokers are handed down the tree, and each request names the
-        // session that made it), so a child's `<invoke type>` naming one is
-        // host-run as the parent's is, and not refused as an undeclared type.
-        if let Err(refused) = sce_build::host_processor_analyzer::declare_host_surfaces(
-            &mut child_model,
-            host_processor,
-            host_invoker,
-        ) {
-            cli_exit(refused.into());
-        }
-        if analyzer::can_generate_static(&child_model, &synthetic_path.to_string_lossy()).is_err() {
-            continue;
-        }
-        // `resolve_source_path` canonicalizes the path, which fails on the
-        // synthetic (the file does not exist on disk: carried children live
-        // in memory). Set `scxml_source_path` directly so the `// From:`
-        // license header and Forge AST envelope match the byte-stable goldens
-        // from the prior `--as-child` flow that staged the synth child on
-        // disk.
-        child_model.scxml_source_path = synthetic_path.to_string_lossy().into_owned();
-        children.push((child_stem.to_string(), child_model));
-    }
-    children
 }
 
 /// Collect child SCXML names from model's static/hybrid invokes.
@@ -8693,6 +8588,21 @@ trait W3cBackend {
 /// function beside its machine. Returns the refusals that fail the fixture:
 /// what a child declaring the function holds that the declaration does not
 /// admit, and a function the backend could not render.
+///
+/// What is shared with `generate`, and what is this route's alone:
+/// - A carried child is prepared by `sce_build::carried_children`, the
+///   preparation `generate`, `check` and `orchestrate` use: one child, one
+///   machine, whichever route writes it.
+/// - A `src` child and a hybrid invoke's stub are not carried children: each
+///   is a document of the suite read from disk (the stub one this route wrote
+///   beside the test), so each is parsed, judged and bound here as the fixture
+///   is, and the children it carries are prepared by the shared operation.
+/// - The machine is rendered by the backend's own `W3cBackend::generate_sm`,
+///   not by `sce_build::emit_carried_children`, for the reason the fixture's
+///   is: the suite places every machine of a test in one package of its own
+///   (`test<id>`), names it in the backend's module index, and stands a stub
+///   in for a child no backend can generate (`process_child_failure`), none
+///   of which a run of `generate` does.
 fn generate_child_sms(
     backend: &dyn W3cBackend,
     test_id: &str,
@@ -8708,10 +8618,11 @@ fn generate_child_sms(
 
     // ChildSource captures where the child SCXMLModel comes from: an
     // inline `<content>` parser kept the model in-memory on the parent
-    // invoke (no disk read needed), an external `src="…"` child must be
-    // re-parsed from `resource_dir`, or a hybrid stub from `test_mod_dir`.
-    // Replaces the prior unconditional disk read which was a leftover
-    // from the parser-writes-synth-child era.
+    // invoke (no disk read needed; the document as written, read for the
+    // children it starts, while its machine is the prepared one), an
+    // external `src="…"` child must be re-parsed from `resource_dir`, or a
+    // hybrid stub from `test_mod_dir`. Replaces the prior unconditional disk
+    // read which was a leftover from the parser-writes-synth-child era.
     enum ChildSource {
         Inline(Box<SCXMLModel>),
         Disk(PathBuf),
@@ -8755,6 +8666,48 @@ fn generate_child_sms(
         children
     }
 
+    // The children `entries` names, queued right after the machine that
+    // starts them, in its document order, ahead of what was queued before:
+    // each is generated right after its parent, with its own children after
+    // it.
+    fn queue_next(
+        pending: &mut std::collections::VecDeque<(String, ChildSource)>,
+        entries: Vec<(String, ChildSource)>,
+    ) {
+        for (offset, entry) in entries.into_iter().enumerate() {
+            pending.insert(offset, entry);
+        }
+    }
+
+    // A document of the suite (the fixture, or a child read from disk), and
+    // the children it carries, prepared by the one operation `generate`,
+    // `check` and `orchestrate` prepare them with.
+    let language = backend.language();
+    let source_hex = drift_ctx.header.source_hex();
+    let carried_by = |document: &SCXMLModel, path: &str| {
+        sce_build::carried_children(
+            document,
+            &sce_build::CarriedChildRun {
+                document: path,
+                language,
+                host_processor_types: &[],
+                host_invoker_types: &[],
+                digest: sce_build::RunDigest::Of(&source_hex),
+            },
+        )
+    };
+    let mut prepared: BTreeMap<String, sce_build::CarriedChild> =
+        match carried_by(model, &scxml_path.to_string_lossy()) {
+            Ok(children) => children
+                .into_iter()
+                .map(|child| (child.stem.clone(), child))
+                .collect(),
+            Err(e) => {
+                refused.push(e);
+                return refused;
+            }
+        };
+
     let stub_dir = backend.emits_hybrid_child_stub().then_some(test_mod_dir);
     let mut pending: std::collections::VecDeque<(String, ChildSource)> =
         started(model, true, resource_dir, stub_dir).into();
@@ -8764,20 +8717,38 @@ fn generate_child_sms(
         if child_name.is_empty() || !seen.insert(child_name.to_string()) {
             continue;
         }
-        let carried = matches!(child_source, ChildSource::Inline(_));
 
-        // Resolve the child model + the diagnostic label used by the
-        // analyzer / source-path resolver. Inline children synthesize an
-        // "as if on disk" path inside `resource_dir` so
-        // `analyzer::compute_scxml_base_path` derives the same base_path
-        // the on-disk-synth era did (the file itself does not exist;
-        // `resolve_source_path` is skipped below — it would fail on
-        // canonicalize). Disk children use the absolute path.
-        let (mut child_model, label, child_path_for_resolver) = match child_source {
-            ChildSource::Inline(m) => {
-                let synthetic = resource_dir.join(format!("{child_name}.scxml"));
-                (*m, synthetic.to_string_lossy().into_owned(), None)
+        // The children each child carries are machines of the test as well:
+        // its machine starts them by name, and a run that wrote only the
+        // parent's children left one that names a machine nobody wrote. A
+        // carried child's `src` and hybrid children are the test's too, as
+        // the document's are: its machine is this test's, and
+        // `generate_hybrid_child_scxmls` wrote its stubs.
+        let (mut child_model, label) = match child_source {
+            // Prepared with its document, above or when the child read from
+            // disk that carries it was read: analysed under a label beside
+            // that document, past `can_generate_static`, its declaration
+            // judged with the document's and bound to this run's digest. A
+            // child the preparation leaves out is one `can_generate_static`
+            // refuses.
+            ChildSource::Inline(carried) => {
+                queue_next(
+                    &mut pending,
+                    started(&carried, true, resource_dir, stub_dir),
+                );
+                match prepared.remove(child_name) {
+                    Some(child) => (child.model, child.label),
+                    None => {
+                        backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
+                        continue;
+                    }
+                }
             }
+            // Not a carried child, so not the shared preparation's: a `src`
+            // child is a document of the suite read from the fixture's
+            // directory, and a hybrid invoke's stub one this route wrote
+            // (`generate_hybrid_child_scxmls`), and each is judged here as
+            // the fixture is. What it carries is prepared beside it.
             ChildSource::Disk(source_dir) => {
                 let child_path = source_dir.join(format!("{child_name}.scxml"));
                 if !sce_build::confine::exists(&child_path) {
@@ -8785,51 +8756,46 @@ fn generate_child_sms(
                     continue;
                 }
                 let child_str = child_path.to_string_lossy().into_owned();
-                match SCXMLParser::new().parse_file(&child_str) {
-                    Ok(parsed) => (parsed, child_str, Some(child_path)),
-                    Err(_) => {
+                let Ok(mut parsed) = SCXMLParser::new().parse_file(&child_str) else {
+                    backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
+                    continue;
+                };
+                queue_next(
+                    &mut pending,
+                    started(&parsed, false, resource_dir, stub_dir),
+                );
+                analyzer::analyze(&mut parsed, &child_str);
+                if analyzer::can_generate_static(&parsed, &child_str).is_err() {
+                    backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
+                    continue;
+                }
+                // The declaration means on a child what it means on a root,
+                // and the children it carries are judged with it.
+                let findings = sce_build::transition_function_findings(&parsed, &child_str);
+                if !findings.is_empty() {
+                    backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
+                    refused.extend(findings);
+                    continue;
+                }
+                sce_build::bind_run_digest(&mut parsed, &source_hex);
+                resolve_source_path(&mut parsed, &child_path);
+                // Only a child that is generated starts the children it
+                // carries; each is prepared beside it, once it was judged.
+                match carried_by(&parsed, &child_str) {
+                    Ok(children) => prepared.extend(
+                        children
+                            .into_iter()
+                            .map(|child| (child.stem.clone(), child)),
+                    ),
+                    Err(e) => {
                         backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
+                        refused.push(e);
                         continue;
                     }
                 }
+                (parsed, child_str)
             }
         };
-
-        // The children this child carries are machines of the test as well:
-        // its machine starts them by name, and a run that wrote only the
-        // parent's children left one that names a machine nobody wrote. Each
-        // is generated right after the child, in its document order, with its
-        // own children after it. A carried child's `src` and hybrid children
-        // are the test's too, as the document's are: its machine is this
-        // test's, and `generate_hybrid_child_scxmls` wrote its stubs.
-        for (offset, entry) in started(&child_model, carried, resource_dir, stub_dir)
-            .into_iter()
-            .enumerate()
-        {
-            pending.insert(offset, entry);
-        }
-
-        analyzer::analyze(&mut child_model, &label);
-
-        if analyzer::can_generate_static(&child_model, &label).is_err() {
-            backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
-            continue;
-        }
-
-        // The declaration means on a child what it means on a root. An
-        // in-line child was judged with its parent, which passed, so only a
-        // child read from disk can be refused here, by the same call.
-        let findings = sce_build::transition_function_findings(&child_model, &label);
-        if !findings.is_empty() {
-            backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
-            refused.extend(findings);
-            continue;
-        }
-        sce_build::bind_run_digest(&mut child_model, &drift_ctx.header.source_hex());
-
-        if let Some(child_path) = child_path_for_resolver.as_deref() {
-            resolve_source_path(&mut child_model, child_path);
-        }
 
         // Templates derive generated PascalCase symbols from
         // `model.name`; `generate_hybrid_child_scxmls` writes the

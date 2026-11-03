@@ -32,6 +32,7 @@
 
 mod common;
 
+use common::routes::{directory_holding, package_of, route_args, W3cSuite};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -143,17 +144,7 @@ fn c_literal(text: &str) -> String {
 
 /// `generate -l <lang>` of `doc` into `out`.
 fn generate(lang: &str, doc: &Path, out: &Path) {
-    output_ok(
-        codegen(&[
-            "generate",
-            "-l",
-            lang,
-            "-o",
-            out.to_str().unwrap(),
-            doc.to_str().unwrap(),
-        ]),
-        &format!("generate -l {lang}"),
-    );
+    route_ok("generate", lang, doc, out);
 }
 
 /// The file `generate -l <lang>` writes the machine of `stem` to.
@@ -224,6 +215,16 @@ fn header_hash(source: &str) -> String {
         .captures(source)
         .unwrap_or_else(|| panic!("no source-hash header in:\n{source}"))[1]
         .to_string()
+}
+
+/// The hash a generated function carries as a value: the literal after the
+/// constant each backend names it by (`SOURCE_HASH`, Go's `SourceHash`,
+/// Swift's `sourceHash`), across a line break if a formatter put one there.
+fn carried_hash(source: &str) -> Option<String> {
+    Regex::new(r#"(?:SOURCE_HASH|SourceHash|sourceHash)[^"]*"([0-9a-f]{64})""#)
+        .unwrap()
+        .captures(source)
+        .map(|c| c[1].to_string())
 }
 
 /// The producer's function of the fixture, as the library hands it out
@@ -333,11 +334,6 @@ fn main() {{
 /// as a value the hash of its own header, which is the machine's.
 #[test]
 fn every_fixture_generates_its_machine_and_its_function_in_every_backend() {
-    // The constant each backend names the hash by (`SOURCE_HASH`, Go's
-    // `SourceHash`, Swift's `sourceHash`) and the literal after it, across a
-    // line break if a formatter put one there.
-    let carried =
-        Regex::new(r#"(?:SOURCE_HASH|SourceHash|sourceHash)[^"]*"([0-9a-f]{64})""#).unwrap();
     for lang in backends() {
         for stem in FIXTURES {
             let out = scratch(&format!("generated_{lang}_{stem}"));
@@ -353,7 +349,7 @@ fn every_fixture_generates_its_machine_and_its_function_in_every_backend() {
             let source = read(&function);
             let hash = header_hash(&source);
             assert_eq!(
-                carried.captures(&source).map(|c| c[1].to_string()),
+                carried_hash(&source),
                 Some(hash.clone()),
                 "[{lang} {stem}] the function does not carry the hash of its own header"
             );
@@ -2694,65 +2690,6 @@ fn orchestrate_reports_every_refusal_check_reports() {
     );
 }
 
-/// A conformance suite of one fixture, `test<id>.scxml`, for `generate-w3c`.
-struct W3cSuite {
-    resources: PathBuf,
-    registry: PathBuf,
-    document: PathBuf,
-}
-
-impl W3cSuite {
-    /// `text` as fixture `id` under `work`, with a registry naming it alone:
-    /// the committed registry's harnesses and version, which are what the
-    /// loader asks of one.
-    fn stage(work: &Path, id: &str, text: &str) -> Self {
-        let resources = work.join("resources");
-        let fixture_dir = resources.join(id);
-        std::fs::create_dir_all(&fixture_dir).expect("create the fixture directory");
-        let document = fixture_dir.join(format!("test{id}.scxml"));
-        std::fs::write(&document, text).expect("write the fixture");
-
-        let committed = std::fs::read_to_string(
-            repo_root().join(sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH),
-        )
-        .expect("read the committed registry");
-        let mut registry: serde_json::Value =
-            serde_json::from_str(&committed).expect("the registry is JSON");
-        registry["fixtures"] = serde_json::json!([{
-            "id": id,
-            "harness": "simple",
-            "summary": "a fixture declaring a transition function"
-        }]);
-        let registry_path = work.join("fixtures.json");
-        std::fs::write(
-            &registry_path,
-            serde_json::to_string_pretty(&registry).expect("serialize the registry"),
-        )
-        .expect("write the registry");
-        Self {
-            resources,
-            registry: registry_path,
-            document,
-        }
-    }
-
-    /// `generate-w3c -l rust` of this suite into `out`, records as JSON.
-    fn args<'a>(&'a self, out: &'a Path) -> Vec<&'a str> {
-        vec![
-            "--error-format=json",
-            "generate-w3c",
-            "-l",
-            "rust",
-            "--registry",
-            self.registry.to_str().unwrap(),
-            "--resources",
-            self.resources.to_str().unwrap(),
-            "--output-dir",
-            out.to_str().unwrap(),
-        ]
-    }
-}
-
 /// `generate-w3c` reports, for a fixture that declares the function and does
 /// not keep it, every record `check` reports for the same file, and fails the
 /// fixture rather than generating it.
@@ -2762,7 +2699,7 @@ fn generate_w3c_reports_every_refusal_check_reports() {
     let suite = W3cSuite::stage(&work, "900", IMPURE);
     let out = work.join("out");
     let checked = checked_records(suite.document.to_str().unwrap());
-    let records = refused_records(&suite.args(&out));
+    let records = refused_records(&suite.args("rust", &out));
     // The run ends on the batch's own record, naming the failed fixture.
     let (batch, findings): (Vec<String>, Vec<String>) = records
         .into_iter()
@@ -2897,18 +2834,62 @@ fn child_stem(stem: &str) -> String {
     format!("{stem}__sce_synth_invoke__lamp")
 }
 
-/// The machine `stem` and the function written beside it in `dir`, named
-/// after the same stem, carrying the hash the machine's header carries.
-fn assert_function_beside(dir: &Path, stem: &str) {
-    let machine = std::fs::read_to_string(dir.join(format!("{stem}_sm.rs")))
-        .unwrap_or_else(|e| panic!("{stem}_sm.rs in {}: {e}", dir.display()));
-    let function = std::fs::read_to_string(dir.join(format!("{stem}_transition_function.rs")))
-        .unwrap_or_else(|e| panic!("no function beside {stem}_sm.rs in {}: {e}", dir.display()));
+/// The machine `stem` a run of `lang` wrote into `dir`, and the function
+/// written beside it under the name the reference doc gives it, named after
+/// the same stem: its header names the source set the machine's names, and it
+/// carries that hash as a value.
+fn assert_function_beside(lang: &str, dir: &Path, stem: &str) {
+    let machine_path = machine_file(lang, dir, stem);
+    let machine = std::fs::read_to_string(&machine_path)
+        .unwrap_or_else(|e| panic!("[{lang}] no machine {}: {e}", machine_path.display()));
+    let function_path = function_file(lang, dir, stem);
+    let function = std::fs::read_to_string(&function_path).unwrap_or_else(|e| {
+        panic!(
+            "[{lang}] no function beside the machine of {stem} at {}: {e}",
+            function_path.display()
+        )
+    });
+    let hash = header_hash(&machine);
     assert_eq!(
         header_hash(&function),
-        header_hash(&machine),
-        "{stem}: the function and its machine name different source sets"
+        hash,
+        "[{lang}] {stem}: the function and its machine name different source sets"
     );
+    assert_eq!(
+        carried_hash(&function),
+        Some(hash),
+        "[{lang}] {stem}: the function does not carry the hash its machine's header names"
+    );
+}
+
+/// The parent's machine `parent` and the machine of its in-line child `child`,
+/// both written by a run of `lang` into `dir`: the parent names the child, the
+/// child's machine is a file of the run, and it is in the package of the
+/// machine that names it unqualified ([`package_of`]; Go and Kotlin, the two
+/// languages whose machines declare one). Returns the child's source.
+fn assert_child_beside(lang: &str, dir: &Path, parent: &str, child: &str) -> String {
+    let parent_source = read(&machine_file(lang, dir, parent));
+    // By its stem (a header, a module, a document name) or by the machine
+    // name the templates derive from it (`to_machine_name`).
+    assert!(
+        parent_source.contains(child)
+            || parent_source.contains(&filters::to_pascal_case(child.to_string())),
+        "[{lang}] the machine of {parent} does not name {child}, so nothing below is asked"
+    );
+    let child_path = machine_file(lang, dir, child);
+    let child_source = std::fs::read_to_string(&child_path).unwrap_or_else(|e| {
+        panic!(
+            "[{lang}] the machine of {parent} names {child}, and no machine of it was written \
+             at {}: {e}",
+            child_path.display()
+        )
+    });
+    assert_eq!(
+        package_of(lang, &child_source),
+        package_of(lang, &parent_source),
+        "[{lang}] {child} is not in the package of the machine that names it"
+    );
+    child_source
 }
 
 /// An in-line child declaring the function is held to it as a root is, by
@@ -2965,97 +2946,406 @@ fn an_inline_child_is_held_to_its_declaration_where_its_author_wrote_it() {
     );
 }
 
-/// `generate` writes an in-line child's function beside the child's machine,
-/// named after the child's stem and bound to the hash the child's machine
-/// carries.
+/// `<via> -l <lang> -o <out>` of the one document `doc` ([`route_args`]),
+/// failing with everything it printed unless it succeeded; what it printed on
+/// stdout (the manifest).
+fn route_ok(via: &str, lang: &str, doc: &Path, out: &Path) -> String {
+    output_ok(
+        codegen(&route_args(via, lang, out, doc)),
+        &format!("{via} -l {lang}"),
+    )
+}
+
+/// `generate` writes an in-line child's machine and its function beside the
+/// parent's, in every backend: named after the child's stem, bound to the hash
+/// the child's machine carries, in the package of the machine that names it.
 #[test]
 fn generate_writes_an_inline_childs_function_beside_its_machine() {
     let work = scratch("pure_child");
     let doc = work.join("host.scxml");
     std::fs::write(&doc, host_with_child(PURE_CHILD)).expect("write the document");
-    let out = work.join("out");
-    output_ok(
-        codegen(&[
-            "generate",
-            "-l",
-            "rust",
-            "-o",
-            out.to_str().unwrap(),
-            doc.to_str().unwrap(),
-        ]),
-        "generate -l rust of the host",
-    );
-    assert_function_beside(&out, &child_stem("host"));
+    for lang in backends() {
+        let out = work.join(format!("out_{lang}"));
+        route_ok("generate", lang, &doc, &out);
+        assert_child_beside(lang, &out, "host", &child_stem("host"));
+        assert_function_beside(lang, &out, &child_stem("host"));
+    }
 }
 
-/// `orchestrate` writes the function beside the machine, bound to the hash
-/// every file of the run carries.
+/// `orchestrate` writes the function beside the machine, in every backend,
+/// bound to the hash every file of the run carries.
 #[test]
 fn orchestrate_writes_the_function_beside_the_machine() {
     let work = scratch("orchestrate_function");
     let doc = write_kept(&work);
-    let out = work.join("out");
-    output_ok(
-        codegen(&[
-            "orchestrate",
-            "--scxml",
-            doc.to_str().unwrap(),
-            "-l",
-            "rust",
-            "-o",
-            out.to_str().unwrap(),
-        ]),
-        "orchestrate -l rust",
-    );
-    assert_function_beside(&out, "kept");
+    for lang in backends() {
+        let out = work.join(format!("out_{lang}"));
+        route_ok("orchestrate", lang, &doc, &out);
+        assert_function_beside(lang, &out, "kept");
+    }
 }
 
-/// `check` on a set renders the function as `orchestrate` does, so it
-/// accepts the declaration `orchestrate` generates: the set compile refuses
-/// a declared function it is given no hash for.
+/// `orchestrate` writes every machine the machines it writes name, in every
+/// backend: an in-line child's machine beside the parent's, in its package,
+/// with the child's function beside it bound to the hash the child's machine
+/// carries, and each listed in the manifest as a file the run wrote.
+///
+/// Until the set compile emitted the children it wrote the parent alone, which
+/// names `host__sce_synth_invoke__lamp`, exited 0, and listed one machine.
 #[test]
-fn check_on_a_set_accepts_the_function_orchestrate_writes() {
-    let work = scratch("check_set_function");
-    let doc = write_kept(&work);
-    let manifest = output_ok(
-        codegen(&["check", "--scxml", doc.to_str().unwrap(), "-l", "rust"]),
-        "check --scxml -l rust",
-    );
+fn orchestrate_writes_every_inline_child_the_parent_names() {
+    let work = scratch("orchestrate_child");
+    let doc = work.join("host.scxml");
+    std::fs::write(&doc, host_with_child(PURE_CHILD)).expect("write the document");
+    let child = child_stem("host");
+    for lang in backends() {
+        let out = work.join(format!("out_{lang}"));
+        let manifest = route_ok("orchestrate", lang, &doc, &out);
+        assert_child_beside(lang, &out, "host", &child);
+        assert_function_beside(lang, &out, &child);
+        let manifest: serde_json::Value =
+            serde_json::from_str(manifest.trim()).expect("orchestrate emits a manifest");
+        let listed: Vec<&str> = manifest["artifacts"]
+            .as_array()
+            .expect("artifacts is an array")
+            .iter()
+            .filter_map(|artifact| artifact["path"].as_str())
+            .collect();
+        for written in [
+            machine_file(lang, &out, &child),
+            function_file(lang, &out, &child),
+        ] {
+            assert!(
+                listed.contains(&written.to_str().unwrap()),
+                "[{lang}] the manifest does not list {}: {listed:?}",
+                written.display()
+            );
+        }
+    }
+}
+
+/// Two documents of one set never write one file: an in-line child's machine
+/// is a file of the set like a document's, so a document named as the child
+/// is named is refused at the collision, naming the document whose child
+/// wrote the file first, and the run writes nothing.
+#[test]
+fn orchestrate_refuses_a_document_writing_a_childs_file() {
+    let work = scratch("orchestrate_child_collision");
+    let host = work.join("host.scxml");
+    std::fs::write(&host, host_with_child(PURE_CHILD)).expect("write the host");
+    let other = work.join(format!("{}.scxml", child_stem("host")));
+    std::fs::write(
+        &other,
+        KEPT.replace(r#" sce:transition-function="emit""#, ""),
+    )
+    .expect("write the other document");
+    for lang in backends() {
+        let out = work.join(format!("out_{lang}"));
+        let records = refused_records(&[
+            "--error-format=json",
+            "orchestrate",
+            "--scxml",
+            host.to_str().unwrap(),
+            "--scxml",
+            other.to_str().unwrap(),
+            "-l",
+            lang,
+            "-o",
+            out.to_str().unwrap(),
+        ]);
+        assert_eq!(records.len(), 1, "[{lang}] {records:?}");
+        let record: serde_json::Value =
+            serde_json::from_str(&records[0]).expect("a record is JSON");
+        assert_eq!(
+            record["code"], "manifest/artifact-path-collision",
+            "[{lang}] {record}"
+        );
+        assert_eq!(
+            record["location"]["file"],
+            other.to_str().unwrap(),
+            "[{lang}] {record}"
+        );
+        assert_eq!(
+            record["related"][0]["location"]["file"],
+            host.to_str().unwrap(),
+            "[{lang}] {record}"
+        );
+        assert!(
+            !machine_file(lang, &out, "host").exists(),
+            "[{lang}] a refused set wrote a machine"
+        );
+    }
+}
+
+/// The verdict `check` gives `doc` for `lang` on the route `args` names.
+fn check_status(args: &[&str], lang: &str) -> serde_json::Value {
+    let manifest = output_ok(codegen(args), &format!("check -l {lang}"));
     let manifest: serde_json::Value =
         serde_json::from_str(manifest.trim()).expect("check emits a manifest");
     let verdicts = manifest["languages"]
         .as_array()
         .expect("per-backend verdicts");
     assert_eq!(verdicts.len(), 1, "{manifest}");
-    assert_eq!(verdicts[0]["language"], "rust", "{manifest}");
-    assert_eq!(verdicts[0]["status"], "ok", "{manifest}");
+    assert_eq!(verdicts[0]["language"], lang, "{manifest}");
+    verdicts[0]["status"].clone()
 }
 
-/// The directory `generate-w3c -l rust` writes fixture `id` into under `out`.
-fn w3c_rust_dir(out: &Path, id: &str) -> PathBuf {
-    out.join("backends/rust/tests/src/generated")
-        .join(format!("test{id}"))
+/// `check` renders the function as `generate` and `orchestrate` do, in every
+/// backend, so it accepts the declarations they generate: on a document and on
+/// a set, a document's own and an in-line child's alone. The set compile
+/// refuses a declared function it is given no hash for, so a set whose child
+/// alone declares one is checked under the digest `orchestrate` would bind.
+#[test]
+fn check_on_a_set_accepts_the_function_orchestrate_writes() {
+    let work = scratch("check_set_function");
+    let kept = write_kept(&work);
+    let host = work.join("host.scxml");
+    std::fs::write(&host, host_with_child(PURE_CHILD)).expect("write the host");
+    for lang in backends() {
+        for doc in [&kept, &host] {
+            let doc = doc.to_str().unwrap();
+            assert_eq!(
+                check_status(&["check", "--scxml", doc, "-l", lang], lang),
+                "ok",
+                "[{lang}] check on the set of {doc}"
+            );
+            assert_eq!(
+                check_status(&["check", doc, "-l", lang], lang),
+                "ok",
+                "[{lang}] check on {doc}"
+            );
+        }
+    }
 }
 
-/// `generate-w3c` writes a fixture's function beside its machine.
+/// The library's set compile emits an in-line child as `orchestrate` writes
+/// it, so given no hash it refuses a child declaring the function as it
+/// refuses a document declaring it; and the file entry, which computes none,
+/// refuses it too, rather than return a parent naming a child it left out.
+#[test]
+fn the_library_refuses_a_childs_function_it_cannot_bind() {
+    let work = scratch("library_child_unbound");
+    let doc = work.join("host.scxml");
+    std::fs::write(&doc, host_with_child(PURE_CHILD)).expect("write the host");
+    let template_dir = sce_build::find_template_dir_for(Language::Rust);
+    assert_refused_for_want_of_a_hash(
+        "ForgeCompileOptions::source_hash",
+        sce_build::compile_scxml_with_imports(
+            &[doc.as_path()],
+            &[],
+            &template_dir,
+            Language::Rust,
+            &sce_build::ForgeCompileOptions::default(),
+            None,
+        )
+        .map(|_| ()),
+    );
+    assert_refused_for_want_of_a_hash(
+        "the library's file entry points",
+        sce_build::compile_scxml_lang_typed(doc.to_str().unwrap(), &template_dir, Language::Rust)
+            .map(|_| ()),
+    );
+}
+
+/// The in-memory entry the WASM build calls hands back an in-line child's
+/// machine with the parent's, in every backend, as the file entry does; and,
+/// computing no hash, refuses a child declaring the function rather than
+/// return the child without it.
+#[test]
+fn the_in_memory_entry_carries_an_inline_child() {
+    let child = child_stem("host");
+    let undeclared = host_with_child(PURE_CHILD).replace(r#" sce:transition-function="emit""#, "");
+    assert_ne!(
+        undeclared,
+        host_with_child(PURE_CHILD),
+        "the child must differ from the declaring one by the declaration alone"
+    );
+    for lang in backends() {
+        let language: Language = lang.parse().expect("a backend name parses");
+        let templates = sce_build::template_registry::embedded_templates_for(language);
+        let output =
+            sce_build::compile_from_string_lang_typed(&undeclared, "host", &templates, language)
+                .unwrap_or_else(|e| panic!("[{lang}] the in-memory entry refused the host: {e}"));
+        let machine = machine_file(lang, Path::new(""), &child)
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            output.files.iter().any(|(name, _)| *name == machine),
+            "[{lang}] the in-memory entry left out {machine}: {:?}",
+            output
+                .files
+                .iter()
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>()
+        );
+    }
+    let templates = sce_build::template_registry::embedded_templates_for(Language::Rust);
+    assert_refused_for_want_of_a_hash(
+        "the library's in-memory entry points",
+        sce_build::compile_from_string_lang_typed(
+            &host_with_child(PURE_CHILD),
+            "host",
+            &templates,
+            Language::Rust,
+        )
+        .map(|_| ()),
+    );
+}
+
+/// The library's set compile, given the hash, emits the in-line child's
+/// machine and its function in the parent's output, every backend: the files
+/// `orchestrate` writes.
+#[test]
+fn the_set_compile_emits_an_inline_child_with_its_function() {
+    let work = scratch("set_compile_child");
+    let doc = work.join("host.scxml");
+    std::fs::write(&doc, host_with_child(PURE_CHILD)).expect("write the host");
+    let child = child_stem("host");
+    let hash = "ab".repeat(32);
+    for lang in backends() {
+        let language: Language = lang.parse().expect("a backend name parses");
+        let outputs = sce_build::compile_scxml_with_imports(
+            &[doc.as_path()],
+            &[],
+            &sce_build::find_template_dir_for(language),
+            language,
+            &sce_build::ForgeCompileOptions {
+                source_hash: Some(hash.clone()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap_or_else(|e| panic!("[{lang}] the set compile refused the host: {e}"));
+        let files: Vec<&(String, String)> = outputs
+            .iter()
+            .flat_map(|(_, output)| output.files.iter())
+            .collect();
+        let named = |path: PathBuf| path.to_string_lossy().into_owned();
+        let function = named(function_file(lang, Path::new(""), &child));
+        let machine = named(machine_file(lang, Path::new(""), &child));
+        assert!(
+            files.iter().any(|(name, _)| *name == machine),
+            "[{lang}] no machine of {child} in the set's output"
+        );
+        let source = files
+            .iter()
+            .find(|(name, _)| *name == function)
+            .map(|(_, source)| source.as_str())
+            .unwrap_or_else(|| panic!("[{lang}] no function of {child} in the set's output"));
+        assert_eq!(
+            carried_hash(source),
+            Some(hash.clone()),
+            "[{lang}] the child's function does not carry the hash the set was given"
+        );
+    }
+}
+
+/// Every backend `generate-w3c` writes a suite for: every backend that emits a
+/// machine but C11, which the route refuses as a usage error
+/// (`LanguageRoute::GenerateW3c`).
+fn w3c_backends() -> Vec<&'static str> {
+    backends()
+        .into_iter()
+        .filter(|lang| *lang != "c11")
+        .collect()
+}
+
+/// The `generate-w3c` backends whose suite takes a fixture's in-line children
+/// from this route: all of [`w3c_backends`] but C++, whose conformance build
+/// generates each fixture's in-line children with the fixture's own `generate`
+/// (the CMake rule that builds the fixture), which
+/// [`generate_writes_an_inline_childs_function_beside_its_machine`] holds for
+/// C++ as for every backend.
+fn w3c_child_backends() -> Vec<&'static str> {
+    w3c_backends()
+        .into_iter()
+        .filter(|lang| *lang != "cpp")
+        .collect()
+}
+
+/// `generate-w3c -l <lang>` of `suite` into `out`, and the directory it wrote
+/// fixture `id`'s machine into.
+fn generate_w3c(lang: &str, suite: &W3cSuite, out: &Path, id: &str) -> PathBuf {
+    output_ok(
+        codegen(&suite.args(lang, out)),
+        &format!("generate-w3c -l {lang}"),
+    );
+    let machine = machine_file(lang, Path::new(""), &format!("test{id}"));
+    directory_holding(out, machine.to_str().unwrap()).unwrap_or_else(|| {
+        panic!(
+            "[{lang}] generate-w3c wrote no {} below {}",
+            machine.display(),
+            out.display()
+        )
+    })
+}
+
+/// `generate-w3c` writes a fixture's function beside its machine, in every
+/// backend it writes a suite for.
 #[test]
 fn generate_w3c_writes_a_fixtures_function_beside_its_machine() {
-    let work = scratch("w3c_function");
-    let suite = W3cSuite::stage(&work, "902", KEPT);
-    let out = work.join("out");
-    output_ok(codegen(&suite.args(&out)), "generate-w3c -l rust");
-    assert_function_beside(&w3c_rust_dir(&out, "902"), "test902");
+    for lang in w3c_backends() {
+        let work = scratch(&format!("w3c_function_{lang}"));
+        let suite = W3cSuite::stage(&work, "902", KEPT);
+        let out = work.join("out");
+        let dir = generate_w3c(lang, &suite, &out, "902");
+        assert_function_beside(lang, &dir, "test902");
+    }
 }
 
-/// `generate-w3c` writes an in-line child's function beside the child's
-/// machine, named after the child's stem.
+/// `generate-w3c` writes an in-line child's machine beside the fixture's and
+/// the child's function beside the child's machine, named after the child's
+/// stem, in every backend whose suite takes the child from this route.
 #[test]
 fn generate_w3c_writes_an_inline_childs_function_beside_its_machine() {
-    let work = scratch("w3c_child_function");
-    let suite = W3cSuite::stage(&work, "903", &host_with_child(PURE_CHILD));
-    let out = work.join("out");
-    output_ok(codegen(&suite.args(&out)), "generate-w3c -l rust");
-    assert_function_beside(&w3c_rust_dir(&out, "903"), &child_stem("test903"));
+    for lang in w3c_child_backends() {
+        let work = scratch(&format!("w3c_child_function_{lang}"));
+        let suite = W3cSuite::stage(&work, "903", &host_with_child(PURE_CHILD));
+        let out = work.join("out");
+        let dir = generate_w3c(lang, &suite, &out, "903");
+        assert_child_beside(lang, &dir, "test903", &child_stem("test903"));
+        assert_function_beside(lang, &dir, &child_stem("test903"));
+    }
+}
+
+/// What a suite's build needs to compile the in-line child's machine and its
+/// function that `generate-w3c` wrote, in every backend whose suite takes the
+/// child from this route:
+/// - Rust: the test's `mod.rs` declares both modules, since a crate compiles
+///   only the files its module tree names;
+/// - Go and Kotlin: the child's machine is in the fixture's package (held by
+///   `assert_child_beside`), since the build compiles a package's files by
+///   their directory and package clause, and the function's package is one of
+///   its own that names no machine;
+/// - Python and Swift: nothing beyond the file beside the fixture's, since a
+///   module is a file of the package's directory and a Swift target compiles
+///   every file of its own.
+#[test]
+fn generate_w3c_puts_an_inline_child_where_each_suite_build_finds_it() {
+    for lang in w3c_child_backends() {
+        let work = scratch(&format!("w3c_child_unit_{lang}"));
+        let suite = W3cSuite::stage(&work, "906", &host_with_child(PURE_CHILD));
+        let out = work.join("out");
+        let dir = generate_w3c(lang, &suite, &out, "906");
+        let child = child_stem("test906");
+        let child_source = assert_child_beside(lang, &dir, "test906", &child);
+        match lang {
+            "rust" => {
+                let index = read(&dir.join("mod.rs"));
+                assert!(
+                    index.contains(&format!("mod {child}_sm;"))
+                        && index.contains(&format!("pub mod {child}_transition_function;")),
+                    "[rust] the test's module index does not name the child's files:\n{index}"
+                );
+            }
+            "go" | "kotlin" => assert!(
+                package_of(lang, &child_source).is_some(),
+                "[{lang}] the child's machine declares no package"
+            ),
+            "python" | "swift" => {}
+            other => panic!("no suite build is described for {other}"),
+        }
+    }
 }
 
 /// The one refusal a library entry point with no source hash gives a
@@ -3264,29 +3554,10 @@ fn generate_w3c_declares_a_fixtures_function_in_its_module_index() {
     let work = scratch("w3c_function_index");
     let suite = W3cSuite::stage(&work, "904", KEPT);
     let out = work.join("out");
-    output_ok(codegen(&suite.args(&out)), "generate-w3c -l rust");
-    let index = std::fs::read_to_string(w3c_rust_dir(&out, "904").join("mod.rs"))
-        .expect("read the fixture's mod.rs");
+    let dir = generate_w3c("rust", &suite, &out, "904");
+    let index = std::fs::read_to_string(dir.join("mod.rs")).expect("read the fixture's mod.rs");
     assert!(
         index.contains("pub mod test904_transition_function;"),
-        "{index}"
-    );
-}
-
-/// `generate-w3c` declares an in-line child's function module in the
-/// fixture's `mod.rs`, beside the child's machine.
-#[test]
-fn generate_w3c_declares_an_inline_childs_function_in_its_module_index() {
-    let work = scratch("w3c_child_function_index");
-    let suite = W3cSuite::stage(&work, "905", &host_with_child(PURE_CHILD));
-    let out = work.join("out");
-    output_ok(codegen(&suite.args(&out)), "generate-w3c -l rust");
-    let index = std::fs::read_to_string(w3c_rust_dir(&out, "905").join("mod.rs"))
-        .expect("read the fixture's mod.rs");
-    let child = child_stem("test905");
-    assert!(
-        index.contains(&format!("mod {child}_sm;"))
-            && index.contains(&format!("pub mod {child}_transition_function;")),
         "{index}"
     );
 }

@@ -27,6 +27,7 @@
 
 mod common;
 
+use common::routes::{directory_holding, route_args, W3cSuite};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -376,17 +377,7 @@ fn generated_source(lang: &str, out: &Path) -> String {
 }
 
 fn generate(lang: &str, out: &Path, doc: &Path) {
-    run(
-        &[
-            "generate",
-            "-l",
-            lang,
-            "-o",
-            out.to_str().unwrap(),
-            doc.to_str().unwrap(),
-        ],
-        &format!("generate -l {lang}"),
-    );
+    route("generate", lang, out, doc);
 }
 
 /// The machine's name as the Rust, Go, Kotlin, Python and Swift templates spell it.
@@ -500,30 +491,35 @@ fn every_backend_carries_the_table_the_export_lists() {
 fn the_table_carries_the_hash_of_the_header_of_its_file() {
     let dir = tempfile::tempdir().expect("tempdir");
     let doc = write_doc(dir.path(), DOC);
-    let header_hash = Regex::new(r"source-hash:\s*([0-9a-f]{64})").unwrap();
     for lang in backends() {
         let out = dir.path().join(format!("out_{lang}"));
         generate(lang, &out, &doc);
-        let source = generated_source(lang, &out);
-        let header: BTreeMap<String, usize> =
-            header_hash
-                .captures_iter(&source)
-                .fold(BTreeMap::new(), |mut acc, c| {
-                    *acc.entry(c[1].to_string()).or_default() += 1;
-                    acc
-                });
-        assert_eq!(
-            header.len(),
-            1,
-            "[{lang}] the files of one run disagree about the source hash: {header:?}"
-        );
-        let hash = header.keys().next().unwrap();
-        let embedded = Regex::new(&format!(r#""{hash}""#)).unwrap();
-        assert!(
-            embedded.is_match(&source),
-            "[{lang}] no string constant of the generated source holds the hash of its own header"
-        );
+        assert_carries_its_header_hash(lang, &generated_source(lang, &out));
     }
+}
+
+/// The one `source-hash` the headers of `source` name (the files of one
+/// machine, concatenated), and that `source` holds it as a string constant:
+/// the table carries the hash of its own file's header.
+fn assert_carries_its_header_hash(lang: &str, source: &str) {
+    let header: BTreeMap<String, usize> = Regex::new(r"source-hash:\s*([0-9a-f]{64})")
+        .unwrap()
+        .captures_iter(source)
+        .fold(BTreeMap::new(), |mut acc, c| {
+            *acc.entry(c[1].to_string()).or_default() += 1;
+            acc
+        });
+    assert_eq!(
+        header.len(),
+        1,
+        "[{lang}] the files of one run disagree about the source hash: {header:?}"
+    );
+    let hash = header.keys().next().unwrap();
+    let embedded = Regex::new(&format!(r#""{hash}""#)).unwrap();
+    assert!(
+        embedded.is_match(source),
+        "[{lang}] no string constant of the generated source holds the hash of its own header"
+    );
 }
 
 /// A document that does not declare a table gets none, and one that does gets it
@@ -705,6 +701,266 @@ fn a_machine_without_transitions_has_an_empty_table() {
             read_table(lang, &source, &machine_name()).is_empty(),
             "[{lang}] a machine with no transition lists one"
         );
+    }
+}
+
+// ── every route that writes a machine binds its table ────────────────────
+//
+// The table carries the digest of the run that writes it, so every route that
+// writes drift-headed files binds it (`sce_build::bind_run_digest`): `generate`,
+// above; `orchestrate`, for a document of a set; `generate-w3c`, for a fixture;
+// and each of them for an in-line child, whose machine is a file of the run
+// beside its parent's (`sce_build::carried_children`). `check` renders what
+// `generate` and `orchestrate` would and accepts the declaration on a child as
+// on a root.
+
+/// `<via> -l <lang> -o <out>` of the one document `doc` ([`route_args`]).
+fn route(via: &str, lang: &str, out: &Path, doc: &Path) {
+    run(
+        &route_args(via, lang, out, doc),
+        &format!("{via} -l {lang}"),
+    );
+}
+
+/// The names of the files a run of `lang` writes the machine of `stem` to,
+/// the first of them always written: the source a table is read back from.
+fn machine_files(lang: &str, stem: &str) -> Vec<String> {
+    match lang {
+        "rust" => vec![format!("{stem}_sm.rs")],
+        "cpp" => vec![format!("{stem}_sm.h"), format!("{stem}_sm.inl")],
+        "c11" => vec![format!("{stem}_sm.h"), format!("{stem}_sm.c")],
+        "go" => vec![format!("{stem}_sm.go")],
+        "kotlin" => vec![format!("{stem}Sm.kt")],
+        "python" => vec![format!("{stem}_sm.py")],
+        "swift" => vec![format!("{stem}_sm.swift")],
+        other => panic!("no machine files for {other}"),
+    }
+}
+
+/// The source of the machine `stem` a run of `lang` wrote into `dir`, every
+/// file of it concatenated, and of nothing else in `dir`.
+fn machine_source(lang: &str, dir: &Path, stem: &str) -> String {
+    let files = machine_files(lang, stem);
+    let first = dir.join(&files[0]);
+    assert!(
+        first.is_file(),
+        "[{lang}] no machine of {stem} was written at {}",
+        first.display()
+    );
+    files
+        .iter()
+        .map(|name| dir.join(name))
+        .filter(|path| path.is_file())
+        .map(|path| std::fs::read_to_string(path).expect("read a generated file"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The table of the machine `machine` in `source` is the transitions the
+/// export `rows` lists, and it carries the hash of its own file's header.
+fn assert_table_of(lang: &str, source: &str, machine: &str, rows: &[serde_json::Value]) {
+    let expected = expected_entries(rows);
+    assert!(
+        !expected.is_empty(),
+        "the document has transitions; the comparison is vacuous without them"
+    );
+    let events = literal_events(&expected);
+    assert_eq!(
+        read_table(lang, source, machine),
+        expected_spelled(lang, &expected, &events),
+        "[{lang}] the table of {machine} is not the export's transitions"
+    );
+    assert_carries_its_header_hash(lang, source);
+}
+
+/// Every backend `generate-w3c` writes a suite for: every backend that emits a
+/// machine but C11, which the route refuses as a usage error.
+fn w3c_backends() -> Vec<&'static str> {
+    backends()
+        .into_iter()
+        .filter(|lang| *lang != "c11")
+        .collect()
+}
+
+/// `generate-w3c -l <lang>` of `suite` into `out`, and the directory it wrote
+/// the machine of `stem` into.
+fn generate_w3c(lang: &str, suite: &W3cSuite, out: &Path, stem: &str) -> PathBuf {
+    run(&suite.args(lang, out), &format!("generate-w3c -l {lang}"));
+    let machine = &machine_files(lang, stem)[0];
+    directory_holding(out, machine).unwrap_or_else(|| {
+        panic!(
+            "[{lang}] generate-w3c wrote no {machine} below {}",
+            out.display()
+        )
+    })
+}
+
+/// `orchestrate` writes the table into a document of the set, in every backend,
+/// with the hash every file of the run carries.
+#[test]
+fn orchestrate_carries_the_table_the_export_lists() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let doc = write_doc(dir.path(), DOC);
+    let (_, rows) = export(&doc);
+    for lang in backends() {
+        let out = dir.path().join(format!("out_{lang}"));
+        route("orchestrate", lang, &out, &doc);
+        assert_table_of(lang, &generated_source(lang, &out), &machine_name(), &rows);
+    }
+}
+
+/// [`DOC`] as a conformance fixture: named by its file, as a fixture is, and
+/// ending in `pass`, which the suite's harness asks for.
+fn w3c_fixture() -> String {
+    DOC.replace(r#" name="ttemit""#, "")
+        .replace(r#"target="end""#, r#"target="pass""#)
+        .replace(r#"<final id="end"/>"#, r#"<final id="pass"/>"#)
+}
+
+/// `generate-w3c` writes the table into a fixture's machine, in every backend
+/// it writes a suite for, with the hash every file of the run carries.
+#[test]
+fn generate_w3c_carries_a_fixtures_table() {
+    let text = w3c_fixture();
+    assert!(
+        !text.contains(r#"name="ttemit""#) && text.contains(r#"<final id="pass"/>"#),
+        "the fixture is DOC under the suite's conventions"
+    );
+    for lang in w3c_backends() {
+        let work = scratch(&format!("w3c_table_{lang}"));
+        let suite = W3cSuite::stage(&work, "907", &text);
+        let (_, rows) = export(&suite.document);
+        let out = work.join("out");
+        let dir = generate_w3c(lang, &suite, &out, "test907");
+        assert_table_of(
+            lang,
+            &machine_source(lang, &dir, "test907"),
+            &filters::to_pascal_case("test907".to_string()),
+            &rows,
+        );
+    }
+}
+
+/// The states of the in-line child [`host_with_table_child`] runs: a literal
+/// event, a prefix family, a targetless transition and a final.
+const CHILD_STATES: &str = r#"          <state id="idle">
+            <transition event="go" target="Busy_2" sce:req="REQ-1"/>
+            <transition event="door.*" target="Busy_2"/>
+            <transition event="stop"/>
+          </state>
+          <state id="Busy_2"><transition event="done" target="end"/></state>
+          <final id="end"/>"#;
+
+/// A statechart that declares nothing and runs, in its one state, an in-line
+/// child declaring its table, with [`CHILD_STATES`] as the child's states. Its
+/// final state is `pass`, so it is a conformance fixture as well.
+fn host_with_table_child() -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="ecmascript">
+  <state id="running">
+    <invoke type="scxml" id="lamp">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+               initial="idle" datamodel="ecmascript" sce:transition-table="emit">
+{CHILD_STATES}
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="stop" target="pass"/>
+  </state>
+  <final id="pass"/>
+</scxml>
+"#
+    )
+}
+
+/// The export of the child [`host_with_table_child`] runs, read from a
+/// document of its own with the same states, written into `dir`: what the
+/// child's table must hold.
+fn child_rows(dir: &Path) -> Vec<serde_json::Value> {
+    let doc = dir.join("lamp.scxml");
+    std::fs::write(
+        &doc,
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="ecmascript" sce:transition-table="emit">
+{CHILD_STATES}
+</scxml>
+"#
+        ),
+    )
+    .expect("write the child's document");
+    export(&doc).1
+}
+
+/// The synthesized stem of the child [`host_with_table_child`] runs, in a
+/// document whose file stem is `stem`, and its machine's name.
+fn table_child(stem: &str) -> (String, String) {
+    let child = format!("{stem}__sce_synth_invoke__lamp");
+    let machine = filters::to_pascal_case(child.clone());
+    (child, machine)
+}
+
+/// `generate` and `orchestrate` write an in-line child's table into the
+/// child's machine, in every backend, with the hash every file of the run
+/// carries.
+#[test]
+fn an_inline_childs_table_is_written_by_generate_and_orchestrate() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let rows = child_rows(dir.path());
+    let host = dir.path().join("host.scxml");
+    std::fs::write(&host, host_with_table_child()).expect("write the host");
+    let (child, machine) = table_child("host");
+    for lang in backends() {
+        for via in ["generate", "orchestrate"] {
+            let out = dir.path().join(format!("{via}_{lang}"));
+            route(via, lang, &out, &host);
+            assert_table_of(lang, &machine_source(lang, &out, &child), &machine, &rows);
+        }
+    }
+}
+
+/// `generate-w3c` writes an in-line child's table into the child's machine
+/// beside the fixture's, in every backend whose suite takes a fixture's
+/// in-line children from this route: all but C++, whose conformance build
+/// generates them with the fixture's own `generate`, held above.
+#[test]
+fn generate_w3c_writes_an_inline_childs_table() {
+    let (child, machine) = table_child("test908");
+    for lang in w3c_backends().into_iter().filter(|lang| *lang != "cpp") {
+        let work = scratch(&format!("w3c_child_table_{lang}"));
+        let rows = child_rows(&work);
+        let suite = W3cSuite::stage(&work, "908", &host_with_table_child());
+        let out = work.join("out");
+        let dir = generate_w3c(lang, &suite, &out, "test908");
+        assert_table_of(lang, &machine_source(lang, &dir, &child), &machine, &rows);
+    }
+}
+
+/// `check` accepts an in-line child declaring its table, in every backend, on
+/// the document and on a set: the set compile binds the child's table to the
+/// digest `orchestrate` would, and refuses one it is given no digest for.
+#[test]
+fn check_accepts_an_inline_childs_table() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let host = dir.path().join("host.scxml");
+    std::fs::write(&host, host_with_table_child()).expect("write the host");
+    let host = host.to_str().unwrap();
+    for lang in backends() {
+        for args in [
+            vec!["check", host, "-l", lang],
+            vec!["check", "--scxml", host, "-l", lang],
+        ] {
+            let manifest: serde_json::Value =
+                serde_json::from_str(run(&args, &format!("{args:?}")).trim())
+                    .expect("check emits a manifest");
+            assert_eq!(
+                manifest["languages"][0]["status"], "ok",
+                "[{lang}] {args:?}: {manifest}"
+            );
+        }
     }
 }
 

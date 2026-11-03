@@ -983,9 +983,11 @@ pub fn transition_function_from_string(
 ///
 /// The one place a route binds them, called by every route that writes
 /// drift-headed files, with the digest those files embed: `generate` for the
-/// document and its in-line children, `orchestrate` through
-/// [`ForgeCompileOptions::source_hash`], and `generate-w3c` for each fixture
-/// and its children. Called after the declaration is judged
+/// document, `orchestrate` through [`ForgeCompileOptions::source_hash`], and
+/// `generate-w3c` for each fixture and each child it reads from disk; and,
+/// for the in-line children of a document on every one of those routes,
+/// through [`carried_children`] ([`RunDigest::bind`]). Called after the
+/// declaration is judged
 /// ([`transition_function_findings`]), so the function is built only for a
 /// document that keeps it. A rejected document is written as a stub and gets
 /// neither.
@@ -1541,56 +1543,93 @@ pub fn compile_from_string_lang_typed(
     language: generator::Language,
 ) -> Result<generator::GeneratedOutput, CompileError> {
     let model = compile_model_from_string(scxml_content, scxml_name)?;
-    // A document handed over as a string has no source set to hash.
+    // A document handed over as a string has no source set to hash, for
+    // itself or for a child it carries.
     refuse_unbound_digest_outputs(&model, scxml_name, IN_MEMORY_ENTRY_POINTS)?;
+    let mut output = emit_with_templates(&model, scxml_name, scxml_name, templates, language)?;
+    // Every child the document carries, prepared as the file entry prepares
+    // it and placed beside the machine that names it: the artefact this
+    // entry hands back is the one the file entry writes.
+    for child in carried_children(
+        &model,
+        &CarriedChildRun {
+            document: scxml_name,
+            language,
+            host_processor_types: &[],
+            host_invoker_types: &[],
+            digest: RunDigest::Unavailable(IN_MEMORY_ENTRY_POINTS),
+        },
+    )? {
+        let mut emitted =
+            emit_with_templates(&child.model, &child.stem, &child.label, templates, language)?;
+        place_in_package(
+            &mut emitted,
+            language,
+            &child.model.name,
+            &child.stem,
+            &model.name,
+            None,
+        );
+        output.files.extend(emitted.files);
+    }
+    Ok(output)
+}
 
+/// The in-memory emission of one model, named `stem`, from templates held as
+/// strings: the machine, the transition function it declares, and the
+/// sibling artifact of every kind declared inside it, as
+/// [`emit_model_artifacts`] emits them from a template directory. `source`
+/// names the model in diagnostics.
+fn emit_with_templates(
+    model: &SCXMLModel,
+    stem: &str,
+    source: &str,
+    templates: &[(&str, &str)],
+    language: generator::Language,
+) -> Result<generator::GeneratedOutput, CompileError> {
     // The in-memory entry emits the same sibling artifacts as the file entry.
     let mut output = match language {
         generator::Language::Rust => {
-            let code = generator::generate_with_templates(&model, templates, false)
-                .map_err(|e| locate_codegen_error(e, scxml_name, &model))?;
+            let code = generator::generate_with_templates(model, templates, false)
+                .map_err(|e| locate_codegen_error(e, source, model))?;
             Ok(generator::GeneratedOutput {
-                files: vec![(format!("{scxml_name}_sm.rs"), code)],
+                files: vec![(format!("{stem}_sm.rs"), code)],
                 ..Default::default()
             })
         }
-        generator::Language::Cpp => {
-            generator::generate_cpp_with_templates(&model, templates, scxml_name)
-                .map_err(|e| locate_codegen_error(e, scxml_name, &model))
-        }
+        generator::Language::Cpp => generator::generate_cpp_with_templates(model, templates, stem)
+            .map_err(|e| locate_codegen_error(e, source, model)),
         generator::Language::Kotlin => {
-            let code = generator::generate_kotlin_with_templates(&model, templates, None)
-                .map_err(|e| locate_codegen_error(e, scxml_name, &model))?;
+            let code = generator::generate_kotlin_with_templates(model, templates, None)
+                .map_err(|e| locate_codegen_error(e, source, model))?;
             Ok(generator::GeneratedOutput {
-                files: vec![(format!("{scxml_name}Sm.kt"), code)],
+                files: vec![(format!("{stem}Sm.kt"), code)],
                 ..Default::default()
             })
         }
         generator::Language::Go => {
-            let code = generator::generate_go_with_templates(&model, templates)
-                .map_err(|e| locate_codegen_error(e, scxml_name, &model))?;
+            let code = generator::generate_go_with_templates(model, templates)
+                .map_err(|e| locate_codegen_error(e, source, model))?;
             Ok(generator::GeneratedOutput {
-                files: vec![(format!("{scxml_name}_sm.go"), code)],
+                files: vec![(format!("{stem}_sm.go"), code)],
                 ..Default::default()
             })
         }
         generator::Language::Python => {
-            let code = generator::generate_python_with_templates(&model, templates)
-                .map_err(|e| locate_codegen_error(e, scxml_name, &model))?;
+            let code = generator::generate_python_with_templates(model, templates)
+                .map_err(|e| locate_codegen_error(e, source, model))?;
             Ok(generator::GeneratedOutput {
-                files: vec![(format!("{scxml_name}_sm.py"), code)],
+                files: vec![(format!("{stem}_sm.py"), code)],
                 ..Default::default()
             })
         }
-        generator::Language::C11 => {
-            generator::generate_c11_with_templates(&model, templates, scxml_name)
-                .map_err(|e| locate_codegen_error(e, scxml_name, &model))
-        }
+        generator::Language::C11 => generator::generate_c11_with_templates(model, templates, stem)
+            .map_err(|e| locate_codegen_error(e, source, model)),
         generator::Language::Swift => {
-            let code = generator::generate_swift_with_templates(&model, templates)
-                .map_err(|e| locate_codegen_error(e, scxml_name, &model))?;
+            let code = generator::generate_swift_with_templates(model, templates)
+                .map_err(|e| locate_codegen_error(e, source, model))?;
             Ok(generator::GeneratedOutput {
-                files: vec![(format!("{scxml_name}_sm.swift"), code)],
+                files: vec![(format!("{stem}_sm.swift"), code)],
                 ..Default::default()
             })
         }
@@ -1599,17 +1638,17 @@ pub fn compile_from_string_lang_typed(
     // above is generated under too: this entry takes no naming prefix.
     output.files.extend(
         generator::transition_function_files(
-            &model,
+            model,
             generator::TemplateSource::Strings(templates),
-            scxml_name,
+            stem,
             language,
             generator::TransitionFunctionNaming::default(),
         )
-        .map_err(|e| locate_codegen_error(e, scxml_name, &model))?,
+        .map_err(|e| locate_codegen_error(e, source, model))?,
     );
     emit_inline_kind_siblings(
-        &model,
-        scxml_name,
+        model,
+        source,
         language,
         &ForgeCompileOptions {
             embedded_templates: true,
@@ -1701,9 +1740,12 @@ pub fn compile_scxml_lang_typed_with_section(
         scxml_path,
         template_dir,
         language,
-        driver_root,
-        section_class,
-        options,
+        &StatechartRun {
+            driver_root,
+            section_class,
+            options,
+            digest: RunDigest::Unavailable(FILE_ENTRY_POINTS),
+        },
         |_| Ok(()),
     )
 }
@@ -1732,9 +1774,12 @@ pub fn compile_scxml_lang_with_deploy(
         scxml_path,
         template_dir,
         language,
-        None,
-        None,
-        &generator::StatechartCodegenOptions::default(),
+        &StatechartRun {
+            driver_root: None,
+            section_class: None,
+            options: &generator::StatechartCodegenOptions::default(),
+            digest: RunDigest::Unavailable(FILE_ENTRY_POINTS),
+        },
         |model| {
             // The facts are dropped here: this entry compiles a model,
             // and has no manifest to report them on. The CLI is the
@@ -1753,19 +1798,44 @@ pub fn compile_scxml_lang_with_deploy(
     )
 }
 
+/// What a compile entry decides about one statechart beyond its path and its
+/// backend ([`compile_scxml_lang_typed_mutated`]).
+#[derive(Clone, Copy)]
+struct StatechartRun<'a> {
+    /// Where `<sce:driver>` references resolve; `None` is the document's own
+    /// directory.
+    driver_root: Option<&'a Path>,
+    /// The C11 linker section every function of the machine is placed in.
+    section_class: Option<&'a str>,
+    /// The Rust codegen decisions and the host's declarations.
+    options: &'a generator::StatechartCodegenOptions,
+    /// The digest the files are written under, or the route that has none.
+    digest: RunDigest<'a>,
+}
+
 /// Shared body of the compile entries: parse, let the caller mutate the
-/// model, emit. The hook is where deploy-derived state enters; without
+/// model, bind the run's digest, emit the machine and every child the
+/// document carries. The hook is where deploy-derived state enters; without
 /// it the deploy-aware path would be a second copy of the language
 /// dispatch below, and the two would drift.
+///
+/// The run's digest ([`StatechartRun::digest`]) is bound after the hook: the
+/// document set binds the digest its caller writes the files under, and the
+/// file entry points, which compute none, refuse a declaration that needs
+/// one, the document's and each child's alike.
 fn compile_scxml_lang_typed_mutated(
     scxml_path: &str,
     template_dir: &Path,
     language: generator::Language,
-    driver_root: Option<&Path>,
-    section_class: Option<&str>,
-    options: &generator::StatechartCodegenOptions,
+    run: &StatechartRun<'_>,
     mutate: impl FnOnce(&mut SCXMLModel) -> Result<(), CompileError>,
 ) -> Result<generator::GeneratedOutput, CompileError> {
+    let StatechartRun {
+        driver_root,
+        section_class,
+        options,
+        digest,
+    } = *run;
     let ParsedSCXML {
         mut model,
         preprocessor_deps,
@@ -1788,9 +1858,7 @@ fn compile_scxml_lang_typed_mutated(
         )
     })?;
     mutate(&mut model)?;
-    // A caller that holds the digest of the files it writes binds it in
-    // `mutate`; every other caller of this body computes none.
-    refuse_unbound_digest_outputs(&model, scxml_path, FILE_ENTRY_POINTS)?;
+    digest.bind(&mut model, scxml_path)?;
     if !model.driver_refs.is_empty() {
         match driver_root {
             Some(root) => resolve_driver_refs_with_root(&mut model, scxml_path, root)?,
@@ -1813,17 +1881,38 @@ fn compile_scxml_lang_typed_mutated(
     // (single-file Rust/Kotlin/Go/Python + multi-file C++/C11) gets
     // the same dep channel without each `generate_*` learning about
     // build-system metadata it doesn't otherwise touch.
+    let emit_options = ModelEmitOptions {
+        codegen: Some(options),
+        ..ModelEmitOptions::default()
+    };
     let mut output = emit_model_artifacts(
         &model,
         template_dir,
         input_stem,
         scxml_path,
         language,
-        &ModelEmitOptions {
-            codegen: Some(options),
-            ..ModelEmitOptions::default()
-        },
+        &emit_options,
     )?;
+    // The machine names each child it starts by its stem, so the output is
+    // the machine and every child the document carries, each beside it in
+    // the document's package (SCE_MESH.md §9.6.6).
+    let children = emit_carried_children(
+        &model,
+        template_dir,
+        &CarriedChildRun {
+            document: scxml_path,
+            language,
+            host_processor_types: &options.host_processor_types,
+            host_invoker_types: &options.host_invoker_types,
+            digest,
+        },
+        &model.name,
+        &emit_options,
+    )?;
+    for EmittedChild { output: child, .. } in children {
+        output.files.extend(child.files);
+        output.deps.extend(child.deps);
+    }
     output.deps.extend(preprocessor_deps);
     output.deps.sort();
     output.deps.dedup();
@@ -1931,6 +2020,294 @@ pub fn emit_model_artifacts(
         options,
         &generator::RustBounds::of(model),
     )
+}
+
+/// The digest of the source set a run writes its files under, as the run
+/// gives it to each machine it generates ([`RunDigest::bind`]).
+///
+/// Three runs, three answers, and each is the run's to state: a run that
+/// writes drift-headed files has the digest those files embed; a run that
+/// writes files with no digest to embed (the library entry points) refuses a
+/// declaration whose output carries one; and a run that writes nothing
+/// (`check`) renders the machine and drops it, so it neither binds nor
+/// refuses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunDigest<'a> {
+    /// The run's files embed this digest (lower-case hex).
+    Of(&'a str),
+    /// The run writes files and has no digest to give them; the text names
+    /// the route in the refusal ([`refuse_unbound_digest_outputs`]).
+    Unavailable(&'a str),
+    /// The run writes nothing.
+    NotWritten,
+}
+
+impl RunDigest<'_> {
+    /// Give `model` this run's digest ([`bind_run_digest`]), or refuse it,
+    /// naming `source`, when it declares an output carrying a digest the run
+    /// does not have.
+    pub fn bind(self, model: &mut SCXMLModel, source: &str) -> Result<(), CompileError> {
+        match self {
+            RunDigest::Of(source_hex) => {
+                bind_run_digest(model, source_hex);
+                Ok(())
+            }
+            RunDigest::Unavailable(route) => refuse_unbound_digest_outputs(model, source, route),
+            RunDigest::NotWritten => Ok(()),
+        }
+    }
+}
+
+/// What a run that generates a document gives every child the document
+/// carries ([`carried_children`]).
+#[derive(Debug, Clone, Copy)]
+pub struct CarriedChildRun<'a> {
+    /// The document's path as the run names it. A child is read as a file
+    /// beside it: its diagnostics are labelled `<dir>/<stem>.scxml`, the
+    /// relative references its author wrote resolve from that directory, and
+    /// a kind declared in it resolves its imports there.
+    pub document: &'a str,
+    /// The backend the run generates for.
+    pub language: generator::Language,
+    /// The `<send>` types the host serves (§scxml-6.2.5): the document's
+    /// declaration, which is the tree's (docs/adr/0045). The host serves every
+    /// session the document's machine starts, so a child's `<send type>`
+    /// naming one is the host's as the parent's is.
+    pub host_processor_types: &'a [String],
+    /// The `<invoke>` types the host runs (§scxml-6.4.1), handed down the
+    /// tree as `host_processor_types` is: the invokers serve every session,
+    /// each request naming the session that made it, so a child's
+    /// `<invoke type>` naming one is host-run and not refused as undeclared.
+    pub host_invoker_types: &'a [String],
+    /// The digest the run's files embed, which a child declaring its
+    /// transition table or function is bound to as a root is.
+    pub digest: RunDigest<'a>,
+}
+
+/// One child a document carries, prepared as the run that generates the
+/// document renders it ([`carried_children`]).
+#[derive(Debug, Clone)]
+pub struct CarriedChild {
+    /// The stem its machine and every file beside it are named by:
+    /// `<parent>__sce_synth_invoke__<id>` (SCE_MESH.md §9.6.6).
+    pub stem: String,
+    /// The name its diagnostics carry: `<stem>.scxml` beside the document.
+    pub label: String,
+    /// Its model: analysed, given the host's declaration and the run's
+    /// digest.
+    pub model: SCXMLModel,
+}
+
+/// A carried child and every file its run emits for it
+/// ([`emit_carried_children`]).
+pub struct EmittedChild {
+    /// The child, as it was rendered.
+    pub child: CarriedChild,
+    /// Its machine and every artifact beside it: a declared transition
+    /// function, a kind declared inside it.
+    pub output: generator::GeneratedOutput,
+}
+
+/// Every child `document` carries, at any depth, that a run generating it
+/// writes beside it, in the order [`model::SCXMLModel::inline_child_invokes`]
+/// gives them (a child before the children it starts), each prepared as that
+/// run renders it.
+///
+/// A carried child is one written in `<content>` or named by its library name
+/// (`sce:std/...`): the parser holds its document in memory, its machine is a
+/// file of the run, and the machine that starts it names that file. So one
+/// preparation serves every route that writes or judges a document: `generate`
+/// and `orchestrate` write what this yields, `check` renders it and reports
+/// the verdict `generate` would reach, and `generate-w3c` writes it into a
+/// suite. A child prepared on one route alone is a verdict another never
+/// reaches (the standard list, which calls imported algorithms, refused
+/// `generate -l go` without a module prefix while `check -l go` accepted the
+/// document).
+///
+/// Each child is:
+/// - started by its parent, so it templates on the parent's type on every
+///   backend but C11, whose child templates detect communication with the
+///   parent from the document and break under the override;
+/// - analysed under its label, and given the host's declaration;
+/// - left out when [`analyzer::can_generate_static`] refuses it, as the
+///   judgement of its declaration leaves it out
+///   ([`transition_function_findings`]);
+/// - bound to the run's digest ([`RunDigest::bind`]), after its declaration was
+///   judged with the document's: its transition table and function are
+///   written beside its machine, named after its stem;
+/// - given the provenance of a file beside the document's own (`// From:`):
+///   the directory of the document's recorded provenance and the child's
+///   stem, so it is as reproducible as the document's is.
+pub fn carried_children(
+    document: &SCXMLModel,
+    run: &CarriedChildRun<'_>,
+) -> Result<Vec<CarriedChild>, CompileError> {
+    // `<stem>.scxml` in the directory of the file `sibling` names.
+    let beside = |sibling: &str, stem: &str| -> String {
+        Path::new(sibling)
+            .parent()
+            .unwrap_or_else(|| Path::new(""))
+            .join(format!("{stem}.scxml"))
+            .to_string_lossy()
+            .into_owned()
+    };
+    let mut children = Vec::new();
+    for invoke in document.inline_child_invokes() {
+        let Some(carried) = invoke.inline_child.as_deref() else {
+            continue;
+        };
+        let stem = invoke.child_name.as_str();
+        if stem.is_empty() {
+            continue;
+        }
+        let label = beside(run.document, stem);
+        let mut model = carried.clone();
+        if run.language != generator::Language::C11 {
+            model.has_parent_communication = true;
+        }
+        analyzer::analyze(&mut model, &label);
+        host_processor_analyzer::declare_host_surfaces(
+            &mut model,
+            run.host_processor_types,
+            run.host_invoker_types,
+        )
+        .map_err(|refused| {
+            forge::error::Located::new(
+                forge::error::ForgeError::from(refused),
+                label.as_str(),
+                None,
+                None,
+            )
+        })?;
+        if analyzer::can_generate_static(&model, &label).is_err() {
+            continue;
+        }
+        // A refusal of the child's declaration is raised under the label the
+        // child was parsed under and moved to the row its author wrote in
+        // the document, as its judgement is
+        // (`inline_child_transition_function_findings`).
+        let parsed_as = invoke
+            .inline_child_positions
+            .as_ref()
+            .map_or(label.as_str(), |positions| positions.document.as_str());
+        run.digest.bind(&mut model, parsed_as).map_err(|refused| {
+            let refused = match invoke.inline_child_positions.as_ref() {
+                Some(positions) => positions.authored(refused),
+                None => refused,
+            };
+            match document.authored_positions.as_ref() {
+                Some(positions) => positions.authored(refused),
+                None => refused,
+            }
+        })?;
+        // Placed where the document is: the same linker section on C11.
+        model
+            .c11_section_attribute_class
+            .clone_from(&document.c11_section_attribute_class);
+        model.scxml_source_path = beside(&document.scxml_source_path, stem);
+        children.push(CarriedChild {
+            stem: stem.to_string(),
+            label,
+            model,
+        });
+    }
+    Ok(children)
+}
+
+/// Every child `document` carries ([`carried_children`]), each emitted as a
+/// machine of the run with every artifact beside it
+/// ([`emit_model_artifacts`], under `options`, the document's), and placed in
+/// the package of the machine named `adopter` ([`place_in_package`]).
+///
+/// The one operation every route that generates a statechart writes its
+/// children through: `generate` (and `check`, which renders and drops them),
+/// the library's file entry points, and the document-set compile
+/// (`orchestrate`). The machine that starts a child names it, unqualified, by
+/// its stem; a run that writes the document and not this leaves a machine
+/// naming a file nobody wrote.
+///
+/// `adopter` is the name of the machine whose package the children join: the
+/// document's own, or under `generate --as-child --parent-stem` the parent's
+/// that adopts the document.
+pub fn emit_carried_children(
+    document: &SCXMLModel,
+    template_dir: &Path,
+    run: &CarriedChildRun<'_>,
+    adopter: &str,
+    options: &ModelEmitOptions<'_>,
+) -> Result<Vec<EmittedChild>, CompileError> {
+    carried_children(document, run)?
+        .into_iter()
+        .map(|child| -> Result<EmittedChild, CompileError> {
+            let mut output = emit_model_artifacts(
+                &child.model,
+                template_dir,
+                &child.stem,
+                run.document,
+                run.language,
+                options,
+            )?;
+            place_in_package(
+                &mut output,
+                run.language,
+                &child.model.name,
+                &child.stem,
+                adopter,
+                options.kotlin_package_prefix,
+            );
+            Ok(EmittedChild { child, output })
+        })
+        .collect()
+}
+
+/// Move the machine `name`, written to the files of `stem`, from the package
+/// its own name derives into the package of the machine named `adopter`.
+///
+/// Go and Kotlin name a machine's package after the machine
+/// ([`generator::go_machine_package`], [`generator::kotlin_machine_package`]),
+/// and a machine names the children it starts unqualified, so a child left in
+/// a package of its own is a second package in one directory, which Go
+/// refuses and against which Kotlin cannot resolve the name. Only the
+/// machine's own file is re-addressed: a sibling artifact carries a package
+/// derived from its own name, and a replace over every file would re-address
+/// any whose package merely starts with the machine's. The other backends
+/// carry no package header to re-address: C++ and C scope by namespace and
+/// symbol prefix, Rust by module path at the consuming crate, Python and
+/// Swift by file.
+pub fn place_in_package(
+    output: &mut generator::GeneratedOutput,
+    language: generator::Language,
+    name: &str,
+    stem: &str,
+    adopter: &str,
+    kotlin_package_prefix: Option<&str>,
+) {
+    let (machine_file, from, to) = match language {
+        generator::Language::Kotlin => (
+            format!("{stem}Sm.kt"),
+            generator::kotlin_machine_package(kotlin_package_prefix, name),
+            generator::kotlin_machine_package(kotlin_package_prefix, adopter),
+        ),
+        generator::Language::Go => (
+            format!("{stem}_sm.go"),
+            generator::go_machine_package(name),
+            generator::go_machine_package(adopter),
+        ),
+        generator::Language::Rust
+        | generator::Language::Cpp
+        | generator::Language::Python
+        | generator::Language::C11
+        | generator::Language::Swift => return,
+    };
+    if from == to {
+        return;
+    }
+    let (from, to) = (format!("package {from}"), format!("package {to}"));
+    for (file, code) in output.files.iter_mut() {
+        if *file == machine_file {
+            *code = code.replace(&from, &to);
+        }
+    }
 }
 
 /// One output for every build of the product line `model` is written as
@@ -5342,44 +5719,49 @@ fn compile_document_set(
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or(path_str);
+        // Deploy orchestration injects no extra enum derives; the
+        // statechart State/Event derive extras are a downstream
+        // library-consumer concern (see `compile_scxml_with_derives`).
+        //
+        // §scxml-6.2.5 + §scxml-6.4.1: the host declarations DO travel,
+        // and this line is where they used to stop. `Default::default()`
+        // here meant a document set could not be told what its host
+        // serves — every `<send type>` naming a host processor stayed the
+        // §scxml-6.2 refusal, however the caller was invoked. The single-
+        // document route had carried the declaration since the surface
+        // existed, so the two commands read the same document through
+        // different eyes, and `check`'s document-set route hid it by
+        // refusing the flag rather than by lacking the capability.
+        let codegen_options = generator::StatechartCodegenOptions {
+            host_processor_types: options.host_processor_types.clone(),
+            host_invoker_types: options.host_invoker_types.clone(),
+            ..Default::default()
+        };
+        // The output of one statechart is its machine and the machine of
+        // every child it carries, each with what its declarations ask beside
+        // it: a child's file colliding with another document's is refused by
+        // `outputs.add` below, as two documents' files are.
         let out = compile_scxml_lang_typed_mutated(
             path_str,
             template_dir,
             language,
-            deploy_driver_root.as_deref(),
-            deploy_section_class.as_deref(),
-            // Deploy orchestration injects no extra enum derives; the
-            // statechart State/Event derive extras are a downstream
-            // library-consumer concern (see `compile_scxml_with_derives`).
-            //
-            // §scxml-6.2.5 + §scxml-6.4.1: the host declarations DO travel,
-            // and this line is where they used to stop. `Default::default()`
-            // here meant a document set could not be told what its host
-            // serves — every `<send type>` naming a host processor stayed the
-            // §scxml-6.2 refusal, however the caller was invoked. The single-
-            // document route had carried the declaration since the surface
-            // existed, so the two commands read the same document through
-            // different eyes, and `check`'s document-set route hid it by
-            // refusing the flag rather than by lacking the capability.
-            &generator::StatechartCodegenOptions {
-                host_processor_types: options.host_processor_types.clone(),
-                host_invoker_types: options.host_invoker_types.clone(),
-                ..Default::default()
+            &StatechartRun {
+                driver_root: deploy_driver_root.as_deref(),
+                section_class: deploy_section_class.as_deref(),
+                options: &codegen_options,
+                // The digest the caller writes these files under is what a
+                // declared table or function carries, the document's and
+                // each child's; without one neither can be generated, and a
+                // document declaring either, or carrying a child that does,
+                // is refused here.
+                digest: match options.source_hash.as_deref() {
+                    Some(source_hex) => RunDigest::Of(source_hex),
+                    None => RunDigest::Unavailable(
+                        "compile_scxml_with_imports, given no ForgeCompileOptions::source_hash,",
+                    ),
+                },
             },
-            // The digest the caller writes these files under is what a
-            // declared table or function carries; without one neither can
-            // be generated, and a document declaring either is refused here.
-            |model| match options.source_hash.as_deref() {
-                Some(source_hex) => {
-                    bind_run_digest(model, source_hex);
-                    Ok(())
-                }
-                None => refuse_unbound_digest_outputs(
-                    model,
-                    path_str,
-                    "compile_scxml_with_imports, given no ForgeCompileOptions::source_hash,",
-                ),
-            },
+            |_| Ok(()),
         )?;
         outputs.add(basename, path_str, out)?;
     }
