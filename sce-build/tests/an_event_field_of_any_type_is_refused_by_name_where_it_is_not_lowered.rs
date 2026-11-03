@@ -19,10 +19,11 @@
 //! * A statechart holds an imported schema whole and takes its event on every
 //!   target. Each use that reads the schema one entry per field is refused by
 //!   name with `generate/unsupported-feature`, naming the field, the type and
-//!   the position: a read of `_event.data` on a transition taken on the event,
-//!   a `<send>` or `<raise>` of the event, a variable that names a record
-//!   holding a composition at any depth, and a host-run record. So is an
-//!   algorithm that names such a record.
+//!   the position: a `<send>` or `<raise>` of the event, a variable that names
+//!   a record holding a composition at any depth, and a host-run record. So is
+//!   an algorithm that names such a record. A read of `_event.data` on a
+//!   transition taken on the event is lowered by Rust, and refused by every
+//!   other backend by its own name.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
