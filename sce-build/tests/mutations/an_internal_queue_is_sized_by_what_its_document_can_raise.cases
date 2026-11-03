@@ -156,11 +156,34 @@ edit("sce-build/src/internal_queue_bound.rs",
      r'''            .filter(|name| false && model.events.contains(**name))''')
 PY
 
-# A `<foreach>` whose body raises is given its body's count, once.
-mutation_case "a raising foreach body is not refused" <<'PY'
+# A `<foreach>` whose body raises over a list whose bound the model does not
+# state is given its body's count, once.
+mutation_case "a raising foreach body over an unbounded list is not refused" <<'PY'
 edit("sce-build/src/internal_queue_bound.rs",
-     r'''        if body.completes > 0 {''',
-     r'''        if body.completes > usize::MAX - 1 {''')
+     r'''        let Some(passes) = self.passes(&action.array) else {''',
+     r'''        let Some(passes) = self.passes(&action.array).or(Some(1)) else {''')
+PY
+
+# A `<foreach>` over a bounded list is given its body's count, once, not once
+# per pass (docs/adr/0086, section 6.3).
+mutation_case "a foreach body is counted once, not once per pass" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''            completes: body.completes.saturating_mul(passes),''',
+     r'''            completes: body.completes,''')
+PY
+
+# The error a last pass raises is counted without the passes before it.
+mutation_case "an error in the last pass forgets the passes before it" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''                .saturating_mul(passes.saturating_sub(1))''',
+     r'''                .saturating_mul(0)''')
+PY
+
+# A variable of any type bounds a loop over it by its capacity.
+mutation_case "a variable that is not a list bounds a foreach" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''                    Some(crate::forge::model::AlgorithmValueType::List { .. })''',
+     r'''                    Some(_)''')
 PY
 
 # A delayed send to `#_internal` is counted as delivered nowhere.

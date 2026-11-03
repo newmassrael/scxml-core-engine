@@ -79,8 +79,11 @@
 //!   to the next branch and the block ends after it. Counted as one for each
 //!   such condition before the branch taken, with the branch.
 //! - `actions/foreach.rs.jinja2`: the native loop raises nothing of its own;
-//!   its body runs once per item, so a body that enqueues anything is not
-//!   proven, and a body's error ends the block and is counted once.
+//!   its body runs once per item, at most as many times as the `list<T>[N]`
+//!   variable it walks declares, so a body that enqueues is counted `N` times
+//!   (a nested loop multiplies), and over a list whose bound the model does not
+//!   state it is not proven; a body's error ends the block and is counted once,
+//!   after the passes before it.
 //! - `actions/native_action.rs.jinja2` (the call `forge::native_action`
 //!   renders): `error.execution` when an argument fails or the payload it reads
 //!   was not delivered, and only when the model declares that event; the block
@@ -476,19 +479,54 @@ impl<'m> Analysis<'m> {
         Ok(cost)
     }
 
-    /// A `<foreach>`: its body runs once per item, and the items are not
-    /// counted, so a body that enqueues anything is not proven. A body's error
-    /// ends the block, so it is raised once.
+    /// A `<foreach>`: its body runs once per item, at most as many times as
+    /// the list it walks declares it holds (docs/adr/0076, docs/adr/0086
+    /// section 6.3), so `N` passes enqueue `N` times what one pass does, and a
+    /// `<foreach>` inside it multiplies again. An error in a pass ends the
+    /// block: at most in the last pass, after the passes before it ran whole.
+    /// A body that enqueues anything over a list whose bound the model does
+    /// not state is not proven; a body that only fails raises once however
+    /// many items there are.
     fn foreach(&mut self, action: &Action) -> Result<Cost, String> {
         let body = self.list(&action.actions)?;
-        if body.completes > 0 {
-            return Err(
-                "a <foreach> body enqueues an internal event on each pass, and the passes are \
-                 not counted"
-                    .to_string(),
-            );
+        if body.completes == 0 {
+            return Ok(Cost::ending(body.ends));
         }
-        Ok(Cost::ending(body.ends))
+        let Some(passes) = self.passes(&action.array) else {
+            return Err(format!(
+                "a <foreach> body enqueues an internal event on each pass, and `{}` is not a \
+                 list whose bound the document declares, so the passes are not counted",
+                action.array.trim()
+            ));
+        };
+        Ok(Cost {
+            completes: body.completes.saturating_mul(passes),
+            ends: body
+                .completes
+                .saturating_mul(passes.saturating_sub(1))
+                .saturating_add(body.ends),
+        })
+    }
+
+    /// The most passes a `<foreach>` over `array` makes: the declared bound of
+    /// the list it names, a `sce-static` variable typed `list<T>[N]` (the
+    /// number the build holds, after its limit name). `None` for any other
+    /// array, whose length the model does not bound.
+    fn passes(&self, array: &str) -> Option<usize> {
+        let name = array.trim();
+        self.model
+            .variables
+            .iter()
+            .chain(self.model.states.values().flat_map(|s| s.datamodel.iter()))
+            .find(|v| v.id == name)
+            .filter(|v| {
+                matches!(
+                    v.value_type,
+                    Some(crate::forge::model::AlgorithmValueType::List { .. })
+                )
+            })
+            .and_then(|v| v.capacity)
+            .and_then(|n| usize::try_from(n).ok())
     }
 
     /// A `<send>`: its delivery, and its errors when it can fail.
@@ -870,7 +908,8 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Param, State, Transition};
+    use crate::forge::model::{AlgorithmValueType, ListElemType, SceType};
+    use crate::model::{Param, State, Transition, Variable};
 
     /// A document built state by state, as the static lowering leaves one.
     #[derive(Default)]
@@ -942,8 +981,27 @@ mod tests {
             self
         }
 
+        /// The document declares `id`, a `list<uint8>[capacity]` variable.
+        fn list(mut self, id: &str, capacity: u32) -> Self {
+            self.model.variables.push(bounded_list(id, capacity));
+            self
+        }
+
         fn bound(&self) -> InternalQueueBound {
             InternalQueueBound::of(&self.model)
+        }
+    }
+
+    /// A `sce-static` variable typed `list<uint8>[capacity]`, as the parser
+    /// leaves one.
+    fn bounded_list(id: &str, capacity: u32) -> Variable {
+        Variable {
+            id: id.to_string(),
+            value_type: Some(AlgorithmValueType::List {
+                elem: ListElemType::Scalar(SceType::Uint8),
+            }),
+            capacity: Some(capacity),
+            ..Variable::default()
         }
     }
 
@@ -1206,6 +1264,80 @@ mod tests {
         };
         let doc = Doc::new().state("a", None).entry("a", vec![foreach]);
         not_proven_because(&doc.bound(), "<foreach>");
+    }
+
+    /// A `<foreach>` over the list `array` whose body is `body`.
+    fn foreach_over(array: &str, body: Vec<Action>) -> Action {
+        Action {
+            action_type: "foreach".to_string(),
+            array: array.to_string(),
+            native_loop: format!("for item in self.{array}.clone()"),
+            actions: body,
+            ..Action::default()
+        }
+    }
+
+    /// A `<foreach>` over a list the document bounds runs its body at most as
+    /// many times as the bound, so a body that raises one event raises that
+    /// many (docs/adr/0086, section 6.3).
+    #[test]
+    fn a_foreach_over_a_bounded_list_raises_once_per_pass() {
+        for capacity in [1u32, 4, 64] {
+            let doc = Doc::new()
+                .list("items", capacity)
+                .state("a", None)
+                .entry("a", vec![foreach_over("items", vec![raise("tick")])]);
+            assert_eq!(doc.bound(), chain(capacity as usize, 0), "{capacity}");
+        }
+    }
+
+    /// Nested loops multiply their bounds, a state's own `<datamodel>` bounds
+    /// a list as the document's does, and what the body raises beside the
+    /// inner loop is counted once per outer pass.
+    #[test]
+    fn nested_foreaches_multiply_their_bounds() {
+        let mut doc = Doc::new().list("rows", 3).state("a", None);
+        doc.model
+            .states
+            .get_mut("a")
+            .expect("the state is added first")
+            .datamodel
+            .push(bounded_list("cells", 4));
+        let inner = foreach_over("cells", vec![raise("cell")]);
+        let outer = foreach_over("rows", vec![inner, raise("row")]);
+        assert_eq!(doc.entry("a", vec![outer]).bound(), chain(3 * 4 + 3, 0));
+    }
+
+    /// A pass whose body raises and then fails ends the block in its last
+    /// pass, after the passes before it ran whole: `(N - 1) x 1 + 2`, more than
+    /// the `N` the passes that run to their end raise.
+    #[test]
+    fn an_error_in_the_last_pass_follows_the_passes_before_it() {
+        let doc = Doc::new()
+            .names("error.execution")
+            .list("items", 4)
+            .state("a", None)
+            .entry(
+                "a",
+                vec![foreach_over("items", vec![raise("tick"), failing_assign()])],
+            );
+        assert_eq!(doc.bound(), chain(3 + 2, 0));
+    }
+
+    /// A name that is no list the document bounds gives the loop no count.
+    #[test]
+    fn a_foreach_over_what_is_not_a_bounded_list_is_not_proven() {
+        let mut scalar = bounded_list("count", 4);
+        scalar.value_type = Some(AlgorithmValueType::Scalar(SceType::Uint8));
+        let mut unbounded = bounded_list("open", 4);
+        unbounded.capacity = None;
+        for array in ["count", "open", "missing"] {
+            let mut doc = Doc::new().state("a", None);
+            doc.model.variables.push(scalar.clone());
+            doc.model.variables.push(unbounded.clone());
+            let doc = doc.entry("a", vec![foreach_over(array, vec![raise("tick")])]);
+            not_proven_because(&doc.bound(), &format!("`{array}` is not a list"));
+        }
     }
 
     /// A `<foreach>` whose body only fails ends its block at the first error,
