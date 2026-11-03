@@ -2277,20 +2277,29 @@ impl Sent {
 /// What [`Trust::sign_waiting`] did with the sends that waited, each as the machine sent it.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Waited {
-    /// The sends signed now, in the order they were sent, or found held already (the device's own
-    /// chain, read back, held them): each `(event, data)`.
+    /// The sends signed now, each a new operation of the person's chain, in the order they were
+    /// sent: each `(event, data)`. The relay is given each with the rest of what it lacks.
     pub taken: Vec<(String, String)>,
+    /// The sends the host held already when their turn came, as the operation made or admitted
+    /// before for the same write or note (the device's own chain, read back, held them): nothing
+    /// was signed for them, and the relay is given nothing new. Each `(event, data)`.
+    pub held: Vec<(String, String)>,
     /// The sends refused for good, each `(event, data, why)`: the log the host now holds says the
     /// person may not write (a reader, a device taken off, a key the log replaced), or the send
     /// would conflict with what the device signed. The machine took each in as made, and no copy
     /// but its own will hold it.
     pub dropped: Vec<(String, String, String)>,
+    /// How many sends still wait after this, 0 when none does.
+    pub waiting: usize,
+    /// Why the first send that still waits does (a round that reads the log, the device's own chain
+    /// or the key of an epoch can change it); `None` when none waits.
+    pub why_waiting: Option<String>,
 }
 
 impl Waited {
-    /// Whether nothing waited that came to anything.
+    /// Whether nothing waited that came to anything: nothing was signed, found held or refused.
     pub fn is_empty(&self) -> bool {
-        self.taken.is_empty() && self.dropped.is_empty()
+        self.taken.is_empty() && self.held.is_empty() && self.dropped.is_empty()
     }
 }
 
@@ -2372,14 +2381,22 @@ impl Trust {
     /// with why; a send that conflicts with what the device signed is refused alone. What it did is
     /// returned, for the host to tell: the machine took each send in as made, so a send refused
     /// here is one its copy holds and no other copy will.
+    ///
+    /// **What was signed and what was held are told apart.** A send that waited may turn out, when
+    /// its turn comes, to be a write or a note the host holds already: a device restored from an
+    /// older store kept it waiting because the store did not hold it, and the round then read the
+    /// device's own chain back from the relay, which did. It leaves as the operation held, and is in
+    /// [`Waited::held`], not in [`Waited::taken`], which holds only the sends a new operation was
+    /// signed for.
     pub fn sign_waiting(&self) -> Waited {
         let mut state = self.state();
         let mut waited = Waited::default();
         while !state.waiting.is_empty() {
             let send = state.waiting.remove(0);
             match readiness(&state, send.event) {
-                Readiness::NotYet(_) => {
+                Readiness::NotYet(why) => {
                     state.waiting.insert(0, send);
+                    waited.why_waiting = Some(why);
                     break;
                 }
                 Readiness::Never(why) => {
@@ -2388,13 +2405,19 @@ impl Trust {
                         .push((send.event.to_string(), send.data, why));
                 }
                 Readiness::Ready => match seal_in(&mut state, send.event, &send.data) {
-                    Ok(_) => waited.taken.push((send.event.to_string(), send.data)),
+                    Ok(Some(sealed)) if sealed.signed => {
+                        waited.taken.push((send.event.to_string(), send.data));
+                    }
+                    // Nothing new was signed: the write or the note leaves as the operation the
+                    // host held already.
+                    Ok(_) => waited.held.push((send.event.to_string(), send.data)),
                     Err(why) => waited
                         .dropped
                         .push((send.event.to_string(), send.data, why)),
                 },
             }
         }
+        waited.waiting = state.waiting.len();
         waited
     }
 

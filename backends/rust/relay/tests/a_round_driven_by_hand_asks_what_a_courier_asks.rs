@@ -391,29 +391,35 @@ fn what_a_host_holds_back_from_a_round_the_next_round_hands_over() {
         data: "AA".to_string(),
         join: None,
     };
-    // What became of two sends that waited: one signed, one refused for good.
+    // What became of three sends that waited: one signed, one found held, one refused for good.
     let taken = (WRITE.to_string(), write(BOB, 2000, 2));
+    let found = (WRITE.to_string(), write(BOB, 2500, 4));
     let dropped = (
         WRITE.to_string(),
         write(BOB, 3000, 3),
         "node 2 may not write".to_string(),
     );
+    // A state that holds no send found held writes no `held`, as before they were told apart.
+    assert!(!state.to_text().contains("\"held\""), "{}", state.to_text());
     state.hold(Round {
         events: vec![held_event.clone()],
         messages: vec![held_message.clone()],
         evicted: vec![(ALICE, 9)],
         restored: vec![(ALICE, 8)],
         taken: vec![taken.clone()],
+        held: vec![found.clone()],
         dropped: vec![dropped.clone()],
         ..Round::default()
     });
     assert_eq!(state.untold(), 1);
+    assert!(state.to_text().contains("\"held\""), "{}", state.to_text());
     let read_back = CourierState::from_text(&state.to_text());
     assert_eq!(read_back.as_ref(), Some(&state), "{}", state.to_text());
-    // A text written before sends were kept waiting names neither, and is read as holding none.
+    // A text written before sends were kept waiting names none of them, and is read as holding none.
     let mut older: serde_json::Value = serde_json::from_str(&state.to_text()).unwrap();
     let object = older.as_object_mut().unwrap();
     object.remove("taken");
+    object.remove("held");
     object.remove("dropped");
     let older = CourierState::from_text(&older.to_string()).expect("an older text is read");
     assert_ne!(older, state, "it holds what became of no send");
@@ -428,6 +434,7 @@ fn what_a_host_holds_back_from_a_round_the_next_round_hands_over() {
     assert_eq!(next.evicted, vec![(ALICE, 9)]);
     assert_eq!(next.restored, vec![(ALICE, 8)]);
     assert_eq!(next.taken, vec![taken.clone()]);
+    assert_eq!(next.held, vec![found.clone()]);
     assert_eq!(next.dropped, vec![dropped.clone()]);
     assert_eq!(after_sync.untold(), 0);
 
@@ -445,8 +452,8 @@ fn what_a_host_holds_back_from_a_round_the_next_round_hands_over() {
     assert_eq!(resync.evicted, vec![(ALICE, 9)]);
     assert_eq!(resync.restored, vec![(ALICE, 8)]);
     assert_eq!(
-        (resync.taken, resync.dropped),
-        (vec![taken], vec![dropped]),
+        (resync.taken, resync.held, resync.dropped),
+        (vec![taken], vec![found], vec![dropped]),
         "a resync reads the relay again, and what became of a send is not read again"
     );
 }

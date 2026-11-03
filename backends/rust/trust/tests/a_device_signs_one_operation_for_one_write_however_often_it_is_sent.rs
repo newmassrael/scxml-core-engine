@@ -374,6 +374,75 @@ fn what_a_host_may_not_sign_yet_waits_and_is_signed_in_its_order() {
     );
 }
 
+/// Alice's device signed two writes and a note, and its store holds the first write alone: her
+/// machine, built again from her commands, sends all three again while the restored host waits for
+/// her chain. The first is held; the two the store lacks wait, and say why. Once her chain is read
+/// back, each that waited is the operation held: `sign_waiting` names them held and none taken, and
+/// her chain does not grow.
+#[test]
+fn what_waited_and_turned_out_held_is_told_apart_from_what_was_signed() {
+    let entries = list(1);
+    let alice = host_in(&entries, Some(ALICE), 1);
+    let sends = [
+        (WRITE, write(1, 1000, 10, "milk")),
+        (WRITE, write(1, 2000, 11, "bread")),
+        (SUPERSEDE, note(1, 1000, 2000)),
+    ];
+    assert!(sealed(&alice, sends[0].0, &sends[0].1).signed);
+    let older = alice.to_text();
+    for (event, data) in &sends[1..] {
+        assert!(sealed(&alice, event, data).signed, "{event}");
+    }
+    let published = alice.heads();
+
+    let restored = host_in(&entries, Some(ALICE), 1);
+    assert_eq!(restored.restore_from_text(&older), 1);
+    restored.await_own_chain();
+    assert_eq!(
+        restored.keep_sent(WRITE, &sends[0].1.to_string()),
+        Sent::Held
+    );
+    for (event, data) in &sends[1..] {
+        assert!(
+            matches!(
+                restored.keep_sent(event, &data.to_string()),
+                Sent::Waiting(_)
+            ),
+            "{event} waits: the store does not hold it"
+        );
+    }
+    let early = restored.sign_waiting();
+    assert!(early.is_empty(), "{early:?}");
+    assert_eq!(early.waiting, 2);
+    assert!(
+        early
+            .why_waiting
+            .as_deref()
+            .is_some_and(|why| why.contains("signs nothing new")),
+        "{early:?}"
+    );
+
+    for (event, data) in alice.operations(ALICE, 2, 3) {
+        restored.take_operation(&event, &data).unwrap();
+    }
+    assert!(restored.confirm_own_chain(&published));
+    let waited = restored.sign_waiting();
+    let in_order: Vec<(String, String)> = sends[1..]
+        .iter()
+        .map(|(event, data)| (event.to_string(), data.to_string()))
+        .collect();
+    assert_eq!(waited.held, in_order, "{waited:?}");
+    assert!(
+        waited.taken.is_empty(),
+        "nothing new was signed: {waited:?}"
+    );
+    assert!(waited.dropped.is_empty(), "{waited:?}");
+    assert_eq!((waited.waiting, waited.why_waiting.clone()), (0, None));
+    assert_eq!(restored.waiting(), 0);
+    assert_eq!(restored.last_seq(ALICE), 3);
+    assert_eq!(restored.signed_operations(), alice.signed_operations());
+}
+
 /// What waits is refused, each with why, once the log the host holds says its person may not write:
 /// alice is made a reader before her host signed what her machine sent. Nothing is signed, nothing
 /// waits any more, and the same write sent again is refused at once.

@@ -201,10 +201,15 @@ pub struct Round {
     /// held a device back went away with the operations that made it. The machine is built again as
     /// for `evicted`.
     pub restored: Vec<(u64, u64)>,
-    /// What the machine sent that waited to be signed ([`Kept::Waiting`]) and the round signed, in
-    /// the order it was sent, each `(event, data)` as the machine sent it: the relay was given it
-    /// with the rest of what it lacked.
+    /// What the machine sent that waited to be signed ([`Kept::Waiting`]) and the round signed, a
+    /// new operation each, in the order it was sent, each `(event, data)` as the machine sent it:
+    /// the relay was given it with the rest of what it lacked.
     pub taken: Vec<(String, String)>,
+    /// What the machine sent that waited to be signed and that the host held already when its turn
+    /// came (the round read the device's own chain back, and it held the write or the note): each
+    /// `(event, data)`, in the order it was sent. Nothing was signed for it and the relay was given
+    /// nothing new ([`sce_rust_trust::Waited::held`]).
+    pub held: Vec<(String, String)>,
     /// What the machine sent that waited to be signed and never will be, each `(event, data, why)`:
     /// the log the round read says the person may not write (a reader, a device taken off). The
     /// machine took each in as made and no other copy will hold it, so the host builds the machine
@@ -268,6 +273,8 @@ pub struct CourierState {
     restored: Vec<(u64, u64)>,
     /// Sends that waited, which a round signed and did not say so of ([`Round::taken`]).
     taken: Vec<(String, String)>,
+    /// Sends that waited, which a round found held and did not say so of ([`Round::held`]).
+    held: Vec<(String, String)>,
     /// Sends that waited, which a round refused for good and did not say so of
     /// ([`Round::dropped`]).
     dropped: Vec<(String, String, String)>,
@@ -288,6 +295,7 @@ impl CourierState {
             mut evicted,
             mut restored,
             mut taken,
+            mut held,
             mut dropped,
             ..
         } = round;
@@ -301,6 +309,8 @@ impl CourierState {
         self.restored = restored;
         taken.append(&mut self.taken);
         self.taken = taken;
+        held.append(&mut self.held);
+        self.held = held;
         dropped.append(&mut self.dropped);
         self.dropped = dropped;
     }
@@ -347,11 +357,17 @@ impl CourierState {
         if let Some(since) = self.since {
             value["since"] = json!(since.to_string());
         }
+        // Written only when a round left some, so that the text of a state that holds none is the
+        // one it was before sends found held were told apart from sends signed.
+        if !self.held.is_empty() {
+            value["held"] = json!(pairs(&self.held));
+        }
         value.to_string()
     }
 
     /// Read back what [`Self::to_text`] wrote; `None` when the text is not that. A text written
-    /// before the sends that wait were kept holds no `taken` and no `dropped`, and is read as none.
+    /// before the sends that wait were kept holds no `taken` and no `dropped`, and one written
+    /// before sends found held were told apart holds no `held`: each is read as none.
     pub fn from_text(text: &str) -> Option<Self> {
         let value: Value = serde_json::from_str(text).ok()?;
         let number = |name: &str| -> Option<u64> { value.get(name)?.as_str()?.parse::<u64>().ok() };
@@ -429,6 +445,11 @@ impl CourierState {
             } else {
                 pairs("taken")?
             },
+            held: if absent("held") {
+                Vec::new()
+            } else {
+                pairs("held")?
+            },
             dropped: if absent("dropped") {
                 Vec::new()
             } else {
@@ -484,6 +505,7 @@ impl CourierState {
         self.evicted.append(&mut round.evicted);
         self.restored.append(&mut round.restored);
         self.taken.append(&mut round.taken);
+        self.held.append(&mut round.held);
         self.dropped.append(&mut round.dropped);
     }
 }
@@ -828,6 +850,7 @@ impl RoundMachine {
             evicted: std::mem::take(&mut state.evicted),
             restored: std::mem::take(&mut state.restored),
             taken: std::mem::take(&mut state.taken),
+            held: std::mem::take(&mut state.held),
             dropped: std::mem::take(&mut state.dropped),
             ..Round::default()
         };
@@ -1277,6 +1300,7 @@ impl RoundMachine {
     fn sign_waiting(&mut self) {
         let waited = self.trust.sign_waiting();
         self.round.taken.extend(waited.taken);
+        self.round.held.extend(waited.held);
         self.round.dropped.extend(waited.dropped);
     }
 

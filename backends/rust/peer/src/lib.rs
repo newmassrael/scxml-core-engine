@@ -171,11 +171,22 @@ impl Outcome {
             .collect()
     }
 
-    /// What the machine sent that waited to be signed ([`Kept::Waiting`]) and was signed now, in
-    /// the order it was sent, each as the machine sent it: the relay was given it.
+    /// What the machine sent that waited to be signed ([`Kept::Waiting`]) and was signed now, a new
+    /// operation of the device's chain each, in the order it was sent, each as the machine sent it:
+    /// the relay was given it.
     pub fn taken(&self) -> Vec<(String, String)> {
         self.rounds()
             .flat_map(|round| round.taken.iter().cloned())
+            .collect()
+    }
+
+    /// What the machine sent that waited to be signed and that the device held already when the
+    /// round came to it, in the order it was sent: a device restored from an older state kept it
+    /// waiting, and the round read the device's own chain back from the relay, which held it.
+    /// Nothing was signed for it and the relay was given nothing new; the host has nothing to do.
+    pub fn held(&self) -> Vec<(String, String)> {
+        self.rounds()
+            .flat_map(|round| round.held.iter().cloned())
             .collect()
     }
 
@@ -1789,14 +1800,18 @@ fn note_failure(list: &str, exchange: &'static str, error: &CourierError) {
 }
 
 /// Log the end of the `exchange` of the core of `list` that came to `outcome`, in counts: the
-/// events for the machine, what the relay was given, the refusals, whether it stalled or the machine
-/// is to be built again, what the relay is still owed, and whether a token came (never which).
+/// events for the machine, what the relay was given, what of the sends that waited was signed,
+/// found held or refused for good, the refusals, whether it stalled or the machine is to be built
+/// again, what the relay is still owed, and whether a token came (never which).
 fn note_ended(list: &str, exchange: &'static str, outcome: &Outcome) {
     log::info!(
         list = list_digest(list).as_str(),
         exchange = exchange,
         events = outcome.events().len(),
         pushed = outcome.round.pushed,
+        taken = outcome.taken().len(),
+        held = outcome.held().len(),
+        dropped = outcome.dropped().len(),
         refused = outcome.refused().len(),
         stalled = outcome.stalled(),
         rebuild = outcome.rebuild(),

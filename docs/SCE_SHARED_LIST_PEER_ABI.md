@@ -228,7 +228,7 @@ The outcome is a JSON object, read by its members' names:
 | `refused` | ended | each record the core or the relay refused, and why; the rest of the round went on |
 | `pushed` | ended | how many entries, operations and checkpoints the relay was given that it lacked |
 | `evicted`, `restored` | ended | the operations, each `[node, number]` as texts, the machine was told and is to be without, or was not told and is to be with |
-| `taken` | ended | the sends that waited (section 4) and were signed and given the relay, in the order they were made, each `[name, payload text]` as the machine sent it |
+| `taken` | ended | the sends that waited (section 4) and were signed and given the relay, a new operation each, in the order they were made, each `[name, payload text]` as the machine sent it; a send that waited and that the device held already when the round came to it (a device restored from an older state, whose chain the round read back) is in neither `taken` nor `dropped`, since nothing was signed for it and the host has nothing to do (the Rust outcome names it in `held`) |
 | `dropped` | ended | the sends that waited and never will be signed, each `[name, payload text, reason]` (section 4) |
 | `rebuild` | ended | whether the host is to build its machine again and make a resync (an operation was evicted or restored, or a send was dropped) |
 | `stalled` | ended | whether the round stopped before the end of what the relay holds; a later round goes on from there |

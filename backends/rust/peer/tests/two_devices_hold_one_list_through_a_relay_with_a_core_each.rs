@@ -1314,6 +1314,16 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
     );
     assert_eq!(alice.trust().last_seq(ALICE), 2, "nothing was signed");
     assert_eq!(alice.standing().waiting, 1);
+    // Her machine, built again from her commands, sends a write the save does not hold: it waits
+    // too, and the round finds it held once it has read her chain back.
+    assert!(
+        matches!(
+            alice.outbound(WRITE, &write(3, ALICE, 1003, 1)),
+            Kept::Waiting(_)
+        ),
+        "the save does not hold it"
+    );
+    assert_eq!(alice.standing().waiting, 2);
 
     alice.start(RoundKind::Sync).unwrap();
     let mut asked = Vec::new();
@@ -1334,7 +1344,13 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
     assert_eq!(back.round.pushed, 1, "the write that waited");
     assert_eq!(
         back.taken(),
-        vec![(WRITE.to_string(), write(5, ALICE, 5000, 5))]
+        vec![(WRITE.to_string(), write(5, ALICE, 5000, 5))],
+        "the write signed now, and no other"
+    );
+    assert_eq!(
+        back.held(),
+        vec![(WRITE.to_string(), write(3, ALICE, 1003, 1))],
+        "the write her chain, read back, held"
     );
     assert!(back.dropped().is_empty());
     assert!(!back.rebuild());
