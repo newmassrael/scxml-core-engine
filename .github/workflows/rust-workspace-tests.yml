@@ -150,6 +150,9 @@ on:
       # The test tree's build, whose Mesh rule-3 override and every command
       # it declares from a plan the same suite compiles in and holds.
       - 'tests/CMakeLists.txt'
+      # The C11 conformance suite's build, which the same suite compiles in
+      # and holds to declaring its fixtures after their plans were asked.
+      - 'backends/c/tests/CMakeLists.txt'
       # The standard library: its statecharts that save are held to their
       # pinned shapes (docs/adr/0045), so an edit of one alone starts the suite.
       - 'stdlib/**'
@@ -263,6 +266,9 @@ on:
       # The test tree's build, whose Mesh rule-3 override and every command
       # it declares from a plan the same suite compiles in and holds.
       - 'tests/CMakeLists.txt'
+      # The C11 conformance suite's build, which the same suite compiles in
+      # and holds to declaring its fixtures after their plans were asked.
+      - 'backends/c/tests/CMakeLists.txt'
       # The standard library: its statecharts that save are held to their
       # pinned shapes (docs/adr/0045), so an edit of one alone starts the suite.
       - 'stdlib/**'

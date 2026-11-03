@@ -1250,6 +1250,318 @@ fn a_request_ahead_that_is_not_the_plan_is_refused() {
             .any(|v| v.contains("is no plan the route asks")),
         "a request asked ahead with options no plan has was accepted: {other:?}"
     );
+    let unasked = unrequested_plans(&request("c11"));
+    assert!(
+        unasked
+            .iter()
+            .any(|v| v.contains("is asked ahead by no request")),
+        "a plan no request asks ahead was accepted: {unasked:?}"
+    );
+}
+
+/// Every way a route's plans depart from being asked ahead: a root plan
+/// (`sce_codegen_plan`, not FROM another) whose options no
+/// `sce_codegen_plan_request` of the route spells, word for word, is asked of
+/// the generator by itself when it is declared, one process for one plan.
+fn unrequested_plans(text: &str) -> Vec<String> {
+    let code = cmake_code(text);
+    let ahead: Vec<Vec<String>> = invocations(&code, "sce_codegen_plan_request")
+        .into_iter()
+        .map(|request| request.args)
+        .collect();
+    invocations(&code, "sce_codegen_plan")
+        .into_iter()
+        .filter(|plan| !plan.args.iter().any(|arg| arg == "FROM"))
+        .filter(|plan| !ahead.contains(&plan.args.get(1..).unwrap_or_default().to_vec()))
+        .map(|plan| {
+            format!(
+                "line {}: the plan {:?} is asked ahead by no request, so it is asked of the \
+                 generator alone when it is declared",
+                plan.line, plan.args
+            )
+        })
+        .collect()
+}
+
+/// Both build-time routes ask every plan they declare ahead, with the options
+/// they then declare it with: the integration route's C++ and C11 fixtures
+/// alike, and the conformance route's fixtures.
+#[test]
+fn every_plan_a_route_declares_is_asked_ahead() {
+    for (route, text) in [
+        ("cmake/SCEStaticW3CTest.cmake", W3C_ROUTE),
+        ("cmake/SCEStaticIntegrationFixture.cmake", INTEGRATION_ROUTE),
+    ] {
+        let found: Vec<String> = ahead_violations(text)
+            .into_iter()
+            .chain(unrequested_plans(text))
+            .collect();
+        assert!(
+            found.is_empty(),
+            "{route} declares a plan it does not ask ahead, or asks ahead for one it does \
+             not declare:\n  {}",
+            found.join("\n  ")
+        );
+    }
+}
+
+/// The C11 conformance suite's build, which registers its fixtures through
+/// `sce_generate_static_w3c_c_test` and declares them together
+/// ([`the_routes_ask_every_plan_before_they_declare_one`]).
+const C11_TESTS: &str = include_str!("../../backends/c/tests/CMakeLists.txt");
+
+/// The body of the CMake function `name` in `code` (without comments), from
+/// its `function(` to its `endfunction(`.
+fn function_body<'a>(code: &'a str, name: &str) -> &'a str {
+    let opening = format!("function({name}");
+    let start = code
+        .match_indices(&opening)
+        .map(|(at, _)| at)
+        .find(|&at| {
+            code[at + opening.len()..]
+                .chars()
+                .next()
+                .is_some_and(|next| next == ')' || next.is_whitespace())
+        })
+        .unwrap_or_else(|| panic!("no function `{name}` is defined"));
+    let end = code[start..]
+        .find("endfunction(")
+        .map_or(code.len(), |offset| start + offset);
+    &code[start..end]
+}
+
+/// Whether each of `steps` is in `code`, each first found after the one
+/// before it: `Err` names the first that is missing or out of its place.
+fn in_order(code: &str, steps: &[&str]) -> Result<(), String> {
+    let mut from = 0;
+    for step in steps {
+        match code[from..].find(step) {
+            Some(at) => from += at + step.len(),
+            None => {
+                return Err(format!(
+                    "`{step}` is not there after {:?}",
+                    &steps[..steps.iter().position(|s| s == step).unwrap_or(0)]
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Where `needle` last occurs in `code`, or `None`.
+fn last(code: &str, needle: &str) -> Option<usize> {
+    code.rfind(needle)
+}
+
+/// Every way the routes and their callers depart from "request first, declare
+/// after": each route queues the plans of every generation it will declare,
+/// sends them in one batch (`sce_codegen_plan_prefetch`), and only then
+/// declares, and a caller declares its registered fixtures after the last
+/// registration and before the first target that compiles them.
+fn order_violations(w3c: &str, integration: &str, tree: &str, c11: &str) -> Vec<String> {
+    let (w3c, integration, tree, c11) = (
+        cmake_code(w3c),
+        cmake_code(integration),
+        cmake_code(tree),
+        cmake_code(c11),
+    );
+    let mut found = Vec::new();
+    let mut must = |what: &str, result: Result<(), String>| {
+        if let Err(why) = result {
+            found.push(format!("{what}: {why}"));
+        }
+    };
+    must(
+        "cmake/SCEStaticW3CTest.cmake, sce_prefetch_static_w3c_tests",
+        in_order(
+            function_body(&w3c, "sce_prefetch_static_w3c_tests"),
+            &["_sce_request_w3c_fixture(", "sce_codegen_plan_prefetch("],
+        ),
+    );
+    must(
+        "cmake/SCEStaticW3CTest.cmake, sce_declare_registered_static_w3c_c_tests",
+        in_order(
+            function_body(&w3c, "sce_declare_registered_static_w3c_c_tests"),
+            &[
+                "_sce_request_w3c_fixture(",
+                "sce_codegen_plan_prefetch(",
+                "_sce_generate_w3c_fixture(",
+            ],
+        ),
+    );
+    must(
+        "cmake/SCEStaticIntegrationFixture.cmake, sce_declare_registered_static_integration_tests",
+        in_order(
+            function_body(
+                &integration,
+                "sce_declare_registered_static_integration_tests",
+            ),
+            &[
+                "_sce_static_integration_fixture(REQUEST",
+                "sce_codegen_plan_prefetch(",
+                "_sce_static_integration_fixture(DECLARE",
+            ],
+        ),
+    );
+    must(
+        "cmake/SCEStaticIntegrationFixture.cmake, sce_generate_static_integration_c_test",
+        in_order(
+            function_body(&integration, "sce_generate_static_integration_c_test"),
+            &[
+                "_sce_static_integration_c_fixture(REQUEST",
+                "cmake_language(DEFER CALL _sce_declare_registered_static_integration_c_tests",
+            ],
+        ),
+    );
+    must(
+        "cmake/SCEStaticIntegrationFixture.cmake, _sce_declare_registered_static_integration_c_tests",
+        in_order(
+            function_body(&integration, "_sce_declare_registered_static_integration_c_tests"),
+            &[
+                "sce_codegen_plan_prefetch(",
+                "_sce_static_integration_c_fixture(DECLARE",
+            ],
+        ),
+    );
+    must(
+        "tests/CMakeLists.txt, sce_mesh_fixture_generations",
+        in_order(
+            function_body(&tree, "sce_mesh_fixture_generations"),
+            &[
+                "cmake_language(DEFER CALL _sce_declare_mesh_fixture_generations",
+                "_sce_mesh_fixture_generation(REQUEST",
+            ],
+        ),
+    );
+    must(
+        "tests/CMakeLists.txt, _sce_declare_mesh_fixture_generations",
+        in_order(
+            function_body(&tree, "_sce_declare_mesh_fixture_generations"),
+            &[
+                "sce_codegen_plan_prefetch(",
+                "_sce_mesh_fixture_generation(DECLARE",
+            ],
+        ),
+    );
+    // A registering call declares nothing itself.
+    for (what, body, declares) in [
+        (
+            "sce_generate_static_integration_c_test",
+            function_body(&integration, "sce_generate_static_integration_c_test"),
+            "(DECLARE",
+        ),
+        (
+            "sce_generate_static_integration_test",
+            function_body(&integration, "sce_generate_static_integration_test"),
+            "(DECLARE",
+        ),
+        (
+            "sce_generate_static_w3c_c_test",
+            function_body(&w3c, "sce_generate_static_w3c_c_test"),
+            "_sce_generate_w3c_fixture(",
+        ),
+        (
+            "sce_mesh_fixture_generations",
+            function_body(&tree, "sce_mesh_fixture_generations"),
+            "(DECLARE",
+        ),
+    ] {
+        if body.contains(declares) {
+            found.push(format!(
+                "{what} declares a generation when it is called, before the plans of the \
+                 fixtures registered after it were asked"
+            ));
+        }
+    }
+    // The conformance fixtures' plans are asked before the loop that declares
+    // them.
+    let prefetched = tree.find("sce_prefetch_static_w3c_tests(");
+    let declared = tree.find("sce_generate_static_w3c_test(");
+    if !matches!((prefetched, declared), (Some(asked), Some(first)) if asked < first) {
+        found.push(format!(
+            "tests/CMakeLists.txt: `sce_prefetch_static_w3c_tests` is not called before the \
+             first `sce_generate_static_w3c_test` ({prefetched:?}, {declared:?})"
+        ));
+    }
+    // The registering callers: every registration before the one
+    // declaration, and the declaration before the first target that compiles
+    // what it declares.
+    let callers = [
+        (
+            "tests/CMakeLists.txt",
+            &tree,
+            "sce_generate_static_integration_test(",
+            "sce_declare_registered_static_integration_tests(",
+            "target_sources(integration_tests",
+        ),
+        (
+            "backends/c/tests/CMakeLists.txt",
+            &c11,
+            "sce_generate_static_w3c_c_test(",
+            "sce_declare_registered_static_w3c_c_tests(",
+            "W3C_C_AOT_TEST_${",
+        ),
+    ];
+    for (file, code, registration, declaration, use_) in callers {
+        let (last_registration, place, first_use) = (
+            last(code, registration),
+            code.find(declaration),
+            code.find(use_),
+        );
+        let ordered = matches!(
+            (last_registration, place, first_use),
+            (Some(registered), Some(place), Some(used)) if registered < place && place < used
+        );
+        if !ordered {
+            found.push(format!(
+                "{file}: `{declaration}` is not after every `{registration}` and before the \
+                 first `{use_}` ({last_registration:?}, {place:?}, {first_use:?})"
+            ));
+        }
+    }
+    found
+}
+
+/// Every route asks the plans of all the generations it declares before it
+/// declares one, in one batch, and its callers declare after their last
+/// registration: on a fresh configure the generator is sent a handful of
+/// batches, not one process per plan.
+#[test]
+fn the_routes_ask_every_plan_before_they_declare_one() {
+    let found = order_violations(W3C_ROUTE, INTEGRATION_ROUTE, TEST_TREE, C11_TESTS);
+    assert!(
+        found.is_empty(),
+        "a route declares a generation before it asked the plans of the others:\n  {}",
+        found.join("\n  ")
+    );
+}
+
+/// A declaration made before the batch is sent, and a registration made
+/// after the declaration, are refused.
+#[test]
+fn a_declaration_before_its_batch_is_refused() {
+    assert!(in_order(
+        "sce_codegen_plan_prefetch()\n_sce_generate_w3c_fixture(1 o c11)",
+        &["sce_codegen_plan_prefetch(", "_sce_generate_w3c_fixture("]
+    )
+    .is_ok());
+    assert!(in_order(
+        "_sce_generate_w3c_fixture(1 o c11)\nsce_codegen_plan_prefetch()",
+        &["sce_codegen_plan_prefetch(", "_sce_generate_w3c_fixture("]
+    )
+    .is_err());
+    let late = C11_TESTS.replace(
+        "sce_declare_registered_static_w3c_c_tests()",
+        "sce_declare_registered_static_w3c_c_tests()\n\
+         sce_generate_static_w3c_c_test(999 \"${SCE_C_GENERATED_DIR}\")",
+    );
+    let found = order_violations(W3C_ROUTE, INTEGRATION_ROUTE, TEST_TREE, &late);
+    assert!(
+        found
+            .iter()
+            .any(|v| v.contains("backends/c/tests/CMakeLists.txt")),
+        "a fixture registered after the declaration was accepted: {found:?}"
+    );
 }
 
 /// The environment variables of the generator that a plan's answer cannot

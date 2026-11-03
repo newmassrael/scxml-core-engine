@@ -47,7 +47,15 @@ function(_sce_refuse_children_arguments FUNCTION STEM)
 endfunction()
 
 # sce_generate_static_integration_test:
-#   Generate C++ AOT code for one integration fixture.
+#   Register one integration fixture whose C++ AOT code the build generates.
+#   Every registered fixture is declared by the one
+#   `sce_declare_registered_static_integration_tests()` that follows the last
+#   registration, which asks the generator for every fixture's plan in one
+#   batch (`sce_codegen_plan_request`, `sce_codegen_plan_prefetch`) and then
+#   declares each from the answer the batch kept. Asked one fixture at a time,
+#   the plans were most of what a configure cost. A fixture registered after
+#   that call, and a registration no call follows, are refused: either would
+#   be a fixture the build never generates.
 #
 # Args:
 #   STEM        Fixture stem (`donedata_local_invoke` etc.). The
@@ -78,7 +86,7 @@ endfunction()
 # plans the child from the text the parent's generation would write, which is
 # on no disk when the tree is configured.
 #
-# Side effects:
+# Side effects (of the declaration):
 #   - Appends parent + every child `_sm.h` to GENERATED_INTEGRATION_HEADERS
 #     (PARENT_SCOPE) so the caller's executable target can DEPENDS on them.
 #   - Stages the fixture into OUTPUT_DIR when the tree is configured, so the
@@ -94,9 +102,87 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
     cmake_parse_arguments(_INT "" "SCXML_FILE" "" ${ARGN})
     _sce_refuse_children_arguments(sce_generate_static_integration_test "${STEM}"
         ${_INT_UNPARSED_ARGUMENTS})
+    get_property(_DECLARED GLOBAL PROPERTY _SCE_STATIC_INTEGRATION_DECLARED)
+    if(_DECLARED)
+        message(FATAL_ERROR
+            "sce_generate_static_integration_test(${STEM}) comes after "
+            "sce_declare_registered_static_integration_tests(), which declared the "
+            "fixtures registered before it: this one would never be generated. "
+            "Register it before that call.")
+    endif()
+    get_property(_REGISTERED GLOBAL PROPERTY _SCE_STATIC_INTEGRATION_REGISTERED)
+    if("${STEM}" IN_LIST _REGISTERED)
+        message(FATAL_ERROR
+            "sce_generate_static_integration_test(${STEM}) registers a fixture "
+            "registered already")
+    endif()
+    if(NOT _REGISTERED)
+        # The first registration: the configure ends refusing a registration
+        # no declaration followed.
+        cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}"
+            CALL _sce_refuse_undeclared_static_integration_tests)
+    endif()
+    set_property(GLOBAL APPEND PROPERTY _SCE_STATIC_INTEGRATION_REGISTERED "${STEM}")
+    set_property(GLOBAL PROPERTY "_SCE_STATIC_INTEGRATION_${STEM}_OUTPUT_DIR" "${OUTPUT_DIR}")
+    set_property(GLOBAL PROPERTY "_SCE_STATIC_INTEGRATION_${STEM}_SCXML_FILE"
+        "${_INT_SCXML_FILE}")
+endfunction()
 
-    if(_INT_SCXML_FILE)
-        set(FIXTURE "${_INT_SCXML_FILE}")
+# sce_declare_registered_static_integration_tests()
+#
+#   Declare every fixture `sce_generate_static_integration_test` registered:
+#   stage each, ask the generator for every plan in one batch, then declare
+#   each generation from the answer the batch kept. Appends every header they
+#   write to GENERATED_INTEGRATION_HEADERS in the caller's scope.
+function(sce_declare_registered_static_integration_tests)
+    get_property(_DECLARED GLOBAL PROPERTY _SCE_STATIC_INTEGRATION_DECLARED)
+    if(_DECLARED)
+        message(FATAL_ERROR
+            "sce_declare_registered_static_integration_tests() is called twice; every "
+            "fixture is registered before the one call that declares them")
+    endif()
+    set_property(GLOBAL PROPERTY _SCE_STATIC_INTEGRATION_DECLARED TRUE)
+    get_property(_REGISTERED GLOBAL PROPERTY _SCE_STATIC_INTEGRATION_REGISTERED)
+    foreach(_STEM IN LISTS _REGISTERED)
+        _sce_static_integration_fixture(REQUEST "${_STEM}")
+    endforeach()
+    sce_codegen_plan_prefetch()
+    set(_HEADERS "")
+    foreach(_STEM IN LISTS _REGISTERED)
+        _sce_static_integration_fixture(DECLARE "${_STEM}")
+        list(APPEND _HEADERS ${_FIXTURE_HEADERS})
+    endforeach()
+    set(GENERATED_INTEGRATION_HEADERS ${GENERATED_INTEGRATION_HEADERS} ${_HEADERS} PARENT_SCOPE)
+endfunction()
+
+# _sce_refuse_undeclared_static_integration_tests()
+#
+#   At the end of the configure: refuse fixtures registered and never
+#   declared, which no command would generate and no target compile.
+function(_sce_refuse_undeclared_static_integration_tests)
+    get_property(_DECLARED GLOBAL PROPERTY _SCE_STATIC_INTEGRATION_DECLARED)
+    if(NOT _DECLARED)
+        get_property(_REGISTERED GLOBAL PROPERTY _SCE_STATIC_INTEGRATION_REGISTERED)
+        message(FATAL_ERROR
+            "sce_generate_static_integration_test registered ${_REGISTERED}, and no "
+            "sce_declare_registered_static_integration_tests() declared them")
+    endif()
+endfunction()
+
+# _sce_static_integration_fixture(<REQUEST|DECLARE> <STEM>)
+#
+#   One registered fixture: staged, then its plan asked ahead (REQUEST), or
+#   its generation declared from the plan (DECLARE), which sets
+#   `_FIXTURE_HEADERS` in the caller's scope to every header it writes. The
+#   two ask the generator the same question, in the options both spell
+#   (`the_conformance_cmake_route_declares_what_the_generator_plans` holds the
+#   request to the plan).
+function(_sce_static_integration_fixture MODE STEM)
+    set(_FIXTURE_HEADERS "" PARENT_SCOPE)
+    get_property(OUTPUT_DIR GLOBAL PROPERTY "_SCE_STATIC_INTEGRATION_${STEM}_OUTPUT_DIR")
+    get_property(_SCXML_FILE GLOBAL PROPERTY "_SCE_STATIC_INTEGRATION_${STEM}_SCXML_FILE")
+    if(_SCXML_FILE)
+        set(FIXTURE "${_SCXML_FILE}")
         get_filename_component(FIXTURE_ROOT "${FIXTURE}" DIRECTORY)
     else()
         set(FIXTURE_ROOT "${CMAKE_SOURCE_DIR}/integration_resources/${STEM}")
@@ -104,9 +190,11 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
     endif()
 
     if(NOT EXISTS "${FIXTURE}")
-        message(WARNING
-            "sce_generate_static_integration_test: fixture not found, "
-            "skipping ${STEM}: ${FIXTURE}")
+        if(MODE STREQUAL "DECLARE")
+            message(WARNING
+                "sce_generate_static_integration_test: fixture not found, "
+                "skipping ${STEM}: ${FIXTURE}")
+        endif()
         return()
     endif()
 
@@ -116,11 +204,22 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
 
     # Step 1: stage the fixture into OUTPUT_DIR so synth-invoke children
     # land in OUTPUT_DIR rather than polluting the read-only source tree
-    # under integration_resources/. At configure time, because the plan below
-    # has to read the staged document; `configure_file` also makes an edit to
-    # the fixture reconfigure the tree, which is when its children are asked
-    # for again.
+    # under integration_resources/. At configure time, and before the plan is
+    # asked ahead, because the plan has to read the staged document;
+    # `configure_file` also makes an edit to the fixture reconfigure the tree,
+    # which is when its children are asked for again.
     configure_file("${FIXTURE}" "${STAGED_SCXML}" COPYONLY)
+
+    if(MODE STREQUAL "REQUEST")
+        sce_codegen_plan_request(
+            STEM "${STEM}"
+            DOCUMENT "${STAGED_SCXML}"
+            OUTPUT_DIR "${OUTPUT_DIR}"
+            LANGUAGE cpp
+            INPUT_ROOT "${FIXTURE_ROOT}"
+            CHILD_GENERATIONS)
+        return()
+    endif()
 
     # Step 2: parent generate. Emits `<stem>_sm.{h,inl}`, the synth-invoke
     # `<stem>__sce_synth_invoke__<id>.scxml` siblings with each one's
@@ -209,8 +308,7 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
         list(APPEND _ALL_HEADERS ${_CHILD_PLAN_HEADERS})
     endforeach()
 
-    list(APPEND GENERATED_INTEGRATION_HEADERS ${_ALL_HEADERS})
-    set(GENERATED_INTEGRATION_HEADERS ${GENERATED_INTEGRATION_HEADERS} PARENT_SCOPE)
+    set(_FIXTURE_HEADERS ${_ALL_HEADERS} PARENT_SCOPE)
 endfunction()
 
 # sce_generate_static_integration_c_test:
@@ -230,10 +328,21 @@ endfunction()
 # The fixture's synth-invoke and hybrid children are derived, as the cpp
 # variant's are: see `sce_codegen_plan`.
 #
+# The call stages the fixture and asks ahead for its plan
+# (`sce_codegen_plan_request`); every fixture registered in a directory is
+# declared at the end of that directory (`cmake_language(DEFER)`), after the
+# plans of all of them were asked of the generator in one batch. Each block
+# that compiles a fixture follows its call and uses the sources at once, so
+# the files are not known when the call returns: what it hands back names
+# them as a generator expression, which a target's sources take and the
+# generate step reads once the declaration has filled it.
+#
 # Side effects:
 #   - Sets `INTEGRATION_C_TEST_${STEM}_SOURCES` (PARENT_SCOPE) to the
-#     parent _sm.c plus every child _sm.c — caller links these into
-#     the per-fixture executable target.
+#     parent _sm.c plus every child _sm.c and every header they write, as a
+#     generator expression for a target's sources (the caller links these
+#     into the per-fixture executable target); a fixture not found sets
+#     nothing.
 # Keyword args beyond the stem contract:
 #   SCXML_FILE <path>        Generate this document instead of the
 #                            `integration_resources/<stem>/<stem>.scxml`
@@ -273,6 +382,85 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
         "HOST_PROCESSOR;HOST_INVOKER;STAGE_ALSO" ${ARGN})
     _sce_refuse_children_arguments(sce_generate_static_integration_c_test "${STEM}"
         ${_INT_UNPARSED_ARGUMENTS})
+    get_property(_DECLARED DIRECTORY PROPERTY _SCE_C_INTEGRATION_DECLARED)
+    if(_DECLARED)
+        message(FATAL_ERROR
+            "sce_generate_static_integration_c_test(${STEM}) comes after the fixtures of "
+            "this directory were declared: it would never be generated")
+    endif()
+    get_property(_EVERY GLOBAL PROPERTY _SCE_C_INTEGRATION_REGISTERED)
+    if("${STEM}" IN_LIST _EVERY)
+        message(FATAL_ERROR
+            "sce_generate_static_integration_c_test(${STEM}) registers a fixture "
+            "registered already; INTEGRATION_C_TEST_${STEM}_SOURCES names one generation")
+    endif()
+    set_property(GLOBAL APPEND PROPERTY _SCE_C_INTEGRATION_REGISTERED "${STEM}")
+    foreach(_OPTION OUTPUT_DIR SCXML_FILE HOST_PROCESSOR HOST_INVOKER STAGE_ALSO)
+        if(_OPTION STREQUAL "OUTPUT_DIR")
+            set(_VALUE "${OUTPUT_DIR}")
+        else()
+            set(_VALUE "${_INT_${_OPTION}}")
+        endif()
+        set_property(DIRECTORY PROPERTY "_SCE_C_INTEGRATION_${STEM}_${_OPTION}" "${_VALUE}")
+    endforeach()
+
+    _sce_static_integration_c_fixture(REQUEST "${STEM}")
+    if(NOT _FIXTURE_FOUND)
+        return()
+    endif()
+
+    get_property(_PENDING DIRECTORY PROPERTY _SCE_C_INTEGRATION_PENDING)
+    if(NOT _PENDING)
+        # The first fixture of this directory: its declarations, and every
+        # later fixture's, are made when the directory ends.
+        if(NOT TARGET sce_c_integration_generated_sources)
+            # Holds, per fixture, the files its generations write, for the
+            # generator expression each caller is handed.
+            add_library(sce_c_integration_generated_sources INTERFACE)
+        endif()
+        cmake_language(DEFER CALL _sce_declare_registered_static_integration_c_tests)
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY _SCE_C_INTEGRATION_PENDING "${STEM}")
+    set("INTEGRATION_C_TEST_${STEM}_SOURCES"
+        "$<TARGET_PROPERTY:sce_c_integration_generated_sources,SCE_GENERATED_SOURCES_${STEM}>"
+        PARENT_SCOPE)
+endfunction()
+
+# _sce_declare_registered_static_integration_c_tests()
+#
+#   At the end of a directory: send every plan its C11 integration fixtures
+#   asked ahead in one batch, then declare each fixture's generations from
+#   the answers, in the order the fixtures were registered (which `CLAIM`
+#   reads: the first fixture to declare a shared candidate owns it), and fill
+#   the sources each caller's generator expression names.
+function(_sce_declare_registered_static_integration_c_tests)
+    set_property(DIRECTORY PROPERTY _SCE_C_INTEGRATION_DECLARED TRUE)
+    get_property(_PENDING DIRECTORY PROPERTY _SCE_C_INTEGRATION_PENDING)
+    sce_codegen_plan_prefetch()
+    foreach(_STEM IN LISTS _PENDING)
+        _sce_static_integration_c_fixture(DECLARE "${_STEM}")
+        set_property(TARGET sce_c_integration_generated_sources
+            PROPERTY "SCE_GENERATED_SOURCES_${_STEM}" ${_FIXTURE_SOURCES})
+    endforeach()
+endfunction()
+
+# _sce_static_integration_c_fixture(<REQUEST|DECLARE> <STEM>)
+#
+#   One C11 integration fixture of this directory, from the options its call
+#   registered: staged and its plan asked ahead (REQUEST, which sets
+#   `_FIXTURE_FOUND` in the caller's scope), or its generations declared from
+#   the plan (DECLARE, which sets `_FIXTURE_SOURCES` to every translation unit
+#   and header they write). The two ask the generator the same question, in
+#   the options both spell
+#   (`the_conformance_cmake_route_declares_what_the_generator_plans` holds the
+#   request to the plan).
+function(_sce_static_integration_c_fixture MODE STEM)
+    set(_FIXTURE_FOUND FALSE PARENT_SCOPE)
+    set(_FIXTURE_SOURCES "" PARENT_SCOPE)
+    foreach(_OPTION OUTPUT_DIR SCXML_FILE HOST_PROCESSOR HOST_INVOKER STAGE_ALSO)
+        get_property(_INT_${_OPTION} DIRECTORY PROPERTY "_SCE_C_INTEGRATION_${STEM}_${_OPTION}")
+    endforeach()
+    set(OUTPUT_DIR "${_INT_OUTPUT_DIR}")
 
     # A library name (`sce:std/shared/record_list.scxml`) names a statechart of the
     # standard library, which the generator reads from the library it embeds: it is
@@ -311,6 +499,7 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
             "skipping ${STEM}: ${FIXTURE}")
         return()
     endif()
+    set(_FIXTURE_FOUND TRUE PARENT_SCOPE)
 
     file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
@@ -323,18 +512,35 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
         set(STAGED_SCXML "${OUTPUT_DIR}/${STEM}.scxml")
         set(_STAGED_DEPENDS "${STAGED_SCXML}")
         set(_INPUT_ROOT_ARGS --input-root "${FIXTURE_ROOT}")
-        # Staged at configure time, as the cpp variant stages it: the plan below
-        # reads the staged document, and `configure_file` makes an edit to the
-        # fixture or to a sibling reconfigure the tree.
-        foreach(_SIBLING ${_INT_STAGE_ALSO})
-            if(NOT EXISTS "${FIXTURE_ROOT}/${_SIBLING}")
-                message(FATAL_ERROR
-                    "sce_generate_static_integration_c_test(${STEM}): STAGE_ALSO names "
-                    "${_SIBLING}, which is not beside the fixture at ${FIXTURE_ROOT}")
-            endif()
-            configure_file("${FIXTURE_ROOT}/${_SIBLING}" "${OUTPUT_DIR}/${_SIBLING}" COPYONLY)
-        endforeach()
-        configure_file("${FIXTURE}" "${STAGED_SCXML}" COPYONLY)
+    endif()
+
+    if(MODE STREQUAL "REQUEST")
+        if(NOT _STANDARD)
+            # Staged at configure time, when the fixture is registered, as the
+            # cpp variant stages it: the plan reads the staged document, and
+            # `configure_file` makes an edit to the fixture or to a sibling
+            # reconfigure the tree.
+            foreach(_SIBLING ${_INT_STAGE_ALSO})
+                if(NOT EXISTS "${FIXTURE_ROOT}/${_SIBLING}")
+                    message(FATAL_ERROR
+                        "sce_generate_static_integration_c_test(${STEM}): STAGE_ALSO names "
+                        "${_SIBLING}, which is not beside the fixture at ${FIXTURE_ROOT}")
+                endif()
+                configure_file("${FIXTURE_ROOT}/${_SIBLING}" "${OUTPUT_DIR}/${_SIBLING}"
+                    COPYONLY)
+            endforeach()
+            configure_file("${FIXTURE}" "${STAGED_SCXML}" COPYONLY)
+        endif()
+        sce_codegen_plan_request(
+            STEM "${STEM}"
+            DOCUMENT "${STAGED_SCXML}"
+            OUTPUT_DIR "${OUTPUT_DIR}"
+            LANGUAGE c11
+            INPUT_ROOT "${FIXTURE_ROOT}"
+            CHILD_GENERATIONS
+            CLAIM SCE_C_INTEGRATION_DECLARED_OUTPUTS
+            ARGS ${_HOST_PROCESSOR_ARGS})
+        return()
     endif()
 
     # The parent emits each synth-invoke child's machine with its own, and
@@ -415,5 +621,5 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
     # dependencies). Listing the headers makes them part of the target's
     # input set so Ninja schedules every child codegen before compiling
     # the parent _sm.c that #includes them.
-    set("INTEGRATION_C_TEST_${STEM}_SOURCES" ${_ALL_SOURCES} ${_ALL_HEADERS} PARENT_SCOPE)
+    set(_FIXTURE_SOURCES ${_ALL_SOURCES} ${_ALL_HEADERS} PARENT_SCOPE)
 endfunction()

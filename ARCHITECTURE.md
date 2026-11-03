@@ -330,25 +330,39 @@ plan once per state of its inputs, and many at once, without changing an answer:
   (`<build>/sce-codegen-plans/entries/<key>.plan`), keyed on the SHA-256 of the generator's
   path, the environment it reads its installation and confinement from, and the arguments,
   beside the list of the files the plan read (`--plan-reads`: the prerequisites the depfile
-  of the same run names, less what the run produces, its child generations' included; one
-  function, `depfile_prerequisites`, writes both). An answer is reused only when neither the
-  generator nor any listed file is newer than it (`IS_NEWER_THAN`, a tie is newer); it is
-  dated when its request was written, before the plan read anything.
-- **Asked many at once.** `sce-codegen plan-batch` answers a list of requests, a process each
-  (a generation keeps its output mode, its in-memory tree and its held documents in process
-  state, and a refusal ends the process), one per processor at a time
-  (`SCE_CODEGEN_PLAN_JOBS`), so each answer is byte for byte the single plan's. The module
-  sends it, in one batch each, every answer the last configure asked that is no longer
-  current (every plan after the generator is rebuilt), and every plan a route knows ahead
-  (`sce_codegen_plan_request` / `sce_codegen_plan_prefetch`; the conformance route queues
-  every registered fixture). A plan asked otherwise and not kept is sent alone.
+  of the same run names, less every file the plan produced, its child generations' included;
+  one function, `depfile_prerequisites`, writes both; a file it looked for and did not find
+  is listed as `?<path>`). An answer is reused only when neither the generator nor any listed
+  file is newer than it (`IS_NEWER_THAN`, a tie is newer) and every absent file is still
+  absent. A batch dates its answers when it begins, strictly after every file written before
+  it, so a file changed while a plan ran is not older than the answer and a document staged
+  just before the batch is.
+- **Request first, declare after.** `sce-codegen plan-batch` answers a list of requests, a
+  process each (a generation keeps its output mode, its in-memory tree and its held documents
+  in process state, and a refusal ends the process), one per processor at a time
+  (`SCE_CODEGEN_PLAN_JOBS`), so each answer is byte for byte the single plan's. Every route
+  queues the plans of the generations it will declare (`sce_codegen_plan_request`,
+  `sce_codegen_generation_request`) and sends them in one batch (`sce_codegen_plan_prefetch`)
+  before it declares any: the conformance route for every registered fixture, the C11
+  conformance and C++ integration fixtures after their last registration
+  (`sce_declare_registered_static_w3c_c_tests`, `sce_declare_registered_static_integration_tests`),
+  and the C11 integration and Mesh fixtures, whose targets compile each one's files right
+  after it is registered, at the end of their directory (`cmake_language(DEFER)`), each caller
+  holding a generator expression for the files its target compiles. When the module is first
+  included, every answer the last configure asked that is no longer current is asked again in
+  one batch (every plan after the generator is rebuilt). A plan asked otherwise and not kept
+  is sent alone.
 - **Settled at the end.** The answers no plan asked for are removed, the asked list is kept
   for the next configure, and one status line reports how many plans were asked, how many
-  were answered from the cache and how many the generator was sent.
+  were answered from the cache and how many the generator was sent, followed by why any kept
+  answer was not current (every reason in `<build>/sce-codegen-plans/stale.txt`).
+- **CI.** The lanes that keep their CMake build state between runs keep
+  `build/sce-codegen-plans` too. After a checkout every kept answer is older than the
+  documents and is asked again, but the kept list of what was asked lets the configure ask
+  all of it in one batch at the start.
 
-What the cache cannot see is what a depfile cannot: a file the plan looked for and did not
-find, and a file put back older than the answer. Removing `<build>/sce-codegen-plans` asks every
-plan again. `sce-build/tests/configure_plans_are_kept_and_asked_together.rs` holds the batch to
+What the cache cannot see is what a depfile cannot: a file put back older than the answer.
+Removing `<build>/sce-codegen-plans` asks every plan again. `sce-build/tests/configure_plans_are_kept_and_asked_together.rs` holds the batch to
 the single plan, `a_configure_asks_each_plan_once_per_input_state.rs` the module's reuse to its
 inputs (through a real `cmake`), and
 `the_conformance_cmake_route_declares_what_the_generator_plans.rs` every plan to coming from the

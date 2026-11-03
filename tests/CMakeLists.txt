@@ -2631,8 +2631,14 @@ sce_generate_static_integration_test(empty_finalize_updates_the_location ${STATI
 # not the other.
 sce_generate_static_integration_test(host_event_reaches_the_child ${STATIC_INTEGRATION_OUTPUT_DIR})
 
+# Every fixture registered above is declared here, after its plan and every
+# other one were asked of the generator in one batch
+# (cmake/SCEStaticIntegrationFixture.cmake). A fixture registered below this
+# line is refused.
+sce_declare_registered_static_integration_tests()
+
 # Wire the integration headers + include path into the integration_tests
-# target now that `sce_generate_static_integration_test` has populated
+# target now that `sce_declare_registered_static_integration_tests` has populated
 # GENERATED_INTEGRATION_HEADERS in this scope. The target itself was
 # defined earlier (around the "Integration Tests" section), but its
 # generated-source dependencies must be appended after the build-time
@@ -3250,6 +3256,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     #   when not given), into OUTPUT_DIR, with DEPLOY and ARGS when given, each
     #   declared from its plan. HEADERS_VAR is set to every header they write,
     #   which is what the fixture's targets compile.
+    #
+    #   The call asks ahead for every machine's plan; every fixture of this
+    #   directory is declared when the directory ends
+    #   (`_sce_declare_mesh_fixture_generations`), after the plans of all of
+    #   them were asked of the generator in one batch. Each fixture's targets
+    #   follow its call and compile its headers at once, so the headers are
+    #   not known when the call returns: HEADERS_VAR names them as a generator
+    #   expression, which a target's sources take and the generate step reads
+    #   once the declaration has filled it.
     function(sce_mesh_fixture_generations HEADERS_VAR)
         cmake_parse_arguments(PARSE_ARGV 1 _MFG ""
             "OUTPUT_DIR;DEPLOY;SOURCE_DIR;LABEL" "MACHINES;ARGS")
@@ -3258,29 +3273,94 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
                 "sce_mesh_fixture_generations(${HEADERS_VAR}): OUTPUT_DIR and MACHINES are "
                 "required (unexpected: ${_MFG_UNPARSED_ARGUMENTS})")
         endif()
+        get_property(_DECLARED DIRECTORY PROPERTY _SCE_MESH_FIXTURES_DECLARED)
+        if(_DECLARED)
+            message(FATAL_ERROR
+                "sce_mesh_fixture_generations(${HEADERS_VAR}) comes after the fixtures of "
+                "this directory were declared: it would never be generated")
+        endif()
         set(_SOURCE_DIR "${MESH_TEST_DIR}")
         if(_MFG_SOURCE_DIR)
             set(_SOURCE_DIR "${_MFG_SOURCE_DIR}")
-        endif()
-        set(_DEPLOY "")
-        if(_MFG_DEPLOY)
-            set(_DEPLOY DEPLOY "${_MFG_DEPLOY}")
         endif()
         set(_LABEL "Mesh")
         if(_MFG_LABEL)
             set(_LABEL "${_MFG_LABEL}")
         endif()
-        set(_HEADERS "")
+        get_property(_ID DIRECTORY PROPERTY _SCE_MESH_FIXTURE_COUNT)
+        if("${_ID}" STREQUAL "")
+            set(_ID 0)
+            # The first fixture of this directory: its declarations, and every
+            # later fixture's, are made when the directory ends.
+            if(NOT TARGET sce_mesh_generated_headers)
+                # Holds, per fixture, the headers its generations write, for
+                # the generator expression each caller is handed.
+                add_library(sce_mesh_generated_headers INTERFACE)
+            endif()
+            cmake_language(DEFER CALL _sce_declare_mesh_fixture_generations)
+        endif()
+        math(EXPR _ID "${_ID} + 1")
+        set_property(DIRECTORY PROPERTY _SCE_MESH_FIXTURE_COUNT "${_ID}")
+        set_property(DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_OUTPUT_DIR" "${_MFG_OUTPUT_DIR}")
+        set_property(DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_SOURCE_DIR" "${_SOURCE_DIR}")
+        set_property(DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_DEPLOY" "${_MFG_DEPLOY}")
+        set_property(DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_ARGS" "${_MFG_ARGS}")
+        set_property(DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_LABEL" "${_LABEL}")
+        set_property(DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_MACHINES" "${_MFG_MACHINES}")
         foreach(_MACHINE ${_MFG_MACHINES})
-            sce_codegen_generation(_MFG_${_MACHINE}
-                DOCUMENT "${_SOURCE_DIR}/${_MACHINE}.scxml"
-                OUTPUT_DIR "${_MFG_OUTPUT_DIR}" LANGUAGE cpp
-                ${_DEPLOY}
-                ARGS ${_MFG_ARGS}
-                COMMENT "${_LABEL}: Generating ${_MACHINE}")
-            list(APPEND _HEADERS ${_MFG_${_MACHINE}_HEADERS})
+            _sce_mesh_fixture_generation(REQUEST ${_ID} ${_MACHINE})
         endforeach()
-        set(${HEADERS_VAR} ${_HEADERS} PARENT_SCOPE)
+        set(${HEADERS_VAR}
+            "$<TARGET_PROPERTY:sce_mesh_generated_headers,SCE_MESH_HEADERS_${_ID}>"
+            PARENT_SCOPE)
+    endfunction()
+
+    # _sce_declare_mesh_fixture_generations()
+    #
+    #   At the end of this directory: send every plan its Mesh fixtures asked
+    #   ahead in one batch, then declare every machine's generation from the
+    #   answers, and fill the headers each fixture's generator expression names.
+    function(_sce_declare_mesh_fixture_generations)
+        set_property(DIRECTORY PROPERTY _SCE_MESH_FIXTURES_DECLARED TRUE)
+        get_property(_COUNT DIRECTORY PROPERTY _SCE_MESH_FIXTURE_COUNT)
+        sce_codegen_plan_prefetch()
+        foreach(_ID RANGE 1 ${_COUNT})
+            get_property(_MACHINES DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_MACHINES")
+            set(_HEADERS "")
+            foreach(_MACHINE ${_MACHINES})
+                _sce_mesh_fixture_generation(DECLARE ${_ID} ${_MACHINE})
+                list(APPEND _HEADERS ${_MACHINE_HEADERS})
+            endforeach()
+            set_property(TARGET sce_mesh_generated_headers
+                PROPERTY "SCE_MESH_HEADERS_${_ID}" ${_HEADERS})
+        endforeach()
+    endfunction()
+
+    # _sce_mesh_fixture_generation(<REQUEST|DECLARE> <ID> <MACHINE>)
+    #
+    #   One machine of the fixture registered as <ID>: its plan asked ahead
+    #   (REQUEST), or its generation declared from the plan (DECLARE, which
+    #   sets `_MACHINE_HEADERS` in the caller's scope). One list of options
+    #   for both, so the generation declared is the one asked ahead.
+    function(_sce_mesh_fixture_generation MODE ID MACHINE)
+        foreach(_OPTION OUTPUT_DIR SOURCE_DIR DEPLOY ARGS LABEL)
+            get_property(_${_OPTION} DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${ID}_${_OPTION}")
+        endforeach()
+        set(_OPTIONS
+            DOCUMENT "${_SOURCE_DIR}/${MACHINE}.scxml"
+            OUTPUT_DIR "${_OUTPUT_DIR}"
+            LANGUAGE cpp)
+        if(_DEPLOY)
+            list(APPEND _OPTIONS DEPLOY "${_DEPLOY}")
+        endif()
+        list(APPEND _OPTIONS ARGS ${_ARGS})
+        if(MODE STREQUAL "REQUEST")
+            sce_codegen_generation_request(${_OPTIONS})
+        else()
+            sce_codegen_generation(_MFG ${_OPTIONS}
+                COMMENT "${_LABEL}: Generating ${MACHINE}")
+            set(_MACHINE_HEADERS ${_MFG_HEADERS} PARENT_SCOPE)
+        endif()
     endfunction()
 
     # ── MeshEnvelope codec unit tests ─────────────────────────────

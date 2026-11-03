@@ -784,6 +784,10 @@ GATES: dict[str, dict] = {
             # command it declares from a plan the same suite compiles in and
             # holds to declaring what the generator plans.
             "tests/CMakeLists.txt",
+            # The C11 conformance suite's build, which the same suite compiles
+            # in and holds to declaring its fixtures after their plans were
+            # asked together.
+            "backends/c/tests/CMakeLists.txt",
             # The standard library, whose statecharts that save are held to
             # their pinned shapes (`a_standard_statechart_that_saves_keeps_its_shape`,
             # docs/adr/0045): an edit of one alone has to start the suite.

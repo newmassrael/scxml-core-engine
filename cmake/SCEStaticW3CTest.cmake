@@ -290,21 +290,29 @@ endfunction()
 #   ahead itself, so leaving one out costs time and changes no answer.
 function(sce_prefetch_static_w3c_tests OUTPUT_DIR LANGUAGE)
     foreach(TEST_NUM IN LISTS ARGN)
-        set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
-        set(_STEM "test${TEST_NUM}")
-        # `_sce_generate_w3c_fixture`'s options, word for word
-        # (`the_conformance_cmake_route_declares_what_the_generator_plans`
-        # holds the two to each other).
-        sce_codegen_plan_request(
-            STEM "${_STEM}"
-            DOCUMENT "${RESOURCE_DIR}/${_STEM}.scxml"
-            OUTPUT_DIR "${OUTPUT_DIR}"
-            LANGUAGE ${LANGUAGE}
-            INPUT_ROOT "${RESOURCE_DIR}"
-            CHILDREN_HELD_IN "${RESOURCE_DIR}"
-            CHILD_GENERATIONS)
+        _sce_request_w3c_fixture(${TEST_NUM} "${OUTPUT_DIR}" ${LANGUAGE})
     endforeach()
     sce_codegen_plan_prefetch()
+endfunction()
+
+# _sce_request_w3c_fixture(<TEST_NUM> <OUTPUT_DIR> <LANGUAGE>)
+#
+#   Queue the request of the plan `_sce_generate_w3c_fixture` asks for one
+#   fixture, for the next `sce_codegen_plan_prefetch` to send.
+function(_sce_request_w3c_fixture TEST_NUM OUTPUT_DIR LANGUAGE)
+    set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
+    set(_STEM "test${TEST_NUM}")
+    # `_sce_generate_w3c_fixture`'s options, word for word
+    # (`the_conformance_cmake_route_declares_what_the_generator_plans`
+    # holds the two to each other).
+    sce_codegen_plan_request(
+        STEM "${_STEM}"
+        DOCUMENT "${RESOURCE_DIR}/${_STEM}.scxml"
+        OUTPUT_DIR "${OUTPUT_DIR}"
+        LANGUAGE ${LANGUAGE}
+        INPUT_ROOT "${RESOURCE_DIR}"
+        CHILDREN_HELD_IN "${RESOURCE_DIR}"
+        CHILD_GENERATIONS)
 endfunction()
 
 # sce_generate_static_w3c_test: Generate C++ code for a single W3C test
@@ -351,11 +359,13 @@ function(sce_generate_static_w3c_test_batch OUTPUT_DIR)
     set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} PARENT_SCOPE)
 endfunction()
 
-# sce_generate_static_w3c_c_test: Generate C11 code for a single W3C test
+# sce_generate_static_w3c_c_test: Register a W3C test generated as C11
 #
-# RFC §5.J.1 sibling of `sce_generate_static_w3c_test`. Declares the
-# generation of the fixture's machines with `sce-codegen -l c11`
-# (`_sce_generate_w3c_fixture`), and sets
+# RFC §5.J.1 sibling of `sce_generate_static_w3c_test`. Registers the
+# fixture; the one `sce_declare_registered_static_w3c_c_tests()` that follows
+# the last registration asks the generator for every registered fixture's
+# plan in one batch, then declares the generation of each fixture's machines
+# with `sce-codegen -l c11` (`_sce_generate_w3c_fixture`) and sets
 # `W3C_C_AOT_TEST_${TEST_NUM}_SOURCES` (PARENT_SCOPE) to every translation
 # unit and header those generations write: the fixture's machine and each
 # child's, synthesized from an inline `<invoke>` or generated from a child
@@ -388,6 +398,10 @@ endfunction()
 # There is no flag for a fixture that starts children: which children a
 # fixture's machine starts is the generator's answer, and the sources above
 # carry them whether or not the call says so.
+#
+# A fixture registered after the declaration, and a registration no
+# declaration follows, are refused: either would be a fixture the build never
+# generates while its runner is still named.
 function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
     cmake_parse_arguments(_SWCT "NEEDS_LUA;NEEDS_DOM;NEEDS_HTTP" "" "" ${ARGN})
     if(_SWCT_UNPARSED_ARGUMENTS)
@@ -397,6 +411,28 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
             "fixture's machine starts are read from `sce-codegen --plan generate`, "
             "not flagged here. Remove it from the call.")
     endif()
+    get_property(_DECLARED GLOBAL PROPERTY _SCE_W3C_C_DECLARED)
+    if(_DECLARED)
+        message(FATAL_ERROR
+            "sce_generate_static_w3c_c_test(${TEST_NUM}) comes after "
+            "sce_declare_registered_static_w3c_c_tests(), which declared the fixtures "
+            "registered before it: this one would never be generated. Register it "
+            "before that call.")
+    endif()
+    get_property(_REGISTERED GLOBAL PROPERTY _SCE_W3C_C_REGISTERED)
+    if("${TEST_NUM}" IN_LIST _REGISTERED)
+        message(FATAL_ERROR
+            "sce_generate_static_w3c_c_test(${TEST_NUM}) registers a fixture registered "
+            "already")
+    endif()
+    if(NOT _REGISTERED)
+        # The first registration: the configure ends refusing a registration
+        # no declaration followed.
+        cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}"
+            CALL _sce_refuse_undeclared_static_w3c_c_tests)
+    endif()
+    set_property(GLOBAL APPEND PROPERTY _SCE_W3C_C_REGISTERED "${TEST_NUM}")
+    set_property(GLOBAL PROPERTY "_SCE_W3C_C_${TEST_NUM}_OUTPUT_DIR" "${OUTPUT_DIR}")
 
     # Accumulate test number into W3C_C_AOT_TESTS so the caller can iterate.
     list(APPEND W3C_C_AOT_TESTS ${TEST_NUM})
@@ -414,8 +450,47 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         set(W3C_C_AOT_TESTS_NEEDS_HTTP ${W3C_C_AOT_TESTS_NEEDS_HTTP} PARENT_SCOPE)
     endif()
 
-    _sce_generate_w3c_fixture(${TEST_NUM} "${OUTPUT_DIR}" c11)
+endfunction()
 
-    set(W3C_C_AOT_TEST_${TEST_NUM}_SOURCES
-        ${_W3C_FIXTURE_SOURCES} ${_W3C_FIXTURE_HEADERS} PARENT_SCOPE)
+# sce_declare_registered_static_w3c_c_tests()
+#
+#   Declare every fixture `sce_generate_static_w3c_c_test` registered: ask the
+#   generator for every fixture's plan in one batch, then declare each
+#   fixture's generations from the answer the batch kept, and set
+#   `W3C_C_AOT_TEST_<id>_SOURCES` in the caller's scope for each.
+function(sce_declare_registered_static_w3c_c_tests)
+    get_property(_DECLARED GLOBAL PROPERTY _SCE_W3C_C_DECLARED)
+    if(_DECLARED)
+        message(FATAL_ERROR
+            "sce_declare_registered_static_w3c_c_tests() is called twice; every fixture "
+            "is registered before the one call that declares them")
+    endif()
+    set_property(GLOBAL PROPERTY _SCE_W3C_C_DECLARED TRUE)
+    get_property(_REGISTERED GLOBAL PROPERTY _SCE_W3C_C_REGISTERED)
+    foreach(_ID IN LISTS _REGISTERED)
+        get_property(_OUTPUT_DIR GLOBAL PROPERTY "_SCE_W3C_C_${_ID}_OUTPUT_DIR")
+        _sce_request_w3c_fixture(${_ID} "${_OUTPUT_DIR}" c11)
+    endforeach()
+    sce_codegen_plan_prefetch()
+    foreach(_ID IN LISTS _REGISTERED)
+        get_property(_OUTPUT_DIR GLOBAL PROPERTY "_SCE_W3C_C_${_ID}_OUTPUT_DIR")
+        _sce_generate_w3c_fixture(${_ID} "${_OUTPUT_DIR}" c11)
+        set(W3C_C_AOT_TEST_${_ID}_SOURCES
+            ${_W3C_FIXTURE_SOURCES} ${_W3C_FIXTURE_HEADERS} PARENT_SCOPE)
+    endforeach()
+endfunction()
+
+# _sce_refuse_undeclared_static_w3c_c_tests()
+#
+#   At the end of the configure: refuse fixtures registered and never
+#   declared, whose runners would be compiled against machines nothing
+#   generates.
+function(_sce_refuse_undeclared_static_w3c_c_tests)
+    get_property(_DECLARED GLOBAL PROPERTY _SCE_W3C_C_DECLARED)
+    if(NOT _DECLARED)
+        get_property(_REGISTERED GLOBAL PROPERTY _SCE_W3C_C_REGISTERED)
+        message(FATAL_ERROR
+            "sce_generate_static_w3c_c_test registered ${_REGISTERED}, and no "
+            "sce_declare_registered_static_w3c_c_tests() declared them")
+    endif()
 endfunction()

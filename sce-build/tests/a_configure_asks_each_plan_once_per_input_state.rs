@@ -4,9 +4,14 @@
 // The CMake module every build-time route asks the generator's plans through
 // (cmake/SCECodegenPlan.cmake) keeps each answer between configures, and asks
 // the ones it does not keep in batches (`sce-codegen plan-batch`). Held here,
-// through a real `cmake`, and skipped where there is no `cmake` 3.20 or later:
+// through a real `cmake`, and skipped where there is no `cmake` 3.20 or later,
+// on three plans of the shapes the routes ask: a document alone, a document
+// whose generation writes a child document with a generation of its own, and
+// a parent staged with its deploy when the tree is configured, whose deploy
+// places its in-line child on a partition of its own:
+//   - plans asked ahead go to the generator in one batch;
 //   - a configure with nothing changed asks the generator nothing, and reads
-//     the answer it was given before;
+//     the answers it was given before;
 //   - an edited document and a rebuilt generator are asked again, in the batch
 //     that refreshes what the last configure asked, before the plan is asked;
 //   - another argument is another plan, which no kept answer answers;
@@ -60,11 +65,13 @@ struct Costs {
     kept: u32,
     /// Requests sent to the generator, whenever they were sent.
     sent: u32,
+    /// The batches they were sent in.
+    batches: u32,
 }
 
 fn costs(log: &str) -> Costs {
     let said = regex::Regex::new(
-        r"generation plans: (\d+) asked, (\d+) answered from the cache; (\d+) sent to sce-codegen",
+        r"generation plans: (\d+) asked, (\d+) answered from the cache; (\d+) sent to sce-codegen in (\d+) batch",
     )
     .expect("pattern");
     let found = said
@@ -75,17 +82,28 @@ fn costs(log: &str) -> Costs {
         asked: count(1),
         kept: count(2),
         sent: count(3),
+        batches: count(4),
     }
 }
 
-/// The files the probe's plan declared, as it printed them.
+fn spent(asked: u32, kept: u32, sent: u32, batches: u32) -> Costs {
+    Costs {
+        asked,
+        kept,
+        sent,
+        batches,
+    }
+}
+
+/// The files the probe's plans declared, as it printed them.
 fn planned_files(log: &str) -> String {
     log.lines()
-        .find_map(|line| {
+        .filter_map(|line| {
             line.split_once("PROBE_FILES=")
                 .map(|(_, files)| files.to_string())
         })
-        .unwrap_or_else(|| panic!("the probe did not print its plan:\n{log}"))
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
 /// Date `path` now, as an edit would.
@@ -97,9 +115,9 @@ fn touch(path: &Path) {
         .unwrap_or_else(|e| panic!("touch {}: {e}", path.display()));
 }
 
-/// One project asks one plan through the module, configured again and again.
-/// The generator is a copy, so it can be dated as a rebuilt one is without
-/// touching the one cargo built.
+/// One project asks three plans through the module, configured again and
+/// again. The generator is a copy, so it can be dated as a rebuilt one is
+/// without touching the one cargo built.
 #[test]
 fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generator_changes() {
     match cmake_version() {
@@ -110,13 +128,23 @@ fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generato
         }
     }
     let sandbox = tempfile::tempdir().expect("temp dir");
-    let fixture = sandbox.path().join("fixture");
-    fs::create_dir_all(&fixture).expect("fixture dir");
-    let document = fixture.join("test144.scxml");
-    fs::copy(repo_root().join("resources/144/test144.scxml"), &document).expect("copy the fixture");
-    let bin = sandbox.path().join("bin");
-    fs::create_dir_all(&bin).expect("bin dir");
-    let generator = bin.join("sce-codegen");
+    fn copy(from: &str, to: &Path) {
+        fs::create_dir_all(to.parent().expect("a directory")).expect("make the directory");
+        fs::copy(repo_root().join(from), to).expect("copy a fixture");
+    }
+    // A document alone.
+    let document = sandbox.path().join("fixture/test144.scxml");
+    copy("resources/144/test144.scxml", &document);
+    // A document whose generation writes the stub of a hybrid `<invoke>`,
+    // whose own generation the plan holds, with the child it names beside it.
+    let hybrid = sandbox.path().join("hybrid/test216.scxml");
+    copy("resources/216/test216.scxml", &hybrid);
+    copy(
+        "resources/216/test216sub1.scxml",
+        &sandbox.path().join("hybrid/test216sub1.scxml"),
+    );
+    let generator = sandbox.path().join("bin/sce-codegen");
+    fs::create_dir_all(generator.parent().expect("bin dir")).expect("bin dir");
     fs::copy(codegen(), &generator).expect("copy the generator");
 
     let project = sandbox.path().join("project");
@@ -127,6 +155,33 @@ fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generato
             "cmake_minimum_required(VERSION 3.20)\n\
              project(sce_codegen_plan_cache_probe NONE)\n\
              include(\"{module}\")\n\
+             # The parent and its deploy, staged when the tree is configured, as\n\
+             # the test tree stages the Mesh rule-3 override.\n\
+             set(MESH \"${{CMAKE_BINARY_DIR}}/mesh\")\n\
+             file(MAKE_DIRECTORY \"${{MESH}}\")\n\
+             configure_file(\"{mesh}/parent_synth_inline.scxml\"\n\
+                 \"${{MESH}}/parent_synth_inline.scxml\" COPYONLY)\n\
+             configure_file(\"{mesh}/deploy_synth_inline.yaml\"\n\
+                 \"${{MESH}}/deploy_synth_inline.yaml\" COPYONLY)\n\
+             # The two asked ahead, in one batch.\n\
+             sce_codegen_plan_request(STEM test216 DOCUMENT \"{hybrid}\"\n\
+                 OUTPUT_DIR \"${{CMAKE_BINARY_DIR}}/generated\" LANGUAGE cpp\n\
+                 INPUT_ROOT \"{hybrid_dir}\" CHILD_GENERATIONS)\n\
+             sce_codegen_plan_request(STEM parent_synth_inline\n\
+                 DOCUMENT \"${{MESH}}/parent_synth_inline.scxml\" OUTPUT_DIR \"${{MESH}}\"\n\
+                 LANGUAGE cpp CHILD_GENERATIONS\n\
+                 ARGS --deploy \"${{MESH}}/deploy_synth_inline.yaml\")\n\
+             sce_codegen_plan_prefetch()\n\
+             sce_codegen_plan(_HYBRID STEM test216 DOCUMENT \"{hybrid}\"\n\
+                 OUTPUT_DIR \"${{CMAKE_BINARY_DIR}}/generated\" LANGUAGE cpp\n\
+                 INPUT_ROOT \"{hybrid_dir}\" CHILD_GENERATIONS)\n\
+             message(STATUS \"PROBE_FILES=${{_HYBRID_FILES}};${{_HYBRID_GENERATIONS}}\")\n\
+             sce_codegen_plan(_DEPLOYED STEM parent_synth_inline\n\
+                 DOCUMENT \"${{MESH}}/parent_synth_inline.scxml\" OUTPUT_DIR \"${{MESH}}\"\n\
+                 LANGUAGE cpp CHILD_GENERATIONS\n\
+                 ARGS --deploy \"${{MESH}}/deploy_synth_inline.yaml\")\n\
+             message(STATUS \"PROBE_FILES=${{_DEPLOYED_FILES}};${{_DEPLOYED_GENERATIONS}}\")\n\
+             # The one asked when it is declared.\n\
              sce_codegen_plan(_PROBE\n\
                  STEM test144\n\
                  DOCUMENT \"{document}\"\n\
@@ -136,6 +191,9 @@ fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generato
                  ARGS ${{PROBE_ARGS}})\n\
              message(STATUS \"PROBE_FILES=${{_PROBE_FILES}}\")\n",
             module = text(&repo_root().join("cmake/SCECodegenPlan.cmake")),
+            mesh = text(&repo_root().join("tests/mesh")),
+            hybrid = text(&hybrid),
+            hybrid_dir = text(hybrid.parent().expect("hybrid dir")),
             document = text(&document),
         ),
     )
@@ -164,46 +222,35 @@ fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generato
     let first = configure(&[]);
     assert_eq!(
         costs(&first),
-        Costs {
-            asked: 1,
-            kept: 0,
-            sent: 1
-        },
-        "{first}"
+        spent(3, 2, 3, 2),
+        "the two plans asked ahead were not sent in one batch, and the third alone:\n{first}"
     );
     let files = planned_files(&first);
     assert!(
-        files.contains("test144_sm.h"),
-        "the plan does not name the machine: {files}"
+        files.contains("test144_sm.h") && files.contains("parent_synth_inline_sm.h"),
+        "the plans do not name the machines: {files}"
     );
 
     let second = configure(&[]);
     assert_eq!(
         costs(&second),
-        Costs {
-            asked: 1,
-            kept: 1,
-            sent: 0
-        },
-        "a configure with nothing changed asked the generator again:\n{second}"
+        spent(3, 3, 0, 0),
+        "a configure with nothing changed asked the generator again; the reasons the \
+         configure gives:\n{second}"
     );
     assert_eq!(
         planned_files(&second),
         files,
-        "the kept answer is not the answer"
+        "the kept answers are not the answers"
     );
 
     touch(&document);
     let third = configure(&[]);
     assert_eq!(
         costs(&third),
-        Costs {
-            asked: 1,
-            kept: 1,
-            sent: 1
-        },
-        "the plan of an edited document was not asked again, in the batch before any plan \
-         is asked for:\n{third}"
+        spent(3, 3, 1, 1),
+        "the plan of an edited document was not asked again, alone, in the batch before \
+         any plan is asked for:\n{third}"
     );
     assert_eq!(planned_files(&third), files);
 
@@ -211,22 +258,15 @@ fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generato
     let fourth = configure(&[]);
     assert_eq!(
         costs(&fourth),
-        Costs {
-            asked: 1,
-            kept: 1,
-            sent: 1
-        },
-        "a rebuilt generator's plan was not asked again before the plan is asked for:\n{fourth}"
+        spent(3, 3, 3, 1),
+        "a rebuilt generator's plans were not asked again in one batch before any plan is \
+         asked for:\n{fourth}"
     );
 
     let fifth = configure(&["-DPROBE_ARGS=--limit;probe_bound=3"]);
     assert_eq!(
         costs(&fifth),
-        Costs {
-            asked: 1,
-            kept: 0,
-            sent: 1
-        },
+        spent(3, 2, 1, 1),
         "a plan asked with another argument was answered from another plan's answer:\n{fifth}"
     );
     assert_eq!(planned_files(&fifth), files);
@@ -242,7 +282,8 @@ fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generato
         .collect();
     assert_eq!(
         keys.len(),
-        1,
-        "the answer no plan asks for any more was kept: {keys:?}"
+        3,
+        "an answer no plan asks for any more was kept, or one a plan asks was removed: \
+         {keys:?}"
     );
 }

@@ -303,6 +303,12 @@ sce_generate_static_w3c_c_test(307 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SC
 sce_generate_static_w3c_c_test(216 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 6.4.1 (test216):`<invoke srcexpr="Var1">` runtime evaluation — Var1 reassigned in onentry to the child path, codegen lowers a luaL_dostring eval-validation gate then spawns the pre-generated `test216_hybrid0` stub child. cpp `test216_sm.inl:166-185` is the equivalent pure-AOT pattern.
 sce_generate_static_w3c_c_test(530 "${SCE_C_GENERATED_DIR}" NEEDS_LUA)  # W3C SCXML 6.4.2 (test530):`<invoke><content expr="Var1"/></invoke>` runtime evaluation — Var1 reassigned in onentry from integer 1 to a literal SCXML scriptlet, codegen lowers a luaL_dostring eval-validation gate then spawns the pre-generated `test530_hybrid0` stub child (byte-equivalent to the original inline `<scxml><final/></scxml>`). cpp `test530_sm.inl:166-185` is the equivalent pattern.
 
+# Every fixture registered above is declared here, after its plan and every
+# other one were asked of the generator in one batch
+# (cmake/SCEStaticW3CTest.cmake), which sets W3C_C_AOT_TEST_<id>_SOURCES for
+# the loop below. A fixture registered below this line is refused.
+sce_declare_registered_static_w3c_c_tests()
+
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `SCE_STATIC_ASSERT`'s C11 lowering and stdint/stdbool are first-class
 # regardless of the compiler's default standard. Lua54 is linked only into fixtures flagged
