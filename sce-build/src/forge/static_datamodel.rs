@@ -2301,7 +2301,7 @@ impl<'a> Judge<'a> {
         Err(Located::new(
             ScxmlSemanticError::StaticLogUnloggableValue {
                 expr: written.to_string(),
-                ty: self.spelled_type(written, ty),
+                ty: self.spelled_type(ctx, written, ty),
                 state: state.to_string(),
                 observed,
             }
@@ -2312,10 +2312,12 @@ impl<'a> Judge<'a> {
         ))
     }
 
-    /// The type of the value `written` computes, as a `sce:type` spells it: the
-    /// type the variable it names declares, the record a loop's item or the
-    /// payload taken whole is of, and the type it was judged to otherwise.
-    fn spelled_type(&self, written: &str, ty: InferredType) -> String {
+    /// The type of the value `written` computes, as a `sce:type` spells it,
+    /// every bound in its bracket (docs/adr/0086, section 1.2): the type the
+    /// variable it names declares, the record a loop's item or the payload taken
+    /// whole is of, the type of the field, element or present value a place
+    /// holds at the path it writes, and the type it was judged to otherwise.
+    fn spelled_type(&self, ctx: &TypeCtx<'_>, written: &str, ty: InferredType) -> String {
         if let Some(value_type) = self
             .scope
             .variables
@@ -2343,6 +2345,14 @@ impl<'a> Judge<'a> {
             if let Some(alias) = self.payload_alias() {
                 return record(&alias);
             }
+        }
+        // A field of a record, at any depth: the judged type has no bound, and
+        // the place's type states every one its schema declares.
+        if let Some(place) = self.whole_place(ctx, written) {
+            return match self.statechart_record_alias(&place) {
+                Some(alias) => record(&alias),
+                None => place.ty.to_string(),
+            };
         }
         ty.describe()
     }

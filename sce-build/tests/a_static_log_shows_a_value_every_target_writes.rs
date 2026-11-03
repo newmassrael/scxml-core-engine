@@ -49,9 +49,9 @@ const EVERY_TARGET: [&[&str]; 7] = [
 const DATA: &str = r#"<data id="count" sce:type="uint32" expr="0"/>
     <data id="ratio" sce:type="float64" expr="0.5"/>
     <data id="flag" sce:type="bool" expr="false"/>
-    <data id="note" sce:type="string" sce:capacity="16" expr="'x'"/>
+    <data id="note" sce:type="string[16]" expr="'x'"/>
     <data id="mode" sce:type="enum:ViewMode" expr="ViewMode.month"/>
-    <data id="frame" sce:type="bytes" sce:capacity="8" expr="'ab'"/>
+    <data id="frame" sce:type="bytes[8]" expr="'ab'"/>
     <data id="draft" sce:type="record:Day">
       <sce:set name="year" expr="2026"/>
       <sce:set name="month" expr="1"/>
@@ -61,9 +61,9 @@ const DATA: &str = r#"<data id="count" sce:type="uint32" expr="0"/>
       <sce:set name="sensor" expr="1"/>
       <sce:set name="frame" expr="'ab'"/>
     </data>
-    <data id="days" sce:type="list&lt;record:Day&gt;" sce:capacity="3"/>
+    <data id="days" sce:type="list&lt;record:Day&gt;[3]"/>
     <data id="due" sce:type="optional&lt;int64&gt;" expr="null"/>
-    <data id="title" sce:type="optional&lt;string&gt;" sce:capacity="16" expr="null"/>
+    <data id="title" sce:type="optional&lt;string[16]&gt;" expr="null"/>
     <data id="status" sce:type="optional&lt;enum:ViewMode&gt;" expr="null"/>"#;
 
 /// The optional values no `<log>` takes, declared only by the probes that
@@ -71,7 +71,7 @@ const DATA: &str = r#"<data id="count" sce:type="uint32" expr="0"/>
 /// until its own step of docs/adr/0055, so a probe that must be accepted by all of
 /// them does not hold one.
 const OPTIONAL_UNLOGGED: &str = r#"
-    <data id="maybe" sce:type="optional&lt;bytes&gt;" sce:capacity="8" expr="null"/>
+    <data id="maybe" sce:type="optional&lt;bytes[8]&gt;" expr="null"/>
     <data id="pick" sce:type="optional&lt;record:Day&gt;" expr="null"/>"#;
 
 /// A statechart declaring [`DATA`] and `extra`, whose `go` transition runs
@@ -202,7 +202,7 @@ fn refused_at_the_log(extra: &str, body: &str, payload: &str, expr: &str, ty: &s
 
 #[test]
 fn a_byte_string_variable_is_refused_in_a_log() {
-    refused_at_the_log("", r#"<log expr="frame"/>"#, "", "frame", "bytes");
+    refused_at_the_log("", r#"<log expr="frame"/>"#, "", "frame", "bytes[8]");
 }
 
 #[test]
@@ -212,7 +212,7 @@ fn a_byte_string_field_of_a_record_is_refused_in_a_log() {
         r#"<log expr="framed.frame"/>"#,
         "",
         "framed.frame",
-        "bytes",
+        "bytes[8]",
     );
 }
 
@@ -258,7 +258,7 @@ fn an_optional_byte_string_is_refused_in_a_log() {
         r#"<log expr="maybe"/>"#,
         "",
         "maybe",
-        "optional<bytes>",
+        "optional<bytes[8]>",
     );
 }
 

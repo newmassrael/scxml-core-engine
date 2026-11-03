@@ -625,8 +625,8 @@ pub enum ScxmlSemanticError {
     StaticLogUnloggableValue {
         /// The expression, for the message.
         expr: String,
-        /// The value's type, as a `sce:type` spells it where one can
-        /// (`bytes`, `record:Day`, `optional<bytes>`).
+        /// The value's type, as a `sce:type` spells it where one can, every
+        /// bound in its bracket (`bytes[8]`, `record:Day`, `optional<bytes[8]>`).
         ty: String,
         /// Owning state id, empty at document scope.
         state: String,
