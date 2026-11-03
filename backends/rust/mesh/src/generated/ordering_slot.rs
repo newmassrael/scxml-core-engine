@@ -14,6 +14,10 @@ pub const EVENT_NAME: &str = "mesh.ordering_slot";
 /// The revision of the schema (`sce:revision`, 1 when the document declares none).
 #[allow(dead_code)]
 pub const REVISION: u32 = 1;
+/// The most bytes the event's `_event.data` JSON text takes: every list full, every
+/// text at its bound, every number at its longest spelling.
+#[allow(dead_code)]
+pub const DATA_MAX_LEN: u64 = 67;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OrderingSlotPayload {
