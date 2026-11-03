@@ -181,6 +181,17 @@ generator folds each `source` into the Rust harness as a `{Codec}Parts` literal,
 with the bytes, decodes and compares element by element. A body, a list, a variant, a gate group and an enum are
 refused by name by the literal and by the model until their parts land.
 
+*Landed (step 3, second part, 2026-11-03).* The model reads the leaves: a VLE (Appendix B of the synthesis RFC), a
+flag set written as a VLE, bytes and text of a `length-ref` (a sibling or a flag of a carrier, less its
+`sce:length-arith`) or a `tail`, each within `sce:max-size`. A length gated with its content is derived with it; a
+length stated where its gated content is absent (ADR 0058 §1) belongs to a group with that content (§4.6, R4b), so it
+waits for the group part. The model refuses by name any attribute, root attribute or child it does not read, so a
+rule a document states is never left out of a case. It writes the `sources` of every codec of the catalog that
+imports nothing, takes no flag input and holds no group (45 codecs, 120 cases), adding the entry to
+`numerical_reference.json` where it had none; the bytes it writes agree with the examples the documents give by hand.
+The harness also holds that the decode reads the frame to its end. The literal names its types by the label the
+harness generated the codec under.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.

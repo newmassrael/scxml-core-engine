@@ -139,8 +139,13 @@ pub(super) fn write_attribute(inline_encode: bool) -> &'static str {
 /// to compare with it. A shape the literal does not spell yet is refused by
 /// name, and so is a source that states an element the value does not present
 /// or leaves out one it does.
+///
+/// `codec` is the label the codec was generated under, which names its types;
+/// it can differ from the stem of the file the plan was read from, as for a
+/// fixture whose document is a standard one (`sce:std/...`).
 pub(crate) fn parts_literal(
     plan: &EncodePlan<'_>,
+    codec: &str,
     source: &serde_json::Value,
 ) -> Result<(String, Vec<String>), String> {
     if !plan.groups().is_empty() {
@@ -189,7 +194,7 @@ pub(crate) fn parts_literal(
     Ok((
         format!(
             "{}Parts {{ {} }}",
-            filters::to_pascal_case(plan.model.name.clone()),
+            filters::to_pascal_case(codec.to_string()),
             members.join(", ")
         ),
         accessors,

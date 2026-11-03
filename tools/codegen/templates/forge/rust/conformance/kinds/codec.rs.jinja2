@@ -171,14 +171,22 @@
             &mut ::sce_forge_runtime::codec::VecSink::new(&mut encoded),
         )
         .unwrap_or_else(|e| panic!("{{ f.name }} source {{ loop.index0 }}: encode refused with {e:?}"));
+        {# Typed: an empty frame names no element to infer `u8` from. #}
+        let expected: &[u8] = &[{{ s.encoded | join(", ") }}];
         assert_eq!(
-            encoded,
-            [{{ s.encoded | join(", ") }}],
+            encoded.as_slice(),
+            expected,
             "{{ f.name }} source {{ loop.index0 }}: {{ s.note }}"
         );
         let mut cursor = ::sce_forge_runtime::codec::SceCursor::new(&encoded);
-        let decoded = {{ f.name | to_pascal_case }}::decode(&mut cursor)
+        {# A value of no element is compared by its decode being accepted alone. #}
+        let {% if not s.accessors %}_{% endif %}decoded = {{ f.name | to_pascal_case }}::decode(&mut cursor)
             .unwrap_or_else(|e| panic!("{{ f.name }} source {{ loop.index0 }}: decode refused with {e:?}"));
+        assert_eq!(
+            cursor.remaining(),
+            0,
+            "{{ f.name }} source {{ loop.index0 }}: the decode left bytes of the frame unread"
+        );
 {% for a in s.accessors %}
         assert!(
             fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}Source::{{ a }}(&decoded)

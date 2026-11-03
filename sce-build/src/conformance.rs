@@ -3190,7 +3190,7 @@ fn fold_source_cases(
                         ));
                     }
                     let (literal, accessors) =
-                        crate::forge::generator::rust_parts_literal(plan, source)
+                        crate::forge::generator::rust_parts_literal(plan, &fixture.name, source)
                             .map_err(|e| format!("{at}: {e}"))?;
                     Ok(serde_json::json!({
                         "literal": literal,
@@ -4099,6 +4099,11 @@ mod tests {
             "CodecPresentIfBasicParts { flags: 1, seq: Some(4660) }",
             "CodecPresentIfBasicParts { flags: 254, seq: None }",
             "CodecFlagsBasicParts { header: 165 }",
+            // Text held to its bound; a length gated with it is no member.
+            "CodecPresentIfStringParts { carrier: 1, text: Some(::sce_forge_runtime::codec::Bounded::new(\"abc\")",
+            // A VLE at its largest, and a codec of no element.
+            "CodecVleZintU64Parts { value: 18446744073709551615 }",
+            "CodecZenohDelParts {  }",
         ] {
             assert!(rust.contains(literal), "the Rust harness lacks `{literal}`");
         }
