@@ -148,6 +148,32 @@ derived flag, and a list law. Each case is written from the document and not tak
 oracle stays independent of the printers. A shape enters a printer together with its cases. A printer runs every case
 of every shape it prints.
 
+*Designed at step 3 (2026-11-03): the notation, the model and the harness.*
+
+- **A case states a value as the plan's interface presents it.** Beside `encoded`, a case of a positional codec carries
+  `source`: one member for each element the value presents, named by its field id. A derived element (a count, a
+  length, a known arm's tag, a derived flag) is not a member, since no value states it. A scalar is a number (an
+  enum's underlying number, a flag set's whole carrier), bytes are an array of numbers, text is a string, an absent
+  element is `null`, an embedded body is an object of the body's codec's members, a list or chain is an array of such
+  objects, and the variant is `{"arm": <the arm codec's alias>, "body": {...}}`, or `{"tag": n, "body": {...}}` for
+  the default arm. A gate group is an object of its members with `"arm"`, the index of the arm the value holds. The
+  catalog's hand-written field lists (`fixtures.json` `fields`) state a builder's struct; `source` states the abstract
+  syntax, and the plan, not the catalog, says which elements it has.
+- **The bytes are computed by an independent model.** `tests/forge/conformance/binary_model.py` is a reading of the
+  positional rules of SCE_FORGE.md, written from the page and the fixture's document alone, as
+  `content_line_model.py` is for content lines: it derives every derived element from the `source` and writes the
+  frame, and it decodes the frame back to the `source`, so each case holds against the model before it is written.
+  A backend that disagrees with a case reads the page differently from the model, and which is wrong is decided
+  against the page.
+- **A printer's harness writes each case as a literal of its ready-made source.** The conformance generator reads the
+  cases at generation time, as it already does for rejects, and a printer that prints the plan writes each `source`
+  as a literal of its idiom's ready-made source (Rust `XParts`, docs/adr/0058 §4), so no harness parses a nested
+  value at run time. The harness encodes it and compares the bytes (law 4), then decodes the bytes and compares what
+  the view presents with the literal (law 1).
+- **A backend that has not taken the plan keeps its `decoded` cases.** Its builder stores derived elements, which a
+  `source` does not state, so it runs the cases of its catalog fields and is compile-only for the rest until its
+  printer lands (§6).
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.
