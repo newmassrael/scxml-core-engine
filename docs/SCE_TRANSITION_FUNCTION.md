@@ -182,10 +182,10 @@ the unit every machine of a target shares, so the names live in a caseless `enum
 machine spells its own (a name Swift reserves is written in backticks). The enumerations declare no
 raw value, so a caller indexes by `allStates` and `allEvents`, which keep the document's order.
 
-The equivalence test below does not read the Swift file back from its source or compile it: that
-test runs no Swift toolchain. What holds the Swift file is the shape a unit test of
-`generator::transition_function_files` pins, and the Swift drivers of the two integration stems,
-which hold the engine to the function pair by pair.
+It compiles alone, as a library module under `-warnings-as-errors` in the Swift 6 language mode the
+machine's package uses. The equivalence test below holds it as it holds the other six; the Swift lane
+runs its compiling check on the release `bx.toml` pins, and the Swift drivers of the two integration
+stems hold the engine to the function pair by pair.
 
 ### Rust
 
@@ -238,19 +238,23 @@ file name, namespace and naming prefixes, and on the lines that carry the table.
 
 `sce-build/tests/the_emitted_transition_function_equals_the_producer.rs` generates two documents
 (`integration_resources/flat_lifecycle/` and `integration_resources/nested_lifecycle/`, a flat cycle
-and a nested lifecycle that reaches every selection rule) in all six backends, and:
+and a nested lifecycle that reaches every selection rule) in all seven backends, and:
 
 - reads every backend's table back from its source and holds it to the producer's, on any host;
 - compiles each backend's file alone, with its own toolchain and nothing else — Rust in a
   `#![no_std]` library under `-D warnings`, C++ and C under `-Wall -Wextra -Wpedantic -Werror` with
   no include path, Go in a module that requires nothing, Kotlin with no classpath, Python imported in
-  an isolated interpreter from its own directory — then runs a program around it that prints every
-  answer, and compares the print with the producer's table; for C++ the compiler also checks every
-  pair as a constant expression, and the header compiles in one unit with the machine's;
+  an isolated interpreter from its own directory, Swift as a library module under
+  `-warnings-as-errors` — then runs a program around it that prints every answer, and compares the
+  print with the producer's table; for C++ the compiler also checks every pair as a constant
+  expression, and the header compiles in one unit with the machine's. Where no toolchain is found
+  the compiling check skips; the Swift one is also run by the Swift lane
+  (`scripts/gate swift-backend`), on the release `bx.toml` pins and with a skip refused;
 - builds the machine generated beside it against the real runtime of Rust, Go, C, Kotlin and Python,
   drives it to every state of the function by the shortest event path the function gives, sends it
   every event there, and holds the configuration the engine reaches, and whether it took the event
-  or discarded it, to the function;
+  or discarded it, to the function (the Swift machine is driven so by its integration drivers,
+  below);
 - holds the declaration's one value, the forge root that does not take it, every backend accepting
   it, and every route reporting the refusals of an impure document: `check` on one document and on
   a set, `generate`, `orchestrate` and `generate-w3c` every record at once and the same records, the

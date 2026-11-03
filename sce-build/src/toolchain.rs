@@ -196,6 +196,12 @@ pub const HARNESS_TOOLS: &[(&str, ToolSource)] = &[
     // present — kotlinc is itself a JVM program — so no lane installs it
     // separately.
     ("java", ToolSource::RunnerImage),
+    // `swiftc` compiles a generated Swift transition function alone. The
+    // runner image carries a Swift toolchain on `PATH` (`swift-backend.yml`
+    // says so where it installs the pinned one ahead of it), and the Swift
+    // lane runs the same check on the release `bx.toml` pins, which
+    // `scripts/test_swift_backend.sh` puts first on `PATH`.
+    ("swiftc", ToolSource::RunnerImage),
     // Lints one generated file alone, as rustc does when it compiles one:
     // the transition function is held to `clippy::pedantic` this way.
     ("clippy-driver", ToolSource::RustupComponent("clippy")),

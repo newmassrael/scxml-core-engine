@@ -7897,9 +7897,9 @@ mod tests {
     fn every_backend_writes_the_function_when_the_run_built_it() {
         let without = transition_function_model(true, false);
         let hash = "ef".repeat(32);
-        for language in
-            crate::forge::codegen_matrix::emitting(crate::forge::model::ForgeKind::Statechart)
-        {
+        for language in crate::forge::codegen_matrix::emitting_in_part(
+            crate::forge::model::ForgeKind::Statechart,
+        ) {
             assert!(
                 function_files(&without, language)
                     .expect("nothing to refuse")
@@ -7913,7 +7913,7 @@ mod tests {
                 Language::Go => "lamp_transition_function/lamp_transition_function.go",
                 Language::Kotlin => "lampTransitionFunction.kt",
                 Language::Python => "lamp_transition_function.py",
-                Language::Swift => unreachable!("swift emits no machine, so it is not iterated"),
+                Language::Swift => "lamp_transition_function.swift",
             };
             assert_eq!(name, expected_name, "{language:?}");
             assert!(code.contains(&hash), "{language:?}: no hash in:\n{code}");

@@ -5,7 +5,7 @@
 // pure function of (current state, event) beside its machine (SCE Accepted
 // Subset 2.21, docs/SCE_TRANSITION_FUNCTION.md). The function is computed once,
 // by `sce_build::model::TransitionFunction::of`, and this file holds the two
-// things that depend on it to it, in each of the six backends:
+// things that depend on it to it, in each of the seven backends:
 //
 // - the file `generate` writes, read back from its source on any host, and
 //   compiled ALONE with the language's own toolchain and nothing else — which
@@ -22,7 +22,9 @@
 //   integration stems (`integration_resources/<stem>/`), so the C++ AOT engine
 //   and the Interpreter, which this file cannot build, are driven the same way
 //   by their drivers under `tests/integration/`, as every other channel is by
-//   its own.
+//   its own; the Swift machine is driven so by its drivers in the Swift lane
+//   (`backends/swift/tests/Tests/IntegrationTests/`), which builds them against
+//   its runtime on the compiler `bx.toml` pins.
 //
 // The compiling checks run where a toolchain is found; the rest run anywhere.
 // The declaration, its one value, the forge root that does not take it, and
@@ -35,7 +37,7 @@ use std::process::{Command, Output};
 
 use regex::Regex;
 use sce_build::filters;
-use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::codegen_matrix::{emitting, emitting_in_part};
 use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
@@ -47,24 +49,27 @@ use sce_build::toolchain;
 /// lifecycle that reaches every selection rule.
 const FIXTURES: [&str; 2] = ["flat_lifecycle", "nested_lifecycle"];
 
-/// Every backend that emits a machine, by the identifier `generate -l` takes.
-/// A backend that emits nothing yet is refused instead
+/// Every backend that generates a statechart machine, by the identifier
+/// `generate -l` takes: the ones that write it whole and Swift, which writes it in
+/// part (`codegen_matrix::emitting_in_part`) and writes the function of a document
+/// it lowers whole. A backend that emits nothing yet is refused instead
 /// (`a_backend_with_no_emitter_is_refused`).
 fn backends() -> Vec<&'static str> {
-    emitting(ForgeKind::Statechart)
+    emitting_in_part(ForgeKind::Statechart)
         .map(|language| language.canonical_name())
         .collect()
 }
 
 /// The template each backend renders the function with, under
 /// `tools/codegen/templates/`.
-const TEMPLATES: [&str; 6] = [
+const TEMPLATES: [&str; 7] = [
     "rust/transition_function.rs.jinja2",
     "transition_function.jinja2",
     "c/transition_function.h.jinja2",
     "go/transition_function.go.jinja2",
     "kotlin/transition_function.kt.jinja2",
     "python/transition_function.py.jinja2",
+    "swift/transition_function.swift.jinja2",
 ];
 
 fn sce_codegen_bin() -> PathBuf {
@@ -159,6 +164,7 @@ fn machine_file(lang: &str, out: &Path, stem: &str) -> PathBuf {
         "go" => format!("{stem}_sm.go"),
         "kotlin" => format!("{stem}Sm.kt"),
         "python" => format!("{stem}_sm.py"),
+        "swift" => format!("{stem}_sm.swift"),
         other => panic!("no machine file for {other}"),
     })
 }
@@ -183,8 +189,18 @@ fn function_file(lang: &str, out: &Path, stem: &str) -> PathBuf {
             .join(format!("{stem}_transition_function.go")),
         "kotlin" => out.join(format!("{stem}TransitionFunction.kt")),
         "python" => out.join(format!("{stem}_transition_function.py")),
+        "swift" => out.join(format!("{stem}_transition_function.swift")),
         other => panic!("no function file for {other}"),
     }
+}
+
+/// The caseless enum the Swift function of `stem` is written in: the machine's
+/// name, as the Swift filters spell it, and `TransitionFunction`.
+fn swift_namespace(stem: &str) -> String {
+    format!(
+        "{}TransitionFunction",
+        filters::to_pascal_case(stem.to_string())
+    )
 }
 
 fn read(path: &Path) -> String {
@@ -318,9 +334,10 @@ fn main() {{
 #[test]
 fn every_fixture_generates_its_machine_and_its_function_in_every_backend() {
     // The constant each backend names the hash by (`SOURCE_HASH`, Go's
-    // `SourceHash`) and the literal after it, across a line break if a
-    // formatter put one there.
-    let carried = Regex::new(r#"(?:SOURCE_HASH|SourceHash)[^"]*"([0-9a-f]{64})""#).unwrap();
+    // `SourceHash`, Swift's `sourceHash`) and the literal after it, across a
+    // line break if a formatter put one there.
+    let carried =
+        Regex::new(r#"(?:SOURCE_HASH|SourceHash|sourceHash)[^"]*"([0-9a-f]{64})""#).unwrap();
     for lang in backends() {
         for stem in FIXTURES {
             let out = scratch(&format!("generated_{lang}_{stem}"));
@@ -382,6 +399,10 @@ fn names_of(lang: &str) -> Names {
         "python" => Names {
             state: |s| filters::to_python_const(s.to_string()),
             event: |e| filters::to_python_const(e.to_string()),
+        },
+        "swift" => Names {
+            state: |s| filters::to_swift_variant(s.to_string()),
+            event: |e| filters::to_swift_variant(e.to_string()),
         },
         other => panic!("no names for {other}"),
     }
@@ -457,6 +478,12 @@ fn written_cells(lang: &str, source: &str, stem: &str) -> Vec<Cell> {
         "kotlin" => nested(
             r"State\.(\w+) -> when \(event\) \{([^{}]*)\}",
             r"Event\.(\w+) -> State\.(\w+)",
+        ),
+        // A case Swift reserves is written in backticks, which are part of the
+        // identifier the source spells.
+        "swift" => nested(
+            r"case \.([\w`]+):\s*switch event \{([^{}]*)\}",
+            r"case \.([\w`]+): return \.([\w`]+)",
         ),
         other => panic!("no reader for {other}"),
     };
@@ -1263,6 +1290,92 @@ fn the_python_function_imports_alone_and_answers_as_the_producer() {
             run_ok(run, &format!("[{stem}] the Python listing program")),
             listing(&function),
             "[{stem}] the imported Python function does not answer as the producer"
+        );
+    }
+}
+
+/// A Swift program that prints the compiled function in `listing`'s shape.
+/// `@NAMESPACE@` is the caseless enum the function is written in.
+const SWIFT_LISTING: &str = r#"typealias TF = @NAMESPACE@
+
+print("hash\t\(TF.sourceHash)")
+print("initial\t\(TF.initial.scxmlName)")
+for state in TF.allStates {
+    precondition(TF.state(named: state.scxmlName) == state, "a state name does not read back")
+    let configuration = TF.configuration(state).joined(separator: " ")
+    print("state\t\(state.scxmlName)\t\(TF.isFinal(state))\t\(configuration)")
+}
+for event in TF.allEvents {
+    precondition(TF.event(named: event.scxmlName) == event, "an event name does not read back")
+    print("event\t\(event.scxmlName)")
+}
+for state in TF.allStates {
+    for event in TF.allEvents {
+        let next = TF.transition(state, event)?.scxmlName ?? "-"
+        print("next\t\(state.scxmlName)\t\(event.scxmlName)\t\(next)")
+    }
+}
+precondition(TF.state(named: "") == nil, "an empty name reads as a state")
+precondition(TF.event(named: "") == nil, "an empty name reads as an event")
+"#;
+
+/// The generated Swift compiles alone — `swiftc` over the file with nothing but
+/// the standard library, as a library module in the Swift 6 language mode the
+/// machine's package uses, every warning an error — and a program over it prints
+/// every answer as the producer.
+///
+/// The Swift lane runs this test too, on the compiler `bx.toml` pins and with a
+/// skip refused (`scripts/test_swift_backend.sh`, its `transition-outputs` arm).
+#[test]
+fn the_swift_function_compiles_alone_and_answers_as_the_producer() {
+    let Some(swiftc) = toolchain::locate("swiftc") else {
+        toolchain::skipped(
+            "the_swift_function_compiles_alone_and_answers_as_the_producer: swiftc not on PATH",
+        );
+        return;
+    };
+    for stem in FIXTURES {
+        let work = scratch(&format!("swift_alone_{stem}"));
+        let out = work.join("out");
+        generate("swift", &fixture(stem), &out);
+        let source = function_file("swift", &out, stem);
+        let function = emitted(&fixture(stem), &header_hash(&read(&source)));
+
+        let mut alone = Command::new(&swiftc);
+        alone
+            .args([
+                "-swift-version",
+                "6",
+                "-parse-as-library",
+                "-warnings-as-errors",
+            ])
+            .args(["-module-name", "Alone", "-c"])
+            .arg(&source)
+            .arg("-o")
+            .arg(work.join("alone.o"));
+        run_ok(alone, &format!("[{stem}] swiftc over the function alone"));
+
+        let program = work.join("main.swift");
+        std::fs::write(
+            &program,
+            SWIFT_LISTING.replace("@NAMESPACE@", &swift_namespace(stem)),
+        )
+        .expect("write the program");
+        let binary = work.join("listing");
+        let mut build = Command::new(&swiftc);
+        build
+            .args(["-swift-version", "6", "-module-name", "Listing", "-o"])
+            .arg(&binary)
+            .arg(&source)
+            .arg(&program);
+        run_ok(build, &format!("[{stem}] swiftc over the listing program"));
+        assert_eq!(
+            run_ok(
+                Command::new(&binary),
+                &format!("[{stem}] the Swift listing program")
+            ),
+            listing(&function),
+            "[{stem}] the compiled Swift function does not answer as the producer"
         );
     }
 }

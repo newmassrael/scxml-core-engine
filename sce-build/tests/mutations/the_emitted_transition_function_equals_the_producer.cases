@@ -5,7 +5,7 @@
 # A document that declares `sce:transition-function="emit"` is generated with a pure function
 # of (current state, event) beside its machine. `TransitionFunction::of` computes it once
 # (`sce-build/src/transition_function.rs`), one template per backend renders it
-# (`tools/codegen/templates/{rust,c,go,kotlin,python}/transition_function.*.jinja2` and the C++
+# (`tools/codegen/templates/{rust,c,go,kotlin,python,swift}/transition_function.*.jinja2` and the C++
 # `tools/codegen/templates/transition_function.jinja2`), and
 # `the_emitted_transition_function_equals_the_producer` holds every template to the producer
 # and the producer to the engines. A test that has never been made to fail says nothing about
@@ -33,6 +33,7 @@ mutation_targets tools/codegen/templates/c/transition_function.h.jinja2
 mutation_targets tools/codegen/templates/go/transition_function.go.jinja2
 mutation_targets tools/codegen/templates/kotlin/transition_function.kt.jinja2
 mutation_targets tools/codegen/templates/python/transition_function.py.jinja2
+mutation_targets tools/codegen/templates/swift/transition_function.swift.jinja2
 mutation_oracles sce-build/tests/the_emitted_transition_function_equals_the_producer.rs
 
 # ── The producer: the selection rule, and the leaf a target enters ──
@@ -81,7 +82,7 @@ edit("tools/codegen/templates/rust/transition_function.rs.jinja2",
      '{% if false %}')
 PY
 
-# ── The other five templates: one cell or one configuration each ──
+# ── The other six templates: one cell or one configuration each ──
 
 mutation_case "C++ writes the source state where the next state belongs" <<'PY'
 edit("tools/codegen/templates/transition_function.jinja2",
@@ -111,6 +112,12 @@ mutation_case "Python writes the source state where the next state belongs" <<'P
 edit("tools/codegen/templates/python/transition_function.py.jinja2",
      ': State.{{ cell.to | to_python_const }},',
      ': State.{{ state.id | to_python_const }},')
+PY
+
+mutation_case "Swift writes the source state where the next state belongs" <<'PY'
+edit("tools/codegen/templates/swift/transition_function.swift.jinja2",
+     '            case .{{ cell.event | to_event_variant }}: return .{{ cell.to | to_state_variant }}',
+     '            case .{{ cell.event | to_event_variant }}: return .{{ state.id | to_state_variant }}')
 PY
 
 # ── The seam every backend's function goes through ──
