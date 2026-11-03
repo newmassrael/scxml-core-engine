@@ -259,6 +259,16 @@ MODULE.bazel.lock
 # a second text of the child that could fall behind the first.
 **/*__sce_synth_invoke__*.scxml
 
+# §scxml-6.4: the stub child of a hybrid `<invoke>` (`<parent>_hybrid<n>`) is
+# written by its parent's generation into the output directory, and every
+# reader takes it from there: the conformance CMake route plans its generation
+# from the parent's plan (`--plan-children`), the sourcemap drift gate
+# regenerates it through the parent that writes it. A copy tracked beside the
+# W3C fixture was a second text of a generated artifact, kept true by a test
+# rather than by the generator. The committed backend trees keep the stub they
+# were generated with, beside its machine, as they keep every generated file.
+resources/**/*_hybrid[0-9]*.scxml
+
 # SCE embed output (regenerate via: ./scripts/package_embed.sh)
 # embed/MANIFEST.json records the public-header API surface and is
 # checked in so consumers vendoring embed/ can diff old-vs-new across

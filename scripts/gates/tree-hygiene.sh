@@ -236,7 +236,7 @@ cargo test -p sce-build --features cli,ffi \
     --test the_pin_is_read_from_one_place \
     --test every_annotated_document_is_accounted_for \
     --test script_engine_census \
-    --test hybrid_stubs_are_tracked_as_generated \
+    --test hybrid_stubs_are_written_only_by_the_generator \
     --test a_regeneration_removes_what_it_no_longer_writes \
     --test a_cpp_test_unit_compiles_a_bounded_number_of_machines \
     --test a_documents_tables_are_its_tree_in_document_order \

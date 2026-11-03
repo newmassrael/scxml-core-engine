@@ -37,6 +37,16 @@
 //! it from the text the parent's generation would write (`--plan-children`),
 //! and the route declares it from that answer
 //! (`sce_codegen_plan(<P> FROM <plan> CHILD <name>)`).
+//!
+//! Both routes declare every child generation that way, and only that way:
+//! every plan a route asks of the generator asks for its children's
+//! generations too, every child command is declared from a plan read FROM
+//! that answer, and no route reads the child document names a plan sets
+//! (`<PREFIX>_CHILDREN`, `<PREFIX>_SYNTH`) to plan a child by its name. The
+//! conformance route planned each child document a fixture's answer named by
+//! its path in the fixture's directory, so a hybrid `<invoke>`'s stub, which
+//! only a generation writes, had to be tracked there for the route to find
+//! it.
 
 /// The route under test. Compiled in, so an edit to it starts the suite that
 /// judges it (`include-str-coverage` in tools/git-hooks/gate_registry.py).
@@ -433,6 +443,146 @@ fn violations(text: &str) -> Vec<String> {
         found.extend(generation_violations(command, &prefixes));
     }
     found
+}
+
+/// The plan expansions a route reads to name a child document itself: the
+/// names a plan sets of the child documents its run writes or stages
+/// (cmake/SCECodegenPlan.cmake). A route that reads them builds a child's
+/// path from its name rather than declaring the generation the plan holds.
+const CHILD_NAME_LISTS: &[&str] = &["_CHILDREN}", "_SYNTH}"];
+
+/// Every way a route departs from declaring each child generation from the
+/// plan its parent's answer holds. Empty is the route this file holds.
+fn child_generation_violations(text: &str) -> Vec<String> {
+    let code = cmake_code(text);
+    let mut found = Vec::new();
+    let plans = invocations(&code, "sce_codegen_plan");
+    let mut read_from_a_plan = 0;
+    for plan in &plans {
+        if plan.args.iter().any(|arg| arg == "FROM") {
+            read_from_a_plan += 1;
+        } else if !plan.args.iter().any(|arg| arg == "CHILD_GENERATIONS") {
+            found.push(format!(
+                "line {}: a plan that does not ask for the generations of the child documents \
+                 its run writes (CHILD_GENERATIONS), so a child's generation is declared from \
+                 something other than the generator's answer",
+                plan.line
+            ));
+        }
+    }
+    if read_from_a_plan == 0 {
+        found.push(
+            "no child generation is declared from a plan read FROM its parent's answer \
+             (`sce_codegen_plan(<P> FROM <plan> CHILD <name>)`)"
+                .to_string(),
+        );
+    }
+    for (index, line) in code.lines().enumerate() {
+        for list in CHILD_NAME_LISTS {
+            if line.contains(list) {
+                found.push(format!(
+                    "line {}: `{list}` reads the names of the child documents a plan names, to \
+                     name a child document by hand: {}",
+                    index + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn neither_route_names_a_child_document_by_hand() {
+    for (route, text) in [
+        ("cmake/SCEStaticW3CTest.cmake", W3C_ROUTE),
+        ("cmake/SCEStaticIntegrationFixture.cmake", INTEGRATION_ROUTE),
+    ] {
+        let found = child_generation_violations(text);
+        assert!(
+            found.is_empty(),
+            "{route} declares a child generation that is not the one its parent's plan \
+             holds:\n  {}\n\nAsk the plan with CHILD_GENERATIONS and declare each child from \
+             `sce_codegen_plan(<P> FROM <plan> CHILD <name>)`.",
+            found.join("\n  ")
+        );
+    }
+}
+
+/// The conformance route asks one plan of a fixture, for the fixture and the
+/// children its generation writes, and declares each child's generation from
+/// it: one plan asked of the generator, one read FROM it.
+#[test]
+fn the_w3c_route_declares_each_child_generation_from_the_fixtures_plan() {
+    let code = cmake_code(W3C_ROUTE);
+    let plans = invocations(&code, "sce_codegen_plan");
+    let asks_for_children = plans
+        .iter()
+        .filter(|plan| plan.args.iter().any(|arg| arg == "CHILD_GENERATIONS"))
+        .count();
+    let read_from_a_plan = plans
+        .iter()
+        .filter(|plan| plan.args.iter().any(|arg| arg == "FROM"))
+        .count();
+    assert_eq!(
+        (asks_for_children, read_from_a_plan),
+        (1, 1),
+        "the conformance route asks the fixture's plan for its children's generations and \
+         declares each from it"
+    );
+}
+
+/// A child planned by its own name in the fixture's directory, which is what
+/// the conformance route did while it found a hybrid stub only by tracking a
+/// copy of it there, is refused.
+#[test]
+fn a_child_planned_by_its_name_is_refused() {
+    let by_name = format!(
+        "{PLANNED_GENERATION}\nforeach(C ${{_PLAN_CHILDREN}})\n\
+         sce_codegen_plan(_CHILD STEM \"${{C}}\" DOCUMENT \"${{R}}/${{C}}.scxml\" \
+         OUTPUT_DIR \"${{O}}\" LANGUAGE cpp)\n\
+         add_custom_command(\n\
+             OUTPUT ${{_CHILD_OUTPUTS}}\n\
+             COMMAND \"${{SCE_CODEGEN}}\" generate \"${{O}}/${{C}}.scxml\" \
+         --write-deps \"${{_CHILD_DEPFILE}}\"\n\
+             DEPFILE \"${{_CHILD_DEPFILE}}\"\n\
+             ${{_CHILD_BYPRODUCTS_ARG}}\n\
+             VERBATIM\n\
+         )\nendforeach()\n"
+    );
+    assert_eq!(
+        violations(&by_name),
+        Vec::<String>::new(),
+        "the shape is a planned generation, which the declaration rules alone accept"
+    );
+    let found = child_generation_violations(&by_name);
+    assert!(
+        found.iter().any(|v| v.contains("`_CHILDREN}`")),
+        "a route reading the plan's child names was accepted: {found:?}"
+    );
+    assert!(
+        found.iter().any(|v| v.contains("CHILD_GENERATIONS")),
+        "a plan that does not ask for its children's generations was accepted: {found:?}"
+    );
+    assert!(
+        found.iter().any(|v| v.contains("FROM its parent's answer")),
+        "a route with no child generation read FROM a plan was accepted: {found:?}"
+    );
+}
+
+/// The shape both routes use is accepted by the child-generation rules.
+#[test]
+fn a_child_generation_read_from_its_parents_plan_names_no_child_by_hand() {
+    let from_the_plan = r#"
+sce_codegen_plan(_PLAN STEM "${M}" DOCUMENT "${D}" OUTPUT_DIR "${O}" LANGUAGE cpp CHILD_GENERATIONS)
+foreach(C ${_PLAN_GENERATIONS})
+    sce_codegen_plan(_CHILD_PLAN FROM _PLAN CHILD "${C}")
+endforeach()
+"#;
+    assert_eq!(
+        child_generation_violations(from_the_plan),
+        Vec::<String>::new()
+    );
 }
 
 #[test]

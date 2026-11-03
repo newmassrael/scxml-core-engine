@@ -207,10 +207,11 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "forge_document_name_is_the_stem",
     "gate_registry_contract",
     "hook_ci_parity",
-    // Parses every tracked W3C resource for its hybrid invokes and holds the
-    // tracked stub children to what code generation writes — a document or a
-    // stub added anywhere under `resources/` changes what it reads.
-    "hybrid_stubs_are_tracked_as_generated",
+    // Parses every tracked W3C resource for its hybrid invokes, holds that no
+    // stub child is tracked, and asks the generator to plan each stub's
+    // generation — a document or a stub added anywhere under `resources/`
+    // changes what it reads.
+    "hybrid_stubs_are_written_only_by_the_generator",
     // Asks `git ls-files` which backends own a `tools/codegen/templates/mesh/
     // <dir>/` tree, and that answer IS the gate: a directory appearing there
     // gives a backend a generated router, so SCE_MESH.md §9.5's roster has to

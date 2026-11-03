@@ -333,21 +333,39 @@ fn committed_sourcemaps_match_regeneration() {
             })
             .collect();
 
+        // A document an author wrote is regenerated from where it is
+        // tracked. A document a generation writes (the stub of a hybrid
+        // `<invoke>`) is regenerated from where the regeneration of the
+        // document that starts it wrote it, as a build reads it: so the
+        // authored ones first, and each run's directory kept until the
+        // sidecar is compared.
+        let (authored, written): (Vec<&String>, Vec<&String>) = sources
+            .iter()
+            .partition(|name| idx.contains_key(name.as_str()));
         let mut got: BTreeMap<String, serde_json::Value> = BTreeMap::new();
         let mut failed = false;
-        for (i, source_name) in sources.iter().enumerate() {
-            let candidates = idx.get(source_name).unwrap_or_else(|| {
-                panic!(
-                    "{} traces back to {source_name}, which is not under {SCXML_ROOTS:?}",
-                    sidecar.display(),
-                )
-            });
-            let source = &candidates[0];
+        let mut runs: Vec<PathBuf> = Vec::new();
+        for (i, source_name) in authored.into_iter().chain(written).enumerate() {
+            let source = match idx.get(source_name.as_str()) {
+                Some(candidates) => candidates[0].clone(),
+                None => runs
+                    .iter()
+                    .map(|run| run.join(source_name.as_str()))
+                    .find(|path| path.is_file())
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "{} traces back to {source_name}, which is neither under \
+                             {SCXML_ROOTS:?} nor written by the regeneration of a document \
+                             that is",
+                            sidecar.display(),
+                        )
+                    }),
+            };
             let out_dir = scratch.join(format!("case-{compared}-{i}"));
             std::fs::create_dir_all(&out_dir).expect("create case dir");
             let run = Command::new(sce_codegen_bin())
                 .arg("generate")
-                .arg(source)
+                .arg(&source)
                 .arg("-l")
                 .arg("rust")
                 .arg("-o")
@@ -380,7 +398,10 @@ fn committed_sourcemaps_match_regeneration() {
             let regenerated: serde_json::Value =
                 serde_json::from_str(&text).expect("regenerated sidecar is JSON");
             got.extend(normalise(&regenerated["symbols"]));
-            let _ = std::fs::remove_dir_all(&out_dir);
+            runs.push(out_dir);
+        }
+        for run in runs {
+            let _ = std::fs::remove_dir_all(run);
         }
         compared += 1;
         if failed {

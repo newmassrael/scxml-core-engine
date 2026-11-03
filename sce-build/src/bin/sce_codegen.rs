@@ -7533,14 +7533,14 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         //
         // ⚠ C11 used to write it beside the SCXML source instead, because the
         // W3C C11 harness found children by globbing RESOURCE_DIR at configure
-        // time. The harness now asks `--plan generate` which child documents a
-        // fixture's generation names, and stages each one `resources/<N>/`
-        // holds (cmake/SCECodegenPlan.cmake): the TRACKED stubs, which
-        // `hybrid_stubs_are_tracked_as_generated` holds to
-        // `HybridInvokeInfo::stub_document`. A write into the source tree was
-        // never what made them visible. What the write did do was put
-        // an ignored `.scxml` into whatever directory a C11 generate was
-        // pointed at — and the §synth-6.2.6 source set reads every `.scxml`
+        // time. The harness now asks `--plan generate --plan-children` for a
+        // fixture's generation and the generation of every child document it
+        // writes (cmake/SCECodegenPlan.cmake), so the stub is planned from the
+        // text written here and no copy of it is kept in the source tree
+        // (`hybrid_stubs_are_written_only_by_the_generator`). A write into the
+        // source tree was never what made it visible. What the write did do
+        // was put an ignored `.scxml` into whatever directory a C11 generate
+        // was pointed at — and the §synth-6.2.6 source set reads every `.scxml`
         // under the input root, so the next committed-tree regeneration there
         // embedded a `source-hash` no clean checkout could reproduce
         // (measured 2026-09-22 on `invoke_expression_failure_is_reported`).

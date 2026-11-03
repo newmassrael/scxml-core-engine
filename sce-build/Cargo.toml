@@ -1555,6 +1555,14 @@ name = "a_carried_child_the_generator_refuses_refuses_its_parent"
 path = "tests/a_carried_child_the_generator_refuses_refuses_its_parent.rs"
 required-features = ["cli"]
 
+# The stub of a hybrid `<invoke>` is the generator's alone: none is tracked, and
+# the plan of its fixture plans its generation. It spawns `sce-codegen --plan`,
+# so it carries the `cli` gate.
+[[test]]
+name = "hybrid_stubs_are_written_only_by_the_generator"
+path = "tests/hybrid_stubs_are_written_only_by_the_generator.rs"
+required-features = ["cli"]
+
 # A child written in-line that a deploy places on another partition is written
 # by the run of that partition, not by its parent's. It spawns `sce-codegen
 # generate`, so it carries the `cli` gate.

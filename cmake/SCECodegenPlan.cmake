@@ -362,6 +362,21 @@ function(sce_codegen_plan PREFIX)
             list(APPEND _WRITERS_OF "${_CHILD}")
             set(_WRITER_FILES_${_CHILD} ${_GENERATION_${_CHILD}_FILES})
         endforeach()
+
+        # Every child document the run writes or stages is one whose machine
+        # the run's machine names, so a plan asked for the children's
+        # generations holds one for each: a child without one is a header no
+        # rule writes.
+        if(_SCP_CHILD_GENERATIONS)
+            foreach(_CHILD ${_CHILDREN})
+                if(NOT "${_CHILD}" IN_LIST _GENERATIONS)
+                    message(FATAL_ERROR
+                        "sce-codegen --plan-children for ${_SCP_DOCUMENT} (${_LANGUAGE}) "
+                        "names the child document ${_CHILD}.scxml and plans no generation "
+                        "of it, so the machine the run's machine names has no rule")
+                endif()
+            endforeach()
+        endif()
     endif()
 
     _sce_codegen_plan_machine(_MACHINE _DEPFILE_NAME "${_STEM}" "${_LANGUAGE}")

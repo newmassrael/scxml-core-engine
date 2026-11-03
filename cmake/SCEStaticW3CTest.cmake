@@ -96,35 +96,37 @@ endfunction()
 # A fixture is its committed document, `resources/<id>/test<id>.scxml`, and
 # the child documents it starts. What its generation writes is not named here:
 # it is asked of the generator (`sce_codegen_plan`), for the fixture's document
-# and then for each child document that answer names, and every file of each
-# answer is declared as an output of the command that writes it. A document
-# that starts a child by `src`, a hybrid `<invoke>` with its stub, an inline
-# `<invoke>` with the machine synthesized from it, a declared transition
-# function with its header: each is in the answer because the generation
-# writes it, so a declaration a document adds tomorrow is declared with it.
+# and, in the same answer, for the generation of every child document that
+# generation writes and of every child document those write in turn
+# (`CHILD_GENERATIONS`), and every file of each answer is declared as an
+# output of the command that writes it. A document that starts a child by
+# `src`, a hybrid `<invoke>` with its stub, an inline `<invoke>` with the
+# machine synthesized from it, a declared transition function with its
+# header: each is in the answer because the generation writes it, so a
+# declaration a document adds tomorrow is declared with it. This is the
+# integration route's mechanism (SCEStaticIntegrationFixture.cmake), and
+# neither route names a child document by hand.
 #
 # ── Read at configure time, from the committed document ────────────────
 #
-# The plan has to be asked before anything is built, so the documents are
-# read where they are committed, and staged into OUTPUT_DIR as the tree is
-# configured (`configure_file`, so an edit reconfigures it, which is when the
-# plan is asked again). Each document is planned in place, beside the child
+# The plan has to be asked before anything is built, so the fixture's
+# document is read where it is committed, and staged into OUTPUT_DIR as the
+# tree is configured (`configure_file`, so an edit reconfigures it, which is
+# when the plan is asked again). It is planned in place, beside the child
 # documents it starts, and generated from its staged copy: every file a
 # generation writes lands in OUTPUT_DIR under the same name whichever copy it
 # read, and the staged copy is the one whose directory the generated machine
 # resolves a `<data src>` against at run time, which is why the sidecar
 # `test<id>.txt` is staged beside it.
 #
-# A child document the fixture holds in RESOURCE_DIR is staged beside its
-# parent before the parent is generated, and is an input of both: the parent
-# reads it to learn what the child sends it, and its own machine is generated
-# from it. That covers the author's sub-fixtures and the stubs of hybrid
-# invokes, which the corpus tracks beside their parents
-# (`hybrid_stubs_are_tracked_as_generated` holds each stub to the text the
-# generation writes, so the parent's rewrite of its staged copy changes no
-# byte). A child document the fixture does not hold is one only a generation
-# writes, and its machine's outputs cannot be planned before the build has
-# run, so it stops the configuration.
+# A child document the author wrote beside the fixture (a sub-fixture started
+# by `src`) is staged beside its parent before the parent is generated
+# (`CHILDREN_HELD_IN`), and is an input of both: the parent reads it to learn
+# what the child sends it, and its own machine is generated from it. A child
+# document only a generation writes (the stub of a hybrid `<invoke>`) is that
+# generation's byproduct, and its own generation is planned by the generator
+# from the text the parent's generation would write, so nothing of it is
+# tracked beside the fixture and its generation waits for its parent's.
 #
 # ── One owner per generated file ──────────────────────────────────────
 #
@@ -144,16 +146,20 @@ endfunction()
 #   OUTPUT_DIR   Where the machines are written, shared by every fixture of
 #                the language.
 #   LANGUAGE     cpp or c11.
-#   CHILD_ARGS   What a child document's generation is given beside what the
-#                fixture's own is (the C++ child is generated `--as-child`).
 #   FORMAT_ARGS  What every generation is given that changes bytes, never
 #                which files.
+#
+# A child document's generation is the one the plan holds for it: `generate
+# <child> --as-child`, with the fixture's language, output directory and input
+# root. `--as-child` changes no C11 file (a C11 child detects what it sends its
+# parent from its document), so both languages run the generation the plan
+# planned.
 #
 # Sets in the caller's scope:
 #   _W3C_FIXTURE_HEADERS  every header any of the fixture's generations writes
 #   _W3C_FIXTURE_SOURCES  every C translation unit any of them writes
 function(_sce_generate_w3c_fixture TEST_NUM OUTPUT_DIR LANGUAGE)
-    cmake_parse_arguments(PARSE_ARGV 3 _FIX "" "" "CHILD_ARGS;FORMAT_ARGS")
+    cmake_parse_arguments(PARSE_ARGV 3 _FIX "" "" "FORMAT_ARGS")
     if(_FIX_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR
             "_sce_generate_w3c_fixture(${TEST_NUM}): unexpected argument(s): "
@@ -198,84 +204,72 @@ function(_sce_generate_w3c_fixture TEST_NUM OUTPUT_DIR LANGUAGE)
         list(APPEND _SIDECARS "${OUTPUT_DIR}/${_STEM}.txt")
     endif()
 
-    set(_HEADERS "")
-    set(_SOURCES "")
-    set(_DECLARED "")
-    set(_VISITED "")
-    set(_PENDING "${_STEM}")
-    list(LENGTH _PENDING _LEFT)
-    while(_LEFT GREATER 0)
-        list(POP_FRONT _PENDING _MACHINE)
-        list(APPEND _VISITED "${_MACHINE}")
+    # The fixture's generation, and, in the same answer, the generation of
+    # every child document it writes (W3C SCXML 6.4: every child document a
+    # machine starts needs a machine of its own).
+    sce_codegen_plan(_PLAN
+        STEM "${_STEM}"
+        DOCUMENT "${RESOURCE_DIR}/${_STEM}.scxml"
+        OUTPUT_DIR "${OUTPUT_DIR}"
+        LANGUAGE ${LANGUAGE}
+        INPUT_ROOT "${RESOURCE_DIR}"
+        CHILDREN_HELD_IN "${RESOURCE_DIR}"
+        CHILD_GENERATIONS)
 
-        if("${_MACHINE}" STREQUAL "${_STEM}")
-            set(_ARGS "")
-            set(_INPUTS "${OUTPUT_DIR}/${_MACHINE}.scxml" ${_SIDECARS})
-        else()
-            set(_ARGS ${_FIX_CHILD_ARGS})
-            set(_INPUTS "${OUTPUT_DIR}/${_MACHINE}.scxml")
-        endif()
+    # Two commands declaring one file is two producers of it, which is the
+    # shape this route was rebuilt to remove.
+    set(_DECLARED ${_PLAN_OUTPUTS} ${_PLAN_BYPRODUCTS})
 
-        sce_codegen_plan(_PLAN
-            STEM "${_MACHINE}"
-            DOCUMENT "${RESOURCE_DIR}/${_MACHINE}.scxml"
-            OUTPUT_DIR "${OUTPUT_DIR}"
-            LANGUAGE ${LANGUAGE}
-            INPUT_ROOT "${RESOURCE_DIR}"
-            CHILDREN_HELD_IN "${RESOURCE_DIR}"
-            ARGS ${_ARGS})
+    # `--write-deps` + DEPFILE: the generated source depends on every jinja2
+    # template that rendered it, not just on the SCXML. Without it a template
+    # edit leaves the artefact stale and the build reuses it silently.
+    add_custom_command(
+        OUTPUT ${_PLAN_OUTPUTS}
+        COMMAND "${SCE_CODEGEN}" generate "${OUTPUT_DIR}/${_STEM}.scxml"
+                -l ${LANGUAGE} -o "${OUTPUT_DIR}"
+                --input-root "${RESOURCE_DIR}"
+                --write-deps "${_PLAN_DEPFILE}"
+                ${_FIX_FORMAT_ARGS}
+        DEPENDS "${OUTPUT_DIR}/${_STEM}.scxml" ${_SIDECARS} ${_PLAN_STAGED} "${SCE_CODEGEN}"
+        DEPFILE "${_PLAN_DEPFILE}"
+        ${_PLAN_BYPRODUCTS_ARG}
+        COMMENT "Generating ${LANGUAGE} code for W3C test ${TEST_NUM}: ${_STEM}"
+        VERBATIM
+    )
+    set(_HEADERS ${_PLAN_HEADERS})
+    set(_SOURCES ${_PLAN_SOURCES})
 
-        # W3C SCXML 6.4: every child document a machine starts needs a machine
-        # of its own, generated from the copy staged beside it.
-        foreach(_CHILD ${_PLAN_CHILDREN})
-            if(NOT "${OUTPUT_DIR}/${_CHILD}.scxml" IN_LIST _PLAN_STAGED)
-                message(FATAL_ERROR
-                    "W3C test ${TEST_NUM}: generating ${_MACHINE} (${LANGUAGE}) writes the "
-                    "child document ${_CHILD}.scxml, which resources/${TEST_NUM}/ does not "
-                    "hold, so the outputs of its own generation cannot be planned before "
-                    "the build has run. A hybrid `<invoke>`'s stub is tracked beside its "
-                    "parent: write it with UPDATE_EXPECT=1 cargo test -p sce-build --test "
-                    "hybrid_stubs_are_tracked_as_generated, review it, and commit it.")
-            endif()
-            if(NOT "${_CHILD}" IN_LIST _VISITED AND NOT "${_CHILD}" IN_LIST _PENDING)
-                list(APPEND _PENDING "${_CHILD}")
-            endif()
-        endforeach()
-
-        # Two commands declaring one file is two producers of it, which is the
-        # shape this route was rebuilt to remove.
-        foreach(_FILE ${_PLAN_OUTPUTS} ${_PLAN_BYPRODUCTS})
+    # Each child document the fixture's generation writes or stages, and each
+    # one those write in turn, generated by a command of its own declared from
+    # the plan the fixture's answer holds for it. It waits for the generation
+    # that writes the document it reads.
+    foreach(_CHILD ${_PLAN_GENERATIONS})
+        sce_codegen_plan(_CHILD_PLAN FROM _PLAN CHILD "${_CHILD}")
+        foreach(_FILE ${_CHILD_PLAN_OUTPUTS} ${_CHILD_PLAN_BYPRODUCTS})
             if("${_FILE}" IN_LIST _DECLARED)
                 message(FATAL_ERROR
                     "W3C test ${TEST_NUM}: ${_FILE} is planned by two of its generations "
-                    "(the second is ${_MACHINE}, ${LANGUAGE}); one file has one producer")
+                    "(the second is ${_CHILD}, ${LANGUAGE}); one file has one producer")
             endif()
             list(APPEND _DECLARED "${_FILE}")
         endforeach()
-
-        # `--write-deps` + DEPFILE: the generated source depends on every
-        # jinja2 template that rendered it, not just on the SCXML. Without it a
-        # template edit leaves the artefact stale and the build reuses it
-        # silently.
         add_custom_command(
-            OUTPUT ${_PLAN_OUTPUTS}
-            COMMAND "${SCE_CODEGEN}" generate "${OUTPUT_DIR}/${_MACHINE}.scxml"
+            OUTPUT ${_CHILD_PLAN_OUTPUTS}
+            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_PLAN_DOCUMENT}"
+                    --as-child
                     -l ${LANGUAGE} -o "${OUTPUT_DIR}"
                     --input-root "${RESOURCE_DIR}"
-                    --write-deps "${_PLAN_DEPFILE}"
-                    ${_ARGS}
+                    --write-deps "${_CHILD_PLAN_DEPFILE}"
                     ${_FIX_FORMAT_ARGS}
-            DEPENDS ${_INPUTS} ${_PLAN_STAGED} "${SCE_CODEGEN}"
-            DEPFILE "${_PLAN_DEPFILE}"
-            ${_PLAN_BYPRODUCTS_ARG}
-            COMMENT "Generating ${LANGUAGE} code for W3C test ${TEST_NUM}: ${_MACHINE}"
+            DEPENDS ${_CHILD_PLAN_DEPENDS} "${SCE_CODEGEN}"
+            DEPFILE "${_CHILD_PLAN_DEPFILE}"
+            ${_CHILD_PLAN_BYPRODUCTS_ARG}
+            COMMENT "Generating ${LANGUAGE} code for W3C test ${TEST_NUM}: ${_CHILD}"
             VERBATIM
         )
-
-        list(APPEND _HEADERS ${_PLAN_HEADERS})
-        list(APPEND _SOURCES ${_PLAN_SOURCES})
-        list(LENGTH _PENDING _LEFT)
-    endwhile()
+        list(APPEND _HEADERS ${_CHILD_PLAN_HEADERS})
+        list(APPEND _SOURCES ${_CHILD_PLAN_SOURCES})
+    endforeach()
 
     set(_W3C_FIXTURE_HEADERS "${_HEADERS}" PARENT_SCOPE)
     set(_W3C_FIXTURE_SOURCES "${_SOURCES}" PARENT_SCOPE)
@@ -306,7 +300,6 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     # clang-format — see SCEClangFormat.cmake.
     sce_codegen_format_args(_FORMAT_ARGS)
     _sce_generate_w3c_fixture(${TEST_NUM} "${OUTPUT_DIR}" cpp
-        CHILD_ARGS --as-child
         FORMAT_ARGS ${_FORMAT_ARGS})
 
     list(APPEND GENERATED_W3C_HEADERS ${_W3C_FIXTURE_HEADERS})
