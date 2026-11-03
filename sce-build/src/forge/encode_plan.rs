@@ -21,13 +21,13 @@
 //!   element that holds it.
 
 use crate::forge::codec_roles::{
-    self, BindSite, CodecRoles, Derivation, ElementId, GateGroup, InputValue,
+    self, BindSite, CodecRoles, Derivation, ElementId, GateGroup, InputValue, Role,
 };
 use crate::forge::codec_totality::{self, RefusalKind, Totality};
 use crate::forge::generator::ImportContext;
 use crate::forge::model::{
-    BitSize, CodecField, CodecModel, FlagBindSource, FlagInput, PresentIfPredicate, PresentIfScope,
-    SceType,
+    BitSize, CodecField, CodecModel, FlagBindSource, FlagDef, FlagInput, PresentIfPredicate,
+    PresentIfScope, SceType, TlvTerminateStrategy,
 };
 use std::collections::BTreeMap;
 
@@ -69,6 +69,72 @@ pub struct EncodePlan<'m> {
     /// How each chain that declares `entry-id` identifies its entries, by the
     /// chain's id.
     pub entry_ids: BTreeMap<String, EntryId>,
+    /// The flags a parent may set in place of the ones the value presents: a
+    /// one-bit flag the value presents of a fixed carrier it presents. A chain
+    /// sets the flag its entries end on this way, as an entry cannot know where
+    /// it stands.
+    pub overridable: Vec<(&'m CodecField, &'m FlagDef)>,
+    /// The writes of the encode, in wire order.
+    pub program: Vec<Write<'m>>,
+}
+
+/// One write of the encode.
+pub enum Write<'m> {
+    /// Fixed fields of a positional layout that share one byte, each masked to
+    /// its bits at its bit offset.
+    Packed(Vec<&'m CodecField>),
+    /// A fixed field of a positional layout, alone at its byte offset.
+    Fixed(&'m CodecField),
+    /// A variable-length field of a positional layout, after zeros up to its
+    /// byte offset where the layout aligns its fields (`pad`).
+    Tail {
+        /// The field.
+        field: &'m CodecField,
+        /// Whether zeros fill the frame up to the field's offset first.
+        pad: bool,
+    },
+    /// A field of a streamed layout, in turn.
+    Streamed {
+        /// The field.
+        field: &'m CodecField,
+        /// When it is written.
+        guard: Guard,
+        /// How a list or a chain is walked; `None` for any other field.
+        list: Option<ListWrite>,
+    },
+    /// The body of the arm of the variant the value holds.
+    Variant,
+}
+
+/// When a field of a streamed layout is written.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Guard {
+    /// Always.
+    Always,
+    /// Where the value holds it: it is gated, or read from the arm of a group
+    /// (a chain of memberships, docs/adr/0065 §6 R6a, or a list whose count
+    /// another shares, R5), and presented.
+    Present,
+    /// Where its gate holds: it is gated and derived whole, as the gate flag
+    /// the encode derived says.
+    Gate,
+}
+
+/// How the encode walks a list or a chain as it writes it.
+pub struct ListWrite {
+    /// The inputs the entry codec is handed from the entry before: for each,
+    /// the input and the kind of entry that sets it (0 for the first entry).
+    pub previous: Vec<(String, u64)>,
+    /// Where a group holds the chain's membership of a bare entry (docs/adr/0065
+    /// §6 R6b), the kind of the named entry, which is written from the kind's
+    /// key and whose identifier is that kind.
+    pub slots: Option<u64>,
+    /// Where the chain ends on its entries' flag, the entry codec's carrier and
+    /// flag, set on every entry but the last.
+    pub ends: Option<(String, String)>,
+    /// Whether the list is held to its law and walked through it, which holds
+    /// each entry to the law again (docs/adr/0065 §6 R8).
+    pub lawful: bool,
 }
 
 /// An input a held codec says, held to what the parent hands it from
@@ -630,6 +696,8 @@ impl<'m> EncodePlan<'m> {
             .filter(|field| field.present_if.is_some())
             .collect();
         let entry_ids = entry_ids(model, imports);
+        let overridable = overridable(model, &roles);
+        let program = program(model, &roles, imports);
         EncodePlan {
             model,
             roles,
@@ -643,6 +711,8 @@ impl<'m> EncodePlan<'m> {
             input_checks,
             gate_checks,
             entry_ids,
+            overridable,
+            program,
         }
     }
 
@@ -1196,6 +1266,136 @@ fn entry_ids(model: &CodecModel, imports: &[ImportContext]) -> BTreeMap<String, 
             Some((chain.id.clone(), id))
         })
         .collect()
+}
+
+/// The one-bit flags the value presents of the fixed carriers it presents.
+fn overridable<'m>(
+    model: &'m CodecModel,
+    roles: &CodecRoles,
+) -> Vec<(&'m CodecField, &'m FlagDef)> {
+    let mut out = Vec::new();
+    for carrier in &model.fields {
+        if carrier.fixed_bits().is_none() || !codec_totality::presented(roles, carrier) {
+            continue;
+        }
+        for def in &carrier.flags {
+            let id = ElementId::Flag {
+                field: carrier.id.clone(),
+                flag: def.name.clone(),
+            };
+            if def.width == 1 && matches!(roles.role_of(&id), Some(Role::Presented)) {
+                out.push((carrier, def));
+            }
+        }
+    }
+    out
+}
+
+/// The writes of the encode of `model`, in wire order: a positional layout's
+/// fixed fields by byte offset, those that share a byte packed, then its
+/// variable-length fields; or a streamed layout's fields in turn; then the
+/// variant's arm.
+fn program<'m>(
+    model: &'m CodecModel,
+    roles: &CodecRoles,
+    imports: &[ImportContext],
+) -> Vec<Write<'m>> {
+    let mut out = Vec::new();
+    if model.positional_layout_is_valid() {
+        let mut bytes: BTreeMap<u32, Vec<&CodecField>> = BTreeMap::new();
+        for field in model.fields.iter().filter(|f| !f.is_variable_length()) {
+            bytes.entry(field.byte_offset).or_default().push(field);
+        }
+        for byte in bytes.into_values() {
+            out.push(match byte.as_slice() {
+                [field] => Write::Fixed(field),
+                _ => Write::Packed(byte),
+            });
+        }
+        for field in model.fields.iter().filter(|f| f.is_variable_length()) {
+            out.push(Write::Tail {
+                field,
+                pad: model.has_dma_aligned_fields(),
+            });
+        }
+    } else {
+        for field in &model.fields {
+            out.push(Write::Streamed {
+                field,
+                guard: guard(roles, field),
+                list: (field.is_repeat() || field.is_tlv_chain())
+                    .then(|| list_write(roles, field, imports)),
+            });
+        }
+    }
+    if model.variant.is_some() {
+        out.push(Write::Variant);
+    }
+    out
+}
+
+/// When the field `field` of a streamed layout is written.
+fn guard(roles: &CodecRoles, field: &CodecField) -> Guard {
+    let group = roles.group_of(&field.id);
+    // The chain of the memberships is read from the arm the value holds, as an
+    // `Option` of its walk whether or not it is itself gated (docs/adr/0065 §6
+    // R6a), and so is the list a count is shared with, which every arm holds (R5).
+    let membership = group.is_some_and(|g| g.chain() == Some(field.id.as_str()));
+    let aligned = group.is_some_and(|g| g.aligned.as_ref().is_some_and(|(f, _)| *f == field.id));
+    let gated = field.present_if.is_some() || membership || aligned;
+    match (gated, codec_totality::presented(roles, field)) {
+        (true, true) => Guard::Present,
+        (true, false) => Guard::Gate,
+        (false, _) => Guard::Always,
+    }
+}
+
+/// How the encode walks the list or chain `field` as it writes it.
+fn list_write(roles: &CodecRoles, field: &CodecField, imports: &[ImportContext]) -> ListWrite {
+    let import = codec_totality::child_alias(field)
+        .and_then(|alias| imports.iter().find(|i| i.alias == alias));
+    let says = |input: &str| import.is_some_and(|i| i.codec_says_inputs.iter().any(|s| s == input));
+    let (previous, ends) = match &field.bit_size {
+        BitSize::TlvChain {
+            entry_binds,
+            terminate_on,
+            ..
+        } => (
+            // An input the entry says is checked in the prologue and not handed
+            // to it (docs/adr/0065 §6 R4a).
+            entry_binds
+                .iter()
+                .filter(|bind| !says(&bind.input))
+                .map(|bind| (bind.input.clone(), bind.previous_entry_id))
+                .collect(),
+            match terminate_on {
+                TlvTerminateStrategy::EntryFlag { flag_name } => import
+                    .and_then(|i| {
+                        i.codec_fields
+                            .iter()
+                            .find(|f| f.flags.iter().any(|d| &d.name == flag_name))
+                    })
+                    .map(|carrier| (carrier.id.clone(), flag_name.clone())),
+                _ => None,
+            },
+        ),
+        _ => (Vec::new(), None),
+    };
+    let slots = roles
+        .group_of(&field.id)
+        .filter(|g| g.chain() == Some(field.id.as_str()) && g.member_is_bare())
+        .map(|g| {
+            g.members()
+                .next()
+                .expect("the one gate on a bare entry is a membership")
+                .1
+        });
+    ListWrite {
+        previous,
+        slots,
+        ends,
+        lawful: !list_law(roles, &field.id).is_none(),
+    }
 }
 
 /// The arms of the variant of `model`: those it names, in order, then the

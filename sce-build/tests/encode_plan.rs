@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 
 use sce_build::forge::codec_roles::ElementId;
 use sce_build::forge::encode_plan::{
-    Absent, Automaton, Bound, Clause, Derive, EncodePlan, LawInput, Measured, Narrow, Number,
-    NumberInto, Offset, Presence, Value,
+    Absent, Automaton, Bound, Clause, Derive, EncodePlan, Guard, LawInput, Measured, Narrow,
+    Number, NumberInto, Offset, Presence, Value, Write,
 };
 use sce_build::{encode_plan_file, ForgeCompileOptions};
 
@@ -349,6 +349,47 @@ fn a_total_codec_plans_no_check() {
         .unwrap_or_else(|err| panic!("{}: {err:?}", path.display()));
     }
     assert!(total > 60, "only {total} total codecs were read");
+}
+
+/// Fields of a positional layout that share a byte are written as one byte.
+#[test]
+fn fields_that_share_a_byte_are_packed_into_one_write() {
+    with_plan("codec_subbyte", |plan| {
+        let [Write::Packed(fields)] = plan.program.as_slice() else {
+            panic!("the codec is one packed byte");
+        };
+        let ids: Vec<&str> = fields.iter().map(|f| f.id.as_str()).collect();
+        assert_eq!(ids, ["priority", "channel", "direction"]);
+    });
+}
+
+/// A gated chain closed by its entries' flag is written where the value holds
+/// it, through its law, each entry but the last told another follows.
+#[test]
+fn a_gated_chain_is_written_where_present_through_its_law_and_its_end_flag() {
+    with_plan("codec_chain_prev_gated", |plan| {
+        let writes: Vec<(&str, Guard)> = plan
+            .program
+            .iter()
+            .map(|write| match write {
+                Write::Streamed { field, guard, .. } => (field.id.as_str(), *guard),
+                _ => panic!("the codec is streamed"),
+            })
+            .collect();
+        assert_eq!(
+            writes,
+            [("head", Guard::Always), ("entries", Guard::Present)]
+        );
+        let Some(Write::Streamed {
+            list: Some(list), ..
+        }) = plan.program.last()
+        else {
+            panic!("the chain is walked");
+        };
+        assert_eq!(list.ends, Some(("header".to_string(), "Z".to_string())));
+        assert!(list.lawful);
+        assert_eq!(list.slots, None);
+    });
 }
 
 #[test]

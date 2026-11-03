@@ -23,12 +23,13 @@
 use super::*;
 use crate::forge::codec_roles::{
     BindSite, CodecRoles, ElementId, GateGroup, GateVar, GroupArm, InputCheck, InputSource,
-    InputValue, Role,
+    InputValue,
 };
 use crate::forge::codec_totality::{self, child_alias, RefusalKind};
 use crate::forge::encode_plan::{
     self, Absent, Against, ArmInput, Automaton, CheckSite, Clause, Derive, EncodePlan, EntryId,
-    HandedFrom, Law, Measured, Narrow, Number, NumberInto, Offset, ParentTag, PresenceFlag, Value,
+    Guard, HandedFrom, Law, ListWrite, Measured, Narrow, Number, NumberInto, Offset, ParentTag,
+    PresenceFlag, Value, Write,
 };
 use std::collections::BTreeSet;
 
@@ -839,52 +840,28 @@ impl<'a> Plan<'a> {
     /// chain derives the flag that says an entry is not the last, and the entry
     /// it writes cannot present that flag, as it cannot know where it stands.
     fn overridable(&self) -> Vec<(&CodecField, &FlagDef)> {
-        let mut out = Vec::new();
-        for carrier in &self.m().fields {
-            if carrier.fixed_bits().is_none() || !self.presented(carrier) {
-                continue;
-            }
-            for def in &carrier.flags {
-                let id = ElementId::Flag {
-                    field: carrier.id.clone(),
-                    flag: def.name.clone(),
-                };
-                if def.width == 1 && matches!(self.encode.roles.role_of(&id), Some(Role::Presented))
-                {
-                    out.push((carrier, def));
-                }
-            }
-        }
-        out
+        self.encode.overridable.clone()
     }
 
     /// The member of the entry codec's overrides that sets the flag a chain ends
     /// on, for a chain that ends on its entries' flag.
-    fn chain_end_flag(&self, field: &CodecField) -> Option<String> {
-        let BitSize::TlvChain {
-            terminate_on: TlvTerminateStrategy::EntryFlag { flag_name },
-            ..
-        } = &field.bit_size
-        else {
-            return None;
-        };
-        let import = self
-            .input
-            .imports
-            .iter()
-            .find(|i| Some(i.alias.as_str()) == child_alias(field))?;
-        let carrier = import
-            .codec_fields
-            .iter()
-            .find(|f| f.flags.iter().any(|d| &d.name == flag_name))?;
-        Some(self.override_member(carrier, flag_name))
+    fn chain_end_flag(&self, list: &ListWrite) -> Option<String> {
+        list.ends
+            .as_ref()
+            .map(|(carrier, flag)| self.override_member_of(carrier, flag))
     }
 
     /// The name of the member of `{Codec}Overrides` that sets `flag` of `carrier`.
     fn override_member(&self, carrier: &CodecField, flag: &str) -> String {
+        self.override_member_of(&carrier.id, flag)
+    }
+
+    /// The name of the member of the overrides of a codec that sets `flag` of its
+    /// carrier `carrier`.
+    fn override_member_of(&self, carrier: &str, flag: &str) -> String {
         format!(
             "{}_{}",
-            self.accessor(carrier),
+            self.l().codec_field_id(carrier),
             filters::to_snake_case(flag.to_string())
         )
     }
@@ -1436,15 +1413,6 @@ impl<'a> Plan<'a> {
             .imports
             .iter()
             .any(|i| i.alias == alias && i.codec_partly_says_inputs.iter().any(|s| s == input))
-    }
-
-    /// Whether the import `alias` says its input `input`, so that it is not
-    /// handed one.
-    fn child_says_input(&self, alias: &str, input: &str) -> bool {
-        self.input
-            .imports
-            .iter()
-            .any(|i| i.alias == alias && i.codec_says_inputs.iter().any(|s| s == input))
     }
 
     /// The arguments a parent passes the codec `alias`, one for each flag-input
@@ -2559,12 +2527,6 @@ impl<'a> Plan<'a> {
         format!("_c_{}", self.l().codec_field_id(&field.id))
     }
 
-    /// Whether a source presents `field`: it is not derived whole
-    /// ([`codec_totality::presented`]).
-    fn presented(&self, field: &CodecField) -> bool {
-        codec_totality::presented(&self.encode.roles, field)
-    }
-
     /// The fields whose size the element `id` is derived from, when it is a
     /// length or a count ([`codec_totality::measured`]).
     fn measured(&self, id: &ElementId) -> Vec<&CodecField> {
@@ -3418,23 +3380,32 @@ impl<'a> Plan<'a> {
             lines.push("Ok(())".to_string());
             return indent(&lines, 8);
         }
-        if self.m().positional_layout_is_valid() {
-            self.positional(&derived, &mut lines);
-        } else {
-            for field in &self.m().fields {
-                self.streamed(field, &derived, &mut lines);
+        for write in &self.encode.program {
+            match write {
+                Write::Packed(fields) => self.packed(fields, &derived, &mut lines),
+                Write::Fixed(field) => self.positional_single(field, &derived, &mut lines),
+                Write::Tail { field, pad } => {
+                    if *pad {
+                        lines.push(format!(
+                            "while w.position() < {} {{\n    w.write_u8(0)?;\n}}",
+                            field.byte_offset
+                        ));
+                    }
+                    let value = self.read(field, &derived);
+                    lines.push(format!("w.write_bytes({})?;", self.bytes_of(field, &value)));
+                }
+                Write::Streamed { field, guard, list } => {
+                    self.streamed(field, *guard, list.as_ref(), &derived, &mut lines)
+                }
+                Write::Variant => self.write_variant(&derived, &mut lines),
             }
         }
-        self.write_variant(&derived, &mut lines);
         lines.push("Ok(())".to_string());
         indent(&lines, 8)
     }
 
     /// The suffix: the body of the arm the value holds.
     fn write_variant(&self, derived: &Derived, lines: &mut Vec<String>) {
-        if self.m().variant.is_none() {
-            return;
-        }
         lines.push("match src.body() {".to_string());
         for arm in self.arms() {
             let pattern = self.arm_pattern(&arm);
@@ -4099,47 +4070,24 @@ impl<'a> Plan<'a> {
 
     // ── the wire: positional layout ──────────────────────────────────
 
-    fn positional(&self, derived: &Derived, lines: &mut Vec<String>) {
-        let m = self.m();
-        let mut groups: std::collections::BTreeMap<u32, Vec<&CodecField>> =
-            std::collections::BTreeMap::new();
-        for field in &m.fields {
-            if !field.is_variable_length() {
-                groups.entry(field.byte_offset).or_default().push(field);
-            }
-        }
-        for group in groups.values() {
-            if let [field] = group.as_slice() {
-                self.positional_single(field, derived, lines);
-            } else {
-                let parts: Vec<String> = group
-                    .iter()
-                    .map(|field| {
-                        let bit_off = field.bit_offset.unwrap_or(0);
-                        let bits = field.fixed_bits().unwrap_or(8);
-                        let mask = (1u64 << bits) - 1;
-                        let value = self.carrier(field, &self.read(field, derived));
-                        // Drop the `<< 0` no-op for a bit-offset-0 field.
-                        if bit_off == 0 {
-                            format!("({value} & 0x{mask:02X})")
-                        } else {
-                            format!("(({value} & 0x{mask:02X}) << {bit_off})")
-                        }
-                    })
-                    .collect();
-                lines.push(format!("w.write_u8({})?;", parts.join(" | ")));
-            }
-        }
-        for field in m.fields.iter().filter(|f| f.is_variable_length()) {
-            if m.has_dma_aligned_fields() {
-                lines.push(format!(
-                    "while w.position() < {} {{\n    w.write_u8(0)?;\n}}",
-                    field.byte_offset
-                ));
-            }
-            let value = self.read(field, derived);
-            lines.push(format!("w.write_bytes({})?;", self.bytes_of(field, &value)));
-        }
+    /// Fixed fields that share one byte, each masked to its bits at its offset.
+    fn packed(&self, fields: &[&CodecField], derived: &Derived, lines: &mut Vec<String>) {
+        let parts: Vec<String> = fields
+            .iter()
+            .map(|field| {
+                let bit_off = field.bit_offset.unwrap_or(0);
+                let bits = field.fixed_bits().unwrap_or(8);
+                let mask = (1u64 << bits) - 1;
+                let value = self.carrier(field, &self.read(field, derived));
+                // Drop the `<< 0` no-op for a bit-offset-0 field.
+                if bit_off == 0 {
+                    format!("({value} & 0x{mask:02X})")
+                } else {
+                    format!("(({value} & 0x{mask:02X}) << {bit_off})")
+                }
+            })
+            .collect();
+        lines.push(format!("w.write_u8({})?;", parts.join(" | ")));
     }
 
     fn positional_single(&self, field: &CodecField, derived: &Derived, lines: &mut Vec<String>) {
@@ -4176,26 +4124,18 @@ impl<'a> Plan<'a> {
 
     // ── the wire: streamed layout ────────────────────────────────────
 
-    fn streamed(&self, field: &CodecField, derived: &Derived, lines: &mut Vec<String>) {
-        // The chain of the memberships is read from the arm the value holds, as
-        // an `Option` of its walk whether or not it is itself gated
-        // (docs/adr/0065 §6 R6a), and so is the list a count is shared with,
-        // which every arm holds (R5).
-        let membership = self
-            .encode
-            .roles
-            .group_of(&field.id)
-            .filter(|group| holds_chain(group, field));
-        let aligned = self
-            .encode
-            .roles
-            .group_of(&field.id)
-            .is_some_and(|group| group.aligned.as_ref().is_some_and(|(f, _)| *f == field.id));
-        let gated = field.present_if.is_some() || membership.is_some() || aligned;
+    fn streamed(
+        &self,
+        field: &CodecField,
+        guard: Guard,
+        list: Option<&ListWrite>,
+        derived: &Derived,
+        lines: &mut Vec<String>,
+    ) {
         // A field derived whole whose gate is its own is written where it is
         // present: the gate flag is derived from the field it gates, and a length
         // field that is itself gated is announced by the same flag.
-        let value = if gated && self.presented(field) {
+        let value = if guard == Guard::Present {
             "_v".to_string()
         } else {
             self.carrier_read(field, derived)
@@ -4226,29 +4166,24 @@ impl<'a> Plan<'a> {
                 body.push(format!("w.write_vle_u{width_bits}({value})?;"));
             }
             BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
+                let list = list.expect("the plan walks a list it writes");
                 let child = self
                     .child(field)
                     .expect("`check` found the codec a list holds");
                 // The inputs of the entry codec that the chain supplies: one
                 // value for each entry, 1 when the entry just written has the
                 // identifier the bind waits for, and 0 for the first.
-                // An input the entry says is checked in the prologue and not
-                // handed to it (docs/adr/0065 §6 R4a).
-                let alias = child_alias(field).unwrap_or_default();
-                let binds: Vec<(String, String, u64)> = match &field.bit_size {
-                    BitSize::TlvChain { entry_binds, .. } => entry_binds
-                        .iter()
-                        .filter(|bind| !self.child_says_input(alias, &bind.input))
-                        .map(|bind| {
-                            (
-                                bind.input.clone(),
-                                format!("_prev_{}", filters::to_snake_case(bind.input.clone())),
-                                bind.previous_entry_id,
-                            )
-                        })
-                        .collect(),
-                    _ => Vec::new(),
-                };
+                let binds: Vec<(String, String, u64)> = list
+                    .previous
+                    .iter()
+                    .map(|(input, previous)| {
+                        (
+                            input.clone(),
+                            format!("_prev_{}", filters::to_snake_case(input.clone())),
+                            *previous,
+                        )
+                    })
+                    .collect();
                 for (_, local, _) in &binds {
                     body.push(format!("let mut {local}: u8 = 0;"));
                 }
@@ -4276,11 +4211,7 @@ impl<'a> Plan<'a> {
                 // identifier is all of it, written from the kind's entry. The
                 // identifier the named entry has is the key, which a bind of
                 // the entry after it reads.
-                if let Some(group) = membership.filter(|group| group.member_is_bare()) {
-                    let (_, key) = group
-                        .members()
-                        .next()
-                        .expect("the one gate on a bare entry is a membership");
+                if let Some(key) = list.slots {
                     let named = format!("{}::named()", key_type(self.name(), &field.id, key));
                     let named_updates: Vec<String> = binds
                         .iter()
@@ -4288,7 +4219,7 @@ impl<'a> Plan<'a> {
                             format!("{local} = u8::from({key}u64 == {previous}u64);")
                         })
                         .collect();
-                    let (head, overrides) = match self.chain_end_flag(field) {
+                    let (head, overrides) = match self.chain_end_flag(list) {
                         Some(member) => (
                             format!("for (_i, _s) in {value}.enumerate() {{"),
                             format!(
@@ -4323,7 +4254,7 @@ impl<'a> Plan<'a> {
                     body.push("    }".to_string());
                     body.push("}".to_string());
                 } else {
-                    match self.chain_end_flag(field) {
+                    match self.chain_end_flag(list) {
                         // Every entry but the last says another follows: the flag is
                         // derived from where the entry stands, and set as it is
                         // written.
@@ -4331,12 +4262,11 @@ impl<'a> Plan<'a> {
                             let count = self.count_local(field);
                             // A list held to its law is walked through it, which
                             // holds each entry to the law again (docs/adr/0065 §6 R8).
-                            let walk =
-                                if law_type(&self.encode.roles, self.name(), &field.id).is_some() {
-                                    format!("{value}.into_iter()")
-                                } else {
-                                    value.clone()
-                                };
+                            let walk = if list.lawful {
+                                format!("{value}.into_iter()")
+                            } else {
+                                value.clone()
+                            };
                             body.push(format!("for (_i, _e) in {walk}.enumerate() {{"));
                             body.push(format!(
                             "    {}::write_source_in(&_e, w{args}, &{}::{member}(_i + 1 < {count})){pass};",
@@ -4369,17 +4299,17 @@ impl<'a> Plan<'a> {
                 ));
             }
         }
-        if gated && self.presented(field) {
-            lines.push(format!("if let Some(_v) = {} {{", self.read_src(field)));
-            lines.extend(body.into_iter().map(|line| format!("    {line}")));
-            lines.push("}".to_string());
-        } else if gated {
+        match guard {
+            Guard::Present => {
+                lines.push(format!("if let Some(_v) = {} {{", self.read_src(field)));
+                lines.extend(body.into_iter().map(|line| format!("    {line}")));
+                lines.push("}".to_string());
+            }
             // Derived whole and gated: written where the field it gates is
             // present is the gate's business, and this field's gate is one flag
             // of a carrier, read as the codec reads it.
-            lines.extend(self.guarded_by_flag(field, body, derived));
-        } else {
-            lines.extend(body);
+            Guard::Gate => lines.extend(self.guarded_by_flag(field, body, derived)),
+            Guard::Always => lines.extend(body),
         }
     }
 
