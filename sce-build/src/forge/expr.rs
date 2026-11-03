@@ -4906,6 +4906,15 @@ pub(crate) fn place_path(node: &TypedExpr) -> Option<String> {
     }
 }
 
+/// The place the expression `text` reads ([`place_path`]), when it reads one:
+/// `_event.data.items[].tags` for `_event.data.items[0].tags`, every index read
+/// as an element whatever it is. `None` for a text that does not parse or reads
+/// no place. What a statement that names a place in an attribute (a
+/// `<foreach>`'s `array`, the value an `<assign>` takes whole) is typed by.
+pub(crate) fn written_place(text: &str) -> Option<String> {
+    place_path(&parse_to_ast(text.trim()).ok()?)
+}
+
 fn flatten_member_path(expr: &TypedExpr) -> Option<String> {
     match &expr.kind {
         ExprKind::Ident(name) => Some(name.clone()),

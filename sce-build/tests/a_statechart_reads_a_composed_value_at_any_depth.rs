@@ -279,7 +279,9 @@ fn the_list_payload_fixture_is_read_and_refused_by_name_where_it_is_generated() 
     // meets, before the reads of the payload.
     let text = refusal.to_string();
     assert!(
-        text.contains("a statechart's variable") && text.contains("the field `tags`"),
+        text.contains("a statechart's variable")
+            && text.contains("the field `tags`")
+            && text.contains("has no backend lowering"),
         "{text}"
     );
 }

@@ -1313,7 +1313,7 @@ fn can_generate_static_impl(
     // over and no backend lowers yet is refused by name here, the one gate
     // every route asks before it generates or judges a machine, and the one
     // place that decides it: no lowering below meets one.
-    crate::forge::event_schema_check::check_composed_uses(model, diag_label)?;
+    crate::forge::event_schema_check::check_composed_uses(model, diag_label, "backend")?;
     // Name collisions in the generated code — hosted here for the same
     // reason: `sce-codegen check` must refuse what `generate` would write
     // uncompilable, and this is the one gate both reach. After the

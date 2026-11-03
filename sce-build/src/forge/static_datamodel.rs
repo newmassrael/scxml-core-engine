@@ -3752,8 +3752,12 @@ impl<'a> Judge<'a> {
         };
         // The list is a place a value holds, at any depth: a list variable, a
         // list the payload holds, or one an enclosing loop's item holds
-        // (docs/adr/0086, section 6.1).
-        let Some(element) = ctx.value_of(array).and_then(|list| list.element()) else {
+        // (docs/adr/0086, section 6.1), written as an expression reads it, an
+        // index into a list on the way included (`_event.data.items[0].tags`).
+        let Some(element) = crate::forge::expr::written_place(array)
+            .and_then(|path| ctx.value_of(&path))
+            .and_then(|list| list.element())
+        else {
             return Err(place(
                 "array",
                 "a <foreach> of this data model walks a list variable, or a list the event's \
@@ -3762,6 +3766,17 @@ impl<'a> Judge<'a> {
                 array,
             ));
         };
+        // A place past a name is an expression: its names and its indices are
+        // judged as any expression's are. A list variable is no value an
+        // expression reads ([`StaticScope::list_read_as_value`]), and holds none.
+        if self.list_var(array).is_none() {
+            self.expr(
+                ctx,
+                array,
+                action.spellings.get("array"),
+                Expected::Hint(InferredType::Unknown),
+            )?;
+        }
         let item = action.item.trim();
         let index = action.index.trim();
         if item.is_empty() {
@@ -3880,8 +3895,7 @@ impl<'a> Judge<'a> {
         if self.scope.list_read_as_value(written).is_some() {
             return None;
         }
-        let ast = crate::forge::expr::parse_to_ast(written.trim()).ok()?;
-        ctx.value_of(&crate::forge::expr::place_path(&ast)?)
+        ctx.value_of(&crate::forge::expr::written_place(written)?)
     }
 
     /// `<assign location="kept" expr="_event.data.items"/>`: the list variable

@@ -315,7 +315,8 @@ impl<'m> Analysis<'m> {
         }
     }
 
-    /// The place `path` names where the walk stands ([`value_path::resolve`]).
+    /// The place `path` (written as [`value_path`] writes one) names where the
+    /// walk stands ([`value_path::resolve`]).
     fn place(&self, path: &str) -> Option<Place> {
         value_path::resolve(
             Some(&self.scope),
@@ -545,7 +546,8 @@ impl<'m> Analysis<'m> {
     fn foreach(&mut self, action: &Action) -> Result<Cost, String> {
         // The list walked is a place, a variable's, the payload's or an
         // enclosing item's, and its item is a place of its body's.
-        let list = self.place(&action.array);
+        let list =
+            crate::forge::expr::written_place(&action.array).and_then(|path| self.place(&path));
         let item = list.as_ref().and_then(Place::element);
         let bound_item = item.is_some();
         if let Some(item) = item {
@@ -1361,7 +1363,8 @@ mod tests {
     /// A `<foreach>` over a list the payload holds, and one inside it over a
     /// list each of its items holds, run their bodies at most as many times as
     /// the bounds their types declare, multiplied (docs/adr/0086, section 6.3):
-    /// three items of at most four tags each raise twelve events. The item's
+    /// three items of at most four tags each raise twelve events, and a loop
+    /// over the tags of one item, reached by an index, four more. The item's
     /// list is read in the scope of the item's own document.
     #[test]
     fn nested_foreaches_over_a_payload_multiply_the_bounds_its_type_declares() {
@@ -1409,8 +1412,11 @@ mod tests {
         inner.item = "word".to_string();
         let mut outer = foreach_over("_event.data.items", vec![inner]);
         outer.item = "row".to_string();
-        let doc = doc.transition("a", on("batch.sent", "a", vec![outer]));
-        assert_eq!(doc.bound(), chain(3 * 4, 0));
+        // A list reached through an index is the list of every element alike.
+        let mut first = foreach_over("_event.data.items[0].tags", vec![raise("first")]);
+        first.item = "word".to_string();
+        let doc = doc.transition("a", on("batch.sent", "a", vec![outer, first]));
+        assert_eq!(doc.bound(), chain(3 * 4 + 4, 0));
     }
 
     /// A pass whose body raises and then fails ends the block in its last

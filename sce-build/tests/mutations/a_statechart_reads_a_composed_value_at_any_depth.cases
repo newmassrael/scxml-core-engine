@@ -42,17 +42,16 @@ PY
 # A loop walks only a list variable: a list the payload holds is refused.
 mutation_case "a loop walks no list the payload holds" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     r'''        let Some(element) = ctx.value_of(array).and_then(|list| list.element()) else {''',
+     r'''        let Some(element) = crate::forge::expr::written_place(array)
+            .and_then(|path| ctx.value_of(&path))''',
      r'''        let Some(element) = self
             .list_var(array)
-            .and_then(|_| ctx.value_of(array))
-            .and_then(|list| list.element())
-        else {''')
+            .and_then(|_| ctx.value_of(array))''')
 PY
 
 # No gate decides what is lowered: a composed read reaches the backends.
 mutation_case "the gate lets a composed read through" <<'PY'
 edit("sce-build/src/analyzer.rs",
-     r'''    crate::forge::event_schema_check::check_composed_uses(model, diag_label)?;''',
+     r'''    crate::forge::event_schema_check::check_composed_uses(model, diag_label, "backend")?;''',
      r'''    let _ = crate::forge::event_schema_check::check_composed_uses;''')
 PY

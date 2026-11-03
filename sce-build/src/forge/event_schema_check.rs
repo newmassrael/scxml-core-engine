@@ -222,6 +222,11 @@ pub fn check_records_carry_payload(
 /// taken on such a schema's event, a `<send>` or `<raise>` of that event, and
 /// a list taken whole into a list variable from a place.
 ///
+/// Each refusal names the construct and `lowering`, the lowering that asks and
+/// has none of it, as every backend's refusal of what it does not lower yet
+/// names the backend: `ecmascript` where the Interpreter's lowering asks, and
+/// `backend` where the gate every generated backend passes asks.
+///
 /// The one place that decides what is lowered: it runs in the gate every route
 /// asks before it generates or judges a machine
 /// ([`crate::analyzer::can_generate_static`]), after the document's
@@ -236,20 +241,33 @@ pub fn check_records_carry_payload(
 pub fn check_composed_uses(
     scxml: &SCXMLModel,
     diag_label: &str,
+    lowering: &str,
 ) -> Result<(), Located<ForgeError>> {
+    // Each refusal names the construct and the lowering that has none of it,
+    // as every backend's refusal of what it does not lower yet does.
+    let not_lowered = |detail: String, at: Option<(u32, Option<u32>)>| -> Located<ForgeError> {
+        Located::new(
+            crate::forge::error::GenerateError::unsupported(detail).into(),
+            diag_label,
+            at.map(|(row, _)| row),
+            at.and_then(|(_, col)| col),
+        )
+    };
     let refused = |schema: &EventSchemaModel,
                    composed: crate::forge::model::ComposedField,
                    position: &str,
                    at: Option<(u32, Option<u32>)>|
      -> Located<ForgeError> {
-        Located::new(
-            crate::forge::error::GenerateError::unsupported(
-                composed.sentence(&schema.name, position),
-            )
-            .into(),
-            diag_label,
-            at.map(|(row, _)| row),
-            at.and_then(|(_, col)| col),
+        not_lowered(
+            format!(
+                "{}: the field `{}` holds `{}`, a type of the language, and {position} has no \
+                 {lowering} lowering of its {} yet (docs/adr/0086, section 7.3)",
+                schema.name,
+                composed.field,
+                composed.composition.place,
+                composed.composition.constructor
+            ),
+            at,
         )
     };
     let variables = scxml.variables.iter().chain(
@@ -268,15 +286,14 @@ pub fn check_composed_uses(
             .as_ref()
             .map(|spelling| (spelling.row(), Some(spelling.col())));
         if let Err(composition) = ty.slot_view() {
-            return Err(Located::new(
-                crate::forge::error::GenerateError::unsupported(composition.sentence(
-                    &format!("<data id=\"{}\">", var.id),
-                    "a statechart's variable",
-                ))
-                .into(),
-                diag_label,
-                at.map(|(row, _)| row),
-                at.and_then(|(_, col)| col),
+            return Err(not_lowered(
+                format!(
+                    "<data id=\"{}\">: `{}` in a statechart's variable is a type of the \
+                     language, and has no {lowering} lowering of its {} yet (docs/adr/0086, \
+                     section 7.3)",
+                    var.id, composition.place, composition.constructor
+                ),
+                at,
             ));
         }
         for alias in ty.record_aliases() {
@@ -366,20 +383,16 @@ pub fn check_composed_uses(
         ));
     }
     if let Some(action) = copied {
-        let at = at_location(&action.source_location);
-        return Err(Located::new(
-            crate::forge::error::GenerateError::unsupported(format!(
+        return Err(not_lowered(
+            format!(
                 "<assign location=\"{}\" expr=\"{}\">: a list taken whole from `{}` is a value \
-                 of the language, and no backend lowers a whole copy of a list yet \
-                 (docs/adr/0086, section 7.3)",
+                 of the language, and has no {lowering} lowering of a whole copy of a list \
+                 yet (docs/adr/0086, section 7.3)",
                 action.location.trim(),
                 action.expr.trim(),
                 action.expr.trim()
-            ))
-            .into(),
-            diag_label,
-            at.map(|(row, _)| row),
-            at.and_then(|(_, col)| col),
+            ),
+            at_location(&action.source_location),
         ));
     }
     Ok(())
@@ -387,12 +400,9 @@ pub fn check_composed_uses(
 
 /// Whether `expr` is a place a value is held at, a name and the fields,
 /// elements and present values read after it
-/// ([`crate::forge::expr::place_path`]), rather than a call or an operation.
+/// ([`crate::forge::expr::written_place`]), rather than a call or an operation.
 fn reads_a_place(expr: &str) -> bool {
-    crate::forge::expr::parse_to_ast(expr.trim())
-        .ok()
-        .and_then(|ast| crate::forge::expr::place_path(&ast))
-        .is_some()
+    crate::forge::expr::written_place(expr).is_some()
 }
 
 /// Whether an expression `action` itself carries, not one of an action nested
