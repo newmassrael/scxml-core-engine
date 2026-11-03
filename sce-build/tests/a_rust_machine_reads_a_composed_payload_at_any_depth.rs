@@ -134,13 +134,14 @@ fn the_payload_is_held_in_the_machine_types_each_record_declared_once() {
             "    pub levels: Vec<BatchReaderSignalLevelEnum>,",
             "    pub maybe: Vec<Option<u16>>,",
             "    pub spare: Option<Vec<u8>>,",
-            "    pub note: String,",
+            "    pub note: ::sce_portable_bytes::SceString<4>,",
             "    pub late: Vec<u8>,",
             "pub struct BatchReaderItemRecord {",
+            "    pub label: ::sce_portable_bytes::SceString<8>,",
             "    pub level: BatchReaderSignalLevelEnum,",
             "    pub due: Option<i64>,",
-            "    pub blob: Vec<u8>,",
-            "    pub tags: Vec<String>,",
+            "    pub blob: ::sce_portable_bytes::SceBytes<4>,",
+            "    pub tags: Vec<::sce_portable_bytes::SceString<8>>,",
         ],
     );
     assert_eq!(
@@ -163,11 +164,12 @@ fn the_lift_reads_each_field_by_its_type_at_every_depth() {
         &[
             r#"PayloadFields::decode_with_defaults(data, "{\"late\":[]}")?"#,
             r#"items: fields.field("items").and_then(|v| v.list::<_, 3>(|v| v.record(None, |r| Ok(BatchReaderItemRecord { id: r.field("id").and_then(|v| v.unsigned::<u32>())?, "#,
-            r#"tags: r.field("tags").and_then(|v| v.list::<_, 4>(|v| v.text::<8>().map(|text| text.as_str().to_string())).map(|list| list.into_vec()))? }))).map(|list| list.into_vec()))?,"#,
+            r#"tags: r.field("tags").and_then(|v| v.list::<_, 4>(|v| v.text::<8>().map(|text| ::sce_portable_bytes::SceString::<8>::held(text.as_str()))).map(|list| list.into_vec()))? }))).map(|list| list.into_vec()))?,"#,
+            r#"blob: r.field("blob").and_then(|v| v.bytes::<4>())?, "#,
             r#"grid: fields.field("grid").and_then(|v| v.list::<_, 2>(|v| v.list::<_, 2>(|v| v.unsigned::<u8>()).map(|list| list.into_vec())).map(|list| list.into_vec()))?,"#,
             r#"maybe: fields.field("maybe").and_then(|v| v.list::<_, 2>(|v| v.optional(|v| v.unsigned::<u16>())).map(|list| list.into_vec()))?,"#,
             r#"spare: fields.field("spare").and_then(|v| v.optional(|v| v.list::<_, 2>(|v| v.unsigned::<u8>()).map(|list| list.into_vec())))?,"#,
-            r#"note: fields.field("note").and_then(|v| v.text::<4>().map(|text| text.as_str().to_string()))?,"#,
+            r#"note: fields.field("note").and_then(|v| v.text::<4>().map(|text| ::sce_portable_bytes::SceString::<4>::held(text.as_str())))?,"#,
         ],
     );
 }
@@ -247,6 +249,67 @@ fn rust_takes_the_read_and_another_backend_refuses_it_by_name() {
         out.contains("a statechart's read of `_event.data` has no go lowering of its list"),
         "{out}"
     );
+}
+
+/// Pinned by `ComposedLowering::of_profile` and its call in `render_rust`
+/// (`sce-build/src/generator.rs`): a machine built without an allocator holds
+/// no composed value, and the one decision refuses the read by that profile's
+/// name rather than generate storage the profile does not have.
+#[test]
+fn a_machine_without_an_allocator_refuses_the_read_by_name() {
+    let (ok, out) = run(
+        &["check", "-l", "rust", "--no-std"],
+        "batch_reader.scxml",
+        READER,
+    );
+    assert!(!ok, "no_std holds no composed value:\n{out}");
+    assert!(out.contains("generate/unsupported-feature"), "{out}");
+    assert!(
+        out.contains(
+            "a statechart's read of `_event.data` has no rust no_std lowering of its list"
+        ),
+        "{out}"
+    );
+}
+
+/// Pinned by `whole_list_copy` (`sce-build/src/forge/static_lowering.rs`) and
+/// `copier` (`sce-build/src/forge/composed_lowering.rs`): a list a payload holds
+/// is taken whole into a list variable of a larger bound, a copy of the one
+/// type the machine holds both in.
+#[test]
+fn a_list_is_taken_whole_into_a_variable_whose_type_it_fits() {
+    let dir = tempdir().expect("tempdir");
+    for sibling in SIBLINGS
+        .iter()
+        .chain(["static_composed_payload.scxml"].iter())
+    {
+        std::fs::copy(fixtures().join(sibling), dir.path().join(sibling)).expect("copy a sibling");
+    }
+    let path = dir.path().join("static_composed_payload.scxml");
+    let language = sce_build::generator::Language::Rust;
+    let output = compile_scxml_lang_typed(
+        path.to_str().expect("a utf-8 path"),
+        &find_template_dir_for(language),
+        language,
+    )
+    .unwrap_or_else(|e| panic!("Rust lowers the fixture: {e:?}"));
+    let code = output
+        .files
+        .into_iter()
+        .find(|(name, _)| name == "static_composed_payload_sm.rs")
+        .map(|(_, code)| code)
+        .expect("the machine's Rust is generated");
+    holds(&code, &["self.late = ev.late.clone();"]);
+    // Another backend refuses the fixture by its own name.
+    let text =
+        std::fs::read_to_string(fixtures().join("static_composed_payload.scxml")).expect("fixture");
+    let (ok, out) = run(
+        &["check", "-l", "kotlin"],
+        "static_composed_payload.scxml",
+        &text,
+    );
+    assert!(!ok, "Kotlin reads no composed payload yet:\n{out}");
+    assert!(out.contains("has no kotlin lowering"), "{out}");
 }
 
 /// What Rust does not lower yet stays refused by name on Rust too: the fixture's

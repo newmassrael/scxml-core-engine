@@ -35,8 +35,16 @@ PY
 # A text is read with no bound, so a text past it is kept (section 4.4).
 mutation_case "a text is read with no bound" <<'PY'
 edit("sce-build/src/forge/composed_lowering.rs",
-     r'''        format!("{value}.text::<{max}>().map(|text| text.as_str().to_string())")''',
-     r'''        format!("{value}.text::<{}>().map(|text| text.as_str().to_string())", u32::MAX)''')
+     r'''            "{value}.text::<{max}>().map(|text| {RUST_PORTABLE}::SceString::<{max}>::held(text.as_str()))"''',
+     r'''            "{value}.text::<{}>().map(|text| {RUST_PORTABLE}::SceString::<{max}>::held(text.as_str()))", u32::MAX''')
+PY
+
+# A text of a smaller bound is copied into a place of a larger one as though
+# the two were one type.
+mutation_case "a text is copied with no widening" <<'PY'
+edit("sce-build/src/forge/composed_lowering.rs",
+     r'''        (ValueType::Text { .. }, ValueType::Text { max }) => Ok(spelling.copy_text(max.max, held)),''',
+     r'''        (ValueType::Text { .. }, ValueType::Text { .. }) => Ok(spelling.copy_whole(held, false)),''')
 PY
 
 # An enum name the enum does not declare is not refused.

@@ -28,12 +28,11 @@
 //!
 //! | Backend | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
 //! |---|---|---|---|---|
-//! | Rust (machine) | `Vec<T>`, the bound kept by the machine | `String` / `Vec<u8>` | `Option<T>` | the machine's record |
+//! | Rust (machine) | `Vec<T>`, the bound kept by the machine | `SceString<N>` / `SceBytes<N>` | `Option<T>` | the machine's record |
 //!
-//! The machine holds a text and a byte string as the type its variables of
-//! them are held in, whatever the bound: the bound is held where a value is
-//! read (the lift) and written (an assignment), so a value that fits a place
-//! is the same type there and is copied as it is (section 5.1).
+//! A text and a byte string carry their bound in their type, so a value is
+//! copied into a place of a larger bound by widening it at each depth where
+//! the two bounds differ, the fit proven before ([`copier`], section 5.1).
 
 use std::collections::BTreeMap;
 
@@ -240,6 +239,90 @@ pub trait ComposedSpelling {
     fn write_field(&self, held: &Held, field: &str) -> String;
     /// The JSON of a record: each field's id with the JSON of its value.
     fn write_record(&self, fields: &[(String, String)]) -> String;
+
+    /// The name a copy binds a reference to an element or a present value to.
+    fn copy_binding(&self) -> &'static str;
+    /// A copy of `held`, a value of the very type of the place it is copied
+    /// into; `plain` for a value the language copies as it reads it (a number,
+    /// `bool`, an enum, an optional one of them).
+    fn copy_whole(&self, held: &Held, plain: bool) -> String;
+    /// A copy of the text `held` into a place of `max` bytes, at least its own.
+    fn copy_text(&self, max: u32, held: &Held) -> String;
+    /// A copy of the value that may be absent `held`, `elem` the copy of its
+    /// present value, a reference bound to [`Self::copy_binding`].
+    fn copy_optional(&self, held: &Held, elem: &str) -> String;
+    /// `value`, a copy of a value of `T`, as the present value of a place of
+    /// `optional<T>`.
+    fn copy_present(&self, value: &str) -> String;
+    /// A copy of the list `held`, `elem` the copy of an element, a reference
+    /// bound to [`Self::copy_binding`].
+    fn copy_list(&self, held: &Held, elem: &str) -> String;
+}
+
+/// Whether a value of `ty` is copied as it is read, which a copy says
+/// ([`ComposedSpelling::copy_whole`]).
+fn plain(ty: &ValueType) -> bool {
+    match ty {
+        ValueType::Scalar(_) => true,
+        ValueType::Optional { elem } => matches!(**elem, ValueType::Scalar(_)),
+        ValueType::Text { .. }
+        | ValueType::Bytes { .. }
+        | ValueType::Record { .. }
+        | ValueType::List { .. } => false,
+    }
+}
+
+/// The copy of `held`, a value of `from` written in the scope `from_within`
+/// names, into a place of `to` written in the scope `to_within` names, `from`
+/// fitting `to` (docs/adr/0086, section 5.1, proven where the document was
+/// read): the value as it is where the machine holds the two in one type, and
+/// otherwise each part copied by the case of its constructor, a text into the
+/// larger bound of the place. A copy that cannot fail, since the fit was
+/// proven. `Err` names a pair of types the walk has no copy of.
+#[allow(clippy::too_many_arguments)]
+pub fn copier(
+    from: &ValueType,
+    from_within: Option<&str>,
+    to: &ValueType,
+    to_within: Option<&str>,
+    records: &dyn RecordEnv,
+    enums: &BTreeMap<String, MachineEnum>,
+    spelling: &dyn ComposedSpelling,
+    held: &Held,
+) -> Result<String, String> {
+    let same = machine_type(from, from_within, records, enums, spelling)?
+        == machine_type(to, to_within, records, enums, spelling)?;
+    if same {
+        return Ok(spelling.copy_whole(held, plain(from)));
+    }
+    let element = Held::reference(spelling.copy_binding());
+    let part = |from: &ValueType, to: &ValueType, held: &Held| {
+        copier(
+            from,
+            from_within,
+            to,
+            to_within,
+            records,
+            enums,
+            spelling,
+            held,
+        )
+    };
+    match (from, to) {
+        (ValueType::Text { .. }, ValueType::Text { max }) => Ok(spelling.copy_text(max.max, held)),
+        (ValueType::Optional { elem: from }, ValueType::Optional { elem: to }) => {
+            Ok(spelling.copy_optional(held, &part(from, to, &element)?))
+        }
+        (from, ValueType::Optional { elem: to }) => {
+            Ok(spelling.copy_present(&part(from, to, held)?))
+        }
+        (ValueType::List { elem: from, .. }, ValueType::List { elem: to, .. }) => {
+            Ok(spelling.copy_list(held, &part(from, to, &element)?))
+        }
+        (from, to) => Err(format!(
+            "`{from}` copied into a place of `{to}` has no copy that changes its type yet"
+        )),
+    }
 }
 
 /// The enum the machine holds as `alias`, or the sentence of one it does not.
@@ -481,15 +564,20 @@ pub struct RustComposed<'a> {
 /// The runtime module the Rust readers and writers are in.
 const RUST_PAYLOAD: &str = "::sce_rust_runtime::event_payload";
 
+/// The crate of the bounded storage a Rust machine holds a text and a byte
+/// string of a composed value in.
+const RUST_PORTABLE: &str = "::sce_portable_bytes";
+
 impl ComposedSpelling for RustComposed<'_> {
     fn scalar_type(&self, ty: &SceType) -> String {
         crate::forge::generator::rust_type(ty).to_string()
     }
-    fn text_type(&self, _max: u32) -> String {
-        "String".to_string()
+    // The portable bounded storage, `N` on the type (docs/adr/0086, section 7.1).
+    fn text_type(&self, max: u32) -> String {
+        format!("{RUST_PORTABLE}::SceString<{max}>")
     }
-    fn bytes_type(&self, _max: u32) -> String {
-        "Vec<u8>".to_string()
+    fn bytes_type(&self, max: u32) -> String {
+        format!("{RUST_PORTABLE}::SceBytes<{max}>")
     }
     fn optional_type(&self, elem: &str) -> String {
         format!("Option<{elem}>")
@@ -564,10 +652,13 @@ impl ComposedSpelling for RustComposed<'_> {
         )
     }
     fn read_text(&self, max: u32, value: &str) -> String {
-        format!("{value}.text::<{max}>().map(|text| text.as_str().to_string())")
+        format!(
+            "{value}.text::<{max}>().map(|text| {RUST_PORTABLE}::SceString::<{max}>::held(text.as_str()))"
+        )
     }
+    // The runtime's reader answers the portable `SceBytes<N>` itself.
     fn read_bytes(&self, max: u32, value: &str) -> String {
-        format!("{value}.bytes::<{max}>().map(|bytes| bytes.to_vec())")
+        format!("{value}.bytes::<{max}>()")
     }
     fn read_optional(&self, value: &str, elem: &str) -> String {
         format!("{value}.optional(|v| {elem})")
@@ -648,6 +739,34 @@ impl ComposedSpelling for RustComposed<'_> {
             .map(|(id, json)| format!("(\"{id}\", {json})"))
             .collect();
         format!("{RUST_PAYLOAD}::record_json(vec![{}])", members.join(", "))
+    }
+
+    fn copy_binding(&self) -> &'static str {
+        "v"
+    }
+    fn copy_whole(&self, held: &Held, plain: bool) -> String {
+        match (plain, held.by_reference) {
+            (true, true) => format!("*{}", held.text),
+            (true, false) => held.text.clone(),
+            (false, _) => format!("{}.clone()", held.text),
+        }
+    }
+    // The fit was proven, so the text is within the bound of the place and
+    // `held` takes it whole.
+    fn copy_text(&self, max: u32, held: &Held) -> String {
+        format!(
+            "{RUST_PORTABLE}::SceString::<{max}>::held({}.as_str())",
+            held.text
+        )
+    }
+    fn copy_optional(&self, held: &Held, elem: &str) -> String {
+        format!("{}.as_ref().map(|v| {elem})", held.text)
+    }
+    fn copy_present(&self, value: &str) -> String {
+        format!("Some({value})")
+    }
+    fn copy_list(&self, held: &Held, elem: &str) -> String {
+        format!("{}.iter().map(|v| {elem}).collect::<Vec<_>>()", held.text)
     }
 }
 
@@ -755,8 +874,8 @@ mod tests {
         let spelled =
             |text: &str| machine_type(&ty(text), None, &held, &enums, &RUST).expect("a type");
         assert_eq!(spelled("uint16"), "u16");
-        assert_eq!(spelled("string[8]"), "String");
-        assert_eq!(spelled("bytes[4]"), "Vec<u8>");
+        assert_eq!(spelled("string[8]"), "::sce_portable_bytes::SceString<8>");
+        assert_eq!(spelled("bytes[4]"), "::sce_portable_bytes::SceBytes<4>");
         assert_eq!(spelled("optional<int64>"), "Option<i64>");
         assert_eq!(spelled("list<list<uint8>[2]>[2]"), "Vec<Vec<u8>>");
         assert_eq!(spelled("list<enum:Level>[2]"), "Vec<MLevelEnum>");
@@ -788,8 +907,14 @@ mod tests {
                 ("id".to_string(), "u32".to_string()),
                 ("level".to_string(), "MLevelEnum".to_string()),
                 ("due".to_string(), "Option<i64>".to_string()),
-                ("blob".to_string(), "Vec<u8>".to_string()),
-                ("tags".to_string(), "Vec<String>".to_string()),
+                (
+                    "blob".to_string(),
+                    "::sce_portable_bytes::SceBytes<4>".to_string()
+                ),
+                (
+                    "tags".to_string(),
+                    "Vec<::sce_portable_bytes::SceString<8>>".to_string()
+                ),
             ]
         );
         let def = RUST.record_def("MItemRecord", "Item", &members);
@@ -797,7 +922,10 @@ mod tests {
             def.contains("pub struct MItemRecord {\n    pub id: u32,\n"),
             "{def}"
         );
-        assert!(def.contains("    pub tags: Vec<String>,\n}"), "{def}");
+        assert!(
+            def.contains("    pub tags: Vec<::sce_portable_bytes::SceString<8>>,\n}"),
+            "{def}"
+        );
     }
 
     #[test]
@@ -813,12 +941,9 @@ mod tests {
         assert_eq!(read("bool"), "v.truth()");
         assert_eq!(
             read("string[8]"),
-            "v.text::<8>().map(|text| text.as_str().to_string())"
+            "v.text::<8>().map(|text| ::sce_portable_bytes::SceString::<8>::held(text.as_str()))"
         );
-        assert_eq!(
-            read("bytes[4]"),
-            "v.bytes::<4>().map(|bytes| bytes.to_vec())"
-        );
+        assert_eq!(read("bytes[4]"), "v.bytes::<4>()");
         assert_eq!(read("optional<int64>"), "v.optional(|v| v.signed64())");
         assert_eq!(
             read("list<list<uint8>[2]>[3]"),
@@ -845,7 +970,8 @@ mod tests {
         assert!(
             item.ends_with(
                 "tags: r.field(\"tags\").and_then(|v| v.list::<_, 4>(|v| v.text::<8>().map(|text| \
-                 text.as_str().to_string())).map(|list| list.into_vec()))? }))"
+                 ::sce_portable_bytes::SceString::<8>::held(text.as_str()))).map(|list| \
+                 list.into_vec()))? }))"
             ),
             "{item}"
         );
@@ -855,6 +981,51 @@ mod tests {
             batch.starts_with("v.record(Some(\"{\\\"late\\\":[]}\"), |r| Ok(MBatchRecord {"),
             "{batch}"
         );
+    }
+
+    #[test]
+    fn a_value_that_fits_is_copied_by_the_case_of_each_constructor() {
+        let held = held();
+        let enums = enums();
+        let copy = |from: &str, to: &str, at: Held| {
+            copier(&ty(from), None, &ty(to), None, &held, &enums, &RUST, &at)
+        };
+        // One type in the machine: the value as it is.
+        assert_eq!(
+            copy("list<uint8>[2]", "list<uint8>[4]", Held::place("x")),
+            Ok("x.clone()".to_string())
+        );
+        assert_eq!(
+            copy(
+                "list<record:Item>[3]",
+                "list<record:Item>[3]",
+                Held::place("x")
+            ),
+            Ok("x.clone()".to_string())
+        );
+        assert_eq!(
+            copy("optional<int64>", "optional<int64>", Held::reference("v")),
+            Ok("*v".to_string())
+        );
+        // A text of a smaller bound, at depth 1 and 2.
+        assert_eq!(
+            copy("string[4]", "string[8]", Held::place("x")),
+            Ok("::sce_portable_bytes::SceString::<8>::held(x.as_str())".to_string())
+        );
+        assert_eq!(
+            copy("list<string[4]>[2]", "list<string[8]>[3]", Held::place("x")),
+            Ok(
+                "x.iter().map(|v| ::sce_portable_bytes::SceString::<8>::held(v.as_str()))\
+                 .collect::<Vec<_>>()"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            copy("string[4]", "optional<string[8]>", Held::place("x")),
+            Ok("Some(::sce_portable_bytes::SceString::<8>::held(x.as_str()))".to_string())
+        );
+        // A byte string of another bound has no copy yet.
+        assert!(copy("bytes[2]", "bytes[4]", Held::place("x")).is_err());
     }
 
     #[test]

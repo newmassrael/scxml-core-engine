@@ -13641,6 +13641,20 @@ fn lower_action(
                 lower_optional_record_assign(action, place, ctx, renames, rewrites)?;
                 return Ok(reads_payload);
             }
+            // ... and a list variable takes a list a place holds whole, copied
+            // into its own type, which the value's fits (docs/adr/0086, sections
+            // 5.1 and 6.1).
+            if let Some(copy) = whole_list_copy(action, ctx, renames, rewrites)? {
+                rewrites.note(&action.expr, action.spellings.get("expr"), &copy);
+                let name = renames
+                    .get(action.location.trim())
+                    .copied()
+                    .unwrap_or(action.location.trim())
+                    .to_string();
+                action.native_code = target.assign(&name, &copy);
+                action.native_fails = false;
+                return Ok(reads_payload);
+            }
             let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)
                 .unwrap_or(InferredType::Unknown);
             let location = action.location.trim();
@@ -14442,6 +14456,78 @@ fn walked_place(
         record: None,
         reads_payload: crate::forge::expr::references_event_data_lexically(list),
     })
+}
+
+/// The value a list variable takes when an `<assign>` takes a list a place
+/// holds whole into it (docs/adr/0086, section 6.1): a copy of the place's
+/// list in the variable's own type, which the value's fits, as the judge proved
+/// where the document was read (section 5.1), so the copy cannot fail. `None`
+/// for an `<assign>` that is no such copy: its location is no list variable,
+/// or its value no place that holds a list.
+///
+/// Refused by name, for a target that spells no composed value, and for a list
+/// reached through an index, whose read can fail where the copy cannot say so.
+fn whole_list_copy(
+    action: &Action,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<Option<String>, GenerateError> {
+    use crate::forge::composed_lowering as composed;
+    let location = action.location.trim();
+    if !rewrites.lists.contains_key(location) {
+        return Ok(None);
+    }
+    let Some((path, from)) = crate::forge::expr::written_place(&action.expr)
+        .and_then(|path| ctx.value_of(&path).map(|place| (path, place)))
+        .filter(|(_, place)| place.list_bound().is_some())
+    else {
+        return Ok(None);
+    };
+    let Some(to) = ctx.value_of(location) else {
+        return Ok(None);
+    };
+    let target = rewrites.target;
+    let lang = target.name();
+    let refused = |why: String| {
+        GenerateError::unsupported(format!(
+            "<assign location=\"{location}\" expr=\"{}\">: {why}",
+            action.expr.trim()
+        ))
+    };
+    let (Some(names), Some(spelling)) = (
+        rewrites.composed.as_ref(),
+        target.composed_spelling(rewrites.machine),
+    ) else {
+        return Err(refused(format!(
+            "a list taken whole has no {lang} lowering of the copy yet (docs/adr/0086, section \
+             7.3)"
+        )));
+    };
+    if path.contains(crate::forge::value_path::ELEMENT) {
+        return Err(refused(format!(
+            "a list read through an index has no {lang} lowering of a whole copy yet \
+             (docs/adr/0086, section 7.3)"
+        )));
+    }
+    let within =
+        |place: &crate::forge::value_path::Place| composed::within_of(&place.scope, &names.records);
+    let copy = within(&from)
+        .and_then(|from_within| {
+            let to_within = within(&to)?;
+            composed::copier(
+                &from.ty,
+                from_within.as_deref(),
+                &to.ty,
+                to_within.as_deref(),
+                &names.records,
+                &names.enums,
+                &*spelling,
+                &composed::Held::place(place_text(&path, renames, target)),
+            )
+        })
+        .map_err(refused)?;
+    Ok(Some(copy))
 }
 
 /// The expression the place `path` is reached by, a path of fields with no

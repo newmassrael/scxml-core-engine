@@ -229,6 +229,10 @@ pub struct ComposedLowering {
     /// item of an enclosing loop holds, and the lift that reads the payload
     /// (section 4).
     pub reads: bool,
+    /// Whether it lowers a list taken whole into a list variable from a place
+    /// that holds one (section 6.1), copied into the variable's type, which the
+    /// value's fits (section 5.1).
+    pub copies: bool,
 }
 
 impl ComposedLowering {
@@ -236,6 +240,7 @@ impl ComposedLowering {
     pub const ECMASCRIPT: Self = Self {
         name: "ecmascript",
         reads: false,
+        copies: false,
     };
 
     /// What some generated backend lowers: the gate every route asks before a
@@ -245,16 +250,41 @@ impl ComposedLowering {
     pub const ANY_BACKEND: Self = Self {
         name: "backend",
         reads: true,
+        copies: true,
     };
 
     /// What the backend `language` lowers: Rust reads a composed payload at
-    /// any depth, the backend whose machine spells the walks over a composed
-    /// value ([`crate::forge::static_lowering::StaticTarget::composed_spelling`]);
+    /// any depth and takes a list whole, the backend whose machine spells the
+    /// walks over a composed value
+    /// ([`crate::forge::static_lowering::StaticTarget::composed_spelling`]);
     /// every other backend lowers no composed value yet.
     pub fn of(language: crate::generator::Language) -> Self {
+        let rust = matches!(language, crate::generator::Language::Rust);
         Self {
             name: language.canonical_name(),
-            reads: matches!(language, crate::generator::Language::Rust),
+            reads: rust,
+            copies: rust,
+        }
+    }
+
+    /// What the Rust backend lowers for a machine built without an allocator
+    /// (`--no-std`): no composed value, since the machine holds a list in
+    /// growable storage and reads a payload through a wire that profile does
+    /// not have.
+    pub const RUST_NO_STD: Self = Self {
+        name: "rust no_std",
+        reads: false,
+        copies: false,
+    };
+
+    /// What the backend `language` lowers for the profile a machine is built
+    /// for: [`Self::RUST_NO_STD`] for Rust without an allocator, and
+    /// [`Self::of`] otherwise.
+    pub fn of_profile(language: crate::generator::Language, no_std: bool) -> Self {
+        if no_std && language == crate::generator::Language::Rust {
+            Self::RUST_NO_STD
+        } else {
+            Self::of(language)
         }
     }
 }
@@ -305,14 +335,15 @@ pub fn check_composed_uses(
 }
 
 /// [`check_composed_uses`] where a backend is generated: the same decision,
-/// keyed by the backend, as the refusal its generator returns. Asked before
-/// the backend reads anything of the model, so the backend that does not
-/// lower a composed value refuses it by name rather than meet it.
+/// keyed by the backend and the profile it is built for
+/// ([`ComposedLowering::of_profile`]), as the refusal its generator returns.
+/// Asked before the backend reads anything of the model, so the backend that
+/// does not lower a composed value refuses it by name rather than meet it.
 pub fn composed_uses_unlowered(
     scxml: &SCXMLModel,
-    language: crate::generator::Language,
+    lowering: ComposedLowering,
 ) -> Result<(), crate::forge::error::GenerateError> {
-    match first_unlowered_composed_use(scxml, ComposedLowering::of(language)) {
+    match first_unlowered_composed_use(scxml, lowering) {
         None => Ok(()),
         Some((detail, at)) => Err(crate::forge::error::GenerateError::unsupported_at(
             detail, at,
@@ -329,6 +360,7 @@ fn first_unlowered_composed_use(
     let ComposedLowering {
         name: lowering,
         reads: lowers_reads,
+        copies: lowers_copies,
     } = lowering;
     // Each refusal names the construct and the lowering that has none of it,
     // as every backend's refusal of what it does not lower yet does.
@@ -458,6 +490,7 @@ fn first_unlowered_composed_use(
                 }
             }
             if copied.is_none()
+                && !lowers_copies
                 && a.action_type == "assign"
                 && lists.contains(a.location.trim())
                 && reads_a_place(&a.expr)
@@ -2486,27 +2519,60 @@ mod tests {
     /// a backend what none lowers.
     #[test]
     fn the_gate_lowers_what_some_backend_lowers() {
-        let some_backend_reads = crate::generator::Language::ALL
-            .iter()
-            .any(|language| ComposedLowering::of(*language).reads);
-        assert_eq!(ComposedLowering::ANY_BACKEND.reads, some_backend_reads);
-        assert_eq!(ComposedLowering::ANY_BACKEND.name, "backend");
-        assert!(!ComposedLowering::ECMASCRIPT.reads);
+        let some_backend = |position: fn(ComposedLowering) -> bool| {
+            crate::generator::Language::ALL
+                .iter()
+                .any(|language| position(ComposedLowering::of(*language)))
+        };
+        assert_eq!(
+            ComposedLowering::ANY_BACKEND.reads,
+            some_backend(|lowering| lowering.reads)
+        );
+        assert_eq!(
+            ComposedLowering::ANY_BACKEND.copies,
+            some_backend(|lowering| lowering.copies)
+        );
+        assert_eq!(
+            ComposedLowering::ECMASCRIPT,
+            ComposedLowering {
+                name: "ecmascript",
+                reads: false,
+                copies: false,
+            }
+        );
     }
 
-    /// Rust reads a composed payload (docs/adr/0086, section 6), and every other
-    /// backend refuses the read by its own name until its step lowers it.
+    /// Rust reads a composed payload and takes a list whole (docs/adr/0086,
+    /// section 6), and every other backend refuses each by its own name until
+    /// its step lowers it.
     #[test]
     fn rust_alone_reads_a_composed_payload() {
         for language in crate::generator::Language::ALL {
             let lowering = ComposedLowering::of(*language);
-            assert_eq!(
-                lowering.reads,
-                *language == crate::generator::Language::Rust,
-                "{language:?}"
-            );
+            let rust = *language == crate::generator::Language::Rust;
+            assert_eq!(lowering.reads, rust, "{language:?}");
+            assert_eq!(lowering.copies, rust, "{language:?}");
             assert_eq!(lowering.name, language.canonical_name());
         }
+    }
+
+    /// A Rust machine built without an allocator lowers no composed value, and
+    /// says so by the name of its profile.
+    #[test]
+    fn a_machine_without_an_allocator_lowers_no_composed_value() {
+        let rust = crate::generator::Language::Rust;
+        let bare = ComposedLowering::of_profile(rust, true);
+        assert!(!bare.reads && !bare.copies, "{bare:?}");
+        assert_eq!(bare.name, "rust no_std");
+        assert_eq!(
+            ComposedLowering::of_profile(rust, false),
+            ComposedLowering::of(rust)
+        );
+        let kotlin = crate::generator::Language::Kotlin;
+        assert_eq!(
+            ComposedLowering::of_profile(kotlin, true),
+            ComposedLowering::of(kotlin)
+        );
     }
 
     fn field(id: &str, ty: SceType) -> EntryField {

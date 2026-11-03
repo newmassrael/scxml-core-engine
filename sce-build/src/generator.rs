@@ -1739,7 +1739,10 @@ fn reject_static_datamodel_in_unsupported_lang(
     // by name before anything of the model is read, by the one decision keyed
     // by the lowering; the gate every route asked first let through only what
     // some backend lowers.
-    crate::forge::event_schema_check::composed_uses_unlowered(model, language)
+    crate::forge::event_schema_check::composed_uses_unlowered(
+        model,
+        crate::forge::event_schema_check::ComposedLowering::of(language),
+    )
 }
 
 /// The backends that write the id a start of a child session is started under
@@ -3284,6 +3287,15 @@ fn render_rust(
     options: &StatechartCodegenOptions,
     bounds: &RustBounds,
 ) -> Result<String, GenerateError> {
+    // A machine built without an allocator holds no composed value (docs/adr/0086):
+    // the one decision of what is lowered refuses it by name for that profile.
+    crate::forge::event_schema_check::composed_uses_unlowered(
+        model,
+        crate::forge::event_schema_check::ComposedLowering::of_profile(
+            Language::Rust,
+            options.no_std,
+        ),
+    )?;
     let machine_name = filters::to_pascal_case(model.name.clone());
 
     // EventSchema MCU native lowering (step 2) —
