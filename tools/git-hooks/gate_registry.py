@@ -776,6 +776,10 @@ GATES: dict[str, dict] = {
             "cmake/SCECodegenPlan.cmake",
             "cmake/SCEStaticW3CTest.cmake",
             "cmake/SCEStaticIntegrationFixture.cmake",
+            # The module the plan module includes, which
+            # `a_configure_asks_each_plan_once_per_input_state` configures a
+            # project through with a real `cmake`.
+            "cmake/SCEClangFormat.cmake",
             # The test tree's build, whose Mesh rule-3 override and every
             # command it declares from a plan the same suite compiles in and
             # holds to declaring what the generator plans.

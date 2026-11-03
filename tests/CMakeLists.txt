@@ -2847,6 +2847,12 @@ if(NOT _W3C_ALL_IDS)
         "sce-codegen list-fixtures returned no test at all; the registry read is broken")
 endif()
 
+# Every fixture's plan, asked of the generator in one batch before the loop
+# declares the fixtures one by one, each from the answer the batch kept
+# (cmake/SCECodegenPlan.cmake): asked one at a time, the plans of the corpus
+# were most of what this configure cost.
+sce_prefetch_static_w3c_tests("${STATIC_W3C_OUTPUT_DIR}" cpp ${_W3C_ALL_IDS})
+
 foreach(_W3C_ID ${_W3C_ALL_IDS})
     set(_W3C_HARNESS "${_W3C_HARNESS_OF_${_W3C_ID}}")
     if(NOT _W3C_HARNESS)

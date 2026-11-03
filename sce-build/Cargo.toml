@@ -255,6 +255,14 @@ name = "configure_plans_are_kept_and_asked_together"
 path = "tests/configure_plans_are_kept_and_asked_together.rs"
 required-features = ["cli"]
 
+# The CMake module that keeps each plan and asks the rest in batches, driven
+# through a real `cmake` with a copy of sce-codegen, so it declares the feature
+# as the target above does.
+[[test]]
+name = "a_configure_asks_each_plan_once_per_input_state"
+path = "tests/a_configure_asks_each_plan_once_per_input_state.rs"
+required-features = ["cli"]
+
 # Requirement-closure RFC Atomic B. Spawns sce-codegen for the same
 # reason the target above does, and carries the same hazard: without
 # the declaration it builds against whatever sce-codegen is lying in

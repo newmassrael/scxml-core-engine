@@ -317,6 +317,43 @@ Adding a new utility or template group means editing `sce_codegen_assets.cmake` 
 - Template-based: easy to modify and extend
 - Template values are encoded for the comment they land in. Every template enters its environment through `generator::register_template`, which reads it in the language it emits (`sce-build/src/template_lexing.rs`) and routes each `{{ … }}` inside a comment through `comment_text` — `\`, CR, LF, the `/` of `*/` and the `*` of `/*` become `\xHH`, and every other character is unchanged. A template therefore writes `// cond="{{ trans.cond }}"`, never `| comment_text` and never a literal escaper (`escape_*`) inside a comment; `sce-build/tests/a_value_written_into_a_comment_is_encoded.rs` refuses both, refuses a template registered any other way, and renders hostile documents through all six backends. A value inside a string literal is not covered by this rule — its encoder is that language's escaper (`docs/SCE_ACCEPTED_SUBSET.md` §2.10). Nor is a value inside a Go `//line` directive: its reader is the Go toolchain, which decodes nothing, so `template_lexing` classifies it as a directive and the door passes the value through untouched, refusing only a line break (`comment_text::directive_guard`). What the encoder writes into a `SCE-MAP:` marker is read back by `forge::sourcemap::read_marker`, and a marker spelled in Rust rather than rendered from a template is written by `forge::sourcemap::marker_payload`.
 
+### Build-Time Plans
+
+A CMake route that generates at build time declares each generation's outputs from the
+generator's own answer, `sce-codegen --plan [--plan-children] generate`, asked when the tree is
+configured (`cmake/SCECodegenPlan.cmake`, the one module that asks it). A plan is the whole
+generation run in memory, and the test tree with the Mesh fixtures asks several hundred: asked
+one after another they took 207 s of an 8-core machine's configure. The module now asks each
+plan once per state of its inputs, and many at once, without changing an answer:
+
+- **Kept per input state.** Each answer is kept in the build tree
+  (`<build>/sce-codegen-plans/entries/<key>.plan`), keyed on the SHA-256 of the generator's
+  path, the environment it reads its installation and confinement from, and the arguments,
+  beside the list of the files the plan read (`--plan-reads`: the prerequisites the depfile
+  of the same run names, less what the run produces, its child generations' included; one
+  function, `depfile_prerequisites`, writes both). An answer is reused only when neither the
+  generator nor any listed file is newer than it (`IS_NEWER_THAN`, a tie is newer); it is
+  dated when its request was written, before the plan read anything.
+- **Asked many at once.** `sce-codegen plan-batch` answers a list of requests, a process each
+  (a generation keeps its output mode, its in-memory tree and its held documents in process
+  state, and a refusal ends the process), one per processor at a time
+  (`SCE_CODEGEN_PLAN_JOBS`), so each answer is byte for byte the single plan's. The module
+  sends it, in one batch each, every answer the last configure asked that is no longer
+  current (every plan after the generator is rebuilt), and every plan a route knows ahead
+  (`sce_codegen_plan_request` / `sce_codegen_plan_prefetch`; the conformance route queues
+  every registered fixture). A plan asked otherwise and not kept is sent alone.
+- **Settled at the end.** The answers no plan asked for are removed, the asked list is kept
+  for the next configure, and one status line reports how many plans were asked, how many
+  were answered from the cache and how many the generator was sent.
+
+What the cache cannot see is what a depfile cannot: a file the plan looked for and did not
+find, and a file put back older than the answer. Removing `<build>/sce-codegen-plans` asks every
+plan again. `sce-build/tests/configure_plans_are_kept_and_asked_together.rs` holds the batch to
+the single plan, `a_configure_asks_each_plan_once_per_input_state.rs` the module's reuse to its
+inputs (through a real `cmake`), and
+`the_conformance_cmake_route_declares_what_the_generator_plans.rs` every plan to coming from the
+generator.
+
 ### Stability and Library Use
 
 `sce-build` is published as an `rlib` (`sce-build/Cargo.toml`). Downstream Rust crates depend on it as a regular library — workspace runtime crates and `build.rs` helpers already do so, and `sce-codegen` is one binary that consumes the same library surface. WASM builds that need a `cdylib` form (gated on the `wasm` feature) must pass `--crate-type cdylib` on the `cargo build` invocation explicitly; unconditional `cdylib` in the default crate-type set produced no in-tree consumer but did trip cargo issue #6313 output-path collisions, so it was removed.

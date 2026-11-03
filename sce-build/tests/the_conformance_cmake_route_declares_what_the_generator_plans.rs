@@ -55,6 +55,19 @@
 //! `sce_codegen_generation`, whose one command the module holds to its plan,
 //! and is held to running no generation of its own, spelling no generated
 //! name and splitting no generation ([`test_tree_violations`]).
+//!
+//! The module keeps each answer between configures and asks the plans it does
+//! not keep many at once (`sce-codegen plan-batch`). That changes where an
+//! answer is read from and not what it is: every plan is still the
+//! generator's, run in the one place the module runs it, as a `--plan
+//! generate` request; a plan the conformance route asks ahead is the plan it
+//! then declares, word for word ([`ahead_violations`]); and a kept answer is
+//! keyed on every environment variable the generator reads
+//! ([`the_key_of_a_kept_plan_carries_the_environment_the_generator_reads`]).
+//! That a batch's answer is the single plan's is held by
+//! `configure_plans_are_kept_and_asked_together`, and that a kept answer is
+//! reused only while its inputs are unchanged by
+//! `a_configure_asks_each_plan_once_per_input_state`, which runs `cmake`.
 
 /// The route under test. Compiled in, so an edit to it starts the suite that
 /// judges it (`include-str-coverage` in tools/git-hooks/gate_registry.py).
@@ -1121,12 +1134,34 @@ fn one_module_asks_the_generator_for_a_plan() {
         1,
         "cmake/SCECodegenPlan.cmake defines `sce_codegen_plan` once"
     );
-    let plans: Vec<Invocation> = invocations(&module, "execute_process");
+    for helper in ["sce_codegen_plan_request", "sce_codegen_plan_prefetch"] {
+        assert_eq!(
+            invocations(&module, "function")
+                .iter()
+                .filter(|function| function.args.first().map(String::as_str) == Some(helper))
+                .count(),
+            1,
+            "cmake/SCECodegenPlan.cmake defines `{helper}` once"
+        );
+    }
+    // Every plan, asked now or ahead, is answered by the one batch the module
+    // runs, and each request of it is a `--plan generate` run.
+    let processes: Vec<Invocation> = invocations(&module, "execute_process");
+    assert_eq!(
+        processes.len(),
+        1,
+        "cmake/SCECodegenPlan.cmake runs the generator in more than one place; every plan \
+         is answered by `sce-codegen plan-batch`, through `_sce_codegen_plan_ask`"
+    );
     assert!(
-        plans
+        processes[0].args.iter().any(|arg| arg == "plan-batch"),
+        "cmake/SCECodegenPlan.cmake no longer runs `sce-codegen plan-batch`"
+    );
+    assert!(
+        invocations(&module, "set")
             .iter()
-            .any(|process| process.args.iter().any(|arg| arg == "--plan")),
-        "cmake/SCECodegenPlan.cmake no longer runs `sce-codegen --plan generate`"
+            .any(|set| set.args.iter().any(|arg| arg == "--plan")),
+        "cmake/SCECodegenPlan.cmake no longer asks the batch for `--plan generate` runs"
     );
 
     for (route, text) in [
@@ -1155,6 +1190,172 @@ fn one_module_asks_the_generator_for_a_plan() {
              the generator is a second answer to keep in step"
         );
     }
+}
+
+/// Every way a route's requests asked ahead (`sce_codegen_plan_request`)
+/// depart from the plans it asks: a request whose options are not, word for
+/// word, those of a plan the route asks (`sce_codegen_plan`, not FROM another)
+/// is an answer nothing reads, and the plan it meant is asked again alone.
+fn ahead_violations(text: &str) -> Vec<String> {
+    let code = cmake_code(text);
+    let asked: Vec<Vec<String>> = invocations(&code, "sce_codegen_plan")
+        .into_iter()
+        .filter(|plan| !plan.args.iter().any(|arg| arg == "FROM"))
+        .map(|plan| plan.args.get(1..).unwrap_or_default().to_vec())
+        .collect();
+    let ahead = invocations(&code, "sce_codegen_plan_request");
+    let mut found = Vec::new();
+    if ahead.is_empty() {
+        found.push("the route asks no plan ahead".to_string());
+    }
+    for request in &ahead {
+        if !asked.contains(&request.args) {
+            found.push(format!(
+                "line {}: the request asked ahead ({:?}) is no plan the route asks \
+                 ({asked:?}), so its answer is never read",
+                request.line, request.args
+            ));
+        }
+    }
+    found
+}
+
+/// The conformance route asks every fixture's plan ahead, in one batch, with
+/// the options it then asks it with one fixture at a time.
+#[test]
+fn the_w3c_route_asks_ahead_for_the_plan_it_declares() {
+    let found = ahead_violations(W3C_ROUTE);
+    assert!(
+        found.is_empty(),
+        "cmake/SCEStaticW3CTest.cmake asks ahead for a plan it does not ask:\n  {}\n\nGive \
+         `sce_codegen_plan_request` the options `_sce_generate_w3c_fixture` gives \
+         `sce_codegen_plan`.",
+        found.join("\n  ")
+    );
+}
+
+#[test]
+fn a_request_ahead_that_is_not_the_plan_is_refused() {
+    let request = |language: &str| {
+        format!(
+            "{PLANNED_GENERATION}\nsce_codegen_plan_request(STEM \"${{M}}\" DOCUMENT \"${{D}}\" \
+             OUTPUT_DIR \"${{O}}\" LANGUAGE {language})\n"
+        )
+    };
+    assert_eq!(ahead_violations(&request("cpp")), Vec::<String>::new());
+    let other = ahead_violations(&request("c11"));
+    assert!(
+        other
+            .iter()
+            .any(|v| v.contains("is no plan the route asks")),
+        "a request asked ahead with options no plan has was accepted: {other:?}"
+    );
+}
+
+/// The environment variables of the generator that a plan's answer cannot
+/// depend on, each with why. Every other `SCE_` variable it reads is one the
+/// key of a kept answer carries (`_ENVIRONMENT` in `_sce_codegen_plan_entry`,
+/// cmake/SCECodegenPlan.cmake).
+const ENVIRONMENT_NO_PLAN_DEPENDS_ON: &[(&str, &str)] = &[
+    (
+        "SCE_REQUIRE_TOOLS",
+        "a test lane's demand that the tools it compiles with are present; a plan compiles \
+         nothing",
+    ),
+    (
+        "SCE_REQUIRE_ALL_COMPILERS",
+        "a test's demand that every compiler it runs is present; a plan compiles nothing",
+    ),
+];
+
+/// Every `SCE_` environment variable the generator's sources read: a name
+/// spelled on a line that reads the environment, or the constant such a line
+/// reads it through.
+fn environment_the_generator_reads() -> std::collections::BTreeSet<String> {
+    fn sources(dir: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("read a source directory") {
+            let path = entry.expect("a directory entry").path();
+            if path.is_dir() {
+                sources(&path, found);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                found.push(path);
+            }
+        }
+    }
+    let literal = regex::Regex::new(r#""(SCE_[A-Z0-9_]+)""#).expect("pattern");
+    let constant =
+        regex::Regex::new(r#"const\s+(\w+)\s*:\s*&(?:'static\s+)?str\s*=\s*"(SCE_[A-Z0-9_]+)""#)
+            .expect("pattern");
+    let mut files = Vec::new();
+    sources(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+        &mut files,
+    );
+    let mut names = std::collections::BTreeSet::new();
+    for file in files {
+        let text = std::fs::read_to_string(&file).expect("read a source");
+        let constants: Vec<(String, String)> = constant
+            .captures_iter(&text)
+            .map(|found| (found[1].to_string(), found[2].to_string()))
+            .collect();
+        for line in text.lines().filter(|line| line.contains("env::var")) {
+            names.extend(
+                literal
+                    .captures_iter(line)
+                    .map(|found| found[1].to_string()),
+            );
+            names.extend(
+                constants
+                    .iter()
+                    .filter(|(constant, _)| line.contains(constant.as_str()))
+                    .map(|(_, name)| name.clone()),
+            );
+        }
+    }
+    names
+}
+
+/// A kept answer is keyed on every environment variable the generator reads
+/// that could change it, and on none it does not read: a variable left out
+/// lets an answer the generator would now give differently be reused.
+#[test]
+fn the_key_of_a_kept_plan_carries_the_environment_the_generator_reads() {
+    let read = environment_the_generator_reads();
+    assert!(
+        read.contains("SCE_TEMPLATE_DIR") && read.contains("SCE_FILE_ROOT"),
+        "the scan of the generator's sources found neither the template directory nor the \
+         confinement it reads, so it reads nothing: {read:?}"
+    );
+    let module = cmake_code(PLAN_MODULE);
+    let keyed: std::collections::BTreeSet<String> = invocations(&module, "set")
+        .into_iter()
+        .find(|set| set.args.first().map(String::as_str) == Some("_ENVIRONMENT"))
+        .expect("cmake/SCECodegenPlan.cmake names the environment a kept answer is keyed on")
+        .args
+        .into_iter()
+        .skip(1)
+        .collect();
+    let exempt: std::collections::BTreeSet<String> = ENVIRONMENT_NO_PLAN_DEPENDS_ON
+        .iter()
+        .map(|(name, _)| name.to_string())
+        .collect();
+    let unkeyed: Vec<&String> = read
+        .iter()
+        .filter(|name| !keyed.contains(*name) && !exempt.contains(*name))
+        .collect();
+    assert!(
+        unkeyed.is_empty(),
+        "the generator reads {unkeyed:?} and a kept plan is not keyed on it: add it to \
+         `_ENVIRONMENT` in cmake/SCECodegenPlan.cmake, or say here why no plan depends on it"
+    );
+    let unread: Vec<&String> = keyed
+        .union(&exempt)
+        .filter(|name| !read.contains(*name))
+        .collect();
+    assert!(
+        unread.is_empty(),
+        "{unread:?} is named for a variable the generator no longer reads"
+    );
 }
 
 // The scanner, held to what it must see and what it must not.

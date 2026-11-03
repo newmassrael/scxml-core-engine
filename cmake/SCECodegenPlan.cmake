@@ -44,6 +44,51 @@
 # with the run's own (`--plan-children`): the generator plans each child from
 # the text the run would write, and `sce_codegen_plan(<PREFIX> FROM <plan>
 # CHILD <name>)` declares one of them as a plan of its own.
+#
+# ── One answer per input state, many asked at once ──────────────────────
+#
+# A plan is the whole generation run in memory, and a configure of the test
+# tree with the Mesh fixtures asks several hundred of them: asked one after
+# another, each by a process of its own, they took 207 s of an 8-core
+# machine's configure (2026-11), paid again by every reconfigure and every CI
+# lane that configures. Two things remove that cost without changing an
+# answer.
+#
+# An answer is a function of the generator, its arguments, the environment
+# the generator reads its installation from, and the files it read. Each is
+# kept in the build tree (`<build>/sce-codegen-plans/entries/<key>.plan`),
+# under the SHA-256 of the generator's path, that environment and the
+# arguments, beside the list of the files the plan read (`<key>.reads`,
+# `sce-codegen --plan-reads`, the prerequisites the depfile of the same run
+# names: its document, what it includes and imports, its source set, its
+# deploy, the templates and the generator). A kept answer is reused only when
+# neither the generator nor any file of its list is newer than it, compared
+# as CMake compares files (`IS_NEWER_THAN`, which calls a tie newer). The
+# generator dates an answer when its request was written, before the plan
+# read anything, so a file that changed while it ran is never older than
+# it. An answer with no list is never reused.
+#
+# Every plan not kept is asked of `sce-codegen plan-batch`, which runs each
+# request as the `--plan generate` run a single ask would make, as many at a
+# time as there are processors (`SCE_CODEGEN_PLAN_JOBS`), and keeps each
+# answer where the next ask finds it. Three moments send it more than one:
+#   - when this module is first included, every answer the last configure of
+#     this build tree asked for that is no longer current, which is every
+#     plan after the generator is rebuilt (`_sce_codegen_plan_refresh`);
+#   - a route that knows its plans before it declares them queues them
+#     (`sce_codegen_plan_request`) and sends them together
+#     (`sce_codegen_plan_prefetch`), as the conformance route does for every
+#     fixture the registry lists;
+#   - any other plan not kept is sent alone, when it is asked.
+# At the end of the configure, the answers no plan asked for are removed,
+# the list of the asked ones is kept for the next configure, and one line
+# says how many plans were asked, how many were kept, and how many the
+# generator was sent (`_sce_codegen_plan_settle`).
+#
+# What the cache cannot see is what no list names: a file the plan looked
+# for and did not find, which a new file of that name could change, and a
+# file put back with an older date than the answer. A depfile has the same
+# blind spots; removing `<build>/sce-codegen-plans` asks every plan again.
 
 include_guard(GLOBAL)
 
@@ -56,6 +101,325 @@ endif()
 # What a generation's command is given to format what it writes
 # (`sce_codegen_format_args`), which `sce_codegen_generation` gives every one.
 include(${CMAKE_CURRENT_LIST_DIR}/SCEClangFormat.cmake)
+
+set(SCE_CODEGEN_PLAN_JOBS "" CACHE STRING
+    "How many plans sce-codegen runs at once when the tree is configured; empty runs one per processor")
+
+# _sce_codegen_plan_cache_dir(<VAR>)
+#
+#   Where the answers of this build tree's plans are kept.
+function(_sce_codegen_plan_cache_dir VAR)
+    set(${VAR} "${CMAKE_BINARY_DIR}/sce-codegen-plans" PARENT_SCOPE)
+endfunction()
+
+# _sce_codegen_plan_count(<COUNTER> <BY>)
+#
+#   Add BY to one of the counts `_sce_codegen_plan_settle` reports.
+function(_sce_codegen_plan_count COUNTER BY)
+    get_property(_NOW GLOBAL PROPERTY "_SCE_CODEGEN_PLAN_${COUNTER}")
+    if("${_NOW}" STREQUAL "")
+        set(_NOW 0)
+    endif()
+    math(EXPR _NOW "${_NOW} + ${BY}")
+    set_property(GLOBAL PROPERTY "_SCE_CODEGEN_PLAN_${COUNTER}" "${_NOW}")
+endfunction()
+
+# _sce_codegen_plan_arguments(<VAR> <document> <language> <output dir>
+#     <input root> <child generations> [<argument>...])
+#
+#   The arguments `sce-codegen` is run with to plan one generation, after the
+#   program: the one spelling of a plan's request, which `sce_codegen_plan`
+#   asks and `sce_codegen_plan_request` asks ahead. An empty input root passes
+#   none; a true <child generations> asks for the plans of the children too
+#   (`--plan-children`).
+#
+#   `--no-format`: formatting changes bytes and never which files, and a plan
+#   is asked once per generation when the tree is configured, so it neither
+#   waits for clang-format on every file nor needs one there.
+function(_sce_codegen_plan_arguments VAR DOCUMENT LANGUAGE OUTPUT_DIR INPUT_ROOT CHILD_GENERATIONS)
+    set(_ARGUMENTS --plan)
+    if(CHILD_GENERATIONS)
+        list(APPEND _ARGUMENTS --plan-children)
+    endif()
+    list(APPEND _ARGUMENTS generate "${DOCUMENT}" -l "${LANGUAGE}" -o "${OUTPUT_DIR}")
+    if(INPUT_ROOT)
+        list(APPEND _ARGUMENTS --input-root "${INPUT_ROOT}")
+    endif()
+    list(APPEND _ARGUMENTS --no-format ${ARGN})
+    set(${VAR} "${_ARGUMENTS}" PARENT_SCOPE)
+endfunction()
+
+# _sce_codegen_plan_entry(<ENTRY_VAR> <LINE_VAR> <argument>...)
+#
+#   Where the answer of the plan asked with <argument>s is kept
+#   (`<cache>/entries/<key>`, each file of it `<key>.<kind>`), and the line
+#   that asks `sce-codegen plan-batch` for it (`<key>`, then each argument,
+#   separated by tabs).
+#
+#   <key> is the SHA-256 of what the answer depends on besides the files it
+#   read: the generator's path, the environment the generator finds its
+#   installation and its confinement through, and the arguments. Each
+#   variable of `_ENVIRONMENT` is one the generator reads when it plans, and
+#   `the_conformance_cmake_route_declares_what_the_generator_plans` holds the
+#   list to the generator's sources.
+function(_sce_codegen_plan_entry ENTRY_VAR LINE_VAR)
+    foreach(_ARGUMENT IN LISTS ARGN)
+        if("${_ARGUMENT}" MATCHES "[\t\n]")
+            message(FATAL_ERROR
+                "sce_codegen_plan: the argument \"${_ARGUMENT}\" holds a tab or a line "
+                "break, which a request to sce-codegen plan-batch cannot carry")
+        endif()
+    endforeach()
+    set(_ENVIRONMENT SCE_FILE_ROOT SCE_SCHEMAS_DIR SCE_TEMPLATE_DIR SCE_WORKSPACE_ROOT)
+    set(_IDENTITY "${SCE_CODEGEN}")
+    foreach(_NAME IN LISTS _ENVIRONMENT)
+        string(APPEND _IDENTITY "\n${_NAME}=$ENV{${_NAME}}")
+    endforeach()
+    string(JOIN "\t" _REQUEST ${ARGN})
+    string(SHA256 _KEY "${_IDENTITY}\n${_REQUEST}")
+    _sce_codegen_plan_cache_dir(_CACHE)
+    set(${ENTRY_VAR} "${_CACHE}/entries/${_KEY}" PARENT_SCOPE)
+    set(${LINE_VAR} "${_KEY}\t${_REQUEST}" PARENT_SCOPE)
+endfunction()
+
+# _sce_codegen_plan_fresh(<VAR> <entry>)
+#
+#   Set VAR to TRUE when the answer kept at <entry> is the one the generator
+#   would give now: it is there with the list of the files its plan read, and
+#   neither the generator nor any of those files is newer than it. A file of
+#   the list that is gone is newer, as `IS_NEWER_THAN` reads a missing file,
+#   and so is one dated the same instant as the answer.
+function(_sce_codegen_plan_fresh VAR ENTRY)
+    set(${VAR} FALSE PARENT_SCOPE)
+    if(NOT EXISTS "${ENTRY}.plan" OR NOT EXISTS "${ENTRY}.reads")
+        return()
+    endif()
+    if("${SCE_CODEGEN}" IS_NEWER_THAN "${ENTRY}.plan")
+        return()
+    endif()
+    file(STRINGS "${ENTRY}.reads" _READS ENCODING UTF-8)
+    foreach(_READ IN LISTS _READS)
+        if("${_READ}" IS_NEWER_THAN "${ENTRY}.plan")
+            return()
+        endif()
+    endforeach()
+    set(${VAR} TRUE PARENT_SCOPE)
+endfunction()
+
+# _sce_codegen_plan_ask(<line>...)
+#
+#   Send every request given (a line of `_sce_codegen_plan_entry`) to one
+#   `sce-codegen plan-batch`, which answers them `SCE_CODEGEN_PLAN_JOBS` at a
+#   time and keeps each answer where `_sce_codegen_plan_entry` names it: what
+#   the plan printed, or what a refused plan wrote on stderr. The one place
+#   this module runs the generator.
+function(_sce_codegen_plan_ask)
+    list(LENGTH ARGN _SENT)
+    if(_SENT EQUAL 0)
+        return()
+    endif()
+    _sce_codegen_plan_cache_dir(_CACHE)
+    file(MAKE_DIRECTORY "${_CACHE}/entries")
+    string(JOIN "\n" _REQUESTS ${ARGN})
+    file(WRITE "${_CACHE}/requests.txt" "${_REQUESTS}\n")
+    set(_JOBS "")
+    if(SCE_CODEGEN_PLAN_JOBS)
+        set(_JOBS --jobs "${SCE_CODEGEN_PLAN_JOBS}")
+    endif()
+    execute_process(
+        COMMAND "${SCE_CODEGEN}" plan-batch
+                --requests "${_CACHE}/requests.txt"
+                --results "${_CACHE}/entries"
+                ${_JOBS}
+        RESULT_VARIABLE _RESULT
+        OUTPUT_VARIABLE _OUTPUT
+        ERROR_VARIABLE _ERROR
+    )
+    if(NOT _RESULT EQUAL 0)
+        message(FATAL_ERROR
+            "sce-codegen plan-batch failed, so the outputs of the generations it was asked "
+            "to plan cannot be declared. A sce-codegen older than plan-batch answers with a "
+            "usage error: rebuild it from this tree.\n${_ERROR}")
+    endif()
+    _sce_codegen_plan_count(SENT ${_SENT})
+    _sce_codegen_plan_count(BATCHES 1)
+endfunction()
+
+# _sce_codegen_plan_answer(<RESULT_VAR> <OUTPUT_VAR> <ERROR_VAR> <argument>...)
+#
+#   The generator's answer to the plan asked with <argument>s, as
+#   `execute_process` would have given it: RESULT_VAR 0 and OUTPUT_VAR what
+#   the plan printed, its trailing white space stripped, or RESULT_VAR 1 and
+#   ERROR_VAR what the refused plan wrote on stderr. A kept answer that is
+#   current is read; any other is asked of the generator now.
+function(_sce_codegen_plan_answer RESULT_VAR OUTPUT_VAR ERROR_VAR)
+    _sce_codegen_plan_entry(_ENTRY _LINE ${ARGN})
+    get_filename_component(_KEY "${_ENTRY}" NAME)
+    set_property(GLOBAL APPEND PROPERTY _SCE_CODEGEN_PLAN_ASKED_KEYS "${_KEY}")
+    _sce_codegen_plan_count(ASKED 1)
+    _sce_codegen_plan_fresh(_FRESH "${_ENTRY}")
+    if(_FRESH)
+        _sce_codegen_plan_count(KEPT 1)
+    else()
+        _sce_codegen_plan_ask("${_LINE}")
+    endif()
+    if(EXISTS "${_ENTRY}.plan")
+        file(READ "${_ENTRY}.plan" _ANSWER)
+        string(REGEX REPLACE "[ \t\r\n]+$" "" _ANSWER "${_ANSWER}")
+        set(${RESULT_VAR} 0 PARENT_SCOPE)
+        set(${OUTPUT_VAR} "${_ANSWER}" PARENT_SCOPE)
+        set(${ERROR_VAR} "" PARENT_SCOPE)
+    elseif(EXISTS "${_ENTRY}.error")
+        file(READ "${_ENTRY}.error" _REFUSAL)
+        set(${RESULT_VAR} 1 PARENT_SCOPE)
+        set(${OUTPUT_VAR} "" PARENT_SCOPE)
+        set(${ERROR_VAR} "${_REFUSAL}" PARENT_SCOPE)
+    else()
+        message(FATAL_ERROR
+            "sce-codegen plan-batch kept no answer at ${_ENTRY} for the plan asked with: "
+            "${ARGN}")
+    endif()
+endfunction()
+
+# _sce_codegen_plan_refresh()
+#
+#   Ask again, in one batch, every plan the last configure of this build tree
+#   asked for whose kept answer is no longer current, before any is asked one
+#   by one: after the generator is rebuilt, that is every plan. A kept request
+#   whose key its arguments no longer give (another generator, another
+#   environment) is not this configure's to ask.
+function(_sce_codegen_plan_refresh)
+    _sce_codegen_plan_cache_dir(_CACHE)
+    if(NOT EXISTS "${_CACHE}/asked.txt")
+        return()
+    endif()
+    file(STRINGS "${_CACHE}/asked.txt" _KEYS ENCODING UTF-8)
+    set(_STALE "")
+    foreach(_KEY IN LISTS _KEYS)
+        set(_ENTRY "${_CACHE}/entries/${_KEY}")
+        if(NOT EXISTS "${_ENTRY}.request")
+            continue()
+        endif()
+        _sce_codegen_plan_fresh(_FRESH "${_ENTRY}")
+        if(_FRESH)
+            continue()
+        endif()
+        file(READ "${_ENTRY}.request" _KEPT)
+        string(REGEX REPLACE "\n$" "" _KEPT "${_KEPT}")
+        string(REPLACE "\t" ";" _FIELDS "${_KEPT}")
+        list(POP_FRONT _FIELDS _KEPT_KEY)
+        _sce_codegen_plan_entry(_NOW _LINE ${_FIELDS})
+        if("${_NOW}" STREQUAL "${_ENTRY}" AND "${_KEPT_KEY}" STREQUAL "${_KEY}")
+            list(APPEND _STALE "${_LINE}")
+        endif()
+    endforeach()
+    _sce_codegen_plan_ask(${_STALE})
+endfunction()
+
+# _sce_codegen_plan_settle()
+#
+#   At the end of the configure: keep the list of the plans it asked for,
+#   for the next configure to refresh, remove every answer no plan asked for,
+#   and say what the plans cost.
+function(_sce_codegen_plan_settle)
+    _sce_codegen_plan_cache_dir(_CACHE)
+    get_property(_ASKED GLOBAL PROPERTY _SCE_CODEGEN_PLAN_ASKED_KEYS)
+    list(REMOVE_DUPLICATES _ASKED)
+    file(MAKE_DIRECTORY "${_CACHE}/entries")
+    list(LENGTH _ASKED _ASKED_COUNT)
+    if(_ASKED_COUNT GREATER 0)
+        string(JOIN "\n" _TEXT ${_ASKED})
+        file(WRITE "${_CACHE}/asked.txt" "${_TEXT}\n")
+    else()
+        file(WRITE "${_CACHE}/asked.txt" "")
+    endif()
+    file(GLOB _KEPT "${_CACHE}/entries/*")
+    foreach(_FILE IN LISTS _KEPT)
+        get_filename_component(_NAME "${_FILE}" NAME)
+        string(FIND "${_NAME}" "." _DOT)
+        string(SUBSTRING "${_NAME}" 0 ${_DOT} _KEY)
+        if(NOT "${_KEY}" IN_LIST _ASKED)
+            file(REMOVE "${_FILE}")
+        endif()
+    endforeach()
+    foreach(_COUNTER ASKED KEPT SENT BATCHES)
+        get_property(_COUNT_${_COUNTER} GLOBAL PROPERTY "_SCE_CODEGEN_PLAN_${_COUNTER}")
+        if("${_COUNT_${_COUNTER}}" STREQUAL "")
+            set(_COUNT_${_COUNTER} 0)
+        endif()
+    endforeach()
+    message(STATUS
+        "SCE: generation plans: ${_COUNT_ASKED} asked, ${_COUNT_KEPT} answered from the "
+        "cache; ${_COUNT_SENT} sent to sce-codegen in ${_COUNT_BATCHES} batch(es) "
+        "(${_CACHE})")
+endfunction()
+
+# sce_codegen_plan_request(STEM <stem> DOCUMENT <document> OUTPUT_DIR <dir>
+#     LANGUAGE <cpp|c11>
+#     [INPUT_ROOT <dir>]
+#     [CHILDREN_HELD_IN <dir>]
+#     [CHILD_GENERATIONS]
+#     [CLAIM <global property>]
+#     [ARGS <arg>...])
+#
+#   Ask ahead for the plan a later `sce_codegen_plan(<PREFIX> ...)` with the
+#   same options asks: queue its request, which `sce_codegen_plan_prefetch`
+#   sends to the generator in one batch with every other request queued. The
+#   options are `sce_codegen_plan`'s, so a route asks ahead with the very
+#   options it plans with; the ones that say how an answer is declared and
+#   not what the generator is asked (STEM, CHILDREN_HELD_IN, CLAIM) change no
+#   request. The answer is read by `sce_codegen_plan` as any kept answer is,
+#   so a request asked ahead that the plan does not match only costs a plan.
+function(sce_codegen_plan_request)
+    cmake_parse_arguments(PARSE_ARGV 0 _SCR "CHILD_GENERATIONS"
+        "STEM;DOCUMENT;OUTPUT_DIR;LANGUAGE;INPUT_ROOT;CHILDREN_HELD_IN;CLAIM"
+        "ARGS")
+    if(_SCR_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR
+            "sce_codegen_plan_request: unexpected argument(s): ${_SCR_UNPARSED_ARGUMENTS}")
+    endif()
+    foreach(_REQUIRED STEM DOCUMENT OUTPUT_DIR LANGUAGE)
+        if("${_SCR_${_REQUIRED}}" STREQUAL "")
+            message(FATAL_ERROR "sce_codegen_plan_request: ${_REQUIRED} is required")
+        endif()
+    endforeach()
+    # The language is judged as `sce_codegen_plan` judges it.
+    _sce_codegen_plan_machine(_MACHINE _DEPFILE_NAME "${_SCR_STEM}" "${_SCR_LANGUAGE}")
+    _sce_codegen_plan_arguments(_REQUEST "${_SCR_DOCUMENT}" "${_SCR_LANGUAGE}"
+        "${_SCR_OUTPUT_DIR}" "${_SCR_INPUT_ROOT}" "${_SCR_CHILD_GENERATIONS}" ${_SCR_ARGS})
+    _sce_codegen_plan_entry(_ENTRY _LINE ${_REQUEST})
+    get_filename_component(_KEY "${_ENTRY}" NAME)
+    set_property(GLOBAL APPEND PROPERTY _SCE_CODEGEN_PLAN_QUEUED "${_KEY}")
+    set_property(GLOBAL PROPERTY "_SCE_CODEGEN_PLAN_LINE_${_KEY}" "${_LINE}")
+endfunction()
+
+# sce_codegen_plan_prefetch()
+#
+#   Send every request `sce_codegen_plan_request` queued whose kept answer is
+#   not current to the generator, in one batch, and empty the queue.
+function(sce_codegen_plan_prefetch)
+    get_property(_KEYS GLOBAL PROPERTY _SCE_CODEGEN_PLAN_QUEUED)
+    set_property(GLOBAL PROPERTY _SCE_CODEGEN_PLAN_QUEUED "")
+    list(REMOVE_DUPLICATES _KEYS)
+    _sce_codegen_plan_cache_dir(_CACHE)
+    set(_STALE "")
+    foreach(_KEY IN LISTS _KEYS)
+        _sce_codegen_plan_fresh(_FRESH "${_CACHE}/entries/${_KEY}")
+        if(NOT _FRESH)
+            get_property(_LINE GLOBAL PROPERTY "_SCE_CODEGEN_PLAN_LINE_${_KEY}")
+            list(APPEND _STALE "${_LINE}")
+        endif()
+    endforeach()
+    _sce_codegen_plan_ask(${_STALE})
+endfunction()
+
+# Once per configure, before any plan is asked: bring up to date what the last
+# configure asked for, and settle the cache when the configure ends. A script
+# (`cmake -P`) has no configure to end.
+if(NOT CMAKE_SCRIPT_MODE_FILE)
+    _sce_codegen_plan_refresh()
+    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL _sce_codegen_plan_settle)
+endif()
 
 # _sce_codegen_plan_machine(<MACHINE_VAR> <DEPFILE_VAR> <STEM> <LANGUAGE>)
 #
@@ -280,12 +644,9 @@ function(sce_codegen_plan PREFIX)
         # The language is judged before the generator is asked.
         _sce_codegen_plan_machine(_MACHINE _DEPFILE_NAME "${_STEM}" "${_LANGUAGE}")
 
-        set(_INPUT_ROOT_ARGS "")
         set(_INPUT_ROOT "${_SCP_INPUT_ROOT}")
         set(_DOCUMENT "${_SCP_DOCUMENT}")
-        if(_SCP_INPUT_ROOT)
-            set(_INPUT_ROOT_ARGS --input-root "${_SCP_INPUT_ROOT}")
-        elseif(NOT "${_SCP_DOCUMENT}" MATCHES "^sce:")
+        if(NOT _SCP_INPUT_ROOT AND NOT "${_SCP_DOCUMENT}" MATCHES "^sce:")
             # The root the generator takes when it is given none: the
             # document's own directory, which a child's generation, reading
             # its document from the output directory, is given explicitly.
@@ -294,31 +655,17 @@ function(sce_codegen_plan PREFIX)
         if(NOT "${_SCP_DOCUMENT}" MATCHES "^sce:")
             set(_DEPENDS "${_SCP_DOCUMENT}")
         endif()
-        set(_CHILD_GENERATIONS_ARGS "")
-        if(_SCP_CHILD_GENERATIONS)
-            set(_CHILD_GENERATIONS_ARGS --plan-children)
-        endif()
-        # `--no-format`: formatting changes bytes and never which files, and a
-        # plan is asked once per generation when the tree is configured, so it
-        # neither waits for clang-format on every file nor needs one there.
-        execute_process(
-            COMMAND "${SCE_CODEGEN}" --plan ${_CHILD_GENERATIONS_ARGS}
-                    generate "${_SCP_DOCUMENT}"
-                    -l "${_LANGUAGE}" -o "${_OUTPUT_DIR}"
-                    ${_INPUT_ROOT_ARGS}
-                    --no-format
-                    ${_SCP_ARGS}
-            RESULT_VARIABLE _PLAN_RESULT
-            OUTPUT_VARIABLE _PLAN_OUTPUT
-            ERROR_VARIABLE _PLAN_ERROR
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
+        # The answer kept for this request while it is current, the
+        # generator's otherwise (`_sce_codegen_plan_answer`).
+        _sce_codegen_plan_arguments(_REQUEST "${_SCP_DOCUMENT}" "${_LANGUAGE}"
+            "${_OUTPUT_DIR}" "${_SCP_INPUT_ROOT}" "${_SCP_CHILD_GENERATIONS}" ${_SCP_ARGS})
+        _sce_codegen_plan_answer(_PLAN_RESULT _PLAN_OUTPUT _PLAN_ERROR ${_REQUEST})
         if(NOT _PLAN_RESULT EQUAL 0)
             message(FATAL_ERROR
                 "sce-codegen --plan generate failed for ${_SCP_DOCUMENT} (${_LANGUAGE}), "
                 "so the outputs of its generation cannot be declared. A sce-codegen older "
-                "than --plan (or, asked with CHILD_GENERATIONS, than --plan-children) "
-                "answers with a usage error: rebuild it from this tree.\n"
+                "than --plan (or, asked with CHILD_GENERATIONS, than --plan-children, or "
+                "than --plan-reads) answers with a usage error: rebuild it from this tree.\n"
                 "${_PLAN_ERROR}")
         endif()
 

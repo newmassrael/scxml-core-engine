@@ -276,6 +276,37 @@ function(_sce_generate_w3c_fixture TEST_NUM OUTPUT_DIR LANGUAGE)
     set(_W3C_FIXTURE_SOURCES "${_SOURCES}" PARENT_SCOPE)
 endfunction()
 
+# sce_prefetch_static_w3c_tests(<OUTPUT_DIR> <LANGUAGE> <TEST_NUM>...)
+#
+#   Ask the generator for the plan of every fixture named, in one batch,
+#   before the fixtures are declared one by one: the plan of each is the one
+#   `_sce_generate_w3c_fixture` asks, with the same options, so each
+#   declaration then reads its answer where the batch kept it
+#   (`sce_codegen_plan_request`, cmake/SCECodegenPlan.cmake). A fixture whose
+#   answer is kept and current is not asked again.
+#
+#   A caller that knows the fixtures before it declares them calls this
+#   first; the declaration asks the plan of a fixture that was not asked
+#   ahead itself, so leaving one out costs time and changes no answer.
+function(sce_prefetch_static_w3c_tests OUTPUT_DIR LANGUAGE)
+    foreach(TEST_NUM IN LISTS ARGN)
+        set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
+        set(_STEM "test${TEST_NUM}")
+        # `_sce_generate_w3c_fixture`'s options, word for word
+        # (`the_conformance_cmake_route_declares_what_the_generator_plans`
+        # holds the two to each other).
+        sce_codegen_plan_request(
+            STEM "${_STEM}"
+            DOCUMENT "${RESOURCE_DIR}/${_STEM}.scxml"
+            OUTPUT_DIR "${OUTPUT_DIR}"
+            LANGUAGE ${LANGUAGE}
+            INPUT_ROOT "${RESOURCE_DIR}"
+            CHILDREN_HELD_IN "${RESOURCE_DIR}"
+            CHILD_GENERATIONS)
+    endforeach()
+    sce_codegen_plan_prefetch()
+endfunction()
+
 # sce_generate_static_w3c_test: Generate C++ code for a single W3C test
 #
 # This does NOT create an executable: it declares the generation of the
