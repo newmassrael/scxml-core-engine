@@ -1062,6 +1062,33 @@ fn a_cbor_enum_entry_is_read_through_its_carrier_and_refused_when_no_variant_dec
     );
 }
 
+/// A variant whose wire form carries no tag (ADR 0062) is told which arm a frame holds by its
+/// caller: the tag is the last argument of a decode, a byte, and the arm is selected by it. An
+/// encode is told nothing, since the arm the value holds says which it is.
+#[test]
+fn a_variant_whose_tag_its_caller_supplies_is_given_the_tag_on_decode() {
+    let code = swift_of(
+        "tests/forge/conformance/broadcast_log_context/broadcast_log_conformance_choice.scxml",
+    )
+    .expect("a variant with a caller's tag is written");
+    assert!(
+        code.contains(
+            "public static func decode(_ cursor: inout SceCursor, tag: UInt8) throws(CodecError)"
+        ),
+        "the caller's tag is a parameter of the decode: {code}"
+    );
+    assert!(
+        code.contains("let body_tag = tag"),
+        "the arm is selected by the tag the caller gave: {code}"
+    );
+    assert!(
+        code.contains(
+            "public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError)"
+        ),
+        "an encode takes no tag: {code}"
+    );
+}
+
 /// An open enum (`sce:strict-variants="false"`) is a struct over its carrier that holds any number,
 /// so a CBOR entry of one takes every number the carrier holds: the conversion is total, and there
 /// is no number to refuse. The document is written beside the enum it imports.

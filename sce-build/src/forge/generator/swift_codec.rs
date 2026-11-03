@@ -221,18 +221,16 @@ fn field_unlowered(
 /// It is the arm a tag selects, held with the fields before it: the tag is a field of the codec
 /// (the whole of it, or a range of bits of a flags carrier), and each arm is the struct of an
 /// imported entry codec, read from the frame once the tag is. The unit of every arm must be
-/// written (`element`). A tag the codec peeks at without reading, or that its caller supplies, or an
-/// arm that is built only under a feature, is named. Two arms of one entry codec would be two cases
-/// of one name, and a field named `body` would be the name of the arm's own.
+/// written (`element`). An arm that is built only under a feature is named. Two arms of one entry
+/// codec would be two cases of one name, and a field named `body` would be the name of the arm's
+/// own. A tag its caller supplies is the `tag` the decode is given; an encode needs none, since the
+/// arm that is held says which it is.
 fn variant_unlowered(
     m: &CodecModel,
     v: &CodecVariant,
     element: &dyn Fn(&str) -> Option<String>,
 ) -> Option<String> {
     let what = |text: &str| Some(format!("a `<sce:variant>` {text}"));
-    if v.tag_field.is_none() {
-        return what("whose tag its caller supplies");
-    }
     if v.arms.iter().any(|arm| arm.feature.is_some()) {
         return what("with an arm built only under a feature");
     }
@@ -596,14 +594,13 @@ fn variant_context(
     thread: &dyn Fn(&str) -> (String, String),
 ) -> Result<VariantParts, ForgeError> {
     let enum_name = format!("{}Variant", filters::to_pascal_case(m.name.clone()));
-    let tag_field = v
-        .tag_field
-        .as_deref()
-        .expect("a variant this renderer is given has a tag field");
     // The tag as the fields before the arm have left it, and the type a tag the arms do not name is
     // held in. A tag that is peeked is a range of bits of the next byte, which stays where it is
-    // for the arm to read as its own header; any other is a field of the codec.
-    let (tag, tag_type) = if let Some(peek) = &v.peek_byte {
+    // for the arm to read as its own header; one the caller supplies is the `tag` the decode is
+    // given, a byte; any other is a field of the codec.
+    let (tag, tag_type) = if v.tag_field.is_none() {
+        ("tag".to_string(), "UInt8")
+    } else if let Some(peek) = &v.peek_byte {
         let name = v
             .tag_flag
             .as_ref()
@@ -623,6 +620,10 @@ fn variant_context(
             smallest_unsigned(width),
         )
     } else {
+        let tag_field = v
+            .tag_field
+            .as_deref()
+            .expect("a variant that takes no tag of its caller has a tag field");
         let carrier = m
             .fields
             .iter()
@@ -1172,6 +1173,15 @@ pub(super) fn render(
             .iter()
             .map(|input| input.name.clone())
             .collect::<Vec<_>>()
+            .into(),
+    );
+    // A variant with no tag of its own is told which arm the frame holds by its caller, as the last
+    // argument of a decode; an encode is told nothing, the arm that is held says which it is.
+    ctx.insert(
+        "caller_tag".into(),
+        m.variant
+            .as_ref()
+            .is_some_and(|v| v.tag_field.is_none())
             .into(),
     );
     // A number of bytes and each embedded codec's own, summed: a constant of the codec's unit.

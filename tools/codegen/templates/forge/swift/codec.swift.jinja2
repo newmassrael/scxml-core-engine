@@ -124,7 +124,7 @@ public struct {{ struct_name }}: Equatable, Sendable {
     /// `frameLength` bytes left answers `needMoreBytes` and is left where it was (RFC §synth-5-B
     /// L494-519).
 {% endif %}
-    public static func decode(_ cursor: inout SceCursor{% for input in flag_params %}, {{ input }}: UInt8{% endfor %}) throws(CodecError) -> {{ struct_name }} {
+    public static func decode(_ cursor: inout SceCursor{% for input in flag_params %}, {{ input }}: UInt8{% endfor %}{% if caller_tag %}, tag: UInt8{% endif %}) throws(CodecError) -> {{ struct_name }} {
 {% if sequential %}
         var reader = cursor
         var frame = {{ struct_name }}()
