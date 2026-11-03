@@ -253,6 +253,76 @@ fn a_refusal_of_the_whole_child_stands_on_its_root_element() {
     assert_eq!(refusal.line, Some(child_root_row(&text)));
 }
 
+/// A child that starts, in turn, a child of its own written in `<content>`,
+/// both of which the generator generates.
+const GENERATED_GRANDCHILD: &str = r#"        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="ecmascript">
+          <state id="c">
+            <invoke type="scxml" id="grand">
+              <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="g" datamodel="ecmascript">
+                  <final id="g"/>
+                </scxml>
+              </content>
+            </invoke>
+          </state>
+        </scxml>"#;
+
+/// The 1-based row of the root element of the machine `depth` invokes down
+/// in a document [`host`] wrote: the `depth`-th `<scxml` after the document's
+/// own.
+fn root_row_at(text: &str, depth: usize) -> u32 {
+    let row = text
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| line.contains("<scxml"))
+        .nth(depth)
+        .map(|(index, _)| index)
+        .expect("the document holds a machine that deep");
+    u32::try_from(row + 1).expect("a row fits in u32")
+}
+
+/// Mark the document of every machine `depth` invokes below `model` as one
+/// the gate refuses whole (W3C SCXML 5.8: a top-level script that cannot be
+/// loaded): `0` marks `model`'s own children.
+fn reject_the_children_at(model: &mut sce_build::model::SCXMLModel, depth: usize) {
+    for state in model.states.values_mut() {
+        for invoke in &mut state.invokes {
+            if let Invoke::Scxml(info) = invoke {
+                if let Some(child) = info.inline_child.as_mut() {
+                    if depth == 0 {
+                        child.document_rejected = true;
+                    } else {
+                        reject_the_children_at(child, depth - 1);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A refusal of the whole of a child's child names no row of it, and stands
+/// on its root element in the document: the positions it is placed through
+/// lead on through the text of the child that holds it, to the row its
+/// author wrote, as a record that names a row is placed.
+#[test]
+fn a_refusal_of_the_whole_grandchild_stands_on_its_root_element() {
+    let text = host(GENERATED_GRANDCHILD);
+    let mut model = parsed(&text, "host");
+    reject_the_children_at(&mut model, 1);
+    let refusal = gate_refusal(&mut model, "host");
+    assert!(
+        matches!(refusal.code, DiagnosticCode::ScxmlTopLevelScriptUnloaded),
+        "{:?}",
+        refusal.code
+    );
+    assert_eq!(refusal.file, "host", "the file its author wrote");
+    assert_eq!(
+        refusal.line,
+        Some(root_row_at(&text, 2)),
+        "the row the grandchild's root element opens on, in the document"
+    );
+}
+
 /// The library's file and in-memory entry points refuse the document with the
 /// record the gate gives, on every backend: the gate runs before any backend
 /// is asked.

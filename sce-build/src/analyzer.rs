@@ -1157,10 +1157,19 @@ pub fn can_generate_static(
     // it holds the parsed model, which is what the lookup needs.
     // `scxml_references::validate` is reached only from here, so its
     // rejections are covered by the same call without a second.
-    can_generate_static_impl(model, diag_label).map_err(|err| model.with_enclosing_anchor(err))?;
-    // A child's records were anchored by the child's own call to this gate,
-    // in the child's coordinates, before they were moved.
+    can_generate_document(model, diag_label)?;
     can_generate_carried_children(model)
+}
+
+/// [`can_generate_static`] of `model`'s own text, without the children it
+/// carries: what each carried child is asked as a document of its own
+/// ([`can_generate_carried_children`]), each record anchored in the
+/// coordinates of the document it was raised against, before it is placed.
+pub fn can_generate_document(
+    model: &SCXMLModel,
+    diag_label: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    can_generate_static_impl(model, diag_label).map_err(|err| model.with_enclosing_anchor(err))
 }
 
 /// Whether the generator can generate every child `model` carries
@@ -1178,44 +1187,33 @@ pub fn can_generate_static(
 /// children (`crate::carried_children`) ask it again of the document they are
 /// handed.
 ///
-/// Each child is analysed and asked under the label it was parsed under, and
-/// its refusal is the one it earns as a document of its own, with its code and
-/// its fix, moved to where its author wrote it
-/// ([`SCXMLModel::authored_from_child`]): in the enclosing document's file, on
-/// the row of what it names, as a child that does not parse and a child's
-/// transition-function refusals are placed. A refusal of the whole child,
-/// which names no row of it (it holds no state, or a top-level script that
-/// cannot be loaded), is placed on the child's root element, which is where
-/// the child stands in the enclosing document. A standard statechart has no
-/// place in the document's text, so its refusal stays in its own coordinates,
-/// under its library name.
+/// Each child, at every depth, is analysed and asked under the label it was
+/// parsed under ([`crate::model::CarriedOrigin::label`]), and its refusal is
+/// the one it earns as a document of its own, with its code and its fix,
+/// placed where its author wrote it ([`crate::model::CarriedOrigin::place`]):
+/// in the file of the document that holds its text, on the row of what it
+/// names, through every child above it and every expansion of that document,
+/// as a child that does not parse and a child's transition-function refusals
+/// are placed. A refusal of the whole child, which names no row of it (it
+/// holds no state, or a top-level script that cannot be loaded), stands on
+/// the child's root element, which is where the child stands in that
+/// document. A standard statechart has no place in the document's text, so
+/// its refusal stays in its own coordinates, under its library name. The
+/// children are asked in the order
+/// [`SCXMLModel::inline_child_invokes`] gives them, a child before the
+/// children it starts, so the refusal is the first a walk down the document
+/// meets.
 pub fn can_generate_carried_children(
     model: &SCXMLModel,
 ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
-    for invoke in model.iter_scxml_invokes() {
+    for (invoke, origin) in model.carried_origins() {
         let Some(carried) = invoke.inline_child.as_deref() else {
             continue;
         };
-        let label = invoke
-            .inline_child_positions
-            .as_ref()
-            .or(carried.authored_positions.as_ref())
-            .map_or_else(
-                || format!("{}.scxml", invoke.child_name),
-                |positions| positions.document.clone(),
-            );
+        let label = origin.label();
         let mut child = carried.clone();
         analyze(&mut child, &label);
-        can_generate_static(&child, &label).map_err(|mut refused| {
-            let unplaced = refused.location.line.is_none() && refused.location.file == label;
-            if unplaced && invoke.inline_child_positions.is_some() {
-                if let Some(root) = child.source_location.as_ref() {
-                    refused.location.line = root.line;
-                    refused.location.col = root.col;
-                }
-            }
-            model.authored_from_child(invoke, refused)
-        })?;
+        can_generate_document(&child, &label).map_err(|refused| origin.place(refused))?;
     }
     Ok(())
 }

@@ -3515,6 +3515,146 @@ impl AuthoredPositions {
     }
 }
 
+/// Where a machine a document carries was written
+/// ([`SCXMLModel::carried_origins`]): the document whose text holds it, the
+/// `<invoke>`s inside that document that lead to it, and the positions that
+/// take a row of the machine's own text to the row its author wrote.
+///
+/// The one mechanism that places what is said about a carried child: a
+/// record raised against it under its label ([`Self::label`]) is moved
+/// through its positions, which lead on through the text of every machine
+/// above it and every expansion of the document (an `<xi:include>`, an
+/// `<sce:use>`), to the file and row its author wrote ([`Self::place`]); its
+/// generated files name the same place (`// From:`, [`Self::provenance`]),
+/// and its sourcemap rows are read through the same positions. A standard
+/// statechart is a document of its own, read from the library, and keeps its
+/// library coordinates under its library name.
+#[derive(Debug, Clone)]
+pub struct CarriedOrigin {
+    /// The provenance of the document whose text holds the machine: the
+    /// document's recorded one, or a standard statechart's library name.
+    /// Empty for a document with none.
+    document: String,
+    /// The ids of the `<invoke>`s from that document down to the machine,
+    /// outermost first; empty for a machine whose document is that document.
+    invoke_path: Vec<String>,
+    /// The machine's positions, each leading on through the text of the
+    /// machine that holds it; `None` for a document parsed with none.
+    positions: Option<AuthoredPositions>,
+    /// The machine's root element, in its own text, for a machine written
+    /// in-line: where a refusal of the whole machine, which names no row of
+    /// it, stands in the document that holds it. `None` for a document of its
+    /// own, whose refusal names the document.
+    root: Option<SourceLocation>,
+}
+
+impl CarriedOrigin {
+    /// The origin of `document` itself: its recorded provenance and its own
+    /// positions.
+    pub fn of_document(document: &SCXMLModel) -> Self {
+        Self {
+            document: document.scxml_source_path.clone(),
+            invoke_path: Vec::new(),
+            positions: document.authored_positions.clone(),
+            root: None,
+        }
+    }
+
+    /// The origin of the child `invoke` carries, started by the machine this
+    /// is the origin of; `None` for an invoke that carries no child. A child
+    /// written in-line stands in that machine's text, one invoke further
+    /// down; a standard statechart is a document of its own, read from the
+    /// library under the name its parse carries.
+    pub fn of_child(&self, invoke: &ScxmlInvokeInfo) -> Option<Self> {
+        let child = invoke.inline_child.as_deref()?;
+        Some(match invoke.inline_child_positions.as_ref() {
+            Some(positions) => Self {
+                document: self.document.clone(),
+                invoke_path: self
+                    .invoke_path
+                    .iter()
+                    .cloned()
+                    .chain(std::iter::once(invoke.invoke_id.clone()))
+                    .collect(),
+                positions: Some(positions.clone().within(self.positions.clone())),
+                root: child.source_location.clone(),
+            },
+            None => Self {
+                document: child
+                    .authored_positions
+                    .as_ref()
+                    .map(|positions| positions.document.clone())
+                    .unwrap_or_default(),
+                invoke_path: Vec::new(),
+                positions: child.authored_positions.clone(),
+                root: None,
+            },
+        })
+    }
+
+    /// The label the machine was parsed under, which every record raised
+    /// against it names until it is placed ([`Self::place`]): for a machine
+    /// written in-line, the document that holds its text as the caller named
+    /// it and its invoke path (`crate::inline_child_label`); for a standard
+    /// statechart, its library name. A machine parsed with no positions is
+    /// named by its provenance.
+    pub fn label(&self) -> String {
+        self.positions
+            .as_ref()
+            .map_or_else(|| self.provenance(), |positions| positions.document.clone())
+    }
+
+    /// The machine's positions, each leading on through the text of the
+    /// machine that holds it: what the model a run renders is given, so its
+    /// markers and sourcemap rows are read through them.
+    pub fn positions(&self) -> Option<&AuthoredPositions> {
+        self.positions.as_ref()
+    }
+
+    /// The invoke path, spelled as [`SCXMLModel::inline_invoke_path`] holds
+    /// it; `None` for a machine whose document is a file of its own.
+    pub fn invoke_path(&self) -> Option<String> {
+        (!self.invoke_path.is_empty())
+            .then(|| self.invoke_path.join(crate::INLINE_INVOKE_PATH_SEPARATOR))
+    }
+
+    /// The provenance the machine's generated files carry (`// From:`): the
+    /// document's, and for a child written in-line, its invoke path after it
+    /// (`crate::inline_child_provenance`).
+    pub fn provenance(&self) -> String {
+        match self.invoke_path() {
+            Some(path) => crate::inline_child_provenance(&self.document, &path),
+            None => self.document.clone(),
+        }
+    }
+
+    /// `refused`, raised against the machine under its label
+    /// ([`Self::label`]), placed where its author wrote what it names: in the
+    /// file of the document that holds the machine, on the row of what it
+    /// names, through every machine above it and every expansion of that
+    /// document ([`AuthoredPositions::authored`]). A refusal of the whole
+    /// machine written in-line, which names no row of it (it holds no state,
+    /// a top-level script cannot be loaded, the host's declaration does not
+    /// serve it, a backend cannot render it), stands on its root element,
+    /// which is where the machine stands in that document. A record already
+    /// placed, or naming another file, is left as it is.
+    pub fn place(
+        &self,
+        mut refused: crate::forge::error::Located<crate::forge::error::ForgeError>,
+    ) -> crate::forge::error::Located<crate::forge::error::ForgeError> {
+        let Some(positions) = self.positions.as_ref() else {
+            return refused;
+        };
+        if refused.location.line.is_none() && refused.location.file == positions.document {
+            if let Some(root) = self.root.as_ref() {
+                refused.location.line = root.line;
+                refused.location.col = root.col;
+            }
+        }
+        positions.authored(refused)
+    }
+}
+
 /// [`AuthoredPositions::resolve`] over borrowed parts — the one reading
 /// both a model and the parse-time remap use, so an error raised while
 /// parsing and one raised over the model are placed alike.
@@ -5132,74 +5272,63 @@ impl SCXMLModel {
     /// child is `<parent>__sce_synth_invoke__<id>__sce_synth_invoke__<id>` and
     /// the names of one document's children differ at every depth.
     pub fn inline_child_invokes(&self) -> Vec<&ScxmlInvokeInfo> {
-        self.inline_child_invoke_paths()
+        self.carried_invokes_with(&(), |_, _| Some(()))
             .into_iter()
-            .filter_map(|path| path.last().copied())
+            .map(|(invoke, _)| invoke)
             .collect()
     }
-    /// [`Self::inline_child_invokes`], each as the path of invokes that reaches
-    /// it from this document: the invoke this document holds, then the invoke
-    /// each child below it holds, down to the one whose child it carries.
-    ///
-    /// What a refusal raised against a child at any depth is moved along to
-    /// stand where its author wrote it ([`Self::authored_from_descendant`]):
-    /// each child is parsed from its own text, so a record against it is in
-    /// that text's coordinates, which map into the document one level up and
-    /// no further.
-    pub fn inline_child_invoke_paths(&self) -> Vec<Vec<&ScxmlInvokeInfo>> {
-        let mut paths = Vec::new();
+    /// [`Self::inline_child_invokes`], each with the place its author wrote
+    /// the child it carries ([`CarriedOrigin`]). The one answer every reader
+    /// that places a record raised against a carried child asks, at any
+    /// depth: the gate a document is asked
+    /// (`analyzer::can_generate_carried_children`), the judgement of a
+    /// declared transition function (`crate::transition_function_findings`),
+    /// and the preparation every route writes a child through
+    /// (`crate::carried_children`).
+    pub fn carried_origins(&self) -> Vec<(&ScxmlInvokeInfo, CarriedOrigin)> {
+        self.carried_invokes_with(&CarriedOrigin::of_document(self), |origin, invoke| {
+            origin.of_child(invoke)
+        })
+    }
+    /// The walk [`Self::inline_child_invokes`] and [`Self::carried_origins`]
+    /// take, carrying a value down it: each invoke is given what `descend`
+    /// makes of the value the machine holding it was given (`from` for this
+    /// document), in the order [`Self::inline_child_invokes`] gives. An
+    /// invoke `descend` gives nothing is left out, and every invoke below its
+    /// child with it.
+    pub fn carried_invokes_with<'m, S, F>(
+        &'m self,
+        from: &S,
+        mut descend: F,
+    ) -> Vec<(&'m ScxmlInvokeInfo, S)>
+    where
+        F: FnMut(&S, &'m ScxmlInvokeInfo) -> Option<S>,
+    {
+        let mut out = Vec::new();
+        self.collect_carried_invokes(from, &mut descend, &mut out);
+        out
+    }
+    /// [`Self::carried_invokes_with`], appending to `out`.
+    fn collect_carried_invokes<'m, S, F>(
+        &'m self,
+        from: &S,
+        descend: &mut F,
+        out: &mut Vec<(&'m ScxmlInvokeInfo, S)>,
+    ) where
+        F: FnMut(&S, &'m ScxmlInvokeInfo) -> Option<S>,
+    {
         for invoke in self.iter_scxml_invokes() {
             let Some(child) = invoke.inline_child.as_deref() else {
                 continue;
             };
-            paths.push(vec![invoke]);
-            for below in child.inline_child_invoke_paths() {
-                paths.push(std::iter::once(invoke).chain(below).collect());
-            }
+            let Some(given) = descend(from, invoke) else {
+                continue;
+            };
+            let mut below = Vec::new();
+            child.collect_carried_invokes(&given, descend, &mut below);
+            out.push((invoke, given));
+            out.append(&mut below);
         }
-        paths
-    }
-    /// Move `refused`, raised against the child `invoke` carries in the child's
-    /// own coordinates (under the label the child was parsed under), to where
-    /// its author wrote it: through the child's positions in the text this
-    /// document was parsed from ([`ScxmlInvokeInfo::inline_child_positions`]),
-    /// then through this document's own positions to the files its author
-    /// wrote ([`Self::authored_positions`]).
-    ///
-    /// A child with no place in this document's text (a standard statechart,
-    /// named by its library name) has no positions here, and its record stays
-    /// in its own coordinates, under its own name.
-    pub fn authored_from_child(
-        &self,
-        invoke: &ScxmlInvokeInfo,
-        refused: crate::forge::error::Located<crate::forge::error::ForgeError>,
-    ) -> crate::forge::error::Located<crate::forge::error::ForgeError> {
-        let refused = match invoke.inline_child_positions.as_ref() {
-            Some(positions) => positions.authored(refused),
-            None => refused,
-        };
-        match self.authored_positions.as_ref() {
-            Some(positions) => positions.authored(refused),
-            None => refused,
-        }
-    }
-    /// [`Self::authored_from_child`] for a child at any depth. `path` is one of
-    /// [`Self::inline_child_invoke_paths`], ending at the invoke that carries
-    /// the child `refused` was raised against; each level moves the record
-    /// into the text of the document one level up, the innermost first.
-    pub fn authored_from_descendant(
-        &self,
-        path: &[&ScxmlInvokeInfo],
-        refused: crate::forge::error::Located<crate::forge::error::ForgeError>,
-    ) -> crate::forge::error::Located<crate::forge::error::ForgeError> {
-        let Some((&invoke, below)) = path.split_first() else {
-            return refused;
-        };
-        let refused = match invoke.inline_child.as_deref() {
-            Some(child) => child.authored_from_descendant(below, refused),
-            None => refused,
-        };
-        self.authored_from_child(invoke, refused)
     }
     /// This document's model, followed by the model of each child
     /// [`Self::inline_child_invokes`] gives, in that order: every machine a run

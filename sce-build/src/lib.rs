@@ -478,6 +478,9 @@ pub const GENERATOR_COMMIT: &str = env!("SCE_GIT_COMMIT");
 /// for why a timestamp cannot stand in for this.
 pub const GENERATOR_SOURCE_DIGEST: &str = env!("SCE_GENERATOR_SOURCE_DIGEST");
 
+/// Where a machine a document carries was written, which places every record
+/// raised against it ([`carried_children`]).
+pub use model::CarriedOrigin;
 use model::SCXMLModel;
 use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
@@ -867,58 +870,56 @@ pub fn unhandled_declaration_findings(
 /// can arrive at for one that does. Resolved at this boundary as the lints
 /// are, so each record carries the anchor enclosing what it names.
 ///
-/// The declaration means the same wherever its root is, so the in-line
-/// children of the document are judged here too, after the document's own
-/// records: every `<invoke><content><scxml>` whose root declares the function
-/// (at any depth), each record moved to the row its author wrote in this
-/// document. One call therefore holds the children to it on every route that
-/// holds the document, and a route that generates the children never reaches
-/// one this call refuses.
+/// The declaration means the same wherever its root is, so the children the
+/// document carries are judged here too, after the document's own records:
+/// every child written in `<invoke><content>` or named by its library name
+/// whose root declares the function (at any depth), each record placed where
+/// its author wrote it (a child written in-line, on its row in this document;
+/// a standard statechart, in its library coordinates). Every child the run
+/// writes is held to it, since the run writes and binds each one's function.
+/// One call therefore holds the children to it on every route that holds the
+/// document, and a route that generates the children never reaches one this
+/// call refuses.
 pub fn transition_function_findings(model: &model::SCXMLModel, source: &str) -> Vec<CompileError> {
     let mut findings: Vec<CompileError> = scxml_transition_function::findings(model, source)
         .into_iter()
         .map(|err| model.with_enclosing_anchor(err))
         .collect();
-    findings.extend(inline_child_transition_function_findings(model));
+    findings.extend(carried_transition_function_findings(model));
     findings
 }
 
-/// The records [`transition_function_findings`] gives the in-line children
-/// of `model`, in document order, placed in `model`'s authored coordinates.
+/// The records [`transition_function_findings`] gives the children `model`
+/// carries, at any depth, in the order
+/// [`model::SCXMLModel::inline_child_invokes`] gives them, each placed where
+/// its author wrote it ([`CarriedOrigin::place`]).
 ///
 /// A child is judged as the routes that generate it read it: analysed under
-/// its own label, and past [`analyzer::can_generate_static`], since a child
-/// that gate refuses refuses the document through the document's own gate,
-/// which every route asks first ([`analyzer::can_generate_carried_children`]).
-/// A child that declares nothing is not analysed; its own children are still
-/// asked.
-fn inline_child_transition_function_findings(model: &model::SCXMLModel) -> Vec<CompileError> {
+/// its own label, and past the gate a document of its own is asked
+/// ([`analyzer::can_generate_document`]), since a child that gate refuses
+/// refuses the document through the document's own gate, which every route
+/// asks first ([`analyzer::can_generate_carried_children`]). A child that
+/// declares nothing is not analysed; the children below it are still asked.
+fn carried_transition_function_findings(model: &model::SCXMLModel) -> Vec<CompileError> {
     let mut findings = Vec::new();
-    for invoke in model.iter_scxml_invokes() {
-        let (Some(child), Some(positions)) = (
-            invoke.inline_child.as_deref(),
-            invoke.inline_child_positions.as_ref(),
-        ) else {
+    for (invoke, origin) in model.carried_origins() {
+        let Some(carried) = invoke
+            .inline_child
+            .as_deref()
+            .filter(|carried| carried.transition_function_declared)
+        else {
             continue;
         };
-        let label = positions.document.as_str();
-        let refused = if child.transition_function_declared {
-            let mut child = child.clone();
-            analyzer::analyze(&mut child, label);
-            if analyzer::can_generate_static(&child, label).is_err() {
-                continue;
-            }
-            transition_function_findings(&child, label)
-        } else {
-            inline_child_transition_function_findings(child)
-        };
-        // The child's text maps into the text this document was parsed
-        // from; that text maps to what its author wrote when a preprocessor
-        // expanded it.
+        let label = origin.label();
+        let mut child = carried.clone();
+        analyzer::analyze(&mut child, &label);
+        if analyzer::can_generate_document(&child, &label).is_err() {
+            continue;
+        }
         findings.extend(
-            refused
+            scxml_transition_function::findings(&child, &label)
                 .into_iter()
-                .map(|err| model.authored_from_child(invoke, err)),
+                .map(|err| origin.place(child.with_enclosing_anchor(err))),
         );
     }
     findings
@@ -2254,10 +2255,8 @@ pub fn carried_children(
             .into_owned()
     };
     analyzer::can_generate_carried_children(document)?;
-    let mut carried_invokes = Vec::new();
-    CarriedOrigin::of_document(document).trace(document, &mut carried_invokes);
     let mut children = Vec::new();
-    for (invoke, origin) in carried_invokes {
+    for (invoke, origin) in document.carried_origins() {
         let Some(carried) = invoke.inline_child.as_deref() else {
             continue;
         };
@@ -2285,20 +2284,13 @@ pub fn carried_children(
             )
         })?;
         // A refusal of the child's declaration is raised under the label the
-        // child was parsed under and moved to the row its author wrote, as its
-        // judgement is (`inline_child_transition_function_findings`): through
-        // the text of every machine above it, so a child of a child is placed
-        // in the document as one of the document's own is.
-        let parsed_as = invoke
-            .inline_child_positions
-            .as_ref()
-            .map_or(label.as_str(), |positions| positions.document.as_str());
-        run.digest.bind(&mut model, parsed_as).map_err(|refused| {
-            match origin.positions.as_ref() {
-                Some(positions) => positions.authored(refused),
-                None => refused,
-            }
-        })?;
+        // child was parsed under and placed where its author wrote it, as its
+        // judgement is (`carried_transition_function_findings`): through the
+        // text of every machine above it, so a child of a child is placed in
+        // the document as one of the document's own is.
+        run.digest
+            .bind(&mut model, &origin.label())
+            .map_err(|refused| origin.place(refused))?;
         // Placed where the document is: the same linker section on C11.
         model
             .c11_section_attribute_class
@@ -2307,7 +2299,7 @@ pub fn carried_children(
         // was moved by the positions it was raised in.
         model.scxml_source_path = origin.provenance();
         model.inline_invoke_path = origin.invoke_path();
-        model.authored_positions = origin.positions;
+        model.authored_positions = origin.positions().cloned();
         children.push(CarriedChild {
             stem: stem.to_string(),
             label,
@@ -2315,101 +2307,6 @@ pub fn carried_children(
         });
     }
     Ok(children)
-}
-
-/// Where a machine of a run was written, as [`carried_children`] traces it
-/// down the document that carries it: the document whose text holds it, the
-/// `<invoke>`s inside that document that lead to it, and the positions that
-/// take a row of the machine's own text to the row its author wrote.
-#[derive(Debug, Clone)]
-pub struct CarriedOrigin {
-    /// The provenance of the document whose text holds the machine: the
-    /// run's document's recorded one, or a standard statechart's library
-    /// name. Empty for a document with none.
-    document: String,
-    /// The ids of the `<invoke>`s from that document down to the machine,
-    /// outermost first; empty for a machine whose document is that document.
-    invoke_path: Vec<String>,
-    /// The machine's positions, each leading on through the text of the
-    /// machine that holds it; `None` for a document parsed with none.
-    positions: Option<model::AuthoredPositions>,
-}
-
-impl CarriedOrigin {
-    /// The origin of `document` itself: its recorded provenance and its own
-    /// positions.
-    pub fn of_document(document: &SCXMLModel) -> Self {
-        Self {
-            document: document.scxml_source_path.clone(),
-            invoke_path: Vec::new(),
-            positions: document.authored_positions.clone(),
-        }
-    }
-
-    /// The origin of the child `invoke` carries, started by the machine this
-    /// is the origin of. A child written in-line stands in that machine's
-    /// text, one invoke further down; a standard statechart is a document of
-    /// its own, read from the library under the name its parse carries.
-    pub fn of_child(&self, invoke: &model::ScxmlInvokeInfo) -> Option<Self> {
-        let child = invoke.inline_child.as_deref()?;
-        Some(match invoke.inline_child_positions.as_ref() {
-            Some(positions) => Self {
-                document: self.document.clone(),
-                invoke_path: self
-                    .invoke_path
-                    .iter()
-                    .cloned()
-                    .chain(std::iter::once(invoke.invoke_id.clone()))
-                    .collect(),
-                positions: Some(positions.clone().within(self.positions.clone())),
-            },
-            None => Self {
-                document: child
-                    .authored_positions
-                    .as_ref()
-                    .map(|positions| positions.document.clone())
-                    .unwrap_or_default(),
-                invoke_path: Vec::new(),
-                positions: child.authored_positions.clone(),
-            },
-        })
-    }
-
-    /// Every invoke of `machine` (whose origin this is) that carries its
-    /// child, at any depth, each with its child's origin, in the order
-    /// [`model::SCXMLModel::inline_child_invokes`] gives them: a child before
-    /// the children it starts.
-    pub fn trace<'m>(
-        &self,
-        machine: &'m SCXMLModel,
-        out: &mut Vec<(&'m model::ScxmlInvokeInfo, CarriedOrigin)>,
-    ) {
-        for invoke in machine.iter_scxml_invokes() {
-            let (Some(child), Some(origin)) =
-                (invoke.inline_child.as_deref(), self.of_child(invoke))
-            else {
-                continue;
-            };
-            out.push((invoke, origin.clone()));
-            origin.trace(child, out);
-        }
-    }
-
-    /// The invoke path, spelled as [`model::SCXMLModel::inline_invoke_path`]
-    /// holds it; `None` for a machine whose document is a file of its own.
-    pub fn invoke_path(&self) -> Option<String> {
-        (!self.invoke_path.is_empty()).then(|| self.invoke_path.join(INLINE_INVOKE_PATH_SEPARATOR))
-    }
-
-    /// The provenance the machine's generated files carry (`// From:`):
-    /// the document's, and for a child written in-line, its invoke path after
-    /// it ([`inline_child_provenance`]).
-    pub fn provenance(&self) -> String {
-        match self.invoke_path() {
-            Some(path) => inline_child_provenance(&self.document, &path),
-            None => self.document.clone(),
-        }
-    }
 }
 
 /// Every child `document` carries ([`carried_children`]), each emitted as a

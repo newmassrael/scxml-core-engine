@@ -6,9 +6,13 @@
 #
 # The first case puts the defect back where every route reads it, the gate no
 # longer asking the children; the second keeps the refusal and leaves a refusal
-# of the whole child in a file named after the child, which nobody wrote; the
-# third moves the refusal of a grandchild's declaration one level up and no
-# further, so it stays in the coordinates of the child that carries it.
+# of the whole child on no row of the document; the third reads a child's
+# positions in the text of the machine that holds it and no further, so the
+# refusal of a grandchild stays in the coordinates of the child that carries
+# it. The second and third are cases of the one mechanism every placement
+# goes through (`CarriedOrigin`), so they reach the gate, the judgement of a
+# declared transition function and the preparation every route writes a
+# child through alike.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -18,25 +22,22 @@ mutation_targets sce-build/src/analyzer.rs sce-build/src/model.rs
 
 mutation_case "the gate does not ask the children a document carries" <<'PY'
 edit("sce-build/src/analyzer.rs",
-     r'''    // A child's records were anchored by the child's own call to this gate,
-    // in the child's coordinates, before they were moved.
+     r'''    can_generate_document(model, diag_label)?;
     can_generate_carried_children(model)''',
-     r'''    let _ = can_generate_carried_children;
+     r'''    can_generate_document(model, diag_label)?;
+    let _ = can_generate_carried_children;
     Ok(())''')
 PY
 
 mutation_case "a refusal of the whole child names no row of the document" <<'PY'
-edit("sce-build/src/analyzer.rs",
-     r'''                    refused.location.line = root.line;
-                    refused.location.col = root.col;''',
-     r'''                    refused.location.col = root.col.filter(|_| false);''')
+edit("sce-build/src/model.rs",
+     r'''                refused.location.line = root.line;
+                refused.location.col = root.col;''',
+     r'''                refused.location.col = root.col.filter(|_| false);''')
 PY
 
-mutation_case "a record is moved one level up and no further" <<'PY'
+mutation_case "a child's positions lead one level up and no further" <<'PY'
 edit("sce-build/src/model.rs",
-     r'''            Some(child) => child.authored_from_descendant(below, refused),''',
-     r'''            Some(_child) => {
-                let _ = below;
-                refused
-            }''')
+     r'''                positions: Some(positions.clone().within(self.positions.clone())),''',
+     r'''                positions: Some(positions.clone().within(None)),''')
 PY
