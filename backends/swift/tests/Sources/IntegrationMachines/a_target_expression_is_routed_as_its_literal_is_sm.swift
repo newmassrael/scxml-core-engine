@@ -750,6 +750,9 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
         )
         if child.isInFinalState {
             sceInvokeDoneKid = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "kid", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -764,6 +767,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                 invokeKey: "kid",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeKid(engine: engine)
         }
@@ -1423,6 +1427,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
         case .run:
             cancelInvokesForState(&pendingInvokes, .run)
             sceInvokeChildKid?.stop()
+            sceInvokeChildKid?.detachMesh()
             sceInvokeChildKid = nil
             activeInvokes["kid"] = nil
             sceInvokeDoneKid = false

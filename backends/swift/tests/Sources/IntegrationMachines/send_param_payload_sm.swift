@@ -852,6 +852,9 @@ public final class SendParamPayloadPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvEmitter = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_emitter", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -866,6 +869,7 @@ public final class SendParamPayloadPolicy: InvocablePolicy {
                 invokeKey: "inv_emitter",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvEmitter(engine: engine)
         }
@@ -1144,6 +1148,7 @@ public final class SendParamPayloadPolicy: InvocablePolicy {
         case .awaitChild:
             cancelInvokesForState(&pendingInvokes, .awaitChild)
             sceInvokeChildInvEmitter?.stop()
+            sceInvokeChildInvEmitter?.detachMesh()
             sceInvokeChildInvEmitter = nil
             activeInvokes["inv_emitter"] = nil
             sceInvokeDoneInvEmitter = false

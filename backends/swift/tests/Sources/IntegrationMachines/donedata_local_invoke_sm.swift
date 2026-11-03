@@ -706,6 +706,9 @@ public final class DonedataLocalInvokePolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvContent = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_content", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -759,6 +762,9 @@ public final class DonedataLocalInvokePolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvParam = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_param", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -773,6 +779,7 @@ public final class DonedataLocalInvokePolicy: InvocablePolicy {
                 invokeKey: "inv_content",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvContent(engine: engine)
         }
@@ -783,6 +790,7 @@ public final class DonedataLocalInvokePolicy: InvocablePolicy {
                 invokeKey: "inv_param",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvParam(engine: engine)
         }
@@ -948,12 +956,14 @@ public final class DonedataLocalInvokePolicy: InvocablePolicy {
         case .phaseContent:
             cancelInvokesForState(&pendingInvokes, .phaseContent)
             sceInvokeChildInvContent?.stop()
+            sceInvokeChildInvContent?.detachMesh()
             sceInvokeChildInvContent = nil
             activeInvokes["inv_content"] = nil
             sceInvokeDoneInvContent = false
         case .phaseParam:
             cancelInvokesForState(&pendingInvokes, .phaseParam)
             sceInvokeChildInvParam?.stop()
+            sceInvokeChildInvParam?.detachMesh()
             sceInvokeChildInvParam = nil
             activeInvokes["inv_param"] = nil
             sceInvokeDoneInvParam = false

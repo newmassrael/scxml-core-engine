@@ -687,6 +687,9 @@ public final class AutoforwardEventFieldsPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvEcho = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_echo", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -701,6 +704,7 @@ public final class AutoforwardEventFieldsPolicy: InvocablePolicy {
                 invokeKey: "inv_echo",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvEcho(engine: engine)
         }
@@ -843,6 +847,7 @@ public final class AutoforwardEventFieldsPolicy: InvocablePolicy {
         case .phase:
             cancelInvokesForState(&pendingInvokes, .phase)
             sceInvokeChildInvEcho?.stop()
+            sceInvokeChildInvEcho?.detachMesh()
             sceInvokeChildInvEcho = nil
             activeInvokes["inv_echo"] = nil
             sceInvokeDoneInvEcho = false

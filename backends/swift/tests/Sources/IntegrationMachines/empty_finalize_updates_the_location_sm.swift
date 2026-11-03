@@ -818,6 +818,9 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvAbsent = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_absent", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -878,6 +881,9 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvEmpty = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_empty", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -938,6 +944,9 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvUnmatched = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_unmatched", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -952,6 +961,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
                 invokeKey: "inv_absent",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvAbsent(engine: engine)
         }
@@ -962,6 +972,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
                 invokeKey: "inv_empty",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvEmpty(engine: engine)
         }
@@ -972,6 +983,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
                 invokeKey: "inv_unmatched",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvUnmatched(engine: engine)
         }
@@ -1249,18 +1261,21 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         case .absentPhase:
             cancelInvokesForState(&pendingInvokes, .absentPhase)
             sceInvokeChildInvAbsent?.stop()
+            sceInvokeChildInvAbsent?.detachMesh()
             sceInvokeChildInvAbsent = nil
             activeInvokes["inv_absent"] = nil
             sceInvokeDoneInvAbsent = false
         case .emptyPhase:
             cancelInvokesForState(&pendingInvokes, .emptyPhase)
             sceInvokeChildInvEmpty?.stop()
+            sceInvokeChildInvEmpty?.detachMesh()
             sceInvokeChildInvEmpty = nil
             activeInvokes["inv_empty"] = nil
             sceInvokeDoneInvEmpty = false
         case .unmatchedPhase:
             cancelInvokesForState(&pendingInvokes, .unmatchedPhase)
             sceInvokeChildInvUnmatched?.stop()
+            sceInvokeChildInvUnmatched?.detachMesh()
             sceInvokeChildInvUnmatched = nil
             activeInvokes["inv_unmatched"] = nil
             sceInvokeDoneInvUnmatched = false

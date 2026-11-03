@@ -419,6 +419,9 @@ public final class AutoforwardDoneInvokePolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvWatch = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_watch", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -472,6 +475,9 @@ public final class AutoforwardDoneInvokePolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvShort = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_short", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -486,6 +492,7 @@ public final class AutoforwardDoneInvokePolicy: InvocablePolicy {
                 invokeKey: "inv_watch",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvWatch(engine: engine)
         }
@@ -496,6 +503,7 @@ public final class AutoforwardDoneInvokePolicy: InvocablePolicy {
                 invokeKey: "inv_short",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvShort(engine: engine)
         }
@@ -671,10 +679,12 @@ public final class AutoforwardDoneInvokePolicy: InvocablePolicy {
         case .phase:
             cancelInvokesForState(&pendingInvokes, .phase)
             sceInvokeChildInvWatch?.stop()
+            sceInvokeChildInvWatch?.detachMesh()
             sceInvokeChildInvWatch = nil
             activeInvokes["inv_watch"] = nil
             sceInvokeDoneInvWatch = false
             sceInvokeChildInvShort?.stop()
+            sceInvokeChildInvShort?.detachMesh()
             sceInvokeChildInvShort = nil
             activeInvokes["inv_short"] = nil
             sceInvokeDoneInvShort = false

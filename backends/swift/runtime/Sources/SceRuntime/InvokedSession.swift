@@ -83,4 +83,16 @@ public final class InvokedSession<Policy: InvocablePolicy>: ChildEngine {
     public func timeUntilNextScheduled() -> Duration? {
         engine.timeUntilNextScheduled()
     }
+
+    public func applyMeshCalls() {
+        engine.applyMeshCalls()
+    }
+
+    public func detachMesh() {
+        engine.detachMesh()
+    }
+
+    public func installMeshRouter(_ router: any ChildMeshRouter) {
+        engine.installChildMeshRouter(router)
+    }
 }

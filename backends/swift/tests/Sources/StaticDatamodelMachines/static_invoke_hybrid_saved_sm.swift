@@ -395,6 +395,9 @@ public final class StaticInvokeHybridSavedPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "watch", document: "static_hybrid_watcher")
             sceStarted = session
         } else if sceSelected.utf8.elementsEqual("static_hybrid_holder".utf8) {
             // The stem names the document the build wrote a child for, and its
@@ -412,6 +415,9 @@ public final class StaticInvokeHybridSavedPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "watch", document: "static_hybrid_holder")
             sceStarted = session
         } else {
             // A value naming none of the declared candidates is the failure the
@@ -447,6 +453,9 @@ public final class StaticInvokeHybridSavedPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneWatch = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "watch", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -461,6 +470,7 @@ public final class StaticInvokeHybridSavedPolicy: InvocablePolicy {
                 invokeKey: "watch",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeWatch(engine: engine)
         }
@@ -601,6 +611,7 @@ public final class StaticInvokeHybridSavedPolicy: InvocablePolicy {
         case .working:
             cancelInvokesForState(&pendingInvokes, .working)
             sceInvokeChildWatch?.stop()
+            sceInvokeChildWatch?.detachMesh()
             sceInvokeChildWatch = nil
             activeInvokes["watch"] = nil
             sceInvokeDoneWatch = false

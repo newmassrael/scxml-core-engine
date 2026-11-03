@@ -750,6 +750,9 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInv1 = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv1", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -776,6 +779,9 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInv2 = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv2", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -802,6 +808,9 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInv3 = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv3", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -816,6 +825,7 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
                 invokeKey: "inv1",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInv1(engine: engine)
         }
@@ -826,6 +836,7 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
                 invokeKey: "inv2",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInv2(engine: engine)
         }
@@ -836,6 +847,7 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
                 invokeKey: "inv3",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInv3(engine: engine)
         }
@@ -1034,16 +1046,19 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
         case .s0:
             cancelInvokesForState(&pendingInvokes, .s0)
             sceInvokeChildInv1?.stop()
+            sceInvokeChildInv1?.detachMesh()
             sceInvokeChildInv1 = nil
             activeInvokes["inv1"] = nil
             sceInvokeDoneInv1 = false
         case .s1:
             cancelInvokesForState(&pendingInvokes, .s1)
             sceInvokeChildInv2?.stop()
+            sceInvokeChildInv2?.detachMesh()
             sceInvokeChildInv2 = nil
             activeInvokes["inv2"] = nil
             sceInvokeDoneInv2 = false
             sceInvokeChildInv3?.stop()
+            sceInvokeChildInv3?.detachMesh()
             sceInvokeChildInv3 = nil
             activeInvokes["inv3"] = nil
             sceInvokeDoneInv3 = false

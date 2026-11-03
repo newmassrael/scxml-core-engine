@@ -691,6 +691,9 @@ public final class CancellingAnInvokeRaisesNothingPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneChild = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "child", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -705,6 +708,7 @@ public final class CancellingAnInvokeRaisesNothingPolicy: InvocablePolicy {
                 invokeKey: "child",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeChild(engine: engine)
         }
@@ -836,6 +840,7 @@ public final class CancellingAnInvokeRaisesNothingPolicy: InvocablePolicy {
         case .p:
             cancelInvokesForState(&pendingInvokes, .p)
             sceInvokeChildChild?.stop()
+            sceInvokeChildChild?.detachMesh()
             sceInvokeChildChild = nil
             activeInvokes["child"] = nil
             sceInvokeDoneChild = false

@@ -436,6 +436,9 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "peer", document: "static_mesh_relay")
             sceStarted = session
         } else {
             // A value naming none of the declared candidates is the failure the
@@ -472,6 +475,9 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDonePeer = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "peer", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -525,6 +531,9 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneList = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "list", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -539,6 +548,7 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
                 invokeKey: "peer",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokePeer(engine: engine)
         }
@@ -549,6 +559,7 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
                 invokeKey: "list",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeList(engine: engine)
         }
@@ -714,12 +725,14 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
         case .joined:
             cancelInvokesForState(&pendingInvokes, .joined)
             sceInvokeChildPeer?.stop()
+            sceInvokeChildPeer?.detachMesh()
             sceInvokeChildPeer = nil
             activeInvokes["peer"] = nil
             sceInvokeDonePeer = false
         case .working:
             cancelInvokesForState(&pendingInvokes, .working)
             sceInvokeChildList?.stop()
+            sceInvokeChildList?.detachMesh()
             sceInvokeChildList = nil
             activeInvokes["list"] = nil
             sceInvokeDoneList = false

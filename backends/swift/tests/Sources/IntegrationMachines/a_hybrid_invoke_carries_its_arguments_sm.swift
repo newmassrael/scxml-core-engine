@@ -750,6 +750,9 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "_invoke_1", document: "keeper")
             sceStarted = session
         } else if sceSelected.utf8.elementsEqual("bare".utf8) {
             // The stem names the document the build wrote a child for, and its
@@ -769,6 +772,9 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "_invoke_1", document: "bare")
             sceStarted = session
         } else {
             // A value naming none of the declared candidates is the failure the
@@ -805,6 +811,9 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvoke1 = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "_invoke_1", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -855,6 +864,9 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "_invoke_0", document: "keeper")
             sceStarted = session
         } else if sceSelected.utf8.elementsEqual("bare".utf8) {
             // The stem names the document the build wrote a child for, and its
@@ -885,6 +897,9 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "_invoke_0", document: "bare")
             sceStarted = session
         } else {
             // A value naming none of the declared candidates is the failure the
@@ -921,6 +936,9 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvoke0 = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "_invoke_0", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -950,6 +968,9 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvoke2 = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "_invoke_2", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -964,6 +985,7 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
                 invokeKey: "_invoke_1",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvoke1(engine: engine)
         }
@@ -974,6 +996,7 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
                 invokeKey: "_invoke_0",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvoke0(engine: engine)
         }
@@ -984,6 +1007,7 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
                 invokeKey: "_invoke_2",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvoke2(engine: engine)
         }
@@ -1183,18 +1207,21 @@ public final class AHybridInvokeCarriesItsArgumentsPolicy: InvocablePolicy {
         case .namelistPhase:
             cancelInvokesForState(&pendingInvokes, .namelistPhase)
             sceInvokeChildInvoke1?.stop()
+            sceInvokeChildInvoke1?.detachMesh()
             sceInvokeChildInvoke1 = nil
             activeInvokes["_invoke_1"] = nil
             sceInvokeDoneInvoke1 = false
         case .paramsPhase:
             cancelInvokesForState(&pendingInvokes, .paramsPhase)
             sceInvokeChildInvoke0?.stop()
+            sceInvokeChildInvoke0?.detachMesh()
             sceInvokeChildInvoke0 = nil
             activeInvokes["_invoke_0"] = nil
             sceInvokeDoneInvoke0 = false
         case .refusedPhase:
             cancelInvokesForState(&pendingInvokes, .refusedPhase)
             sceInvokeChildInvoke2?.stop()
+            sceInvokeChildInvoke2?.detachMesh()
             sceInvokeChildInvoke2 = nil
             activeInvokes["_invoke_2"] = nil
             sceInvokeDoneInvoke2 = false

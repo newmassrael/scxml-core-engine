@@ -654,6 +654,7 @@ public final class InvokeExpressionFailureIsReportedPolicy: InvocablePolicy {
             queue: ParentEventQueue()
         )
         stubSession.engine.setClock(engine.clock())
+        engine.startChildMesh(of: stubSession, invokeID: "_invoke_0", document: "")
         let sceStarted: any ChildEngine = stubSession
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["_invoke_0"] = ChildSession(
@@ -683,6 +684,9 @@ public final class InvokeExpressionFailureIsReportedPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvoke0 = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "_invoke_0", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -697,6 +701,7 @@ public final class InvokeExpressionFailureIsReportedPolicy: InvocablePolicy {
                 invokeKey: "_invoke_0",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvoke0(engine: engine)
         }
@@ -828,6 +833,7 @@ public final class InvokeExpressionFailureIsReportedPolicy: InvocablePolicy {
         case .probe:
             cancelInvokesForState(&pendingInvokes, .probe)
             sceInvokeChildInvoke0?.stop()
+            sceInvokeChildInvoke0?.detachMesh()
             sceInvokeChildInvoke0 = nil
             activeInvokes["_invoke_0"] = nil
             sceInvokeDoneInvoke0 = false

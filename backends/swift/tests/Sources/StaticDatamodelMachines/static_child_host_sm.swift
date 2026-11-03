@@ -488,6 +488,9 @@ public final class StaticChildHostPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneWorker = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "worker", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -502,6 +505,7 @@ public final class StaticChildHostPolicy: InvocablePolicy {
                 invokeKey: "worker",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeWorker(engine: engine)
         }
@@ -644,6 +648,7 @@ public final class StaticChildHostPolicy: InvocablePolicy {
         case .working:
             cancelInvokesForState(&pendingInvokes, .working)
             sceInvokeChildWorker?.stop()
+            sceInvokeChildWorker?.detachMesh()
             sceInvokeChildWorker = nil
             activeInvokes["worker"] = nil
             sceInvokeDoneWorker = false

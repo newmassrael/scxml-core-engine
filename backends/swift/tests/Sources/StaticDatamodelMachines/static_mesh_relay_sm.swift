@@ -362,6 +362,9 @@ public final class StaticMeshRelayPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInner = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inner", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -376,6 +379,7 @@ public final class StaticMeshRelayPolicy: InvocablePolicy {
                 invokeKey: "inner",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInner(engine: engine)
         }
@@ -507,6 +511,7 @@ public final class StaticMeshRelayPolicy: InvocablePolicy {
         case .relaying:
             cancelInvokesForState(&pendingInvokes, .relaying)
             sceInvokeChildInner?.stop()
+            sceInvokeChildInner?.detachMesh()
             sceInvokeChildInner = nil
             activeInvokes["inner"] = nil
             sceInvokeDoneInner = false

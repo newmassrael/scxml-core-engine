@@ -716,6 +716,9 @@ public final class SessionIdsAreDistinctPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvA = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_a", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -769,6 +772,9 @@ public final class SessionIdsAreDistinctPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvB = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_b", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -783,6 +789,7 @@ public final class SessionIdsAreDistinctPolicy: InvocablePolicy {
                 invokeKey: "inv_a",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvA(engine: engine)
         }
@@ -793,6 +800,7 @@ public final class SessionIdsAreDistinctPolicy: InvocablePolicy {
                 invokeKey: "inv_b",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvB(engine: engine)
         }
@@ -957,10 +965,12 @@ public final class SessionIdsAreDistinctPolicy: InvocablePolicy {
         case .phase:
             cancelInvokesForState(&pendingInvokes, .phase)
             sceInvokeChildInvA?.stop()
+            sceInvokeChildInvA?.detachMesh()
             sceInvokeChildInvA = nil
             activeInvokes["inv_a"] = nil
             sceInvokeDoneInvA = false
             sceInvokeChildInvB?.stop()
+            sceInvokeChildInvB?.detachMesh()
             sceInvokeChildInvB = nil
             activeInvokes["inv_b"] = nil
             sceInvokeDoneInvB = false

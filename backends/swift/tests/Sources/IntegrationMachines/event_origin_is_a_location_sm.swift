@@ -716,6 +716,9 @@ public final class EventOriginIsALocationPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvPeer = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_peer", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -730,6 +733,7 @@ public final class EventOriginIsALocationPolicy: InvocablePolicy {
                 invokeKey: "inv_peer",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvPeer(engine: engine)
         }
@@ -861,6 +865,7 @@ public final class EventOriginIsALocationPolicy: InvocablePolicy {
         case .phase:
             cancelInvokesForState(&pendingInvokes, .phase)
             sceInvokeChildInvPeer?.stop()
+            sceInvokeChildInvPeer?.detachMesh()
             sceInvokeChildInvPeer = nil
             activeInvokes["inv_peer"] = nil
             sceInvokeDoneInvPeer = false

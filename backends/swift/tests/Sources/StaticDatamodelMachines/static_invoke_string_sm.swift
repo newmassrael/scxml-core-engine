@@ -456,6 +456,9 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneFits = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "fits", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -520,6 +523,9 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneOver = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "over", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -584,6 +590,9 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneWide = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "wide", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -598,6 +607,7 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
                 invokeKey: "fits",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeFits(engine: engine)
         }
@@ -608,6 +618,7 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
                 invokeKey: "over",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeOver(engine: engine)
         }
@@ -618,6 +629,7 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
                 invokeKey: "wide",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeWide(engine: engine)
         }
@@ -815,14 +827,17 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
         case .running:
             cancelInvokesForState(&pendingInvokes, .running)
             sceInvokeChildFits?.stop()
+            sceInvokeChildFits?.detachMesh()
             sceInvokeChildFits = nil
             activeInvokes["fits"] = nil
             sceInvokeDoneFits = false
             sceInvokeChildOver?.stop()
+            sceInvokeChildOver?.detachMesh()
             sceInvokeChildOver = nil
             activeInvokes["over"] = nil
             sceInvokeDoneOver = false
             sceInvokeChildWide?.stop()
+            sceInvokeChildWide?.detachMesh()
             sceInvokeChildWide = nil
             activeInvokes["wide"] = nil
             sceInvokeDoneWide = false

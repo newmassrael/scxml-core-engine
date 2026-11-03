@@ -697,6 +697,9 @@ public final class AnEventKeepsTheNameItWasSentUnderPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneListener = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "listener", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -711,6 +714,7 @@ public final class AnEventKeepsTheNameItWasSentUnderPolicy: InvocablePolicy {
                 invokeKey: "listener",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeListener(engine: engine)
         }
@@ -842,6 +846,7 @@ public final class AnEventKeepsTheNameItWasSentUnderPolicy: InvocablePolicy {
         case .phase:
             cancelInvokesForState(&pendingInvokes, .phase)
             sceInvokeChildListener?.stop()
+            sceInvokeChildListener?.detachMesh()
             sceInvokeChildListener = nil
             activeInvokes["listener"] = nil
             sceInvokeDoneListener = false

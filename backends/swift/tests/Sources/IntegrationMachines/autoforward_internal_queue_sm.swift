@@ -411,6 +411,9 @@ public final class AutoforwardInternalQueuePolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvWatch = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_watch", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -425,6 +428,7 @@ public final class AutoforwardInternalQueuePolicy: InvocablePolicy {
                 invokeKey: "inv_watch",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvWatch(engine: engine)
         }
@@ -567,6 +571,7 @@ public final class AutoforwardInternalQueuePolicy: InvocablePolicy {
         case .phase:
             cancelInvokesForState(&pendingInvokes, .phase)
             sceInvokeChildInvWatch?.stop()
+            sceInvokeChildInvWatch?.detachMesh()
             sceInvokeChildInvWatch = nil
             activeInvokes["inv_watch"] = nil
             sceInvokeDoneInvWatch = false

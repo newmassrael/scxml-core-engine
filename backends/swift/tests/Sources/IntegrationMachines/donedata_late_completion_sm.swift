@@ -692,6 +692,9 @@ public final class DonedataLateCompletionPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvLate = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_late", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -706,6 +709,7 @@ public final class DonedataLateCompletionPolicy: InvocablePolicy {
                 invokeKey: "inv_late",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvLate(engine: engine)
         }
@@ -837,6 +841,7 @@ public final class DonedataLateCompletionPolicy: InvocablePolicy {
         case .phase:
             cancelInvokesForState(&pendingInvokes, .phase)
             sceInvokeChildInvLate?.stop()
+            sceInvokeChildInvLate?.detachMesh()
             sceInvokeChildInvLate = nil
             activeInvokes["inv_late"] = nil
             sceInvokeDoneInvLate = false

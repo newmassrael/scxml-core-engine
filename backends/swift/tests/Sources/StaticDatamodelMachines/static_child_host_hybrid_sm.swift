@@ -442,6 +442,9 @@ public final class StaticChildHostHybridPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "work", document: "static_hosted_first")
             sceStarted = session
         } else if sceSelected.utf8.elementsEqual("static_hosted_second".utf8) {
             // The stem names the document the build wrote a child for, and its
@@ -454,6 +457,9 @@ public final class StaticChildHostHybridPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "work", document: "static_hosted_second")
             sceStarted = session
         } else {
             // A value naming none of the declared candidates is the failure the
@@ -489,6 +495,9 @@ public final class StaticChildHostHybridPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneWork = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "work", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -503,6 +512,7 @@ public final class StaticChildHostHybridPolicy: InvocablePolicy {
                 invokeKey: "work",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeWork(engine: engine)
         }
@@ -634,6 +644,7 @@ public final class StaticChildHostHybridPolicy: InvocablePolicy {
         case .working:
             cancelInvokesForState(&pendingInvokes, .working)
             sceInvokeChildWork?.stop()
+            sceInvokeChildWork?.detachMesh()
             sceInvokeChildWork = nil
             activeInvokes["work"] = nil
             sceInvokeDoneWork = false

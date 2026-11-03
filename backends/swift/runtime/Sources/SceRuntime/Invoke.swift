@@ -176,12 +176,19 @@ public protocol ChildEngine: AnyObject {
     /// Tells the child's Mesh router its session ended, once: after the child
     /// reached a top-level `<final>`, or after its parent stopped it.
     func detachMesh()
+
+    /// Gives the child the Mesh router its parent's factory answered for it, before the child
+    /// initializes (SCE_MESH.md §21.3): the child's peer sends, requests and own children's
+    /// routers are then served by it and by nothing of its parent's.
+    func installMeshRouter(_ router: any ChildMeshRouter)
 }
 
 extension ChildEngine {
     public func applyMeshCalls() {}
 
     public func detachMesh() {}
+
+    public func installMeshRouter(_ router: any ChildMeshRouter) {}
 }
 
 /// Delivers a `<send>` addressed to an invoked session and lets that session take it
@@ -198,6 +205,7 @@ extension ChildEngine {
 /// for `tickChildren` to drain, so the parent sees it where it did.
 public func deliverToChild(_ child: any ChildEngine, eventName: String, eventData: String) {
     child.raiseExternalByName(eventName, eventData: eventData)
+    child.applyMeshCalls()
     child.step()
 }
 

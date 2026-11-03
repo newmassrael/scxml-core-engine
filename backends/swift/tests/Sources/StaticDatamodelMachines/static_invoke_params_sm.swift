@@ -456,6 +456,9 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneControl = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "control", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -514,6 +517,9 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneWatcher = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "watcher", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -575,6 +581,9 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneWorker = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "worker", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -589,6 +598,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
                 invokeKey: "control",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeControl(engine: engine)
         }
@@ -599,6 +609,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
                 invokeKey: "watcher",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeWatcher(engine: engine)
         }
@@ -609,6 +620,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
                 invokeKey: "worker",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeWorker(engine: engine)
         }
@@ -816,16 +828,19 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         case .plain:
             cancelInvokesForState(&pendingInvokes, .plain)
             sceInvokeChildControl?.stop()
+            sceInvokeChildControl?.detachMesh()
             sceInvokeChildControl = nil
             activeInvokes["control"] = nil
             sceInvokeDoneControl = false
             sceInvokeChildWatcher?.stop()
+            sceInvokeChildWatcher?.detachMesh()
             sceInvokeChildWatcher = nil
             activeInvokes["watcher"] = nil
             sceInvokeDoneWatcher = false
         case .working:
             cancelInvokesForState(&pendingInvokes, .working)
             sceInvokeChildWorker?.stop()
+            sceInvokeChildWorker?.detachMesh()
             sceInvokeChildWorker = nil
             activeInvokes["worker"] = nil
             sceInvokeDoneWorker = false

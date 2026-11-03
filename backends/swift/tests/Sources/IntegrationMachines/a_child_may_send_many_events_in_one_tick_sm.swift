@@ -671,6 +671,9 @@ public final class AChildMaySendManyEventsInOneTickPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneChatty = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "chatty", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -685,6 +688,7 @@ public final class AChildMaySendManyEventsInOneTickPolicy: InvocablePolicy {
                 invokeKey: "chatty",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeChatty(engine: engine)
         }
@@ -816,6 +820,7 @@ public final class AChildMaySendManyEventsInOneTickPolicy: InvocablePolicy {
         case .s0:
             cancelInvokesForState(&pendingInvokes, .s0)
             sceInvokeChildChatty?.stop()
+            sceInvokeChildChatty?.detachMesh()
             sceInvokeChildChatty = nil
             activeInvokes["chatty"] = nil
             sceInvokeDoneChatty = false

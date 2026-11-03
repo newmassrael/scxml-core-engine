@@ -882,6 +882,9 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvInfinite = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_infinite", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -942,6 +945,9 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvNamelist = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_namelist", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -1002,6 +1008,9 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvShadow = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_shadow", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -1062,6 +1071,9 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvSole = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_sole", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -1119,6 +1131,9 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvUnmatched = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_unmatched", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -1133,6 +1148,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
                 invokeKey: "inv_infinite",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvInfinite(engine: engine)
         }
@@ -1143,6 +1159,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
                 invokeKey: "inv_namelist",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvNamelist(engine: engine)
         }
@@ -1153,6 +1170,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
                 invokeKey: "inv_shadow",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvShadow(engine: engine)
         }
@@ -1163,6 +1181,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
                 invokeKey: "inv_sole",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvSole(engine: engine)
         }
@@ -1173,6 +1192,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
                 invokeKey: "inv_unmatched",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvUnmatched(engine: engine)
         }
@@ -1440,30 +1460,35 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         case .infinite:
             cancelInvokesForState(&pendingInvokes, .infinite)
             sceInvokeChildInvInfinite?.stop()
+            sceInvokeChildInvInfinite?.detachMesh()
             sceInvokeChildInvInfinite = nil
             activeInvokes["inv_infinite"] = nil
             sceInvokeDoneInvInfinite = false
         case .namelistPhase:
             cancelInvokesForState(&pendingInvokes, .namelistPhase)
             sceInvokeChildInvNamelist?.stop()
+            sceInvokeChildInvNamelist?.detachMesh()
             sceInvokeChildInvNamelist = nil
             activeInvokes["inv_namelist"] = nil
             sceInvokeDoneInvNamelist = false
         case .shadowed:
             cancelInvokesForState(&pendingInvokes, .shadowed)
             sceInvokeChildInvShadow?.stop()
+            sceInvokeChildInvShadow?.detachMesh()
             sceInvokeChildInvShadow = nil
             activeInvokes["inv_shadow"] = nil
             sceInvokeDoneInvShadow = false
         case .soleName:
             cancelInvokesForState(&pendingInvokes, .soleName)
             sceInvokeChildInvSole?.stop()
+            sceInvokeChildInvSole?.detachMesh()
             sceInvokeChildInvSole = nil
             activeInvokes["inv_sole"] = nil
             sceInvokeDoneInvSole = false
         case .unmatched:
             cancelInvokesForState(&pendingInvokes, .unmatched)
             sceInvokeChildInvUnmatched?.stop()
+            sceInvokeChildInvUnmatched?.detachMesh()
             sceInvokeChildInvUnmatched = nil
             activeInvokes["inv_unmatched"] = nil
             sceInvokeDoneInvUnmatched = false

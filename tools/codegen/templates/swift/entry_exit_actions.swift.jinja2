@@ -306,6 +306,7 @@
             cancelInvokesForState(&pendingInvokes, .{{ state_id | to_state_variant }})
 {% for invoke_info in (state.invokes | scxml) + (state.invokes | hybrid) %}
             sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }}?.stop()
+            sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }}?.detachMesh()
             sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }} = nil
             activeInvokes["{{ invoke_info.invoke_id | escape_swift }}"] = nil
             sceInvokeDone{{ invoke_info.field_suffix | to_pascal_case }} = false

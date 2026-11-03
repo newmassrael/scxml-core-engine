@@ -531,6 +531,9 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneGiven = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "given", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -598,6 +601,9 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneLifted = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "lifted", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -659,6 +665,9 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneAbsent = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "absent", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -717,6 +726,9 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneReplaced = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "replaced", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -781,6 +793,9 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneOver = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "over", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -845,6 +860,9 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneFits = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "fits", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -859,6 +877,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
                 invokeKey: "given",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeGiven(engine: engine)
         }
@@ -869,6 +888,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
                 invokeKey: "lifted",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeLifted(engine: engine)
         }
@@ -879,6 +899,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
                 invokeKey: "absent",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeAbsent(engine: engine)
         }
@@ -889,6 +910,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
                 invokeKey: "replaced",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeReplaced(engine: engine)
         }
@@ -899,6 +921,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
                 invokeKey: "over",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeOver(engine: engine)
         }
@@ -909,6 +932,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
                 invokeKey: "fits",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeFits(engine: engine)
         }
@@ -1205,26 +1229,32 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         case .running:
             cancelInvokesForState(&pendingInvokes, .running)
             sceInvokeChildGiven?.stop()
+            sceInvokeChildGiven?.detachMesh()
             sceInvokeChildGiven = nil
             activeInvokes["given"] = nil
             sceInvokeDoneGiven = false
             sceInvokeChildLifted?.stop()
+            sceInvokeChildLifted?.detachMesh()
             sceInvokeChildLifted = nil
             activeInvokes["lifted"] = nil
             sceInvokeDoneLifted = false
             sceInvokeChildAbsent?.stop()
+            sceInvokeChildAbsent?.detachMesh()
             sceInvokeChildAbsent = nil
             activeInvokes["absent"] = nil
             sceInvokeDoneAbsent = false
             sceInvokeChildReplaced?.stop()
+            sceInvokeChildReplaced?.detachMesh()
             sceInvokeChildReplaced = nil
             activeInvokes["replaced"] = nil
             sceInvokeDoneReplaced = false
             sceInvokeChildOver?.stop()
+            sceInvokeChildOver?.detachMesh()
             sceInvokeChildOver = nil
             activeInvokes["over"] = nil
             sceInvokeDoneOver = false
             sceInvokeChildFits?.stop()
+            sceInvokeChildFits?.detachMesh()
             sceInvokeChildFits = nil
             activeInvokes["fits"] = nil
             sceInvokeDoneFits = false

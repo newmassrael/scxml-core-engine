@@ -737,6 +737,9 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
         )
         if child.isInFinalState {
             sceInvokeDoneKid = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "kid", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -790,6 +793,9 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
         )
         if child.isInFinalState {
             sceInvokeDoneGone = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "gone", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -804,6 +810,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
                 invokeKey: "kid",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeKid(engine: engine)
         }
@@ -814,6 +821,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
                 invokeKey: "gone",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeGone(engine: engine)
         }
@@ -1049,10 +1057,12 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
         case .run:
             cancelInvokesForState(&pendingInvokes, .run)
             sceInvokeChildKid?.stop()
+            sceInvokeChildKid?.detachMesh()
             sceInvokeChildKid = nil
             activeInvokes["kid"] = nil
             sceInvokeDoneKid = false
             sceInvokeChildGone?.stop()
+            sceInvokeChildGone?.detachMesh()
             sceInvokeChildGone = nil
             activeInvokes["gone"] = nil
             sceInvokeDoneGone = false

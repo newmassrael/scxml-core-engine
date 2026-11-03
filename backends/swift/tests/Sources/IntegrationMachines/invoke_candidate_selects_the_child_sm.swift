@@ -671,6 +671,9 @@ public final class InvokeCandidateSelectsTheChildPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "_invoke_0", document: "chosen")
             sceStarted = session
         } else if sceSelected.utf8.elementsEqual("other".utf8) {
             // The stem names the document the build wrote a child for, and its
@@ -683,6 +686,9 @@ public final class InvokeCandidateSelectsTheChildPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "_invoke_0", document: "other")
             sceStarted = session
         } else {
             // A value naming none of the declared candidates is the failure the
@@ -719,6 +725,9 @@ public final class InvokeCandidateSelectsTheChildPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvoke0 = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "_invoke_0", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -733,6 +742,7 @@ public final class InvokeCandidateSelectsTheChildPolicy: InvocablePolicy {
                 invokeKey: "_invoke_0",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvoke0(engine: engine)
         }
@@ -864,6 +874,7 @@ public final class InvokeCandidateSelectsTheChildPolicy: InvocablePolicy {
         case .probe:
             cancelInvokesForState(&pendingInvokes, .probe)
             sceInvokeChildInvoke0?.stop()
+            sceInvokeChildInvoke0?.detachMesh()
             sceInvokeChildInvoke0 = nil
             activeInvokes["_invoke_0"] = nil
             sceInvokeDoneInvoke0 = false

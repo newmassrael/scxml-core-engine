@@ -192,6 +192,7 @@ public final class Engine<Policy: StatePolicy> {
     /// The processors a host registered for `<send type=...>` (§scxml-6.2.5), held here as
     /// `hostInvokes` is and operated on by `HostSend.swift`.
     var hostSends = HostSendBook()
+    var meshRouting = MeshRouting()
 
     /// `_event.invokeid` of the event being processed (§scxml-5.10.1), empty when none is: while
     /// the initial configuration is entered, or between two events. A `<send>` to a processor the

@@ -361,6 +361,7 @@
             queue: ParentEventQueue()
         )
         stubSession.engine.setClock(engine.clock())
+        engine.startChildMesh(of: stubSession, invokeID: "{{ invoke_info.invoke_id | escape_swift }}", document: "")
         let sceStarted: any ChildEngine = stubSession
 {% else %}
         let sceStarted: any ChildEngine
@@ -388,6 +389,9 @@
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "{{ invoke_info.invoke_id | escape_swift }}", document: "{{ candidate.stem | escape_swift }}")
             sceStarted = session
 {% endfor %}
 {% if invoke_info.candidates %}
@@ -431,6 +435,9 @@
         )
         if child.isInFinalState {
             sceInvokeDone{{ invoke_info.field_suffix | to_pascal_case }} = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "{{ invoke_info.invoke_id | escape_swift }}", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -527,6 +534,7 @@
                 invokeKey: "{{ invoke_info.invoke_id | escape_swift }}",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvoke{{ invoke_info.field_suffix | to_pascal_case }}(engine: engine)
         }

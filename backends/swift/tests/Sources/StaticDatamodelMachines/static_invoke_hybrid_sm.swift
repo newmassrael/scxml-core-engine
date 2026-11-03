@@ -526,6 +526,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "first_run", document: "static_hybrid_first")
             sceStarted = session
         } else if sceSelected.utf8.elementsEqual("static_hybrid_second".utf8) {
             // The stem names the document the build wrote a child for, and its
@@ -552,6 +555,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "first_run", document: "static_hybrid_second")
             sceStarted = session
         } else {
             // A value naming none of the declared candidates is the failure the
@@ -588,6 +594,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneFirstRun = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "first_run", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -629,6 +638,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "lossy_run", document: "static_hybrid_first")
             sceStarted = session
         } else if sceSelected.utf8.elementsEqual("static_hybrid_second".utf8) {
             // The stem names the document the build wrote a child for, and its
@@ -655,6 +667,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "lossy_run", document: "static_hybrid_second")
             sceStarted = session
         } else {
             // A value naming none of the declared candidates is the failure the
@@ -691,6 +706,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneLossyRun = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "lossy_run", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -725,6 +743,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "missing_run", document: "static_hybrid_first")
             sceStarted = session
         } else if sceSelected.utf8.elementsEqual("static_hybrid_second".utf8) {
             // The stem names the document the build wrote a child for, and its
@@ -742,6 +763,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "missing_run", document: "static_hybrid_second")
             sceStarted = session
         } else {
             // A value naming none of the declared candidates is the failure the
@@ -778,6 +802,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneMissingRun = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "missing_run", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -819,6 +846,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "second_run", document: "static_hybrid_first")
             sceStarted = session
         } else if sceSelected.utf8.elementsEqual("static_hybrid_second".utf8) {
             // The stem names the document the build wrote a child for, and its
@@ -845,6 +875,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 queue: ParentEventQueue()
             )
             session.engine.setClock(engine.clock())
+            // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
+            // invoke and this document, installed before the child initializes.
+            engine.startChildMesh(of: session, invokeID: "second_run", document: "static_hybrid_second")
             sceStarted = session
         } else {
             // A value naming none of the declared candidates is the failure the
@@ -881,6 +914,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneSecondRun = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "second_run", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -895,6 +931,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 invokeKey: "first_run",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeFirstRun(engine: engine)
         }
@@ -905,6 +942,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 invokeKey: "lossy_run",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeLossyRun(engine: engine)
         }
@@ -915,6 +953,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 invokeKey: "missing_run",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeMissingRun(engine: engine)
         }
@@ -925,6 +964,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 invokeKey: "second_run",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeSecondRun(engine: engine)
         }
@@ -1194,24 +1234,28 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
         case .first:
             cancelInvokesForState(&pendingInvokes, .first)
             sceInvokeChildFirstRun?.stop()
+            sceInvokeChildFirstRun?.detachMesh()
             sceInvokeChildFirstRun = nil
             activeInvokes["first_run"] = nil
             sceInvokeDoneFirstRun = false
         case .lossy:
             cancelInvokesForState(&pendingInvokes, .lossy)
             sceInvokeChildLossyRun?.stop()
+            sceInvokeChildLossyRun?.detachMesh()
             sceInvokeChildLossyRun = nil
             activeInvokes["lossy_run"] = nil
             sceInvokeDoneLossyRun = false
         case .missing:
             cancelInvokesForState(&pendingInvokes, .missing)
             sceInvokeChildMissingRun?.stop()
+            sceInvokeChildMissingRun?.detachMesh()
             sceInvokeChildMissingRun = nil
             activeInvokes["missing_run"] = nil
             sceInvokeDoneMissingRun = false
         case .second:
             cancelInvokesForState(&pendingInvokes, .second)
             sceInvokeChildSecondRun?.stop()
+            sceInvokeChildSecondRun?.detachMesh()
             sceInvokeChildSecondRun = nil
             activeInvokes["second_run"] = nil
             sceInvokeDoneSecondRun = false

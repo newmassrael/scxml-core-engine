@@ -440,6 +440,9 @@ public final class HostEventReachesTheChildPolicy: InvocablePolicy {
         )
         if child.isInFinalState {
             sceInvokeDoneInvProbe = true
+            // SCE_MESH.md §21.5: the session reached its top-level `<final>`, so its router
+            // is told once.
+            child.detachMesh()
             raiseDoneInvoke(invokeID: "inv_probe", donedata: child.donedataAtFinal, engine: engine)
         }
     }
@@ -454,6 +457,7 @@ public final class HostEventReachesTheChildPolicy: InvocablePolicy {
                 invokeKey: "inv_probe",
                 engine: engine
             )
+            child.applyMeshCalls()
             child.tick()
             sceSettleInvokeInvProbe(engine: engine)
         }
@@ -596,6 +600,7 @@ public final class HostEventReachesTheChildPolicy: InvocablePolicy {
         case .phase:
             cancelInvokesForState(&pendingInvokes, .phase)
             sceInvokeChildInvProbe?.stop()
+            sceInvokeChildInvProbe?.detachMesh()
             sceInvokeChildInvProbe = nil
             activeInvokes["inv_probe"] = nil
             sceInvokeDoneInvProbe = false
