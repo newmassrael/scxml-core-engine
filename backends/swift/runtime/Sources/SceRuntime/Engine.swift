@@ -189,6 +189,10 @@ public final class Engine<Policy: StatePolicy> {
     /// are `HostInvoke.swift`'s.
     var hostInvokes = HostInvokeBook()
 
+    /// The processors a host registered for `<send type=...>` (§scxml-6.2.5), held here as
+    /// `hostInvokes` is and operated on by `HostSend.swift`.
+    var hostSends = HostSendBook()
+
     /// How many ids this machine has generated for a `<send idlocation>`: the number
     /// the last one carried. Counted per machine and not per process, so a machine's
     /// ids do not depend on what else ran beside it. See `nextAutoSendID`.
@@ -1178,6 +1182,13 @@ public final class Engine<Policy: StatePolicy> {
                 params: route.httpParams,
                 sendID: sendID
             )
+            return true
+        case .host:
+            // §scxml-6.2.5: the request the send made, to the processor the host registered for it.
+            guard let request = route.host else {
+                return false
+            }
+            performHostSend(request)
             return true
         }
     }

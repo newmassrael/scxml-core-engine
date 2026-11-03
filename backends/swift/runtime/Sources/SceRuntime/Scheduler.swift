@@ -18,6 +18,10 @@ public enum RouteKind: Sendable, Equatable {
     /// A BasicHTTP POST (§scxml-C-2): the request the send made, handed to the host's
     /// transport when the delay is over.
     case httpPost
+
+    /// A send to a processor the host serves (§scxml-6.2.5): the request the send made, handed to
+    /// the handler the host registered for its type when the delay is over.
+    case host
 }
 
 /// Where a delayed `<send>`'s event goes when it comes due (§scxml-6.2).
@@ -47,9 +51,14 @@ public struct ScheduledRoute: Sendable, Equatable {
     /// the order the send gave them (§scxml-C-2).
     public var httpParams: [String: [String]]
 
+    /// What a `.host` route performs: the request as it stood when the send was made, its
+    /// `<param>` values and `_event.invokeid` included, and not as they stand when the wait is over.
+    public var host: HostSendRequest?
+
     public init(
         kind: RouteKind, eventName: String, invokeID: String = "", sessionID: String = "",
-        httpTarget: String = "", httpParams: [String: [String]] = [:]
+        httpTarget: String = "", httpParams: [String: [String]] = [:],
+        host: HostSendRequest? = nil
     ) {
         self.kind = kind
         self.eventName = eventName
@@ -57,6 +66,7 @@ public struct ScheduledRoute: Sendable, Equatable {
         self.sessionID = sessionID
         self.httpTarget = httpTarget
         self.httpParams = httpParams
+        self.host = host
     }
 }
 
