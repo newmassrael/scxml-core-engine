@@ -48,7 +48,13 @@ const SCAN_ROOTS: &[&str] = &["cmake", "tests", "backends"];
 ///
 /// Coverage is measured per site rather than assumed: deleting any single
 /// `DEPFILE` keyword turns this gate red.
-const MIN_CODEGEN_INVOCATIONS: usize = 150;
+///
+/// A site is a command as written, not a generation the build runs: the
+/// Mesh fixtures of the test tree, 139 commands written out one per file
+/// until 2026-11-03, are now every one declared by the single command in
+/// `sce_codegen_generation` (cmake/SCECodegenPlan.cmake), which is why the
+/// floor fell from 150 to the 38 sites measured then.
+const MIN_CODEGEN_INVOCATIONS: usize = 38;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

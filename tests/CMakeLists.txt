@@ -3225,11 +3225,57 @@ if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
 run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         OFF)
 
-    # Jinja2 template consumed by sce-codegen --deploy. Listed in the
-    # DEPENDS of every *_transport.h custom_command so template edits
-    # trigger re-codegen without manually deleting cached headers.
-    set(SCE_MESH_CPP_TEMPLATE
-        "${CMAKE_SOURCE_DIR}/tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2")
+    # Every generation of a Mesh fixture is declared from the generator's
+    # plan of it (`sce_codegen_generation`, cmake/SCECodegenPlan.cmake): one
+    # command per machine, which writes the machine and, with a deploy, the
+    # transport the deploy routes it through. What a generation reads (the
+    # deploy, the templates, the sibling documents of its source set, the
+    # `vsomeip.json` a device names) is the depfile it writes, not a list
+    # kept here.
+    include(${CMAKE_SOURCE_DIR}/cmake/SCECodegenPlan.cmake)
+
+    # sce_mesh_fixture_generations(<HEADERS_VAR>
+    #     OUTPUT_DIR <dir> MACHINES <machine>...
+    #     [DEPLOY <deploy.yaml>] [SOURCE_DIR <dir>] [ARGS <arg>...]
+    #     [LABEL <text>])
+    #
+    #   The shape most fixtures below share: the generation of each machine's
+    #   document, `<SOURCE_DIR>/<machine>.scxml` (SOURCE_DIR is MESH_TEST_DIR
+    #   when not given), into OUTPUT_DIR, with DEPLOY and ARGS when given, each
+    #   declared from its plan. HEADERS_VAR is set to every header they write,
+    #   which is what the fixture's targets compile.
+    function(sce_mesh_fixture_generations HEADERS_VAR)
+        cmake_parse_arguments(PARSE_ARGV 1 _MFG ""
+            "OUTPUT_DIR;DEPLOY;SOURCE_DIR;LABEL" "MACHINES;ARGS")
+        if(_MFG_UNPARSED_ARGUMENTS OR NOT _MFG_OUTPUT_DIR OR NOT _MFG_MACHINES)
+            message(FATAL_ERROR
+                "sce_mesh_fixture_generations(${HEADERS_VAR}): OUTPUT_DIR and MACHINES are "
+                "required (unexpected: ${_MFG_UNPARSED_ARGUMENTS})")
+        endif()
+        set(_SOURCE_DIR "${MESH_TEST_DIR}")
+        if(_MFG_SOURCE_DIR)
+            set(_SOURCE_DIR "${_MFG_SOURCE_DIR}")
+        endif()
+        set(_DEPLOY "")
+        if(_MFG_DEPLOY)
+            set(_DEPLOY DEPLOY "${_MFG_DEPLOY}")
+        endif()
+        set(_LABEL "Mesh")
+        if(_MFG_LABEL)
+            set(_LABEL "${_MFG_LABEL}")
+        endif()
+        set(_HEADERS "")
+        foreach(_MACHINE ${_MFG_MACHINES})
+            sce_codegen_generation(_MFG_${_MACHINE}
+                DOCUMENT "${_SOURCE_DIR}/${_MACHINE}.scxml"
+                OUTPUT_DIR "${_MFG_OUTPUT_DIR}" LANGUAGE cpp
+                ${_DEPLOY}
+                ARGS ${_MFG_ARGS}
+                COMMENT "${_LABEL}: Generating ${_MACHINE}")
+            list(APPEND _HEADERS ${_MFG_${_MACHINE}_HEADERS})
+        endforeach()
+        set(${HEADERS_VAR} ${_HEADERS} PARENT_SCOPE)
+    endfunction()
 
     # ── MeshEnvelope codec unit tests ─────────────────────────────
     # Pure unit tests on the CBOR envelope codec — no codegen, no
@@ -3743,53 +3789,20 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     add_test(NAME mesh_parallel_completion_tracker_verification
              COMMAND mesh_parallel_completion_tracker_test)
 
-    # Generate brake_sm.h from brake.scxml
-    add_custom_command(
-        OUTPUT "${MESH_OUTPUT_DIR}/brake_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy.yaml"
-                --write-deps "${MESH_OUTPUT_DIR}/brake_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_OUTPUT_DIR}/brake_sm.h.d"
-        COMMENT "Mesh: Generating brake_sm.h"
-        VERBATIM
-    )
-
-    # Generate motor_sm.h from motor.scxml
-    add_custom_command(
-        OUTPUT "${MESH_OUTPUT_DIR}/motor_sm.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml" -l cpp -o "${MESH_OUTPUT_DIR}"
-                --write-deps "${MESH_OUTPUT_DIR}/motor_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_OUTPUT_DIR}/motor_sm.h.d"
-        COMMENT "Mesh: Generating motor_sm.h"
-        VERBATIM
-    )
-
-    # Generate brake_transport.h from brake.scxml + deploy.yaml
-    # DEPENDS on brake_sm.h to serialize after the first codegen run —
-    # --deploy also regenerates brake_sm.h as a side effect, so parallel
-    # builds must not race with the standalone brake_sm.h command above.
-    add_custom_command(
-        OUTPUT "${MESH_OUTPUT_DIR}/brake_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy.yaml"
-                --transport-only
-                --write-deps "${MESH_OUTPUT_DIR}/brake_transport.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                "${MESH_OUTPUT_DIR}/brake_sm.h"
-        DEPFILE "${MESH_OUTPUT_DIR}/brake_transport.h.d"
-        COMMENT "Mesh: Generating brake_transport.h (local transport)"
-        VERBATIM
-    )
+    # brake with the local deploy (its machine and its transport), motor
+    # without one: the receiving end, which routes nothing.
+    sce_codegen_generation(_MESH_LOCAL_BRAKE
+        DOCUMENT "${MESH_TEST_DIR}/brake.scxml" OUTPUT_DIR "${MESH_OUTPUT_DIR}" LANGUAGE cpp
+        DEPLOY "${MESH_TEST_DIR}/deploy.yaml"
+        COMMENT "Mesh: Generating brake (local transport)")
+    sce_codegen_generation(_MESH_LOCAL_MOTOR
+        DOCUMENT "${MESH_TEST_DIR}/motor.scxml" OUTPUT_DIR "${MESH_OUTPUT_DIR}" LANGUAGE cpp
+        COMMENT "Mesh: Generating motor")
+    set(MESH_LOCAL_HEADERS ${_MESH_LOCAL_BRAKE_HEADERS} ${_MESH_LOCAL_MOTOR_HEADERS})
 
     add_executable(mesh_compile_test
         mesh/test_mesh_local.cpp
-        "${MESH_OUTPUT_DIR}/brake_sm.h"
-        "${MESH_OUTPUT_DIR}/motor_sm.h"
-        "${MESH_OUTPUT_DIR}/brake_transport.h"
+        ${MESH_LOCAL_HEADERS}
     )
 
     target_include_directories(mesh_compile_test
@@ -3829,24 +3842,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # another transport-router compile.
     set(MESH_PARTITIONS_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_partitions_generated")
 
-    add_custom_command(
-        OUTPUT "${MESH_PARTITIONS_OUTPUT_DIR}/motor_partition_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_PARTITIONS_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
-                -l cpp -o "${MESH_PARTITIONS_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_partitions.yaml"
-                --write-deps "${MESH_PARTITIONS_OUTPUT_DIR}/motor_partition_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
-                "${MESH_TEST_DIR}/deploy_partitions.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_PARTITIONS_OUTPUT_DIR}/motor_partition_sm.h.d"
-        COMMENT "Mesh partitions: Generating motor_partition_sm.h via §14 deploy validation"
-        VERBATIM
-    )
+    sce_codegen_generation(_MESH_PARTITIONS_MOTOR
+        DOCUMENT "${MESH_TEST_DIR}/motor_partition.scxml"
+        OUTPUT_DIR "${MESH_PARTITIONS_OUTPUT_DIR}" LANGUAGE cpp
+        DEPLOY "${MESH_TEST_DIR}/deploy_partitions.yaml"
+        COMMENT "Mesh partitions: Generating motor_partition via §14 deploy validation")
 
     add_executable(mesh_partitions_test
         mesh/test_mesh_partitions.cpp
-        "${MESH_PARTITIONS_OUTPUT_DIR}/motor_partition_sm.h"
+        ${_MESH_PARTITIONS_MOTOR_HEADERS}
     )
 
     target_include_directories(mesh_partitions_test
@@ -3893,82 +3897,24 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     set(MESH_PARTITION_RULE12_LEFT_DIR  "${CMAKE_CURRENT_BINARY_DIR}/mesh_partition_rule12_left_generated")
     set(MESH_PARTITION_RULE12_RIGHT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_partition_rule12_right_generated")
 
-    # Pattern C split (mesh_open_issues.md Issue 2 follow-up): each
-    # (sm.h + transport.h) emit is two commands so a transport-only
-    # edit (deploy.yaml change) doesn't churn the sm.h mtime and
-    # cascade rebuilds. SM emit stays --deploy-aware so its model
-    # mutations (server-response, partition, queue capacity) match
-    # what the transport emit produces.
-    add_custom_command(
-        OUTPUT  "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_PARTITION_RULE12_LEFT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
-                -l cpp -o "${MESH_PARTITION_RULE12_LEFT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_partitions.yaml"
-                --partition motor_left
-                --write-deps "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
-                "${MESH_TEST_DIR}/deploy_partitions.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_sm.h.d"
-        COMMENT "Mesh rule 12: Generating motor_partition_sm.h (Root partition motor_left)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT  "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
-                -l cpp -o "${MESH_PARTITION_RULE12_LEFT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_partitions.yaml"
-                --transport-only
-                --partition motor_left
-                --write-deps "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_transport.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
-                "${MESH_TEST_DIR}/deploy_partitions.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_sm.h"
-        DEPFILE "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_transport.h.d"
-        COMMENT "Mesh rule 12: Generating motor_partition_transport.h (Root partition motor_left)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT  "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_PARTITION_RULE12_RIGHT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
-                -l cpp -o "${MESH_PARTITION_RULE12_RIGHT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_partitions.yaml"
-                --partition motor_right
-                --write-deps "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
-                "${MESH_TEST_DIR}/deploy_partitions.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_sm.h.d"
-        COMMENT "Mesh rule 12: Generating motor_partition_sm.h (NonRoot partition motor_right)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT  "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
-                -l cpp -o "${MESH_PARTITION_RULE12_RIGHT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_partitions.yaml"
-                --transport-only
-                --partition motor_right
-                --write-deps "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_transport.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
-                "${MESH_TEST_DIR}/deploy_partitions.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_sm.h"
-        DEPFILE "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_transport.h.d"
-        COMMENT "Mesh rule 12: Generating motor_partition_transport.h (NonRoot partition motor_right)"
-        VERBATIM
-    )
+    # One generation per partition: each writes that partition's machine
+    # and the transport its deploy routes it through.
+    sce_codegen_generation(_MESH_RULE12_LEFT
+        DOCUMENT "${MESH_TEST_DIR}/motor_partition.scxml"
+        OUTPUT_DIR "${MESH_PARTITION_RULE12_LEFT_DIR}" LANGUAGE cpp
+        DEPLOY "${MESH_TEST_DIR}/deploy_partitions.yaml"
+        ARGS --partition motor_left
+        COMMENT "Mesh rule 12: Generating motor_partition (Root partition motor_left)")
+    sce_codegen_generation(_MESH_RULE12_RIGHT
+        DOCUMENT "${MESH_TEST_DIR}/motor_partition.scxml"
+        OUTPUT_DIR "${MESH_PARTITION_RULE12_RIGHT_DIR}" LANGUAGE cpp
+        DEPLOY "${MESH_TEST_DIR}/deploy_partitions.yaml"
+        ARGS --partition motor_right
+        COMMENT "Mesh rule 12: Generating motor_partition (NonRoot partition motor_right)")
 
     add_executable(mesh_partition_rule12_left_proc
         mesh/test_mesh_partition_rule12_left_proc.cpp
-        "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_sm.h"
-        "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_transport.h"
+        ${_MESH_RULE12_LEFT_HEADERS}
     )
     target_include_directories(mesh_partition_rule12_left_proc
         PRIVATE
@@ -3985,8 +3931,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_executable(mesh_partition_rule12_right_proc
         mesh/test_mesh_partition_rule12_right_proc.cpp
-        "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_sm.h"
-        "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_transport.h"
+        ${_MESH_RULE12_RIGHT_HEADERS}
     )
     target_include_directories(mesh_partition_rule12_right_proc
         PRIVATE
@@ -4037,76 +3982,22 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     set(MESH_BARRIER_TIMEOUT_RIGHT_DIR
         "${CMAKE_CURRENT_BINARY_DIR}/mesh_barrier_timeout_right_generated")
 
-    add_custom_command(
-        OUTPUT  "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_BARRIER_TIMEOUT_LEFT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
-                -l cpp -o "${MESH_BARRIER_TIMEOUT_LEFT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
-                --partition motor_left
-                --write-deps "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
-                "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_sm.h.d"
-        COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition_sm.h (Root motor_left, fast)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT  "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
-                -l cpp -o "${MESH_BARRIER_TIMEOUT_LEFT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
-                --transport-only
-                --partition motor_left
-                --write-deps "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_transport.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
-                "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_sm.h"
-        DEPFILE "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_transport.h.d"
-        COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition_transport.h (Root motor_left, fast)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT  "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
-                -l cpp -o "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
-                --partition motor_right
-                --write-deps "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
-                "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_sm.h.d"
-        COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition_sm.h (NonRoot motor_right, fast)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT  "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
-                -l cpp -o "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
-                --transport-only
-                --partition motor_right
-                --write-deps "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_transport.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
-                "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_sm.h"
-        DEPFILE "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_transport.h.d"
-        COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition_transport.h (NonRoot motor_right, fast)"
-        VERBATIM
-    )
+    sce_codegen_generation(_MESH_BARRIER_TIMEOUT_LEFT
+        DOCUMENT "${MESH_TEST_DIR}/motor_partition.scxml"
+        OUTPUT_DIR "${MESH_BARRIER_TIMEOUT_LEFT_DIR}" LANGUAGE cpp
+        DEPLOY "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
+        ARGS --partition motor_left
+        COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition (Root motor_left, fast)")
+    sce_codegen_generation(_MESH_BARRIER_TIMEOUT_RIGHT
+        DOCUMENT "${MESH_TEST_DIR}/motor_partition.scxml"
+        OUTPUT_DIR "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}" LANGUAGE cpp
+        DEPLOY "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
+        ARGS --partition motor_right
+        COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition (NonRoot motor_right, fast)")
 
     add_executable(mesh_barrier_timeout_root_proc
         mesh/test_mesh_barrier_timeout_root_proc.cpp
-        "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_sm.h"
-        "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_transport.h"
+        ${_MESH_BARRIER_TIMEOUT_LEFT_HEADERS}
     )
     target_include_directories(mesh_barrier_timeout_root_proc
         PRIVATE
@@ -4123,8 +4014,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_executable(mesh_barrier_timeout_right_proc
         mesh/test_mesh_barrier_timeout_right_proc.cpp
-        "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_sm.h"
-        "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_transport.h"
+        ${_MESH_BARRIER_TIMEOUT_RIGHT_HEADERS}
     )
     target_include_directories(mesh_barrier_timeout_right_proc
         PRIVATE
@@ -4180,69 +4070,23 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # without invokeMeshRpc / cancelMeshRpc — this test fails to link.
     set(MESH_INVOKE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_invoke_generated")
 
-    add_custom_command(
-        OUTPUT "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_INVOKE_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_invoke.scxml" -l cpp -o "${MESH_INVOKE_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_invoke.yaml"
-                --write-deps "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake_invoke.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h.d"
-        COMMENT "Mesh: Generating brake_invoke_sm.h (§9.5 invoke)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_invoke.scxml" -l cpp -o "${MESH_INVOKE_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_invoke.yaml"
-                --write-deps "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_invoke.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h.d"
-        COMMENT "Mesh: Generating motor_invoke_sm.h (§9.5 invoke receiver)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_invoke.scxml" -l cpp -o "${MESH_INVOKE_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_invoke.yaml"
-                --transport-only
-                --write-deps "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake_invoke.scxml" "${MESH_TEST_DIR}/deploy_invoke.yaml"
-                "${MESH_TEST_DIR}/motor_invoke.scxml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
-        DEPFILE "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h.d"
-        COMMENT "Mesh: Generating brake_invoke_transport.h (§9.5 invoke plumbing)"
-        VERBATIM
-    )
-
-    # motor_invoke_transport.h: generated from the same deploy file so
-    # the §9.5 round-trip test can host two linked routers in-process.
-    # The deploy YAML declares a motor_invoke → #brake_invoke local
-    # binding; without this rule, the receiver side of the round-trip
-    # has no TransportRouter class to instantiate.
-    add_custom_command(
-        OUTPUT "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_invoke.scxml" -l cpp -o "${MESH_INVOKE_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_invoke.yaml"
-                --transport-only
-                --write-deps "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_transport.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_invoke.scxml" "${MESH_TEST_DIR}/deploy_invoke.yaml"
-                "${MESH_TEST_DIR}/brake_invoke.scxml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
-        DEPFILE "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_transport.h.d"
-        COMMENT "Mesh: Generating motor_invoke_transport.h (§9.5 invoke reply path)"
-        VERBATIM
-    )
+    # Both machines with the same deploy, so the §9.5 round-trip test can
+    # host two linked routers in-process: the deploy declares a
+    # motor_invoke → #brake_invoke local binding, which gives the receiver
+    # side of the round-trip the TransportRouter class it instantiates.
+    set(MESH_INVOKE_HEADERS "")
+    foreach(_machine brake_invoke motor_invoke)
+        sce_codegen_generation(_MESH_INVOKE_${_machine}
+            DOCUMENT "${MESH_TEST_DIR}/${_machine}.scxml"
+            OUTPUT_DIR "${MESH_INVOKE_OUTPUT_DIR}" LANGUAGE cpp
+            DEPLOY "${MESH_TEST_DIR}/deploy_invoke.yaml"
+            COMMENT "Mesh: Generating ${_machine} (§9.5 invoke plumbing)")
+        list(APPEND MESH_INVOKE_HEADERS ${_MESH_INVOKE_${_machine}_HEADERS})
+    endforeach()
 
     add_executable(mesh_invoke_compile_test
         mesh/test_mesh_invoke_compile.cpp
-        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
-        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
-        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h"
+        ${MESH_INVOKE_HEADERS}
     )
 
     target_include_directories(mesh_invoke_compile_test
@@ -4278,25 +4122,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # `error.execution`. No transport — the raise is local.
     set(MESH_SESSION_F_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_generated")
 
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_OUTPUT_DIR}/parent_session_f_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f.scxml"
-                -l cpp -o "${MESH_SESSION_F_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f.yaml"
-                --write-deps "${MESH_SESSION_F_OUTPUT_DIR}/parent_session_f_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f.scxml"
-                "${MESH_TEST_DIR}/worker_session_f.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_OUTPUT_DIR}/parent_session_f_sm.h.d"
-        COMMENT "Mesh §9.6: Generating parent_session_f_sm.h (Session F scaffold)"
-        VERBATIM
-    )
+    sce_codegen_generation(_MESH_SESSION_F_PARENT
+        DOCUMENT "${MESH_TEST_DIR}/parent_session_f.scxml"
+        OUTPUT_DIR "${MESH_SESSION_F_OUTPUT_DIR}" LANGUAGE cpp
+        DEPLOY "${MESH_TEST_DIR}/deploy_session_f.yaml"
+        COMMENT "Mesh §9.6: Generating parent_session_f (Session F scaffold)")
 
     add_executable(mesh_session_f_not_implemented_test
         mesh/test_mesh_session_f_not_implemented.cpp
-        "${MESH_SESSION_F_OUTPUT_DIR}/parent_session_f_sm.h"
+        ${_MESH_SESSION_F_PARENT_HEADERS}
     )
 
     target_include_directories(mesh_session_f_not_implemented_test
@@ -4330,46 +4164,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     set(MESH_SESSION_F_WIRED_OUTPUT_DIR
         "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_wired_generated")
 
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/parent_session_f_wired_sm.h"
-               "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/parent_session_f_wired_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_WIRED_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_wired.scxml"
-                -l cpp -o "${MESH_SESSION_F_WIRED_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_wired.yaml"
-                --write-deps "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/parent_session_f_wired_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_wired.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_wired.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_wired.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/parent_session_f_wired_sm.h.d"
-        COMMENT "Mesh §9.6: Generating parent_session_f_wired_{sm,transport}.h"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/worker_session_f_wired_sm.h"
-               "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/worker_session_f_wired_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_WIRED_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_wired.scxml"
-                -l cpp -o "${MESH_SESSION_F_WIRED_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_wired.yaml"
-                --write-deps "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/worker_session_f_wired_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_wired.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_wired.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_wired.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/worker_session_f_wired_sm.h.d"
-        COMMENT "Mesh §9.6: Generating worker_session_f_wired_{sm,transport}.h"
-        VERBATIM
-    )
+    sce_mesh_fixture_generations(MESH_SESSION_F_WIRED_HEADERS
+        OUTPUT_DIR "${MESH_SESSION_F_WIRED_OUTPUT_DIR}"
+        MACHINES parent_session_f_wired worker_session_f_wired
+        DEPLOY "${MESH_TEST_DIR}/deploy_session_f_wired.yaml"
+        LABEL "Mesh §9.6")
 
     add_executable(mesh_session_f_wire_roundtrip_test
         mesh/test_mesh_session_f_wire_roundtrip.cpp
-        "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/parent_session_f_wired_sm.h"
-        "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/parent_session_f_wired_transport.h"
-        "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/worker_session_f_wired_sm.h"
-        "${MESH_SESSION_F_WIRED_OUTPUT_DIR}/worker_session_f_wired_transport.h"
+        ${MESH_SESSION_F_WIRED_HEADERS}
     )
 
     target_include_directories(mesh_session_f_wire_roundtrip_test
@@ -4432,30 +4235,14 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     # Stage 2: the parent's generation. What it writes (its machine and
     # transport, the child's document) is declared from the generator's
-    # answer (`sce_codegen_plan`, cmake/SCECodegenPlan.cmake), not listed
-    # here; stage 3 depends on the child's document through it.
-    sce_codegen_plan(_MESH_SYNTH_OVERRIDE_PARENT
-        STEM parent_synth_inline
+    # answer (`sce_codegen_generation`, cmake/SCECodegenPlan.cmake), not
+    # listed here; stage 3 depends on the child's document through it.
+    sce_codegen_generation(_MESH_SYNTH_OVERRIDE_PARENT
         DOCUMENT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
-        OUTPUT_DIR "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}"
-        LANGUAGE cpp
+        OUTPUT_DIR "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}" LANGUAGE cpp
+        DEPLOY "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
         CHILD_GENERATIONS
-        ARGS --deploy "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml")
-    add_custom_command(
-        OUTPUT ${_MESH_SYNTH_OVERRIDE_PARENT_OUTPUTS}
-        COMMAND "${SCE_CODEGEN}" generate
-                "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
-                ${_MESH_SYNTH_OVERRIDE_PARENT_ARGS}
-                -l cpp -o "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}"
-                --write-deps "${_MESH_SYNTH_OVERRIDE_PARENT_DEPFILE}"
-        DEPENDS "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
-                "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${_MESH_SYNTH_OVERRIDE_PARENT_DEPFILE}"
-        ${_MESH_SYNTH_OVERRIDE_PARENT_BYPRODUCTS_ARG}
-        COMMENT "Mesh §9.6.6: Generating parent_synth_inline and the document of its child"
-        VERBATIM
-    )
+        COMMENT "Mesh §9.6.6: Generating parent_synth_inline and the document of its child")
     set(_MESH_SYNTH_OVERRIDE_HEADERS ${_MESH_SYNTH_OVERRIDE_PARENT_HEADERS})
 
     # Stage 3: the child's partition's generation, with --deploy, from the
@@ -4477,20 +4264,9 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # parent's generation depends on, and that generation rewrites the
     # document this one reads.
     foreach(_CHILD ${_MESH_SYNTH_OVERRIDE_PARENT_GENERATIONS})
-        sce_codegen_plan(_MESH_SYNTH_OVERRIDE_CHILD
-            FROM _MESH_SYNTH_OVERRIDE_PARENT CHILD "${_CHILD}")
-        add_custom_command(
-            OUTPUT ${_MESH_SYNTH_OVERRIDE_CHILD_OUTPUTS}
-            COMMAND "${SCE_CODEGEN}" generate "${_MESH_SYNTH_OVERRIDE_CHILD_DOCUMENT}"
-                    ${_MESH_SYNTH_OVERRIDE_CHILD_ARGS}
-                    -l cpp -o "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}"
-                    --write-deps "${_MESH_SYNTH_OVERRIDE_CHILD_DEPFILE}"
-            DEPENDS ${_MESH_SYNTH_OVERRIDE_CHILD_DEPENDS} "${SCE_CODEGEN}"
-            DEPFILE "${_MESH_SYNTH_OVERRIDE_CHILD_DEPFILE}"
-            ${_MESH_SYNTH_OVERRIDE_CHILD_BYPRODUCTS_ARG}
-            COMMENT "Mesh §9.6.6: Generating ${_CHILD} on its own partition (rule 3)"
-            VERBATIM
-        )
+        sce_codegen_generation(_MESH_SYNTH_OVERRIDE_CHILD
+            FROM _MESH_SYNTH_OVERRIDE_PARENT CHILD "${_CHILD}"
+            COMMENT "Mesh §9.6.6: Generating ${_CHILD} on its own partition (rule 3)")
         list(APPEND _MESH_SYNTH_OVERRIDE_HEADERS ${_MESH_SYNTH_OVERRIDE_CHILD_HEADERS})
     endforeach()
 
@@ -4529,46 +4305,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     set(MESH_SESSION_F_EVENTFUL_OUTPUT_DIR
         "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_eventful_generated")
 
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/parent_session_f_eventful_sm.h"
-               "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/parent_session_f_eventful_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_eventful.scxml"
-                -l cpp -o "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_eventful.yaml"
-                --write-deps "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/parent_session_f_eventful_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_eventful.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_eventful.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_eventful.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/parent_session_f_eventful_sm.h.d"
-        COMMENT "Mesh §9.6.2 eventful: Generating parent_session_f_eventful_{sm,transport}.h"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/worker_session_f_eventful_sm.h"
-               "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/worker_session_f_eventful_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_eventful.scxml"
-                -l cpp -o "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_eventful.yaml"
-                --write-deps "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/worker_session_f_eventful_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_eventful.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_eventful.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_eventful.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/worker_session_f_eventful_sm.h.d"
-        COMMENT "Mesh §9.6.2 eventful: Generating worker_session_f_eventful_{sm,transport}.h"
-        VERBATIM
-    )
+    sce_mesh_fixture_generations(MESH_SESSION_F_EVENTFUL_HEADERS
+        OUTPUT_DIR "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}"
+        MACHINES parent_session_f_eventful worker_session_f_eventful
+        DEPLOY "${MESH_TEST_DIR}/deploy_session_f_eventful.yaml"
+        LABEL "Mesh §9.6.2 eventful")
 
     add_executable(mesh_session_f_eventful_test
         mesh/test_mesh_session_f_eventful.cpp
-        "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/parent_session_f_eventful_sm.h"
-        "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/parent_session_f_eventful_transport.h"
-        "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/worker_session_f_eventful_sm.h"
-        "${MESH_SESSION_F_EVENTFUL_OUTPUT_DIR}/worker_session_f_eventful_transport.h"
+        ${MESH_SESSION_F_EVENTFUL_HEADERS}
     )
 
     target_include_directories(mesh_session_f_eventful_test
@@ -4596,46 +4341,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     set(MESH_SESSION_F_AUTOFWD_OUTPUT_DIR
         "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_autoforward_generated")
 
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/parent_session_f_autoforward_sm.h"
-               "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/parent_session_f_autoforward_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_autoforward.scxml"
-                -l cpp -o "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_autoforward.yaml"
-                --write-deps "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/parent_session_f_autoforward_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_autoforward.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_autoforward.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_autoforward.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/parent_session_f_autoforward_sm.h.d"
-        COMMENT "Mesh §9.6.5 autoforward: Generating parent_session_f_autoforward_{sm,transport}.h"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/worker_session_f_autoforward_sm.h"
-               "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/worker_session_f_autoforward_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_autoforward.scxml"
-                -l cpp -o "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_autoforward.yaml"
-                --write-deps "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/worker_session_f_autoforward_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_autoforward.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_autoforward.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_autoforward.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/worker_session_f_autoforward_sm.h.d"
-        COMMENT "Mesh §9.6.5 autoforward: Generating worker_session_f_autoforward_{sm,transport}.h"
-        VERBATIM
-    )
+    sce_mesh_fixture_generations(MESH_SESSION_F_AUTOFWD_HEADERS
+        OUTPUT_DIR "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}"
+        MACHINES parent_session_f_autoforward worker_session_f_autoforward
+        DEPLOY "${MESH_TEST_DIR}/deploy_session_f_autoforward.yaml"
+        LABEL "Mesh §9.6.5 autoforward")
 
     add_executable(mesh_session_f_autoforward_test
         mesh/test_mesh_session_f_autoforward.cpp
-        "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/parent_session_f_autoforward_sm.h"
-        "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/parent_session_f_autoforward_transport.h"
-        "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/worker_session_f_autoforward_sm.h"
-        "${MESH_SESSION_F_AUTOFWD_OUTPUT_DIR}/worker_session_f_autoforward_transport.h"
+        ${MESH_SESSION_F_AUTOFWD_HEADERS}
     )
 
     target_include_directories(mesh_session_f_autoforward_test
@@ -4663,46 +4377,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     set(MESH_SESSION_F_CANCEL_OUTPUT_DIR
         "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_cancel_generated")
 
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/parent_session_f_cancel_sm.h"
-               "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/parent_session_f_cancel_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_cancel.scxml"
-                -l cpp -o "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_cancel.yaml"
-                --write-deps "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/parent_session_f_cancel_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_cancel.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_cancel.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_cancel.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/parent_session_f_cancel_sm.h.d"
-        COMMENT "Mesh §9.6 cancel: Generating parent_session_f_cancel_{sm,transport}.h"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/worker_session_f_cancel_sm.h"
-               "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/worker_session_f_cancel_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_cancel.scxml"
-                -l cpp -o "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_cancel.yaml"
-                --write-deps "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/worker_session_f_cancel_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_cancel.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_cancel.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_cancel.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/worker_session_f_cancel_sm.h.d"
-        COMMENT "Mesh §9.6 cancel: Generating worker_session_f_cancel_{sm,transport}.h"
-        VERBATIM
-    )
+    sce_mesh_fixture_generations(MESH_SESSION_F_CANCEL_HEADERS
+        OUTPUT_DIR "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}"
+        MACHINES parent_session_f_cancel worker_session_f_cancel
+        DEPLOY "${MESH_TEST_DIR}/deploy_session_f_cancel.yaml"
+        LABEL "Mesh §9.6 cancel")
 
     add_executable(mesh_session_f_cancel_test
         mesh/test_mesh_session_f_cancel.cpp
-        "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/parent_session_f_cancel_sm.h"
-        "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/parent_session_f_cancel_transport.h"
-        "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/worker_session_f_cancel_sm.h"
-        "${MESH_SESSION_F_CANCEL_OUTPUT_DIR}/worker_session_f_cancel_transport.h"
+        ${MESH_SESSION_F_CANCEL_HEADERS}
     )
 
     target_include_directories(mesh_session_f_cancel_test
@@ -4737,46 +4420,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     set(MESH_SESSION_F_PEER_DROP_OUTPUT_DIR
         "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_peer_drop_generated")
 
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/parent_session_f_peer_drop_sm.h"
-               "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/parent_session_f_peer_drop_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_peer_drop.scxml"
-                -l cpp -o "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_peer_drop.yaml"
-                --write-deps "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/parent_session_f_peer_drop_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_peer_drop.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_peer_drop.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_peer_drop.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/parent_session_f_peer_drop_sm.h.d"
-        COMMENT "Mesh §16.7 row 5 sub-atomic C: Generating parent_session_f_peer_drop_{sm,transport}.h"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/worker_session_f_peer_drop_sm.h"
-               "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/worker_session_f_peer_drop_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_peer_drop.scxml"
-                -l cpp -o "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_peer_drop.yaml"
-                --write-deps "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/worker_session_f_peer_drop_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_peer_drop.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_peer_drop.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_peer_drop.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/worker_session_f_peer_drop_sm.h.d"
-        COMMENT "Mesh §16.7 row 5 sub-atomic C: Generating worker_session_f_peer_drop_{sm,transport}.h"
-        VERBATIM
-    )
+    sce_mesh_fixture_generations(MESH_SESSION_F_PEER_DROP_HEADERS
+        OUTPUT_DIR "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}"
+        MACHINES parent_session_f_peer_drop worker_session_f_peer_drop
+        DEPLOY "${MESH_TEST_DIR}/deploy_session_f_peer_drop.yaml"
+        LABEL "Mesh §16.7 row 5 sub-atomic C")
 
     add_executable(mesh_session_f_peer_drop_test
         mesh/test_mesh_session_f_peer_drop.cpp
-        "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/parent_session_f_peer_drop_sm.h"
-        "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/parent_session_f_peer_drop_transport.h"
-        "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/worker_session_f_peer_drop_sm.h"
-        "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/worker_session_f_peer_drop_transport.h"
+        ${MESH_SESSION_F_PEER_DROP_HEADERS}
     )
 
     target_include_directories(mesh_session_f_peer_drop_test
@@ -4810,92 +4462,16 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     set(MESH_SESSION_F_DONEDATA_OUTPUT_DIR
         "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_donedata_generated")
 
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h"
-               "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
-                -l cpp -o "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
-                --write-deps "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h.d"
-        COMMENT "Mesh §9.6.2 donedata: Generating parent_session_f_donedata_{sm,transport}.h"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h"
-               "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
-                -l cpp -o "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
-                --write-deps "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h.d"
-        COMMENT "Mesh §9.6.2 donedata: Generating worker_session_f_donedata_param_{sm,transport}.h"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h"
-               "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
-                -l cpp -o "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
-                --write-deps "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h.d"
-        COMMENT "Mesh §9.6.2 donedata: Generating worker_session_f_donedata_content_{sm,transport}.h"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h"
-               "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml"
-                -l cpp -o "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
-                --write-deps "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml"
-                "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h.d"
-        COMMENT "Mesh §9.6.2 donedata: Generating worker_session_f_donedata_nested_{sm,transport}.h"
-        VERBATIM
-    )
+    sce_mesh_fixture_generations(MESH_SESSION_F_DONEDATA_HEADERS
+        OUTPUT_DIR "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}"
+        MACHINES parent_session_f_donedata worker_session_f_donedata_param
+                 worker_session_f_donedata_content worker_session_f_donedata_nested
+        DEPLOY "${MESH_TEST_DIR}/deploy_session_f_donedata.yaml"
+        LABEL "Mesh §9.6.2 donedata")
 
     add_executable(mesh_session_f_donedata_test
         mesh/test_mesh_session_f_donedata.cpp
-        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h"
-        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_transport.h"
-        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h"
-        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_transport.h"
-        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h"
-        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_transport.h"
-        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h"
-        "${MESH_SESSION_F_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_transport.h"
+        ${MESH_SESSION_F_DONEDATA_HEADERS}
     )
 
     target_include_directories(mesh_session_f_donedata_test
@@ -4929,48 +4505,19 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # resolve without pulling a concrete engine at runtime.
     set(MESH_SRCEXPR_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_srcexpr_generated")
 
-    add_custom_command(
-        OUTPUT "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SRCEXPR_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/srcexpr_client.scxml" -l cpp -o "${MESH_SRCEXPR_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_srcexpr.yaml"
-                --write-deps "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/srcexpr_client.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_sm.h.d"
-        COMMENT "Mesh srcexpr: Generating srcexpr_client_sm.h (§9.5 srcexpr runtime target)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SRCEXPR_OUTPUT_DIR}/motor_srcexpr_sm.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_srcexpr.scxml" -l cpp -o "${MESH_SRCEXPR_OUTPUT_DIR}"
-                --write-deps "${MESH_SRCEXPR_OUTPUT_DIR}/motor_srcexpr_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_srcexpr.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SRCEXPR_OUTPUT_DIR}/motor_srcexpr_sm.h.d"
-        COMMENT "Mesh srcexpr: Generating motor_srcexpr_sm.h (§9.5 srcexpr receiver)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/srcexpr_client.scxml" -l cpp -o "${MESH_SRCEXPR_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_srcexpr.yaml"
-                --transport-only
-                --write-deps "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_transport.h.d"
-        DEPENDS "${MESH_TEST_DIR}/srcexpr_client.scxml" "${MESH_TEST_DIR}/deploy_srcexpr.yaml"
-                "${MESH_TEST_DIR}/motor_srcexpr.scxml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_sm.h"
-        DEPFILE "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_transport.h.d"
-        COMMENT "Mesh srcexpr: Generating srcexpr_client_transport.h (§9.5 srcexpr plumbing)"
-        VERBATIM
-    )
+    # The client with the deploy (§9.5 srcexpr runtime target and its
+    # plumbing), the receiver without one.
+    sce_mesh_fixture_generations(_MESH_SRCEXPR_CLIENT_HEADERS
+        OUTPUT_DIR "${MESH_SRCEXPR_OUTPUT_DIR}" MACHINES srcexpr_client
+        DEPLOY "${MESH_TEST_DIR}/deploy_srcexpr.yaml" LABEL "Mesh srcexpr")
+    sce_mesh_fixture_generations(_MESH_SRCEXPR_MOTOR_HEADERS
+        OUTPUT_DIR "${MESH_SRCEXPR_OUTPUT_DIR}" MACHINES motor_srcexpr
+        LABEL "Mesh srcexpr")
 
     add_executable(mesh_srcexpr_compile_test
         mesh/test_mesh_srcexpr_compile.cpp
-        "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_sm.h"
-        "${MESH_SRCEXPR_OUTPUT_DIR}/motor_srcexpr_sm.h"
-        "${MESH_SRCEXPR_OUTPUT_DIR}/srcexpr_client_transport.h"
+        ${_MESH_SRCEXPR_CLIENT_HEADERS}
+        ${_MESH_SRCEXPR_MOTOR_HEADERS}
     )
 
     target_include_directories(mesh_srcexpr_compile_test
@@ -5017,48 +4564,18 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # ensureScriptEngine() pulls in, and no interpreter.
     set(MESH_SRCEXPR_MISS_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_srcexpr_miss_generated")
 
-    add_custom_command(
-        OUTPUT "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SRCEXPR_MISS_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/srcexpr_miss.scxml" -l cpp -o "${MESH_SRCEXPR_MISS_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_srcexpr_miss.yaml"
-                --write-deps "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/srcexpr_miss.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_sm.h.d"
-        COMMENT "Mesh srcexpr miss: Generating srcexpr_miss_sm.h (§9.5 miss runtime SM)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/motor_srcexpr_sm.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_srcexpr.scxml" -l cpp -o "${MESH_SRCEXPR_MISS_OUTPUT_DIR}"
-                --write-deps "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/motor_srcexpr_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_srcexpr.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/motor_srcexpr_sm.h.d"
-        COMMENT "Mesh srcexpr miss: Generating motor_srcexpr_sm.h (phantom binding stub)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/srcexpr_miss.scxml" -l cpp -o "${MESH_SRCEXPR_MISS_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_srcexpr_miss.yaml"
-                --transport-only
-                --write-deps "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_transport.h.d"
-        DEPENDS "${MESH_TEST_DIR}/srcexpr_miss.scxml" "${MESH_TEST_DIR}/deploy_srcexpr_miss.yaml"
-                "${MESH_TEST_DIR}/motor_srcexpr.scxml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_sm.h"
-        DEPFILE "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_transport.h.d"
-        COMMENT "Mesh srcexpr miss: Generating srcexpr_miss_transport.h (§9.5 miss plumbing)"
-        VERBATIM
-    )
+    # The client with the deploy, the phantom binding's stub without one.
+    sce_mesh_fixture_generations(_MESH_SRCEXPR_MISS_CLIENT_HEADERS
+        OUTPUT_DIR "${MESH_SRCEXPR_MISS_OUTPUT_DIR}" MACHINES srcexpr_miss
+        DEPLOY "${MESH_TEST_DIR}/deploy_srcexpr_miss.yaml" LABEL "Mesh srcexpr miss")
+    sce_mesh_fixture_generations(_MESH_SRCEXPR_MISS_MOTOR_HEADERS
+        OUTPUT_DIR "${MESH_SRCEXPR_MISS_OUTPUT_DIR}" MACHINES motor_srcexpr
+        LABEL "Mesh srcexpr miss")
 
     add_executable(mesh_srcexpr_miss_test
         mesh/test_mesh_srcexpr_miss.cpp
-        "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_sm.h"
-        "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/motor_srcexpr_sm.h"
-        "${MESH_SRCEXPR_MISS_OUTPUT_DIR}/srcexpr_miss_transport.h"
+        ${_MESH_SRCEXPR_MISS_CLIENT_HEADERS}
+        ${_MESH_SRCEXPR_MISS_MOTOR_HEADERS}
     )
 
     target_include_directories(mesh_srcexpr_miss_test
@@ -5088,10 +4605,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # the compile-only fixture so the two failure modes stay distinguishable.
     add_executable(mesh_invoke_rpc_runtime_test
         mesh/test_mesh_invoke_rpc_runtime.cpp
-        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
-        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
-        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h"
-        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_transport.h"
+        ${MESH_INVOKE_HEADERS}
     )
 
     target_include_directories(mesh_invoke_rpc_runtime_test
@@ -5118,46 +4632,12 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # and the immediate pair above must keep its immediate reply: one pair
     # writes the peer in `target`, the `_expr` pair reads it from `targetexpr`.
     set(MESH_DELAYED_REPLY_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_delayed_reply_generated")
-    set(MESH_DELAYED_REPLY_DEPLOY "${MESH_TEST_DIR}/deploy_delayed_reply.yaml")
-    set(MESH_DELAYED_REPLY_MACHINES
-        brake_delayed_reply motor_delayed_reply brake_delayed_reply_expr motor_delayed_reply_expr)
-    set(MESH_DELAYED_REPLY_SOURCES "")
-    set(MESH_DELAYED_REPLY_HEADERS "")
-    foreach(_machine ${MESH_DELAYED_REPLY_MACHINES})
-        list(APPEND MESH_DELAYED_REPLY_SOURCES "${MESH_TEST_DIR}/${_machine}.scxml")
-        list(APPEND MESH_DELAYED_REPLY_HEADERS
-             "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_sm.h"
-             "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_transport.h")
-    endforeach()
-
-    foreach(_machine ${MESH_DELAYED_REPLY_MACHINES})
-        add_custom_command(
-            OUTPUT "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DELAYED_REPLY_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_machine}.scxml" -l cpp
-                    -o "${MESH_DELAYED_REPLY_OUTPUT_DIR}"
-                    --deploy "${MESH_DELAYED_REPLY_DEPLOY}"
-                    --write-deps "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/${_machine}.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_sm.h.d"
-            COMMENT "Mesh: Generating ${_machine}_sm.h (§9.5 delayed reply)"
-            VERBATIM
-        )
-        add_custom_command(
-            OUTPUT "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_machine}.scxml" -l cpp
-                    -o "${MESH_DELAYED_REPLY_OUTPUT_DIR}"
-                    --deploy "${MESH_DELAYED_REPLY_DEPLOY}"
-                    --transport-only
-                    --write-deps "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_transport.h.d"
-            DEPENDS ${MESH_DELAYED_REPLY_SOURCES}
-                    "${MESH_DELAYED_REPLY_DEPLOY}" "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_sm.h"
-            DEPFILE "${MESH_DELAYED_REPLY_OUTPUT_DIR}/${_machine}_transport.h.d"
-            COMMENT "Mesh: Generating ${_machine}_transport.h (§9.5 delayed reply)"
-            VERBATIM
-        )
-    endforeach()
+    sce_mesh_fixture_generations(MESH_DELAYED_REPLY_HEADERS
+        OUTPUT_DIR "${MESH_DELAYED_REPLY_OUTPUT_DIR}"
+        MACHINES brake_delayed_reply motor_delayed_reply
+                 brake_delayed_reply_expr motor_delayed_reply_expr
+        DEPLOY "${MESH_TEST_DIR}/deploy_delayed_reply.yaml"
+        LABEL "Mesh §9.5 delayed reply")
 
     add_executable(mesh_delayed_reply_runtime_test
         mesh/test_mesh_delayed_reply_runtime.cpp
@@ -5191,9 +4671,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # correlation axis so the verdict cannot be a fixture artifact.
     add_executable(mesh_cross_target_rpc_reply_test
         mesh/test_mesh_cross_target_rpc_reply.cpp
-        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
-        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
-        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h"
+        ${MESH_INVOKE_HEADERS}
     )
 
     target_include_directories(mesh_cross_target_rpc_reply_test
@@ -5223,54 +4701,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # transport is involved; the peer is only the machine type the router is
     # parameterised on.
     set(MESH_STATIC_INVOKE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_static_invoke_generated")
-    set(MESH_STATIC_INVOKE_DEPLOY "${MESH_TEST_DIR}/deploy_static_invoke.yaml")
-
-    add_custom_command(
-        OUTPUT "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_STATIC_INVOKE_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_static_invoke.scxml" -l cpp
-                -o "${MESH_STATIC_INVOKE_OUTPUT_DIR}"
-                --deploy "${MESH_STATIC_INVOKE_DEPLOY}"
-                --write-deps "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake_static_invoke.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_sm.h.d"
-        COMMENT "Mesh: Generating brake_static_invoke_sm.h (§9.5 static invoke)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_STATIC_INVOKE_OUTPUT_DIR}/motor_static_invoke_sm.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_static_invoke.scxml" -l cpp
-                -o "${MESH_STATIC_INVOKE_OUTPUT_DIR}"
-                --deploy "${MESH_STATIC_INVOKE_DEPLOY}"
-                --write-deps "${MESH_STATIC_INVOKE_OUTPUT_DIR}/motor_static_invoke_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_static_invoke.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_STATIC_INVOKE_OUTPUT_DIR}/motor_static_invoke_sm.h.d"
-        COMMENT "Mesh: Generating motor_static_invoke_sm.h (§9.5 static invoke receiver)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_static_invoke.scxml" -l cpp
-                -o "${MESH_STATIC_INVOKE_OUTPUT_DIR}"
-                --deploy "${MESH_STATIC_INVOKE_DEPLOY}"
-                --transport-only
-                --write-deps "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_transport.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake_static_invoke.scxml" "${MESH_STATIC_INVOKE_DEPLOY}"
-                "${MESH_TEST_DIR}/motor_static_invoke.scxml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_sm.h"
-        DEPFILE "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_transport.h.d"
-        COMMENT "Mesh: Generating brake_static_invoke_transport.h (§9.5 static invoke plumbing)"
-        VERBATIM
-    )
+    sce_mesh_fixture_generations(MESH_STATIC_INVOKE_HEADERS
+        OUTPUT_DIR "${MESH_STATIC_INVOKE_OUTPUT_DIR}"
+        MACHINES brake_static_invoke motor_static_invoke
+        DEPLOY "${MESH_TEST_DIR}/deploy_static_invoke.yaml"
+        LABEL "Mesh §9.5 static invoke")
 
     add_executable(mesh_static_invoke_request_test
         mesh/test_mesh_static_invoke_request.cpp
-        "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_sm.h"
-        "${MESH_STATIC_INVOKE_OUTPUT_DIR}/motor_static_invoke_sm.h"
-        "${MESH_STATIC_INVOKE_OUTPUT_DIR}/brake_static_invoke_transport.h"
+        ${MESH_STATIC_INVOKE_HEADERS}
     )
 
     # The checked arithmetic a static machine's params use (`sce/forge/algorithm.h`)
@@ -5299,54 +4738,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # invocation starts, looked up among the bindings the deployment declares. The
     # test is linked without a script engine for the reason the one above is.
     set(MESH_STATIC_SRCEXPR_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_static_srcexpr_generated")
-    set(MESH_STATIC_SRCEXPR_DEPLOY "${MESH_TEST_DIR}/deploy_static_srcexpr.yaml")
-
-    add_custom_command(
-        OUTPUT "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_static_srcexpr.scxml" -l cpp
-                -o "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}"
-                --deploy "${MESH_STATIC_SRCEXPR_DEPLOY}"
-                --write-deps "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake_static_srcexpr.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_sm.h.d"
-        COMMENT "Mesh: Generating brake_static_srcexpr_sm.h (§9.5 static srcexpr)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/motor_static_srcexpr_sm.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_static_srcexpr.scxml" -l cpp
-                -o "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}"
-                --deploy "${MESH_STATIC_SRCEXPR_DEPLOY}"
-                --write-deps "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/motor_static_srcexpr_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_static_srcexpr.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/motor_static_srcexpr_sm.h.d"
-        COMMENT "Mesh: Generating motor_static_srcexpr_sm.h (§9.5 static srcexpr receiver)"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_static_srcexpr.scxml" -l cpp
-                -o "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}"
-                --deploy "${MESH_STATIC_SRCEXPR_DEPLOY}"
-                --transport-only
-                --write-deps "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_transport.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake_static_srcexpr.scxml" "${MESH_STATIC_SRCEXPR_DEPLOY}"
-                "${MESH_TEST_DIR}/motor_static_srcexpr.scxml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_sm.h"
-        DEPFILE "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_transport.h.d"
-        COMMENT "Mesh: Generating brake_static_srcexpr_transport.h (§9.5 static srcexpr plumbing)"
-        VERBATIM
-    )
+    sce_mesh_fixture_generations(MESH_STATIC_SRCEXPR_HEADERS
+        OUTPUT_DIR "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}"
+        MACHINES brake_static_srcexpr motor_static_srcexpr
+        DEPLOY "${MESH_TEST_DIR}/deploy_static_srcexpr.yaml"
+        LABEL "Mesh §9.5 static srcexpr")
 
     add_executable(mesh_static_invoke_srcexpr_test
         mesh/test_mesh_static_invoke_srcexpr.cpp
-        "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_sm.h"
-        "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/motor_static_srcexpr_sm.h"
-        "${MESH_STATIC_SRCEXPR_OUTPUT_DIR}/brake_static_srcexpr_transport.h"
+        ${MESH_STATIC_SRCEXPR_HEADERS}
     )
 
     target_include_directories(mesh_static_invoke_srcexpr_test
@@ -5374,10 +4774,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # and the main thread's step() pop have a formal happens-before.
     add_executable(mesh_invoke_deadline_test
         mesh/test_mesh_invoke_deadline_expiry.cpp
-        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
-        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
-        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h"
-        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_transport.h"
+        ${MESH_INVOKE_HEADERS}
     )
 
     target_include_directories(mesh_invoke_deadline_test
@@ -5403,10 +4800,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # cancels the correlation. Late reply from motor is silently dropped.
     add_executable(mesh_invoke_cancel_test
         mesh/test_mesh_invoke_cancel_abort.cpp
-        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
-        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
-        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h"
-        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_transport.h"
+        ${MESH_INVOKE_HEADERS}
     )
 
     target_include_directories(mesh_invoke_cancel_test
@@ -5430,49 +4824,19 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # ── shm_transport compile verification ──────────────
     set(MESH_SHM_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_shm_generated")
 
-    # Generate brake_sm.h for shm test (reuse motor_sm.h from above)
-    add_custom_command(
-        OUTPUT "${MESH_SHM_OUTPUT_DIR}/brake_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SHM_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_SHM_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_shm.yaml"
-                --write-deps "${MESH_SHM_OUTPUT_DIR}/brake_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SHM_OUTPUT_DIR}/brake_sm.h.d"
-        COMMENT "Mesh shm: Generating brake_sm.h"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SHM_OUTPUT_DIR}/motor_sm.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml" -l cpp -o "${MESH_SHM_OUTPUT_DIR}"
-                --write-deps "${MESH_SHM_OUTPUT_DIR}/motor_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SHM_OUTPUT_DIR}/motor_sm.h.d"
-        COMMENT "Mesh shm: Generating motor_sm.h"
-        VERBATIM
-    )
-
-    # Generate brake_transport.h with shm transport
-    add_custom_command(
-        OUTPUT "${MESH_SHM_OUTPUT_DIR}/brake_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_SHM_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_shm.yaml"
-                --transport-only
-                --write-deps "${MESH_SHM_OUTPUT_DIR}/brake_transport.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_shm.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                "${MESH_SHM_OUTPUT_DIR}/brake_sm.h"
-        DEPFILE "${MESH_SHM_OUTPUT_DIR}/brake_transport.h.d"
-        COMMENT "Mesh shm: Generating brake_transport.h (shm transport)"
-        VERBATIM
-    )
+    # brake with the shm deploy, motor without one.
+    sce_codegen_generation(_MESH_SHM_BRAKE
+        DOCUMENT "${MESH_TEST_DIR}/brake.scxml" OUTPUT_DIR "${MESH_SHM_OUTPUT_DIR}" LANGUAGE cpp
+        DEPLOY "${MESH_TEST_DIR}/deploy_shm.yaml"
+        COMMENT "Mesh shm: Generating brake (shm transport)")
+    sce_codegen_generation(_MESH_SHM_MOTOR
+        DOCUMENT "${MESH_TEST_DIR}/motor.scxml" OUTPUT_DIR "${MESH_SHM_OUTPUT_DIR}" LANGUAGE cpp
+        COMMENT "Mesh shm: Generating motor")
 
     add_executable(mesh_shm_compile_test
         mesh/test_mesh_shm.cpp
-        "${MESH_SHM_OUTPUT_DIR}/brake_sm.h"
-        "${MESH_SHM_OUTPUT_DIR}/motor_sm.h"
-        "${MESH_SHM_OUTPUT_DIR}/brake_transport.h"
+        ${_MESH_SHM_BRAKE_HEADERS}
+        ${_MESH_SHM_MOTOR_HEADERS}
     )
 
     target_include_directories(mesh_shm_compile_test
@@ -5501,9 +4865,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # callback wire-up; this one fails if the chain regresses.
     add_executable(mesh_local_runtime_test
         mesh/test_mesh_local_runtime.cpp
-        "${MESH_OUTPUT_DIR}/brake_sm.h"
-        "${MESH_OUTPUT_DIR}/motor_sm.h"
-        "${MESH_OUTPUT_DIR}/brake_transport.h"
+        ${MESH_LOCAL_HEADERS}
     )
 
     target_include_directories(mesh_local_runtime_test
@@ -5559,9 +4921,8 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # shm_unlink ownership across process boundary.
     add_executable(mesh_shm_runtime_test
         mesh/test_mesh_shm_runtime.cpp
-        "${MESH_SHM_OUTPUT_DIR}/brake_sm.h"
-        "${MESH_SHM_OUTPUT_DIR}/motor_sm.h"
-        "${MESH_SHM_OUTPUT_DIR}/brake_transport.h"
+        ${_MESH_SHM_BRAKE_HEADERS}
+        ${_MESH_SHM_MOTOR_HEADERS}
     )
 
     target_include_directories(mesh_shm_runtime_test
@@ -5638,46 +4999,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
         @ONLY)
 
-    add_custom_command(
-        OUTPUT "${MESH_TCP_OUTPUT_DIR}/brake_sm.h"
-                "${MESH_TCP_OUTPUT_DIR}/brake_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_TCP_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml"
-                -l cpp -o "${MESH_TCP_OUTPUT_DIR}"
-                --deploy "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
-                --write-deps "${MESH_TCP_OUTPUT_DIR}/brake_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake.scxml"
-                "${MESH_TEST_DIR}/motor.scxml"
-                "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-        DEPFILE "${MESH_TCP_OUTPUT_DIR}/brake_sm.h.d"
-        COMMENT "Mesh custom_tcp: Generating brake_sm.h + brake_transport.h"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_TCP_OUTPUT_DIR}/motor_sm.h"
-                "${MESH_TCP_OUTPUT_DIR}/motor_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_TCP_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml"
-                -l cpp -o "${MESH_TCP_OUTPUT_DIR}"
-                --deploy "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
-                --write-deps "${MESH_TCP_OUTPUT_DIR}/motor_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake.scxml"
-                "${MESH_TEST_DIR}/motor.scxml"
-                "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-        DEPFILE "${MESH_TCP_OUTPUT_DIR}/motor_sm.h.d"
-        COMMENT "Mesh custom_tcp: Generating motor_sm.h + motor_transport.h"
-        VERBATIM
-    )
+    sce_mesh_fixture_generations(MESH_TCP_HEADERS
+        OUTPUT_DIR "${MESH_TCP_OUTPUT_DIR}"
+        MACHINES brake motor
+        DEPLOY "${MESH_TCP_OUTPUT_DIR}/deploy_custom_tcp.yaml"
+        LABEL "Mesh custom_tcp")
 
     add_executable(mesh_custom_tcp_runtime_test
         mesh/test_mesh_custom_tcp_runtime.cpp
-        "${MESH_TCP_OUTPUT_DIR}/brake_sm.h"
-        "${MESH_TCP_OUTPUT_DIR}/brake_transport.h"
-        "${MESH_TCP_OUTPUT_DIR}/motor_sm.h"
-        "${MESH_TCP_OUTPUT_DIR}/motor_transport.h"
+        ${MESH_TCP_HEADERS}
     )
 
     target_include_directories(mesh_custom_tcp_runtime_test
@@ -5731,31 +5061,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         "${MESH_TCP_MULTI_OUTPUT_DIR}/deploy_tcp_multi.yaml"
         @ONLY)
 
-    foreach(tcp_multi_machine brake_tcp_multi motor_tcp_multi)
-        add_custom_command(
-            OUTPUT "${MESH_TCP_MULTI_OUTPUT_DIR}/${tcp_multi_machine}_sm.h"
-                   "${MESH_TCP_MULTI_OUTPUT_DIR}/${tcp_multi_machine}_transport.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_TCP_MULTI_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${tcp_multi_machine}.scxml"
-                    -l cpp -o "${MESH_TCP_MULTI_OUTPUT_DIR}"
-                    --deploy "${MESH_TCP_MULTI_OUTPUT_DIR}/deploy_tcp_multi.yaml"
-                    --write-deps "${MESH_TCP_MULTI_OUTPUT_DIR}/${tcp_multi_machine}_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_tcp_multi.scxml"
-                    "${MESH_TEST_DIR}/motor_tcp_multi.scxml"
-                    "${MESH_TCP_MULTI_OUTPUT_DIR}/deploy_tcp_multi.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-            DEPFILE "${MESH_TCP_MULTI_OUTPUT_DIR}/${tcp_multi_machine}_sm.h.d"
-            COMMENT "Mesh custom_tcp multi-pattern: Generating ${tcp_multi_machine}_sm.h + _transport.h"
-            VERBATIM
-        )
-    endforeach()
+    sce_mesh_fixture_generations(MESH_TCP_MULTI_HEADERS
+        OUTPUT_DIR "${MESH_TCP_MULTI_OUTPUT_DIR}"
+        MACHINES brake_tcp_multi motor_tcp_multi
+        DEPLOY "${MESH_TCP_MULTI_OUTPUT_DIR}/deploy_tcp_multi.yaml"
+        LABEL "Mesh custom_tcp multi-pattern")
 
     add_executable(mesh_tcp_multipattern_runtime_test
         mesh/test_mesh_tcp_multipattern_runtime.cpp
-        "${MESH_TCP_MULTI_OUTPUT_DIR}/brake_tcp_multi_sm.h"
-        "${MESH_TCP_MULTI_OUTPUT_DIR}/brake_tcp_multi_transport.h"
-        "${MESH_TCP_MULTI_OUTPUT_DIR}/motor_tcp_multi_sm.h"
-        "${MESH_TCP_MULTI_OUTPUT_DIR}/motor_tcp_multi_transport.h")
+        ${MESH_TCP_MULTI_HEADERS})
 
     target_include_directories(mesh_tcp_multipattern_runtime_test
         PRIVATE
@@ -5803,31 +5117,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/deploy_tcp_server_deadline.yaml"
         @ONLY)
 
-    foreach(tcp_sd_machine brake_tcp_server_deadline motor_tcp_server_deadline)
-        add_custom_command(
-            OUTPUT "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/${tcp_sd_machine}_sm.h"
-                   "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/${tcp_sd_machine}_transport.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${tcp_sd_machine}.scxml"
-                    -l cpp -o "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}"
-                    --deploy "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/deploy_tcp_server_deadline.yaml"
-                    --write-deps "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/${tcp_sd_machine}_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_tcp_server_deadline.scxml"
-                    "${MESH_TEST_DIR}/motor_tcp_server_deadline.scxml"
-                    "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/deploy_tcp_server_deadline.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-            DEPFILE "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/${tcp_sd_machine}_sm.h.d"
-            COMMENT "Mesh custom_tcp server deadline: Generating ${tcp_sd_machine}_sm.h + _transport.h"
-            VERBATIM
-        )
-    endforeach()
+    sce_mesh_fixture_generations(MESH_TCP_SERVER_DEADLINE_HEADERS
+        OUTPUT_DIR "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}"
+        MACHINES brake_tcp_server_deadline motor_tcp_server_deadline
+        DEPLOY "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/deploy_tcp_server_deadline.yaml"
+        LABEL "Mesh custom_tcp server deadline")
 
     add_executable(mesh_tcp_server_deadline_test
         mesh/test_mesh_tcp_server_deadline.cpp
-        "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/brake_tcp_server_deadline_sm.h"
-        "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/brake_tcp_server_deadline_transport.h"
-        "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/motor_tcp_server_deadline_sm.h"
-        "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/motor_tcp_server_deadline_transport.h")
+        ${MESH_TCP_SERVER_DEADLINE_HEADERS})
 
     target_include_directories(mesh_tcp_server_deadline_test
         PRIVATE
@@ -5874,31 +5172,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/deploy_tcp_machine_lifetime_subscribe.yaml"
         @ONLY)
 
-    foreach(tcp_mls_machine brake_tcp_machine_lifetime_subscribe motor_tcp_machine_lifetime_subscribe)
-        add_custom_command(
-            OUTPUT "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/${tcp_mls_machine}_sm.h"
-                   "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/${tcp_mls_machine}_transport.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${tcp_mls_machine}.scxml"
-                    -l cpp -o "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}"
-                    --deploy "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/deploy_tcp_machine_lifetime_subscribe.yaml"
-                    --write-deps "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/${tcp_mls_machine}_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_tcp_machine_lifetime_subscribe.scxml"
-                    "${MESH_TEST_DIR}/motor_tcp_machine_lifetime_subscribe.scxml"
-                    "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/deploy_tcp_machine_lifetime_subscribe.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-            DEPFILE "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/${tcp_mls_machine}_sm.h.d"
-            COMMENT "Mesh custom_tcp machine-lifetime: Generating ${tcp_mls_machine}_sm.h + _transport.h"
-            VERBATIM
-        )
-    endforeach()
+    sce_mesh_fixture_generations(MESH_TCP_MACHINE_LIFETIME_HEADERS
+        OUTPUT_DIR "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}"
+        MACHINES brake_tcp_machine_lifetime_subscribe motor_tcp_machine_lifetime_subscribe
+        DEPLOY "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/deploy_tcp_machine_lifetime_subscribe.yaml"
+        LABEL "Mesh custom_tcp machine-lifetime")
 
     add_executable(mesh_tcp_machine_lifetime_subscribe_test
         mesh/test_mesh_tcp_machine_lifetime_subscribe.cpp
-        "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/brake_tcp_machine_lifetime_subscribe_sm.h"
-        "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/brake_tcp_machine_lifetime_subscribe_transport.h"
-        "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/motor_tcp_machine_lifetime_subscribe_sm.h"
-        "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/motor_tcp_machine_lifetime_subscribe_transport.h")
+        ${MESH_TCP_MACHINE_LIFETIME_HEADERS})
 
     target_include_directories(mesh_tcp_machine_lifetime_subscribe_test
         PRIVATE
@@ -5943,8 +5225,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # its own.
     add_executable(mesh_cxx17_conformance_test
         mesh/MeshCxx17ConformanceTest.cpp
-        "${MESH_TCP_MULTI_OUTPUT_DIR}/brake_tcp_multi_transport.h"
-        "${MESH_TCP_MULTI_OUTPUT_DIR}/motor_tcp_multi_transport.h")
+        ${MESH_TCP_MULTI_HEADERS})
 
     target_include_directories(mesh_cxx17_conformance_test
         PRIVATE
@@ -6032,44 +5313,17 @@ RESOURCE_LOCK keys off the value so parallel ctest stays safe.")
         "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/deploy_session_f_crossdev_lifecycle.yaml"
         @ONLY)
 
-    add_custom_command(
-        OUTPUT "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/parent_session_f_wired_sm.h"
-                "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/parent_session_f_wired_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_wired.scxml"
-                -l cpp -o "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}"
-                --deploy "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/deploy_session_f_crossdev_lifecycle.yaml"
-                --write-deps "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/parent_session_f_wired_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_wired.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_wired.scxml"
-                "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/deploy_session_f_crossdev_lifecycle.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-        DEPFILE "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/parent_session_f_wired_sm.h.d"
-        COMMENT "Mesh §9.6 crossdev lifecycle: Generating parent_session_f_wired_{sm,transport}.h"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/worker_session_f_wired_sm.h"
-                "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/worker_session_f_wired_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_wired.scxml"
-                -l cpp -o "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}"
-                --deploy "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/deploy_session_f_crossdev_lifecycle.yaml"
-                --write-deps "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/worker_session_f_wired_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/parent_session_f_wired.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_wired.scxml"
-                "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/deploy_session_f_crossdev_lifecycle.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-        DEPFILE "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/worker_session_f_wired_sm.h.d"
-        COMMENT "Mesh §9.6 crossdev lifecycle: Generating worker_session_f_wired_{sm,transport}.h"
-        VERBATIM
-    )
+    foreach(_role parent worker)
+        sce_mesh_fixture_generations(MESH_CROSSDEV_LIFECYCLE_${_role}_HEADERS
+            OUTPUT_DIR "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}"
+            MACHINES ${_role}_session_f_wired
+            DEPLOY "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/deploy_session_f_crossdev_lifecycle.yaml"
+            LABEL "Mesh §9.6 crossdev lifecycle")
+    endforeach()
 
     add_executable(mesh_session_f_crossdev_lifecycle_worker
         mesh/test_mesh_session_f_crossdev_lifecycle_worker.cpp
-        "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/worker_session_f_wired_sm.h"
-        "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/worker_session_f_wired_transport.h")
+        ${MESH_CROSSDEV_LIFECYCLE_worker_HEADERS})
     target_include_directories(mesh_session_f_crossdev_lifecycle_worker
         PRIVATE ${CMAKE_SOURCE_DIR}/sce/include
                 ${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR})
@@ -6080,8 +5334,7 @@ RESOURCE_LOCK keys off the value so parallel ctest stays safe.")
 
     add_executable(mesh_session_f_crossdev_lifecycle_parent
         mesh/test_mesh_session_f_crossdev_lifecycle_parent.cpp
-        "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/parent_session_f_wired_sm.h"
-        "${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR}/parent_session_f_wired_transport.h")
+        ${MESH_CROSSDEV_LIFECYCLE_parent_HEADERS})
     target_include_directories(mesh_session_f_crossdev_lifecycle_parent
         PRIVATE ${CMAKE_SOURCE_DIR}/sce/include
                 ${MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR})
@@ -6127,44 +5380,21 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/deploy_session_f_crossdev_donedata.yaml"
         @ONLY)
 
-    set(MESH_CROSSDEV_DONEDATA_SCXMLS
-        parent_session_f_donedata
-        worker_session_f_donedata_param
-        worker_session_f_donedata_content
-        worker_session_f_donedata_nested)
-
-    set(MESH_CROSSDEV_DONEDATA_SCXML_DEPS
-        "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
-        "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
-        "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
-        "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml")
-
-    foreach(machine ${MESH_CROSSDEV_DONEDATA_SCXMLS})
-        add_custom_command(
-            OUTPUT "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h"
-                    "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_transport.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${machine}.scxml"
-                    -l cpp -o "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}"
-                    --deploy "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/deploy_session_f_crossdev_donedata.yaml"
-                    --write-deps "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h.d"
-            DEPENDS ${MESH_CROSSDEV_DONEDATA_SCXML_DEPS}
-                    "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/deploy_session_f_crossdev_donedata.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-            DEPFILE "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h.d"
-            COMMENT "Mesh §9.6 crossdev donedata: Generating ${machine}_{sm,transport}.h"
-            VERBATIM
-        )
-    endforeach()
+    sce_mesh_fixture_generations(MESH_CROSSDEV_DONEDATA_PARENT_HEADERS
+        OUTPUT_DIR "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}"
+        MACHINES parent_session_f_donedata
+        DEPLOY "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/deploy_session_f_crossdev_donedata.yaml"
+        LABEL "Mesh §9.6 crossdev donedata")
+    sce_mesh_fixture_generations(MESH_CROSSDEV_DONEDATA_WORKER_HEADERS
+        OUTPUT_DIR "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}"
+        MACHINES worker_session_f_donedata_param worker_session_f_donedata_content
+                 worker_session_f_donedata_nested
+        DEPLOY "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/deploy_session_f_crossdev_donedata.yaml"
+        LABEL "Mesh §9.6 crossdev donedata")
 
     add_executable(mesh_session_f_crossdev_donedata_worker
         mesh/test_mesh_session_f_crossdev_donedata_worker.cpp
-        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h"
-        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_transport.h"
-        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h"
-        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_transport.h"
-        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h"
-        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_transport.h")
+        ${MESH_CROSSDEV_DONEDATA_WORKER_HEADERS})
     target_include_directories(mesh_session_f_crossdev_donedata_worker
         PRIVATE ${CMAKE_SOURCE_DIR}/sce/include
                 ${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR})
@@ -6175,8 +5405,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
     add_executable(mesh_session_f_crossdev_donedata_parent
         mesh/test_mesh_session_f_crossdev_donedata_parent.cpp
-        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h"
-        "${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_transport.h")
+        ${MESH_CROSSDEV_DONEDATA_PARENT_HEADERS})
     target_include_directories(mesh_session_f_crossdev_donedata_parent
         PRIVATE ${CMAKE_SOURCE_DIR}/sce/include
                 ${MESH_CROSSDEV_DONEDATA_OUTPUT_DIR})
@@ -6200,53 +5429,18 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     # → raiseExternal → _event.data → receiver cond matches.
     set(MESH_SHM_PAYLOAD_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_shm_payload_generated")
 
-    add_custom_command(
-        OUTPUT "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_payload.scxml"
-                -l cpp -o "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_shm_payload.yaml"
-                --write-deps "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake_payload.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_sm.h.d"
-        COMMENT "Mesh shm payload: Generating brake_payload_sm.h"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/motor_payload_sm.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_payload.scxml"
-                -l cpp -o "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
-                --write-deps "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/motor_payload_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/motor_payload.scxml" "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/motor_payload_sm.h.d"
-        COMMENT "Mesh shm payload: Generating motor_payload_sm.h"
-        VERBATIM
-    )
-
-    add_custom_command(
-        OUTPUT "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_payload.scxml"
-                -l cpp -o "${MESH_SHM_PAYLOAD_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_shm_payload.yaml"
-                --transport-only
-                --write-deps "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_transport.h.d"
-        DEPENDS "${MESH_TEST_DIR}/brake_payload.scxml"
-                "${MESH_TEST_DIR}/motor_payload.scxml"
-                "${MESH_TEST_DIR}/deploy_shm_payload.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_sm.h"
-        DEPFILE "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_transport.h.d"
-        COMMENT "Mesh shm payload: Generating brake_payload_transport.h"
-        VERBATIM
-    )
+    # The sender with the deploy, the receiver without one.
+    sce_mesh_fixture_generations(_MESH_SHM_PAYLOAD_BRAKE_HEADERS
+        OUTPUT_DIR "${MESH_SHM_PAYLOAD_OUTPUT_DIR}" MACHINES brake_payload
+        DEPLOY "${MESH_TEST_DIR}/deploy_shm_payload.yaml" LABEL "Mesh shm payload")
+    sce_mesh_fixture_generations(_MESH_SHM_PAYLOAD_MOTOR_HEADERS
+        OUTPUT_DIR "${MESH_SHM_PAYLOAD_OUTPUT_DIR}" MACHINES motor_payload
+        LABEL "Mesh shm payload")
 
     add_executable(mesh_shm_payload_runtime_test
         mesh/test_mesh_shm_payload_runtime.cpp
-        "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_sm.h"
-        "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/motor_payload_sm.h"
-        "${MESH_SHM_PAYLOAD_OUTPUT_DIR}/brake_payload_transport.h"
+        ${_MESH_SHM_PAYLOAD_BRAKE_HEADERS}
+        ${_MESH_SHM_PAYLOAD_MOTOR_HEADERS}
     )
 
     target_include_directories(mesh_shm_payload_runtime_test
@@ -6284,49 +5478,17 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     if(vsomeip3_FOUND)
         set(MESH_SOMEIP_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_SOMEIP_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip.yaml"
-                    --write-deps "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h.d"
-            COMMENT "Mesh someip: Generating brake_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_OUTPUT_DIR}/motor_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml" -l cpp -o "${MESH_SOMEIP_OUTPUT_DIR}"
-                    --write-deps "${MESH_SOMEIP_OUTPUT_DIR}/motor_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_SOMEIP_OUTPUT_DIR}/motor_sm.h.d"
-            COMMENT "Mesh someip: Generating motor_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_OUTPUT_DIR}/brake_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_SOMEIP_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip.yaml"
-                    --transport-only
-                    --write-deps "${MESH_SOMEIP_OUTPUT_DIR}/brake_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_someip.yaml"
-                    "${MESH_TEST_DIR}/motor.scxml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h"
-            DEPFILE "${MESH_SOMEIP_OUTPUT_DIR}/brake_transport.h.d"
-            COMMENT "Mesh someip: Generating brake_transport.h (someip transport)"
-            VERBATIM
-        )
+        # brake with the someip deploy, motor without one.
+        sce_mesh_fixture_generations(_MESH_SOMEIP_BRAKE_HEADERS
+            OUTPUT_DIR "${MESH_SOMEIP_OUTPUT_DIR}" MACHINES brake
+            DEPLOY "${MESH_TEST_DIR}/deploy_someip.yaml" LABEL "Mesh someip")
+        sce_mesh_fixture_generations(_MESH_SOMEIP_MOTOR_HEADERS
+            OUTPUT_DIR "${MESH_SOMEIP_OUTPUT_DIR}" MACHINES motor LABEL "Mesh someip")
+        set(MESH_SOMEIP_HEADERS ${_MESH_SOMEIP_BRAKE_HEADERS} ${_MESH_SOMEIP_MOTOR_HEADERS})
 
         add_executable(mesh_someip_compile_test
             mesh/test_mesh_someip.cpp
-            "${MESH_SOMEIP_OUTPUT_DIR}/brake_sm.h"
-            "${MESH_SOMEIP_OUTPUT_DIR}/motor_sm.h"
-            "${MESH_SOMEIP_OUTPUT_DIR}/brake_transport.h"
+            ${MESH_SOMEIP_HEADERS}
         )
 
         target_include_directories(mesh_someip_compile_test
@@ -6355,67 +5517,17 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # that per-field_kind template branches compile against vsomeip 3.7.x.
         set(MESH_SOMEIP_MULTI_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_multi_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
-                    --write-deps "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_someip_multi.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h.d"
-            COMMENT "Mesh someip multi: Generating brake_someip_multi_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
-                    --write-deps "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h.d"
-            COMMENT "Mesh someip multi: Generating motor_someip_multi_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
-                    --transport-only
-                    --write-deps "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
-                    "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
-            DEPFILE "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h.d"
-            COMMENT "Mesh someip multi: Generating brake_someip_multi_transport.h (multi-pattern)"
-            VERBATIM
-        )
-
-        # Session E: generate motor (server) transport header
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
-                    --transport-only
-                    --write-deps "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
-                    "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
-            DEPFILE "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h.d"
-            COMMENT "Mesh someip multi: Generating motor_someip_multi_transport.h (server-side Session E)"
-            VERBATIM
-        )
+        # The client (multi-pattern) and the server (Session E), each with
+        # its transport.
+        sce_mesh_fixture_generations(MESH_SOMEIP_MULTI_HEADERS
+            OUTPUT_DIR "${MESH_SOMEIP_MULTI_OUTPUT_DIR}"
+            MACHINES brake_someip_multi motor_someip_multi
+            DEPLOY "${MESH_TEST_DIR}/deploy_someip_multi.yaml"
+            LABEL "Mesh someip multi")
 
         add_executable(mesh_someip_multipattern_compile_test
             mesh/test_mesh_someip_multipattern.cpp
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h"
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h"
+            ${MESH_SOMEIP_MULTI_HEADERS}
         )
 
         target_include_directories(mesh_someip_multipattern_compile_test
@@ -6446,73 +5558,17 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # test only proves the text is there.
         set(MESH_SOMEIP_MLSUB_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_machine_lifetime_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_machine_lifetime_subscribe.scxml"
-                    -l cpp -o "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_machine_lifetime_subscribe.yaml"
-                    --write-deps "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_someip_machine_lifetime_subscribe.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_sm.h.d"
-            COMMENT "Mesh someip machine-lifetime: Generating brake_someip_machine_lifetime_subscribe_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_machine_lifetime_subscribe.scxml"
-                    -l cpp -o "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_machine_lifetime_subscribe.yaml"
-                    --write-deps "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_someip_machine_lifetime_subscribe.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_sm.h.d"
-            COMMENT "Mesh someip machine-lifetime: Generating motor_someip_machine_lifetime_subscribe_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_machine_lifetime_subscribe.scxml"
-                    -l cpp -o "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_machine_lifetime_subscribe.yaml"
-                    --transport-only
-                    --write-deps "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_someip_machine_lifetime_subscribe.scxml"
-                    "${MESH_TEST_DIR}/motor_someip_machine_lifetime_subscribe.scxml"
-                    "${MESH_TEST_DIR}/deploy_someip_machine_lifetime_subscribe.yaml"
-                    "${MESH_TEST_DIR}/vsomeip_someip_machine_lifetime.json"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_sm.h"
-            DEPFILE "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_transport.h.d"
-            COMMENT "Mesh someip machine-lifetime: Generating brake_someip_machine_lifetime_subscribe_transport.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_machine_lifetime_subscribe.scxml"
-                    -l cpp -o "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_machine_lifetime_subscribe.yaml"
-                    --transport-only
-                    --write-deps "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_someip_machine_lifetime_subscribe.scxml"
-                    "${MESH_TEST_DIR}/deploy_someip_machine_lifetime_subscribe.yaml"
-                    "${MESH_TEST_DIR}/vsomeip_someip_machine_lifetime.json"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_sm.h"
-            DEPFILE "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_transport.h.d"
-            COMMENT "Mesh someip machine-lifetime: Generating motor_someip_machine_lifetime_subscribe_transport.h (publisher)"
-            VERBATIM
-        )
+        # The subscriber and the publisher, each with its transport.
+        sce_mesh_fixture_generations(MESH_SOMEIP_MLSUB_HEADERS
+            OUTPUT_DIR "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}"
+            MACHINES brake_someip_machine_lifetime_subscribe
+                     motor_someip_machine_lifetime_subscribe
+            DEPLOY "${MESH_TEST_DIR}/deploy_someip_machine_lifetime_subscribe.yaml"
+            LABEL "Mesh someip machine-lifetime")
 
         add_executable(mesh_someip_machine_lifetime_subscribe_test
             mesh/test_mesh_someip_machine_lifetime_subscribe.cpp
-            "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_sm.h"
-            "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_sm.h"
-            "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_transport.h"
-            "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_transport.h"
+            ${MESH_SOMEIP_MLSUB_HEADERS}
         )
 
         target_include_directories(mesh_someip_machine_lifetime_subscribe_test
@@ -6550,8 +5606,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # wire rather than an inference.
         add_executable(mesh_someip_machine_lifetime_unsubscribe_test
             mesh/test_mesh_someip_machine_lifetime_unsubscribe.cpp
-            "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_sm.h"
-            "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_transport.h"
+            ${MESH_SOMEIP_MLSUB_HEADERS}
         )
 
         target_include_directories(mesh_someip_machine_lifetime_unsubscribe_test
@@ -6584,10 +5639,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # (c) RPC correlation round-trips through CBOR + vsomeip wire.
         add_executable(mesh_someip_runtime_test
             mesh/test_mesh_someip_runtime.cpp
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h"
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h"
+            ${MESH_SOMEIP_MULTI_HEADERS}
         )
 
         target_include_directories(mesh_someip_runtime_test
@@ -6630,46 +5682,15 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_scxml_invoke_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_parent_sm.h"
-                   "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_parent_transport.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_someip_parent.scxml"
-                    -l cpp -o "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_someip.yaml"
-                    --write-deps "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_parent_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/scxml_invoke_someip_parent.scxml"
-                    "${MESH_TEST_DIR}/scxml_invoke_someip_worker.scxml"
-                    "${MESH_TEST_DIR}/deploy_scxml_invoke_someip.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-            DEPFILE "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_parent_sm.h.d"
-            COMMENT "Mesh §9.6 Session 4b: Generating scxml_invoke_someip_parent_{sm,transport}.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_worker_sm.h"
-                   "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_worker_transport.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_someip_worker.scxml"
-                    -l cpp -o "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_someip.yaml"
-                    --write-deps "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_worker_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/scxml_invoke_someip_parent.scxml"
-                    "${MESH_TEST_DIR}/scxml_invoke_someip_worker.scxml"
-                    "${MESH_TEST_DIR}/deploy_scxml_invoke_someip.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-            DEPFILE "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_worker_sm.h.d"
-            COMMENT "Mesh §9.6 Session 4b: Generating scxml_invoke_someip_worker_{sm,transport}.h"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_SOMEIP_SCXML_INVOKE_HEADERS
+            OUTPUT_DIR "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}"
+            MACHINES scxml_invoke_someip_parent scxml_invoke_someip_worker
+            DEPLOY "${MESH_TEST_DIR}/deploy_scxml_invoke_someip.yaml"
+            LABEL "Mesh §9.6 Session 4b")
 
         add_executable(mesh_someip_scxml_invoke_roundtrip_test
             mesh/test_mesh_someip_scxml_invoke_roundtrip.cpp
-            "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_parent_sm.h"
-            "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_parent_transport.h"
-            "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_worker_sm.h"
-            "${MESH_SOMEIP_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_someip_worker_transport.h"
+            ${MESH_SOMEIP_SCXML_INVOKE_HEADERS}
         )
 
         target_include_directories(mesh_someip_scxml_invoke_roundtrip_test
@@ -6740,44 +5761,17 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             set(MESH_SOMEIP_CROSSDEV_OUTPUT_DIR
                 "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_scxml_invoke_crossdev_generated")
 
-            add_custom_command(
-                OUTPUT "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_parent_sm.h"
-                       "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_parent_transport.h"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}"
-                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_someip_crossdev_parent.scxml"
-                        -l cpp -o "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}"
-                        --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_someip_crossdev.yaml"
-                        --write-deps "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_parent_sm.h.d"
-                DEPENDS "${MESH_TEST_DIR}/scxml_invoke_someip_crossdev_parent.scxml"
-                        "${MESH_TEST_DIR}/scxml_invoke_someip_crossdev_worker.scxml"
-                        "${MESH_TEST_DIR}/deploy_scxml_invoke_someip_crossdev.yaml"
-                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                DEPFILE "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_parent_sm.h.d"
-                COMMENT "Mesh §9.6 Session 5b: Generating scxml_invoke_someip_crossdev_parent_{sm,transport}.h"
-                VERBATIM
-            )
-
-            add_custom_command(
-                OUTPUT "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_worker_sm.h"
-                       "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_worker_transport.h"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}"
-                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_someip_crossdev_worker.scxml"
-                        -l cpp -o "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}"
-                        --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_someip_crossdev.yaml"
-                        --write-deps "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_worker_sm.h.d"
-                DEPENDS "${MESH_TEST_DIR}/scxml_invoke_someip_crossdev_parent.scxml"
-                        "${MESH_TEST_DIR}/scxml_invoke_someip_crossdev_worker.scxml"
-                        "${MESH_TEST_DIR}/deploy_scxml_invoke_someip_crossdev.yaml"
-                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                DEPFILE "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_worker_sm.h.d"
-                COMMENT "Mesh §9.6 Session 5b: Generating scxml_invoke_someip_crossdev_worker_{sm,transport}.h"
-                VERBATIM
-            )
+            foreach(_role parent worker)
+                sce_mesh_fixture_generations(MESH_SOMEIP_CROSSDEV_${_role}_HEADERS
+                    OUTPUT_DIR "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}"
+                    MACHINES scxml_invoke_someip_crossdev_${_role}
+                    DEPLOY "${MESH_TEST_DIR}/deploy_scxml_invoke_someip_crossdev.yaml"
+                    LABEL "Mesh §9.6 Session 5b")
+            endforeach()
 
             add_executable(mesh_someip_scxml_invoke_crossdev_parent
                 mesh/test_mesh_someip_scxml_invoke_crossdev_parent.cpp
-                "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_parent_sm.h"
-                "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_parent_transport.h"
+                ${MESH_SOMEIP_CROSSDEV_parent_HEADERS}
             )
             target_include_directories(mesh_someip_scxml_invoke_crossdev_parent
                 PRIVATE
@@ -6798,8 +5792,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
             add_executable(mesh_someip_scxml_invoke_crossdev_worker
                 mesh/test_mesh_someip_scxml_invoke_crossdev_worker.cpp
-                "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_worker_sm.h"
-                "${MESH_SOMEIP_CROSSDEV_OUTPUT_DIR}/scxml_invoke_someip_crossdev_worker_transport.h"
+                ${MESH_SOMEIP_CROSSDEV_worker_HEADERS}
             )
             target_include_directories(mesh_someip_scxml_invoke_crossdev_worker
                 PRIVATE
@@ -6856,44 +5849,21 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             set(MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR
                 "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_session_f_crossdev_donedata_generated")
 
-            set(MESH_SOMEIP_CROSSDEV_DONEDATA_SCXMLS
-                parent_session_f_donedata
-                worker_session_f_donedata_param
-                worker_session_f_donedata_content
-                worker_session_f_donedata_nested)
-
-            set(MESH_SOMEIP_CROSSDEV_DONEDATA_SCXML_DEPS
-                "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml")
-
-            foreach(machine ${MESH_SOMEIP_CROSSDEV_DONEDATA_SCXMLS})
-                add_custom_command(
-                    OUTPUT "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h"
-                            "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_transport.h"
-                    COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}"
-                    COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${machine}.scxml"
-                            -l cpp -o "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}"
-                            --deploy "${MESH_TEST_DIR}/deploy_session_f_donedata_someip_crossdev.yaml"
-                            --write-deps "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h.d"
-                    DEPENDS ${MESH_SOMEIP_CROSSDEV_DONEDATA_SCXML_DEPS}
-                            "${MESH_TEST_DIR}/deploy_session_f_donedata_someip_crossdev.yaml"
-                            "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    DEPFILE "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h.d"
-                    COMMENT "Mesh §9.6 Session 5c SOME/IP donedata: Generating ${machine}_{sm,transport}.h"
-                    VERBATIM
-                )
-            endforeach()
+            sce_mesh_fixture_generations(MESH_SOMEIP_CROSSDEV_DONEDATA_PARENT_HEADERS
+                OUTPUT_DIR "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}"
+                MACHINES parent_session_f_donedata
+                DEPLOY "${MESH_TEST_DIR}/deploy_session_f_donedata_someip_crossdev.yaml"
+                LABEL "Mesh §9.6 Session 5c SOME/IP donedata")
+            sce_mesh_fixture_generations(MESH_SOMEIP_CROSSDEV_DONEDATA_WORKER_HEADERS
+                OUTPUT_DIR "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}"
+                MACHINES worker_session_f_donedata_param worker_session_f_donedata_content
+                         worker_session_f_donedata_nested
+                DEPLOY "${MESH_TEST_DIR}/deploy_session_f_donedata_someip_crossdev.yaml"
+                LABEL "Mesh §9.6 Session 5c SOME/IP donedata")
 
             add_executable(mesh_someip_session_f_crossdev_donedata_worker
                 mesh/test_mesh_someip_session_f_crossdev_donedata_worker.cpp
-                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h"
-                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_transport.h"
-                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h"
-                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_transport.h"
-                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h"
-                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_transport.h")
+                ${MESH_SOMEIP_CROSSDEV_DONEDATA_WORKER_HEADERS})
             target_include_directories(mesh_someip_session_f_crossdev_donedata_worker
                 PRIVATE
                     ${CMAKE_SOURCE_DIR}/sce/include
@@ -6908,8 +5878,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
             add_executable(mesh_someip_session_f_crossdev_donedata_parent
                 mesh/test_mesh_someip_session_f_crossdev_donedata_parent.cpp
-                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h"
-                "${MESH_SOMEIP_CROSSDEV_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_transport.h")
+                ${MESH_SOMEIP_CROSSDEV_DONEDATA_PARENT_HEADERS})
             target_include_directories(mesh_someip_session_f_crossdev_donedata_parent
                 PRIVATE
                     ${CMAKE_SOURCE_DIR}/sce/include
@@ -6964,26 +5933,12 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_region_liveness_generated")
 
         foreach(part brake_left_part brake_right_part)
-            add_custom_command(
-                OUTPUT "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/${part}/brake_region_liveness_sm.h"
-                       "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/${part}/brake_region_liveness_transport.h"
-                COMMAND ${CMAKE_COMMAND} -E make_directory
-                        "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/${part}"
-                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_region_liveness.scxml"
-                        -l cpp -o "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/${part}"
-                        --deploy "${MESH_TEST_DIR}/deploy_someip_region_liveness.yaml"
-                        --partition ${part}
-                        --write-deps
-                        "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/${part}/brake_region_liveness_sm.h.d"
-                DEPENDS "${MESH_TEST_DIR}/brake_region_liveness.scxml"
-                        "${MESH_TEST_DIR}/peer_region_liveness.scxml"
-                        "${MESH_TEST_DIR}/deploy_someip_region_liveness.yaml"
-                        "${MESH_TEST_DIR}/vsomeip_someip_region_liveness_codegen.json"
-                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                DEPFILE "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/${part}/brake_region_liveness_sm.h.d"
-                COMMENT "Mesh §16.4 SOMEIP region liveness: Generating ${part}/brake_region_liveness_{sm,transport}.h"
-                VERBATIM
-            )
+            sce_mesh_fixture_generations(MESH_SOMEIP_REGION_LIVENESS_${part}_HEADERS
+                OUTPUT_DIR "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/${part}"
+                MACHINES brake_region_liveness
+                DEPLOY "${MESH_TEST_DIR}/deploy_someip_region_liveness.yaml"
+                ARGS --partition ${part}
+                LABEL "Mesh §16.4 SOMEIP region liveness (${part})")
         endforeach()
 
         # Per-partition compile-verification binaries. Two binaries are
@@ -6996,8 +5951,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # 0x8181) are byte-pinned at compile time.
         add_executable(mesh_someip_region_liveness_left_compile_test
             mesh/test_mesh_someip_region_liveness_compile.cpp
-            "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_left_part/brake_region_liveness_sm.h"
-            "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_left_part/brake_region_liveness_transport.h")
+            ${MESH_SOMEIP_REGION_LIVENESS_brake_left_part_HEADERS})
         target_include_directories(mesh_someip_region_liveness_left_compile_test
             PRIVATE
                 ${CMAKE_SOURCE_DIR}/sce/include
@@ -7016,8 +5970,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
         add_executable(mesh_someip_region_liveness_right_compile_test
             mesh/test_mesh_someip_region_liveness_compile.cpp
-            "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_right_part/brake_region_liveness_sm.h"
-            "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_right_part/brake_region_liveness_transport.h")
+            ${MESH_SOMEIP_REGION_LIVENESS_brake_right_part_HEADERS})
         target_include_directories(mesh_someip_region_liveness_right_compile_test
             PRIVATE
                 ${CMAKE_SOURCE_DIR}/sce/include
@@ -7049,26 +6002,11 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_machine_liveness_generated")
 
         foreach(machine_id alpha beta)
-            set(machine_name ${machine_id}_machine_liveness)
-            add_custom_command(
-                OUTPUT "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/${machine_id}/${machine_name}_sm.h"
-                       "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/${machine_id}/${machine_name}_transport.h"
-                COMMAND ${CMAKE_COMMAND} -E make_directory
-                        "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/${machine_id}"
-                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${machine_name}.scxml"
-                        -l cpp -o "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/${machine_id}"
-                        --deploy "${MESH_TEST_DIR}/deploy_someip_machine_liveness.yaml"
-                        --write-deps
-                        "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/${machine_id}/${machine_name}_sm.h.d"
-                DEPENDS "${MESH_TEST_DIR}/alpha_machine_liveness.scxml"
-                        "${MESH_TEST_DIR}/beta_machine_liveness.scxml"
-                        "${MESH_TEST_DIR}/deploy_someip_machine_liveness.yaml"
-                        "${MESH_TEST_DIR}/vsomeip_someip_machine_liveness_codegen.json"
-                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                DEPFILE "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/${machine_id}/${machine_name}_sm.h.d"
-                COMMENT "Mesh §16.7 SOMEIP machine liveness: Generating ${machine_id}/${machine_name}_{sm,transport}.h"
-                VERBATIM
-            )
+            sce_mesh_fixture_generations(MESH_SOMEIP_MACHINE_LIVENESS_${machine_id}_HEADERS
+                OUTPUT_DIR "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/${machine_id}"
+                MACHINES ${machine_id}_machine_liveness
+                DEPLOY "${MESH_TEST_DIR}/deploy_someip_machine_liveness.yaml"
+                LABEL "Mesh §16.7 SOMEIP machine liveness (${machine_id})")
         endforeach()
 
         # Per-machine compile-verification binaries. Two binaries are
@@ -7079,8 +6017,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # beta → 0x8281) are byte-pinned at compile time.
         add_executable(mesh_someip_machine_liveness_alpha_compile_test
             mesh/test_mesh_someip_machine_liveness_compile.cpp
-            "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/alpha/alpha_machine_liveness_sm.h"
-            "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/alpha/alpha_machine_liveness_transport.h")
+            ${MESH_SOMEIP_MACHINE_LIVENESS_alpha_HEADERS})
         target_include_directories(mesh_someip_machine_liveness_alpha_compile_test
             PRIVATE
                 ${CMAKE_SOURCE_DIR}/sce/include
@@ -7099,8 +6036,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
         add_executable(mesh_someip_machine_liveness_beta_compile_test
             mesh/test_mesh_someip_machine_liveness_compile.cpp
-            "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/beta/beta_machine_liveness_sm.h"
-            "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/beta/beta_machine_liveness_transport.h")
+            ${MESH_SOMEIP_MACHINE_LIVENESS_beta_HEADERS})
         target_include_directories(mesh_someip_machine_liveness_beta_compile_test
             PRIVATE
                 ${CMAKE_SOURCE_DIR}/sce/include
@@ -7122,8 +6058,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
             add_executable(mesh_someip_region_liveness_parent
                 mesh/test_mesh_someip_region_liveness_parent.cpp
-                "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_left_part/brake_region_liveness_sm.h"
-                "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_left_part/brake_region_liveness_transport.h")
+                ${MESH_SOMEIP_REGION_LIVENESS_brake_left_part_HEADERS})
             target_include_directories(mesh_someip_region_liveness_parent
                 PRIVATE
                     ${CMAKE_SOURCE_DIR}/sce/include
@@ -7138,8 +6073,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
             add_executable(mesh_someip_region_liveness_worker
                 mesh/test_mesh_someip_region_liveness_worker.cpp
-                "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_right_part/brake_region_liveness_sm.h"
-                "${MESH_SOMEIP_REGION_LIVENESS_OUTPUT_DIR}/brake_right_part/brake_region_liveness_transport.h")
+                ${MESH_SOMEIP_REGION_LIVENESS_brake_right_part_HEADERS})
             target_include_directories(mesh_someip_region_liveness_worker
                 PRIVATE
                     ${CMAKE_SOURCE_DIR}/sce/include
@@ -7184,8 +6118,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             # are shared by netns design).
             add_executable(mesh_someip_machine_liveness_parent
                 mesh/test_mesh_someip_machine_liveness_parent.cpp
-                "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/alpha/alpha_machine_liveness_sm.h"
-                "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/alpha/alpha_machine_liveness_transport.h")
+                ${MESH_SOMEIP_MACHINE_LIVENESS_alpha_HEADERS})
             target_include_directories(mesh_someip_machine_liveness_parent
                 PRIVATE
                     ${CMAKE_SOURCE_DIR}/sce/include
@@ -7200,8 +6133,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
             add_executable(mesh_someip_machine_liveness_worker
                 mesh/test_mesh_someip_machine_liveness_worker.cpp
-                "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/beta/beta_machine_liveness_sm.h"
-                "${MESH_SOMEIP_MACHINE_LIVENESS_OUTPUT_DIR}/beta/beta_machine_liveness_transport.h")
+                ${MESH_SOMEIP_MACHINE_LIVENESS_beta_HEADERS})
             target_include_directories(mesh_someip_machine_liveness_worker
                 PRIVATE
                     ${CMAKE_SOURCE_DIR}/sce/include
@@ -7232,10 +6164,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # observing the reply, not system under test).
         add_executable(mesh_someip_rpc_engine_driven_test
             mesh/test_mesh_someip_rpc_engine_driven.cpp
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h"
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h"
+            ${MESH_SOMEIP_MULTI_HEADERS}
         )
 
         target_include_directories(mesh_someip_rpc_engine_driven_test
@@ -7270,44 +6199,15 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_server_deadline_generated")
 
-        foreach(SD_MACHINE brake_someip_server_deadline motor_someip_server_deadline)
-            add_custom_command(
-                OUTPUT "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_sm.h"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}"
-                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${SD_MACHINE}.scxml"
-                        -l cpp -o "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}"
-                        --deploy "${MESH_TEST_DIR}/deploy_someip_server_deadline.yaml"
-                        --write-deps "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_sm.h.d"
-                DEPENDS "${MESH_TEST_DIR}/${SD_MACHINE}.scxml" "${SCE_CODEGEN}"
-                DEPFILE "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_sm.h.d"
-                COMMENT "Mesh someip server deadline: Generating ${SD_MACHINE}_sm.h"
-                VERBATIM
-            )
-
-            add_custom_command(
-                OUTPUT "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_transport.h"
-                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${SD_MACHINE}.scxml"
-                        -l cpp -o "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}"
-                        --deploy "${MESH_TEST_DIR}/deploy_someip_server_deadline.yaml"
-                        --transport-only
-                        --write-deps "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_transport.h.d"
-                DEPENDS "${MESH_TEST_DIR}/${SD_MACHINE}.scxml"
-                        "${MESH_TEST_DIR}/deploy_someip_server_deadline.yaml"
-                        "${MESH_TEST_DIR}/vsomeip_someip_server_deadline.json"
-                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                        "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_sm.h"
-                DEPFILE "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_transport.h.d"
-                COMMENT "Mesh someip server deadline: Generating ${SD_MACHINE}_transport.h"
-                VERBATIM
-            )
-        endforeach()
+        sce_mesh_fixture_generations(MESH_SOMEIP_SERVER_DEADLINE_HEADERS
+            OUTPUT_DIR "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}"
+            MACHINES brake_someip_server_deadline motor_someip_server_deadline
+            DEPLOY "${MESH_TEST_DIR}/deploy_someip_server_deadline.yaml"
+            LABEL "Mesh someip server deadline")
 
         add_executable(mesh_someip_server_deadline_test
             mesh/test_mesh_someip_server_deadline.cpp
-            "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/brake_someip_server_deadline_sm.h"
-            "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/motor_someip_server_deadline_sm.h"
-            "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/brake_someip_server_deadline_transport.h"
-            "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/motor_someip_server_deadline_transport.h"
+            ${MESH_SOMEIP_SERVER_DEADLINE_HEADERS}
         )
 
         target_include_directories(mesh_someip_server_deadline_test
@@ -7345,38 +6245,14 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # generated server never does.
         set(MESH_CROSS_TARGET_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_cross_target_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_CROSS_TARGET_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/cross_target_client.scxml" -l cpp -o "${MESH_CROSS_TARGET_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_cross_target.yaml"
-                    --write-deps "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/cross_target_client.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_sm.h.d"
-            COMMENT "Mesh cross-target (§14.6): Generating cross_target_client_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/cross_target_client.scxml" -l cpp -o "${MESH_CROSS_TARGET_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_cross_target.yaml"
-                    --transport-only
-                    --write-deps "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/cross_target_client.scxml" "${MESH_TEST_DIR}/deploy_cross_target.yaml"
-                    "${MESH_TEST_DIR}/cross_target_alpha.scxml" "${MESH_TEST_DIR}/cross_target_beta.scxml"
-                    "${MESH_TEST_DIR}/vsomeip_cross_target.json"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_sm.h"
-            DEPFILE "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_transport.h.d"
-            COMMENT "Mesh cross-target (§14.6): Generating cross_target_client_transport.h"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_CROSS_TARGET_HEADERS
+            OUTPUT_DIR "${MESH_CROSS_TARGET_OUTPUT_DIR}" MACHINES cross_target_client
+            DEPLOY "${MESH_TEST_DIR}/deploy_cross_target.yaml"
+            LABEL "Mesh cross-target (§14.6)")
 
         add_executable(mesh_someip_cross_target_reply_test
             mesh/test_mesh_someip_cross_target_reply.cpp
-            "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_sm.h"
-            "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_transport.h"
+            ${MESH_CROSS_TARGET_HEADERS}
         )
 
         target_include_directories(mesh_someip_cross_target_reply_test
@@ -7408,38 +6284,14 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # gate keys on the declared set and nothing else.
         set(MESH_XT_DECLARED_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_cross_target_declared_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_XT_DECLARED_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/cross_target_client.scxml" -l cpp -o "${MESH_XT_DECLARED_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_cross_target_declared.yaml"
-                    --write-deps "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/cross_target_client.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_sm.h.d"
-            COMMENT "Mesh cross-target declared (§14.6): Generating cross_target_client_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/cross_target_client.scxml" -l cpp -o "${MESH_XT_DECLARED_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_cross_target_declared.yaml"
-                    --transport-only
-                    --write-deps "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/cross_target_client.scxml" "${MESH_TEST_DIR}/deploy_cross_target_declared.yaml"
-                    "${MESH_TEST_DIR}/cross_target_alpha.scxml" "${MESH_TEST_DIR}/cross_target_beta.scxml"
-                    "${MESH_TEST_DIR}/vsomeip_cross_target.json"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_sm.h"
-            DEPFILE "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_transport.h.d"
-            COMMENT "Mesh cross-target declared (§14.6): Generating cross_target_client_transport.h"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_XT_DECLARED_HEADERS
+            OUTPUT_DIR "${MESH_XT_DECLARED_OUTPUT_DIR}" MACHINES cross_target_client
+            DEPLOY "${MESH_TEST_DIR}/deploy_cross_target_declared.yaml"
+            LABEL "Mesh cross-target declared (§14.6)")
 
         add_executable(mesh_someip_declared_responder_test
             mesh/test_mesh_someip_declared_responder.cpp
-            "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_sm.h"
-            "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_transport.h"
+            ${MESH_XT_DECLARED_HEADERS}
         )
 
         target_include_directories(mesh_someip_declared_responder_test
@@ -7475,66 +6327,15 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # variant that the happy-path fixtures consume.
         set(MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_late_boot_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
-                    --write-deps "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_someip_multi.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_sm.h.d"
-            COMMENT "Mesh someip late-boot (§10.10): Generating brake_someip_multi_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
-                    --write-deps "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_sm.h.d"
-            COMMENT "Mesh someip late-boot (§10.10): Generating motor_someip_multi_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
-                    --transport-only
-                    --write-deps "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
-                    "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_sm.h"
-            DEPFILE "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_transport.h.d"
-            COMMENT "Mesh someip late-boot (§10.10): Generating brake_someip_multi_transport.h with outbound_buffer"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_multi.scxml" -l cpp -o "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
-                    --transport-only
-                    --write-deps "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_someip_multi.scxml" "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
-                    "${MESH_TEST_DIR}/vsomeip_motor_multi.json"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_sm.h"
-            DEPFILE "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_transport.h.d"
-            COMMENT "Mesh someip late-boot (§10.10): Generating motor_someip_multi_transport.h"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_SOMEIP_LATE_BOOT_HEADERS
+            OUTPUT_DIR "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}"
+            MACHINES brake_someip_multi motor_someip_multi
+            DEPLOY "${MESH_TEST_DIR}/deploy_someip_late_boot.yaml"
+            LABEL "Mesh someip late-boot (§10.10)")
 
         add_executable(mesh_someip_late_boot_test
             mesh/test_mesh_someip_late_boot.cpp
-            "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_sm.h"
-            "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_sm.h"
-            "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/brake_someip_multi_transport.h"
-            "${MESH_SOMEIP_LATE_BOOT_OUTPUT_DIR}/motor_someip_multi_transport.h"
+            ${MESH_SOMEIP_LATE_BOOT_HEADERS}
         )
 
         target_include_directories(mesh_someip_late_boot_test
@@ -7564,10 +6365,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # getter/setter) → offer_event + notify path.
         add_executable(mesh_someip_eventgroup_engine_driven_test
             mesh/test_mesh_someip_eventgroup_engine_driven.cpp
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_sm.h"
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_sm.h"
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/brake_someip_multi_transport.h"
-            "${MESH_SOMEIP_MULTI_OUTPUT_DIR}/motor_someip_multi_transport.h"
+            ${MESH_SOMEIP_MULTI_HEADERS}
         )
 
         target_include_directories(mesh_someip_eventgroup_engine_driven_test
@@ -7600,73 +6398,15 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_SOMEIP_UNSUB_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_unsub_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_unsub.scxml"
-                    -l cpp -o "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
-                    --write-deps "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_someip_unsub.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_sm.h.d"
-            COMMENT "Mesh someip unsub: Generating brake_someip_unsub_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_unsub.scxml"
-                    -l cpp -o "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
-                    --write-deps "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_someip_unsub.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_sm.h.d"
-            COMMENT "Mesh someip unsub: Generating motor_someip_unsub_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_unsub.scxml"
-                    -l cpp -o "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
-                    --transport-only
-                    --write-deps "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_someip_unsub.scxml"
-                    "${MESH_TEST_DIR}/motor_someip_unsub.scxml"
-                    "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
-                    "${MESH_TEST_DIR}/vsomeip_motor_unsub.json"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_sm.h"
-            DEPFILE "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_transport.h.d"
-            COMMENT "Mesh someip unsub: Generating brake_someip_unsub_transport.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_unsub.scxml"
-                    -l cpp -o "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
-                    --transport-only
-                    --write-deps "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_someip_unsub.scxml"
-                    "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
-                    "${MESH_TEST_DIR}/vsomeip_motor_unsub.json"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_sm.h"
-            DEPFILE "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_transport.h.d"
-            COMMENT "Mesh someip unsub: Generating motor_someip_unsub_transport.h (server)"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_SOMEIP_UNSUB_HEADERS
+            OUTPUT_DIR "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}"
+            MACHINES brake_someip_unsub motor_someip_unsub
+            DEPLOY "${MESH_TEST_DIR}/deploy_someip_unsub.yaml"
+            LABEL "Mesh someip unsub")
 
         add_executable(mesh_someip_unsubscribe_test
             mesh/test_mesh_someip_unsubscribe.cpp
-            "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_sm.h"
-            "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_sm.h"
-            "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/brake_someip_unsub_transport.h"
-            "${MESH_SOMEIP_UNSUB_OUTPUT_DIR}/motor_someip_unsub_transport.h"
+            ${MESH_SOMEIP_UNSUB_HEADERS}
         )
 
         target_include_directories(mesh_someip_unsubscribe_test
@@ -7705,49 +6445,17 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     if(zenohc_FOUND AND zenohcxx_FOUND)
         set(MESH_ZENOH_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_ZENOH_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh.yaml"
-                    --write-deps "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h.d"
-            COMMENT "Mesh zenoh: Generating brake_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_OUTPUT_DIR}/motor_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor.scxml" -l cpp -o "${MESH_ZENOH_OUTPUT_DIR}"
-                    --write-deps "${MESH_ZENOH_OUTPUT_DIR}/motor_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ZENOH_OUTPUT_DIR}/motor_sm.h.d"
-            COMMENT "Mesh zenoh: Generating motor_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_OUTPUT_DIR}/brake_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_ZENOH_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh.yaml"
-                    --transport-only
-                    --write-deps "${MESH_ZENOH_OUTPUT_DIR}/brake_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_zenoh.yaml"
-                    "${MESH_TEST_DIR}/motor.scxml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
-            DEPFILE "${MESH_ZENOH_OUTPUT_DIR}/brake_transport.h.d"
-            COMMENT "Mesh zenoh: Generating brake_transport.h (zenoh transport)"
-            VERBATIM
-        )
+        # brake with the zenoh deploy, motor without one.
+        sce_mesh_fixture_generations(_MESH_ZENOH_BRAKE_HEADERS
+            OUTPUT_DIR "${MESH_ZENOH_OUTPUT_DIR}" MACHINES brake
+            DEPLOY "${MESH_TEST_DIR}/deploy_zenoh.yaml" LABEL "Mesh zenoh")
+        sce_mesh_fixture_generations(_MESH_ZENOH_MOTOR_HEADERS
+            OUTPUT_DIR "${MESH_ZENOH_OUTPUT_DIR}" MACHINES motor LABEL "Mesh zenoh")
+        set(MESH_ZENOH_HEADERS ${_MESH_ZENOH_BRAKE_HEADERS} ${_MESH_ZENOH_MOTOR_HEADERS})
 
         add_executable(mesh_zenoh_compile_test
             mesh/test_mesh_zenoh.cpp
-            "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
-            "${MESH_ZENOH_OUTPUT_DIR}/motor_sm.h"
-            "${MESH_ZENOH_OUTPUT_DIR}/brake_transport.h"
+            ${MESH_ZENOH_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_compile_test
@@ -7777,8 +6485,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # because both fixtures listen on tcp/127.0.0.1:17447.
         add_executable(mesh_zenoh_runtime_test
             mesh/test_mesh_zenoh_runtime.cpp
-            "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
-            "${MESH_ZENOH_OUTPUT_DIR}/brake_transport.h"
+            ${_MESH_ZENOH_BRAKE_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_runtime_test
@@ -7820,46 +6527,15 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_scxml_invoke_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_parent_sm.h"
-                   "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_parent_transport.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_zenoh_parent.scxml"
-                    -l cpp -o "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh.yaml"
-                    --write-deps "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_parent_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/scxml_invoke_zenoh_parent.scxml"
-                    "${MESH_TEST_DIR}/scxml_invoke_zenoh_worker.scxml"
-                    "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-            DEPFILE "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_parent_sm.h.d"
-            COMMENT "Mesh §9.6 Session 5: Generating scxml_invoke_zenoh_parent_{sm,transport}.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_worker_sm.h"
-                   "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_worker_transport.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_zenoh_worker.scxml"
-                    -l cpp -o "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh.yaml"
-                    --write-deps "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_worker_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/scxml_invoke_zenoh_parent.scxml"
-                    "${MESH_TEST_DIR}/scxml_invoke_zenoh_worker.scxml"
-                    "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-            DEPFILE "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_worker_sm.h.d"
-            COMMENT "Mesh §9.6 Session 5: Generating scxml_invoke_zenoh_worker_{sm,transport}.h"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_ZENOH_SCXML_INVOKE_HEADERS
+            OUTPUT_DIR "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}"
+            MACHINES scxml_invoke_zenoh_parent scxml_invoke_zenoh_worker
+            DEPLOY "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh.yaml"
+            LABEL "Mesh §9.6 Session 5")
 
         add_executable(mesh_zenoh_scxml_invoke_roundtrip_test
             mesh/test_mesh_zenoh_scxml_invoke_roundtrip.cpp
-            "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_parent_sm.h"
-            "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_parent_transport.h"
-            "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_worker_sm.h"
-            "${MESH_ZENOH_SCXML_INVOKE_OUTPUT_DIR}/scxml_invoke_zenoh_worker_transport.h"
+            ${MESH_ZENOH_SCXML_INVOKE_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_scxml_invoke_roundtrip_test
@@ -7912,44 +6588,17 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             set(MESH_ZENOH_CROSSDEV_OUTPUT_DIR
                 "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_scxml_invoke_crossdev_generated")
 
-            add_custom_command(
-                OUTPUT "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_parent_sm.h"
-                       "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_parent_transport.h"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}"
-                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_zenoh_crossdev_parent.scxml"
-                        -l cpp -o "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}"
-                        --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh_crossdev.yaml"
-                        --write-deps "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_parent_sm.h.d"
-                DEPENDS "${MESH_TEST_DIR}/scxml_invoke_zenoh_crossdev_parent.scxml"
-                        "${MESH_TEST_DIR}/scxml_invoke_zenoh_crossdev_worker.scxml"
-                        "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh_crossdev.yaml"
-                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                DEPFILE "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_parent_sm.h.d"
-                COMMENT "Mesh §9.6 Session 5b: Generating scxml_invoke_zenoh_crossdev_parent_{sm,transport}.h"
-                VERBATIM
-            )
-
-            add_custom_command(
-                OUTPUT "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_worker_sm.h"
-                       "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_worker_transport.h"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}"
-                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/scxml_invoke_zenoh_crossdev_worker.scxml"
-                        -l cpp -o "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}"
-                        --deploy "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh_crossdev.yaml"
-                        --write-deps "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_worker_sm.h.d"
-                DEPENDS "${MESH_TEST_DIR}/scxml_invoke_zenoh_crossdev_parent.scxml"
-                        "${MESH_TEST_DIR}/scxml_invoke_zenoh_crossdev_worker.scxml"
-                        "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh_crossdev.yaml"
-                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                DEPFILE "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_worker_sm.h.d"
-                COMMENT "Mesh §9.6 Session 5b: Generating scxml_invoke_zenoh_crossdev_worker_{sm,transport}.h"
-                VERBATIM
-            )
+            foreach(_role parent worker)
+                sce_mesh_fixture_generations(MESH_ZENOH_CROSSDEV_${_role}_HEADERS
+                    OUTPUT_DIR "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}"
+                    MACHINES scxml_invoke_zenoh_crossdev_${_role}
+                    DEPLOY "${MESH_TEST_DIR}/deploy_scxml_invoke_zenoh_crossdev.yaml"
+                    LABEL "Mesh §9.6 Session 5b")
+            endforeach()
 
             add_executable(mesh_zenoh_scxml_invoke_crossdev_parent
                 mesh/test_mesh_zenoh_scxml_invoke_crossdev_parent.cpp
-                "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_parent_sm.h"
-                "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_parent_transport.h"
+                ${MESH_ZENOH_CROSSDEV_parent_HEADERS}
             )
             target_include_directories(mesh_zenoh_scxml_invoke_crossdev_parent
                 PRIVATE
@@ -7964,8 +6613,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
             add_executable(mesh_zenoh_scxml_invoke_crossdev_worker
                 mesh/test_mesh_zenoh_scxml_invoke_crossdev_worker.cpp
-                "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_worker_sm.h"
-                "${MESH_ZENOH_CROSSDEV_OUTPUT_DIR}/scxml_invoke_zenoh_crossdev_worker_transport.h"
+                ${MESH_ZENOH_CROSSDEV_worker_HEADERS}
             )
             target_include_directories(mesh_zenoh_scxml_invoke_crossdev_worker
                 PRIVATE
@@ -8004,44 +6652,21 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             set(MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR
                 "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_session_f_crossdev_donedata_generated")
 
-            set(MESH_ZENOH_CROSSDEV_DONEDATA_SCXMLS
-                parent_session_f_donedata
-                worker_session_f_donedata_param
-                worker_session_f_donedata_content
-                worker_session_f_donedata_nested)
-
-            set(MESH_ZENOH_CROSSDEV_DONEDATA_SCXML_DEPS
-                "${MESH_TEST_DIR}/parent_session_f_donedata.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_param.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_content.scxml"
-                "${MESH_TEST_DIR}/worker_session_f_donedata_nested.scxml")
-
-            foreach(machine ${MESH_ZENOH_CROSSDEV_DONEDATA_SCXMLS})
-                add_custom_command(
-                    OUTPUT "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h"
-                            "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_transport.h"
-                    COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}"
-                    COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${machine}.scxml"
-                            -l cpp -o "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}"
-                            --deploy "${MESH_TEST_DIR}/deploy_session_f_donedata_zenoh_crossdev.yaml"
-                            --write-deps "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h.d"
-                    DEPENDS ${MESH_ZENOH_CROSSDEV_DONEDATA_SCXML_DEPS}
-                            "${MESH_TEST_DIR}/deploy_session_f_donedata_zenoh_crossdev.yaml"
-                            "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    DEPFILE "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/${machine}_sm.h.d"
-                    COMMENT "Mesh §9.6 Session 5c Zenoh donedata: Generating ${machine}_{sm,transport}.h"
-                    VERBATIM
-                )
-            endforeach()
+            sce_mesh_fixture_generations(MESH_ZENOH_CROSSDEV_DONEDATA_PARENT_HEADERS
+                OUTPUT_DIR "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}"
+                MACHINES parent_session_f_donedata
+                DEPLOY "${MESH_TEST_DIR}/deploy_session_f_donedata_zenoh_crossdev.yaml"
+                LABEL "Mesh §9.6 Session 5c Zenoh donedata")
+            sce_mesh_fixture_generations(MESH_ZENOH_CROSSDEV_DONEDATA_WORKER_HEADERS
+                OUTPUT_DIR "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}"
+                MACHINES worker_session_f_donedata_param worker_session_f_donedata_content
+                         worker_session_f_donedata_nested
+                DEPLOY "${MESH_TEST_DIR}/deploy_session_f_donedata_zenoh_crossdev.yaml"
+                LABEL "Mesh §9.6 Session 5c Zenoh donedata")
 
             add_executable(mesh_zenoh_session_f_crossdev_donedata_worker
                 mesh/test_mesh_zenoh_session_f_crossdev_donedata_worker.cpp
-                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_sm.h"
-                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_param_transport.h"
-                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_sm.h"
-                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_content_transport.h"
-                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_sm.h"
-                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/worker_session_f_donedata_nested_transport.h")
+                ${MESH_ZENOH_CROSSDEV_DONEDATA_WORKER_HEADERS})
             target_include_directories(mesh_zenoh_session_f_crossdev_donedata_worker
                 PRIVATE ${CMAKE_SOURCE_DIR}/sce/include
                         ${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR})
@@ -8052,8 +6677,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
             add_executable(mesh_zenoh_session_f_crossdev_donedata_parent
                 mesh/test_mesh_zenoh_session_f_crossdev_donedata_parent.cpp
-                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_sm.h"
-                "${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR}/parent_session_f_donedata_transport.h")
+                ${MESH_ZENOH_CROSSDEV_DONEDATA_PARENT_HEADERS})
             target_include_directories(mesh_zenoh_session_f_crossdev_donedata_parent
                 PRIVATE ${CMAKE_SOURCE_DIR}/sce/include
                         ${MESH_ZENOH_CROSSDEV_DONEDATA_OUTPUT_DIR})
@@ -8082,40 +6706,14 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_ZENOH_BASE_SUB_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_base_subscribe_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_base_subscribe.scxml"
-                    -l cpp -o "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_base_subscribe.yaml"
-                    --write-deps "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_base_subscribe.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_sm.h.d"
-            COMMENT "Mesh zenoh base subscribe: Generating brake_zenoh_base_subscribe_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_base_subscribe.scxml"
-                    -l cpp -o "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_base_subscribe.yaml"
-                    --transport-only
-                    --write-deps "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_base_subscribe.scxml"
-                    "${MESH_TEST_DIR}/motor_zenoh_base_subscribe.scxml"
-                    "${MESH_TEST_DIR}/deploy_zenoh_base_subscribe.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_sm.h"
-            DEPFILE "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_transport.h.d"
-            COMMENT "Mesh zenoh base subscribe: Generating brake_zenoh_base_subscribe_transport.h"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_ZENOH_BASE_SUB_HEADERS
+            OUTPUT_DIR "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}" MACHINES brake_zenoh_base_subscribe
+            DEPLOY "${MESH_TEST_DIR}/deploy_zenoh_base_subscribe.yaml"
+            LABEL "Mesh zenoh base subscribe")
 
         add_executable(mesh_zenoh_base_subscribe_test
             mesh/test_mesh_zenoh_base_subscribe.cpp
-            "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_sm.h"
-            "${MESH_ZENOH_BASE_SUB_OUTPUT_DIR}/brake_zenoh_base_subscribe_transport.h"
+            ${MESH_ZENOH_BASE_SUB_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_base_subscribe_test
@@ -8158,40 +6756,15 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_machine_lifetime_subscribe_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_machine_lifetime_subscribe.scxml"
-                    -l cpp -o "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_machine_lifetime_subscribe.yaml"
-                    --write-deps "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_machine_lifetime_subscribe.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_sm.h.d"
-            COMMENT "Mesh zenoh machine-lifetime subscribe: Generating brake_zenoh_machine_lifetime_subscribe_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_machine_lifetime_subscribe.scxml"
-                    -l cpp -o "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_machine_lifetime_subscribe.yaml"
-                    --transport-only
-                    --write-deps "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_machine_lifetime_subscribe.scxml"
-                    "${MESH_TEST_DIR}/motor_zenoh_base_subscribe.scxml"
-                    "${MESH_TEST_DIR}/deploy_zenoh_machine_lifetime_subscribe.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_sm.h"
-            DEPFILE "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_transport.h.d"
-            COMMENT "Mesh zenoh machine-lifetime subscribe: Generating brake_zenoh_machine_lifetime_subscribe_transport.h"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_ZENOH_MACHINE_LIFETIME_HEADERS
+            OUTPUT_DIR "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}"
+            MACHINES brake_zenoh_machine_lifetime_subscribe
+            DEPLOY "${MESH_TEST_DIR}/deploy_zenoh_machine_lifetime_subscribe.yaml"
+            LABEL "Mesh zenoh machine-lifetime subscribe")
 
         add_executable(mesh_zenoh_machine_lifetime_subscribe_test
             mesh/test_mesh_zenoh_machine_lifetime_subscribe.cpp
-            "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_sm.h"
-            "${MESH_ZENOH_MACHINE_LIFETIME_OUTPUT_DIR}/brake_zenoh_machine_lifetime_subscribe_transport.h"
+            ${MESH_ZENOH_MACHINE_LIFETIME_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_machine_lifetime_subscribe_test
@@ -8235,40 +6808,15 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_subscription_clobber_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_subscription_clobber.scxml"
-                    -l cpp -o "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_subscription_clobber.yaml"
-                    --write-deps "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_subscription_clobber.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_sm.h.d"
-            COMMENT "Mesh zenoh subscription clobber: Generating brake_zenoh_subscription_clobber_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_subscription_clobber.scxml"
-                    -l cpp -o "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_subscription_clobber.yaml"
-                    --transport-only
-                    --write-deps "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_subscription_clobber.scxml"
-                    "${MESH_TEST_DIR}/motor_zenoh_subscription_clobber.scxml"
-                    "${MESH_TEST_DIR}/deploy_zenoh_subscription_clobber.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_sm.h"
-            DEPFILE "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_transport.h.d"
-            COMMENT "Mesh zenoh subscription clobber: Generating brake_zenoh_subscription_clobber_transport.h"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_ZENOH_SUB_CLOBBER_HEADERS
+            OUTPUT_DIR "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}"
+            MACHINES brake_zenoh_subscription_clobber
+            DEPLOY "${MESH_TEST_DIR}/deploy_zenoh_subscription_clobber.yaml"
+            LABEL "Mesh zenoh subscription clobber")
 
         add_executable(mesh_zenoh_subscription_clobber_test
             mesh/test_mesh_zenoh_subscription_clobber.cpp
-            "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_sm.h"
-            "${MESH_ZENOH_SUB_CLOBBER_OUTPUT_DIR}/brake_zenoh_subscription_clobber_transport.h"
+            ${MESH_ZENOH_SUB_CLOBBER_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_subscription_clobber_test
@@ -8312,40 +6860,15 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_publisher_first_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_publisher_first.scxml"
-                    -l cpp -o "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_publisher_first.yaml"
-                    --write-deps "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_publisher_first.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_sm.h.d"
-            COMMENT "Mesh zenoh publisher-first (§10.10): Generating brake_zenoh_publisher_first_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_publisher_first.scxml"
-                    -l cpp -o "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_publisher_first.yaml"
-                    --transport-only
-                    --write-deps "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_publisher_first.scxml"
-                    "${MESH_TEST_DIR}/motor_zenoh_publisher_first.scxml"
-                    "${MESH_TEST_DIR}/deploy_zenoh_publisher_first.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_sm.h"
-            DEPFILE "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_transport.h.d"
-            COMMENT "Mesh zenoh publisher-first (§10.10): Generating brake_zenoh_publisher_first_transport.h with outbound_buffer"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_ZENOH_PUBLISHER_FIRST_HEADERS
+            OUTPUT_DIR "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}"
+            MACHINES brake_zenoh_publisher_first
+            DEPLOY "${MESH_TEST_DIR}/deploy_zenoh_publisher_first.yaml"
+            LABEL "Mesh zenoh publisher-first (§10.10)")
 
         add_executable(mesh_zenoh_publisher_first_test
             mesh/test_mesh_zenoh_publisher_first.cpp
-            "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_sm.h"
-            "${MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR}/brake_zenoh_publisher_first_transport.h"
+            ${MESH_ZENOH_PUBLISHER_FIRST_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_publisher_first_test
@@ -8380,40 +6903,14 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_ZENOH_LIVELINESS_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_liveliness_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_liveliness.scxml"
-                    -l cpp -o "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_liveliness.yaml"
-                    --write-deps "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_liveliness.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_sm.h.d"
-            COMMENT "Mesh zenoh liveliness: Generating brake_zenoh_liveliness_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_liveliness.scxml"
-                    -l cpp -o "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_liveliness.yaml"
-                    --transport-only
-                    --write-deps "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_liveliness.scxml"
-                    "${MESH_TEST_DIR}/motor_zenoh_liveliness.scxml"
-                    "${MESH_TEST_DIR}/deploy_zenoh_liveliness.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_sm.h"
-            DEPFILE "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_transport.h.d"
-            COMMENT "Mesh zenoh liveliness: Generating brake_zenoh_liveliness_transport.h"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_ZENOH_LIVELINESS_HEADERS
+            OUTPUT_DIR "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}" MACHINES brake_zenoh_liveliness
+            DEPLOY "${MESH_TEST_DIR}/deploy_zenoh_liveliness.yaml"
+            LABEL "Mesh zenoh liveliness")
 
         add_executable(mesh_zenoh_liveliness_test
             mesh/test_mesh_zenoh_liveliness.cpp
-            "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_sm.h"
-            "${MESH_ZENOH_LIVELINESS_OUTPUT_DIR}/brake_zenoh_liveliness_transport.h"
+            ${MESH_ZENOH_LIVELINESS_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_liveliness_test
@@ -8469,44 +6966,15 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_region_liveness_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_region_liveness.scxml"
-                    -l cpp -o "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_region_liveness.yaml"
-                    --partition brake_left_part
-                    --write-deps "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_region_liveness.scxml"
-                    "${MESH_TEST_DIR}/deploy_zenoh_region_liveness.yaml"
-                    "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_sm.h.d"
-            COMMENT "Mesh zenoh region liveness: Generating brake_region_liveness_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_region_liveness.scxml"
-                    -l cpp -o "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_region_liveness.yaml"
-                    --transport-only
-                    --partition brake_left_part
-                    --write-deps "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_region_liveness.scxml"
-                    "${MESH_TEST_DIR}/peer_region_liveness.scxml"
-                    "${MESH_TEST_DIR}/deploy_zenoh_region_liveness.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_sm.h"
-            DEPFILE "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_transport.h.d"
-            COMMENT "Mesh zenoh region liveness: Generating brake_region_liveness_transport.h"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_ZENOH_REGION_LIVENESS_HEADERS
+            OUTPUT_DIR "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}" MACHINES brake_region_liveness
+            DEPLOY "${MESH_TEST_DIR}/deploy_zenoh_region_liveness.yaml"
+            ARGS --partition brake_left_part
+            LABEL "Mesh zenoh region liveness")
 
         add_executable(mesh_zenoh_region_liveness_test
             mesh/test_mesh_region_liveness_zenoh.cpp
-            "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_sm.h"
-            "${MESH_ZENOH_REGION_LIVENESS_OUTPUT_DIR}/brake_region_liveness_transport.h"
+            ${MESH_ZENOH_REGION_LIVENESS_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_region_liveness_test
@@ -8550,40 +7018,14 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_ZENOH_ON_DROP_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_on_drop_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_on_drop.scxml"
-                    -l cpp -o "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_on_drop.yaml"
-                    --write-deps "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_on_drop.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_sm.h.d"
-            COMMENT "Mesh zenoh on_drop: Generating brake_zenoh_on_drop_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_on_drop.scxml"
-                    -l cpp -o "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_on_drop.yaml"
-                    --transport-only
-                    --write-deps "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_on_drop.scxml"
-                    "${MESH_TEST_DIR}/motor_zenoh_on_drop.scxml"
-                    "${MESH_TEST_DIR}/deploy_zenoh_on_drop.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_sm.h"
-            DEPFILE "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_transport.h.d"
-            COMMENT "Mesh zenoh on_drop: Generating brake_zenoh_on_drop_transport.h"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_ZENOH_ON_DROP_HEADERS
+            OUTPUT_DIR "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}" MACHINES brake_zenoh_on_drop
+            DEPLOY "${MESH_TEST_DIR}/deploy_zenoh_on_drop.yaml"
+            LABEL "Mesh zenoh on_drop")
 
         add_executable(mesh_zenoh_on_drop_test
             mesh/test_mesh_zenoh_on_drop.cpp
-            "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_sm.h"
-            "${MESH_ZENOH_ON_DROP_OUTPUT_DIR}/brake_zenoh_on_drop_transport.h"
+            ${MESH_ZENOH_ON_DROP_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_on_drop_test
@@ -8626,39 +7068,15 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_server_timeout_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_zenoh_server_timeout.scxml"
-                    -l cpp -o "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_server_timeout.yaml"
-                    --write-deps "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_zenoh_server_timeout.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_sm.h.d"
-            COMMENT "Mesh zenoh server_timeout: Generating motor_zenoh_server_timeout_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_zenoh_server_timeout.scxml"
-                    -l cpp -o "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_server_timeout.yaml"
-                    --transport-only
-                    --write-deps "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_zenoh_server_timeout.scxml"
-                    "${MESH_TEST_DIR}/deploy_zenoh_server_timeout.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_sm.h"
-            DEPFILE "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_transport.h.d"
-            COMMENT "Mesh zenoh server_timeout: Generating motor_zenoh_server_timeout_transport.h"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_ZENOH_SERVER_TIMEOUT_HEADERS
+            OUTPUT_DIR "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}"
+            MACHINES motor_zenoh_server_timeout
+            DEPLOY "${MESH_TEST_DIR}/deploy_zenoh_server_timeout.yaml"
+            LABEL "Mesh zenoh server_timeout")
 
         add_executable(mesh_zenoh_server_timeout_test
             mesh/test_mesh_zenoh_server_timeout.cpp
-            "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_sm.h"
-            "${MESH_ZENOH_SERVER_TIMEOUT_OUTPUT_DIR}/motor_zenoh_server_timeout_transport.h"
+            ${MESH_ZENOH_SERVER_TIMEOUT_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_server_timeout_test
@@ -8697,8 +7115,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # both fast and lock-free.
         add_executable(mesh_dedup_injection_test
             mesh/test_mesh_dedup_injection.cpp
-            "${MESH_ZENOH_OUTPUT_DIR}/brake_sm.h"
-            "${MESH_ZENOH_OUTPUT_DIR}/brake_transport.h"
+            ${_MESH_ZENOH_BRAKE_HEADERS}
         )
 
         target_include_directories(mesh_dedup_injection_test
@@ -8734,37 +7151,14 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # tickOrdering, and RpcReply bypass.
         set(MESH_ORDERED_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_ordered_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ORDERED_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_ORDERED_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_ordered.yaml"
-                    --write-deps "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h.d"
-            COMMENT "Mesh ordered: Generating brake_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ORDERED_OUTPUT_DIR}/brake_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake.scxml" -l cpp -o "${MESH_ORDERED_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_ordered.yaml"
-                    --transport-only
-                    --write-deps "${MESH_ORDERED_OUTPUT_DIR}/brake_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake.scxml" "${MESH_TEST_DIR}/deploy_ordered.yaml"
-                    "${MESH_TEST_DIR}/motor.scxml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h"
-            DEPFILE "${MESH_ORDERED_OUTPUT_DIR}/brake_transport.h.d"
-            COMMENT "Mesh ordered: Generating brake_transport.h (zenoh + ordering:required)"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_ORDERED_HEADERS
+            OUTPUT_DIR "${MESH_ORDERED_OUTPUT_DIR}" MACHINES brake
+            DEPLOY "${MESH_TEST_DIR}/deploy_ordered.yaml"
+            LABEL "Mesh ordered (zenoh + ordering:required)")
 
         add_executable(mesh_order_injection_test
             mesh/test_mesh_order_injection.cpp
-            "${MESH_ORDERED_OUTPUT_DIR}/brake_sm.h"
-            "${MESH_ORDERED_OUTPUT_DIR}/brake_transport.h"
+            ${MESH_ORDERED_HEADERS}
         )
 
         target_include_directories(mesh_order_injection_test
@@ -8796,66 +7190,21 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # compiles against zenoh-cpp with every switch branch realized.
         set(MESH_ZENOH_MULTI_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_multi_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_multi.scxml" -l cpp -o "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
-                    --write-deps "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_multi.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h.d"
-            COMMENT "Mesh zenoh multi: Generating brake_zenoh_multi_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" -l cpp -o "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
-                    --write-deps "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h.d"
-            COMMENT "Mesh zenoh multi: Generating motor_zenoh_multi_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_zenoh_multi.scxml" -l cpp -o "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
-                    --transport-only
-                    --write-deps "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/brake_zenoh_multi.scxml" "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
-                    "${MESH_TEST_DIR}/motor_zenoh_multi.scxml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
-            DEPFILE "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h.d"
-            COMMENT "Mesh zenoh multi: Generating brake_zenoh_multi_transport.h (multi-pattern)"
-            VERBATIM
-        )
-
-        # Session E: generate motor (server) transport header
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" -l cpp -o "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
-                    --transport-only
-                    --write-deps "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_zenoh_multi.scxml" "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
-            DEPFILE "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h.d"
-            COMMENT "Mesh zenoh multi: Generating motor_zenoh_multi_transport.h (server-side Session E)"
-            VERBATIM
-        )
+        # The client (multi-pattern) and the server (Session E), each with
+        # its transport.
+        foreach(_side brake motor)
+            sce_mesh_fixture_generations(MESH_ZENOH_MULTI_${_side}_HEADERS
+                OUTPUT_DIR "${MESH_ZENOH_MULTI_OUTPUT_DIR}"
+                MACHINES ${_side}_zenoh_multi
+                DEPLOY "${MESH_TEST_DIR}/deploy_zenoh_multi.yaml"
+                LABEL "Mesh zenoh multi")
+        endforeach()
+        set(MESH_ZENOH_MULTI_HEADERS
+            ${MESH_ZENOH_MULTI_brake_HEADERS} ${MESH_ZENOH_MULTI_motor_HEADERS})
 
         add_executable(mesh_zenoh_multipattern_compile_test
             mesh/test_mesh_zenoh_multipattern.cpp
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h"
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h"
+            ${MESH_ZENOH_MULTI_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_multipattern_compile_test
@@ -8887,9 +7236,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # (c) RPC reply correlation is native (session.get on_reply closure).
         add_executable(mesh_zenoh_multipattern_runtime_test
             mesh/test_mesh_zenoh_multipattern_runtime.cpp
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h"
+            ${MESH_ZENOH_MULTI_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_multipattern_runtime_test
@@ -8926,8 +7273,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # (c) CBOR payload round-trips through server encode/decode.
         add_executable(mesh_zenoh_server_runtime_test
             mesh/test_mesh_zenoh_server_runtime.cpp
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h"
+            ${MESH_ZENOH_MULTI_motor_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_server_runtime_test
@@ -8960,10 +7306,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # use generated transport headers with peer-mode sessions.
         add_executable(mesh_zenoh_rpc_e2e_test
             mesh/test_mesh_zenoh_rpc_e2e.cpp
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_sm.h"
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/brake_zenoh_multi_transport.h"
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h"
+            ${MESH_ZENOH_MULTI_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_rpc_e2e_test
@@ -9000,8 +7343,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # correlation key mismatch) surfaces here.
         add_executable(mesh_zenoh_rpc_engine_driven_test
             mesh/test_mesh_zenoh_rpc_engine_driven.cpp
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h"
+            ${MESH_ZENOH_MULTI_motor_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_rpc_engine_driven_test
@@ -9032,8 +7374,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # getter/setter) → session.put on the server key.
         add_executable(mesh_zenoh_eventgroup_engine_driven_test
             mesh/test_mesh_zenoh_eventgroup_engine_driven.cpp
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_sm.h"
-            "${MESH_ZENOH_MULTI_OUTPUT_DIR}/motor_zenoh_multi_transport.h"
+            ${MESH_ZENOH_MULTI_motor_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_eventgroup_engine_driven_test
@@ -9092,38 +7433,14 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
        AND CycloneDDS_FOUND AND CycloneDDS-CXX_FOUND)
         set(MESH_POOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_pool_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_POOL_OUTPUT_DIR}/pool_client_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_POOL_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_client.scxml" -l cpp -o "${MESH_POOL_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_pool.yaml"
-                    --write-deps "${MESH_POOL_OUTPUT_DIR}/pool_client_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/pool_client.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_POOL_OUTPUT_DIR}/pool_client_sm.h.d"
-            COMMENT "Mesh pool: Generating pool_client_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_POOL_OUTPUT_DIR}/pool_client_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_client.scxml" -l cpp -o "${MESH_POOL_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_pool.yaml"
-                    --transport-only
-                    --write-deps "${MESH_POOL_OUTPUT_DIR}/pool_client_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/pool_client.scxml" "${MESH_TEST_DIR}/deploy_pool.yaml"
-                    "${MESH_TEST_DIR}/vsomeip_pool_controller.json"
-                    "${MESH_TEST_DIR}/sensor.scxml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_POOL_OUTPUT_DIR}/pool_client_sm.h"
-            DEPFILE "${MESH_POOL_OUTPUT_DIR}/pool_client_transport.h.d"
-            COMMENT "Mesh pool: Generating pool_client_transport.h (§14.4 pool dispatch)"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_POOL_HEADERS
+            OUTPUT_DIR "${MESH_POOL_OUTPUT_DIR}" MACHINES pool_client
+            DEPLOY "${MESH_TEST_DIR}/deploy_pool.yaml"
+            LABEL "Mesh pool (§14.4 pool dispatch)")
 
         add_executable(mesh_pool_compile_test
             mesh/test_mesh_pool_compile.cpp
-            "${MESH_POOL_OUTPUT_DIR}/pool_client_sm.h"
-            "${MESH_POOL_OUTPUT_DIR}/pool_client_transport.h"
+            ${MESH_POOL_HEADERS}
         )
 
         target_include_directories(mesh_pool_compile_test
@@ -9169,37 +7486,14 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     if(vsomeip3_FOUND)
         set(MESH_SERVER_POOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_server_pool_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SERVER_POOL_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_pool.scxml" -l cpp -o "${MESH_SERVER_POOL_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_pool_server.yaml"
-                    --write-deps "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_pool.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h.d"
-            COMMENT "Mesh server pool: Generating motor_pool_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_pool.scxml" -l cpp -o "${MESH_SERVER_POOL_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_pool_server.yaml"
-                    --transport-only
-                    --write-deps "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/motor_pool.scxml" "${MESH_TEST_DIR}/deploy_someip_pool_server.yaml"
-                    "${MESH_TEST_DIR}/vsomeip_motor_pool.json"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h"
-            DEPFILE "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_transport.h.d"
-            COMMENT "Mesh server pool: Generating motor_pool_transport.h (§14.4)"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_SERVER_POOL_HEADERS
+            OUTPUT_DIR "${MESH_SERVER_POOL_OUTPUT_DIR}" MACHINES motor_pool
+            DEPLOY "${MESH_TEST_DIR}/deploy_someip_pool_server.yaml"
+            LABEL "Mesh server pool (§14.4)")
 
         add_executable(mesh_someip_server_pool_compile_test
             mesh/test_mesh_someip_server_pool_compile.cpp
-            "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h"
-            "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_transport.h"
+            ${MESH_SERVER_POOL_HEADERS}
         )
 
         target_include_directories(mesh_someip_server_pool_compile_test
@@ -9235,8 +7529,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # or short-circuited dispatch to sessions_[0] would compile clean.
         add_executable(mesh_someip_server_pool_runtime_test
             mesh/test_mesh_someip_server_pool_runtime.cpp
-            "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_sm.h"
-            "${MESH_SERVER_POOL_OUTPUT_DIR}/motor_pool_transport.h"
+            ${MESH_SERVER_POOL_HEADERS}
         )
 
         target_include_directories(mesh_someip_server_pool_runtime_test
@@ -9288,39 +7581,18 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     if(vsomeip3_FOUND)
         set(MESH_SOMEIP_POOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_pool_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_POOL_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_sender_someip.scxml" -l cpp
-                    -o "${MESH_SOMEIP_POOL_OUTPUT_DIR}"
-                    --write-deps "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/pool_sender_someip.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_sm.h.d"
-            COMMENT "Mesh someip pool send: Generating pool_sender_someip_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_sender_someip.scxml" -l cpp
-                    -o "${MESH_SOMEIP_POOL_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_someip_pool.yaml"
-                    --transport-only
-                    --write-deps "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/pool_sender_someip.scxml" "${MESH_TEST_DIR}/deploy_someip_pool.yaml"
-                    "${MESH_TEST_DIR}/controller_someip_pool.scxml"
-                    "${MESH_TEST_DIR}/vsomeip_pool_send.json"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_sm.h"
-            DEPFILE "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_transport.h.d"
-            COMMENT "Mesh someip pool send: Generating pool_sender_someip_transport.h (§14.4)"
-            VERBATIM
-        )
+        # The sender's machine and transport from one run with its deploy,
+        # as every Mesh sender here: the machine was generated without the
+        # deploy while its transport was generated with it, so the two
+        # headers the test compiles described two different models.
+        sce_mesh_fixture_generations(MESH_SOMEIP_POOL_HEADERS
+            OUTPUT_DIR "${MESH_SOMEIP_POOL_OUTPUT_DIR}" MACHINES pool_sender_someip
+            DEPLOY "${MESH_TEST_DIR}/deploy_someip_pool.yaml"
+            LABEL "Mesh someip pool send (§14.4)")
 
         add_executable(mesh_someip_pool_test
             mesh/test_mesh_someip_pool.cpp
-            "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_sm.h"
-            "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_transport.h"
+            ${MESH_SOMEIP_POOL_HEADERS}
         )
 
         target_include_directories(mesh_someip_pool_test
@@ -9372,37 +7644,14 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     if(zenohc_FOUND AND zenohcxx_FOUND)
         set(MESH_POOL_ZENOH_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_pool_zenoh_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_POOL_ZENOH_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_zenoh_client.scxml" -l cpp -o "${MESH_POOL_ZENOH_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_pool_zenoh.yaml"
-                    --write-deps "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/pool_zenoh_client.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_sm.h.d"
-            COMMENT "Mesh pool Zenoh: Generating pool_zenoh_client_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_zenoh_client.scxml" -l cpp -o "${MESH_POOL_ZENOH_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_pool_zenoh.yaml"
-                    --transport-only
-                    --write-deps "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/pool_zenoh_client.scxml" "${MESH_TEST_DIR}/deploy_pool_zenoh.yaml"
-                    "${MESH_TEST_DIR}/gamer_pool.scxml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_sm.h"
-            DEPFILE "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_transport.h.d"
-            COMMENT "Mesh pool Zenoh: Generating pool_zenoh_client_transport.h (§14.4 runtime)"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_POOL_ZENOH_HEADERS
+            OUTPUT_DIR "${MESH_POOL_ZENOH_OUTPUT_DIR}" MACHINES pool_zenoh_client
+            DEPLOY "${MESH_TEST_DIR}/deploy_pool_zenoh.yaml"
+            LABEL "Mesh pool Zenoh (§14.4 runtime)")
 
         add_executable(mesh_pool_zenoh_runtime_test
             mesh/test_mesh_pool_zenoh_runtime.cpp
-            "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_sm.h"
-            "${MESH_POOL_ZENOH_OUTPUT_DIR}/pool_zenoh_client_transport.h"
+            ${MESH_POOL_ZENOH_HEADERS}
         )
 
         target_include_directories(mesh_pool_zenoh_runtime_test
@@ -9454,38 +7703,16 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     if(zenohc_FOUND AND zenohcxx_FOUND)
         set(MESH_ZENOH_POOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_pool_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_POOL_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_sender_zenoh.scxml" -l cpp
-                    -o "${MESH_ZENOH_POOL_OUTPUT_DIR}"
-                    --write-deps "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/pool_sender_zenoh.scxml" "${SCE_CODEGEN}"
-            DEPFILE "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_sm.h.d"
-            COMMENT "Mesh zenoh pool send: Generating pool_sender_zenoh_sm.h"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_sender_zenoh.scxml" -l cpp
-                    -o "${MESH_ZENOH_POOL_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_pool.yaml"
-                    --transport-only
-                    --write-deps "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_transport.h.d"
-            DEPENDS "${MESH_TEST_DIR}/pool_sender_zenoh.scxml" "${MESH_TEST_DIR}/deploy_zenoh_pool.yaml"
-                    "${MESH_TEST_DIR}/gamer_zenoh_pool.scxml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                    "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_sm.h"
-            DEPFILE "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_transport.h.d"
-            COMMENT "Mesh zenoh pool send: Generating pool_sender_zenoh_transport.h (§14.4)"
-            VERBATIM
-        )
+        # The sender's machine and transport from one run with its deploy,
+        # as for the SOME/IP pool sender above.
+        sce_mesh_fixture_generations(MESH_ZENOH_POOL_HEADERS
+            OUTPUT_DIR "${MESH_ZENOH_POOL_OUTPUT_DIR}" MACHINES pool_sender_zenoh
+            DEPLOY "${MESH_TEST_DIR}/deploy_zenoh_pool.yaml"
+            LABEL "Mesh zenoh pool send (§14.4)")
 
         add_executable(mesh_zenoh_pool_test
             mesh/test_mesh_zenoh_pool.cpp
-            "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_sm.h"
-            "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_transport.h"
+            ${MESH_ZENOH_POOL_HEADERS}
         )
 
         target_include_directories(mesh_zenoh_pool_test
@@ -9716,15 +7943,16 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     # sce_generate_distributed_w3c_test(TEST_NUM)
     #
     # Wires one §16.8 seed into the build + ctest graph:
-    #   1. Stage `resources/${TEST_NUM}/test${TEST_NUM}.txml` into the
-    #      build tree as `.../test${TEST_NUM}/test${TEST_NUM}.scxml`
-    #      and copy the seed's deploy.yaml alongside, so sce-codegen's
-    #      `source: test${TEST_NUM}.scxml` reference resolves without
-    #      an absolute path in the yaml.
-    #   2. Run sce-codegen twice with `--partition test${TEST_NUM}_main`
-    #      and `--partition test${TEST_NUM}_worker`, emitting per-
-    #      partition `test${TEST_NUM}_sm.h`/`_transport.h` into disjoint
-    #      subdirs (main/, worker/). Per-partition namespaces are
+    #   1. Stage the committed `resources/${TEST_NUM}/test${TEST_NUM}.scxml`
+    #      into the build tree as `.../test${TEST_NUM}/test${TEST_NUM}.scxml`
+    #      and copy the seed's deploy.yaml alongside when the tree is
+    #      configured, so sce-codegen's `source: test${TEST_NUM}.scxml`
+    #      reference resolves without an absolute path in the yaml.
+    #   2. Declare one generation per partition from its plan
+    #      (`--partition test${TEST_NUM}_main` and
+    #      `--partition test${TEST_NUM}_worker`), each writing that
+    #      partition's machine and transport into disjoint subdirs
+    #      (main/, worker/). Per-partition namespaces are
     #      now baked as inner segments (`SCE::Generated::testXXX::
     #      P_<partition>`), so both headers can be ODR-co-included in
     #      a future single-runner binary. The shm fork+exec shape
@@ -9751,93 +7979,33 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(staged_scxml "${test_out_dir}/test${TEST_NUM}.scxml")
         set(staged_deploy "${test_out_dir}/deploy.yaml")
 
-        # Stage SCXML into the build tree. The TXML source is the
-        # existing W3C IRP resource; no seed-specific SCXML lives in
-        # source — keeps the seed honest against the same TXML every
-        # other W3C pipeline consumes.
-        add_custom_command(
-            OUTPUT "${staged_scxml}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${test_out_dir}"
-            COMMAND txml-converter
-                    "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}/test${TEST_NUM}.txml"
-                    "${staged_scxml}"
-            DEPENDS txml-converter
-                    "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}/test${TEST_NUM}.txml"
-            COMMENT "§16.8 seed: staging test${TEST_NUM}.scxml into build tree"
-            VERBATIM
-        )
+        # Stage the fixture's committed SCXML and the seed's deploy.yaml into
+        # the build tree when the tree is configured: each partition's
+        # generation is planned from the staged document, so it has to be
+        # on disk before the build starts, and `configure_file` makes an
+        # edit to either reconfigure the tree, which is when the plan is
+        # asked again. The committed SCXML is what every other W3C
+        # pipeline generates from (cmake/SCEStaticW3CTest.cmake); this
+        # seed converted the TXML at build time instead, which no
+        # generation could be planned from.
+        file(MAKE_DIRECTORY "${test_out_dir}")
+        configure_file("${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}/test${TEST_NUM}.scxml"
+            "${staged_scxml}" COPYONLY)
+        configure_file("${test_src_dir}/deploy.yaml" "${staged_deploy}" COPYONLY)
 
-        add_custom_command(
-            OUTPUT "${staged_deploy}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${test_out_dir}"
-            COMMAND ${CMAKE_COMMAND} -E copy
-                    "${test_src_dir}/deploy.yaml" "${staged_deploy}"
-            DEPENDS "${test_src_dir}/deploy.yaml"
-            COMMENT "§16.8 seed: staging test${TEST_NUM} deploy.yaml"
-            VERBATIM
-        )
-
-        # Per-partition codegen. Two invocations of sce-codegen produce
-        # the Root and NonRoot shapes from the same SCXML + deploy.yaml;
-        # the `--partition` flag switches `parallel_final.jinja2`
-        # between tracker-owning (Root) and remote-send-callback (NonRoot).
-        add_custom_command(
-            OUTPUT "${main_out}/test${TEST_NUM}_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${main_out}"
-            COMMAND "${SCE_CODEGEN}" generate "${staged_scxml}"
-                    -l cpp -o "${main_out}"
-                    --deploy "${staged_deploy}"
-                    --partition "test${TEST_NUM}_main"
-                    --write-deps "${main_out}/test${TEST_NUM}_sm.h.d"
-            DEPENDS "${staged_scxml}" "${staged_deploy}" "${SCE_CODEGEN}"
-            DEPFILE "${main_out}/test${TEST_NUM}_sm.h.d"
-            COMMENT "§16.8 seed: codegen test${TEST_NUM}_sm.h main (Root) partition"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${main_out}/test${TEST_NUM}_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${staged_scxml}"
-                    -l cpp -o "${main_out}"
-                    --deploy "${staged_deploy}"
-                    --transport-only
-                    --partition "test${TEST_NUM}_main"
-                    --write-deps "${main_out}/test${TEST_NUM}_transport.h.d"
-            DEPENDS "${staged_scxml}" "${staged_deploy}" "${SCE_CODEGEN}"
-                    "${main_out}/test${TEST_NUM}_sm.h"
-            DEPFILE "${main_out}/test${TEST_NUM}_transport.h.d"
-            COMMENT "§16.8 seed: codegen test${TEST_NUM}_transport.h main (Root) partition"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${worker_out}/test${TEST_NUM}_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${worker_out}"
-            COMMAND "${SCE_CODEGEN}" generate "${staged_scxml}"
-                    -l cpp -o "${worker_out}"
-                    --deploy "${staged_deploy}"
-                    --partition "test${TEST_NUM}_worker"
-                    --write-deps "${worker_out}/test${TEST_NUM}_sm.h.d"
-            DEPENDS "${staged_scxml}" "${staged_deploy}" "${SCE_CODEGEN}"
-            DEPFILE "${worker_out}/test${TEST_NUM}_sm.h.d"
-            COMMENT "§16.8 seed: codegen test${TEST_NUM}_sm.h worker (NonRoot) partition"
-            VERBATIM
-        )
-
-        add_custom_command(
-            OUTPUT "${worker_out}/test${TEST_NUM}_transport.h"
-            COMMAND "${SCE_CODEGEN}" generate "${staged_scxml}"
-                    -l cpp -o "${worker_out}"
-                    --deploy "${staged_deploy}"
-                    --transport-only
-                    --partition "test${TEST_NUM}_worker"
-                    --write-deps "${worker_out}/test${TEST_NUM}_transport.h.d"
-            DEPENDS "${staged_scxml}" "${staged_deploy}" "${SCE_CODEGEN}"
-                    "${worker_out}/test${TEST_NUM}_sm.h"
-            DEPFILE "${worker_out}/test${TEST_NUM}_transport.h.d"
-            COMMENT "§16.8 seed: codegen test${TEST_NUM}_transport.h worker (NonRoot) partition"
-            VERBATIM
-        )
+        # Per-partition codegen. One generation per partition produces the
+        # Root and NonRoot shapes, each with its transport, from the same
+        # SCXML + deploy.yaml; the `--partition` flag switches
+        # `parallel_final.jinja2` between tracker-owning (Root) and
+        # remote-send-callback (NonRoot).
+        foreach(_role main worker)
+            sce_codegen_generation(_W3C_DIST_${_role}
+                DOCUMENT "${staged_scxml}"
+                OUTPUT_DIR "${test_out_dir}/${_role}" LANGUAGE cpp
+                DEPLOY "${staged_deploy}"
+                ARGS --partition "test${TEST_NUM}_${_role}"
+                COMMENT "§16.8 seed: codegen test${TEST_NUM} ${_role} partition")
+        endforeach()
 
         # Partition binaries. Each shares `w3c_dist_partition_runner.cpp`
         # but selects its CRTP header via preprocessor define so exactly
@@ -9845,8 +8013,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(main_bin "w3c_dist_test${TEST_NUM}_main")
         add_executable(${main_bin}
             "${W3C_DIST_SRC_DIR}/w3c_dist_partition_runner.cpp"
-            "${main_out}/test${TEST_NUM}_sm.h"
-            "${main_out}/test${TEST_NUM}_transport.h"
+            ${_W3C_DIST_main_HEADERS}
         )
         target_include_directories(${main_bin}
             PRIVATE
@@ -9865,8 +8032,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(worker_bin "w3c_dist_test${TEST_NUM}_worker")
         add_executable(${worker_bin}
             "${W3C_DIST_SRC_DIR}/w3c_dist_partition_runner.cpp"
-            "${worker_out}/test${TEST_NUM}_sm.h"
-            "${worker_out}/test${TEST_NUM}_transport.h"
+            ${_W3C_DIST_worker_HEADERS}
         )
         target_include_directories(${worker_bin}
             PRIVATE
@@ -9918,8 +8084,8 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     # fixtures gate on theirs: a developer without the transport gets a tree
     # that configures rather than a hard failure.
     #
-    # Inside the mesh guard, not after it. These fixtures read MESH_TEST_DIR
-    # and SCE_MESH_CPP_TEMPLATE and link sce_mesh_common, none of which exist
+    # Inside the mesh guard, not after it. These fixtures read MESH_TEST_DIR,
+    # call sce_mesh_fixture_generations and link sce_mesh_common, none of which exist
     # when SCE_ENABLE_MESH is OFF — which is the default. Registered outside
     # the guard they still configured cleanly on a machine with Cyclone
     # installed, and emitted rules whose input path was the empty variable
@@ -9938,27 +8104,15 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
         set(MESH_DDS_MULTI_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_multi_generated")
 
-        foreach(_dds_machine brake_dds_multi motor_dds_multi)
-            add_custom_command(
-                OUTPUT "${MESH_DDS_MULTI_OUTPUT_DIR}/${_dds_machine}_sm.h"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_MULTI_OUTPUT_DIR}"
-                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_dds_machine}.scxml" -l cpp
-                        -o "${MESH_DDS_MULTI_OUTPUT_DIR}"
-                        --deploy "${MESH_TEST_DIR}/deploy_dds_multi.yaml"
-                        --write-deps "${MESH_DDS_MULTI_OUTPUT_DIR}/${_dds_machine}_sm.h.d"
-                DEPENDS "${MESH_TEST_DIR}/${_dds_machine}.scxml" "${MESH_TEST_DIR}/deploy_dds_multi.yaml"
-                        "${MESH_TEST_DIR}/brake_dds_multi.scxml" "${MESH_TEST_DIR}/motor_dds_multi.scxml"
-                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                DEPFILE "${MESH_DDS_MULTI_OUTPUT_DIR}/${_dds_machine}_sm.h.d"
-                COMMENT "Mesh dds multi: Generating ${_dds_machine}_sm.h + _transport.h"
-                VERBATIM
-            )
-        endforeach()
+        sce_mesh_fixture_generations(MESH_DDS_MULTI_HEADERS
+            OUTPUT_DIR "${MESH_DDS_MULTI_OUTPUT_DIR}"
+            MACHINES brake_dds_multi motor_dds_multi
+            DEPLOY "${MESH_TEST_DIR}/deploy_dds_multi.yaml"
+            LABEL "Mesh dds multi")
 
         add_executable(mesh_dds_multipattern_test
             mesh/test_mesh_dds_multipattern.cpp
-            "${MESH_DDS_MULTI_OUTPUT_DIR}/brake_dds_multi_sm.h"
-            "${MESH_DDS_MULTI_OUTPUT_DIR}/motor_dds_multi_sm.h"
+            ${MESH_DDS_MULTI_HEADERS}
         )
         target_include_directories(mesh_dds_multipattern_test
             PRIVATE "${MESH_DDS_MULTI_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -9985,32 +8139,15 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_server_deadline_generated")
 
-        foreach(_dds_sd_machine brake_dds_server_deadline motor_dds_server_deadline)
-            add_custom_command(
-                OUTPUT "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_sm.h"
-                       "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_transport.h"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}"
-                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_dds_sd_machine}.scxml" -l cpp
-                        -o "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}"
-                        --deploy "${MESH_TEST_DIR}/deploy_dds_server_deadline.yaml"
-                        --write-deps "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_sm.h.d"
-                DEPENDS "${MESH_TEST_DIR}/${_dds_sd_machine}.scxml"
-                        "${MESH_TEST_DIR}/deploy_dds_server_deadline.yaml"
-                        "${MESH_TEST_DIR}/brake_dds_server_deadline.scxml"
-                        "${MESH_TEST_DIR}/motor_dds_server_deadline.scxml"
-                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                DEPFILE "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_sm.h.d"
-                COMMENT "Mesh dds server deadline: Generating ${_dds_sd_machine}_sm.h + _transport.h"
-                VERBATIM
-            )
-        endforeach()
+        sce_mesh_fixture_generations(MESH_DDS_SERVER_DEADLINE_HEADERS
+            OUTPUT_DIR "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}"
+            MACHINES brake_dds_server_deadline motor_dds_server_deadline
+            DEPLOY "${MESH_TEST_DIR}/deploy_dds_server_deadline.yaml"
+            LABEL "Mesh dds server deadline")
 
         add_executable(mesh_dds_server_deadline_test
             mesh/test_mesh_dds_server_deadline.cpp
-            "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/brake_dds_server_deadline_sm.h"
-            "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/brake_dds_server_deadline_transport.h"
-            "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/motor_dds_server_deadline_sm.h"
-            "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/motor_dds_server_deadline_transport.h"
+            ${MESH_DDS_SERVER_DEADLINE_HEADERS}
         )
         target_include_directories(mesh_dds_server_deadline_test
             PRIVATE "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -10036,32 +8173,15 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set(MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_machine_lifetime_generated")
 
-        foreach(_dds_mls_machine brake_dds_machine_lifetime_subscribe motor_dds_machine_lifetime_subscribe)
-            add_custom_command(
-                OUTPUT "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_sm.h"
-                       "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_transport.h"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}"
-                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_dds_mls_machine}.scxml" -l cpp
-                        -o "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}"
-                        --deploy "${MESH_TEST_DIR}/deploy_dds_machine_lifetime_subscribe.yaml"
-                        --write-deps "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_sm.h.d"
-                DEPENDS "${MESH_TEST_DIR}/${_dds_mls_machine}.scxml"
-                        "${MESH_TEST_DIR}/deploy_dds_machine_lifetime_subscribe.yaml"
-                        "${MESH_TEST_DIR}/brake_dds_machine_lifetime_subscribe.scxml"
-                        "${MESH_TEST_DIR}/motor_dds_machine_lifetime_subscribe.scxml"
-                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-                DEPFILE "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_sm.h.d"
-                COMMENT "Mesh dds machine-lifetime: Generating ${_dds_mls_machine}_sm.h + _transport.h"
-                VERBATIM
-            )
-        endforeach()
+        sce_mesh_fixture_generations(MESH_DDS_MACHINE_LIFETIME_HEADERS
+            OUTPUT_DIR "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}"
+            MACHINES brake_dds_machine_lifetime_subscribe motor_dds_machine_lifetime_subscribe
+            DEPLOY "${MESH_TEST_DIR}/deploy_dds_machine_lifetime_subscribe.yaml"
+            LABEL "Mesh dds machine-lifetime")
 
         add_executable(mesh_dds_machine_lifetime_subscribe_test
             mesh/test_mesh_dds_machine_lifetime_subscribe.cpp
-            "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/brake_dds_machine_lifetime_subscribe_sm.h"
-            "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/brake_dds_machine_lifetime_subscribe_transport.h"
-            "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/motor_dds_machine_lifetime_subscribe_sm.h"
-            "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/motor_dds_machine_lifetime_subscribe_transport.h"
+            ${MESH_DDS_MACHINE_LIFETIME_HEADERS}
         )
         target_include_directories(mesh_dds_machine_lifetime_subscribe_test
             PRIVATE "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -10090,27 +8210,14 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # telling two apart.
         set(MESH_DDS_POOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_pool_generated")
 
-        add_custom_command(
-            OUTPUT "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h"
-                   "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_transport.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_POOL_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_sender_dds.scxml" -l cpp
-                    -o "${MESH_DDS_POOL_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_dds_pool.yaml"
-                    --write-deps "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/pool_sender_dds.scxml"
-                    "${MESH_TEST_DIR}/deploy_dds_pool.yaml"
-                    "${MESH_TEST_DIR}/sensor_dds_pool.scxml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-            DEPFILE "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h.d"
-            COMMENT "Mesh dds pool: Generating pool_sender_dds_sm.h + _transport.h"
-            VERBATIM
-        )
+        sce_mesh_fixture_generations(MESH_DDS_POOL_HEADERS
+            OUTPUT_DIR "${MESH_DDS_POOL_OUTPUT_DIR}" MACHINES pool_sender_dds
+            DEPLOY "${MESH_TEST_DIR}/deploy_dds_pool.yaml"
+            LABEL "Mesh dds pool")
 
         add_executable(mesh_dds_pool_test
             mesh/test_mesh_dds_pool.cpp
-            "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h"
-            "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_transport.h"
+            ${MESH_DDS_POOL_HEADERS}
         )
         target_include_directories(mesh_dds_pool_test
             PRIVATE "${MESH_DDS_POOL_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
