@@ -6066,7 +6066,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             // renders the document with, derived as `generate` derives them,
             // so the verdict on that backend is the verdict `generate` reaches.
             let variants = if features.is_none()
-                && langs.contains(&Language::Rust)
+                && langs.iter().any(|lang| lang.keeps_variability())
                 && model
                     .product_line
                     .as_ref()
@@ -7391,7 +7391,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     // document is held to (the family check `check` runs) and prepared as
     // the document was, and the output is held to what each generates alone.
     let variants = if features.is_none()
-        && lang == Language::Rust
+        && lang.keeps_variability()
         && model
             .product_line
             .as_ref()

@@ -23,6 +23,7 @@ use crate::feature_selector::{Refusal, Selector};
 use crate::generator::Language;
 use crate::variant_merge::{Interner, Source, Unmerged};
 
+pub mod preprocessor;
 pub mod rust;
 
 /// How the sources one backend writes carry the variability of a product line.

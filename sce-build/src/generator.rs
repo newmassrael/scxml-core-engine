@@ -157,6 +157,21 @@ impl Language {
         matches!(self, Language::C11)
     }
 
+    /// Whether this backend keeps a product line's variability in one output
+    /// for every build (docs/adr/0057 §9 and §10), so that a gated document is
+    /// generated without a selection. Every other backend generates one
+    /// variant, named by `--features`.
+    pub fn keeps_variability(self) -> bool {
+        match self {
+            Language::Rust | Language::C11 => true,
+            Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::Swift => false,
+        }
+    }
+
     /// Every backend, in the canonical order used wherever a run spans
     /// all of them (the `check` sweep, the codegen-matrix coverage
     /// tests, the manifest schema's language enum).

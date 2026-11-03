@@ -217,6 +217,23 @@ impl Refusal {
             self.message(model_name)
         )
     }
+
+    /// The refusal as lines of the C or C++ preprocessor: an `#error` under
+    /// the selector of the builds it refuses.
+    pub fn c(&self, model_name: &str) -> String {
+        let message: String = self
+            .message(model_name)
+            .chars()
+            .flat_map(|c| match c {
+                '"' | '\\' => vec!['\\', c],
+                c => vec![c],
+            })
+            .collect();
+        format!(
+            "#if {}\n#error \"{message}\"\n#endif\n",
+            self.selector().c()
+        )
+    }
 }
 
 /// The negation, a double negation and a negated constant folded away.

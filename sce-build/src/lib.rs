@@ -2111,15 +2111,26 @@ pub fn emit_model_artifacts(
                 variants,
                 &variant_dialect::rust::Rust,
             ),
+            (generator::Language::C11, Some(variants)) => emit_lifted_artifacts(
+                model,
+                template_dir,
+                input_stem,
+                source_name,
+                options,
+                variants,
+                &variant_dialect::preprocessor::Preprocessor::new(
+                    generator::Language::C11,
+                    line.model().features().map(|f| line.model().name(f)),
+                ),
+            ),
             // Every backend is named: one added to `Language` is decided here, not
             // inherited from the arm (`a_backend_is_decided_at_every_site_and_listed_once`).
-            (generator::Language::Rust, None)
+            (generator::Language::Rust | generator::Language::C11, None)
             | (
                 generator::Language::Cpp
                 | generator::Language::Kotlin
                 | generator::Language::Go
                 | generator::Language::Python
-                | generator::Language::C11
                 | generator::Language::Swift,
                 _,
             ) => Err(forge::error::Located::new(

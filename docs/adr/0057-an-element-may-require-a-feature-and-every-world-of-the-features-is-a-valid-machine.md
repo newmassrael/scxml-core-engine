@@ -356,15 +356,21 @@ cannot leave out: the header of C11 and C++, the source of Swift. For each edge 
 `#if defined(SCE_FEATURE_A) && !defined(SCE_FEATURE_B)` / `#error "…"` / `#endif` in C and C++,
 `#if SCE_FEATURE_A && !SCE_FEATURE_B` / `#error("…")` / `#endif` in Swift. The message is `Refusal::message`.
 
-**The sourcemap is lifted with the source.** A backend that writes `sce_sourcemap.json` writes one for each variant,
-and the variants' maps differ in every row after the first gated element. The output for every build carries one
-map: each row of a variant's map, moved to the line the merge put that line on, with the condition under which the
-row is present (§7). It is not compared as text.
+**The sourcemap is the document's.** `sce_sourcemap.json` maps a generated symbol to the SCXML element and lines it
+was written from; it names no generated line. `generate` writes it from the document as written, so the map of the
+output for every build holds every symbol of every variant, each where a variant's own map puts it (a variant's
+positions are the document's, §2). The condition under which a symbol is present is a field of §7 still to add.
+(Corrected 2026-11-03 while building C11: this paragraph had the maps differ in every row after the first gated
+element, which is true of no backend.)
 
-**A build of `sce-build` without the readers.** The C, C++ and Swift readers are native code (the Swift grammar is
-C, as libxml2 is behind the `xsd` feature) and sit behind a default feature of `sce-build`. A build without it
-(`sce-build-wasm`) refuses a gated document for those backends without `--features`, as every backend refused one
-before it kept the variability (`codegen/feature-selection-required`).
+**A `#line` stays with its line.** A `#line` directive names the line after it, so the C reader makes the two one
+member and no selector comes between them. A selector's lines move the lines after them within a `#line` scope, as
+they move `__LINE__`: only a scope's first line is the one its directive names, and that one is kept.
+
+**A build of `sce-build` without the readers.** The Rust and the C and C++ readers are Rust. The Swift reader is
+native code (the Swift grammar is C, as libxml2 is behind the `xsd` feature) and sits behind a default feature of
+`sce-build`. A build without it (`sce-build-wasm`) refuses a gated document for Swift without `--features`, as every
+backend refused one before it kept the variability (`codegen/feature-selection-required`).
 
 **Conformance** is §8's law in each lane. One fixture set (`tests/product_line/`) is read by every lane, so no lane
 keeps a copy: the Rust crate of step 3 moves its two documents there. Each lane builds the output for every build
@@ -469,7 +475,14 @@ that backend gap to be closed, as its own change, rather than holding to a weake
   `syn`, `#[cfg]` as the writer, `lift_validation` as the resolver, `compile_error!` as the guard. The output did not
   change: the lifted machine and sourcemap of the conformance crate's `session.scxml` are the same bytes as before
   the split.
-- Still to do: the C11 dialect and its CMake matrix, then C++, then Swift; the fixtures to `tests/product_line/`.
+- **The C11 dialect** ([`variant_dialect::preprocessor`](../../sce-build/src/variant_dialect/preprocessor.rs)), which
+  C++ will share. `generate` and `check` of a gated document with `-l c11` and no `--features` write one source and
+  one header for every build (`Language::keeps_variability`); the header ends with an `#error` for each edge of the
+  model (`Refusal::c`). The lifted C of `session.scxml` compiles with `-Wall -Werror` under each of the three feature
+  sets, and a set that breaks the edge stops at its `#error`. The enum of events writes its last member without a
+  comma, so a variant that adds an event writes that member twice, each under its builds: correct, and left so,
+  since the template's hash moves every committed tree.
+- Still to do: the C11 CMake matrix, then C++, then Swift; the fixtures to `tests/product_line/`.
 
 ## Questions left open
 

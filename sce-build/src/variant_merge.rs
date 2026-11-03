@@ -149,13 +149,13 @@ impl Interner {
 }
 
 /// A token, or tokens between a delimiter and its match.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tree {
     id: TreeId,
     group: Option<Group>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Group {
     delimiter: char,
     /// The offset the text between the delimiters starts at: where a list
@@ -181,6 +181,11 @@ impl Member {
     /// key exactly when they are the same tokens.
     pub fn key(&self) -> TreeId {
         self.key
+    }
+
+    /// Its tokens, as the dialect read them.
+    pub fn trees(&self) -> &[Tree] {
+        &self.trees
     }
 }
 
