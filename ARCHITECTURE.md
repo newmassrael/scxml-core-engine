@@ -459,7 +459,11 @@ the parent writes the child, at every depth, beside it. A child a deploy places 
 partition (SCE_MESH.md §9.6.6 rule 3) is the one exception: the parent reaches it through the
 transport and names no file of it, so the parent's run writes its document and the run of its
 partition writes its machine, each file with one producer
-(`ScxmlInvokeInfo::carries_a_child_written_with_its_parent`). The plan of the parent
+(`ScxmlInvokeInfo::carries_a_child_written_with_its_parent`). What that child carries in turn is
+the run of its partition's to write, documents and machines alike
+(`SCXMLModel::carried_documents_written`): the parent's run holds every carried document in memory
+while its deploy reads them, and writes, once the deploy has said which children it placed, only
+the ones it owns. The plan of the parent
 (`sce-codegen --plan --plan-children`) plans that run too, `--deploy` and all, from the document
 the parent's run would write, so a build declares it from the generator's answer as it declares
 a child generated in its parent's process. The child is prepared once, by

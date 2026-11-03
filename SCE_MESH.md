@@ -896,6 +896,16 @@ generated/
     dashboard_mesh_main.h
 ```
 
+One `generate` run with the deploy writes a machine and its transport together: they are made from
+the same model, after the deploy's mutations, and are one generation's outputs. A build declares
+them from that run's plan (`sce-codegen --plan generate ... --deploy`, `sce_codegen_generation` in
+`cmake/SCECodegenPlan.cmake`), so each file has the one command that writes it as its producer, and
+the run's depfile names what it read: the document, the deploy, the sibling documents of its source
+set, the templates, and each external configuration the deploy names (a device's `vsomeip.json`).
+`--transport-only` writes the transport without the machine, for a peer table committed on its own
+whose machine is built elsewhere; a build that generates the machine as well does not split the
+generation, since the machine run with the deploy writes the transport too.
+
 ### 7.4 Generated Transport Code
 
 Each target binding generates a dedicated send function that calls the transport API directly:

@@ -1887,17 +1887,18 @@ struct GenerateArgs {
     /// the state machine code. SM output remains identical.
     #[arg(long)]
     deploy: Option<String>,
-    /// Emit only the mesh transport header — skip the state-machine
-    /// backend code generation entirely. Requires `--deploy`. Used
-    /// by CMake fixtures that want transport regeneration without
-    /// the rebuild churn from re-emitting `<name>_sm.{h,rs,kt,go,py}`
-    /// on every transport-touching change. The state-machine output
-    /// must be produced by a separate `generate` invocation without
-    /// `--transport-only` (typically a sibling `add_custom_command`).
+    /// Emit only the mesh transport — skip the state-machine backend code
+    /// generation entirely. Requires `--deploy`. For a deployment's peer
+    /// table committed on its own, whose machine is generated nowhere
+    /// beside it (`backends/rust/mesh/generate.sh`,
+    /// `backends/kotlin/mesh/generate.sh`).
     ///
-    /// Closes mesh_open_issues.md Issue 2 — Pattern Realization
-    /// completed 2026-04-16 (Session C), making the deferred
-    /// rationale moot.
+    /// A build that generates the machine too runs one `generate` with
+    /// the deploy, which writes the machine and its transport, and
+    /// declares both from `--plan` (cmake/SCECodegenPlan.cmake). Splitting
+    /// that into a machine run and a transport-only run gives the
+    /// transport two producers, since the machine run with the deploy
+    /// writes it as well.
     #[arg(long, requires = "deploy")]
     transport_only: bool,
     /// The machine of `--deploy` this forge document is generated for.
@@ -7419,14 +7420,13 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         None
     };
 
-    // mesh_open_issues.md Issue 2: when --transport-only is set, skip
-    // the state-machine backend emit + its side-product files
-    // (sourcemap, children manifest, static-invoke copy, hybrid stubs).
-    // The transport-only branch still threads `out_path` and the report
-    // through to the mesh emit block below so depfile + sourcemap-marker
-    // validation operate on the transport header alone. `out_path` +
-    // `ensure_output_dir` ran above (before the synth-SCXML emit + the
-    // mesh injection chain) — the dir already exists at this point.
+    // `--transport-only` (a peer table committed on its own): skip the
+    // state-machine backend emit + its side-product files (sourcemap,
+    // static-invoke copy, hybrid stubs). The transport-only branch still
+    // threads `out_path` and the report through to the mesh emit block
+    // below so depfile + sourcemap-marker validation operate on the
+    // transport header alone. `out_path` + `ensure_output_dir` ran above
+    // (before the deploy was applied) — the dir already exists here.
     let mut output_paths: Vec<PathBuf> = Vec::new();
     let mut artifact_deps = parser.preprocessor_deps().to_vec();
 
