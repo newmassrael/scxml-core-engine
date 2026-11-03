@@ -545,7 +545,7 @@ fn the_sink_is_given_its_level_and_none_past_it_and_is_replaced_and_removed() {
         last_error()
     );
     run(&waits_twice);
-    let info = drained(&records);
+    let info = drained(records);
     assert!(
         info.iter().all(|(level, _, _)| *level <= SCE_PEER_LOG_INFO),
         "none past its level: {info:#?}"
@@ -573,7 +573,7 @@ fn the_sink_is_given_its_level_and_none_past_it_and_is_replaced_and_removed() {
     // Replaced at a more verbose level: the host's pauses, at debug, come too.
     assert_eq!(install(SCE_PEER_LOG_DEBUG, records), SCE_PEER_OK);
     run(&waits_twice);
-    let debug = drained(&records);
+    let debug = drained(records);
     assert!(
         debug
             .iter()
@@ -586,7 +586,7 @@ fn the_sink_is_given_its_level_and_none_past_it_and_is_replaced_and_removed() {
     remove();
     run(&waits_twice);
     assert!(
-        drained(&records).is_empty(),
+        drained(records).is_empty(),
         "a sink removed is given nothing"
     );
 
@@ -594,7 +594,7 @@ fn the_sink_is_given_its_level_and_none_past_it_and_is_replaced_and_removed() {
     assert_eq!(install(9, records), SCE_PEER_ERR_BAD_ARGUMENT);
     assert!(last_error().contains("level"), "{}", last_error());
     run(&waits_twice);
-    assert!(drained(&records).is_empty());
+    assert!(drained(records).is_empty());
 }
 
 /// The context of a host's transport to a relay in this process.
