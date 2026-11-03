@@ -148,7 +148,7 @@ fn golden_options_for(
     match language {
         Language::C11 => opts.codec_capacities = conformance_capacities(),
         Language::Rust => opts.views = holds_an_unbounded_list(dir, documents),
-        _ => {}
+        Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::Swift => {}
     }
     opts
 }
