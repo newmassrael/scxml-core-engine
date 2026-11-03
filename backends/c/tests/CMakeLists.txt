@@ -3264,6 +3264,53 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # The shared to-do list at the bounds of a team (docs/adr/0082 §5): the document,
+    # every document it imports and every algorithm they call, generated in one run with
+    # the limits moved, into a directory of its own so that no header of the build above
+    # is read in place of one of these. The program replays the scenarios the suite
+    # above replays the same machine through, at the bounds its document writes.
+    set(_LARGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration_generated_large")
+    set(_LARGE_FIXTURES "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel")
+    file(MAKE_DIRECTORY "${_LARGE_DIR}")
+    add_custom_command(
+        OUTPUT "${_LARGE_DIR}/todo_peer_sm.c" "${_LARGE_DIR}/todo_peer_sm.h"
+        COMMAND "${SCE_CODEGEN}"
+                --limit merge_values=65536 --limit merge_entries=65536 --limit merge_digest=262144
+                generate --with-imports "${_LARGE_FIXTURES}/todo_peer.scxml"
+                -l c11 -o "${_LARGE_DIR}" --input-root "${_LARGE_FIXTURES}"
+                --write-deps "${_LARGE_DIR}/todo_peer_sm.c.d"
+        DEPENDS "${SCE_CODEGEN}" "${_LARGE_FIXTURES}/todo_peer.scxml"
+        DEPFILE "${_LARGE_DIR}/todo_peer_sm.c.d"
+        COMMENT "Generating C11 todo_peer at the bounds of a team"
+        VERBATIM
+    )
+    add_executable(sce_c_integration_static_large
+        integration/test_static_large.c
+        "${_LARGE_DIR}/todo_peer_sm.c"
+    )
+    target_link_libraries(sce_c_integration_static_large PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_large PRIVATE
+        "${_LARGE_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    target_compile_definitions(sce_c_integration_static_large PRIVATE
+        SCE_STATIC_SCENARIO_DIR="${_LARGE_FIXTURES}/scenarios"
+    )
+    set_target_properties(sce_c_integration_static_large PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_large
+        COMMAND sce_c_integration_static_large
+    )
+    set_tests_properties(c11_integration_static_large PROPERTIES
+        TIMEOUT 120
+        LABELS "integration;c11;aot"
+    )
+
     # The saved-state tests compare what a machine writes with the shared text every backend writes,
     # deadlines included, so each runs on a manual clock. They link `integration/no_wall_clock.c` in
     # place of `sce_c_runtime_posix`: a machine that reads the wall clock stops at its first reading,

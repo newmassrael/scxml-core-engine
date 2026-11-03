@@ -203,7 +203,7 @@ changes each backend says how (ADR 0078):
 4. The C11 machine. `scratch`, the statement of §3, and the removal of `_take`, `_within` and
    `list_result_type` for lists. The stack refusal goes (§4). The refusal test becomes the large-bound test, and the
    `-fstack-usage` gate is added.
-   *Landed 2026-11-03, but for the run at a team's bound, which follows.* A call that the machine holds storage for is
+   *Landed 2026-11-03.* A call that the machine holds storage for is
    typed with it (`FuncSig::storage`, carried on the call), so the expression layer hands the call a pointer to its
    member of `scratch` after its written arguments: a direct call's destination (`scratch.call.into_<symbol>`), and an
    adapter's storage (`scratch.call.<adapter>`), which holds the copy of the machine's records it hands over and, for a
@@ -218,7 +218,12 @@ changes each backend says how (ADR 0078):
    `a_bound_the_c_stack_cannot_hold_is_refused_where_it_is_built_in` became
    `a_c11_build_takes_a_bound_no_stack_could_hold`. `C11_LIST_STACK_LIMIT_BYTES`, `c11_list_too_large`,
    `StaticTarget::list_stack_limit_bytes`, `list_result_type`, `state_list_result_type` and `C_LIST_DESTINATION` are
-   removed.
+   removed. The run of §5 is `c11_integration_static_large` (`backends/c/tests/integration/test_static_large.c`): the
+   to-do list generated with every import at the bounds of the Rust world's `large` build (`merge_values=65536`,
+   `merge_entries=65536`, `merge_digest=262144`, which the program asserts it was built at), replaying the three
+   scenarios the C11 suite replays it through at the bounds its document writes. The machine is 54.6 MB and is held in
+   static storage, as a host holds one of that size; the C scenario driver, shared by the two programs
+   (`static_scenario_harness.h`, `todo_peer_scenario.h`), now holds every machine so.
 5. SCE_FORGE.md §4.12 and SCE_ACCEPTED_SUBSET §2.15 are rewritten to the new signatures and the removed refusal, in
    the landings that change them.
 
