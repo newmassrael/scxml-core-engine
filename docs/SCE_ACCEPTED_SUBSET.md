@@ -5015,14 +5015,15 @@ always had. The bound is still one bound on every backend a build is made for, a
 a build that moves it is a different machine, which holds more: two copies of one
 list that differ in it are not the same list, and a copy built with the smaller
 bound refuses a write the larger one took and never catches up. A deployment
-therefore gives every copy of a list the same numbers. A bound moved far is a build
-for the backends whose lists live on the heap (Rust, Kotlin, Go, Python and the
-Interpreter): the C11 backend returns and passes an algorithm's list by value on the
-stack, a few copies of it at a call, so a bound past what a stack holds there would be
-a crash and not a refusal: a list that crosses a call of an algorithm and takes more
-than 256 KiB (its bound times the bytes of an element) is refused when the algorithm
-and the machine are generated for C11, naming the bound and what to do. The C++
-backend returns it in a `std::vector` and the others on the heap, and take the bound.
+therefore gives every copy of a list the same numbers. Every backend takes a bound
+of any size, limited by the memory its target has and not by a stack
+(docs/adr/0082). An algorithm writes the list it returns into storage its caller
+holds. A C11 machine holds the storage of its calls and of its `<foreach>` copies in
+its own `scratch`, a member of the machine, so the machine grows by its largest call
+and its deepest nest of loops, and no function's frame grows with a list's bound
+(`no_c11_frame_grows_with_a_list_bound` compares every frame of the to-do list's
+machine built at two bounds 64 times apart). The C++ backend returns a list in a
+`std::vector` and the others on the heap.
 `sce-build/tests/a_limit_moves_every_bound_that_names_it.rs`
 holds all of this, the text of a schema's field among it
 (`a_name_moves_the_text_a_schema_field_holds`), and that the repository's own bounds

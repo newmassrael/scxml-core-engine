@@ -215,57 +215,164 @@ fn what_a_build_gives_the_name_is_what_the_files_it_writes_hold() {
     assert_eq!(hash(&machine_moved), hash(&again));
 }
 
-/// A C11 machine holds an algorithm's list on the stack at the call, a few copies of it, so
-/// a bound a stack cannot hold is a crash at the call and not a refusal the machine could
-/// report. It is refused where the bound is built in, by the machine that calls the
-/// algorithm, and the backends whose lists live on the heap take it. The algorithm itself
-/// takes it: it writes its list into a destination its caller holds (docs/adr/0082), and
-/// a caller may hold one of any size where it chooses.
+/// A C11 machine holds the storage of its calls of algorithms and of its loops itself, in
+/// its `scratch`, and an algorithm writes its list into storage its caller holds
+/// (docs/adr/0082), so no bound is held on a stack and none is refused: the machine and
+/// the algorithm both take one far past what a stack holds, and the backends whose lists
+/// live on the heap take the same.
 #[test]
-fn a_bound_the_c_stack_cannot_hold_is_refused_where_it_is_built_in() {
+fn a_c11_build_takes_a_bound_no_stack_could_hold() {
     let (dir, path) = documents(&algorithm(4, ROOM), &machine(4, ROOM));
     let algorithm_path = dir.path().join("copies.scxml");
-    let generate_c = |given: &str, document: &Path| -> (bool, String) {
-        let out = tempdir().expect("tempdir");
-        codegen(
-            &[
-                "--limit",
-                given,
-                "generate",
-                "-l",
-                "c",
-                "-o",
-                out.path().to_str().expect("utf-8"),
-            ],
-            document,
-        )
-    };
-    // A list of bytes holds a byte an element: 200000 of them are 200 KB, which a stack
-    // holds, and 300000 are more than the 256 KiB a list may take.
-    let (ok, out) = generate_c("room=200000", &path);
-    assert!(ok, "{}: a bound a stack holds:\n{out}", path.display());
-    let (ok, out) = generate_c("room=300000", &path);
-    assert!(!ok, "{}: expected a refusal, got:\n{out}", path.display());
-    assert!(
-        out.contains("stack") && out.contains("--limit"),
-        "{}: the refusal must say what to do:\n{out}",
-        path.display()
-    );
-    // The algorithm takes both: its list is its caller's to hold.
-    for given in ["room=200000", "room=300000"] {
-        let (ok, out) = generate_c(given, &algorithm_path);
-        assert!(
-            ok,
-            "{}: the algorithm writes into its caller's destination at {given}:\n{out}",
-            algorithm_path.display()
-        );
+    for given in ["room=200000", "room=300000", "room=16777216"] {
+        for document in [&path, &algorithm_path] {
+            let out = tempdir().expect("tempdir");
+            let (ok, text) = codegen(
+                &[
+                    "--limit",
+                    given,
+                    "generate",
+                    "-l",
+                    "c",
+                    "-o",
+                    out.path().to_str().expect("utf-8"),
+                ],
+                document,
+            );
+            assert!(ok, "{}: C11 at {given}:\n{text}", document.display());
+        }
     }
-    // The backends whose lists live on the heap take the same bound.
     for language in ["rust", "kotlin", "cpp", "python"] {
         let (_dir, path) = documents(&algorithm(4, ROOM), &machine(4, ROOM));
         let (ok, out) = codegen(&["--limit", "room=300000", "check", "-l", language], &path);
         assert!(ok, "{language} takes the bound:\n{out}");
     }
+}
+
+/// The frame of every function of the C11 shared to-do list (`todo_peer`, the machine of a
+/// team's calendar) and of every algorithm it calls, as the compiler reports it
+/// (`-fstack-usage`), built under the list limits `given`: by the file and the function,
+/// the bytes and whether the compiler could bound them.
+fn todo_peer_frames(given: &[(&str, u32)]) -> BTreeMap<(String, String), String> {
+    let fixtures = repo_root().join("sce-build/tests/fixtures/static_datamodel");
+    let out = tempdir().expect("tempdir");
+    let limits: Vec<String> = given
+        .iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect();
+    let mut args: Vec<&str> = Vec::new();
+    for limit in &limits {
+        args.extend(["--limit", limit.as_str()]);
+    }
+    args.extend([
+        "generate",
+        "--with-imports",
+        "-l",
+        "c11",
+        "--input-root",
+        fixtures.to_str().expect("utf-8"),
+        "-o",
+        out.path().to_str().expect("utf-8"),
+    ]);
+    let (ok, text) = codegen(&args, &fixtures.join("todo_peer.scxml"));
+    assert!(ok, "todo_peer at {limits:?}:\n{text}");
+    let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
+    let backends_c = repo_root().join("backends/c");
+    let mut frames = BTreeMap::new();
+    let sources: Vec<PathBuf> = std::fs::read_dir(out.path())
+        .expect("the generated files")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "c"))
+        .collect();
+    assert!(!sources.is_empty(), "no C file was generated at {limits:?}");
+    for source in &sources {
+        let object = source.with_extension("o");
+        // Unoptimised, so that each function keeps a frame of its own and every local
+        // of a bound is in it: one the optimiser dropped would not be seen.
+        let compiled = Command::new(&cc)
+            .args(["-std=c11", "-O0", "-fstack-usage", "-c", "-I"])
+            .arg(out.path())
+            .arg("-I")
+            .arg(backends_c.join("runtime/include"))
+            .arg("-I")
+            .arg(backends_c.join("forge-runtime/include"))
+            .arg(source)
+            .arg("-o")
+            .arg(&object)
+            .output()
+            .expect("the C compiler runs");
+        assert!(
+            compiled.status.success(),
+            "{} compiles at {limits:?}:\n{}",
+            source.display(),
+            String::from_utf8_lossy(&compiled.stderr)
+        );
+        let usage = std::fs::read_to_string(object.with_extension("su"))
+            .expect("the compiler wrote the frames it laid out");
+        let file = source
+            .file_name()
+            .expect("a file name")
+            .to_string_lossy()
+            .into_owned();
+        // `<file>:<line>:<column>:<function>\t<bytes>\t<qualifier>`: the line moves with
+        // the text of a bound, the function does not.
+        for line in usage.lines() {
+            let mut columns = line.split('\t');
+            let (Some(place), Some(bytes), Some(qualifier)) =
+                (columns.next(), columns.next(), columns.next())
+            else {
+                panic!("a line of {file}'s frames this test cannot read: {line}");
+            };
+            let function = place.rsplit(':').next().expect("a function").to_string();
+            frames.insert((file.clone(), function), format!("{bytes} {qualifier}"));
+        }
+    }
+    frames
+}
+
+/// No frame of a C11 machine or of an algorithm it calls grows with a list's bound
+/// (docs/adr/0082 §5). Built at the bounds of the to-do list's small build and at 64
+/// times them, every function has the frame it had: a list of a bound is held by the
+/// machine or by the caller, never by a call's frame, where a bound a team needs would
+/// be a stack that is gone at the call.
+#[test]
+fn no_c11_frame_grows_with_a_list_bound() {
+    let small = todo_peer_frames(&[
+        ("merge_values", 16),
+        ("merge_entries", 48),
+        ("merge_digest", 512),
+    ]);
+    let large = todo_peer_frames(&[
+        ("merge_values", 16 * 64),
+        ("merge_entries", 48 * 64),
+        ("merge_digest", 512 * 64),
+    ]);
+    // A comparison of nothing would pass: the machine's own functions are many.
+    assert!(
+        small.len() > 100,
+        "only {} frames were read at the small bounds",
+        small.len()
+    );
+    assert_eq!(
+        small.keys().collect::<Vec<_>>(),
+        large.keys().collect::<Vec<_>>(),
+        "the two builds lay out the same functions"
+    );
+    let grown: Vec<String> = small
+        .iter()
+        .filter(|(function, frame)| large.get(*function) != Some(*frame))
+        .map(|((file, function), frame)| {
+            format!(
+                "{file} {function}: {frame} -> {}",
+                large[&(file.clone(), function.clone())]
+            )
+        })
+        .collect();
+    assert!(
+        grown.is_empty(),
+        "frames that grow with a list's bound:\n{}",
+        grown.join("\n")
+    );
 }
 
 #[test]

@@ -219,6 +219,42 @@ SCE_SM_FN static void {{ _t }}_saved_write_states(sce_jw_t *w, uint32_t bits) {
    value and keeps nothing. */
 SCE_SM_FN static bool {{ _t }}_saved_read_{{ field.name }}(sce_jv_t v, const char *what, unsigned at, {{ field.ty }} *out,
                                                         sce_saved_error_t *err) {
+{% if field.saved_kind == "list" or field.saved_kind == "record_list" %}
+    /* A list is read an element at a time, each into `out` where it is kept: no copy of
+       the list's whole bound is made here (docs/adr/0082). A session is judged whole,
+       with `out` NULL, before it is kept, so a list that is kept is one that was read. */
+    size_t count = 0u;
+    sce_jiter_t it;
+    sce_jv_t item;
+    char element_what[SCE_SAVED_AT_LEN];
+    (void)at;
+    if (!sce_saved_list(v, what, {{ field.bound }}u, &count, err)) {
+        return false;
+    }
+    (void)sce_jv_iter(v, &it);
+    for (size_t i = 0u; sce_jiter_element(&it, &item); ++i) {
+        {{ field.elem_ty }} element;
+        memset(&element, 0, sizeof(element));
+        sce_saved_path_index(element_what, sizeof(element_what), what, i);
+{% if field.saved_kind == "list" %}
+        if (!{{ get_scalar(false, field.saved_type, none, "item", "element_what", "element") }}) {
+            return false;
+        }
+{% else %}
+        if (!{{ field.saved_type }}_saved_read(item, element_what, at, &element, err)) {
+            return false;
+        }
+{% endif %}
+        if (out != NULL) {
+            out->data[i] = element;
+        }
+    }
+    if (out != NULL) {
+        out->len = count;
+    }
+    return true;
+}
+{% else %}
     {{ field.ty }} value;
     (void)at;
     memset(&value, 0, sizeof(value));
@@ -233,30 +269,6 @@ SCE_SM_FN static bool {{ _t }}_saved_read_{{ field.name }}(sce_jv_t v, const cha
 {% elif field.saved_kind == "record" %}
     if (!{{ field.saved_type }}_saved_read(v, what, at, &value, err)) {
         return false;
-    }
-{% elif field.saved_kind == "list" or field.saved_kind == "record_list" %}
-    {
-        size_t count = 0u;
-        sce_jiter_t it;
-        sce_jv_t item;
-        char element_what[SCE_SAVED_AT_LEN];
-        if (!sce_saved_list(v, what, {{ field.bound }}u, &count, err)) {
-            return false;
-        }
-        (void)sce_jv_iter(v, &it);
-        for (size_t i = 0u; sce_jiter_element(&it, &item); ++i) {
-            sce_saved_path_index(element_what, sizeof(element_what), what, i);
-{% if field.saved_kind == "list" %}
-            if (!{{ get_scalar(false, field.saved_type, none, "item", "element_what", "value.data[i]") }}) {
-                return false;
-            }
-{% else %}
-            if (!{{ field.saved_type }}_saved_read(item, element_what, at, &value.data[i], err)) {
-                return false;
-            }
-{% endif %}
-        }
-        value.len = count;
     }
 {% elif field.saved_kind == "optional" and field.saved_elem == "record" %}
     if (!sce_jv_is_null(v)) {
@@ -278,6 +290,7 @@ SCE_SM_FN static bool {{ _t }}_saved_read_{{ field.name }}(sce_jv_t v, const cha
     }
     return true;
 }
+{% endif %}
 
 {% endfor %}
 /* Every variable of `s`, read as the value of its type, or the refusal that names the first that

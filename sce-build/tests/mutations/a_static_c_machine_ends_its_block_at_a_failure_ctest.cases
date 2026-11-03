@@ -142,8 +142,8 @@ PY
 
 mutation_case "a loop walks the live list instead of its copy" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "sce_at_{n}_ < sce_list_{n}_.len",
-     "sce_at_{n}_ < {list}.len")
+     "sce_at_{n}_ < sce_list_{n}_->len",
+     "sce_at_{n}_ < ({list}).len")
 PY
 
 mutation_case "a loop's index is one past its position" <<'PY'

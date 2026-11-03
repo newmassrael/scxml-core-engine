@@ -74,6 +74,12 @@
    below hold. #}
 {{ static_optional_include }}
 {% endif %}
+{% for line in static_scratch_imports %}
+{# docs/adr/0082: the machine holds the storage its calls of an algorithm write
+   their list into and copy its records into, of the algorithm's own types, which
+   the algorithm's header declares. #}
+{{ line }}
+{% endfor %}
 {% for line in host_invoker_includes %}
 {# docs/adr/0055: a typed host-run result's field that may be absent is the
    struct the runtime declares for its element, which the record below holds
@@ -333,6 +339,10 @@ const {{ csym_prefix }}{{ model.name }}_transition_t *{{ csym_prefix }}{{ model.
    other enums and the bounded strings a record holds, none of which name the
    payload or the event. #}
 {{ static_type_defs }}
+
+{% endif %}
+{% if static_scratch_defs %}
+{{ static_scratch_defs }}
 
 {% endif %}
 {% if static_format2_shape %}
@@ -701,6 +711,14 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     bool in_turn;
 {% endif %}
     {{ csym_prefix }}{{ model.name }}_policy_t policy;
+{% if static_scratch_member %}
+    /* docs/adr/0082: the storage of the machine's calls of algorithms and of its
+       loops, which it holds and not the stack: the destination a call writes its list
+       into, the copy of the machine's records an adapter hands over, and the copy of
+       the list a <foreach> walks (§scxml-4.6). One union for the calls and one for
+       each depth of loop, since no two members of one union are live at once. */
+    {{ static_scratch_member }}
+{% endif %}
     bool is_running;
     /* §scxml-D-enterStates: the top-level <final> the run ended in, valid
        when `has_terminal_state` — set on entering it, zero when a run starts.

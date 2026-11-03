@@ -3891,6 +3891,22 @@ fn render_c11(
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
+        // docs/adr/0082: the storage the machine holds for its calls of algorithms.
+        static_scratch_imports => static_lowering
+            .scratch
+            .as_ref()
+            .map(|scratch| scratch.imports.clone())
+            .unwrap_or_default(),
+        static_scratch_defs => static_lowering
+            .scratch
+            .as_ref()
+            .map(|scratch| scratch.defs.join("\n\n"))
+            .unwrap_or_default(),
+        static_scratch_member => static_lowering
+            .scratch
+            .as_ref()
+            .map(|scratch| scratch.member.clone())
+            .unwrap_or_default(),
         static_format2_shape => format2_keys(&static_lowering),
         static_saved_shape => &static_saved_shape,
         static_done_data => static_done_data,

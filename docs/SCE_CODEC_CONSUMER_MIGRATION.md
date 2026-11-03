@@ -836,3 +836,20 @@ Landing: the commit that adds this section.
 - A generated C11 statechart calls the new signature already. It still holds the list on its stack at the call, and is
   still refused a list larger than 256 KiB there.
 
+## A C11 statechart holds the storage of its calls and loops in the machine (ADR 0082 step 4)
+
+Landing: the commit that adds this section.
+
+- A generated C11 statechart that calls an algorithm returning a list, calls one through an adapter that copies the
+  machine's records, or runs a `<foreach>` has one more member, `scratch`: a struct of one union for the calls and one
+  for each depth of loop. The machine's `sizeof` grows by its largest call and its deepest nest of loop copies, at the
+  bounds it was built with. No function's frame grows with a list's bound any longer.
+- A machine built at a large bound is large. Place it in static storage or on the heap, not in a local of a function:
+  that was always true of its lists, and now holds of the storage of its calls too.
+- The machine's header includes the header of each algorithm whose types `scratch` holds, so a host that includes the
+  machine's header sees those algorithms' declarations. Every such header was generated beside the machine already and
+  is included through the same path.
+- The machine is no longer refused a list larger than 256 KiB. `sce-codegen --limit` takes any bound for C11, as it
+  does for every other backend.
+- Nothing a host calls changed: the machine's functions, its readers and its saved form are as they were.
+

@@ -25,7 +25,7 @@ use crate::filters;
 use crate::forge::error::GenerateError;
 use crate::forge::expr::{
     transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal,
-    C_LIST_DESTINATION, RUST_LIST_DESTINATION,
+    RUST_LIST_DESTINATION,
 };
 use crate::forge::model::{EnumModel, EventSchemaModel, FieldType, SceType, SchemaField};
 use crate::forge::narrowing::{Chain, Facts, Writes};
@@ -78,6 +78,10 @@ pub struct StaticField {
     /// written and read by its own type as a variable of the enum is
     /// ([`Self::saved_type`] is then that type). `None` for every other kind.
     pub saved_elem: Option<&'static str>,
+    /// For a list, the backend type of one element, which a saved state is read into
+    /// an element at a time for a backend whose list holds its whole bound
+    /// (docs/adr/0082). `None` for every other kind.
+    pub elem_ty: Option<String>,
     /// The name a host reads this field through when the field's own name is
     /// not it ([`StaticTarget::reader_name`]) — `None` for a name the backend
     /// cannot give a reader.
@@ -117,6 +121,10 @@ pub struct StaticLowering {
     /// after the machine's payload types, which an adapter that takes an event's
     /// payload names.
     pub adapter_defs: Vec<String>,
+    /// The storage the machine holds for its calls of algorithms in place of the
+    /// stack (docs/adr/0082), for a target that holds it there and a machine that
+    /// makes such a call.
+    pub scratch: Option<Scratch>,
     /// The annotations the machine's file begins with, before its package, for
     /// what it uses of the code it calls — Kotlin's opt-in to the unsigned arrays
     /// an algorithm's list is returned in.
@@ -622,6 +630,49 @@ pub enum AdapterParam<'a> {
     },
 }
 
+/// Which call writes a list a statechart takes whole into the storage its machine
+/// holds (docs/adr/0082, [`StaticTarget::receiving_held_list`]).
+#[derive(Debug, Clone, Copy)]
+pub enum ListCall<'a> {
+    /// The algorithm `symbol`, called by its own name: the list is the variable's
+    /// own kind.
+    Direct(&'a str),
+    /// A statechart's adapter, by its name, for an algorithm that takes or returns
+    /// state: the list is of the algorithm's records, which the adapter converts.
+    Adapter(&'a str),
+}
+
+/// A call or a loop the walk lowered that its machine holds storage for
+/// (docs/adr/0082, [`StaticTarget::scratch`]).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ScratchSite {
+    /// A call of the algorithm `symbol` by its own name, which writes its list there.
+    Direct { symbol: String },
+    /// A call through the adapter `adapter`, whose storage has the members `members`
+    /// ([`StaticTarget::adapter_storage`]).
+    Adapter {
+        adapter: String,
+        members: Vec<String>,
+    },
+    /// A `<foreach>` `depth` loops deep (0 for one no loop holds), which walks a copy
+    /// of a list of the type `list_ty` (§scxml-4.6).
+    Loop { depth: usize, list_ty: String },
+}
+
+/// The storage a machine holds for the calls the walk lowered, in place of the stack
+/// (docs/adr/0082, [`StaticTarget::scratch`]).
+#[derive(Debug, Clone, Default)]
+pub struct Scratch {
+    /// The declarations the machine's own header makes before the machine, which the
+    /// member names.
+    pub defs: Vec<String>,
+    /// The member of the machine that holds it.
+    pub member: String,
+    /// The line of each unit whose types the storage is of, which the machine's
+    /// header includes.
+    pub imports: Vec<String>,
+}
+
 /// What a target needs to write the adapter of a call of an algorithm that takes or
 /// returns a record or a list.
 pub struct AdapterSpec<'a> {
@@ -1080,6 +1131,14 @@ pub trait StaticTarget {
     fn state_adapter(&self, _spec: &AdapterSpec<'_>) -> Option<String> {
         None
     }
+    /// The members of the storage the machine holds for a call through the adapter of
+    /// `spec`, for a target whose adapter copies into storage or has an algorithm write
+    /// into it, which its machine holds and not the stack (docs/adr/0082): each
+    /// declaration of a member, in the target's own language. `None` for a target
+    /// whose adapter holds no storage, and for a call whose adapter needs none.
+    fn adapter_storage(&self, _spec: &AdapterSpec<'_>) -> Option<Vec<String>> {
+        None
+    }
     /// The line that brings the generated unit of the event-schema document
     /// `schema_name` into scope, which an adapter names the algorithm's record type
     /// through; empty for a target that needs none.
@@ -1511,8 +1570,9 @@ pub trait StaticTarget {
     /// [`Self::foreach_loop`] for a target that has to name the type of the item
     /// it binds and of the list it copies — C has no `auto` — handed both:
     /// `item_ty` is the element's type, a record's included, and `list_ty` the
-    /// list's own ([`Self::bounded_list`], [`Self::bounded_record_list`]). The
-    /// default is the untyped loop.
+    /// list's own ([`Self::bounded_list`], [`Self::bounded_record_list`]). `depth` is
+    /// how many loops hold this one, for a target that holds the copy in the machine
+    /// ([`ScratchSite::Loop`]). The default is the untyped loop.
     fn foreach_loop_typed(
         &self,
         list: &str,
@@ -1520,6 +1580,7 @@ pub trait StaticTarget {
         index: Option<&str>,
         _item_ty: &str,
         _list_ty: &str,
+        _depth: usize,
     ) -> Option<(String, String)> {
         self.foreach_loop(list, item, index)
     }
@@ -1586,35 +1647,39 @@ pub trait StaticTarget {
     fn file_annotation_for_list_call(&self) -> Option<String> {
         None
     }
-    /// The type of the local a list `symbol` returns is held in while it is
-    /// computed, for a target that names it — C has no `auto`. `None` for the
-    /// other targets, whose locals are typed by what they infer.
-    fn list_result_type(&self, _symbol: &str) -> Option<String> {
+    /// Types into `ctx` the storage the target hands each call of the machine
+    /// `machine` it holds storage for ([`crate::forge::types::FuncSig::storage`],
+    /// docs/adr/0082). Nothing by default: a target whose calls answer their list and
+    /// copy what they are handed hands none.
+    fn hand_call_storage(
+        &self,
+        _scope: &StaticScope,
+        _machine: &str,
+        _ctx: &mut crate::forge::types::TypeCtx<'_>,
+    ) {
+    }
+    /// The statement that writes the list variable `target` from `value`, a call of
+    /// `call` that writes its list into storage the machine holds (docs/adr/0082), held
+    /// to the variable's bound ([`Self::list_within`], [`Self::state_list_within`]).
+    /// The variable is written, with `write` where the list is the variable's own kind,
+    /// only after every way the statement can fail, so a call that fails leaves it as it
+    /// was. `None` for a target whose call answers the list, which
+    /// [`Self::receiving_write_of`] takes.
+    fn receiving_held_list(
+        &self,
+        _call: ListCall<'_>,
+        _value: &str,
+        _target: &str,
+        _write: &dyn Fn(&str) -> String,
+        _failed: &str,
+    ) -> Option<String> {
         None
     }
-    /// [`Self::list_result_type`] of the list a statechart's adapter `adapter`
-    /// answers, which is the adapter's own type and not the algorithm's.
-    fn state_list_result_type(&self, adapter: &str) -> Option<String> {
-        self.list_result_type(adapter)
-    }
-    /// The statement that takes the list an algorithm writes, computed by `value`,
-    /// into a variable with `write`: [`Self::receiving_write_of`] of the value on a
-    /// target whose call answers the list, and on C11, whose algorithm writes it into
-    /// a destination (docs/adr/0082), the statement that declares the destination
-    /// `value` names, calls, and writes the variable only when the call succeeded.
-    fn receiving_list(
-        &self,
-        write: &dyn Fn(&str) -> String,
-        value: &str,
-        held: &str,
-        failed: &str,
-    ) -> String {
-        self.receiving_write_of(write, value, held, failed)
-    }
-    /// The most bytes one list may take where it crosses a call of an algorithm, for a
-    /// target that passes it by value on the stack. `None` for the others, whose lists
-    /// live on the heap.
-    fn list_stack_limit_bytes(&self) -> Option<u64> {
+    /// The storage of the machine `machine` for the calls and loops the walk lowered,
+    /// which it holds and not the stack (docs/adr/0082): its `scratch`, of one member for
+    /// each of `sites`, for a target that holds one. `None` for the others, and for a
+    /// machine with no such site.
+    fn scratch(&self, _machine: &str, _sites: &[ScratchSite]) -> Option<Scratch> {
         None
     }
     /// The id the machine generates for a `<send idlocation>`, as an owned
@@ -3708,6 +3773,20 @@ fn record_field_bounds<'a>(
     })
 }
 
+/// [`StaticScope::ctx`] as `target` lowers the machine `machine`'s calls: each call
+/// typed with the storage the target hands it ([`StaticTarget::hand_call_storage`]).
+fn lowering_ctx<'a>(
+    scope: &'a StaticScope,
+    target: &dyn StaticTarget,
+    machine: &str,
+    paths: &'a [(String, InferredType)],
+    enums: &'a [StaticEnum],
+) -> crate::forge::types::TypeCtx<'a> {
+    let mut ctx = scope.ctx(paths, enums);
+    target.hand_call_storage(scope, machine, &mut ctx);
+    ctx
+}
+
 /// Every name a lowered `sce-static` expression spells differently on
 /// `target`: each variable to the way the backend reaches its field, each
 /// imported algorithm to the function its generation emits — the name a
@@ -4353,6 +4432,9 @@ pub fn lower(
         scope: &scope,
         payload_schema: Default::default(),
         state_calls: Default::default(),
+        list_calls: Default::default(),
+        loop_depth: Default::default(),
+        loop_lists: Default::default(),
         sites: Default::default(),
         elements: Default::default(),
         next_if_ordinal: std::cell::Cell::new(max_if_ordinal(model) + 1),
@@ -4376,7 +4458,7 @@ pub fn lower(
     // and the same for every backend.
     let saved_shape = saved_shape(model, &scope);
     {
-        let ctx = scope.ctx(&no_payload, &enums);
+        let ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums);
         let init_names: Vec<(String, String)> = variables
             .iter()
             .map(|v| {
@@ -4470,6 +4552,7 @@ pub fn lower(
                     bound: None,
                     saved_kind: "record",
                     saved_elem: None,
+                    elem_ty: None,
                     reader: None,
                     holds_bytes: holds_bytes(schema),
                     seeded: false,
@@ -4515,6 +4598,12 @@ pub fn lower(
                 if let Some(element) = target.data_element(&var.id, &empty) {
                     rewrites.note_element(var.value_type_spelling.as_ref(), &element);
                 }
+                // An element is a number's own type, or the record type the list
+                // holds, which is what its saved form is read by.
+                let elem_ty = match elem {
+                    ListElemType::Scalar(elem) => target.scalar_type(elem),
+                    ListElemType::Record { .. } => saved_type.clone(),
+                };
                 fields.push(StaticField {
                     id: var.id.clone(),
                     name,
@@ -4527,6 +4616,7 @@ pub fn lower(
                     saved_kind,
                     saved_type,
                     saved_elem: None,
+                    elem_ty: Some(elem_ty),
                     reader: None,
                     holds_bytes: holds,
                     seeded: false,
@@ -4570,6 +4660,7 @@ pub fn lower(
                     saved_kind: "optional",
                     saved_type: record_ty,
                     saved_elem: Some("record"),
+                    elem_ty: None,
                     reader: None,
                     holds_bytes: holds_bytes(&place.schema),
                     seeded: false,
@@ -4633,6 +4724,7 @@ pub fn lower(
                         SceType::Enum(_) => "enum",
                         _ => "scalar",
                     }),
+                    elem_ty: None,
                     reader: None,
                     holds_bytes: false,
                     seeded: crate::forge::static_datamodel::seed_slot(var).is_some(),
@@ -4676,6 +4768,7 @@ pub fn lower(
                     bound: None,
                     saved_kind: "enum",
                     saved_elem: None,
+                    elem_ty: None,
                     reader: None,
                     holds_bytes: false,
                     seeded: false,
@@ -4720,6 +4813,7 @@ pub fn lower(
                 saved_kind: "scalar",
                 saved_type: ty.as_attr(),
                 saved_elem: None,
+                elem_ty: None,
                 reader: None,
                 holds_bytes: false,
                 seeded: crate::forge::static_datamodel::seed_slot(var).is_some(),
@@ -4734,7 +4828,7 @@ pub fn lower(
 
     let mut payload_events = BTreeSet::new();
     for state in model.states.values_mut() {
-        let plain_ctx = scope.ctx(&no_payload, &enums);
+        let plain_ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums);
         let plain_renames = renames(&names, None, target);
         for block in state
             .on_entry_blocks
@@ -4848,7 +4942,7 @@ pub fn lower(
             let schema = schemas.get(&transition.event);
             rewrites.open_payload(schema);
             let paths = scope.paths(schema);
-            let ctx = scope.ctx(&paths, &enums);
+            let ctx = lowering_ctx(&scope, target, machine, &paths, &enums);
             let accessor = target.payload_accessor(&transition.event);
             let payload_reads = payload_enum_reads(target, schema, &accessor, &held_enums);
             let mut renames = renames(&names, schema.map(|_| accessor.as_str()), target);
@@ -4942,7 +5036,7 @@ pub fn lower(
         rewrites.open_payload(None);
     }
     for script in &mut model.global_scripts {
-        let ctx = scope.ctx(&no_payload, &enums);
+        let ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums);
         lower_action(script, &ctx, &renames(&names, None, target), &rewrites)?;
     }
     // A payload that is read rides the typed channel, whose struct holds every
@@ -4998,22 +5092,6 @@ pub fn lower(
             if let Some(elem) = field.sce_type.optional_elem() {
                 let present = optional_present(target, machine, elem, field.max_size);
                 declarations.optional_def(&present, elem);
-            }
-        }
-    }
-    // A target that passes an algorithm's list by value on the stack is refused a list of
-    // numbers a stack cannot hold as well (the lists of records are judged below, with the
-    // adapters they are copied by).
-    if target.list_stack_limit_bytes().is_some() {
-        for callee in &scope.callees {
-            if let Some(returned) = &callee.list_return {
-                if let Some(refusal) = crate::forge::generator::c11_list_too_large(
-                    &format!("the list `{}(…)` returns", callee.alias),
-                    crate::forge::generator::c11_scalar_bytes(&returned.elem, None),
-                    returned.max_size,
-                ) {
-                    return Err(refusal);
-                }
             }
         }
     }
@@ -5074,6 +5152,33 @@ pub fn lower(
             *bound = (*bound).max(*capacity);
         }
     }
+    // The calls and loops the machine holds storage for (docs/adr/0082), and the unit
+    // of each algorithm whose types that storage is of.
+    let callee_import = |callee: &StaticCallee| match target.callee(callee)?.import {
+        CalleeImport::Line(line) => Some(line),
+        CalleeImport::InScope | CalleeImport::Unwritable => None,
+    };
+    let mut scratch_sites: Vec<ScratchSite> = Vec::new();
+    let mut scratch_imports: BTreeSet<String> = BTreeSet::new();
+    for symbol in rewrites.list_calls.borrow().iter() {
+        scratch_sites.push(ScratchSite::Direct {
+            symbol: symbol.clone(),
+        });
+    }
+    for (depth, list_ty) in rewrites.loop_lists.borrow().iter() {
+        scratch_sites.push(ScratchSite::Loop {
+            depth: *depth,
+            list_ty: list_ty.clone(),
+        });
+    }
+    for callee in scope.callees.iter().filter(|c| {
+        c.list_return.is_some()
+            && target
+                .callee(c)
+                .is_some_and(|reached| rewrites.list_calls.borrow().contains(&reached.call))
+    }) {
+        scratch_imports.extend(callee_import(callee));
+    }
     let adapted: Vec<String> = if target.has_state_adapters() {
         rewrites.state_calls.borrow().iter().cloned().collect()
     } else {
@@ -5118,57 +5223,14 @@ pub fn lower(
             record_list_bounds: &record_list_bounds,
             enums: &held_enums,
         };
-        // A target that passes an algorithm's list by value on the stack is refused a list
-        // a stack cannot hold, here where the bound is built in and not at the call.
-        if target.list_stack_limit_bytes().is_some() {
-            let record_bytes = |alias: &str| -> u64 {
-                records
-                    .get(alias)
-                    .map(|schema| {
-                        schema
-                            .fields
-                            .iter()
-                            .map(|f| {
-                                crate::forge::generator::c11_field_bytes(&f.sce_type, f.max_size)
-                            })
-                            .sum()
-                    })
-                    .unwrap_or(0)
-            };
-            for slot in &value.params {
-                if let StaticSlot::RecordList(alias) = slot {
-                    let bound = record_list_bounds.get(alias).copied().unwrap_or(1);
-                    if let Some(refusal) = crate::forge::generator::c11_list_too_large(
-                        &format!(
-                            "`{}(…)` is handed a list of the records `{alias}`, which the machine \
-                             copies for it: the list",
-                            callee.alias
-                        ),
-                        record_bytes(alias),
-                        bound,
-                    ) {
-                        return Err(refusal);
-                    }
-                }
-            }
-            if let (Some(slot), Some(max)) = (value.ret.as_ref(), value.max_size) {
-                let element_bytes = match slot {
-                    StaticSlot::ScalarList(ty) => {
-                        Some(crate::forge::generator::c11_scalar_bytes(ty, None))
-                    }
-                    StaticSlot::RecordList(alias) => Some(record_bytes(alias)),
-                    _ => None,
-                };
-                if let Some(refusal) = element_bytes.and_then(|bytes| {
-                    crate::forge::generator::c11_list_too_large(
-                        &format!("the list `{}(…)` returns", callee.alias),
-                        bytes,
-                        max,
-                    )
-                }) {
-                    return Err(refusal);
-                }
-            }
+        // What the adapter copies the machine's records into and has the algorithm write
+        // its list into is the machine's, whatever the bound, and not the stack's.
+        if let Some(members) = target.adapter_storage(&spec) {
+            scratch_sites.push(ScratchSite::Adapter {
+                adapter: spec.name.clone(),
+                members,
+            });
+            scratch_imports.extend(callee_import(callee));
         }
         adapter_defs.push(target.state_adapter(&spec).ok_or_else(|| {
             GenerateError::unsupported(format!(
@@ -5235,11 +5297,18 @@ pub fn lower(
         }
     }
     let imports: Vec<String> = imports.into_iter().collect();
+    let scratch = target
+        .scratch(machine, &scratch_sites)
+        .map(|scratch| Scratch {
+            imports: scratch_imports.into_iter().collect(),
+            ..scratch
+        });
     Ok(StaticLowering {
         fields,
         payload_events,
         type_defs,
         adapter_defs,
+        scratch,
         file_annotations,
         imports,
         records: declarations.records,
@@ -6228,6 +6297,15 @@ struct Rewrites<'m> {
     /// The names ([`crate::forge::type_ctx::state_call_name`]) of the calls of an
     /// algorithm with state in a slot the walk has lowered: the adapters to declare.
     state_calls: std::cell::RefCell<BTreeSet<String>>,
+    /// The symbols of the algorithms the walk has lowered a call of that writes a list
+    /// whole into a variable, called by their own name: the destinations a target that
+    /// holds them in the machine declares (docs/adr/0082).
+    list_calls: std::cell::RefCell<BTreeSet<String>>,
+    /// How many `<foreach>` hold the action the walk is in, and each depth a loop was
+    /// lowered at with the type of the list it copies: the copies a target that holds
+    /// them in the machine declares (docs/adr/0082).
+    loop_depth: std::cell::Cell<usize>,
+    loop_lists: std::cell::RefCell<BTreeSet<(usize, String)>>,
     /// What the walk has lowered so far ([`StaticLowering::sites`]). Written
     /// through a shared reference because the walk reads `Rewrites` from
     /// closures.
@@ -9971,11 +10049,6 @@ impl StaticTarget for CTarget {
     fn generated_invoke_id(&self) -> Option<&'static str> {
         Some("_runtime_id_buf")
     }
-    // The machine holds an algorithm's list on the stack at the call, a few copies of
-    // it where an adapter converts it.
-    fn list_stack_limit_bytes(&self) -> Option<u64> {
-        Some(crate::forge::generator::C11_LIST_STACK_LIMIT_BYTES)
-    }
     // A statement that fails is a block of its own that returns from the function: the
     // blocks follow one another.
     fn in_sequence(&self, parts: &[String]) -> String {
@@ -10060,11 +10133,14 @@ impl StaticTarget for CTarget {
     fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("call_{coded}")
     }
-    // The list an adapter gave back is its result struct, read from `items` and `len`,
-    // as an algorithm's is; the adapter declares the `_within` that holds it to the
-    // variable's bound.
+    // The adapter has the algorithm write its list into the destination the machine
+    // holds for the adapter (docs/adr/0082) and answers whether it did, as a direct call
+    // does: only a list it wrote is held to the variable's bound.
     fn state_list_within(&self, adapter: &str, value: &str, capacity: u32) -> String {
-        format!("{adapter}_within(&sce_failure_, {value}, {capacity}u)")
+        format!(
+            "({value} && sce_forge_algorithm_held_within(&sce_failure_, {}.r.len, {capacity}u))",
+            c11_scratch(adapter)
+        )
     }
     // A function of the machine's header that builds the algorithm's records from the
     // machine's, calls it, and builds the machine's own from what it returns,
@@ -10213,20 +10289,16 @@ impl StaticTarget for CTarget {
                     ..
                 } => {
                     let algorithm = algorithm_record(alias)?;
-                    // The list is copied into a buffer of the largest bound any list of
-                    // these records has in the machine, which the list handed in fits.
-                    let bound = spec
-                        .record_list_bounds
-                        .get(alias)
-                        .copied()
-                        .unwrap_or(1)
-                        .max(1);
+                    // The list is copied into the machine's storage for the call, of the
+                    // largest bound any list of these records has in the machine, which
+                    // the list handed in fits ([`Self::adapter_storage`]).
+                    let bound = c11_record_list_bound(spec, alias);
                     declarations.push(format!(
                         "{} {p}",
                         self.record_list_view(&machine_record(alias))?
                     ));
                     prelude.push_str(&format!(
-                        "    {algorithm} a{index}[{bound}u];\n    for (size_t i = 0; i < {p}.len && i < {bound}u; ++i) {{\n        a{index}[i] = {};\n    }}\n",
+                        "    for (size_t i = 0; i < {p}.len && i < {bound}u; ++i) {{\n        s->a{index}[i] = {};\n    }}\n",
                         record_of(
                             alias,
                             algorithm.clone(),
@@ -10235,7 +10307,7 @@ impl StaticTarget for CTarget {
                         )?
                     ));
                     arguments.push(format!(
-                        "({}_view_t){{ .data = a{index}, .len = {p}.len }}",
+                        "({}_view_t){{ .data = s->a{index}, .len = {p}.len }}",
                         algorithm.trim_end_matches("_t")
                     ));
                 }
@@ -10244,10 +10316,16 @@ impl StaticTarget for CTarget {
         }
         let call = format!("{}({})", spec.call, arguments.join(", "));
         let result_type = format!("{name}_result_t");
-        // The machine's own element or value, and the bound the algorithm's list has.
+        // The storage the machine holds for the call, which the adapter is handed after
+        // the values it converts.
+        let storage = c11_adapter_storage_type(spec.machine, name);
+        if self.adapter_storage(spec).is_some() {
+            declarations.push(format!("{storage} *s"));
+        }
+        // The machine's own element or value.
         enum Shape {
             Value(String),
-            List(String, u32),
+            List(String),
         }
         let shape = match value.ret.as_ref()? {
             StaticSlot::Scalar(SceType::Enum(reference)) => {
@@ -10259,14 +10337,12 @@ impl StaticTarget for CTarget {
                 Shape::Value(self.optional_record_type(spec.machine, alias)?)
             }
             StaticSlot::Record(alias) => Shape::Value(machine_record(alias)),
-            StaticSlot::ScalarList(ty) if plain_scalar(ty) => {
-                Shape::List(self.scalar_type(ty), value.max_size?)
-            }
-            StaticSlot::RecordList(alias) => Shape::List(machine_record(alias), value.max_size?),
+            StaticSlot::ScalarList(ty) if plain_scalar(ty) => Shape::List(self.scalar_type(ty)),
+            StaticSlot::RecordList(alias) => Shape::List(machine_record(alias)),
             _ => return None,
         };
-        // From the algorithm's result `r`: the machine's value, or the statements
-        // that fill `out` with the machine's list.
+        // From the algorithm's result `r`: the machine's value; or, from the list it
+        // wrote into the storage `s`, the statement that fills the machine's list `into`.
         let converted = |from: &str| -> Option<String> {
             Some(match value.ret.as_ref()? {
                 StaticSlot::Scalar(SceType::Enum(reference)) => {
@@ -10296,13 +10372,13 @@ impl StaticTarget for CTarget {
             })
         };
         let list_fill = match value.ret.as_ref()? {
-            StaticSlot::ScalarList(_) => "        out.items[i] = r.items[i];\n".to_string(),
+            StaticSlot::ScalarList(_) => "        into[i] = s->r.items[i];\n".to_string(),
             StaticSlot::RecordList(alias) => format!(
-                "        out.items[i] = {};\n",
+                "        into[i] = {};\n",
                 record_of(
                     alias,
                     machine_record(alias),
-                    "r.items[i]",
+                    "s->r.items[i]",
                     Crossing::FromAlgorithm
                 )?
             ),
@@ -10311,16 +10387,16 @@ impl StaticTarget for CTarget {
         let scalar_or_record_value = |from: &str| converted(from);
         // The algorithm's own result struct.
         let call_result = format!("{}_result_t", spec.call);
-        // A list the algorithm returns is written into the adapter's destination `r`
-        // and its failure into the adapter's record (docs/adr/0082).
-        let destination = crate::forge::generator::c11_list_destination_type(&spec.call);
+        // A list the algorithm returns is written into the destination `r` the machine
+        // holds for the call, and its failure into the statement's record
+        // (docs/adr/0082).
         let written = format!(
             "{}({})",
             spec.call,
             arguments
                 .iter()
                 .map(String::as_str)
-                .chain(["&r", "&sce_why_"])
+                .chain(["&s->r", "failure"])
                 .collect::<Vec<_>>()
                 .join(", ")
         );
@@ -10332,12 +10408,18 @@ impl StaticTarget for CTarget {
                 declarations.join(", "),
                 scalar_or_record_value("r.value")?,
             ),
-            (true, Shape::List(ty, max)) => format!(
-                "typedef struct {{\n    {ty} items[{max}u];\n    size_t len;\n    bool ok;\n    sce_forge_algorithm_error_t why;\n}} {result_type};\n\n\
-                 static inline {result_type} {name}_take(sce_forge_algorithm_failure_t *failure, {result_type} result) {{\n    if (!result.ok) {{\n        sce_forge_algorithm_fail(failure, result.why);\n        return ({result_type}){{0}};\n    }}\n    return result;\n}}\n\n\
-                 static inline {result_type} {name}_within(sce_forge_algorithm_failure_t *failure, {result_type} result, uint32_t capacity) {{\n    if (result.len > capacity) {{\n        sce_forge_algorithm_fail(failure, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);\n        return ({result_type}){{0}};\n    }}\n    return result;\n}}\n\n\
-                 static inline {result_type} {name}({}) {{\n{prelude}    {destination} r;\n    sce_forge_algorithm_failure_t sce_why_ = {{ false, SCE_FORGE_ALGORITHM_OVERFLOW }};\n    if (!{written}) {{\n        return ({result_type}){{ .ok = false, .why = sce_why_.error }};\n    }}\n    {result_type} out = {{ .ok = true }};\n    for (size_t i = 0; i < r.len && i < {max}u; ++i) {{\n{list_fill}    }}\n    out.len = r.len;\n    return out;\n}}",
-                declarations.join(", "),
+            // The call writes the storage and answers whether it did, as the algorithm
+            // does; the statement holds the list to the variable's bound and then has
+            // `_commit` copy it into the variable, each record converted.
+            (true, Shape::List(ty)) => format!(
+                "static inline bool {name}({}) {{\n{prelude}    return {written};\n}}\n\n\
+                 static inline size_t {name}_commit(const {storage} *s, {ty} *into) {{\n    for (size_t i = 0; i < s->r.len; ++i) {{\n{list_fill}    }}\n    return s->r.len;\n}}",
+                declarations
+                    .iter()
+                    .map(String::as_str)
+                    .chain(["sce_forge_algorithm_failure_t *failure"])
+                    .collect::<Vec<_>>()
+                    .join(", "),
             ),
             (false, Shape::Value(ty)) => {
                 // What the algorithm returns, in the algorithm's own type.
@@ -10356,6 +10438,38 @@ impl StaticTarget for CTarget {
             }
             (false, Shape::List(..)) => return None,
         })
+    }
+    // A buffer of the algorithm's records for each list of the machine's records the
+    // call hands over, of the largest bound such a list has in the machine, and the
+    // algorithm's destination for a list it returns.
+    fn adapter_storage(&self, spec: &AdapterSpec<'_>) -> Option<Vec<String>> {
+        use crate::forge::generator::event_schema_payload_type;
+        let value = spec.callee.value.as_ref()?;
+        let mut members = Vec::new();
+        for (index, param) in spec.params.iter().enumerate() {
+            if let AdapterParam::State {
+                slot: StaticSlot::RecordList(alias),
+                ..
+            } = param
+            {
+                let schema = plain_schema(spec, alias)?;
+                members.push(format!(
+                    "{} a{index}[{}u];",
+                    event_schema_payload_type(&schema.name, Language::C11),
+                    c11_record_list_bound(spec, alias)
+                ));
+            }
+        }
+        if matches!(
+            value.ret,
+            Some(StaticSlot::ScalarList(_) | StaticSlot::RecordList(_))
+        ) {
+            members.push(format!(
+                "{} r;",
+                crate::forge::generator::c11_list_destination_type(&spec.call)
+            ));
+        }
+        (!members.is_empty()).then_some(members)
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
         // The integers, the bool and an enum: a `bool`, a number and an
@@ -10843,8 +10957,10 @@ impl StaticTarget for CTarget {
         }
     }
     // A copy of the list the loop began with is walked, by a count of its own
-    // (§scxml-4.6). The outer `for` is how a statement declares the copy in a
-    // head that is one statement: it runs its body once.
+    // (§scxml-4.6). The copy is the machine's, in the union of the loop's depth
+    // (docs/adr/0082), and holds the list's elements and no more. The outer `for` is
+    // how a statement makes the copy in a head that is one statement: it runs its
+    // body once.
     fn foreach_loop_typed(
         &self,
         list: &str,
@@ -10852,18 +10968,27 @@ impl StaticTarget for CTarget {
         index: Option<&str>,
         item_ty: &str,
         list_ty: &str,
+        depth: usize,
     ) -> Option<(String, String)> {
         let n = self
             .loops
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             + 1;
+        let copy = format!(
+            "sm->scratch.{}.{}",
+            c11_loop_storage(depth),
+            c11_loop_member(list_ty)
+        );
         let head = format!(
-            "for ({list_ty} sce_list_{n}_ = {list}, *sce_once_{n}_ = &sce_list_{n}_; \
+            "for ({list_ty} *sce_list_{n}_ = &{copy}, *sce_once_{n}_ = \
+             (sce_list_{n}_->len = ({list}).len, \
+             memcpy(sce_list_{n}_->data, ({list}).data, ({list}).len * sizeof(sce_list_{n}_->data[0])), \
+             sce_list_{n}_); \
              sce_once_{n}_ != NULL; sce_once_{n}_ = NULL) \
-             for (size_t sce_at_{n}_ = 0; sce_at_{n}_ < sce_list_{n}_.len; ++sce_at_{n}_)"
+             for (size_t sce_at_{n}_ = 0; sce_at_{n}_ < sce_list_{n}_->len; ++sce_at_{n}_)"
         );
         let mut prologue =
-            format!("{item_ty} {item} = sce_list_{n}_.data[sce_at_{n}_]; (void){item};");
+            format!("{item_ty} {item} = sce_list_{n}_->data[sce_at_{n}_]; (void){item};");
         if let Some(index) = index {
             prologue.push_str(&format!(
                 " uint32_t {index} = (uint32_t)sce_at_{n}_; (void){index};"
@@ -10986,13 +11111,14 @@ impl StaticTarget for CTarget {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }
-    // The algorithm writes its list into the destination the statement declares
-    // (docs/adr/0082), and the call answers whether it did: only a list it wrote is
+    // The algorithm writes its list into the destination the machine holds for the
+    // call (docs/adr/0082), and the call answers whether it did: only a list it wrote is
     // held to the variable's bound, so a failed call's destination is never read.
     // The machine's own list is the library's `{len, data[bound]}`.
-    fn list_within(&self, value: &str, capacity: u32, _symbol: &str, _elem: &SceType) -> String {
+    fn list_within(&self, value: &str, capacity: u32, symbol: &str, _elem: &SceType) -> String {
         format!(
-            "({value} && sce_forge_algorithm_held_within(&sce_failure_, {C_LIST_DESTINATION}.len, {capacity}u))"
+            "({value} && sce_forge_algorithm_held_within(&sce_failure_, {}.len, {capacity}u))",
+            c11_scratch(&c11_direct_storage(symbol))
         )
     }
     fn assign_list(&self, target: &str, value: &str) -> String {
@@ -11001,28 +11127,130 @@ impl StaticTarget for CTarget {
              {target}.len = {value}.len;"
         )
     }
-    fn list_result_type(&self, symbol: &str) -> Option<String> {
-        Some(crate::forge::generator::c11_list_destination_type(symbol))
-    }
-    // An adapter answers its own result struct, by value, holding the machine's
-    // records it converted from the algorithm's destination.
-    fn state_list_result_type(&self, adapter: &str) -> Option<String> {
-        Some(format!("{adapter}_result_t"))
-    }
-    // The destination is a local of the algorithm's `<symbol>_list_t`, which the
-    // call writes, and the variable takes it only when nothing failed.
-    fn receiving_list(
+    // Each call that writes a list, and each adapter that copies the machine's records
+    // or has the algorithm write a list, is handed its member of the machine's
+    // `scratch`: no list of a bound is ever a local of the machine's code.
+    fn hand_call_storage(
         &self,
-        write: &dyn Fn(&str) -> String,
+        scope: &StaticScope,
+        machine: &str,
+        ctx: &mut crate::forge::types::TypeCtx<'_>,
+    ) {
+        for callee in scope.callees.iter().filter(|c| c.list_return.is_some()) {
+            let symbol = generated_callee(Language::C11, callee, None).call;
+            if let Some(sig) = ctx.funcs.get_mut(callee.alias.as_str()) {
+                sig.storage = Some(format!("&{}", c11_scratch(&c11_direct_storage(&symbol))));
+            }
+        }
+        for call in scope.state_calls() {
+            let Some(callee) = scope.value_callee(&call.alias) else {
+                continue;
+            };
+            let Some(value) = callee.value.as_ref() else {
+                continue;
+            };
+            let returns_list = matches!(
+                value.ret,
+                Some(StaticSlot::ScalarList(_) | StaticSlot::RecordList(_))
+            );
+            let copies_records = value
+                .params
+                .iter()
+                .any(|slot| matches!(slot, StaticSlot::RecordList(_)));
+            if !(returns_list || copies_records) {
+                continue;
+            }
+            let adapter = self.state_adapter_name(machine, callee, &call.name);
+            if let Some(sig) = ctx.funcs.get_mut(call.name.as_str()) {
+                sig.storage = Some(format!("&{}", c11_scratch(&adapter)));
+                if returns_list {
+                    sig.reading = CallReading::IntoDestination;
+                }
+            }
+        }
+    }
+    // The call writes the machine's storage and answers whether it did; the variable
+    // takes the list only when nothing failed, copied from the algorithm's destination
+    // (by its adapter, which converts the algorithm's records into the machine's).
+    fn receiving_held_list(
+        &self,
+        call: ListCall<'_>,
         value: &str,
-        held: &str,
+        target: &str,
+        write: &dyn Fn(&str) -> String,
         failed: &str,
-    ) -> String {
-        format!(
-            "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; {held} {C_LIST_DESTINATION}; \
-             (void){value}; if (sce_failure_.failed) {{ {failed} return; }} {} }}",
-            write(C_LIST_DESTINATION)
-        )
+    ) -> Option<String> {
+        let commit = match call {
+            ListCall::Direct(symbol) => write(&c11_scratch(&c11_direct_storage(symbol))),
+            ListCall::Adapter(adapter) => format!(
+                "{target}.len = {adapter}_commit(&{}, {target}.data);",
+                c11_scratch(adapter)
+            ),
+        };
+        Some(format!(
+            "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; (void){value}; \
+             if (sce_failure_.failed) {{ {failed} return; }} {commit} }}"
+        ))
+    }
+    // A union for the calls: no two calls that hold storage are live at once, since a
+    // list is taken only as the whole of an assignment and an adapter's copies end with
+    // its call. A union for each depth of loop: two loops at one depth never run at once,
+    // and a loop inside a loop, or a call inside either, does. So the machine is as large
+    // as its largest call and its deepest nest of copies, and no larger.
+    fn scratch(&self, machine: &str, sites: &[ScratchSite]) -> Option<Scratch> {
+        if sites.is_empty() {
+            return None;
+        }
+        let mut defs = Vec::new();
+        let mut calls = Vec::new();
+        let mut loops: std::collections::BTreeMap<usize, Vec<String>> = Default::default();
+        for site in sites {
+            match site {
+                ScratchSite::Direct { symbol } => calls.push(format!(
+                    "{} {};",
+                    crate::forge::generator::c11_list_destination_type(symbol),
+                    c11_direct_storage(symbol)
+                )),
+                ScratchSite::Adapter { adapter, members } => {
+                    let ty = c11_adapter_storage_type(machine, adapter);
+                    defs.push(format!(
+                        "/* docs/adr/0082: what `{adapter}` copies the machine's records into and\n   has the algorithm write its list into. */\ntypedef struct {{\n{}\n}} {ty};",
+                        members
+                            .iter()
+                            .map(|member| format!("    {member}"))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    ));
+                    calls.push(format!("{ty} {adapter};"));
+                }
+                ScratchSite::Loop { depth, list_ty } => loops
+                    .entry(*depth)
+                    .or_default()
+                    .push(format!("{list_ty} {};", c11_loop_member(list_ty))),
+            }
+        }
+        let union = |members: &[String], name: &str| {
+            format!(
+                "        union {{\n{}\n        }} {name};",
+                members
+                    .iter()
+                    .map(|member| format!("            {member}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        };
+        let mut parts = Vec::new();
+        if !calls.is_empty() {
+            parts.push(union(&calls, C11_CALL_STORAGE));
+        }
+        for (depth, members) in &loops {
+            parts.push(union(members, &c11_loop_storage(*depth)));
+        }
+        Some(Scratch {
+            defs,
+            member: format!("struct {{\n{}\n    }} scratch;", parts.join("\n")),
+            imports: Vec::new(),
+        })
     }
     // The count and the buffer the id is formatted into are fields of the
     // machine (`SCXMLModel::needs_auto_send_id`), and the runtime's helper
@@ -11495,6 +11723,53 @@ impl StaticTarget for CTarget {
 /// runtime's optional type by: the machine's header, whose policy and records hold
 /// one, and its source.
 pub(crate) const C11_OPTIONAL_INCLUDE: &str = "#include <sce/forge/optional.h>";
+
+/// The union of a C11 machine's `scratch` that holds the storage of its calls
+/// (docs/adr/0082).
+const C11_CALL_STORAGE: &str = "call";
+
+/// Where a C11 machine holds the storage of a call: the member `member` of the calls'
+/// union of its `scratch` (docs/adr/0082), which the machine's code reaches through
+/// `sm`.
+fn c11_scratch(member: &str) -> String {
+    format!("sm->scratch.{C11_CALL_STORAGE}.{member}")
+}
+
+/// The union of a C11 machine's `scratch` that holds the copies the `<foreach>` loops
+/// `depth` loops deep walk (docs/adr/0082, §scxml-4.6).
+fn c11_loop_storage(depth: usize) -> String {
+    format!("loop_{depth}")
+}
+
+/// The member of a loop's union that holds a copy of a list of the type `list_ty`.
+fn c11_loop_member(list_ty: &str) -> String {
+    format!("of_{}", list_ty.trim_end_matches("_t"))
+}
+
+/// The member of a C11 machine's `scratch` a call of the algorithm `symbol` by its own
+/// name writes its list into. An adapter's member is the adapter's name, which begins
+/// with `call_` ([`StaticTarget::state_adapter_name`]), so the two never meet.
+fn c11_direct_storage(symbol: &str) -> String {
+    format!("into_{symbol}")
+}
+
+/// The type of the storage a C11 machine `machine` holds for the calls through its
+/// adapter `adapter` ([`StaticTarget::adapter_storage`]), declared in the machine's
+/// header beside the machine.
+fn c11_adapter_storage_type(machine: &str, adapter: &str) -> String {
+    format!("{machine}_{adapter}_storage_t")
+}
+
+/// The bound of the buffer a C11 adapter copies a list of the records `alias` into: the
+/// largest bound any list of these records has in the machine, which every list the
+/// machine hands over fits.
+fn c11_record_list_bound(spec: &AdapterSpec<'_>, alias: &str) -> u32 {
+    spec.record_list_bounds
+        .get(alias)
+        .copied()
+        .unwrap_or(1)
+        .max(1)
+}
 
 /// The name `sce/forge/optional.h` declares the optional value whose present
 /// value is held in the C type `present` under (`sce_optional_<name>_t`,
@@ -13240,8 +13515,8 @@ fn lower_action(
                     // call and the variable to its bound.
                     //
                     // A call that takes or returns state is the adapter's, not the
-                    // algorithm's own: what it gives back is the adapter's result,
-                    // which the algorithm's `_within` does not take.
+                    // algorithm's own: what it gives back is the adapter's, held to
+                    // the bound below as the adapter's.
                     let state_call = rewrites.whole_state_call(&action.expr);
                     let returned_list = rewrites
                         .lists
@@ -13295,17 +13570,27 @@ fn lower_action(
                             target.assign(name, v)
                         }
                     };
-                    // A target that names the type of the local the returned list
-                    // is held in while it is computed.
-                    let held_list = returned_list
+                    // A list a call writes into the storage its machine holds is
+                    // written into the variable after every way the statement can fail
+                    // (docs/adr/0082).
+                    let list_call = returned_list
                         .as_ref()
-                        .and_then(|(_, _, alias)| {
-                            target.list_result_type(renames.get(alias.as_str()).copied()?)
+                        .map(|(_, _, alias)| {
+                            ListCall::Direct(renames.get(alias.as_str()).copied().unwrap_or(alias))
                         })
-                        .or_else(|| {
-                            state_list
-                                .and_then(|(adapter, _)| target.state_list_result_type(adapter))
-                        });
+                        .or_else(|| state_list.map(|(adapter, _)| ListCall::Adapter(adapter)));
+                    if let Some(ListCall::Direct(symbol)) = list_call {
+                        rewrites.list_calls.borrow_mut().insert(symbol.to_string());
+                    }
+                    let held_list = list_call.filter(|_| value.can_fail).and_then(|call| {
+                        target.receiving_held_list(
+                            call,
+                            &value.text,
+                            name,
+                            &write,
+                            &failed(construct.clone()),
+                        )
+                    });
                     // ... and the record an adapter gave back.
                     let held_record = state_call.as_ref().and_then(|(_, ret)| match ret {
                         StaticSlot::Record(alias) => {
@@ -13323,27 +13608,7 @@ fn lower_action(
                             ),
                             true,
                         ),
-                        // A list the algorithm itself returns is written where the
-                        // statement holds it (docs/adr/0082); an adapter's is its
-                        // own value.
-                        _ if held_list.is_some() && value.can_fail && returned_list.is_some() => (
-                            target.receiving_list(
-                                &write,
-                                &value.text,
-                                held_list.as_deref().unwrap_or_default(),
-                                &failed(construct),
-                            ),
-                            true,
-                        ),
-                        _ if held_list.is_some() && value.can_fail => (
-                            target.receiving_write_of(
-                                &write,
-                                &value.text,
-                                held_list.as_deref().unwrap_or_default(),
-                                &failed(construct),
-                            ),
-                            true,
-                        ),
+                        _ if held_list.is_some() => (held_list.unwrap_or_default(), true),
                         // A record made whole from a payload that can fail is
                         // held while it is computed in a value of its own type.
                         Some(held) if value.can_fail => (
@@ -13534,12 +13799,19 @@ fn lower_action(
                     (record_ty, list.ty)
                 }
             };
+            // The loops that hold this one, and the copy it walks at that depth.
+            let depth = rewrites.loop_depth.get();
+            rewrites
+                .loop_lists
+                .borrow_mut()
+                .insert((depth, list_ty.clone()));
             if let Some((head, prologue)) = target.foreach_loop_typed(
                 name,
                 &item_local,
                 index_local.as_deref(),
                 &item_ty,
                 &list_ty,
+                depth,
             ) {
                 action.native_loop = head;
                 action.native_loop_prologue = prologue;
@@ -13577,7 +13849,9 @@ fn lower_action(
                         .map(|(from, to)| (from.as_str(), to.as_str())),
                 )
                 .collect();
+            rewrites.loop_depth.set(depth + 1);
             let lowered = lower_actions(&mut action.actions, &inner, &inner_renames, rewrites);
+            rewrites.loop_depth.set(depth);
             if holds_a_record.is_some() {
                 rewrites.loop_records.borrow_mut().pop();
             }

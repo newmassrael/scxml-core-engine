@@ -203,6 +203,22 @@ changes each backend says how (ADR 0078):
 4. The C11 machine. `scratch`, the statement of §3, and the removal of `_take`, `_within` and
    `list_result_type` for lists. The stack refusal goes (§4). The refusal test becomes the large-bound test, and the
    `-fstack-usage` gate is added.
+   *Landed 2026-11-03, but for the run at a team's bound, which follows.* A call that the machine holds storage for is
+   typed with it (`FuncSig::storage`, carried on the call), so the expression layer hands the call a pointer to its
+   member of `scratch` after its written arguments: a direct call's destination (`scratch.call.into_<symbol>`), and an
+   adapter's storage (`scratch.call.<adapter>`), which holds the copy of the machine's records it hands over and, for a
+   list, the algorithm's destination. A list-returning adapter answers `bool`, as the algorithm does, and its
+   `_commit` converts the destination into the variable after the bound is held, so the variable is written after
+   every way the statement can fail. The machine's header includes the headers of the algorithms whose types
+   `scratch` holds. The gate (`no_c11_frame_grows_with_a_list_bound`) found three more kinds of frame that grew with
+   a bound, each a copy of a whole list in a local, and each is gone: a `<foreach>` walks a copy in a union of its
+   depth (`scratch.loop_<depth>`, a loop inside a loop being the one case where two copies are live), the empty list
+   a variable starts as is not written again over the machine `init_construct` has zeroed, and a saved list is read
+   an element at a time into the machine, which is safe because a session is judged whole before it is applied.
+   `a_bound_the_c_stack_cannot_hold_is_refused_where_it_is_built_in` became
+   `a_c11_build_takes_a_bound_no_stack_could_hold`. `C11_LIST_STACK_LIMIT_BYTES`, `c11_list_too_large`,
+   `StaticTarget::list_stack_limit_bytes`, `list_result_type`, `state_list_result_type` and `C_LIST_DESTINATION` are
+   removed.
 5. SCE_FORGE.md §4.12 and SCE_ACCEPTED_SUBSET §2.15 are rewritten to the new signatures and the removed refusal, in
    the landings that change them.
 

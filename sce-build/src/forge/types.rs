@@ -1142,6 +1142,12 @@ pub struct FuncSig {
     /// check and a lookup whose miss is an error, which a `sce-static` statechart
     /// calls.
     pub reading: CallReading,
+    /// The storage the caller holds for the call, handed after the arguments it is
+    /// written with, as the backend spells a pointer to it (docs/adr/0082): the
+    /// member of a C11 machine's `scratch` a call of an algorithm writes its list
+    /// into, or copies the machine's records into before it is called. `None` for a
+    /// call that is handed none, which is every call but those.
+    pub storage: Option<String>,
 }
 
 /// How the value of a call is read from what the called function answers, where
@@ -1178,6 +1184,7 @@ impl FuncSig {
             host_only: None,
             may_fail: false,
             reading: CallReading::Value,
+            storage: None,
         }
     }
 

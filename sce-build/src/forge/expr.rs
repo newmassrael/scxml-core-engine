@@ -2195,6 +2195,7 @@ fn lower_stateful_import_calls(ast: &mut TypedExpr, lowerings: &[ImportLowering]
                                 // A stateful import's method returns a value.
                                 fails: false,
                                 into_destination: false,
+                                storage: None,
                             };
                             return;
                         }
@@ -2724,6 +2725,11 @@ pub(crate) enum ExprKind {
         /// docs/adr/0082), which Rust and C11 spell. Written by [`infer_types`]
         /// with `fails`.
         into_destination: bool,
+        /// The storage the caller holds for the call and hands it after the
+        /// arguments it is written with ([`FuncSig::storage`], docs/adr/0082), as
+        /// the backend spells a pointer to it. Written by [`infer_types`] with
+        /// `fails`.
+        storage: Option<String>,
     },
     /// A borrowed `bytes`-view projection of a `Str`-typed source. Not
     /// produced by the parser — [`infer_types`] wraps a call argument in
@@ -4532,6 +4538,7 @@ impl<'a> Parser<'a> {
                             params: Vec::new(),
                             fails: false,
                             into_destination: false,
+                            storage: None,
                         },
                     ))?;
                 }
@@ -5233,6 +5240,7 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             params: call_params,
             fails: call_fails,
             into_destination,
+            storage,
         } => {
             infer_types(callee, ctx);
             for a in args.iter_mut() {
@@ -5263,12 +5271,12 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                 _ => None,
             };
             *call_fails = resolved.as_ref().is_some_and(|(_, _, may_fail)| *may_fail);
-            *into_destination = match &callee.kind {
-                ExprKind::Ident(name) => ctx
-                    .lookup_func(name.as_str())
-                    .is_some_and(|s| s.reading == CallReading::IntoDestination),
-                _ => false,
+            let named = match &callee.kind {
+                ExprKind::Ident(name) => ctx.lookup_func(name.as_str()),
+                _ => None,
             };
+            *into_destination = named.is_some_and(|s| s.reading == CallReading::IntoDestination);
+            *storage = named.and_then(|s| s.storage.clone());
             match resolved {
                 Some((ret, params, _)) => {
                     // Wildcard-keyexpr Str-argument projection: a `Str`
@@ -6158,6 +6166,7 @@ fn wrap_in_found(expr: &mut TypedExpr, wrapper: &str) {
             params: std::mem::take(params),
             fails: false,
             into_destination: false,
+            storage: None,
         },
         ty: InferredType::Unknown,
         span,
@@ -6379,6 +6388,7 @@ fn lower_string_concatenation(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                         params: Vec::new(),
                         fails: false,
                         into_destination: false,
+                        storage: None,
                     })
                 };
                 let mut args = vec![
@@ -6392,6 +6402,7 @@ fn lower_string_concatenation(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                     params: Vec::new(),
                     fails: false,
                     into_destination: false,
+                    storage: None,
                 };
                 return;
             }
@@ -6576,6 +6587,7 @@ fn wrap_in_call(node: &mut TypedExpr, callee: &str, ty: InferredType) {
             params: Vec::new(),
             fails: false,
             into_destination: false,
+            storage: None,
         },
         ty,
         span: None,
@@ -8876,6 +8888,7 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             params,
             fails,
             into_destination,
+            ..
         } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
@@ -9775,11 +9788,6 @@ pub(crate) const SWIFT_STATE_ADAPTER_PREFIX: &str = "call_";
 /// (docs/adr/0082). Its element and bound are the algorithm's parameter's, which the
 /// call infers.
 pub(crate) const RUST_LIST_DESTINATION: &str = "sce_portable_bytes::SceOwnedList::new()";
-
-/// The local a C11 statement declares for the list an algorithm writes, of the
-/// algorithm's `<symbol>_list_t` (docs/adr/0082). The call the expression layer
-/// spells names it, and the statement that holds the call declares it.
-pub(crate) const C_LIST_DESTINATION: &str = "sce_list_";
 
 /// `call` — a call to a `may-fail` algorithm, spelled `symbol(args)` in
 /// `target` — as the calling `may-fail` body passes its failure on and keeps
@@ -11257,6 +11265,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             params,
             fails,
             into_destination,
+            storage,
         } => {
             if is_len_builtin(callee, args) {
                 let len = c_length(&args[0])?;
@@ -11284,12 +11293,22 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 a.push(emit_c(arg, argument_type(params, i))?);
             }
             let symbol = wrap_postfix(callee, emit_c(callee, InferredType::Unknown)?);
+            // The storage the caller holds for the call follows the arguments it is
+            // written with (docs/adr/0082): a machine's member of its `scratch`.
+            a.extend(storage.iter().cloned());
             // A generated algorithm writes the list it returns into the destination
-            // the statement around the call declares, and records its failure in
-            // that statement's `sce_failure_` (docs/adr/0082): the call is whether it
-            // wrote. A list is taken only from an algorithm that declares `may-fail`.
+            // the caller holds, which is that storage, and records its failure in the
+            // statement's `sce_failure_`: the call is whether it wrote. A list is taken
+            // only from an algorithm that declares `may-fail`.
             if *into_destination && *fails {
-                a.push(format!("&{C_LIST_DESTINATION}"));
+                if storage.is_none() {
+                    return Err(ExprError::UnsupportedConstruct {
+                        construct: "a call that writes a list, where its caller holds no \
+                                    storage for it"
+                            .to_string(),
+                        observed: None,
+                    });
+                }
                 a.push("&sce_failure_".to_string());
                 return Ok(format!("{symbol}({})", a.join(", ")));
             }

@@ -435,7 +435,8 @@
 /* Calls of an algorithm that takes or returns state (SCE Accepted Subset §2.15): the
    machine's header declares its records and payloads, and the algorithms' headers
    above declare theirs, so the adapter between the two sits here and not in the
-   header, which includes no algorithm. */
+   header, which includes an algorithm's header only for the types of the storage the
+   machine holds for its calls (docs/adr/0082). */
 {{ static_adapter_defs }}
 
 {% endif %}
@@ -5397,9 +5398,13 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_p
 {% for field in static_fields %}
     {% if loop.first %}
     /* SCE Accepted Subset §2.15: each variable at its declared value, in
-       declaration order — an initial value reads the ones before it. */
+       declaration order — an initial value reads the ones before it. A list
+       starts empty, which the memset above already made it: its value is not
+       written again from a copy of its whole bound (docs/adr/0082). */
     {% endif %}
+{% if field.saved_kind != "list" and field.saved_kind != "record_list" %}
     sm->policy.{{ field.name }} = {{ field.init }};
+{% endif %}
 {% endfor %}
     {{ csym_prefix }}{{ model.name }}_issue_session_identity(sm);
 {% if model.needs_script_engine %}

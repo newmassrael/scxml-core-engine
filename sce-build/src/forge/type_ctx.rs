@@ -1205,6 +1205,12 @@ impl StaticScope {
         self.state_calls.iter().find(|c| c.name == name)
     }
 
+    /// Every call of an algorithm with state in a slot the document makes, each way of
+    /// making one once ([`state_call_name`]).
+    pub fn state_calls(&self) -> &[StateCallName] {
+        &self.state_calls
+    }
+
     /// The enum each slot of the call `name` holds — `name` the callee's alias, or the
     /// name a rewrite gave its call ([`state_call_name`]) — what
     /// [`crate::forge::static_enum`] holds an argument and the value of the call to.
