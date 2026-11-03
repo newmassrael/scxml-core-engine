@@ -243,3 +243,101 @@ fn a_childs_markers_name_the_document_that_holds_it() {
         "a marker of the child names a synthesised file"
     );
 }
+
+/// The fixture written into a directory of its own, and parsed from there:
+/// the directory (kept alive), the document's path as the parse was given
+/// it, and the model.
+fn parsed() -> (tempfile::TempDir, String, sce_build::model::SCXMLModel) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("states.xml"), FRAGMENT).expect("write fragment");
+    let doc = dir.path().join("sc.scxml");
+    std::fs::write(&doc, HOST).expect("write host");
+    let doc = doc.to_str().expect("a UTF-8 path").to_string();
+    let model = sce_build::parser::SCXMLParser::new()
+        .parse_file(&doc)
+        .expect("the fixture parses");
+    (dir, doc, model)
+}
+
+/// The children the fixture carries, prepared as a run that writes nothing
+/// prepares them.
+fn carried(doc: &str, model: &sce_build::model::SCXMLModel) -> Vec<sce_build::CarriedChild> {
+    sce_build::carried_children(
+        model,
+        &sce_build::CarriedChildRun {
+            document: doc,
+            language: sce_build::generator::Language::Rust,
+            host_processor_types: &[],
+            host_invoker_types: &[],
+            digest: sce_build::RunDigest::NotWritten,
+        },
+    )
+    .expect("the generator generates every child of the fixture")
+}
+
+/// A record about a child names, until it is placed on a row its author
+/// wrote, the document that holds the child's text, as the caller named it,
+/// and the invokes that lead to the child there: the label the child is
+/// parsed under, at every depth, and the label every route prepares it
+/// under. Never `<parent>__sce_synth_invoke__<id>.scxml`, a copy a run
+/// writes into its output, which is not where the child is edited.
+#[test]
+fn a_child_is_labelled_by_the_document_and_the_invokes_that_lead_to_it() {
+    let (_dir, doc, model) = parsed();
+    let want = [format!("{doc}#outer"), format!("{doc}#outer/_invoke_0")];
+    let parsed_under: Vec<String> = model
+        .carried_origins()
+        .iter()
+        .map(|(_, origin)| origin.label())
+        .collect();
+    assert_eq!(
+        parsed_under, want,
+        "the labels the children were parsed under"
+    );
+    let prepared: Vec<String> = carried(&doc, &model)
+        .into_iter()
+        .map(|child| child.label)
+        .collect();
+    assert_eq!(
+        prepared, want,
+        "the labels the children were prepared under"
+    );
+}
+
+/// A record about the whole of a child, raised under its label with no row
+/// (a backend that cannot render it, a host declaration that does not serve
+/// it), is placed on the row its root element opens on in the document,
+/// through the child that holds it and past the `<xi:include>` that moves
+/// every row after it.
+#[test]
+fn a_record_about_a_whole_child_stands_on_its_root_element() {
+    use sce_build::forge::error::{ForgeError, Located, ValidationError};
+
+    let (_dir, doc, model) = parsed();
+    let children = carried(&doc, &model);
+    let grandchild = children
+        .iter()
+        .find(|child| child.label.ends_with("#outer/_invoke_0"))
+        .expect("the grandchild is prepared");
+    let refusal = Located::new(
+        ForgeError::from(ValidationError::DuplicateId {
+            kind: sce_build::forge::model::ForgeKind::Statechart,
+            what: "generated file".into(),
+            id: "probe".into(),
+        }),
+        grandchild.label.as_str(),
+        None,
+        None,
+    );
+    let placed = grandchild.place(refusal);
+    let row = row_of(
+        HOST,
+        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" initial=\"grand_done\"",
+    );
+    assert_eq!(placed.location.file, doc, "the file its author wrote");
+    assert_eq!(
+        placed.location.line.map(u64::from),
+        Some(row),
+        "the row the grandchild's root element opens on, in the document"
+    );
+}

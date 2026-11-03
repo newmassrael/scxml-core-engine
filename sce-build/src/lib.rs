@@ -1209,6 +1209,20 @@ pub fn inline_child_provenance(document: &str, invoke_path: &str) -> String {
     if document.is_empty() {
         return String::new();
     }
+    inline_child_label(document, invoke_path)
+}
+
+/// The name a machine whose author wrote it in-line is parsed and judged
+/// under, which every diagnostic about it carries until it is placed on a row
+/// its author wrote (`model::CarriedOrigin::place`): the document whose text
+/// holds it, as the caller named that document, then `#` and its invoke path
+/// (`/path/to/host.scxml#outer/_invoke_0`).
+///
+/// [`inline_child_provenance`]'s spelling, with the document as a diagnostic
+/// names it rather than as an artifact does (SCE_ERROR_CONTRACT.md §2.2): a
+/// record no authored row can be given names the file the author opens and
+/// the child inside it, never a file a run writes.
+pub fn inline_child_label(document: &str, invoke_path: &str) -> String {
     format!("{document}#{invoke_path}")
 }
 
@@ -1646,7 +1660,8 @@ pub fn compile_from_string_lang_typed(
         },
     )? {
         let mut emitted =
-            emit_with_templates(&child.model, &child.stem, &child.label, templates, language)?;
+            emit_with_templates(&child.model, &child.stem, &child.label, templates, language)
+                .map_err(|refused| child.place(refused))?;
         place_in_package(
             &mut emitted,
             language,
@@ -2156,10 +2171,11 @@ impl RunDigest<'_> {
 /// carries ([`carried_children`]).
 #[derive(Debug, Clone, Copy)]
 pub struct CarriedChildRun<'a> {
-    /// The document's path as the run names it. A child is read as a file
-    /// beside it: its diagnostics are labelled `<dir>/<stem>.scxml`, the
-    /// relative references its author wrote resolve from that directory, and
-    /// a kind declared in it resolves its imports there.
+    /// The document's path as the run names it. The relative references the
+    /// author of a child written in it wrote resolve from its directory, as
+    /// the document's own do. A child's diagnostics name the document that
+    /// holds its text and its invoke path, or a standard statechart's library
+    /// name ([`CarriedChild::label`]), never a file of the run.
     pub document: &'a str,
     /// The backend the run generates for.
     pub language: generator::Language,
@@ -2185,11 +2201,29 @@ pub struct CarriedChild {
     /// The stem its machine and every file beside it are named by:
     /// `<parent>__sce_synth_invoke__<id>` (SCE_MESH.md §9.6.6).
     pub stem: String,
-    /// The name its diagnostics carry: `<stem>.scxml` beside the document.
+    /// The name its diagnostics carry until they are placed on a row its
+    /// author wrote ([`Self::place`]), and the one a record that cannot be
+    /// placed keeps: for a child written in-line, the document that holds its
+    /// text as the run names it and its invoke path
+    /// (`<document>#<invoke path>`, [`inline_child_label`]); for a standard
+    /// statechart, its library name ([`CarriedOrigin::label`]).
     pub label: String,
     /// Its model: analysed, given the host's declaration and the run's
     /// digest.
     pub model: SCXMLModel,
+    /// Where its author wrote it, which places every record raised against
+    /// it.
+    pub origin: CarriedOrigin,
+}
+
+impl CarriedChild {
+    /// `refused`, raised against this child under [`Self::label`] (its
+    /// rendering by a backend, its host's declaration), placed where its
+    /// author wrote it, as every refusal of a carried child is
+    /// ([`CarriedOrigin::place`]).
+    pub fn place(&self, refused: CompileError) -> CompileError {
+        self.origin.place(refused)
+    }
 }
 
 /// A carried child and every file its run emits for it
@@ -2222,7 +2256,9 @@ pub struct EmittedChild {
 /// - started by its parent, so it templates on the parent's type on every
 ///   backend but C11, whose child templates detect communication with the
 ///   parent from the document and break under the override;
-/// - analysed under its label, and given the host's declaration;
+/// - analysed with the relative references its author wrote resolved from
+///   the document's directory, and given the host's declaration, a refusal of
+///   which stands where the child is written;
 /// - one the generator can generate: a child it cannot generate refuses the
 ///   document, on the row its author wrote
 ///   ([`analyzer::can_generate_carried_children`], which the document's own
@@ -2245,15 +2281,6 @@ pub fn carried_children(
     document: &SCXMLModel,
     run: &CarriedChildRun<'_>,
 ) -> Result<Vec<CarriedChild>, CompileError> {
-    // `<stem>.scxml` in the directory of the file `sibling` names.
-    let beside = |sibling: &str, stem: &str| -> String {
-        Path::new(sibling)
-            .parent()
-            .unwrap_or_else(|| Path::new(""))
-            .join(format!("{stem}.scxml"))
-            .to_string_lossy()
-            .into_owned()
-    };
     analyzer::can_generate_carried_children(document)?;
     let mut children = Vec::new();
     for (invoke, origin) in document.carried_origins() {
@@ -2264,32 +2291,34 @@ pub fn carried_children(
         if stem.is_empty() {
             continue;
         }
-        let label = beside(run.document, stem);
+        let label = origin.label();
         let mut model = carried.clone();
         if run.language != generator::Language::C11 {
             model.has_parent_communication = true;
         }
-        analyzer::analyze(&mut model, &label);
+        // The directory the child's relative references resolve from is the
+        // document's, where its author wrote them.
+        analyzer::analyze(&mut model, run.document);
+        // A refusal is raised under the label the child was parsed under and
+        // placed where its author wrote it, as its judgement is
+        // (`carried_transition_function_findings`): through the text of every
+        // machine above it, so a child of a child is placed in the document as
+        // one of the document's own is.
         host_processor_analyzer::declare_host_surfaces(
             &mut model,
             run.host_processor_types,
             run.host_invoker_types,
         )
         .map_err(|refused| {
-            forge::error::Located::new(
+            origin.place(forge::error::Located::new(
                 forge::error::ForgeError::from(refused),
                 label.as_str(),
                 None,
                 None,
-            )
+            ))
         })?;
-        // A refusal of the child's declaration is raised under the label the
-        // child was parsed under and placed where its author wrote it, as its
-        // judgement is (`carried_transition_function_findings`): through the
-        // text of every machine above it, so a child of a child is placed in
-        // the document as one of the document's own is.
         run.digest
-            .bind(&mut model, &origin.label())
+            .bind(&mut model, &label)
             .map_err(|refused| origin.place(refused))?;
         // Placed where the document is: the same linker section on C11.
         model
@@ -2304,6 +2333,7 @@ pub fn carried_children(
             stem: stem.to_string(),
             label,
             model,
+            origin,
         });
     }
     Ok(children)
@@ -2334,14 +2364,18 @@ pub fn emit_carried_children(
     carried_children(document, run)?
         .into_iter()
         .map(|child| -> Result<EmittedChild, CompileError> {
+            // Named by its label, whose directory is the one a kind declared
+            // in it resolves its imports from: the document's for a child
+            // written in-line, the library's for a standard statechart.
             let mut output = emit_model_artifacts(
                 &child.model,
                 template_dir,
                 &child.stem,
-                run.document,
+                &child.label,
                 run.language,
                 options,
-            )?;
+            )
+            .map_err(|refused| child.place(refused))?;
             place_in_package(
                 &mut output,
                 run.language,

@@ -8909,14 +8909,16 @@ fn generate_child_sms(
         // carried child's `src` and hybrid children are the test's too, as
         // the document's are: its machine is this test's, and
         // `generate_hybrid_child_scxmls` wrote its stubs.
-        let (mut child_model, label) = match child_source {
+        // Where a carried child was written, which places a refusal of its
+        // rendering; a document read from disk names its own file.
+        let (mut child_model, label, origin) = match child_source {
             // Prepared with its document, above or when the child read from
-            // disk that carries it was judged: analysed under a label beside
-            // that document, its declaration judged with the document's and
-            // bound to this run's digest. The preparation leaves no child out
-            // (one the generator cannot generate refuses its document, through
-            // the document's own gate), and a document's children are queued
-            // only once they were prepared.
+            // disk that carries it was judged: analysed, its declaration
+            // judged with the document's and bound to this run's digest. The
+            // preparation leaves no child out (one the generator cannot
+            // generate refuses its document, through the document's own gate),
+            // and a document's children are queued only once they were
+            // prepared.
             ChildSource::Inline(carried) => {
                 let child = prepared.remove(child_name).expect(
                     "a carried child is queued only by a document whose carried children \
@@ -8926,7 +8928,7 @@ fn generate_child_sms(
                     &mut pending,
                     started(&carried, true, resource_dir, stub_dir),
                 );
-                (child.model, child.label)
+                (child.model, child.label, Some(child.origin))
             }
             // Not a carried child, so not the shared preparation's: a `src`
             // child is a document of the suite read from the fixture's
@@ -8990,7 +8992,17 @@ fn generate_child_sms(
                     &mut pending,
                     started(&parsed, false, resource_dir, stub_dir),
                 );
-                (parsed, child_str)
+                (parsed, child_str, None)
+            }
+        };
+        // A refusal of the child's rendering names no row of it: a carried
+        // child's stands where its author wrote the child, as every refusal of
+        // one does; a document read from disk's names that document.
+        let rendering_refused = |error: ForgeError| {
+            let refusal = Located::new(error, label.as_str(), None, None);
+            match origin.as_ref() {
+                Some(origin) => origin.place(refusal),
+                None => refusal,
             }
         };
 
@@ -9031,7 +9043,7 @@ fn generate_child_sms(
                         }
                     }
                     Err(e) => {
-                        refused.push(sce_build::forge::error::Located::new(e, label, None, None));
+                        refused.push(rendering_refused(e));
                     }
                 }
             }
@@ -9043,7 +9055,7 @@ fn generate_child_sms(
                 ));
             }
             Err(e) => {
-                refused.push(sce_build::forge::error::Located::new(e, label, None, None));
+                refused.push(rendering_refused(e));
             }
         }
     }

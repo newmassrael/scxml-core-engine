@@ -466,7 +466,16 @@ own backend, as it renders each fixture, because the suite packages every machin
 itself. A child the generator cannot generate is never left out, since its parent would name a
 file nobody wrote: `analyzer::can_generate_static`, the gate every route asks of a document, asks
 it of every child the document carries (`analyzer::can_generate_carried_children`), and refuses
-the document with the child's own record, placed on the row its author wrote. `generate-w3c`
+the document with the child's own record, placed on the row its author wrote. One mechanism
+places every record about a carried child, at every depth: the child's positions
+(`model::AuthoredPositions`), which lead through the text of every machine above it and every
+expansion of the document to the authored row, and put a refusal of the whole child on its root
+element. Its parse refusal, its gate refusal, its declared function's findings, the refusal of
+its digest or its host's declaration, and a backend's refusal to render it all leave through it
+(`sce_build::CarriedOrigin::place`). Until placed, a record names the child by the label it was
+parsed under, `<document>#<invoke path>` with the document as the caller named it (a standard
+statechart: its library name), never a `<parent>__sce_synth_invoke__<id>.scxml` nobody wrote.
+`generate-w3c`
 skips such a fixture as it skips one whose own document cannot be generated, and stands no stub
 in for any child of a fixture. The two library entry points that return one machine's source
 (`compile_scxml_to_string`, `compile_from_string`, and their typed forms) have no place for the

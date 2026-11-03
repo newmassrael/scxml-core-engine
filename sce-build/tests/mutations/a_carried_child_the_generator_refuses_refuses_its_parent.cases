@@ -10,9 +10,10 @@
 # positions in the text of the machine that holds it and no further, so the
 # refusal of a grandchild stays in the coordinates of the child that carries
 # it. The second and third are cases of the one mechanism every placement
-# goes through (`CarriedOrigin`), so they reach the gate, the judgement of a
-# declared transition function and the preparation every route writes a
-# child through alike.
+# goes through (a child's `AuthoredPositions`, read through `CarriedOrigin`),
+# so they reach the gate, the judgement of a declared transition function,
+# the preparation every route writes a child through and a child's parse
+# alike.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -31,9 +32,9 @@ PY
 
 mutation_case "a refusal of the whole child names no row of the document" <<'PY'
 edit("sce-build/src/model.rs",
-     r'''                refused.location.line = root.line;
-                refused.location.col = root.col;''',
-     r'''                refused.location.col = root.col.filter(|_| false);''')
+     r'''                err.location.line = Some(row);
+                err.location.col = Some(col);''',
+     r'''                let _ = (row, col);''')
 PY
 
 mutation_case "a child's positions lead one level up and no further" <<'PY'

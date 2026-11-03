@@ -433,6 +433,20 @@ in generated source, so it carries the basename rather than baking one
 machine's checkout into the tree. Same document, two spellings, chosen
 by who reads them.
 
+A statechart written in-line, in an `<invoke>`'s `<content>`, is no file
+of its own, and a record about it is placed where its author wrote it:
+`file` is the document that holds its text, `line` and `col` the row of
+what the record names there, and a record about the whole child (it
+holds no state, a backend cannot render it) stands on the child's root
+element. A record that cannot be placed names the document and the
+child inside it, `<document>#<invoke path>` (the ids of the `<invoke>`s
+that lead to the child, outermost first, joined by `/`), the provenance
+spelling of the child with the document spelled as the caller named it.
+Never the `<parent>__sce_synth_invoke__<id>.scxml` a run writes into its
+output, which is a copy for a later build step and not where the child
+is edited. A standard statechart (`sce:std/...`) is a document of the
+library and is named by its library name.
+
 Mesh errors currently omit `location` — their coordinates are the
 machine / binding / target names carried by the error fields themselves.
 

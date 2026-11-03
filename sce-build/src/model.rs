@@ -3306,6 +3306,13 @@ pub struct AuthoredPositions {
     /// is moved on through the enclosing map, so a resolution ends where the
     /// author wrote the position, however deep the child stands.
     pub enclosing: Option<Box<AuthoredPositions>>,
+    /// Where, in [`Self::expanded`], the document's root element starts, for
+    /// a document cut from another's text ([`Self::cut_at`]): the row and
+    /// column a refusal of the whole document, which names no row of it,
+    /// stands on, so it is placed where the document stands in the one that
+    /// holds it ([`Self::authored`]). `None` for a document of its own, whose
+    /// refusal names the file and no row (SCE_ERROR_CONTRACT.md §2.2).
+    pub root: Option<(u32, u32)>,
 }
 
 impl AuthoredPositions {
@@ -3320,7 +3327,17 @@ impl AuthoredPositions {
             expanded: expanded.into(),
             map,
             enclosing: None,
+            root: None,
         }
+    }
+
+    /// These positions, read as a document cut from another's text whose
+    /// root element starts at `row`, `col` of [`Self::expanded`]
+    /// ([`Self::root`]).
+    #[must_use]
+    pub fn cut_at(mut self, row: u32, col: u32) -> Self {
+        self.root = Some((row, col));
+        self
     }
 
     /// These positions, read as a document cut from the text `enclosing`
@@ -3345,7 +3362,10 @@ impl AuthoredPositions {
     ///   row with no column is a row all the same: raised after parsing from
     ///   a line the model recorded, it names the same expanded text and is
     ///   exactly as wrong unmoved. This used to require both, so such a
-    ///   refusal kept its expanded row under the authored file's name.
+    ///   refusal kept its expanded row under the authored file's name. A
+    ///   location with no row, in a document cut from another's text, is the
+    ///   document's root element ([`Self::root`]): what is said of the whole
+    ///   of an in-line child is said where the child stands.
     /// * each `related` site — the other rows the same rejection names, once
     ///   left in expanded coordinates beside a moved `location`.
     /// * each schema-validation record, one per violation, which may land in
@@ -3370,6 +3390,13 @@ impl AuthoredPositions {
         }
 
         if err.location.file == self.document {
+            // A refusal of the whole of a document cut from another's text
+            // stands on its root element, where the document stands in the
+            // one that holds it.
+            if let (None, Some((row, col))) = (err.location.line, self.root) {
+                err.location.line = Some(row);
+                err.location.col = Some(col);
+            }
             let expanded_line = err.location.line;
             let had_col = err.location.col.is_some();
             if let Some((file, row, col)) = self.resolve(err.location.line, err.location.col) {
@@ -3541,11 +3568,6 @@ pub struct CarriedOrigin {
     /// The machine's positions, each leading on through the text of the
     /// machine that holds it; `None` for a document parsed with none.
     positions: Option<AuthoredPositions>,
-    /// The machine's root element, in its own text, for a machine written
-    /// in-line: where a refusal of the whole machine, which names no row of
-    /// it, stands in the document that holds it. `None` for a document of its
-    /// own, whose refusal names the document.
-    root: Option<SourceLocation>,
 }
 
 impl CarriedOrigin {
@@ -3556,7 +3578,6 @@ impl CarriedOrigin {
             document: document.scxml_source_path.clone(),
             invoke_path: Vec::new(),
             positions: document.authored_positions.clone(),
-            root: None,
         }
     }
 
@@ -3577,7 +3598,6 @@ impl CarriedOrigin {
                     .chain(std::iter::once(invoke.invoke_id.clone()))
                     .collect(),
                 positions: Some(positions.clone().within(self.positions.clone())),
-                root: child.source_location.clone(),
             },
             None => Self {
                 document: child
@@ -3587,7 +3607,6 @@ impl CarriedOrigin {
                     .unwrap_or_default(),
                 invoke_path: Vec::new(),
                 positions: child.authored_positions.clone(),
-                root: None,
             },
         })
     }
@@ -3632,26 +3651,22 @@ impl CarriedOrigin {
     /// ([`Self::label`]), placed where its author wrote what it names: in the
     /// file of the document that holds the machine, on the row of what it
     /// names, through every machine above it and every expansion of that
-    /// document ([`AuthoredPositions::authored`]). A refusal of the whole
-    /// machine written in-line, which names no row of it (it holds no state,
-    /// a top-level script cannot be loaded, the host's declaration does not
-    /// serve it, a backend cannot render it), stands on its root element,
-    /// which is where the machine stands in that document. A record already
-    /// placed, or naming another file, is left as it is.
+    /// document ([`AuthoredPositions::authored`], the placement a child's
+    /// parse refusal is given too). A refusal of the whole machine written
+    /// in-line, which names no row of it (it holds no state, a top-level
+    /// script cannot be loaded, the host's declaration does not serve it, a
+    /// backend cannot render it), stands on its root element
+    /// ([`AuthoredPositions::root`]), which is where the machine stands in
+    /// that document. A record already placed, or naming another file, is
+    /// left as it is.
     pub fn place(
         &self,
-        mut refused: crate::forge::error::Located<crate::forge::error::ForgeError>,
+        refused: crate::forge::error::Located<crate::forge::error::ForgeError>,
     ) -> crate::forge::error::Located<crate::forge::error::ForgeError> {
-        let Some(positions) = self.positions.as_ref() else {
-            return refused;
-        };
-        if refused.location.line.is_none() && refused.location.file == positions.document {
-            if let Some(root) = self.root.as_ref() {
-                refused.location.line = root.line;
-                refused.location.col = root.col;
-            }
+        match self.positions.as_ref() {
+            Some(positions) => positions.authored(refused),
+            None => refused,
         }
-        positions.authored(refused)
     }
 }
 

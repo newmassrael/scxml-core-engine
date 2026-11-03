@@ -143,6 +143,34 @@ pub struct SCXMLParser {
     /// are ranked and named as the document's are, so a state has one name and
     /// one place in the order whatever features are on (ADR 0057 §9).
     inherited: Option<InheritedNames>,
+    /// Where the document being parsed stands when its author wrote it
+    /// in-line, in an `<invoke>`'s `<content>`: set by
+    /// [`SCXMLParser::for_inline_child`]. The children it carries in turn are
+    /// labelled from it, so a child at any depth is named by the file its
+    /// author edits and the invokes that lead to it there.
+    inline_origin: Option<InlineOrigin>,
+}
+
+/// Where an in-line child stands: the label of the document whose text holds
+/// it, as the caller named that document, and the ids of the `<invoke>`s that
+/// lead to it from there, outermost first. The label the child is parsed
+/// under is spelled from it ([`InlineOrigin::label`]).
+#[derive(Debug, Clone)]
+struct InlineOrigin {
+    document: String,
+    invoke_path: Vec<String>,
+}
+
+impl InlineOrigin {
+    /// `<document>#<invoke path>` (`crate::inline_child_label`): what every
+    /// record raised against the child names until it is placed on a row its
+    /// author wrote, and what its positions are keyed by.
+    fn label(&self) -> String {
+        crate::inline_child_label(
+            &self.document,
+            &self.invoke_path.join(crate::INLINE_INVOKE_PATH_SEPARATOR),
+        )
+    }
 }
 
 /// The ranks and generated ids of a document's state elements, by where each
@@ -2180,6 +2208,7 @@ impl SCXMLParser {
             features: None,
             variant: None,
             inherited: None,
+            inline_origin: None,
         }
     }
 
@@ -2412,10 +2441,27 @@ impl SCXMLParser {
     /// configured as this one is, so the child's documents are looked for
     /// where the parent's are, and counted afresh, so its ids, document order
     /// and invoke numbering are its own and not continued from the parent's.
-    fn for_inline_child(&self) -> Self {
-        Self::new()
+    /// `origin` is where the child stands ([`Self::inline_origin`]), which the
+    /// children it carries in turn are labelled from.
+    fn for_inline_child(&self, origin: InlineOrigin) -> Self {
+        let mut child = Self::new()
             .with_include_dirs(self.include_dirs.clone())
-            .with_candidate_roots(self.candidate_roots.clone())
+            .with_candidate_roots(self.candidate_roots.clone());
+        child.inline_origin = Some(origin);
+        child
+    }
+
+    /// Where the in-line child the invoke `invoke_id` of the document being
+    /// parsed (labelled `source_name`) carries stands: the document whose
+    /// text holds this one, or this one when it is a document of its own, and
+    /// the invokes that lead to the child from there, its own last.
+    fn inline_child_origin(&self, source_name: &str, invoke_id: &str) -> InlineOrigin {
+        let mut origin = self.inline_origin.clone().unwrap_or_else(|| InlineOrigin {
+            document: source_name.to_string(),
+            invoke_path: Vec::new(),
+        });
+        origin.invoke_path.push(invoke_id.to_string());
+        origin
     }
 
     /// The directory the relative `<sce:import>`s of `model`, read from
@@ -5366,12 +5412,13 @@ impl SCXMLParser {
                 // it (`<sce:import src>` among them) were written from where
                 // the document that holds it stands. A library name
                 // (`sce:std/...`) is read from the library, whatever that
-                // directory is. Asymmetric
-                // [`DocumentLabel`]: identifier = synth name (extension-
-                // free, drives template symbols), diagnostic label =
-                // `<synth>.scxml` (matches the historical on-disk file
-                // path so SCE-MAP markers + NDJSON `location.file` stay
-                // byte-stable against the pre-refactor goldens).
+                // directory is. Asymmetric [`DocumentLabel`]: identifier =
+                // synth name (extension-free, drives template symbols),
+                // diagnostic label = the document that holds the child's text
+                // and the invokes that lead to it (`crate::inline_child_label`),
+                // the one name every record about the child carries until it is
+                // placed on a row its author wrote, and never a file a run
+                // writes.
                 //
                 // A child that does not parse refuses its parent, at the
                 // row its author wrote. ⚠ Until 2026-09-24 the failure
@@ -5379,17 +5426,18 @@ impl SCXMLParser {
                 // the parent generated, its code still included the
                 // child's header, and the build failed later, far from
                 // the cause.
-                let synth_diag_label = format!("{synth_name}.scxml");
+                let origin = self.inline_child_origin(source_name, &invoke_id);
+                let child_label = origin.label();
                 // Kept on the invoke as well: a refusal raised against the
                 // child after this parse (its declared transition function,
                 // judged once the child is analysed) is moved to the rows its
                 // author wrote by the same mapping.
-                let positions = inline.positions(&synth_diag_label);
-                let mut child_parser = self.for_inline_child();
+                let positions = inline.positions(&child_label);
+                let mut child_parser = self.for_inline_child(origin);
                 let inline_child = child_parser
                     .parse_string_with_label(
                         &inline.text,
-                        DocumentLabel::asymmetric(&synth_name, &synth_diag_label),
+                        DocumentLabel::asymmetric(&synth_name, &child_label),
                         base_dir,
                     )
                     .map_err(|err| positions.authored(err))?;
@@ -7858,9 +7906,14 @@ impl InlineDocument {
 
     /// The positions of this document parsed under `label`: what moves a
     /// refusal raised against it to where the child's author wrote what it
-    /// names — in the enclosing document.
+    /// names — in the enclosing document — and a refusal of the whole child
+    /// to its root element, which starts where the declaration before it
+    /// ends, at the first column.
     fn positions(&self, label: &str) -> crate::model::AuthoredPositions {
+        let root_row = u32::try_from(Self::DECLARATION.matches('\n').count() + 1)
+            .expect("the declaration holds a handful of rows");
         crate::model::AuthoredPositions::new(label, self.text.as_str(), self.map.clone())
+            .cut_at(root_row, 1)
     }
 }
 
