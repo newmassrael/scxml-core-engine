@@ -439,6 +439,15 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
          `check` needs no counterpart",
     ),
     f(
+        "--plan-reads",
+        Reach::Emission,
+        Some(&["--plan", "--plan-reads", "{probe_file}"]),
+        "rust",
+        "writes beside a plan the list of the files its run read, which a \
+         build keeps to tell when the plan is still current; it reads the \
+         document no differently, so `check` needs no counterpart",
+    ),
+    f(
         "--profile",
         Reach::Verdict,
         None,
