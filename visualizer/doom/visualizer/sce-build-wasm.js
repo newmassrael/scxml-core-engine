@@ -61,13 +61,14 @@ const SceBuildWasm = (() => {
     /**
      * The documents the Interpreter runs for `scxmlContent`, the document
      * asked for first: itself, or the ECMAScript lowering of a
-     * `datamodel="sce-static"` one with every document its hybrid `<invoke>`s
-     * may start. Throws with the product's own message when the document
-     * cannot be lowered — the Interpreter is never handed a typed document it
-     * would run untyped.
+     * `datamodel="sce-static"` one with every document its `<invoke>`s may
+     * start (a child named by `src`, a candidate of a hybrid one). Throws with
+     * the product's own message when the document cannot be lowered — the
+     * Interpreter is never handed a typed document it would run untyped.
      *
      * The lowering reads what the document names beside itself (an imported
-     * algorithm or schema, a candidate). The page has no file system, so
+     * algorithm or schema, a child named by `src`, a candidate). The page has
+     * no file system, so
      * `fetchSibling(path)` answers each such path with the text, or `null` for
      * a file that is not there; the product's own reader names the paths
      * (`documents_named_by`), down to the ones the documents named name in
