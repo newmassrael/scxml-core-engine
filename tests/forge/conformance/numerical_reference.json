@@ -39710,6 +39710,29 @@
         }
       ]
     },
+    "codec_present_if_basic": {
+      "fixture": "CodecPresentIfBasic",
+      "signature": "(raw: &[u8]) <-> {flags: u8 carrier (has_seq bit 0, derived), seq: u16 BE if has_seq}",
+      "description": "docs/adr/0081 §5: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. The flag has_seq is not a member: the encoder derives it from whether seq is present. Regenerate with tests/forge/conformance/gen_cases.py.",
+      "sources": [
+        {"source": {"flags": 0, "seq": null}, "encoded": [0], "note": "has_seq clear: the frame is the carrier alone"},
+        {"source": {"flags": 1, "seq": 4660}, "encoded": [1, 18, 52], "note": "has_seq set: seq follows, big-endian"},
+        {"source": {"flags": 254, "seq": null}, "encoded": [254], "note": "the bits the value presents are kept beside the derived one"},
+        {"source": {"flags": 255, "seq": 0}, "encoded": [255, 0, 0], "note": "a present seq of zero is still present"},
+        {"source": {"flags": 1, "seq": 65535}, "encoded": [1, 255, 255], "note": "seq at its largest"}
+      ]
+    },
+    "codec_flags_basic": {
+      "fixture": "CodecFlagsBasic",
+      "signature": "(raw: &[u8]) <-> {header: u8 flag set (reliable bit 7, more 6, drop 5, first 4)}",
+      "description": "docs/adr/0081 §5: a flag set is presented whole, its value the carrier, named bits and unnamed alike. Written by tests/forge/conformance/binary_model.py; regenerate with tests/forge/conformance/gen_cases.py.",
+      "sources": [
+        {"source": {"header": 0}, "encoded": [0], "note": "no flag set"},
+        {"source": {"header": 240}, "encoded": [240], "note": "every named flag set"},
+        {"source": {"header": 15}, "encoded": [15], "note": "only bits no flag names: the carrier is presented whole"},
+        {"source": {"header": 165}, "encoded": [165], "note": "reliable and drop set, with unnamed bits"}
+      ]
+    },
     "codec_little_endian": {
       "fixture": "CodecLittleEndian",
       "signature": "(raw: &[u8]) <-> {sensorId: u8 @ byte 0, value: u16 @ byte 1 little-endian, status: u8 @ byte 3}",

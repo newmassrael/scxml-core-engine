@@ -174,6 +174,7 @@ import sys
 import unicodedata
 from pathlib import Path
 
+import binary_model
 import content_line_model
 
 REFERENCE = Path("tests/forge/conformance/numerical_reference.json")
@@ -5190,6 +5191,9 @@ def main(argv) -> int:
     # component and its bytes, so their model writes the whole fixture (see the
     # module's own page) rather than the `fuzz` lines of a list.
     text, content_line_report = content_line_model.regenerate(text)
+    # A positional codec's byte cases state the value as its interface presents
+    # it (docs/adr/0081 §5); their model writes each fixture's `sources`.
+    text, binary_report = binary_model.regenerate(text)
     json.loads(text)
     for fixture, checked, dropped, made, kinds in report:
         print(
@@ -5197,6 +5201,7 @@ def main(argv) -> int:
             f"{made} generated (was {dropped}): {kinds}"
         )
     print(content_line_report)
+    print(binary_report)
     if text == original:
         print("numerical_reference.json: unchanged")
         return 0

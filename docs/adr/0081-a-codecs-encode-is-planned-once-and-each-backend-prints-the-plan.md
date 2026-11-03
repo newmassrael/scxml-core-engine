@@ -174,6 +174,13 @@ of every shape it prints.
   `source` does not state, so it runs the cases of its catalog fields and is compile-only for the rest until its
   printer lands (§6).
 
+*Landed (step 3, first part, 2026-11-03).* `binary_model.py` reads fixed-width fields, a flag set presented whole,
+fields that share a byte, and a field gated on one flag, whose flag it derives. It writes the `sources` of
+`codec_present_if_basic` and `codec_flags_basic`, nine cases, each held by the model; `gen_cases.py` runs it. The
+generator folds each `source` into the Rust harness as a `{Codec}Parts` literal, which the harness encodes, compares
+with the bytes, decodes and compares element by element. A body, a list, a variant, a gate group and an enum are
+refused by name by the literal and by the model until their parts land.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.

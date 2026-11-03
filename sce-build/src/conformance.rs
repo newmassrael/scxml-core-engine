@@ -3121,6 +3121,96 @@ fn fold_reject_vectors(
     Ok(true)
 }
 
+/// Fold a codec fixture's byte cases stated as its interface presents the value
+/// (docs/adr/0081 §5) into the value the fragment renders from, for a backend
+/// whose encode prints the codec's plan: each `source` becomes a literal of the
+/// backend's ready-made source, with the accessors to compare a decode of the
+/// bytes against. Only Rust prints the plan so far; the others are handed
+/// nothing, and run their `cases` as before.
+///
+/// Answers whether anything was folded, as [`fold_reject_vectors`] does.
+fn fold_source_cases(
+    value: &mut serde_json::Value,
+    reference: &serde_json::Value,
+    fixture: &Fixture,
+    language: Language,
+    resource_dir: &Path,
+    reference_path: &Path,
+) -> Result<bool, String> {
+    let Some(sources) = reference
+        .get(&fixture.ref_section)
+        .and_then(|s| s.get(&fixture.name))
+        .and_then(|e| e.get("sources"))
+    else {
+        return Ok(false);
+    };
+    let where_ = format!("fixture {} in {}", fixture.name, reference_path.display());
+    if !matches!(fixture.spec, FixtureSpec::Codec { .. }) {
+        return Err(format!(
+            "{where_}: 'sources' are a codec's byte cases; this fixture is not a codec"
+        ));
+    }
+    let rows = sources
+        .as_array()
+        .filter(|rows| !rows.is_empty())
+        .ok_or_else(|| format!("{where_}: 'sources' must be a non-empty array"))?;
+    if !matches!(language, Language::Rust) {
+        return Ok(false);
+    }
+    let document = fixture.document_path(resource_dir);
+    let folded = crate::encode_plan_file(
+        &document,
+        &[resource_dir.to_path_buf()],
+        &crate::ForgeCompileOptions::default(),
+        |plan| -> Result<Vec<serde_json::Value>, String> {
+            let crate::forge::encode_plan::CodecPlan::Positional(plan) = plan else {
+                return Err(format!(
+                    "{where_}: 'sources' are written for a positional codec"
+                ));
+            };
+            rows.iter()
+                .enumerate()
+                .map(|(i, row)| {
+                    let at = format!("{where_}: sources[{i}]");
+                    let source = row
+                        .get("source")
+                        .ok_or_else(|| format!("{at} must carry 'source'"))?;
+                    let encoded = row
+                        .get("encoded")
+                        .and_then(|v| v.as_array())
+                        .ok_or_else(|| format!("{at} must carry an 'encoded' byte array"))?;
+                    if encoded.iter().any(|b| b.as_u64().is_none_or(|b| b > 0xFF)) {
+                        return Err(format!("{at}: 'encoded' holds a value that is not a byte"));
+                    }
+                    let note = row.get("note").and_then(|v| v.as_str()).unwrap_or_default();
+                    // The note is inlined into a string literal of the harness.
+                    if note.chars().any(|c| "\"\\{}".contains(c) || c.is_control()) {
+                        return Err(format!(
+                            "{at}: 'note' holds a character a literal does not keep"
+                        ));
+                    }
+                    let (literal, accessors) =
+                        crate::forge::generator::rust_parts_literal(plan, source)
+                            .map_err(|e| format!("{at}: {e}"))?;
+                    Ok(serde_json::json!({
+                        "literal": literal,
+                        "accessors": accessors,
+                        "encoded": encoded,
+                        "note": note,
+                    }))
+                })
+                .collect()
+        },
+    )
+    .map_err(|e| format!("{where_}: {}: {e:?}", document.display()))?
+    .ok_or_else(|| format!("{where_}: {} is not a codec", document.display()))??;
+    value
+        .as_object_mut()
+        .ok_or_else(|| format!("{where_} did not serialize to a JSON object"))?
+        .insert("sources".into(), serde_json::Value::Array(folded));
+    Ok(true)
+}
+
 /// Put on each variant of an enum fixture the identifier this language's
 /// declaration emits for it, as `ident`, taken from
 /// [`crate::forge::enum_naming::variant_ident`].
@@ -3690,6 +3780,14 @@ pub fn render_harness(
                 .map_err(|e| format!("serialize fixture {}: {e}", f.name))?;
             baked_from_reference |=
                 fold_reject_vectors(&mut v, &reference, f, language, &reference_path)?;
+            baked_from_reference |= fold_source_cases(
+                &mut v,
+                &reference,
+                f,
+                language,
+                resource_dir,
+                &reference_path,
+            )?;
             fold_enum_identifiers(&mut v, f, language)?;
             fold_event_schema_enum_fields(&mut v, f, language, resource_dir)?;
             // `oracle_eligible: false` fixtures don't have a field oracle —
@@ -3980,6 +4078,35 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A byte case stated as the codec's interface presents the value
+    /// (docs/adr/0081 §5) reaches the Rust harness as a literal of the codec's
+    /// ready-made source, encoded and compared with its bytes; a backend whose
+    /// encode does not print the plan yet is handed none.
+    #[test]
+    fn a_source_case_reaches_the_rust_harness_as_a_parts_literal() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let template_base =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let rust = render_harness(&manifest, Language::Rust, &template_base, &resource_dir)
+            .expect("the Rust harness renders")
+            .source;
+        for literal in [
+            "CodecPresentIfBasicParts { flags: 1, seq: Some(4660) }",
+            "CodecPresentIfBasicParts { flags: 254, seq: None }",
+            "CodecFlagsBasicParts { header: 165 }",
+        ] {
+            assert!(rust.contains(literal), "the Rust harness lacks `{literal}`");
+        }
+        assert!(rust.contains("CodecPresentIfBasicWire::encode_source("));
+        let cpp = render_harness(&manifest, Language::Cpp, &template_base, &resource_dir)
+            .expect("the C++ harness renders")
+            .source;
+        assert!(!cpp.contains("Parts {"), "C++ does not print the plan yet");
     }
 
     /// An enum fragment must name the identifier the declaration emits,

@@ -155,6 +155,40 @@
     let _ = (_val, _val2);
 {% endif %}
 
+{# Byte cases stated as the codec's interface presents the value
+   (docs/adr/0081 §5): each `source` is a literal of the codec's ready-made
+   source, written by the generator from the codec's plan, and its bytes were
+   computed by an independent model. The literal is encoded and compared with
+   the bytes (law 4 of docs/adr/0058 §5), and the bytes are decoded and what the
+   decode presents compared with the literal, element by element (law 1).
+   Independent of `oracle_eligible`, which speaks of the builder's struct. #}
+{% for s in f.sources %}
+    {
+        let parts = fixtures::{{ f.name }}::{{ s.literal }};
+        let mut encoded: Vec<u8> = Vec::new();
+        fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}Wire::encode_source(
+            &parts,
+            &mut ::sce_forge_runtime::codec::VecSink::new(&mut encoded),
+        )
+        .unwrap_or_else(|e| panic!("{{ f.name }} source {{ loop.index0 }}: encode refused with {e:?}"));
+        assert_eq!(
+            encoded,
+            [{{ s.encoded | join(", ") }}],
+            "{{ f.name }} source {{ loop.index0 }}: {{ s.note }}"
+        );
+        let mut cursor = ::sce_forge_runtime::codec::SceCursor::new(&encoded);
+        let decoded = {{ f.name | to_pascal_case }}::decode(&mut cursor)
+            .unwrap_or_else(|e| panic!("{{ f.name }} source {{ loop.index0 }}: decode refused with {e:?}"));
+{% for a in s.accessors %}
+        assert!(
+            fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}Source::{{ a }}(&decoded)
+                == fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}Source::{{ a }}(&parts),
+            "{{ f.name }} source {{ loop.index0 }}: the decode presents another {{ a }}"
+        );
+{% endfor %}
+    }
+{% endfor %}
+
 {# RFC synth-5-B decode-rejection vectors — wire this codec MUST refuse,
    paired with the failure it must refuse with. Independent of
    `oracle_eligible`: a reject vector carries no field values, so a codec

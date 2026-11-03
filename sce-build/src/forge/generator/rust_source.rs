@@ -132,6 +132,120 @@ pub(super) fn write_attribute(inline_encode: bool) -> &'static str {
     }
 }
 
+/// A value a byte case states as the codec's interface presents it
+/// (docs/adr/0081 §5), spelled as a literal of the codec's ready-made source,
+/// `{Codec}Parts`, which a conformance harness encodes; and the accessors of
+/// the elements it states, which the harness reads off a decode of the bytes
+/// to compare with it. A shape the literal does not spell yet is refused by
+/// name, and so is a source that states an element the value does not present
+/// or leaves out one it does.
+pub(crate) fn parts_literal(
+    plan: &EncodePlan<'_>,
+    source: &serde_json::Value,
+) -> Result<(String, Vec<String>), String> {
+    if !plan.groups().is_empty() {
+        return Err("a gate group is not spelled as a literal yet".to_string());
+    }
+    if !plan.arms.is_empty() {
+        return Err("a variant is not spelled as a literal yet".to_string());
+    }
+    let object = source
+        .as_object()
+        .ok_or_else(|| "a source is a JSON object".to_string())?;
+    if let Some(extra) = object
+        .keys()
+        .find(|key| !plan.elements.iter().any(|e| &e.field.id == *key))
+    {
+        return Err(format!(
+            "the source states `{extra}`, which the value does not present"
+        ));
+    }
+    let mut members = Vec::new();
+    let mut accessors = Vec::new();
+    for element in &plan.elements {
+        let id = &element.field.id;
+        let value = object
+            .get(id)
+            .ok_or_else(|| format!("the source states no `{id}`"))?;
+        let spelled = if value.is_null() {
+            if !element.presence.optional() {
+                return Err(format!(
+                    "`{id}` is always there, and the source states none"
+                ));
+            }
+            "None".to_string()
+        } else {
+            let one = literal_value(&element.value, value).map_err(|e| format!("`{id}`: {e}"))?;
+            if element.presence.optional() {
+                format!("Some({one})")
+            } else {
+                one
+            }
+        };
+        let member = filters::to_snake_case(id.clone());
+        members.push(format!("{member}: {spelled}"));
+        accessors.push(member);
+    }
+    Ok((
+        format!(
+            "{}Parts {{ {} }}",
+            filters::to_pascal_case(plan.model.name.clone()),
+            members.join(", ")
+        ),
+        accessors,
+    ))
+}
+
+/// One value of the abstract type `value`, as a Rust literal of the type the
+/// ready-made source holds it in.
+fn literal_value(value: &Value<'_>, json: &serde_json::Value) -> Result<String, String> {
+    let held = |inner: String| {
+        format!("{RUNTIME_CODEC}::Bounded::new({inner}).expect(\"the case is within its bound\")")
+    };
+    match value {
+        Value::Scalar(SceType::Bool) => json
+            .as_bool()
+            .map(|b| b.to_string())
+            .ok_or_else(|| "a boolean is `true` or `false`".to_string()),
+        Value::Scalar(
+            SceType::Uint8
+            | SceType::Uint16
+            | SceType::Uint32
+            | SceType::Uint64
+            | SceType::Int8
+            | SceType::Int16
+            | SceType::Int32
+            | SceType::Int64,
+        ) => json
+            .as_u64()
+            .map(|n| n.to_string())
+            .or_else(|| json.as_i64().map(|n| n.to_string()))
+            .ok_or_else(|| "an integer is a JSON integer".to_string()),
+        Value::Bytes(_) => {
+            let bytes = json
+                .as_array()
+                .ok_or_else(|| "bytes are an array of numbers".to_string())?
+                .iter()
+                .map(|b| {
+                    b.as_u64()
+                        .filter(|b| *b <= 0xFF)
+                        .map(|b| b.to_string())
+                        .ok_or_else(|| "a byte is a number in 0..=255".to_string())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(held(format!("&[{}][..]", bytes.join(", "))))
+        }
+        Value::Text(_) => json
+            .as_str()
+            .map(|s| held(format!("{s:?}")))
+            .ok_or_else(|| "text is a JSON string".to_string()),
+        _ => Err(
+            "an embedded body, a list, an enum or a float is not spelled as a literal yet"
+                .to_string(),
+        ),
+    }
+}
+
 /// The source interface of a codec, as the text a codec file holds, or why the
 /// codec has none yet.
 pub(super) fn render(input: &Input<'_>) -> Result<String, Unsupported> {
