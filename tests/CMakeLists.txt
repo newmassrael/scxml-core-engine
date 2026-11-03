@@ -1876,6 +1876,9 @@ add_executable(integration_tests
     integration/HostProcessorAotTest.cpp
     integration/DelayedHostSendAotTest.cpp
     integration/HostInvokerAotTest.cpp
+    # docs/adr/0083: what another thread has for the generated engine enters
+    # through its inbox, while the owner runs macrosteps.
+    integration/WhatAnotherThreadPostsEntersThroughTheInboxAotTest.cpp
     integration/NativeActionAotTest.cpp
     # NL→IR Item C1 Path A: the typed `_event.data` view read out of the data
     # wire every producer but the generated inject seam fills. A gate of its
@@ -2713,6 +2716,16 @@ sce_add_state_machine(
 sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml
+    HOST_INVOKER x-sce-host
+)
+
+# docs/adr/0083: the machine WhatAnotherThreadPostsEntersThroughTheInboxAotTest
+# posts to from other threads. It sits beside its driver, as
+# parallel_current_state.scxml does, because only the C++ engine is driven with
+# it; the declaration is the one above, since its `job` is a host-run invocation.
+sce_add_state_machine(
+    TARGET integration_tests
+    SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/inbox_probe.scxml
     HOST_INVOKER x-sce-host
 )
 
@@ -4877,9 +4890,10 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
              COMMAND mesh_static_invoke_srcexpr_test)
 
     # §9.5 deadline expiry: motor never replies, 50ms deadline fires
-    # error.invoke on the scheduler thread. SCE_THREAD_SAFE enables the
-    # EventQueueManager mutex so the scheduler thread's raiseExternal push
-    # and the main thread's step() pop have a formal happens-before.
+    # error.invoke on the scheduler thread, which posts it to brake's inbox
+    # (docs/adr/0083). The inbox is what orders the scheduler thread's post
+    # before the main thread's step(), so this test builds without
+    # SCE_THREAD_SAFE: no queue of the engine is touched off its owner.
     add_executable(mesh_invoke_deadline_test
         mesh/test_mesh_invoke_deadline_expiry.cpp
         ${MESH_INVOKE_HEADERS}
@@ -4898,7 +4912,6 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     )
 
     target_compile_features(mesh_invoke_deadline_test PRIVATE cxx_std_17)
-    target_compile_definitions(mesh_invoke_deadline_test PRIVATE SCE_THREAD_SAFE)
 
     apply_sce_test_policies(mesh_invoke_deadline_test)
 

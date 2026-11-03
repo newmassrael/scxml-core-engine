@@ -20,7 +20,9 @@
 #include "static/StaticExecutionEngine.h"
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <thread>
+#include <vector>
 
 namespace SCE::W3C::AotTests {
 
@@ -65,6 +67,11 @@ public:
                                                                        [](::SCE::IScriptEngine *){}));
         }
 
+        // What the server's thread hands the machine's owner (see `raiseReceived`
+        // below). Declared before the server, so it outlives the server's thread.
+        std::mutex receivedMutex;
+        std::vector<typename SM::EventWithMetadata> received;
+
         // W3C SCXML C.2: Create and start HTTP server
         W3C::W3CHttpTestServer httpServer(W3C::basicHttpTestPort(), W3C::basicHttpTestPath());
 
@@ -80,44 +87,66 @@ public:
         // sends through that published entry.
         sm.setBasicHttpAccessUri(W3C::basicHttpTestAccessUri());
 
-        // W3C SCXML C.2: Setup HTTP event callback to route responses to state machine
-        // When HTTP server receives POST response, it raises event to state machine
-        httpServer.setEventCallback([&sm](const std::string &eventName, const std::string &eventData) {
-            SCE_LOG_DEBUG("HttpAotTest {}: HTTP callback received event '{}' with data '{}'", TestNum, eventName,
-                          eventData);
-
-            // W3C SCXML C.2: Map event name string to Event enum
-            // Each test has different Event enum values, so we iterate to find match
-            using Event = typename SM::Event;
-            using Policy = typename SM::PolicyType;
-
-            // Find matching Event enum by comparing event names
-            Event matchedEvent = Event::NONE;
-            bool found = false;
-
-            // Iterate through all possible Event enum values (typically < 10)
-            for (int i = 0; i < 256 && !found; ++i) {
-                Event candidateEvent = static_cast<Event>(i);
-                if (Policy::getEventName(candidateEvent) == eventName) {
-                    matchedEvent = candidateEvent;
-                    found = true;
-                    SCE_LOG_DEBUG("HttpAotTest {}: Mapped '{}' to Event enum value {}", TestNum, eventName, i);
-                }
+        // What the server received, waiting for the machine's owner. The server
+        // answers on a thread of its own, and the machine belongs to the thread
+        // that drives it (ARCHITECTURE.md "Engine Threading"). This processor is
+        // synchronous: the POST returns only after the server has handed over
+        // the event it made, so the event is raised on the owner as soon as the
+        // send that caused it returns, ahead of anything the document queues
+        // after the send (W3C test 201 sends `timeout` to itself right after
+        // the POST and must see `event1` first). Raised rather than posted to
+        // the inbox for that reason: a post would be applied at the macrostep
+        // boundary, behind what the rest of the macrostep queues.
+        const auto raiseReceived = [&sm, &receivedMutex, &received] {
+            std::vector<typename SM::EventWithMetadata> taken;
+            {
+                std::lock_guard<std::mutex> lock(receivedMutex);
+                taken.swap(received);
             }
-
-            if (found && matchedEvent != Event::NONE) {
-                typename SM::EventWithMetadata eventMeta(matchedEvent, eventData);
+            for (const auto &eventMeta : taken) {
                 sm.raiseExternal(eventMeta);
-            } else {
-                SCE_LOG_WARN("HttpAotTest {}: Unknown HTTP event: {}", TestNum, eventName);
             }
-        });
+        };
+
+        // W3C SCXML C.2: Setup HTTP event callback to route responses to state machine
+        // When HTTP server receives POST response, it hands the event to the owner (above)
+        httpServer.setEventCallback(
+            [&receivedMutex, &received](const std::string &eventName, const std::string &eventData) {
+                SCE_LOG_DEBUG("HttpAotTest {}: HTTP callback received event '{}' with data '{}'", TestNum, eventName,
+                              eventData);
+
+                // W3C SCXML C.2: Map event name string to Event enum
+                // Each test has different Event enum values, so we iterate to find match
+                using Event = typename SM::Event;
+                using Policy = typename SM::PolicyType;
+
+                // Find matching Event enum by comparing event names
+                Event matchedEvent = Event::NONE;
+                bool found = false;
+
+                // Iterate through all possible Event enum values (typically < 10)
+                for (int i = 0; i < 256 && !found; ++i) {
+                    Event candidateEvent = static_cast<Event>(i);
+                    if (Policy::getEventName(candidateEvent) == eventName) {
+                        matchedEvent = candidateEvent;
+                        found = true;
+                        SCE_LOG_DEBUG("HttpAotTest {}: Mapped '{}' to Event enum value {}", TestNum, eventName, i);
+                    }
+                }
+
+                if (found && matchedEvent != Event::NONE) {
+                    std::lock_guard<std::mutex> lock(receivedMutex);
+                    received.emplace_back(matchedEvent, eventData);
+                } else {
+                    SCE_LOG_WARN("HttpAotTest {}: Unknown HTTP event: {}", TestNum, eventName);
+                }
+            });
 
         // W3C SCXML C.2: Wire performHttpSend() callback (Kotlin W3CHttpTestBase parity)
         // Generated code calls engine.performHttpSend() which delegates to this callback.
         // Synchronous send ensures server callback (which injects response event into SM)
         // completes before performHttpSend returns, preserving event ordering.
-        sm.setHttpSendCallback([](const SCE::Static::HttpSendRequest &request) {
+        sm.setHttpSendCallback([&raiseReceived](const SCE::Static::HttpSendRequest &request) {
             SCE_LOG_DEBUG("HttpAotTest {}: performHttpSend target='{}' event='{}' content='{}'", TestNum,
                           request.target, request.eventName, request.content);
 
@@ -149,6 +178,8 @@ public:
             } catch (const std::exception &e) {
                 SCE_LOG_ERROR("HttpAotTest {}: HTTP POST failed: {}", TestNum, e.what());
             }
+            // On the owner, inside the send: what the POST produced.
+            raiseReceived();
         });
 
         // Initialize state machine
@@ -169,7 +200,8 @@ public:
                 return false;
             }
 
-            // Process any pending events
+            // Process any pending events, the server's first
+            raiseReceived();
             sm.tick();
 
             // Small sleep to avoid busy-waiting

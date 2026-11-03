@@ -31,6 +31,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifndef SCE_PROJECT_ROOT
@@ -265,6 +266,45 @@ TEST(ASavedTreeHoldsEverySessionWhereItStood, AChildsInvocationReachesTheRootsIn
               ::SCE::HostInvokeEndOutcome::Delivered);
     drive(*machine);
     EXPECT_EQ(machine->stamps(), 1u) << "the child took done.invoke.clock and told its parent";
+}
+
+// docs/adr/0083: a host that serves the tree on a thread of its own posts the
+// ending, naming the child session, to the root's inbox; the root's owner routes
+// it at its next macrostep boundary as `endHostInvokeIn` does, and a stale one
+// is refused there as a direct one is.
+TEST(ASavedTreeHoldsEverySessionWhereItStood, AChildsEndingPostedFromAnotherThreadIsRoutedByTheRootsOwner) {
+    Starts starts;
+    auto machine = started(starts);
+    raise(*machine, "go");
+    ASSERT_EQ(starts.requests.size(), 1u);
+    const auto request = starts.requests[0];
+    const auto post = [&machine, &request](bool done, const std::string &data) {
+        bool taken = false;
+        std::thread host([&machine, &request, &taken, done, &data] {
+            taken = machine->inbox().post(
+                Machine::InboxHostInvokeEnding{/*sessionId=*/request.sessionId,
+                                               /*ending=*/::SCE::HostInvokeEnding{/*processorType=*/kClock,
+                                                                                  /*invokeId=*/"clock",
+                                                                                  /*token=*/request.token,
+                                                                                  /*done=*/done,
+                                                                                  /*data=*/data,
+                                                                                  /*origin=*/"",
+                                                                                  /*originType=*/""}});
+        });
+        host.join();
+        return taken;
+    };
+
+    EXPECT_TRUE(post(true, kNow)) << "the root's inbox refused the ending";
+    EXPECT_EQ(machine->stamps(), 0u) << "the ending was applied before the root's owner drove the tree";
+    drive(*machine);
+    EXPECT_EQ(machine->stamps(), 1u) << "the child took done.invoke.clock and told its parent";
+
+    // Ended once: the same start's failure is taken by the inbox and refused by the token
+    // check in the child when the owner applies it.
+    EXPECT_TRUE(post(false, "\"late\""));
+    drive(*machine);
+    EXPECT_EQ(machine->stamps(), 1u) << "a refused ending raised something";
 }
 
 TEST(ASavedTreeHoldsEverySessionWhereItStood, AnEndingForASessionTheTreeDoesNotHoldOrAStartItDoesNotRunIsRefused) {

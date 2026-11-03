@@ -5,16 +5,19 @@
 //
 // brake_invoke declares _mesh_deadline_ms=50. This test sends the
 // RpcRequest to motor but never steps motor, so motor never replies.
-// After 100ms the MeshDeadlineScheduler fires handleDeadline on
+// After 50ms the MeshDeadlineScheduler fires handleDeadline on
 // the scheduler thread → InvokeCorrelation delivers
-// error.invoke.<id> with RpcStatus::DeadlineExceeded to brake's
-// external queue. brake.step() consumes the event and transitions
-// Computing → Failed.
+// error.invoke.<id> with RpcStatus::DeadlineExceeded by posting it to
+// brake's inbox. brake.step() applies the post at its macrostep
+// boundary and transitions Computing → Failed.
 //
-// SCE_THREAD_SAFE is required: the scheduler thread's raiseExternal
-// push and the main thread's step() pop share the EventQueueManager,
-// and sleep_for alone does not establish happens-before per the C++
-// memory model. The define enables the queue's internal mutex.
+// The scheduler thread does not own brake, so it never touches brake's
+// queues (ARCHITECTURE.md "Engine Threading", docs/adr/0083): the inbox
+// is the one part of the engine it may use, and the post happens-before
+// the step that applies it through the inbox's own atomics. The test
+// therefore builds without SCE_THREAD_SAFE, whose queue mutex is the
+// arrangement the inbox replaced; a raise from the scheduler thread here
+// would be refused by the debug owner check.
 
 #include "brake_invoke_sm.h"
 #include "brake_invoke_transport.h"

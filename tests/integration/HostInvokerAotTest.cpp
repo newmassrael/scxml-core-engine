@@ -43,6 +43,7 @@
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -574,6 +575,39 @@ TEST_F(HostInvokerAotTest, ATypedCompletionIsReadAsItsRecord) {
     EXPECT_EQ(complete(R"({"granted":true})"), (Counts{1, 0, 0})) << "granted";
     EXPECT_EQ(complete(R"({"granted":false})"), (Counts{0, 1, 0})) << "denied";
     EXPECT_EQ(complete("yes"), (Counts{0, 0, 1})) << "not the record";
+}
+
+// docs/adr/0083: a typed completion made on the host's own thread goes through
+// the machine's inbox (`postComplete<Id>`), typed as the direct one is, and the
+// owner applies it at its next macrostep boundary, where the token is checked.
+TEST_F(HostInvokerAotTest, ATypedCompletionPostedFromAnotherThreadIsReadAsItsRecord) {
+    Machine sm;
+    registerRunningInvoker(sm);
+    boot(sm);
+    sm.processEvent(Event::Type);
+    const uint64_t token = tokenOf("perm");
+
+    SCE::Generated::statechart_host_invoker::PermResult result;
+    result.granted = true;
+    bool taken = false;
+    std::thread host([&sm, &taken, token, &result] { taken = sm.postCompletePerm(token, result); });
+    host.join();
+    EXPECT_TRUE(taken) << "the machine's inbox refused the completion";
+    EXPECT_EQ(sm.getPolicy().granted(), std::optional<int64_t>(0))
+        << "the completion was applied before the owner reached a macrostep boundary";
+
+    sm.step();
+    EXPECT_EQ(sm.getPolicy().granted(), std::optional<int64_t>(1))
+        << "the posted completion never reached the document";
+    EXPECT_EQ(sm.getPolicy().unreadable(), std::optional<int64_t>(0)) << "the posted record was not read as one";
+
+    // Ended once: a second post of the same start is taken by the inbox and refused
+    // by the token check when the owner applies it.
+    std::thread again([&sm, &taken, token, &result] { taken = sm.postCompletePerm(token, result); });
+    again.join();
+    EXPECT_TRUE(taken);
+    sm.step();
+    EXPECT_EQ(sm.getPolicy().granted(), std::optional<int64_t>(1)) << "the same start completed twice";
 }
 
 namespace {

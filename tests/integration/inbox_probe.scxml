@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The smallest machine with a host-run invocation whose every taken event can
+  be read back in order: what WhatAnotherThreadPostsEntersThroughTheInboxAotTest
+  posts to the generated C++ engine's inbox from other threads
+  (docs/adr/0083, ARCHITECTURE.md "Engine Threading").
+
+  `working` (initial) starts the host-run invocation `job` on entry and so
+  cancels it on exit; `leave` goes to `idle` and `go` back, which starts `job`
+  again under a new token. `ping`, `done.invoke.job` and `error.invoke.job`
+  are taken in either state, by `running`, and appended to `taken` as
+  `ping:<data>;`, `done:<data>;` and `failed:<data>;`, so the variable is the
+  order the machine took them in.
+
+  It sits beside its driver, as parallel_current_state.scxml does: only the C++
+  engine is driven with it, and the generated machine is compiled with the
+  host-invoker declaration `x-sce-host` (tests/CMakeLists.txt).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="inbox_probe" datamodel="ecmascript" initial="running">
+
+  <datamodel>
+    <data id="taken" expr="''"/>
+  </datamodel>
+
+  <state id="running" initial="working">
+    <transition event="ping">
+      <assign location="taken" expr="taken + 'ping:' + _event.data + ';'"/>
+    </transition>
+    <transition event="done.invoke.job">
+      <assign location="taken" expr="taken + 'done:' + _event.data + ';'"/>
+    </transition>
+    <transition event="error.invoke.job">
+      <assign location="taken" expr="taken + 'failed:' + _event.data + ';'"/>
+    </transition>
+
+    <state id="working">
+      <invoke id="job" type="x-sce-host"/>
+      <transition event="leave" target="idle"/>
+    </state>
+
+    <state id="idle">
+      <transition event="go" target="working"/>
+    </state>
+  </state>
+</scxml>
