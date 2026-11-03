@@ -6011,6 +6011,30 @@ pub enum GenerateError {
         at: Option<SourceLocation>,
     },
 
+    /// A document carries an in-line child (written in `<content>`, or a
+    /// standard statechart named by `src`), whose machine is a file of its own
+    /// written beside the parent's, and the entry point it was handed to
+    /// returns the source of one machine. Refused rather than returned as the
+    /// parent alone, whose code names the child's file.
+    ///
+    /// Not [`Self::SourceHashUnavailable`]: no value is missing from the
+    /// route, its result has no place for a second file. `child` is the
+    /// child's stem, the name the parent's machine starts it by; `entry` names
+    /// the entry the caller took, and `carrying_entry` the entry that takes the
+    /// same input and returns every file. `at` is the `<invoke>` that starts
+    /// the child.
+    #[error(
+        "the document carries the in-line child `{child}`, whose machine is a file of its own \
+         beside the parent's, and `{entry}` returns the parent's source alone; compile the \
+         document with `{carrying_entry}`, which returns every file"
+    )]
+    InlineChildUnreturnable {
+        child: String,
+        entry: String,
+        carrying_entry: String,
+        at: Option<SourceLocation>,
+    },
+
     /// SCE Protocol-Synthesis RFC §synth-5-J-4: an MCU-class kind (link / worker /
     /// buffer-pool / reassembly, or an MCU-only codec sub-feature)
     /// was authored against a language target outside `(rust, c11)`.

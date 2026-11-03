@@ -1350,6 +1350,10 @@ pub enum DiagnosticCode {
     /// and the route it was handed to has no source hash to give it.
     #[serde(rename = "generate/source-hash-unavailable")]
     GenerateSourceHashUnavailable,
+    /// A document carries an in-line child, whose machine is a file of its
+    /// own, and the entry point it was handed to returns one machine's source.
+    #[serde(rename = "generate/inline-child-unreturnable")]
+    GenerateInlineChildUnreturnable,
 
     // ── Codegen matrix invariants (SCE Protocol-Synthesis RFC §synth-5-J-4 / §synth-5-J-5).
     //    The variants shipped first as shells (item A1) so downstream
@@ -3902,6 +3906,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         GenerateTemplateRender,
         GenerateUnsupportedFeature,
         GenerateSourceHashUnavailable,
+        GenerateInlineChildUnreturnable,
         // Codegen matrix shells (SCE Protocol-Synthesis RFC §synth-5-J-4 / §synth-5-J-5)
         CodegenMcuClassKindOnNonMcuLanguage,
         CodegenGenericKindBackendEmitMissing,
@@ -5117,6 +5122,7 @@ impl DiagnosticCode {
             | GenerateTemplateRender
             | GenerateUnsupportedFeature
             | GenerateSourceHashUnavailable
+            | GenerateInlineChildUnreturnable
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
             | CodegenFeatureSelectionRequired
@@ -5500,6 +5506,7 @@ impl DiagnosticCode {
             | GenerateTemplateRender
             | GenerateUnsupportedFeature
             | GenerateSourceHashUnavailable
+            | GenerateInlineChildUnreturnable
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
             | QueueStorageNotExactlyOne
@@ -6004,6 +6011,7 @@ impl DiagnosticCode {
             GenerateTemplateRender => "generate/template-render",
             GenerateUnsupportedFeature => "generate/unsupported-feature",
             GenerateSourceHashUnavailable => "generate/source-hash-unavailable",
+            GenerateInlineChildUnreturnable => "generate/inline-child-unreturnable",
             CodegenMcuClassKindOnNonMcuLanguage => "codegen/mcu-class-kind-on-non-mcu-language",
             CodegenGenericKindBackendEmitMissing => "codegen/generic-kind-backend-emit-missing",
             CodegenFeatureSelectionRequired => "codegen/feature-selection-required",
@@ -11353,6 +11361,20 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![declarations.clone(), route.clone()],
         },
+        // The repair is the other entry, which the record names in its
+        // message; no fix, since the document is not what is wrong. The child
+        // and the entry key the id: the child's stem is the name SCE gave it,
+        // and a document carrying two children is refused on its first. No
+        // `actual`: the stem is written nowhere in the document, so the row of
+        // the `<invoke>` does not hold it (SCE_ERROR_CONTRACT §3.1.1).
+        GenerateError::InlineChildUnreturnable { child, entry, .. } => DiagnosticPayload {
+            code: DiagnosticCode::GenerateInlineChildUnreturnable,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![child.clone(), entry.clone()],
+        },
         GenerateError::CodegenMcuClassKindOnNonMcuLanguage { kind, language } => {
             DiagnosticPayload {
                 code: DiagnosticCode::CodegenMcuClassKindOnNonMcuLanguage,
@@ -14972,6 +14994,19 @@ mod tests {
                 }
                 .into(),
                 r##"{"v":1,"id":"fnv1a:9d66ced2bb5ec4cc","code":"generate/source-hash-unavailable","stage":"generate","message":"the document declares sce:transition-function=\"emit\", whose output carries the source hash of the run that generates it, which the library's in-memory entry points cannot supply; generate the document with `sce-codegen generate` or `sce-codegen orchestrate`"}"##,
+            ),
+            (
+                // A document carrying an in-line child handed to the entry
+                // point that returns one machine's source.
+                "forge/generate-inline-child-unreturnable",
+                GenerateError::InlineChildUnreturnable {
+                    child: "host__sce_synth_invoke__kid".into(),
+                    entry: "compile_from_string".into(),
+                    carrying_entry: "compile_from_string_lang".into(),
+                    at: None,
+                }
+                .into(),
+                r##"{"v":1,"id":"fnv1a:865a271de53e9063","code":"generate/inline-child-unreturnable","stage":"generate","message":"the document carries the in-line child `host__sce_synth_invoke__kid`, whose machine is a file of its own beside the parent's, and `compile_from_string` returns the parent's source alone; compile the document with `compile_from_string_lang`, which returns every file"}"##,
             ),
             (
                 "forge/io-filesystem",
@@ -19457,6 +19492,7 @@ mod tests {
             | GenerateTemplateRender
             | GenerateUnsupportedFeature
             | GenerateSourceHashUnavailable
+            | GenerateInlineChildUnreturnable
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
             // ADR 0057 §6: the repair names a variant, which is the build's
@@ -20291,6 +20327,7 @@ mod tests {
                 | GenerateTemplateLoad | GenerateTemplateRender
                 | GenerateUnsupportedFeature
                 | GenerateSourceHashUnavailable
+                | GenerateInlineChildUnreturnable
                 | CodegenMcuClassKindOnNonMcuLanguage
                 | CodegenGenericKindBackendEmitMissing
                 | CodegenFeatureSelectionRequired
@@ -20610,9 +20647,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            491,
+            492,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 491 distinct variants to match the DiagnosticCode \
+             expected 492 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21641,6 +21678,10 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // resolves the enclosing anchor; no scenario takes a route
             // without a source hash, so the roster has not seen it carry.
             | GenerateSourceHashUnavailable
+            // Located on the `<invoke>` through `locate_codegen_error`, which
+            // resolves the enclosing anchor; no scenario takes an entry that
+            // returns one source, so the roster has not seen it carry.
+            | GenerateInlineChildUnreturnable
             | ProfileInterfaceNotClosed
             | ProfileNameStyle
             | ProfileNameLimit

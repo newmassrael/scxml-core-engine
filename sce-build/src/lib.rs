@@ -1500,7 +1500,8 @@ fn locate_codegen_error<E: Into<forge::error::ForgeError>>(
     let at = match &err {
         ForgeError::Generate(generate) => match generate.as_ref() {
             GenerateError::UnsupportedFeature { at, .. }
-            | GenerateError::SourceHashUnavailable { at, .. } => at.clone(),
+            | GenerateError::SourceHashUnavailable { at, .. }
+            | GenerateError::InlineChildUnreturnable { at, .. } => at.clone(),
             _ => None,
         },
         _ => None,
@@ -1512,6 +1513,11 @@ fn locate_codegen_error<E: Into<forge::error::ForgeError>>(
 /// observe `Located<ForgeError>` should prefer this entry point so they
 /// receive structured `code` / `stage` / `fix` data instead of a
 /// stringified message.
+///
+/// The result is one machine's source, so a document carrying an in-line
+/// child, whose machine is a file of its own, is refused
+/// (`generate/inline-child-unreturnable`, [`refuse_carried_children`]):
+/// [`compile_scxml_lang_typed`] returns the child's files with the parent's.
 pub fn compile_scxml_to_string_typed(
     scxml_path: &str,
     template_dir: &Path,
@@ -1523,6 +1529,12 @@ pub fn compile_scxml_to_string_typed(
     // set survives to the depfile sink.
     let ParsedSCXML { model, .. } = compile_model(scxml_path)?;
     refuse_unbound_digest_outputs(&model, scxml_path, FILE_ENTRY_POINTS)?;
+    refuse_carried_children(
+        &model,
+        scxml_path,
+        "compile_scxml_to_string",
+        "compile_scxml_lang",
+    )?;
     generator::generate(&model, template_dir, false)
         .map_err(|e| locate_codegen_error(e, scxml_path, &model))
 }
@@ -1538,6 +1550,11 @@ pub fn compile_scxml_to_string(scxml_path: &str, template_dir: &Path) -> Result<
 
 /// Typed analogue of [`compile_from_string`] — see the typed file-based
 /// sibling for routing rationale.
+///
+/// The result is one machine's source, so a document carrying an in-line
+/// child is refused (`generate/inline-child-unreturnable`,
+/// [`refuse_carried_children`]): [`compile_from_string_lang_typed`] returns
+/// the child's files with the parent's.
 pub fn compile_from_string_typed(
     scxml_content: &str,
     scxml_name: &str,
@@ -1545,8 +1562,49 @@ pub fn compile_from_string_typed(
 ) -> Result<String, CompileError> {
     let model = compile_model_from_string(scxml_content, scxml_name)?;
     refuse_unbound_digest_outputs(&model, scxml_name, IN_MEMORY_ENTRY_POINTS)?;
+    refuse_carried_children(
+        &model,
+        scxml_name,
+        "compile_from_string",
+        "compile_from_string_lang",
+    )?;
     generator::generate_with_templates(&model, templates, false)
         .map_err(|e| locate_codegen_error(e, scxml_name, &model))
+}
+
+/// Refuse a document carrying an in-line child on an entry point that returns
+/// the source of one machine (`entry`): `generate/inline-child-unreturnable`,
+/// on the `<invoke>` that starts the first child, naming the child and the
+/// entry point that takes the same input and returns every file
+/// (`carrying_entry`).
+///
+/// The child's machine is a file of its own, written beside the parent's
+/// ([`carried_children`]), and the parent's machine names it; returning the
+/// parent alone hands back a machine whose child nobody can build. The same
+/// shape as [`refuse_unbound_digest_outputs`]: the entry cannot give what the
+/// document asks for, so it says which entry can.
+fn refuse_carried_children(
+    model: &SCXMLModel,
+    source: &str,
+    entry: &str,
+    carrying_entry: &str,
+) -> Result<(), CompileError> {
+    let Some(invoke) = model
+        .iter_scxml_invokes()
+        .find(|invoke| invoke.inline_child.is_some())
+    else {
+        return Ok(());
+    };
+    Err(locate_codegen_error(
+        forge::error::GenerateError::InlineChildUnreturnable {
+            child: invoke.child_name.clone(),
+            entry: entry.to_string(),
+            carrying_entry: carrying_entry.to_string(),
+            at: invoke.common.base.source_location.clone(),
+        },
+        source,
+        model,
+    ))
 }
 
 /// Compile SCXML content string to Rust code (no filesystem access).

@@ -468,7 +468,11 @@ file nobody wrote: `analyzer::can_generate_static`, the gate every route asks of
 it of every child the document carries (`analyzer::can_generate_carried_children`), and refuses
 the document with the child's own record, placed on the row its author wrote. `generate-w3c`
 skips such a fixture as it skips one whose own document cannot be generated, and stands no stub
-in for any child of a fixture.
+in for any child of a fixture. The two library entry points that return one machine's source
+(`compile_scxml_to_string`, `compile_from_string`, and their typed forms) have no place for the
+child's file, so they refuse a document carrying a child with `generate/inline-child-unreturnable`
+on its `<invoke>`, naming the entry that returns every file (`compile_scxml_lang`,
+`compile_from_string_lang`).
 
 **Hybrid Invoke** (`contentExpr`):
 - AOT parent evaluates expression via JSEngine/LuaEngine

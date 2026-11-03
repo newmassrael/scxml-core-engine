@@ -816,6 +816,7 @@ references against a real document and drift silently.
 | `extern/signature-mismatch` | `validation` | `replace_with` | SCE Protocol-Synthesis RFC §5.I |
 | `extern/symbol-not-in-whitelist` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.I |
 | `extern/target-plugin-symbol-conflict` | `validation` | no | SCE Protocol-Synthesis RFC §5.I |
+| `generate/inline-child-unreturnable` | `generate` | no |  |
 | `generate/invalid-config` | `generate` | no |  |
 | `generate/source-hash-unavailable` | `generate` | no |  |
 | `generate/template-load` | `generate` | no |  |
