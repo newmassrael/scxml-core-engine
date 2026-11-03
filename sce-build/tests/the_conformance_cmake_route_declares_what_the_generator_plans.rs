@@ -1492,7 +1492,7 @@ fn order_violations(w3c: &str, integration: &str, tree: &str, c11: &str) -> Vec<
             &tree,
             "sce_generate_static_integration_test(",
             "sce_declare_registered_static_integration_tests(",
-            "target_sources(integration_tests",
+            "${GENERATED_INTEGRATION_HEADERS}",
         ),
         (
             "backends/c/tests/CMakeLists.txt",
