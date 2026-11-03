@@ -11,8 +11,9 @@
 // because nothing asked it to. This check asks. For each backend it derives a
 // row of capabilities from the registries that already decide them — the kind
 // matrix, the static data model roster, the CLI routes, the script-engine
-// seam, the Mesh rosters, the conformance harness tree — and holds every row
-// to the union of all of them.
+// seam, the Mesh rosters, the conformance harness tree, the blocks a backend's
+// templates render a declared output with — and holds every row to the union
+// of all of them.
 //
 // Nothing here restates a registry. A capability is read from the code that
 // decides it; the only thing written by hand is `ACCEPTED`, the record of
@@ -162,6 +163,35 @@ fn derived_facts() -> Vec<Fact> {
     for fragment in every_fragment {
         facts.push(fact(format!("conformance fragment `{fragment}`"), |l| {
             holds_if(fragments_of(l).contains(&fragment))
+        }));
+    }
+
+    // What a statechart declares of its own output (SCE Accepted Subset §2.20,
+    // §2.21): a backend writes it when one of its own templates holds the block
+    // that renders it, which is marked where it begins
+    // (`the_emitted_transition_table_equals_the_export`,
+    // `the_emitted_transition_function_equals_the_producer`). A backend's own
+    // templates are the ones under the directory it owns, or, for the one that
+    // owns none, the ones at the root of the tree.
+    let owns = |l: Language, name: &str| match l.template_owned_subdir() {
+        Some(subdir) => name
+            .strip_prefix(subdir)
+            .is_some_and(|rest| rest.starts_with('/')),
+        None => !name.contains('/'),
+    };
+    for (label, marker) in [
+        (
+            "declared transition table",
+            "emitted-transition-table:begin",
+        ),
+        ("declared transition function", "transition-function:begin"),
+    ] {
+        facts.push(fact(label, |l| {
+            holds_if(
+                embedded_templates_for(Language::Cpp)
+                    .into_iter()
+                    .any(|(name, text)| owns(l, name) && text.contains(marker)),
+            )
         }));
     }
 
