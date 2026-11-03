@@ -1,0 +1,46 @@
+# Mutation cases for "an enum is as long on CBOR as the longest number it can
+# hold" (docs/adr/0086, sections 2.1, 2.3 and 9.2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_enum_is_sized_on_cbor_by_the_numbers_it_holds.cases`.
+#
+# A closed enum holds only its declared numbers, each written with its shortest
+# head, so its size is the longest of those heads; an open enum
+# (`sce:strict-variants="false"`) holds every number of its underlying type, so
+# its size is that type's. The mutants take one decision away each:
+#
+#   a closed enum is sized by its underlying type;
+#   an open enum is sized by its declared numbers;
+#   only the first declared number is measured;
+#   a negative number is measured by its magnitude, not by `-1 - n`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib forge::value_type
+mutation_targets sce-build/src/forge/value_type.rs
+mutation_oracles sce-build/src/forge/value_type.rs
+
+mutation_case "a closed enum is sized by its underlying type" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "                Measure::Cbor if enumeration.strict => {",
+     "                Measure::Cbor if enumeration.strict && false => {")
+PY
+
+mutation_case "an open enum is sized by its declared numbers" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "                Measure::Cbor if enumeration.strict => {",
+     "                Measure::Cbor if enumeration.strict || !enumeration.strict => {")
+PY
+
+mutation_case "only the first declared number is measured" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "                        longest = longest.max(Some(len));",
+     "                        longest = longest.or(Some(len));")
+PY
+
+mutation_case "a negative number is measured by its magnitude" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "    let argument = if n < 0 { -1 - n } else { n };",
+     "    let argument = if n < 0 { -n } else { n };")
+PY
