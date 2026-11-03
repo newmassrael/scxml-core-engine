@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 use crate::forge::error::{ForgeError, ImportError, Located};
 use crate::forge::model::{ForgeDocument, ForgeImport, ForgeKind, ParsedForge};
-use crate::forge::value_type::{ScopedEnum, ScopedRecord, TypeScope};
+use crate::forge::value_type::{ScopedEnum, ScopedRecord, ScopedVariant, TypeScope};
 use crate::DocumentLabel;
 
 /// An imported document's text, and the path it was read from.
@@ -135,6 +135,24 @@ pub fn enum_model(
     }
 }
 
+/// The enum an enum document is, as a type that holds it is sized
+/// (docs/adr/0086, sections 2 and 9.2): each variant with its declared name and
+/// number (`value=`), its underlying type, and whether it is closed.
+pub fn scoped_enum(model: &crate::forge::model::EnumModel) -> ScopedEnum {
+    ScopedEnum {
+        variants: model
+            .variants
+            .iter()
+            .map(|v| ScopedVariant {
+                name: v.name.clone(),
+                value: v.value,
+            })
+            .collect(),
+        underlying: model.underlying_type.clone(),
+        strict: model.strict_variants,
+    }
+}
+
 /// The record an event-schema document is, as a type that holds it is sized
 /// (docs/adr/0086, section 2): its identity, its fields of the one value type,
 /// and the scope its own imports (`imports`, written relative to `base_dir`,
@@ -186,13 +204,9 @@ fn type_scope_at(
                 if let Some(ForgeDocument::Enum(model)) =
                     parse_quietly(base_dir, import).map(|p| p.document)
                 {
-                    scope.enums.insert(
-                        import.alias.clone(),
-                        ScopedEnum {
-                            names: model.variants.iter().map(|v| v.name.clone()).collect(),
-                            underlying: model.underlying_type.clone(),
-                        },
-                    );
+                    scope
+                        .enums
+                        .insert(import.alias.clone(), scoped_enum(&model));
                 }
             }
             ForgeKind::EventSchema => {

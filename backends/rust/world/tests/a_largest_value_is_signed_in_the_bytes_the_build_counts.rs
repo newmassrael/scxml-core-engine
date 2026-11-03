@@ -14,15 +14,15 @@
 
 use sce_build::forge::model::SceType;
 use sce_build::forge::value_type::{
-    cbor_max_len, ScopedEnum, ScopedRecord, TypeScope, ValueType as BuildType, WrittenType,
+    cbor_max_len, ScopedEnum, ScopedRecord, ScopedVariant, TypeScope, ValueType as BuildType,
+    WrittenType,
 };
 use sce_rust_trust::cbor::{
     encode, EnumType, Field, Integer, RecordType, Shape, Value, ValueType, Variant,
 };
 
-/// `SignalLevel`, with the numbers its variants declare. The build sizes an enum by its underlying
-/// type, so the largest number a closed enum declares has the longest head of that type here: a
-/// size is tight for a closed enum only when one of its variants reaches that head.
+/// `enum_signal_level.scxml`, which the batch item's `level` names as `SignalLevel`: a closed enum,
+/// so its values are its declared numbers, each one byte, and not every number of its `uint8`.
 const LEVEL: EnumType = EnumType {
     underlying: Integer::Uint8,
     variants: &[
@@ -32,11 +32,55 @@ const LEVEL: EnumType = EnumType {
         },
         Variant {
             name: "high",
-            value: 200,
+            value: 1,
+        },
+        Variant {
+            name: "critical",
+            value: 2,
         },
     ],
     strict: true,
 };
+
+/// A closed enum whose longest number is a negative one: major type 1, with the argument 24.
+const READING: EnumType = EnumType {
+    underlying: Integer::Int8,
+    variants: &[
+        Variant {
+            name: "none",
+            value: -25,
+        },
+        Variant {
+            name: "some",
+            value: 3,
+        },
+    ],
+    strict: true,
+};
+
+/// An open enum (`sce:strict-variants="false"`): it holds every number of its underlying type, so
+/// its largest value is one no variant declares.
+const CODE: EnumType = EnumType {
+    underlying: Integer::Uint16,
+    variants: &[
+        Variant {
+            name: "ok",
+            value: 0,
+        },
+        Variant {
+            name: "busy",
+            value: 1,
+        },
+    ],
+    strict: false,
+};
+
+/// Every enum the documents here name, by its alias.
+const ENUMS: [(&str, &EnumType); 3] = [
+    ("SignalLevel", &LEVEL),
+    ("Reading", &READING),
+    ("Code", &CODE),
+];
 
 /// `event_batch_item.scxml` (docs/adr/0086, section 14.1): a record that holds a list.
 const ITEM_FIELDS: [(&str, &str); 7] = [
@@ -60,15 +104,19 @@ const BATCH_FIELDS: [(&str, &str); 7] = [
     ("late", "list<uint8>[2]"),
 ];
 
-/// Compositions past the fixtures': the ADR's nested example, a limit name, an optional record, and
-/// lengths at the boundary where a head grows by a byte.
-const MORE: [&str; 6] = [
+/// Compositions past the fixtures': the ADR's nested example, a limit name, an optional record,
+/// lengths at the boundary where a head grows by a byte, and an enum of each kind.
+const MORE: [&str; 10] = [
     "list<list<string[8]>[4]>[3]",
     "string[merge_text=96]",
     "optional<record:Item>",
     "list<optional<list<bytes[24]>[24]>>[2]",
     "bytes[23]",
     "list<float32>[23]",
+    "enum:Reading",
+    "optional<enum:Reading>",
+    "enum:Code",
+    "list<enum:Code>[2]",
 ];
 
 fn ty(text: &str) -> BuildType {
@@ -85,23 +133,53 @@ fn fields(table: &[(&str, &str)]) -> Vec<(String, BuildType)> {
         .collect()
 }
 
-/// The aliases the batch document reads: `SignalLevel`, `Item`, and the payload as the record
-/// `Batch`.
-fn scope() -> TypeScope {
-    let level = ScopedEnum {
-        names: LEVEL
+/// The enum the build reads for `descriptor`.
+fn scoped(descriptor: &EnumType) -> ScopedEnum {
+    ScopedEnum {
+        variants: descriptor
             .variants
             .iter()
-            .map(|variant| variant.name.to_string())
+            .map(|variant| ScopedVariant {
+                name: variant.name.to_string(),
+                value: variant.value,
+            })
             .collect(),
-        underlying: SceType::Uint8,
-    };
+        underlying: match descriptor.underlying {
+            Integer::Uint8 => SceType::Uint8,
+            Integer::Uint16 => SceType::Uint16,
+            Integer::Uint32 => SceType::Uint32,
+            Integer::Uint64 => SceType::Uint64,
+            Integer::Int8 => SceType::Int8,
+            Integer::Int16 => SceType::Int16,
+            Integer::Int32 => SceType::Int32,
+            Integer::Int64 => SceType::Int64,
+        },
+        strict: descriptor.strict,
+    }
+}
+
+/// The descriptor of the enum `alias` names.
+fn enumeration(alias: &str) -> &'static EnumType {
+    ENUMS
+        .iter()
+        .find(|(name, _)| *name == alias)
+        .map(|(_, descriptor)| *descriptor)
+        .unwrap_or_else(|| panic!("`{alias}` names an enum here"))
+}
+
+/// The aliases the batch document reads: `SignalLevel`, `Item`, and the payload as the record
+/// `Batch`; and the enums of the compositions past the fixtures'.
+fn scope() -> TypeScope {
     let mut item_scope = TypeScope::default();
     item_scope
         .enums
-        .insert("SignalLevel".to_string(), level.clone());
+        .insert("SignalLevel".to_string(), scoped(&LEVEL));
     let mut batch_scope = TypeScope::default();
-    batch_scope.enums.insert("SignalLevel".to_string(), level);
+    for (alias, descriptor) in ENUMS {
+        batch_scope
+            .enums
+            .insert(alias.to_string(), scoped(descriptor));
+    }
     batch_scope.records.insert(
         "Item".to_string(),
         ScopedRecord {
@@ -149,10 +227,7 @@ fn shape(ty: &BuildType, scope: &TypeScope) -> Shape {
                 SceType::Float32 => Shape::Float32,
                 SceType::Float64 => Shape::Float64,
                 SceType::Bool => Shape::Bool,
-                SceType::Enum(reference) => {
-                    assert_eq!(reference.alias, "SignalLevel", "the one enum here");
-                    Shape::Enum(&LEVEL)
-                }
+                SceType::Enum(reference) => Shape::Enum(enumeration(&reference.alias)),
                 SceType::String | SceType::Bytes => {
                     panic!("a value type holds a text or a byte string as Text or Bytes, with its bound")
                 }
@@ -186,31 +261,26 @@ fn shape(ty: &BuildType, scope: &TypeScope) -> Shape {
 
 /// The value of `ty` whose encoding is longest: every integer at the end of its width whose head
 /// is longest, every float one only the widest width holds, every text, byte string and list at its
-/// bound, every optional present and every enum at its greatest number.
+/// bound, every optional present, and every enum at the number it holds whose head is longest.
 fn largest(ty: &ValueType) -> Value {
     let (ValueType::Required(shape) | ValueType::Optional(shape)) = ty;
     match shape {
-        Shape::Integer(integer) => Value::Integer(match integer {
-            Integer::Uint8 => i128::from(u8::MAX),
-            Integer::Uint16 => i128::from(u16::MAX),
-            Integer::Uint32 => i128::from(u32::MAX),
-            Integer::Uint64 => i128::from(u64::MAX),
-            Integer::Int8 => i128::from(i8::MIN),
-            Integer::Int16 => i128::from(i16::MIN),
-            Integer::Int32 => i128::from(i32::MIN),
-            Integer::Int64 => i128::from(i64::MIN),
-        }),
+        Shape::Integer(integer) => Value::Integer(longest_integer(*integer)),
         Shape::Float32 => Value::Float(f64::from(0.1f32)),
         Shape::Float64 => Value::Float(0.1),
         Shape::Bool => Value::Bool(true),
-        Shape::Enum(enumeration) => Value::Integer(
-            enumeration
+        // A closed enum holds only its declared numbers: the one whose head is longest, which is
+        // the one whose argument (`n`, or `-1 - n` below zero) is greatest.
+        Shape::Enum(descriptor) if descriptor.strict => Value::Integer(
+            descriptor
                 .variants
                 .iter()
                 .map(|variant| variant.value)
-                .max()
+                .max_by_key(|&n| if n < 0 { -1 - n } else { n })
                 .expect("an enum declares a variant"),
         ),
+        // An open enum holds every number of its underlying type.
+        Shape::Enum(descriptor) => Value::Integer(longest_integer(descriptor.underlying)),
         Shape::Text { max } => Value::Text("\u{0}".repeat(*max as usize)),
         Shape::Bytes { max } => Value::Bytes(vec![0xff; *max as usize]),
         Shape::Record(record) => Value::Record(
@@ -221,6 +291,20 @@ fn largest(ty: &ValueType) -> Value {
                 .collect(),
         ),
         Shape::List { elem, max } => Value::List(vec![largest(elem); *max as usize]),
+    }
+}
+
+/// The number of `integer` whose head is longest: the end of its width furthest from zero.
+fn longest_integer(integer: Integer) -> i128 {
+    match integer {
+        Integer::Uint8 => i128::from(u8::MAX),
+        Integer::Uint16 => i128::from(u16::MAX),
+        Integer::Uint32 => i128::from(u32::MAX),
+        Integer::Uint64 => i128::from(u64::MAX),
+        Integer::Int8 => i128::from(i8::MIN),
+        Integer::Int16 => i128::from(i16::MIN),
+        Integer::Int32 => i128::from(i32::MIN),
+        Integer::Int64 => i128::from(i64::MIN),
     }
 }
 

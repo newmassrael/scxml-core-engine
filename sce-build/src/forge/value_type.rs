@@ -1104,12 +1104,10 @@ pub trait TypeEnv {
     /// The fields of the record `alias` names, in the schema's order, or `None`
     /// when no record goes by that alias.
     fn record_fields(&self, alias: &str) -> Option<Vec<(String, ValueType)>>;
-    /// The declared names of the variants of the enum `alias` names, or `None`
-    /// when no enum goes by that alias.
-    fn enum_names(&self, alias: &str) -> Option<Vec<String>>;
-    /// The underlying type of the enum `alias` names: what its value is on a
-    /// CBOR wire.
-    fn enum_underlying(&self, alias: &str) -> Option<SceType>;
+    /// The enum `alias` names: its variants, each with its declared name and
+    /// number, its underlying type, and whether it is closed; `None` when no
+    /// enum goes by that alias.
+    fn enum_type(&self, alias: &str) -> Option<&ScopedEnum>;
     /// The environment the fields of the record `alias` names are read in: the
     /// record's own document, whose aliases name its enums and records, and
     /// which need not be the aliases of the document that names the record.
@@ -1126,12 +1124,27 @@ pub trait TypeEnv {
     }
 }
 
-/// An enum, as a size reads it: the declared names of its variants and its
-/// underlying type.
+/// An enum, as a size reads it: its variants, its underlying type, and whether
+/// it is closed. Its JSON value is the name of a variant; its CBOR value is a
+/// number (docs/adr/0086, section 9.2).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopedEnum {
-    pub names: Vec<String>,
+    /// Every variant, in declaration order.
+    pub variants: Vec<ScopedVariant>,
+    /// The integer its numbers are (`sce:underlying-type`).
     pub underlying: SceType,
+    /// Whether a number no variant declares is refused (`sce:strict-variants`,
+    /// true unless the document says otherwise). A closed enum holds only its
+    /// declared numbers; an open one every number of its underlying type.
+    pub strict: bool,
+}
+
+/// A variant of an enum, as a size reads it: its declared name and its
+/// declared number (`value=`, ADR 0047).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopedVariant {
+    pub name: String,
+    pub value: i128,
 }
 
 /// A record, as a size reads it: the document it is (its identity), its fields
@@ -1158,11 +1171,8 @@ impl TypeEnv for TypeScope {
     fn record_fields(&self, alias: &str) -> Option<Vec<(String, ValueType)>> {
         self.records.get(alias).map(|r| r.fields.clone())
     }
-    fn enum_names(&self, alias: &str) -> Option<Vec<String>> {
-        self.enums.get(alias).map(|e| e.names.clone())
-    }
-    fn enum_underlying(&self, alias: &str) -> Option<SceType> {
-        self.enums.get(alias).map(|e| e.underlying.clone())
+    fn enum_type(&self, alias: &str) -> Option<&ScopedEnum> {
+        self.enums.get(alias)
     }
     fn record_scope(&self, alias: &str) -> Option<&dyn TypeEnv> {
         self.records.get(alias).map(|r| &r.scope as &dyn TypeEnv)
@@ -1214,6 +1224,15 @@ pub fn cbor_head_len(n: u64) -> u64 {
         0x1_0000..=0xffff_ffff => 5,
         _ => 9,
     }
+}
+
+/// The length of the deterministic CBOR of the integer `n` (RFC 8949 sections
+/// 3.1 and 4.2.1): major type 0 with the argument `n` when it is zero or more,
+/// major type 1 with the argument `-1 - n` otherwise, each with its shortest
+/// head. `None` when the argument is past 2^64 - 1, which no head holds.
+pub fn cbor_integer_len(n: i128) -> Option<u64> {
+    let argument = if n < 0 { -1 - n } else { n };
+    u64::try_from(argument).ok().map(cbor_head_len)
 }
 
 /// The bytes `text` takes inside a JSON string: two for a quote, a backslash
@@ -1269,26 +1288,41 @@ fn scalar_size(t: &SceType, measure: Measure, env: &dyn TypeEnv) -> Result<u64, 
         (SceType::Uint32 | SceType::Int32 | SceType::Float32, Measure::Cbor) => 5,
         (SceType::Uint64 | SceType::Int64 | SceType::Float64, Measure::Cbor) => 9,
         (SceType::Bool, Measure::Cbor) => 1,
-        (SceType::Enum(reference), Measure::Json) => {
-            let names = env
-                .enum_names(&reference.alias)
-                .ok_or_else(|| SizeError::Unresolved {
-                    alias: reference.alias.clone(),
-                })?;
-            2 + names.iter().map(|n| json_escaped_len(n)).max().unwrap_or(0)
-        }
-        (SceType::Enum(reference), Measure::Cbor) => {
-            let underlying =
-                env.enum_underlying(&reference.alias)
-                    .ok_or_else(|| SizeError::Unresolved {
-                        alias: reference.alias.clone(),
-                    })?;
-            if matches!(underlying, SceType::Enum(_)) {
-                return Err(SizeError::Unresolved {
-                    alias: reference.alias.clone(),
-                });
+        (SceType::Enum(reference), _) => {
+            let unresolved = || SizeError::Unresolved {
+                alias: reference.alias.clone(),
+            };
+            let enumeration = env.enum_type(&reference.alias).ok_or_else(unresolved)?;
+            match measure {
+                Measure::Json => {
+                    2 + enumeration
+                        .variants
+                        .iter()
+                        .map(|v| json_escaped_len(&v.name))
+                        .max()
+                        .unwrap_or(0)
+                }
+                // A closed enum's value is one of its declared numbers, each
+                // written with its shortest head (docs/adr/0086, section 9.2),
+                // so the longest of those heads is its size.
+                Measure::Cbor if enumeration.strict => {
+                    let mut longest: Option<u64> = None;
+                    for variant in &enumeration.variants {
+                        let len = cbor_integer_len(variant.value).ok_or(SizeError::Overflow)?;
+                        longest = longest.max(Some(len));
+                    }
+                    // A closed enum with no variant holds no value: it was not
+                    // read from its document, which declares at least one.
+                    longest.ok_or_else(unresolved)?
+                }
+                // An open enum holds every number of its underlying type.
+                Measure::Cbor => {
+                    if matches!(enumeration.underlying, SceType::Enum(_)) {
+                        return Err(unresolved());
+                    }
+                    scalar_size(&enumeration.underlying, measure, env)?
+                }
             }
-            scalar_size(&underlying, measure, env)?
         }
         // A `Scalar` never holds a text or a byte string; were one built so, it
         // is sized as the unbounded text it would be, which has no size.
@@ -1397,11 +1431,8 @@ pub fn payload_json_max_len(
                 self.env.record_fields(alias)
             }
         }
-        fn enum_names(&self, alias: &str) -> Option<Vec<String>> {
-            self.env.enum_names(alias)
-        }
-        fn enum_underlying(&self, alias: &str) -> Option<SceType> {
-            self.env.enum_underlying(alias)
+        fn enum_type(&self, alias: &str) -> Option<&ScopedEnum> {
+            self.env.enum_type(alias)
         }
         fn record_scope(&self, alias: &str) -> Option<&dyn TypeEnv> {
             if alias.is_empty() {
@@ -1629,6 +1660,31 @@ mod tests {
         SceType::Enum(EnumRef {
             alias: alias.to_string(),
         })
+    }
+
+    fn scoped_enum(underlying: SceType, variants: &[(&str, i128)], strict: bool) -> ScopedEnum {
+        ScopedEnum {
+            variants: variants
+                .iter()
+                .map(|(name, value)| ScopedVariant {
+                    name: name.to_string(),
+                    value: *value,
+                })
+                .collect(),
+            underlying,
+            strict,
+        }
+    }
+
+    /// An enum that holds only the numbers its variants declare.
+    fn closed_enum(underlying: SceType, variants: &[(&str, i128)]) -> ScopedEnum {
+        scoped_enum(underlying, variants, true)
+    }
+
+    /// An enum that holds every number of its underlying type
+    /// (`sce:strict-variants="false"`).
+    fn open_enum(underlying: SceType, variants: &[(&str, i128)]) -> ScopedEnum {
+        scoped_enum(underlying, variants, false)
     }
 
     // ── The oracle: every written type up to depth 3 ──────────────────────
@@ -2017,17 +2073,16 @@ mod tests {
 
     #[test]
     fn a_record_is_sized_by_the_enums_its_own_document_names() {
-        let level = |names: &[&str]| ScopedEnum {
-            names: names.iter().map(|n| n.to_string()).collect(),
-            underlying: SceType::Uint8,
-        };
         let mut item_scope = TypeScope::default();
-        item_scope
-            .enums
-            .insert("Level".into(), level(&["low", "critical"]));
+        item_scope.enums.insert(
+            "Level".into(),
+            closed_enum(SceType::Uint16, &[("low", 0), ("critical", 300)]),
+        );
         // The document that holds the record calls another enum `Level`.
         let mut outer = TypeScope::default();
-        outer.enums.insert("Level".into(), level(&["a"]));
+        outer
+            .enums
+            .insert("Level".into(), closed_enum(SceType::Uint16, &[("a", 0)]));
         outer.records.insert(
             "Item".into(),
             ScopedRecord {
@@ -2042,7 +2097,8 @@ mod tests {
         // `{"level":"critical"}`: the braces, the quoted key and its colon, and
         // the longest name of the record's own enum, quoted.
         assert_eq!(json_max_len(&item, &outer), Ok(2 + (2 + 5 + 1) + (2 + 8)));
-        assert_eq!(cbor_max_len(&item, &outer), Ok(1 + (1 + 5) + 2));
+        // The map's head, the key, and `critical`'s number 300 with its head.
+        assert_eq!(cbor_max_len(&item, &outer), Ok(1 + (1 + 5) + 3));
         assert_eq!(contains_itself("Item", &outer), None);
     }
 
@@ -2203,18 +2259,15 @@ mod tests {
     #[derive(Default)]
     struct Table {
         records: BTreeMap<String, Vec<(String, ValueType)>>,
-        enums: BTreeMap<String, (Vec<String>, SceType)>,
+        enums: BTreeMap<String, ScopedEnum>,
     }
 
     impl TypeEnv for Table {
         fn record_fields(&self, alias: &str) -> Option<Vec<(String, ValueType)>> {
             self.records.get(alias).cloned()
         }
-        fn enum_names(&self, alias: &str) -> Option<Vec<String>> {
-            self.enums.get(alias).map(|(n, _)| n.clone())
-        }
-        fn enum_underlying(&self, alias: &str) -> Option<SceType> {
-            self.enums.get(alias).map(|(_, t)| t.clone())
+        fn enum_type(&self, alias: &str) -> Option<&ScopedEnum> {
+            self.enums.get(alias)
         }
     }
 
@@ -2227,10 +2280,17 @@ mod tests {
         let mut table = Table::default();
         table.enums.insert(
             "SignalLevel".into(),
-            (
-                vec!["low".into(), "medium".into(), "high".into()],
-                SceType::Uint8,
-            ),
+            closed_enum(SceType::Uint8, &[("low", 0), ("medium", 1), ("high", 2)]),
+        );
+        // A closed enum whose longest number is a negative one, and an open
+        // enum, which holds numbers no variant declares.
+        table.enums.insert(
+            "Reading".into(),
+            closed_enum(SceType::Int8, &[("none", -25), ("some", 3)]),
+        );
+        table.enums.insert(
+            "Code".into(),
+            open_enum(SceType::Uint16, &[("ok", 0), ("busy", 1)]),
         );
         table.records.insert(
             "Item".into(),
@@ -2268,8 +2328,9 @@ mod tests {
         assert_eq!(both("float32"), (25, 5));
         assert_eq!(both("float64"), (25, 9));
         assert_eq!(both("bool"), (5, 1));
-        // "medium" is the longest name; the enum is a uint8 on CBOR.
-        assert_eq!(both("enum:SignalLevel"), (8, 2));
+        // "medium" is the longest name; its numbers, the closed enum's only
+        // values on CBOR, are each one byte.
+        assert_eq!(both("enum:SignalLevel"), (8, 1));
         assert_eq!(both("string[8]"), (2 + 48, 1 + 8));
         assert_eq!(both("bytes[24]"), (2 + 144, 2 + 24));
         assert_eq!(both("optional<bool>"), (5, 1));
@@ -2296,6 +2357,92 @@ mod tests {
         }
     }
 
+    #[test]
+    fn an_integer_is_as_long_on_cbor_as_the_argument_of_its_head() {
+        let u64_max = i128::from(u64::MAX);
+        for (n, len) in [
+            (0, Some(1)),
+            (23, Some(1)),
+            (24, Some(2)),
+            (-1, Some(1)),
+            // Below zero the argument is `-1 - n`: -24 is written as 23.
+            (-24, Some(1)),
+            (-25, Some(2)),
+            (-256, Some(2)),
+            (-257, Some(3)),
+            (u64_max, Some(9)),
+            (-u64_max - 1, Some(9)),
+            (u64_max + 1, None),
+            (-u64_max - 2, None),
+        ] {
+            assert_eq!(cbor_integer_len(n), len, "{n}");
+        }
+    }
+
+    /// `C` of `enum:E`, `E` alone in its table.
+    fn enum_cbor_len(enumeration: ScopedEnum) -> Result<u64, SizeError> {
+        let mut env = Table::default();
+        env.enums.insert("E".into(), enumeration);
+        cbor_max_len(&ValueType::Scalar(enum_ty("E")), &env)
+    }
+
+    #[test]
+    fn a_closed_enum_is_as_long_on_cbor_as_its_longest_declared_number() {
+        let digits: [(&str, i128); 4] = [("a", 0), ("b", 1), ("c", 2), ("d", 3)];
+        assert_eq!(enum_cbor_len(closed_enum(SceType::Uint8, &digits)), Ok(1));
+        assert_eq!(
+            enum_cbor_len(closed_enum(SceType::Uint8, &[("a", 0), ("b", 24)])),
+            Ok(2)
+        );
+        // Three bytes, not the five of a uint32.
+        assert_eq!(
+            enum_cbor_len(closed_enum(SceType::Uint32, &[("a", 0), ("b", 256)])),
+            Ok(3)
+        );
+        // Major type 1: -25 is written with the argument 24.
+        assert_eq!(
+            enum_cbor_len(closed_enum(SceType::Int8, &[("a", -25), ("b", 3)])),
+            Ok(2)
+        );
+        assert_eq!(
+            enum_cbor_len(closed_enum(SceType::Int8, &[("a", -24), ("b", 3)])),
+            Ok(1)
+        );
+    }
+
+    #[test]
+    fn an_open_enum_is_as_long_on_cbor_as_its_underlying_type() {
+        let small: &[(&str, i128)] = &[("a", 0), ("b", 1)];
+        let large: &[(&str, i128)] = &[("a", 0), ("b", 200)];
+        for variants in [small, large] {
+            assert_eq!(
+                enum_cbor_len(open_enum(SceType::Uint8, variants)),
+                Ok(2),
+                "{variants:?}"
+            );
+        }
+        assert_eq!(enum_cbor_len(open_enum(SceType::Int32, &[("a", 0)])), Ok(5));
+    }
+
+    #[test]
+    fn an_enum_whose_numbers_no_head_holds_has_no_cbor_size() {
+        assert_eq!(
+            enum_cbor_len(closed_enum(
+                SceType::Uint64,
+                &[("a", i128::from(u64::MAX) + 1)]
+            )),
+            Err(SizeError::Overflow)
+        );
+        let unresolved: Result<u64, SizeError> = Err(SizeError::Unresolved { alias: "E".into() });
+        // A closed enum with no variant was not read from its document.
+        assert_eq!(enum_cbor_len(closed_enum(SceType::Uint8, &[])), unresolved);
+        // An enum whose numbers are an enum is not resolved, not recursed into.
+        assert_eq!(
+            enum_cbor_len(open_enum(enum_ty("E"), &[("a", 0)])),
+            unresolved
+        );
+    }
+
     // An independent writer of the largest value of a type: each runtime's
     // writer spells a value so, and a size that is only an upper bound would
     // differ from its length (docs/adr/0086, section 2.3).
@@ -2315,9 +2462,9 @@ mod tests {
                 SceType::Float64 => small_band_text(-f64::from_bits(0x3eb4_b66d_c01e_c6fb)),
                 SceType::Bool => "false".into(),
                 SceType::Enum(r) => {
-                    let names = &env.enums[&r.alias].0;
-                    let longest = names.iter().max_by_key(|n| n.len()).unwrap();
-                    format!("\"{longest}\"")
+                    let variants = &env.enums[&r.alias].variants;
+                    let longest = variants.iter().max_by_key(|v| v.name.len()).unwrap();
+                    format!("\"{}\"", longest.name)
                 }
                 SceType::String | SceType::Bytes => unreachable!("never a scalar"),
             },
@@ -2431,7 +2578,25 @@ mod tests {
                 }
                 SceType::Bool => vec![0xf4],
                 SceType::Enum(r) => {
-                    maximal_cbor(&ValueType::Scalar(env.enums[&r.alias].1.clone()), env)
+                    let enumeration = &env.enums[&r.alias];
+                    if enumeration.strict {
+                        // The declared number whose argument is greatest.
+                        let (major, argument) = enumeration
+                            .variants
+                            .iter()
+                            .map(|v| {
+                                if v.value < 0 {
+                                    (1u8, (-1 - v.value) as u64)
+                                } else {
+                                    (0u8, v.value as u64)
+                                }
+                            })
+                            .max_by_key(|&(_, argument)| argument)
+                            .unwrap();
+                        cbor_head(major, argument)
+                    } else {
+                        maximal_cbor(&ValueType::Scalar(enumeration.underlying.clone()), env)
+                    }
                 }
                 SceType::String | SceType::Bytes => unreachable!("never a scalar"),
             },
@@ -2484,6 +2649,9 @@ mod tests {
             "float64",
             "bool",
             "enum:SignalLevel",
+            "enum:Reading",
+            "enum:Code",
+            "list<enum:Code>[2]",
             "string[8]",
             "bytes[300]",
             "optional<int64>",

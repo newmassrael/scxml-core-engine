@@ -7190,6 +7190,9 @@ fn validate_and_enrich_imports(
                 // decision, not the codec's.
                 ctx.enum_underlying = Some(em.underlying_type.clone());
                 ctx.enum_is_open = !em.strict_variants;
+                // The enum as the one type grammar reads it, which a type that
+                // holds it is sized by (docs/adr/0086).
+                ctx.enum_type = Some(forge::import_source::scoped_enum(em));
                 // What `<alias>.toNumber` and `<alias>.fromNumber` are lowered to
                 // in this language: the enum document's own accessors.
                 (ctx.enum_to_number, ctx.enum_from_number) =

@@ -631,6 +631,13 @@ pub struct ImportContext {
     /// every other import.
     #[serde(skip)]
     pub enum_from_number: String,
+    /// For an imported `sce:kind="enum"`: the enum as the one type grammar
+    /// reads it, each variant with its declared name and number, its underlying
+    /// type, and whether it is closed (docs/adr/0086). What a type that holds
+    /// the enum is sized by ([`import_type_scope`]). `None` for every other
+    /// import.
+    #[serde(skip)]
+    pub enum_type: Option<crate::forge::value_type::ScopedEnum>,
     /// For an imported transform that reads a field through `previous()`,
     /// its first such read. A stateless import stands for a pure function
     /// the importer calls with its own values, and this transform's
@@ -1325,6 +1332,7 @@ fn resolve_single_import(
         enum_is_open: false,
         enum_to_number: String::new(),
         enum_from_number: String::new(),
+        enum_type: None,
         transform_state_read: None,
         record: None,
         record_type: None,
@@ -3507,23 +3515,16 @@ fn c11_found_reading(name: &str, value: &str, params: &str, about: &str, body: &
 /// them: what the size of a type the document writes reads (docs/adr/0086,
 /// section 2). Each record carries the scope of its own document
 /// ([`ImportContext::record_type`]), so its fields are sized by the enums and
-/// records its own aliases name. An enum declares at least one variant, so an
-/// import that carries none, or no underlying type, was not read from its
-/// document, and is left out: a type that names it has no size.
+/// records its own aliases name. Each enum is read from its document
+/// ([`ImportContext::enum_type`]); an import whose document was not read
+/// carries none, and is left out: a type that names it has no size.
 fn import_type_scope(imports: &[ImportContext]) -> crate::forge::value_type::TypeScope {
-    use crate::forge::value_type::{ScopedEnum, TypeScope};
-    let mut scope = TypeScope::default();
+    let mut scope = crate::forge::value_type::TypeScope::default();
     for import in imports {
-        if import.kind == "enum" && !import.enum_variants.is_empty() {
-            if let Some(underlying) = &import.enum_underlying {
-                scope.enums.insert(
-                    import.alias.clone(),
-                    ScopedEnum {
-                        names: import.enum_variants.clone(),
-                        underlying: underlying.clone(),
-                    },
-                );
-            }
+        if let Some(enumeration) = &import.enum_type {
+            scope
+                .enums
+                .insert(import.alias.clone(), enumeration.clone());
         }
         if let Some(record) = &import.record_type {
             scope.records.insert(import.alias.clone(), record.clone());
@@ -42007,6 +42008,7 @@ mod tests {
             enum_is_open: false,
             enum_to_number: String::new(),
             enum_from_number: String::new(),
+            enum_type: None,
             transform_state_read: None,
             record: None,
             record_type: None,
@@ -42901,6 +42903,7 @@ mod tests {
                 enum_is_open: false,
                 enum_to_number: String::new(),
                 enum_from_number: String::new(),
+                enum_type: None,
                 transform_state_read: None,
                 record: None,
                 record_type: None,
@@ -42963,6 +42966,7 @@ mod tests {
                 enum_is_open: false,
                 enum_to_number: String::new(),
                 enum_from_number: String::new(),
+                enum_type: None,
                 transform_state_read: None,
                 record: None,
                 record_type: None,

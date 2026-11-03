@@ -264,7 +264,7 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    | `uint64`, `int64` | 22 (the quoted digits; `-9223372036854775808` is 20) | 9 |
    | `float32`, `float64` | 25, 25 (a single crosses as the double it widens to; ECMAScript's spelling, ARCHITECTURE.md "JSON Number Text", is longest as `-0.00000` and seventeen digits, in the band from 1e-6 to 1e-5) | 5, 9 |
    | `bool` | 5 | 1 |
-   | `enum:E` | 2 + the longest escaped name of `E` | `C` of `E`'s underlying type |
+   | `enum:E` | 2 + the longest escaped name of `E` | a closed `E`: the greatest h over its declared numbers, h(n) for n of zero or more and h(-1 - n) below zero (section 9.2); an open `E` (`sce:strict-variants="false"`): `C` of its underlying type |
    | `string[B]` | 2 + 6B (every byte at its worst escape, `\u00XX`) | h(B) + B |
    | `bytes[B]` | 2 + 6B (the Latin-1 text the wire spells) | h(B) + B |
    | `optional<T>` | max(4, `J(T)`) | max(1, `C(T)`) |
