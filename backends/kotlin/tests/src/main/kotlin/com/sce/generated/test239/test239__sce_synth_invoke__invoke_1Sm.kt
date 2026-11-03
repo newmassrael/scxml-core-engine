@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4
+// source-hash: 1036b5ee37fb5c89aaa1e8156f295f52aeb22d8997a046fafa16b7778f1ace69
 
 // GENERATED CODE — DO NOT EDIT
-// Source: resources/239/test239__sce_synth_invoke__invoke_1.scxml
+// Source: resources/239/test239.scxml#_invoke_1
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test239__sce_synth_invoke__invoke_1.scxml:3 :: _machine
+// SCE-MAP: test239.scxml:23 :: _machine
 
 package com.sce.generated.test239
 
@@ -108,11 +108,11 @@ class Test239SceSynthInvokeInvoke1StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test239__sce_synth_invoke__invoke_1.scxml:3 :: _machine
+    // SCE-MAP: test239.scxml:23 :: _machine
     override fun onEntry(state: Test239SceSynthInvokeInvoke1State, isDefaultEntry: Boolean) {
         when (state) {
             is Test239SceSynthInvokeInvoke1State.Final -> {
-                // SCE-MAP: test239__sce_synth_invoke__invoke_1.scxml:4 :: final :: _state_body
+                // SCE-MAP: test239.scxml:24 :: final :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -120,18 +120,18 @@ class Test239SceSynthInvokeInvoke1StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test239__sce_synth_invoke__invoke_1.scxml:3 :: _machine
+    // SCE-MAP: test239.scxml:23 :: _machine
     override fun onExit(state: Test239SceSynthInvokeInvoke1State) {
         when (state) {
             is Test239SceSynthInvokeInvoke1State.Final -> {
-                // SCE-MAP: test239__sce_synth_invoke__invoke_1.scxml:4 :: final :: _state_body
+                // SCE-MAP: test239.scxml:24 :: final :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: test239__sce_synth_invoke__invoke_1.scxml:3 :: _machine
+    // SCE-MAP: test239.scxml:23 :: _machine
     override fun executeTransitionContent(source: Test239SceSynthInvokeInvoke1State, transitionIndex: Int) {
         when (source) {
         else -> {}

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source_hash": "75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4",
+  "source_hash": "1036b5ee37fb5c89aaa1e8156f295f52aeb22d8997a046fafa16b7778f1ace69",
   "symbols": {
     "test228_____machine": {
       "scxml_file": "test228.scxml",
@@ -105,22 +105,24 @@
       "kind": "transition"
     },
     "test228_u_sce_synth_invoke_u_foo_____machine": {
-      "scxml_file": "test228__sce_synth_invoke__foo.scxml",
+      "scxml_file": "test228.scxml",
       "scxml_state_path": "",
+      "scxml_invoke_path": "foo",
       "scxml_xpath": "//scxml",
       "line_range": [
-        3,
-        3
+        17,
+        17
       ],
       "kind": "machine"
     },
     "test228_u_sce_synth_invoke_u_foo__subFinal___state_body": {
-      "scxml_file": "test228__sce_synth_invoke__foo.scxml",
+      "scxml_file": "test228.scxml",
       "scxml_state_path": "subFinal",
+      "scxml_invoke_path": "foo",
       "scxml_xpath": "//state[@id='subFinal']",
       "line_range": [
-        4,
-        4
+        18,
+        18
       ],
       "kind": "state"
     }

@@ -2,9 +2,9 @@
 // source-hash: 24f1c455257ea04f598b006a589c3dea642c1ea2e58b2dcf4b49b8cebf3f207e
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-build/tests/fixtures/static_datamodel/static_child_host__sce_synth_invoke__worker.scxml
+// Source: sce-build/tests/fixtures/static_datamodel/static_child_host.scxml#worker
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:3 :: _machine
+// SCE-MAP: static_child_host.scxml:32 :: _machine
 
 package com.sce.integration.static_child_host
 
@@ -336,11 +336,11 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:3 :: _machine
+    // SCE-MAP: static_child_host.scxml:32 :: _machine
     override fun onEntry(state: StaticChildHostSceSynthInvokeWorkerState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticChildHostSceSynthInvokeWorkerState.First -> {
-                // SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:8 :: first :: _state_body
+                // SCE-MAP: static_child_host.scxml:37 :: first :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -349,40 +349,40 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
                 }
             }
             is StaticChildHostSceSynthInvokeWorkerState.Leaf -> {
-                // SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:24 :: leaf :: _state_body
+                // SCE-MAP: static_child_host.scxml:53 :: leaf :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is StaticChildHostSceSynthInvokeWorkerState.Second -> {
-                // SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:16 :: second :: _state_body
+                // SCE-MAP: static_child_host.scxml:45 :: second :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:3 :: _machine
+    // SCE-MAP: static_child_host.scxml:32 :: _machine
     override fun onExit(state: StaticChildHostSceSynthInvokeWorkerState) {
         when (state) {
             is StaticChildHostSceSynthInvokeWorkerState.First -> {
-                // SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:8 :: first :: _state_body
+                // SCE-MAP: static_child_host.scxml:37 :: first :: _state_body
             }
             is StaticChildHostSceSynthInvokeWorkerState.Leaf -> {
-                // SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:24 :: leaf :: _state_body
+                // SCE-MAP: static_child_host.scxml:53 :: leaf :: _state_body
             }
             is StaticChildHostSceSynthInvokeWorkerState.Second -> {
-                // SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:16 :: second :: _state_body
+                // SCE-MAP: static_child_host.scxml:45 :: second :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:3 :: _machine
+    // SCE-MAP: static_child_host.scxml:32 :: _machine
     override fun executeTransitionContent(source: StaticChildHostSceSynthInvokeWorkerState, transitionIndex: Int) {
         when (source) {
         is StaticChildHostSceSynthInvokeWorkerState.First -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:12 :: first :: _transition_0
+                // SCE-MAP: static_child_host.scxml:41 :: first :: _transition_0
 
             if (try { vSteps = com.sce.forge.runtime.SceChecked.add(vSteps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
@@ -392,7 +392,7 @@ class StaticChildHostSceSynthInvokeWorkerStateMachine(
         }
         is StaticChildHostSceSynthInvokeWorkerState.Second -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_child_host__sce_synth_invoke__worker.scxml:17 :: second :: _transition_0
+                // SCE-MAP: static_child_host.scxml:46 :: second :: _transition_0
 
             if (try { vSteps = com.sce.forge.runtime.SceChecked.add(vSteps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return

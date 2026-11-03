@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4
+// source-hash: 1036b5ee37fb5c89aaa1e8156f295f52aeb22d8997a046fafa16b7778f1ace69
 
 // GENERATED CODE — DO NOT EDIT
-// Source: resources/232/test232__sce_synth_invoke__invoke_0.scxml
+// Source: resources/232/test232.scxml#_invoke_0
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test232__sce_synth_invoke__invoke_0.scxml:3 :: _machine
+// SCE-MAP: test232.scxml:14 :: _machine
 
 package com.sce.generated.test232
 
@@ -115,11 +115,11 @@ class Test232SceSynthInvokeInvoke0StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test232__sce_synth_invoke__invoke_0.scxml:3 :: _machine
+    // SCE-MAP: test232.scxml:14 :: _machine
     override fun onEntry(state: Test232SceSynthInvokeInvoke0State, isDefaultEntry: Boolean) {
         when (state) {
             is Test232SceSynthInvokeInvoke0State.SubFinal -> {
-                // SCE-MAP: test232__sce_synth_invoke__invoke_0.scxml:4 :: subFinal :: _state_body
+                // SCE-MAP: test232.scxml:15 :: subFinal :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -168,18 +168,18 @@ class Test232SceSynthInvokeInvoke0StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test232__sce_synth_invoke__invoke_0.scxml:3 :: _machine
+    // SCE-MAP: test232.scxml:14 :: _machine
     override fun onExit(state: Test232SceSynthInvokeInvoke0State) {
         when (state) {
             is Test232SceSynthInvokeInvoke0State.SubFinal -> {
-                // SCE-MAP: test232__sce_synth_invoke__invoke_0.scxml:4 :: subFinal :: _state_body
+                // SCE-MAP: test232.scxml:15 :: subFinal :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: test232__sce_synth_invoke__invoke_0.scxml:3 :: _machine
+    // SCE-MAP: test232.scxml:14 :: _machine
     override fun executeTransitionContent(source: Test232SceSynthInvokeInvoke0State, transitionIndex: Int) {
         when (source) {
         else -> {}

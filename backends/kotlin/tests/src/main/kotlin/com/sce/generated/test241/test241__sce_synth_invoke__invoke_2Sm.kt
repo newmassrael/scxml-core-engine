@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4
+// source-hash: 1036b5ee37fb5c89aaa1e8156f295f52aeb22d8997a046fafa16b7778f1ace69
 
 // GENERATED CODE — DO NOT EDIT
-// Source: resources/241/test241__sce_synth_invoke__invoke_2.scxml
+// Source: resources/241/test241.scxml#_invoke_2
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:3 :: _machine
+// SCE-MAP: test241.scxml:75 :: _machine
 
 package com.sce.generated.test241
 
@@ -395,14 +395,14 @@ class Test241SceSynthInvokeInvoke2StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:3 :: _machine
+    // SCE-MAP: test241.scxml:75 :: _machine
     override fun onEntry(state: Test241SceSynthInvokeInvoke2State, isDefaultEntry: Boolean) {
         when (state) {
             is Test241SceSynthInvokeInvoke2State.Sub03 -> {
-                // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:8 :: sub03 :: _state_body
+                // SCE-MAP: test241.scxml:80 :: sub03 :: _state_body
             }
             is Test241SceSynthInvokeInvoke2State.SubFinal3 -> {
-                // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:17 :: subFinal3 :: _state_body
+                // SCE-MAP: test241.scxml:89 :: subFinal3 :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -410,26 +410,26 @@ class Test241SceSynthInvokeInvoke2StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:3 :: _machine
+    // SCE-MAP: test241.scxml:75 :: _machine
     override fun onExit(state: Test241SceSynthInvokeInvoke2State) {
         when (state) {
             is Test241SceSynthInvokeInvoke2State.Sub03 -> {
-                // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:8 :: sub03 :: _state_body
+                // SCE-MAP: test241.scxml:80 :: sub03 :: _state_body
             }
             is Test241SceSynthInvokeInvoke2State.SubFinal3 -> {
-                // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:17 :: subFinal3 :: _state_body
+                // SCE-MAP: test241.scxml:89 :: subFinal3 :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:3 :: _machine
+    // SCE-MAP: test241.scxml:75 :: _machine
     override fun executeTransitionContent(source: Test241SceSynthInvokeInvoke2State, transitionIndex: Int) {
         when (source) {
         is Test241SceSynthInvokeInvoke2State.Sub03 -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:9 :: sub03 :: _transition_0
+                // SCE-MAP: test241.scxml:81 :: sub03 :: _transition_0
 
 
             if (run send@{
@@ -451,7 +451,7 @@ class Test241SceSynthInvokeInvoke2StateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             1 -> {
-                // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:12 :: sub03 :: _transition_1
+                // SCE-MAP: test241.scxml:84 :: sub03 :: _transition_1
 
 
             if (run send@{

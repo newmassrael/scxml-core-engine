@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source_hash": "75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4",
+  "source_hash": "1036b5ee37fb5c89aaa1e8156f295f52aeb22d8997a046fafa16b7778f1ace69",
   "symbols": {
     "test240_____machine": {
       "scxml_file": "test240.scxml",
@@ -128,102 +128,112 @@
       "event": "timeout"
     },
     "test240_u_sce_synth_invoke_u_invoke_0_____machine": {
-      "scxml_file": "test240__sce_synth_invoke__invoke_0.scxml",
+      "scxml_file": "test240.scxml",
       "scxml_state_path": "",
+      "scxml_invoke_path": "_invoke_0",
       "scxml_xpath": "//scxml",
       "line_range": [
-        3,
-        3
+        22,
+        22
       ],
       "kind": "machine"
     },
     "test240_u_sce_synth_invoke_u_invoke_0__sub01___state_body": {
-      "scxml_file": "test240__sce_synth_invoke__invoke_0.scxml",
+      "scxml_file": "test240.scxml",
       "scxml_state_path": "sub01",
+      "scxml_invoke_path": "_invoke_0",
       "scxml_xpath": "//state[@id='sub01']",
       "line_range": [
-        7,
-        7
+        26,
+        26
       ],
       "kind": "state"
     },
     "test240_u_sce_synth_invoke_u_invoke_0__sub01___transition_0": {
-      "scxml_file": "test240__sce_synth_invoke__invoke_0.scxml",
+      "scxml_file": "test240.scxml",
       "scxml_state_path": "sub01",
+      "scxml_invoke_path": "_invoke_0",
       "scxml_xpath": "//state[@id='sub01']/transition[1]",
       "line_range": [
-        8,
-        8
+        27,
+        27
       ],
       "kind": "transition"
     },
     "test240_u_sce_synth_invoke_u_invoke_0__sub01___transition_1": {
-      "scxml_file": "test240__sce_synth_invoke__invoke_0.scxml",
+      "scxml_file": "test240.scxml",
       "scxml_state_path": "sub01",
+      "scxml_invoke_path": "_invoke_0",
       "scxml_xpath": "//state[@id='sub01']/transition[2]",
       "line_range": [
-        11,
-        11
+        30,
+        30
       ],
       "kind": "transition"
     },
     "test240_u_sce_synth_invoke_u_invoke_0__subFinal1___state_body": {
-      "scxml_file": "test240__sce_synth_invoke__invoke_0.scxml",
+      "scxml_file": "test240.scxml",
       "scxml_state_path": "subFinal1",
+      "scxml_invoke_path": "_invoke_0",
       "scxml_xpath": "//state[@id='subFinal1']",
       "line_range": [
-        15,
-        15
+        34,
+        34
       ],
       "kind": "state"
     },
     "test240_u_sce_synth_invoke_u_invoke_1_____machine": {
-      "scxml_file": "test240__sce_synth_invoke__invoke_1.scxml",
+      "scxml_file": "test240.scxml",
       "scxml_state_path": "",
+      "scxml_invoke_path": "_invoke_1",
       "scxml_xpath": "//scxml",
       "line_range": [
-        3,
-        3
+        46,
+        46
       ],
       "kind": "machine"
     },
     "test240_u_sce_synth_invoke_u_invoke_1__sub02___state_body": {
-      "scxml_file": "test240__sce_synth_invoke__invoke_1.scxml",
+      "scxml_file": "test240.scxml",
       "scxml_state_path": "sub02",
+      "scxml_invoke_path": "_invoke_1",
       "scxml_xpath": "//state[@id='sub02']",
       "line_range": [
-        8,
-        8
+        51,
+        51
       ],
       "kind": "state"
     },
     "test240_u_sce_synth_invoke_u_invoke_1__sub02___transition_0": {
-      "scxml_file": "test240__sce_synth_invoke__invoke_1.scxml",
+      "scxml_file": "test240.scxml",
       "scxml_state_path": "sub02",
+      "scxml_invoke_path": "_invoke_1",
       "scxml_xpath": "//state[@id='sub02']/transition[1]",
       "line_range": [
-        9,
-        9
+        52,
+        52
       ],
       "kind": "transition"
     },
     "test240_u_sce_synth_invoke_u_invoke_1__sub02___transition_1": {
-      "scxml_file": "test240__sce_synth_invoke__invoke_1.scxml",
+      "scxml_file": "test240.scxml",
       "scxml_state_path": "sub02",
+      "scxml_invoke_path": "_invoke_1",
       "scxml_xpath": "//state[@id='sub02']/transition[2]",
       "line_range": [
-        12,
-        12
+        55,
+        55
       ],
       "kind": "transition"
     },
     "test240_u_sce_synth_invoke_u_invoke_1__subFinal2___state_body": {
-      "scxml_file": "test240__sce_synth_invoke__invoke_1.scxml",
+      "scxml_file": "test240.scxml",
       "scxml_state_path": "subFinal2",
+      "scxml_invoke_path": "_invoke_1",
       "scxml_xpath": "//state[@id='subFinal2']",
       "line_range": [
-        16,
-        16
+        59,
+        59
       ],
       "kind": "state"
     }

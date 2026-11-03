@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4
+// source-hash: 1036b5ee37fb5c89aaa1e8156f295f52aeb22d8997a046fafa16b7778f1ace69
 
 // GENERATED CODE — DO NOT EDIT
-// Source: resources/242/test242__sce_synth_invoke__invoke_1.scxml
+// Source: resources/242/test242.scxml#_invoke_1
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test242__sce_synth_invoke__invoke_1.scxml:3 :: _machine
+// SCE-MAP: test242.scxml:27 :: _machine
 
 package com.sce.generated.test242
 
@@ -108,11 +108,11 @@ class Test242SceSynthInvokeInvoke1StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test242__sce_synth_invoke__invoke_1.scxml:3 :: _machine
+    // SCE-MAP: test242.scxml:27 :: _machine
     override fun onEntry(state: Test242SceSynthInvokeInvoke1State, isDefaultEntry: Boolean) {
         when (state) {
             is Test242SceSynthInvokeInvoke1State.SubFinal1 -> {
-                // SCE-MAP: test242__sce_synth_invoke__invoke_1.scxml:4 :: subFinal1 :: _state_body
+                // SCE-MAP: test242.scxml:28 :: subFinal1 :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -120,18 +120,18 @@ class Test242SceSynthInvokeInvoke1StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test242__sce_synth_invoke__invoke_1.scxml:3 :: _machine
+    // SCE-MAP: test242.scxml:27 :: _machine
     override fun onExit(state: Test242SceSynthInvokeInvoke1State) {
         when (state) {
             is Test242SceSynthInvokeInvoke1State.SubFinal1 -> {
-                // SCE-MAP: test242__sce_synth_invoke__invoke_1.scxml:4 :: subFinal1 :: _state_body
+                // SCE-MAP: test242.scxml:28 :: subFinal1 :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: test242__sce_synth_invoke__invoke_1.scxml:3 :: _machine
+    // SCE-MAP: test242.scxml:27 :: _machine
     override fun executeTransitionContent(source: Test242SceSynthInvokeInvoke1State, transitionIndex: Int) {
         when (source) {
         else -> {}

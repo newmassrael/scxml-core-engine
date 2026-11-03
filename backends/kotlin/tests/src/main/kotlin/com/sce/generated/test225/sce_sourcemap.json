@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source_hash": "75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4",
+  "source_hash": "1036b5ee37fb5c89aaa1e8156f295f52aeb22d8997a046fafa16b7778f1ace69",
   "symbols": {
     "test225_____machine": {
       "scxml_file": "test225.scxml",
@@ -94,42 +94,46 @@
       "kind": "transition"
     },
     "test225_u_sce_synth_invoke_u_invoke_0_____machine": {
-      "scxml_file": "test225__sce_synth_invoke__invoke_0.scxml",
+      "scxml_file": "test225.scxml",
       "scxml_state_path": "",
+      "scxml_invoke_path": "_invoke_0",
       "scxml_xpath": "//scxml",
       "line_range": [
-        3,
-        3
+        18,
+        18
       ],
       "kind": "machine"
     },
     "test225_u_sce_synth_invoke_u_invoke_0__subFinal1___state_body": {
-      "scxml_file": "test225__sce_synth_invoke__invoke_0.scxml",
+      "scxml_file": "test225.scxml",
       "scxml_state_path": "subFinal1",
+      "scxml_invoke_path": "_invoke_0",
       "scxml_xpath": "//state[@id='subFinal1']",
       "line_range": [
-        4,
-        4
+        19,
+        19
       ],
       "kind": "state"
     },
     "test225_u_sce_synth_invoke_u_invoke_1_____machine": {
-      "scxml_file": "test225__sce_synth_invoke__invoke_1.scxml",
+      "scxml_file": "test225.scxml",
       "scxml_state_path": "",
+      "scxml_invoke_path": "_invoke_1",
       "scxml_xpath": "//scxml",
       "line_range": [
-        3,
-        3
+        25,
+        25
       ],
       "kind": "machine"
     },
     "test225_u_sce_synth_invoke_u_invoke_1__subFinal2___state_body": {
-      "scxml_file": "test225__sce_synth_invoke__invoke_1.scxml",
+      "scxml_file": "test225.scxml",
       "scxml_state_path": "subFinal2",
+      "scxml_invoke_path": "_invoke_1",
       "scxml_xpath": "//state[@id='subFinal2']",
       "line_range": [
-        4,
-        4
+        26,
+        26
       ],
       "kind": "state"
     }

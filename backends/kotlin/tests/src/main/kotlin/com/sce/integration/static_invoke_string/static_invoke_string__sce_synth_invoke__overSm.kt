@@ -2,9 +2,9 @@
 // source-hash: 24f1c455257ea04f598b006a589c3dea642c1ea2e58b2dcf4b49b8cebf3f207e
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-build/tests/fixtures/static_datamodel/static_invoke_string__sce_synth_invoke__over.scxml
+// Source: sce-build/tests/fixtures/static_datamodel/static_invoke_string.scxml#over
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_invoke_string__sce_synth_invoke__over.scxml:3 :: _machine
+// SCE-MAP: static_invoke_string.scxml:49 :: _machine
 
 package com.sce.integration.static_invoke_string
 
@@ -266,36 +266,36 @@ class StaticInvokeStringSceSynthInvokeOverStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_invoke_string__sce_synth_invoke__over.scxml:3 :: _machine
+    // SCE-MAP: static_invoke_string.scxml:49 :: _machine
     override fun onEntry(state: StaticInvokeStringSceSynthInvokeOverState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticInvokeStringSceSynthInvokeOverState.Leaf -> {
-                // SCE-MAP: static_invoke_string__sce_synth_invoke__over.scxml:11 :: leaf :: _state_body
+                // SCE-MAP: static_invoke_string.scxml:57 :: leaf :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is StaticInvokeStringSceSynthInvokeOverState.Waiting -> {
-                // SCE-MAP: static_invoke_string__sce_synth_invoke__over.scxml:8 :: waiting :: _state_body
+                // SCE-MAP: static_invoke_string.scxml:54 :: waiting :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_invoke_string__sce_synth_invoke__over.scxml:3 :: _machine
+    // SCE-MAP: static_invoke_string.scxml:49 :: _machine
     override fun onExit(state: StaticInvokeStringSceSynthInvokeOverState) {
         when (state) {
             is StaticInvokeStringSceSynthInvokeOverState.Leaf -> {
-                // SCE-MAP: static_invoke_string__sce_synth_invoke__over.scxml:11 :: leaf :: _state_body
+                // SCE-MAP: static_invoke_string.scxml:57 :: leaf :: _state_body
             }
             is StaticInvokeStringSceSynthInvokeOverState.Waiting -> {
-                // SCE-MAP: static_invoke_string__sce_synth_invoke__over.scxml:8 :: waiting :: _state_body
+                // SCE-MAP: static_invoke_string.scxml:54 :: waiting :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_invoke_string__sce_synth_invoke__over.scxml:3 :: _machine
+    // SCE-MAP: static_invoke_string.scxml:49 :: _machine
     override fun executeTransitionContent(source: StaticInvokeStringSceSynthInvokeOverState, transitionIndex: Int) {
         when (source) {
         else -> {}

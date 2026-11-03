@@ -2,9 +2,9 @@
 // source-hash: 24f1c455257ea04f598b006a589c3dea642c1ea2e58b2dcf4b49b8cebf3f207e
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-build/tests/fixtures/static_datamodel/static_mesh_relay__sce_synth_invoke__inner.scxml
+// Source: sce-build/tests/fixtures/static_datamodel/static_mesh_relay.scxml#inner
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_mesh_relay__sce_synth_invoke__inner.scxml:3 :: _machine
+// SCE-MAP: static_mesh_relay.scxml:17 :: _machine
 
 package com.sce.integration.static_child_mesh
 
@@ -211,33 +211,33 @@ class StaticMeshRelaySceSynthInvokeInnerStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_mesh_relay__sce_synth_invoke__inner.scxml:3 :: _machine
+    // SCE-MAP: static_mesh_relay.scxml:17 :: _machine
     override fun onEntry(state: StaticMeshRelaySceSynthInvokeInnerState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticMeshRelaySceSynthInvokeInnerState.Waiting -> {
-                // SCE-MAP: static_mesh_relay__sce_synth_invoke__inner.scxml:5 :: waiting :: _state_body
+                // SCE-MAP: static_mesh_relay.scxml:19 :: waiting :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_mesh_relay__sce_synth_invoke__inner.scxml:3 :: _machine
+    // SCE-MAP: static_mesh_relay.scxml:17 :: _machine
     override fun onExit(state: StaticMeshRelaySceSynthInvokeInnerState) {
         when (state) {
             is StaticMeshRelaySceSynthInvokeInnerState.Waiting -> {
-                // SCE-MAP: static_mesh_relay__sce_synth_invoke__inner.scxml:5 :: waiting :: _state_body
+                // SCE-MAP: static_mesh_relay.scxml:19 :: waiting :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_mesh_relay__sce_synth_invoke__inner.scxml:3 :: _machine
+    // SCE-MAP: static_mesh_relay.scxml:17 :: _machine
     override fun executeTransitionContent(source: StaticMeshRelaySceSynthInvokeInnerState, transitionIndex: Int) {
         when (source) {
         is StaticMeshRelaySceSynthInvokeInnerState.Waiting -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_mesh_relay__sce_synth_invoke__inner.scxml:6 :: waiting :: _transition_0
+                // SCE-MAP: static_mesh_relay.scxml:20 :: waiting :: _transition_0
 
 
             if (run send@{

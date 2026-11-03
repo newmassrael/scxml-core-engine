@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source_hash": "75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4",
+  "source_hash": "1036b5ee37fb5c89aaa1e8156f295f52aeb22d8997a046fafa16b7778f1ace69",
   "symbols": {
     "test253_____machine": {
       "scxml_file": "test253.scxml",
@@ -157,93 +157,102 @@
       "event": "timeout"
     },
     "test253_u_sce_synth_invoke_u_foo_____machine": {
-      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_file": "test253.scxml",
       "scxml_state_path": "",
+      "scxml_invoke_path": "foo",
       "scxml_xpath": "//scxml",
       "line_range": [
-        3,
-        3
+        24,
+        24
       ],
       "kind": "machine"
     },
     "test253_u_sce_synth_invoke_u_foo__sub0___on_entry_0_0": {
-      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_file": "test253.scxml",
       "scxml_state_path": "sub0",
+      "scxml_invoke_path": "foo",
       "scxml_xpath": "//state[@id='sub0']/onentry",
       "line_range": [
-        9,
-        9
+        30,
+        30
       ],
       "kind": "on_entry"
     },
     "test253_u_sce_synth_invoke_u_foo__sub0___state_body": {
-      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_file": "test253.scxml",
       "scxml_state_path": "sub0",
+      "scxml_invoke_path": "foo",
       "scxml_xpath": "//state[@id='sub0']",
       "line_range": [
-        7,
-        7
+        28,
+        28
       ],
       "kind": "state"
     },
     "test253_u_sce_synth_invoke_u_foo__sub0___transition_0": {
-      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_file": "test253.scxml",
       "scxml_state_path": "sub0",
+      "scxml_invoke_path": "foo",
       "scxml_xpath": "//state[@id='sub0']/transition[1]",
       "line_range": [
-        12,
-        12
+        33,
+        33
       ],
       "kind": "transition",
       "event": "parentToChild"
     },
     "test253_u_sce_synth_invoke_u_foo__sub1___state_body": {
-      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_file": "test253.scxml",
       "scxml_state_path": "sub1",
+      "scxml_invoke_path": "foo",
       "scxml_xpath": "//state[@id='sub1']",
       "line_range": [
-        16,
-        16
+        37,
+        37
       ],
       "kind": "state"
     },
     "test253_u_sce_synth_invoke_u_foo__sub1___transition_0": {
-      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_file": "test253.scxml",
       "scxml_state_path": "sub1",
+      "scxml_invoke_path": "foo",
       "scxml_xpath": "//state[@id='sub1']/transition[1]",
       "line_range": [
-        17,
-        17
+        38,
+        38
       ],
       "kind": "transition"
     },
     "test253_u_sce_synth_invoke_u_foo__sub1___transition_1": {
-      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_file": "test253.scxml",
       "scxml_state_path": "sub1",
+      "scxml_invoke_path": "foo",
       "scxml_xpath": "//state[@id='sub1']/transition[2]",
       "line_range": [
-        20,
-        20
+        41,
+        41
       ],
       "kind": "transition"
     },
     "test253_u_sce_synth_invoke_u_foo__sub1___transition_2": {
-      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_file": "test253.scxml",
       "scxml_state_path": "sub1",
+      "scxml_invoke_path": "foo",
       "scxml_xpath": "//state[@id='sub1']/transition[3]",
       "line_range": [
-        23,
-        23
+        44,
+        44
       ],
       "kind": "transition"
     },
     "test253_u_sce_synth_invoke_u_foo__subFinal___state_body": {
-      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_file": "test253.scxml",
       "scxml_state_path": "subFinal",
+      "scxml_invoke_path": "foo",
       "scxml_xpath": "//state[@id='subFinal']",
       "line_range": [
-        27,
-        27
+        48,
+        48
       ],
       "kind": "state"
     }

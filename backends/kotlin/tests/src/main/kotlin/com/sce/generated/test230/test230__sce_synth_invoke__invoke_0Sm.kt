@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4
+// source-hash: 1036b5ee37fb5c89aaa1e8156f295f52aeb22d8997a046fafa16b7778f1ace69
 
 // GENERATED CODE — DO NOT EDIT
-// Source: resources/230/test230__sce_synth_invoke__invoke_0.scxml
+// Source: resources/230/test230.scxml#_invoke_0
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test230__sce_synth_invoke__invoke_0.scxml:3 :: _machine
+// SCE-MAP: test230.scxml:19 :: _machine
 
 package com.sce.generated.test230
 
@@ -377,11 +377,11 @@ class Test230SceSynthInvokeInvoke0StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test230__sce_synth_invoke__invoke_0.scxml:3 :: _machine
+    // SCE-MAP: test230.scxml:19 :: _machine
     override fun onEntry(state: Test230SceSynthInvokeInvoke0State, isDefaultEntry: Boolean) {
         when (state) {
             is Test230SceSynthInvokeInvoke0State.Sub0 -> {
-                // SCE-MAP: test230__sce_synth_invoke__invoke_0.scxml:4 :: sub0 :: _state_body
+                // SCE-MAP: test230.scxml:20 :: sub0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -418,7 +418,7 @@ class Test230SceSynthInvokeInvoke0StateMachine(
                 }
             }
             is Test230SceSynthInvokeInvoke0State.SubFinal -> {
-                // SCE-MAP: test230__sce_synth_invoke__invoke_0.scxml:20 :: subFinal :: _state_body
+                // SCE-MAP: test230.scxml:36 :: subFinal :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -426,26 +426,26 @@ class Test230SceSynthInvokeInvoke0StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test230__sce_synth_invoke__invoke_0.scxml:3 :: _machine
+    // SCE-MAP: test230.scxml:19 :: _machine
     override fun onExit(state: Test230SceSynthInvokeInvoke0State) {
         when (state) {
             is Test230SceSynthInvokeInvoke0State.Sub0 -> {
-                // SCE-MAP: test230__sce_synth_invoke__invoke_0.scxml:4 :: sub0 :: _state_body
+                // SCE-MAP: test230.scxml:20 :: sub0 :: _state_body
             }
             is Test230SceSynthInvokeInvoke0State.SubFinal -> {
-                // SCE-MAP: test230__sce_synth_invoke__invoke_0.scxml:20 :: subFinal :: _state_body
+                // SCE-MAP: test230.scxml:36 :: subFinal :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: test230__sce_synth_invoke__invoke_0.scxml:3 :: _machine
+    // SCE-MAP: test230.scxml:19 :: _machine
     override fun executeTransitionContent(source: Test230SceSynthInvokeInvoke0State, transitionIndex: Int) {
         when (source) {
         is Test230SceSynthInvokeInvoke0State.Sub0 -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: test230__sce_synth_invoke__invoke_0.scxml:9 :: sub0 :: _transition_0
+                // SCE-MAP: test230.scxml:25 :: sub0 :: _transition_0
 
             // W3C SCXML 4.7: Log expression evaluation. An expression that fails
             // raises error.execution (W3C SCXML 5.9), and the error ends the

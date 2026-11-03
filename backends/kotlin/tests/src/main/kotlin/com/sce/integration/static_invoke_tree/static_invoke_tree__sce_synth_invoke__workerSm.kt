@@ -2,9 +2,9 @@
 // source-hash: 24f1c455257ea04f598b006a589c3dea642c1ea2e58b2dcf4b49b8cebf3f207e
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-build/tests/fixtures/static_datamodel/static_invoke_tree__sce_synth_invoke__worker.scxml
+// Source: sce-build/tests/fixtures/static_datamodel/static_invoke_tree.scxml#worker
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:3 :: _machine
+// SCE-MAP: static_invoke_tree.scxml:33 :: _machine
 
 package com.sce.integration.static_invoke_tree
 
@@ -530,14 +530,14 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:3 :: _machine
+    // SCE-MAP: static_invoke_tree.scxml:33 :: _machine
     override fun onEntry(state: StaticInvokeTreeSceSynthInvokeWorkerState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticInvokeTreeSceSynthInvokeWorkerState.First -> {
-                // SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:21 :: first :: _state_body
+                // SCE-MAP: static_invoke_tree.scxml:51 :: first :: _state_body
             }
             is StaticInvokeTreeSceSynthInvokeWorkerState.Second -> {
-                // SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:30 :: second :: _state_body
+                // SCE-MAP: static_invoke_tree.scxml:60 :: second :: _state_body
                 // W3C SCXML 6.4: Defer the hybrid invoke until macrostep end. `deferStaticInvoke`
                 // starts it — for entering the state and for a restore alike, so the two
                 // cannot start it differently.
@@ -676,14 +676,14 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:3 :: _machine
+    // SCE-MAP: static_invoke_tree.scxml:33 :: _machine
     override fun onExit(state: StaticInvokeTreeSceSynthInvokeWorkerState) {
         when (state) {
             is StaticInvokeTreeSceSynthInvokeWorkerState.First -> {
-                // SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:21 :: first :: _state_body
+                // SCE-MAP: static_invoke_tree.scxml:51 :: first :: _state_body
             }
             is StaticInvokeTreeSceSynthInvokeWorkerState.Second -> {
-                // SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:30 :: second :: _state_body
+                // SCE-MAP: static_invoke_tree.scxml:60 :: second :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -699,12 +699,12 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:3 :: _machine
+    // SCE-MAP: static_invoke_tree.scxml:33 :: _machine
     override fun executeTransitionContent(source: StaticInvokeTreeSceSynthInvokeWorkerState, transitionIndex: Int) {
         when (source) {
         is StaticInvokeTreeSceSynthInvokeWorkerState.First -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:22 :: first :: _transition_0
+                // SCE-MAP: static_invoke_tree.scxml:52 :: first :: _transition_0
 
             if (try { vSteps = com.sce.forge.runtime.SceChecked.add(vSteps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, "<assign location='steps'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -723,7 +723,7 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             1 -> {
-                // SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:26 :: first :: _transition_1
+                // SCE-MAP: static_invoke_tree.scxml:56 :: first :: _transition_1
 
 
             if (run send@{
@@ -748,7 +748,7 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
         }
         is StaticInvokeTreeSceSynthInvokeWorkerState.Second -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:36 :: second :: _transition_0
+                // SCE-MAP: static_invoke_tree.scxml:66 :: second :: _transition_0
 
 
             if (run send@{
@@ -770,21 +770,21 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             1 -> {
-                // SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:39 :: second :: _transition_1
+                // SCE-MAP: static_invoke_tree.scxml:69 :: second :: _transition_1
 
             if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("static_hybrid_holder.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             2 -> {
-                // SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:42 :: second :: _transition_2
+                // SCE-MAP: static_invoke_tree.scxml:72 :: second :: _transition_2
 
             if (try { vSteps = com.sce.forge.runtime.SceChecked.add(vSteps, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, "<assign location='steps'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             3 -> {
-                // SCE-MAP: static_invoke_tree__sce_synth_invoke__worker.scxml:45 :: second :: _transition_3
+                // SCE-MAP: static_invoke_tree.scxml:75 :: second :: _transition_3
 
 
             if (run send@{

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source_hash": "75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4",
+  "source_hash": "1036b5ee37fb5c89aaa1e8156f295f52aeb22d8997a046fafa16b7778f1ace69",
   "symbols": {
     "test239_____machine": {
       "scxml_file": "test239.scxml",
@@ -106,22 +106,24 @@
       "event": "timeout"
     },
     "test239_u_sce_synth_invoke_u_invoke_1_____machine": {
-      "scxml_file": "test239__sce_synth_invoke__invoke_1.scxml",
+      "scxml_file": "test239.scxml",
       "scxml_state_path": "",
+      "scxml_invoke_path": "_invoke_1",
       "scxml_xpath": "//scxml",
       "line_range": [
-        3,
-        3
+        23,
+        23
       ],
       "kind": "machine"
     },
     "test239_u_sce_synth_invoke_u_invoke_1__final___state_body": {
-      "scxml_file": "test239__sce_synth_invoke__invoke_1.scxml",
+      "scxml_file": "test239.scxml",
       "scxml_state_path": "final",
+      "scxml_invoke_path": "_invoke_1",
       "scxml_xpath": "//state[@id='final']",
       "line_range": [
-        4,
-        4
+        24,
+        24
       ],
       "kind": "state"
     },

@@ -2,7 +2,7 @@
 // source-hash: 24f1c455257ea04f598b006a589c3dea642c1ea2e58b2dcf4b49b8cebf3f207e
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-build/tests/fixtures/static_datamodel/record_list_parent__sce_synth_invoke__list.scxml
+// Source: sce:std/shared/record_list.scxml
 // Generator: SCE Kotlin Code Generator v1.0
 // SCE-MAP: record_list.scxml:209 :: _machine
 

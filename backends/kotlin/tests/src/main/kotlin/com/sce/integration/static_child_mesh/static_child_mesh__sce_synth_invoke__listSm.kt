@@ -2,9 +2,9 @@
 // source-hash: 24f1c455257ea04f598b006a589c3dea642c1ea2e58b2dcf4b49b8cebf3f207e
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-build/tests/fixtures/static_datamodel/static_child_mesh__sce_synth_invoke__list.scxml
+// Source: sce-build/tests/fixtures/static_datamodel/static_child_mesh.scxml#list
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_child_mesh__sce_synth_invoke__list.scxml:3 :: _machine
+// SCE-MAP: static_child_mesh.scxml:38 :: _machine
 
 package com.sce.integration.static_child_mesh
 
@@ -235,11 +235,11 @@ class StaticChildMeshSceSynthInvokeListStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_child_mesh__sce_synth_invoke__list.scxml:3 :: _machine
+    // SCE-MAP: static_child_mesh.scxml:38 :: _machine
     override fun onEntry(state: StaticChildMeshSceSynthInvokeListState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticChildMeshSceSynthInvokeListState.Open -> {
-                // SCE-MAP: static_child_mesh__sce_synth_invoke__list.scxml:5 :: open :: _state_body
+                // SCE-MAP: static_child_mesh.scxml:40 :: open :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -283,7 +283,7 @@ class StaticChildMeshSceSynthInvokeListStateMachine(
                 }
             }
             is StaticChildMeshSceSynthInvokeListState.Refused -> {
-                // SCE-MAP: static_child_mesh__sce_synth_invoke__list.scxml:15 :: refused :: _state_body
+                // SCE-MAP: static_child_mesh.scxml:50 :: refused :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -291,26 +291,26 @@ class StaticChildMeshSceSynthInvokeListStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_child_mesh__sce_synth_invoke__list.scxml:3 :: _machine
+    // SCE-MAP: static_child_mesh.scxml:38 :: _machine
     override fun onExit(state: StaticChildMeshSceSynthInvokeListState) {
         when (state) {
             is StaticChildMeshSceSynthInvokeListState.Open -> {
-                // SCE-MAP: static_child_mesh__sce_synth_invoke__list.scxml:5 :: open :: _state_body
+                // SCE-MAP: static_child_mesh.scxml:40 :: open :: _state_body
             }
             is StaticChildMeshSceSynthInvokeListState.Refused -> {
-                // SCE-MAP: static_child_mesh__sce_synth_invoke__list.scxml:15 :: refused :: _state_body
+                // SCE-MAP: static_child_mesh.scxml:50 :: refused :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_child_mesh__sce_synth_invoke__list.scxml:3 :: _machine
+    // SCE-MAP: static_child_mesh.scxml:38 :: _machine
     override fun executeTransitionContent(source: StaticChildMeshSceSynthInvokeListState, transitionIndex: Int) {
         when (source) {
         is StaticChildMeshSceSynthInvokeListState.Open -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_child_mesh__sce_synth_invoke__list.scxml:9 :: open :: _transition_0
+                // SCE-MAP: static_child_mesh.scxml:44 :: open :: _transition_0
 
 
             if (run send@{

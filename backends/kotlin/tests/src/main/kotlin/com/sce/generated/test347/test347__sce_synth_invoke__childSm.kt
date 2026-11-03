@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4
+// source-hash: 1036b5ee37fb5c89aaa1e8156f295f52aeb22d8997a046fafa16b7778f1ace69
 
 // GENERATED CODE — DO NOT EDIT
-// Source: resources/347/test347__sce_synth_invoke__child.scxml
+// Source: resources/347/test347.scxml#child
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test347__sce_synth_invoke__child.scxml:3 :: _machine
+// SCE-MAP: test347.scxml:12 :: _machine
 
 package com.sce.generated.test347
 
@@ -133,11 +133,11 @@ class Test347SceSynthInvokeChildStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test347__sce_synth_invoke__child.scxml:3 :: _machine
+    // SCE-MAP: test347.scxml:12 :: _machine
     override fun onEntry(state: Test347SceSynthInvokeChildState, isDefaultEntry: Boolean) {
         when (state) {
             is Test347SceSynthInvokeChildState.Sub0 -> {
-                // SCE-MAP: test347__sce_synth_invoke__child.scxml:4 :: sub0 :: _state_body
+                // SCE-MAP: test347.scxml:13 :: sub0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -162,7 +162,7 @@ class Test347SceSynthInvokeChildStateMachine(
                 }
             }
             is Test347SceSynthInvokeChildState.SubFinal -> {
-                // SCE-MAP: test347__sce_synth_invoke__child.scxml:10 :: subFinal :: _state_body
+                // SCE-MAP: test347.scxml:19 :: subFinal :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -170,21 +170,21 @@ class Test347SceSynthInvokeChildStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test347__sce_synth_invoke__child.scxml:3 :: _machine
+    // SCE-MAP: test347.scxml:12 :: _machine
     override fun onExit(state: Test347SceSynthInvokeChildState) {
         when (state) {
             is Test347SceSynthInvokeChildState.Sub0 -> {
-                // SCE-MAP: test347__sce_synth_invoke__child.scxml:4 :: sub0 :: _state_body
+                // SCE-MAP: test347.scxml:13 :: sub0 :: _state_body
             }
             is Test347SceSynthInvokeChildState.SubFinal -> {
-                // SCE-MAP: test347__sce_synth_invoke__child.scxml:10 :: subFinal :: _state_body
+                // SCE-MAP: test347.scxml:19 :: subFinal :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: test347__sce_synth_invoke__child.scxml:3 :: _machine
+    // SCE-MAP: test347.scxml:12 :: _machine
     override fun executeTransitionContent(source: Test347SceSynthInvokeChildState, transitionIndex: Int) {
         when (source) {
         else -> {}
