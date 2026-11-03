@@ -15,7 +15,10 @@ const val EVENT_NAME: String = "merge.mv_value"
 /** The revision of the schema (`sce:revision`, 1 when the document declares none). */
 const val REVISION: UInt = 1u
 
-/** The most UTF-8 bytes `text` holds (`sce:max-size`, the bound `sce:limit="merge_text"` names), as this build resolved it. */
+/** The most UTF-8 bytes `text` holds (the bound its type writes, named `merge_text`), as this build resolved it. */
 const val TEXT_MAX_SIZE: UInt = 96u
+
+/** The most bytes the event's `_event.data` JSON text takes: every list full, every text at its bound, every number at its longest spelling. */
+const val DATA_MAX_LEN: ULong = 764uL
 
 data class MvValuePayload(    val id: ULong,    val field: ULong,    val value: Long,    val text: String,    val wallTime: Long,    val counter: UInt,    val nodeId: ULong)

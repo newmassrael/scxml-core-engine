@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 6fe63bbaa76604f09a48d24750e75e0a784e90fcb598cdca75c3ac643915bb8d
+// source-hash: ef94c112b4026dfab705629195b17ee265cdc572de6e8fceff328262c2af0613
 // SCE-MAP: event_schedule.scxml:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -14,6 +14,10 @@ const EventName string = "calendar.schedule"
 
 // Revision is the revision of the schema (`sce:revision`, 1 when the document declares none).
 const Revision uint32 = 1
+
+// DataMaxLen is the most bytes the event's `_event.data` JSON text takes: every list
+// full, every text at its bound, every number at its longest spelling.
+const DataMaxLen uint64 = 1352
 
 type EventSchedulePayload struct {
 	Zone int64

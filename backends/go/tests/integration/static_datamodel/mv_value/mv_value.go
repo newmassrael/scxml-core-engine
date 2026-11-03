@@ -15,8 +15,12 @@ const EventName string = "merge.mv_value"
 // Revision is the revision of the schema (`sce:revision`, 1 when the document declares none).
 const Revision uint32 = 1
 
-// TextMaxSize is the most UTF-8 bytes `text` holds (`sce:max-size`, the bound `sce:limit="merge_text"` names), as this build resolved it.
+// TextMaxSize is the most UTF-8 bytes `text` holds (the bound its type writes, named `merge_text`), as this build resolved it.
 const TextMaxSize uint32 = 96
+
+// DataMaxLen is the most bytes the event's `_event.data` JSON text takes: every list
+// full, every text at its bound, every number at its longest spelling.
+const DataMaxLen uint64 = 764
 
 type MvValuePayload struct {
 	Id uint64

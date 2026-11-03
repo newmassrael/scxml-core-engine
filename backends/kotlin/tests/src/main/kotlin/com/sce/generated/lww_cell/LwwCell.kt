@@ -15,4 +15,7 @@ const val EVENT_NAME: String = "merge.lww_cell"
 /** The revision of the schema (`sce:revision`, 1 when the document declares none). */
 const val REVISION: UInt = 1u
 
+/** The most bytes the event's `_event.data` JSON text takes: every list full, every text at its bound, every number at its longest spelling. */
+const val DATA_MAX_LEN: ULong = 392uL
+
 data class LwwCellPayload(    val row: ULong,    val col: ULong,    val value: Long,    val wallTime: Long,    val counter: UInt,    val nodeId: ULong,    val op: UByte,    val aRef: Boolean,    val aRow: ULong,    val aCol: ULong,    val aVal: Long,    val bRef: Boolean,    val bRow: ULong,    val bCol: ULong,    val bVal: Long)

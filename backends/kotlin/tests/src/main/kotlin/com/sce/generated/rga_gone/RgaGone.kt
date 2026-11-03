@@ -15,4 +15,7 @@ const val EVENT_NAME: String = "merge.rga_gone"
 /** The revision of the schema (`sce:revision`, 1 when the document declares none). */
 const val REVISION: UInt = 1u
 
+/** The most bytes the event's `_event.data` JSON text takes: every list full, every text at its bound, every number at its longest spelling. */
+const val DATA_MAX_LEN: ULong = 58uL
+
 data class RgaGonePayload(    val key: ULong,    val by: ULong)

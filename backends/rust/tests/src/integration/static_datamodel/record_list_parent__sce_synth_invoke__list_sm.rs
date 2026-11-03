@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 6fe63bbaa76604f09a48d24750e75e0a784e90fcb598cdca75c3ac643915bb8d
+// source-hash: ef94c112b4026dfab705629195b17ee265cdc572de6e8fceff328262c2af0613
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -3780,8 +3780,10 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
     // itself during a macrostep, so its no_std depth is the bound the
     // generator proves from the document, and the external rule where it
     // proves none (docs/adr/0076). Inert under std, as above.
-    // No depth is proven, so it is the external queue's: a <foreach> body
-    // enqueues an internal event on each pass, and the passes are not counted.
+    // No depth is proven, so it is the external queue's: the transition of
+    // `open` on `record_list.close` takes `record_list.close`, an event the
+    // internal queue can hold, so an internal event can start a microstep that
+    // raises more.
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
 
     // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only

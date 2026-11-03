@@ -18,14 +18,18 @@ public enum HttpFetchResult {
     /// The revision of the schema (`sce:revision`, 1 when the document declares none).
     public static let revision: UInt32 = 1
 
-    /// The most UTF-8 bytes `error` holds (`sce:max-size`), as this build resolved it.
+    /// The most UTF-8 bytes `error` holds (the bound its type writes), as this build resolved it.
     public static let errorMaxSize: UInt32 = 24
 
-    /// The most UTF-8 bytes `headers` holds (`sce:max-size`), as this build resolved it.
+    /// The most UTF-8 bytes `headers` holds (the bound its type writes), as this build resolved it.
     public static let headersMaxSize: UInt32 = 4096
 
-    /// The most UTF-8 bytes `body` holds (`sce:max-size`), as this build resolved it.
+    /// The most UTF-8 bytes `body` holds (the bound its type writes), as this build resolved it.
     public static let bodyMaxSize: UInt32 = 16384
+
+    /// The most bytes the event's `_event.data` JSON text takes: every list full, every text at its
+    /// bound, every number at its longest spelling.
+    public static let dataMaxLen: UInt64 = 123074
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order,

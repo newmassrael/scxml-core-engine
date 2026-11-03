@@ -14,9 +14,13 @@ pub const EVENT_NAME: &str = "text.slot";
 /// The revision of the schema (`sce:revision`, 1 when the document declares none).
 #[allow(dead_code)]
 pub const REVISION: u32 = 1;
-/// The most UTF-8 bytes `text` holds (`sce:max-size`), as this build resolved it.
+/// The most UTF-8 bytes `text` holds (the bound its type writes), as this build resolved it.
 #[allow(dead_code)]
 pub const TEXT_MAX_SIZE: u32 = 32;
+/// The most bytes the event's `_event.data` JSON text takes: every list full, every
+/// text at its bound, every number at its longest spelling.
+#[allow(dead_code)]
+pub const DATA_MAX_LEN: u64 = 254;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextSlotPayload {

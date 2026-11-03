@@ -14,9 +14,13 @@ pub const EVENT_NAME: &str = "merge.mv_value";
 /// The revision of the schema (`sce:revision`, 1 when the document declares none).
 #[allow(dead_code)]
 pub const REVISION: u32 = 1;
-/// The most UTF-8 bytes `text` holds (`sce:max-size`, the bound `sce:limit="merge_text"` names), as this build resolved it.
+/// The most UTF-8 bytes `text` holds (the bound its type writes, named `merge_text`), as this build resolved it.
 #[allow(dead_code)]
 pub const TEXT_MAX_SIZE: u32 = 96;
+/// The most bytes the event's `_event.data` JSON text takes: every list full, every
+/// text at its bound, every number at its longest spelling.
+#[allow(dead_code)]
+pub const DATA_MAX_LEN: u64 = 764;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MvValuePayload {

@@ -15,6 +15,10 @@ const EventName string = "record_list.member"
 // Revision is the revision of the schema (`sce:revision`, 1 when the document declares none).
 const Revision uint32 = 1
 
+// DataMaxLen is the most bytes the event's `_event.data` JSON text takes: every list
+// full, every text at its bound, every number at its longest spelling.
+const DataMaxLen uint64 = 42
+
 type RecordMemberPayload struct {
 	Node uint64
 	Role uint8

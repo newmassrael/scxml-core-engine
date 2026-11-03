@@ -18,8 +18,12 @@ public enum NotifyCancelRequest {
     /// The revision of the schema (`sce:revision`, 1 when the document declares none).
     public static let revision: UInt32 = 1
 
-    /// The most UTF-8 bytes `id` holds (`sce:max-size`), as this build resolved it.
+    /// The most UTF-8 bytes `id` holds (the bound its type writes), as this build resolved it.
     public static let idMaxSize: UInt32 = 64
+
+    /// The most bytes the event's `_event.data` JSON text takes: every list full, every text at its
+    /// bound, every number at its longest spelling.
+    public static let dataMaxLen: UInt64 = 393
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order,

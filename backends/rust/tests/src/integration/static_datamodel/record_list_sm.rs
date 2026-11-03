@@ -3612,8 +3612,10 @@ impl StatePolicy for RecordListPolicy {
     // itself during a macrostep, so its no_std depth is the bound the
     // generator proves from the document, and the external rule where it
     // proves none (docs/adr/0076). Inert under std, as above.
-    // No depth is proven, so it is the external queue's: a <foreach> body
-    // enqueues an internal event on each pass, and the passes are not counted.
+    // No depth is proven, so it is the external queue's: the transition of
+    // `open` on `record_list.close` takes `record_list.close`, an event the
+    // internal queue can hold, so an internal event can start a microstep that
+    // raises more.
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
 
     // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only
