@@ -316,14 +316,32 @@ fn a_read_of_the_data_of_a_composed_schema_is_refused_by_name() {
       </if>
     </transition>"#,
     );
+    // Rust reads a composed payload (docs/adr/0086, section 6), so the gate every
+    // backend passes lets the read through, and each backend that does not
+    // lower it refuses it by its own name where it is generated.
     for document in [guarded, nested] {
-        let out = refusal_of(&["check"], &document);
-        assert!(out.contains("the field `items`"), "{out}");
-        assert!(
-            out.contains("a statechart's read of `_event.data`"),
-            "{out}"
+        for language in ["kotlin", "cpp", "go", "python", "c11"] {
+            let out = refusal_of(&["check", "-l", language], &document);
+            assert!(out.contains("the field `items`"), "{language}: {out}");
+            assert!(
+                out.contains("a statechart's read of `_event.data`"),
+                "{language}: {out}"
+            );
+            assert!(
+                out.contains(&format!("has no {language} lowering of its list")),
+                "{language}: {out}"
+            );
+            assert!(
+                out.contains("list<record:Item>[batch_items=3]"),
+                "{language}: {out}"
+            );
+        }
+        let (ok, out) = run(
+            &["check", "-l", "rust"],
+            &[("batch_reader.scxml", &document)],
+            "batch_reader.scxml",
         );
-        assert!(out.contains("list<record:Item>[batch_items=3]"), "{out}");
+        assert!(ok, "Rust reads the payload of a composed schema:\n{out}");
     }
 }
 

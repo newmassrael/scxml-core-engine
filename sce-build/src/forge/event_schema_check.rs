@@ -244,15 +244,17 @@ impl ComposedLowering {
     /// generated. Each position is the union of [`Self::of`] over every backend.
     pub const ANY_BACKEND: Self = Self {
         name: "backend",
-        reads: false,
+        reads: true,
     };
 
-    /// What the backend `language` lowers: no backend lowers a composed value
-    /// yet.
+    /// What the backend `language` lowers: Rust reads a composed payload at
+    /// any depth, the backend whose machine spells the walks over a composed
+    /// value ([`crate::forge::static_lowering::StaticTarget::composed_spelling`]);
+    /// every other backend lowers no composed value yet.
     pub fn of(language: crate::generator::Language) -> Self {
         Self {
             name: language.canonical_name(),
-            reads: false,
+            reads: matches!(language, crate::generator::Language::Rust),
         }
     }
 }
@@ -974,9 +976,10 @@ pub(crate) fn select_native_typed_guards(
             if trans.cond.trim().is_empty() {
                 continue;
             }
-            // A schema that holds a composition has no native payload: a
-            // transition that reads its data is refused where the document is
-            // parsed ([`check_composed_uses`]).
+            // A schema that holds a composition has no guard of this kind: a
+            // `sce-static` machine reads its data through the walks over its
+            // type on a backend that lowers them, and every other refuses the
+            // read by name ([`check_composed_uses`]).
             let Some(Ok(schema)) = model
                 .imported_event_schemas
                 .get(&trans.event)
@@ -2489,6 +2492,21 @@ mod tests {
         assert_eq!(ComposedLowering::ANY_BACKEND.reads, some_backend_reads);
         assert_eq!(ComposedLowering::ANY_BACKEND.name, "backend");
         assert!(!ComposedLowering::ECMASCRIPT.reads);
+    }
+
+    /// Rust reads a composed payload (docs/adr/0086, section 6), and every other
+    /// backend refuses the read by its own name until its step lowers it.
+    #[test]
+    fn rust_alone_reads_a_composed_payload() {
+        for language in crate::generator::Language::ALL {
+            let lowering = ComposedLowering::of(*language);
+            assert_eq!(
+                lowering.reads,
+                *language == crate::generator::Language::Rust,
+                "{language:?}"
+            );
+            assert_eq!(lowering.name, language.canonical_name());
+        }
     }
 
     fn field(id: &str, ty: SceType) -> EntryField {

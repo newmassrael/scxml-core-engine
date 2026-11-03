@@ -8658,6 +8658,56 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal
     rust_coerce(raw, expr.ty, expected, expr)
 }
 
+/// How a Rust index reads an element that is no plain value (docs/adr/0086):
+/// `at` copies the element out, which only a `Copy` element allows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RustElement {
+    /// A list, read by reference: the operand of a further read, its length,
+    /// an index into it, or a field of its element.
+    Operand,
+    /// A text, a byte string, or an optional value of either or of a list:
+    /// the owned copy the place it is written to takes.
+    Owned,
+}
+
+/// How a Rust index reads an element of type `ty`; `None` for a plain value,
+/// which `at` copies out.
+fn rust_element_by_reference(ty: InferredType) -> Option<RustElement> {
+    match ty {
+        InferredType::List(_) => Some(RustElement::Operand),
+        InferredType::Str | InferredType::Bytes => Some(RustElement::Owned),
+        InferredType::Optional(elem)
+            if matches!(
+                elem.present(),
+                InferredType::Str | InferredType::Bytes | InferredType::List(_)
+            ) =>
+        {
+            Some(RustElement::Owned)
+        }
+        _ => None,
+    }
+}
+
+/// The list `left` an index reads, as the reference `at` and `at_ref` take: a
+/// borrow of the list, or, for a list that is itself an element read by
+/// reference ([`RustElement::Operand`]), that reference.
+fn rust_list_operand(left: &TypedExpr) -> Result<String, Refusal> {
+    let emitted = wrap_postfix(left, emit_rust(left, InferredType::Unknown)?);
+    let by_reference = matches!(
+        &left.kind,
+        ExprKind::Checked {
+            op: CheckedOp::Index,
+            right: Some(_),
+            ..
+        }
+    ) && rust_element_by_reference(left.ty) == Some(RustElement::Operand);
+    Ok(if by_reference {
+        emitted
+    } else {
+        format!("&{emitted}")
+    })
+}
+
 /// A `string` value a Rust function returns, in the `String` its signature
 /// declares.
 ///
@@ -9015,8 +9065,8 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
                 unreachable!("guarded by the match above")
             };
             format!(
-                "sce_forge_runtime::algorithm::at_ref(&{}, {})?.{property}",
-                wrap_postfix(left, emit_rust(left, InferredType::Unknown)?),
+                "sce_forge_runtime::algorithm::at_ref({}, {})?.{property}",
+                rust_list_operand(left)?,
                 emit_rust(index, InferredType::Unknown)?,
             )
         }
@@ -9101,15 +9151,28 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
         // SCE_FORGE.md §3.4.1: an index read through the runtime's `at`,
         // which takes the index at its own type and fails out of range
         // instead of panicking.
+        //
+        // An element that is no plain value (a list, a text, a byte string, an
+        // optional one of either, docs/adr/0086) is read by reference through
+        // `at_ref`: a list is the operand of a further read, and a text or a
+        // byte string is the owned copy a place takes.
         ExprKind::Checked {
             op: CheckedOp::Index,
             left,
             right: Some(index),
-        } => format!(
-            "sce_forge_runtime::algorithm::at(&{}, {})?",
-            wrap_postfix(left, emit_rust(left, InferredType::Unknown)?),
-            emit_rust(index, InferredType::Unknown)?,
-        ),
+        } => {
+            let list = rust_list_operand(left)?;
+            let index = emit_rust(index, InferredType::Unknown)?;
+            match rust_element_by_reference(expr.ty) {
+                None => format!("sce_forge_runtime::algorithm::at({list}, {index})?"),
+                Some(RustElement::Operand) => {
+                    format!("sce_forge_runtime::algorithm::at_ref({list}, {index})?")
+                }
+                Some(RustElement::Owned) => {
+                    format!("sce_forge_runtime::algorithm::at_ref({list}, {index})?.clone()")
+                }
+            }
+        }
         // SCE_FORGE.md §3.4.1: the runtime's checked helper at the operation's
         // own width, its failure returned through the algorithm's `Result`
         // by `?`. The width rides as a turbofish so a literal operand takes

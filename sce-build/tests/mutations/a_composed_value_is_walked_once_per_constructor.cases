@@ -1,0 +1,74 @@
+# Mutation cases for "a composed value is walked once per constructor"
+# (docs/adr/0086, sections 4, 3.1 and 7.1).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_composed_value_is_walked_once_per_constructor.cases
+#
+# One walk of a value type gives the type a machine holds a composed value in,
+# the records it names (each once, an inner one first), the reader that lifts
+# it out of the event's data (one runtime call per constructor, each bound held
+# where the value is read) and the writer that spells it as JSON. Each case
+# takes one constructor's arm, or one rule of the walk, away and has to turn the
+# walk's own tests red on its own.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib forge::composed_lowering
+mutation_targets sce-build/src/forge/composed_lowering.rs
+mutation_oracles sce-build/src/forge/composed_lowering.rs
+
+# An optional value is held as its present value: absence has nowhere to be.
+mutation_case "the machine holds no optional" <<'PY'
+edit("sce-build/src/forge/composed_lowering.rs",
+     r'''        format!("Option<{elem}>")''',
+     r'''        elem.to_string()''')
+PY
+
+# A list is read past its bound: one element too many is kept.
+mutation_case "a list is read with no bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering.rs",
+     r'''        format!("{value}.list::<_, {max}>(|v| {elem}).map(|list| list.into_vec())")''',
+     r'''        format!("{value}.list::<_, {}>(|v| {elem}).map(|list| list.into_vec())", max + 1)''')
+PY
+
+# A text is read with no bound, so a text past it is kept (section 4.4).
+mutation_case "a text is read with no bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering.rs",
+     r'''        format!("{value}.text::<{max}>().map(|text| text.as_str().to_string())")''',
+     r'''        format!("{value}.text::<{}>().map(|text| text.as_str().to_string())", u32::MAX)''')
+PY
+
+# An enum name the enum does not declare is not refused.
+mutation_case "an unknown variant name is not refused" <<'PY'
+edit("sce-build/src/forge/composed_lowering.rs",
+     r'''            "{value}.name().and_then(|name| match name {{ {arms}other => \
+             Err({value}.refuse(&format!(\"({{other}}) is not a variant of {}\"))) }})",''',
+     r'''            "{value}.name().and_then(|name| match name {{ {arms}_ => Err({value}.refuse({:?})) }})",''')
+PY
+
+# A record whose schema grew reads a delivery of its first revision as refused.
+mutation_case "a record reads no defaults" <<'PY'
+edit("sce-build/src/forge/composed_lowering.rs",
+     r'''                crate::forge::schema_revision::composed_defaults_wire(held.schema).as_deref(),''',
+     r'''                None,''')
+PY
+
+# A record is declared before the records its fields name.
+mutation_case "an outer record is reached first" <<'PY'
+edit("sce-build/src/forge/composed_lowering.rs",
+     r'''            for field in &held.schema.fields {
+                held_records(&field.sce_type, Some(held.alias), records, reached)?;
+            }''',
+     r'''            reached.records.push(held.alias.to_string());
+            for field in &held.schema.fields {
+                held_records(&field.sce_type, Some(held.alias), records, reached)?;
+            }''')
+PY
+
+# A value that may be absent is written as though it were present.
+mutation_case "an optional value is written as its present value" <<'PY'
+edit("sce-build/src/forge/composed_lowering.rs",
+     r'''            "{RUST_PAYLOAD}::optional_json({}.as_ref(), |h| {elem})",''',
+     r'''            "{RUST_PAYLOAD}::list_json({}.as_ref(), |h| {elem})",''')
+PY

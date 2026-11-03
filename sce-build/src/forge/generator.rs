@@ -4152,7 +4152,6 @@ pub fn build_rust_event_payload(
     // under no_std, which has no such wire.
     let mut lift_arms = String::new();
     for event in &payload_events {
-        let schema = &entry_schemas[event];
         let variant = filters::to_event_variant(event.clone());
         let struct_name = format!("{machine_name}{variant}Payload");
         // Per-event typed inject wrapper: one call binds the event name and
@@ -4179,51 +4178,21 @@ pub fn build_rust_event_payload(
                 "{doc}\n    fn {method}(&mut self, payload: {struct_name});\n"
             ));
         }
-        let mut field_lines = String::new();
-        let mut lift_fields = String::new();
-        for f in &schema.fields {
-            field_lines.push_str(&format!(
-                "    pub {}: {},\n",
-                f.id,
-                rust_record_field_type(&l, f)
-            ));
-            // What the lift reads back out of `data`, and what the inject seam
-            // writes into it beside the typed payload: the same fields, named
-            // once. The reader's width comes from the field's own declared
-            // type, so a field widened in its schema cannot keep being read at
-            // the old width — the generated call stops compiling instead. An
-            // optional field (docs/adr/0055) is read by the reader of its
-            // present value where the delivery carries one.
-            let ty = rust_record_present_type(&l, f);
-            let present_reader = match f.sce_type.present_type() {
-                // A 64-bit integer is read from its digits as a text, or from a number
-                // exact in a double (`PayloadFields::wide`).
-                SceType::Uint64 => format!("fields.unsigned64(\"{}\")?", f.id),
-                SceType::Int64 => format!("fields.signed64(\"{}\")?", f.id),
-                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
-                    format!("fields.unsigned::<{ty}>(\"{}\")?", f.id)
-                }
-                SceType::Int8 | SceType::Int16 | SceType::Int32 => {
-                    format!("fields.signed::<{ty}>(\"{}\")?", f.id)
-                }
-                SceType::Float32 => format!("fields.float32(\"{}\")?", f.id),
-                SceType::Float64 => format!("fields.float64(\"{}\")?", f.id),
-                SceType::Bool => format!("fields.truth(\"{}\")?", f.id),
-                SceType::String => format!("fields.text(\"{}\")?", f.id),
-                SceType::Bytes => format!("fields.bytes(\"{}\")?", f.id),
-                SceType::Enum(r) => rust_enum_lift(static_enums, &r.alias, &f.id),
-            };
-            // `null` is an absent value, and a delivery that lacks the key is
-            // refused, as it is for a field of `T` (docs/adr/0055, section 4).
-            let reader = match f.sce_type {
-                EntryType::Optional { .. } => {
-                    crate::forge::rust_optional::payload_read(&f.id, &present_reader)
-                }
-                EntryType::Scalar(_) => present_reader,
-            };
-            lift_fields.push_str(&format!("                    {}: {reader},\n", f.id));
-        }
-        let data = rust_record_wire_of(&schema.fields, "payload", "        ", static_enums);
+        // The struct's members, the lift's reader of each, the JSON the inject
+        // seam writes, the defaults of the fields a later revision added and the
+        // derives: a schema of entries field by field, and one that holds a
+        // composition by the walks over its type (docs/adr/0086), which the
+        // static lowering reads a payload of only on a target that spells them.
+        let RustPayloadParts {
+            field_lines,
+            lift_fields,
+            data,
+            defaults,
+            derives,
+        } = match entry_schemas.get(event) {
+            Some(schema) => rust_entry_payload(schema, &l, static_enums),
+            None => rust_composed_payload(model, machine_name, event, static_enums),
+        };
         // The inject seam fills both carriers under std: the typed payload a
         // native guard reads, and the `data` wire the script engine binds
         // `_event.data` from. Filling only the first left an
@@ -4238,7 +4207,7 @@ pub fn build_rust_event_payload(
             // schema's defaults where the delivery lacks it
             // (`crate::forge::schema_revision`); a schema with none reads the
             // delivery alone, as it always has.
-            let decode = match crate::forge::schema_revision::defaults_wire(schema) {
+            let decode = match defaults {
                 Some(defaults) => format!(
                     "decode_with_defaults(data, \"{}\")",
                     filters::escape_rust(defaults)
@@ -4269,18 +4238,6 @@ self.raise_external_typed_with_data(\n            {machine_name}Event::{variant}
                 "    fn {method}(&mut self, payload: {struct_name}) {{\n{inject_body}    }}\n"
             ));
         }
-        // A struct that holds an enum has no default: the enum is the machine's
-        // own, with no value that is the one to start from, and the payload
-        // enum's `None` is what stands for a payload nothing has bound.
-        let derives = if schema
-            .fields
-            .iter()
-            .any(|f| matches!(f.sce_type.present_type(), SceType::Enum(_)))
-        {
-            "Clone, Debug, PartialEq"
-        } else {
-            "Clone, Debug, Default, PartialEq"
-        };
         structs.push_str(&format!(
             "#[derive({derives})]\npub struct {struct_name} {{\n{field_lines}}}\n\n"
         ));
@@ -4340,6 +4297,168 @@ match event {{\n{lift_arms}            _ => {{}}\n        }}\n        Ok(())\n  
         guard_writes,
         entries,
         lift,
+    }
+}
+
+/// What the Rust typed channel holds and reads of one event's payload
+/// ([`build_rust_event_payload`]).
+struct RustPayloadParts {
+    /// The payload struct's members, one line each.
+    field_lines: String,
+    /// The lift's initialiser of each member, out of the decoded `fields`.
+    lift_fields: String,
+    /// The JSON the inject seam writes beside the typed payload.
+    data: String,
+    /// The JSON of the defaults of the fields a later revision added, or
+    /// `None` for a schema that added none.
+    defaults: Option<String>,
+    /// The payload struct's derives.
+    derives: &'static str,
+}
+
+/// [`RustPayloadParts`] of a schema each field of which is one entry: each
+/// field read by the reader of its declared type.
+fn rust_entry_payload(
+    schema: &EntrySchema,
+    l: &LangCtx,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+) -> RustPayloadParts {
+    let mut field_lines = String::new();
+    let mut lift_fields = String::new();
+    for f in &schema.fields {
+        field_lines.push_str(&format!(
+            "    pub {}: {},\n",
+            f.id,
+            rust_record_field_type(l, f)
+        ));
+        // What the lift reads back out of `data`, and what the inject seam
+        // writes into it beside the typed payload: the same fields, named
+        // once. The reader's width comes from the field's own declared
+        // type, so a field widened in its schema cannot keep being read at
+        // the old width — the generated call stops compiling instead. An
+        // optional field (docs/adr/0055) is read by the reader of its
+        // present value where the delivery carries one.
+        let ty = rust_record_present_type(l, f);
+        let present_reader = match f.sce_type.present_type() {
+            // A 64-bit integer is read from its digits as a text, or from a number
+            // exact in a double (`PayloadFields::wide`).
+            SceType::Uint64 => format!("fields.unsigned64(\"{}\")?", f.id),
+            SceType::Int64 => format!("fields.signed64(\"{}\")?", f.id),
+            SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
+                format!("fields.unsigned::<{ty}>(\"{}\")?", f.id)
+            }
+            SceType::Int8 | SceType::Int16 | SceType::Int32 => {
+                format!("fields.signed::<{ty}>(\"{}\")?", f.id)
+            }
+            SceType::Float32 => format!("fields.float32(\"{}\")?", f.id),
+            SceType::Float64 => format!("fields.float64(\"{}\")?", f.id),
+            SceType::Bool => format!("fields.truth(\"{}\")?", f.id),
+            SceType::String => format!("fields.text(\"{}\")?", f.id),
+            SceType::Bytes => format!("fields.bytes(\"{}\")?", f.id),
+            SceType::Enum(r) => rust_enum_lift(static_enums, &r.alias, &f.id),
+        };
+        // `null` is an absent value, and a delivery that lacks the key is
+        // refused, as it is for a field of `T` (docs/adr/0055, section 4).
+        let reader = match f.sce_type {
+            EntryType::Optional { .. } => {
+                crate::forge::rust_optional::payload_read(&f.id, &present_reader)
+            }
+            EntryType::Scalar(_) => present_reader,
+        };
+        lift_fields.push_str(&format!("                    {}: {reader},\n", f.id));
+    }
+    // A struct that holds an enum has no default: the enum is the machine's
+    // own, with no value that is the one to start from, and the payload
+    // enum's `None` is what stands for a payload nothing has bound.
+    let derives = if schema
+        .fields
+        .iter()
+        .any(|f| matches!(f.sce_type.present_type(), SceType::Enum(_)))
+    {
+        "Clone, Debug, PartialEq"
+    } else {
+        "Clone, Debug, Default, PartialEq"
+    };
+    RustPayloadParts {
+        field_lines,
+        lift_fields,
+        data: rust_record_wire_of(&schema.fields, "payload", "        ", static_enums),
+        defaults: crate::forge::schema_revision::defaults_wire(schema),
+        derives,
+    }
+}
+
+/// [`RustPayloadParts`] of the payload of `event`, whose schema holds a
+/// composition (docs/adr/0086), by the walks over its type
+/// ([`crate::forge::composed_lowering`]): each member in the type the machine
+/// holds it in (section 7.1), each read by one runtime call per constructor,
+/// which refuses the delivery whole, naming the path, at the first value
+/// outside its type (section 4), and written as its JSON (section 3.1). A text
+/// is held to its bound at the lift at every depth, the top level included
+/// (section 4.4).
+///
+/// The static lowering declared every record and enum the payload names before
+/// the channel is built ([`crate::forge::static_lowering::lower`]), so a walk
+/// that fails here is a routing defect.
+fn rust_composed_payload(
+    model: &crate::model::SCXMLModel,
+    machine_name: &str,
+    event: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+) -> RustPayloadParts {
+    use crate::forge::composed_lowering::{self as composed, ComposedSpelling, RecordEnv};
+    let unlowered = |why: &str| -> String {
+        format!(
+            "the payload of `{event}` reached the Rust typed channel unlowered ({why}): the \
+             static lowering declares what a composed payload names before the channel is built"
+        )
+    };
+    let schema = model
+        .imported_event_schemas
+        .get(event)
+        .unwrap_or_else(|| panic!("{}", unlowered("no schema")));
+    let alias = model
+        .imported_records
+        .iter()
+        .find(|(_, held)| held.name == schema.name)
+        .map(|(alias, _)| alias.as_str())
+        .unwrap_or_else(|| panic!("{}", unlowered("no record of its schema")));
+    let records = composed::StatechartRecords::of(model);
+    let enums: std::collections::BTreeMap<String, composed::MachineEnum> = static_enums
+        .iter()
+        .map(|e| (e.alias.clone(), e.machine_enum()))
+        .collect();
+    let spelling = composed::RustComposed {
+        machine: machine_name,
+    };
+    let walked = |result: Result<Vec<(String, String)>, String>| {
+        result.unwrap_or_else(|why| panic!("{}", unlowered(&why)))
+    };
+    let held = records
+        .record(None, alias)
+        .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
+    let members = walked(composed::record_members(alias, &records, &enums, &spelling));
+    let readers = walked(composed::field_readers(held, &records, &enums, &spelling));
+    let writers = walked(composed::field_writers(
+        held,
+        &records,
+        &spelling,
+        &composed::Held::place("payload"),
+    ));
+    RustPayloadParts {
+        field_lines: members
+            .iter()
+            .map(|(id, ty)| format!("    pub {id}: {ty},\n"))
+            .collect(),
+        lift_fields: readers
+            .iter()
+            .map(|(id, read)| {
+                format!("                    {id}: fields.field(\"{id}\").and_then(|v| {read})?,\n")
+            })
+            .collect(),
+        data: spelling.write_record(&writers),
+        defaults: crate::forge::schema_revision::composed_defaults_wire(schema),
+        derives: "Clone, Debug, PartialEq",
     }
 }
 

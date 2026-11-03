@@ -68,23 +68,25 @@ pub trait RecordEnv {
 }
 
 /// The records of a statechart: the schemas it imports, by alias, and the
-/// scope each document names its records in.
-pub struct StatechartRecords<'m> {
+/// scope each document names its records in. Held apart from the model, so a
+/// walk that rewrites the model's states reads them.
+#[derive(Debug, Clone)]
+pub struct StatechartRecords {
     scope: TypeScope,
-    records: &'m BTreeMap<String, EventSchemaModel>,
+    records: BTreeMap<String, EventSchemaModel>,
 }
 
-impl<'m> StatechartRecords<'m> {
+impl StatechartRecords {
     /// The records `model` holds.
-    pub fn of(model: &'m crate::model::SCXMLModel) -> Self {
+    pub fn of(model: &crate::model::SCXMLModel) -> Self {
         Self {
             scope: crate::forge::value_path::statechart_scope(model),
-            records: &model.imported_records,
+            records: model.imported_records.clone(),
         }
     }
 }
 
-impl RecordEnv for StatechartRecords<'_> {
+impl RecordEnv for StatechartRecords {
     fn record(&self, within: Option<&str>, alias: &str) -> Result<HeldRecord<'_>, String> {
         let unheld = || {
             format!("`record:{alias}` names a record whose document the statechart does not import")
@@ -113,6 +115,20 @@ impl RecordEnv for StatechartRecords<'_> {
         let (alias, schema) = self.records.get_key_value(held).ok_or_else(unheld)?;
         Ok(HeldRecord { alias, schema })
     }
+}
+
+/// The record whose document the aliases of a place's type are written in, as
+/// the statechart holds it, for a place reached through the records `chain`
+/// names, each alias in the scope of the one before it
+/// ([`crate::forge::value_path::Place::scope`]); `None` for a place in the
+/// statechart's own scope.
+pub fn within_of(chain: &[String], records: &dyn RecordEnv) -> Result<Option<String>, String> {
+    let mut within: Option<String> = None;
+    for alias in chain {
+        let held = records.record(within.as_deref(), alias)?.alias.to_string();
+        within = Some(held);
+    }
+    Ok(within)
 }
 
 /// A value a writer spells: an expression that is the value (a place), or one

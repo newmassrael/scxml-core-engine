@@ -413,6 +413,22 @@ pub struct StaticEnumType {
     pub variants: Vec<StaticEnumVariant>,
 }
 
+impl StaticEnumType {
+    /// The enum as the walks over a composed value read it
+    /// ([`crate::forge::composed_lowering::MachineEnum`]).
+    pub fn machine_enum(&self) -> crate::forge::composed_lowering::MachineEnum {
+        crate::forge::composed_lowering::MachineEnum {
+            alias: self.alias.clone(),
+            ty: self.ty.clone(),
+            variants: self
+                .variants
+                .iter()
+                .map(|v| (v.declared.clone(), v.ident.clone()))
+                .collect(),
+        }
+    }
+}
+
 /// One variant of a [`StaticEnumType`].
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct StaticEnumVariant {
@@ -1357,6 +1373,18 @@ pub trait StaticTarget {
         _variants: &[&str],
         _default: &str,
     ) -> Option<String> {
+        None
+    }
+    /// How this target spells each case of the walks over a composed value
+    /// (docs/adr/0086, [`crate::forge::composed_lowering`]) for the machine
+    /// `machine`: the type it holds one in, its reader and its writer. `None`
+    /// for a target that lowers no composed value, which the one decision of
+    /// what is lowered refuses by name before the walk
+    /// ([`crate::forge::event_schema_check::ComposedLowering`]).
+    fn composed_spelling<'a>(
+        &self,
+        _machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
         None
     }
     /// The expression lowerer's target.
@@ -3255,11 +3283,19 @@ impl StaticTarget for RustTarget {
             _ => None,
         }
     }
+    // One spelling of a record's type, whether a variable or a composed value
+    // holds it.
     fn record_type(&self, machine: &str, alias: &str) -> String {
-        format!(
-            "{machine}{}Record",
-            filters::to_pascal_case(alias.to_string())
-        )
+        use crate::forge::composed_lowering::ComposedSpelling;
+        crate::forge::composed_lowering::RustComposed { machine }.record_type(alias)
+    }
+    fn composed_spelling<'a>(
+        &self,
+        machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(crate::forge::composed_lowering::RustComposed {
+            machine,
+        }))
     }
     // Plain data by the record rule, so `Copy` — the derive set a plain
     // event-schema payload takes from the one policy that decides it — unless
@@ -4222,6 +4258,21 @@ pub fn lower(
     // ([`crate::forge::event_schema_check::check_composed_uses`]).
     let schemas = model.entry_event_schemas();
     let records = model.entry_records();
+    // The events whose schema holds a composition, each with its schema's name:
+    // `_event.data` on a transition taken on one is typed by walking its
+    // record's type at any depth, as a schema of entries is, for a target that
+    // spells the walks ([`StaticTarget::composed_spelling`]). The one decision
+    // of what is lowered refused every other target's read of one before this
+    // walk ([`crate::forge::event_schema_check::ComposedLowering`]); a caller
+    // that lowers for another target outside that decision meets no composed
+    // payload here, so its read of one does not lower.
+    let composed_payloads: std::collections::BTreeMap<String, String> = model
+        .imported_event_schemas
+        .iter()
+        .filter(|(event, _)| !schemas.contains_key(*event))
+        .filter(|_| target.composed_spelling(machine).is_some())
+        .map(|(event, schema)| (event.clone(), schema.name.clone()))
+        .collect();
     // An optional value (docs/adr/0055) is refused before anything reads the
     // variables' types, on every target that does not lower it yet: a variable
     // that holds one, and a field of a schema the machine reads a payload by or
@@ -4466,6 +4517,7 @@ pub fn lower(
         elements: Default::default(),
         next_if_ordinal: std::cell::Cell::new(max_if_ordinal(model) + 1),
         host_optional: std::cell::Cell::new(false),
+        composed: ComposedNames::of(model, target, machine, &held_enums),
     };
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
@@ -4974,12 +5026,17 @@ pub fn lower(
         }
         for transition in &mut state.transitions {
             let schema = schemas.get(&transition.event);
+            // The schema `_event.data` is a record of, of entries or holding a
+            // composition alike.
+            let payload = schema
+                .map(|schema| schema.name.as_str())
+                .or_else(|| composed_payloads.get(&transition.event).map(String::as_str));
             rewrites.open_payload(schema);
-            let paths = scope.paths(schema.map(|schema| schema.name.as_str()));
+            let paths = scope.paths(payload);
             let ctx = lowering_ctx(&scope, target, machine, &paths, &enums);
             let accessor = target.payload_accessor(&transition.event);
             let payload_reads = payload_enum_reads(target, schema, &accessor, &held_enums);
-            let mut renames = renames(&names, schema.map(|_| accessor.as_str()), target);
+            let mut renames = renames(&names, payload.map(|_| accessor.as_str()), target);
             renames.extend(
                 payload_reads
                     .iter()
@@ -5011,7 +5068,7 @@ pub fn lower(
                 // around, so it takes it on the value, before the failure is
                 // received: the operations of a delivery that did not carry a
                 // payload are not run, and so fail nothing.
-                let reads_payload = schema.is_some()
+                let reads_payload = payload.is_some()
                     && crate::forge::expr::references_event_data_lexically(&transition.cond);
                 let value = if reads_payload && target.payload_guards_the_value() {
                     target.payload_guard(machine, &transition.event, &cond.text)
@@ -5061,7 +5118,7 @@ pub fn lower(
                 &ctx.proving(guarded),
                 &renames,
                 &rewrites,
-            )? && schema.is_some()
+            )? && payload.is_some()
             {
                 payload_events.insert(transition.event.clone());
                 transition.content_reads_payload = true;
@@ -5085,6 +5142,11 @@ pub fn lower(
     // the one rule for what the channel holds without it.
     for event in &payload_events {
         let Some(schema) = schemas.get(event) else {
+            // A payload whose schema holds a composition rides the typed channel
+            // too, held in the types the walks spell (docs/adr/0086).
+            if composed_payloads.contains_key(event) {
+                declare_composed_payload(&mut declarations, model, event)?;
+            }
             continue;
         };
         if crate::forge::event_schema_check::schema_is_native_payload_eligible(schema) {
@@ -5398,18 +5460,8 @@ impl<'t> TypeDeclarations<'t> {
         };
         if self.declared.insert(ty.clone()) {
             self.type_defs.push(self.target.enum_def(&ty, alias, model));
-            self.enums.push(StaticEnumType {
-                ty: ty.clone(),
-                alias: alias.to_string(),
-                variants: model
-                    .variants
-                    .iter()
-                    .map(|v| StaticEnumVariant {
-                        declared: v.name.clone(),
-                        ident: self.target.enum_variant(&ty, &model.name, &v.name),
-                    })
-                    .collect(),
-            });
+            self.enums
+                .push(static_enum_type(self.target, &ty, alias, model));
         }
         Ok(ty)
     }
@@ -5572,6 +5624,150 @@ impl<'t> TypeDeclarations<'t> {
         }
         list
     }
+}
+
+/// The enum `model`, held by the machine as `alias` in the type `ty`
+/// ([`StaticTarget::enum_type`]), variant by variant as `target` spells each.
+fn static_enum_type(
+    target: &dyn StaticTarget,
+    ty: &str,
+    alias: &str,
+    model: &EnumModel,
+) -> StaticEnumType {
+    StaticEnumType {
+        ty: ty.to_string(),
+        alias: alias.to_string(),
+        variants: model
+            .variants
+            .iter()
+            .map(|v| StaticEnumVariant {
+                declared: v.name.clone(),
+                ident: target.enum_variant(ty, &model.name, &v.name),
+            })
+            .collect(),
+    }
+}
+
+/// What the walks over a composed value read of the machine
+/// ([`crate::forge::composed_lowering`]): the records its schemas name, and
+/// every enum the machine holds, as the type it is declared as.
+struct ComposedNames {
+    records: crate::forge::composed_lowering::StatechartRecords,
+    enums: std::collections::BTreeMap<String, crate::forge::composed_lowering::MachineEnum>,
+}
+
+impl ComposedNames {
+    /// What the walks read of `model`, the machine `machine` of `target`, which
+    /// holds `held_enums` ([`SCXMLModel::held_enums`]); `None` for a target that
+    /// spells no composed value.
+    fn of(
+        model: &SCXMLModel,
+        target: &dyn StaticTarget,
+        machine: &str,
+        held_enums: &std::collections::BTreeMap<String, EnumModel>,
+    ) -> Option<Self> {
+        target.composed_spelling(machine)?;
+        Some(Self {
+            records: crate::forge::composed_lowering::StatechartRecords::of(model),
+            enums: held_enums
+                .iter()
+                .filter_map(|(alias, held)| {
+                    let ty = target.enum_type(machine, alias)?;
+                    Some((
+                        alias.clone(),
+                        static_enum_type(target, &ty, alias, held).machine_enum(),
+                    ))
+                })
+                .collect(),
+        })
+    }
+}
+
+/// Declare in the machine's own unit what the payload of `event` names, whose
+/// schema holds a composition (docs/adr/0086): each enum and each record it
+/// holds at any depth, each once, an inner record before the outer one that
+/// names it. A record of entries is declared as a variable of it declares it
+/// ([`TypeDeclarations::record`]); one that holds a composition by the walk
+/// ([`crate::forge::composed_lowering::record_members`]). The payload's own
+/// record is the payload struct, which the typed channel declares.
+fn declare_composed_payload(
+    declarations: &mut TypeDeclarations<'_>,
+    model: &SCXMLModel,
+    event: &str,
+) -> Result<(), GenerateError> {
+    use crate::forge::composed_lowering as composed;
+    let target = declarations.target;
+    let lang = target.name();
+    let refused = |why: String| {
+        GenerateError::unsupported(format!(
+            "a transition that reads the payload of `{event}`, whose schema holds a composed \
+             value: {why} (docs/adr/0086, section 7.3)"
+        ))
+    };
+    let Some(spelling) = target.composed_spelling(declarations.machine) else {
+        return Err(refused(format!(
+            "{lang} has no lowering of a composed value yet"
+        )));
+    };
+    let Some(payload) = model.imported_event_schemas.get(event) else {
+        return Ok(());
+    };
+    let records = composed::StatechartRecords::of(model);
+    let payload_alias = model
+        .imported_records
+        .iter()
+        .find(|(_, held)| held.name == payload.name)
+        .map(|(alias, _)| alias.clone())
+        .ok_or_else(|| {
+            refused(format!(
+                "the statechart holds no record of `{}`",
+                payload.name
+            ))
+        })?;
+    let mut reached = composed::Reached::default();
+    composed::held_records(
+        &crate::forge::value_type::ValueType::Record {
+            alias: payload_alias.clone(),
+        },
+        None,
+        &records,
+        &mut reached,
+    )
+    .map_err(refused)?;
+    let mut enums = std::collections::BTreeMap::new();
+    for alias in &reached.enums {
+        declarations.enum_type(alias).map_err(|alias| {
+            refused(format!(
+                "{lang} has no type for the enum `{alias}`, or its document could not be read"
+            ))
+        })?;
+        if let Some(declared) = declarations.enums.iter().find(|e| e.alias == *alias) {
+            enums.insert(alias.clone(), declared.machine_enum());
+        }
+    }
+    let entries = model.entry_records();
+    for alias in reached
+        .records
+        .iter()
+        .filter(|alias| **alias != payload_alias)
+    {
+        match entries.get(alias) {
+            Some(entry) => {
+                declarations.record(alias, entry)?;
+            }
+            None => {
+                let ty = spelling.record_type(alias);
+                if declarations.declared.insert(ty.clone()) {
+                    let members = composed::record_members(alias, &records, &enums, &*spelling)
+                        .map_err(refused)?;
+                    declarations
+                        .type_defs
+                        .push(spelling.record_def(&ty, alias, &members));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The shape a saved state of this machine is bound to (SCE Accepted Subset
@@ -6358,6 +6554,10 @@ struct Rewrites<'m> {
     /// where the target's import is not read off the generated text. Set by the
     /// walk where it meets one, read once it is done.
     host_optional: std::cell::Cell<bool>,
+    /// What the walks over a composed value read of the machine (docs/adr/0086):
+    /// the type a loop over a list the payload holds names its item and list
+    /// by. `None` for a target that spells no composed value.
+    composed: Option<ComposedNames>,
 }
 
 impl Rewrites<'_> {
@@ -13798,14 +13998,51 @@ fn lower_action(
         // body's own, so the body is lowered in a scope that has them and
         // nothing else is nested below it (§scxml-4.6).
         "foreach" => {
-            let list = action.array.trim();
-            let (elem, capacity) = rewrites.lists.get(list).ok_or_else(|| {
-                GenerateError::unsupported(format!(
-                    "<foreach array=\"{list}\"> names no list variable"
-                ))
-            })?;
-            let item = action.item.trim();
-            let index = Some(action.index.trim()).filter(|name| !name.is_empty());
+            let list = action.array.trim().to_string();
+            let walked = match rewrites.lists.get(list.as_str()) {
+                Some((elem, capacity)) => {
+                    // What a target that has to name the item's type and the list
+                    // it copies is told: the element's type and the list's own.
+                    let (item_ty, list_ty) = match elem {
+                        crate::forge::model::AlgorithmValueType::Scalar(scalar) => (
+                            target.scalar_type(scalar),
+                            target.bounded_list(scalar, Some(*capacity)).ty,
+                        ),
+                        crate::forge::model::AlgorithmValueType::Record { alias } => {
+                            let record_ty = target.record_type(rewrites.machine, alias);
+                            let list = target.bounded_record_list(&record_ty, Some(*capacity));
+                            (record_ty, list.ty)
+                        }
+                        other => {
+                            return Err(composition_not_lowered(
+                                &format!("<foreach array=\"{list}\">"),
+                                other,
+                                "a statechart's list variable",
+                            ))
+                        }
+                    };
+                    WalkedList {
+                        name: renames
+                            .get(list.as_str())
+                            .map_or_else(|| list.clone(), |name| name.to_string()),
+                        // A record item is a record a `<send>` of the body may
+                        // take whole.
+                        record: elem.record_alias().map(str::to_string),
+                        element: WalkedElement::Variable(elem.clone()),
+                        item_ty,
+                        list_ty,
+                        reads_payload: false,
+                    }
+                }
+                // A list no variable names is one a place holds, the payload's or
+                // an enclosing loop's item's, at any depth (docs/adr/0086, section
+                // 6.1).
+                None => walked_place(&list, ctx, renames, rewrites)?,
+            };
+            let item = action.item.trim().to_string();
+            let item = item.as_str();
+            let index = action.index.trim().to_string();
+            let index = Some(index.as_str()).filter(|name| !name.is_empty());
             // The loop binds its variables under the spelling every expression
             // of the body reads them by, the target's for any local: the type
             // scope and the renames stay keyed by the names as written.
@@ -13825,33 +14062,23 @@ fn lower_action(
                      field of the machine"
                 )));
             }
-            let loop_variables =
-                crate::forge::type_ctx::LoopVariables::new(item, index, elem, &rewrites.schemas);
+            let loop_variables = match &walked.element {
+                WalkedElement::Variable(elem) => {
+                    crate::forge::type_ctx::LoopVariables::new(item, index, elem, &rewrites.schemas)
+                }
+                WalkedElement::Place(element) => crate::forge::type_ctx::LoopVariables::of_place(
+                    item,
+                    index,
+                    Some(element.clone()),
+                    None,
+                ),
+            };
             let mut inner = loop_variables.bind(ctx);
             // A fact proven before the loop holds in its body only if nothing in
             // the body ends it, as the judge read it (docs/adr/0055, section 3).
             inner.proven = crate::forge::narrowing::loop_entry(&ctx.proven, &action.actions);
-            let name = renames.get(list).copied().unwrap_or(list);
-            // What a target that has to name the item's type and the list it
-            // copies is told: the element's type and the list's own.
-            let (item_ty, list_ty) = match elem {
-                crate::forge::model::AlgorithmValueType::Scalar(scalar) => (
-                    target.scalar_type(scalar),
-                    target.bounded_list(scalar, Some(*capacity)).ty,
-                ),
-                crate::forge::model::AlgorithmValueType::Record { alias } => {
-                    let record_ty = target.record_type(rewrites.machine, alias);
-                    let list = target.bounded_record_list(&record_ty, Some(*capacity));
-                    (record_ty, list.ty)
-                }
-                other => {
-                    return Err(composition_not_lowered(
-                        &format!("<foreach array=\"{list}\">"),
-                        other,
-                        "a statechart's list variable",
-                    ))
-                }
-            };
+            let name = walked.name.as_str();
+            let (item_ty, list_ty) = (&walked.item_ty, &walked.list_ty);
             // The loops that hold this one, and the copy it walks at that depth.
             let depth = rewrites.loop_depth.get();
             rewrites
@@ -13862,8 +14089,8 @@ fn lower_action(
                 name,
                 &item_local,
                 index_local.as_deref(),
-                &item_ty,
-                &list_ty,
+                item_ty,
+                list_ty,
                 depth,
             ) {
                 action.native_loop = head;
@@ -13872,8 +14099,7 @@ fn lower_action(
                     .foreach_first(name, &item_local, index_local.as_deref())
                     .unwrap_or_default();
             }
-            // A record item is a record a `<send>` of the body may take whole.
-            let holds_a_record = elem.record_alias().map(str::to_string);
+            let holds_a_record = walked.record.clone();
             if let Some(alias) = &holds_a_record {
                 rewrites
                     .loop_records
@@ -13905,7 +14131,9 @@ fn lower_action(
             if holds_a_record.is_some() {
                 rewrites.loop_records.borrow_mut().pop();
             }
-            return lowered;
+            // A loop over a list the payload holds reads the payload, as its
+            // body may.
+            return Ok(lowered? || walked.reads_payload);
         }
         // A host operation whose arguments the Interpreter's engine computes
         // when the action runs: each is lowered as any expression is, to the
@@ -14119,6 +14347,132 @@ fn lower_action(
         _ => {}
     }
     Ok(lower_nested(action, ctx, renames, rewrites)? || reads_payload)
+}
+
+/// The list a `<foreach>` walks, as the loop's lowering reads it: a list
+/// variable, or a list a place holds that no variable names.
+struct WalkedList {
+    /// The list as the loop's head reaches it.
+    name: String,
+    /// What the loop's item is an element of.
+    element: WalkedElement,
+    /// The type a target that names it holds the item in.
+    item_ty: String,
+    /// The type a target that names it holds the list's copy in.
+    list_ty: String,
+    /// The alias of a record item a `<send>` of the body may take whole, for an
+    /// element of a list variable of records.
+    record: Option<String>,
+    /// Whether reaching the list reads the payload of the event the transition
+    /// is on.
+    reads_payload: bool,
+}
+
+/// What a `<foreach>`'s item is an element of.
+enum WalkedElement {
+    /// A list variable of this element.
+    Variable(crate::forge::model::AlgorithmValueType),
+    /// A list a place holds, its element's place
+    /// ([`crate::forge::value_path::Place::element`]).
+    Place(crate::forge::value_path::Place),
+}
+
+/// The list `list` names where it is a place no variable names: a list of the
+/// payload of the event the transition is on, or of an enclosing loop's item,
+/// at any depth (docs/adr/0086, section 6.1), its item a value of the list's
+/// element type that the body reads by walking that type. The loop walks the
+/// list as it was when it began (§scxml-4.6), as a loop over a variable does.
+///
+/// Refused by name, for a target that spells no composed value, and for a list
+/// reached through an index, whose read can fail where a loop's head cannot
+/// say so.
+fn walked_place(
+    list: &str,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<WalkedList, GenerateError> {
+    let target = rewrites.target;
+    let lang = target.name();
+    let refused =
+        |why: String| GenerateError::unsupported(format!("<foreach array=\"{list}\">{why}"));
+    let Some((path, place)) = crate::forge::expr::written_place(list)
+        .and_then(|path| ctx.value_of(&path).map(|place| (path, place)))
+    else {
+        return Err(refused(" names no list variable".to_string()));
+    };
+    let Some(element) = place.element() else {
+        return Err(refused(" names no list variable".to_string()));
+    };
+    let (Some(names), Some(spelling)) = (
+        rewrites.composed.as_ref(),
+        target.composed_spelling(rewrites.machine),
+    ) else {
+        return Err(refused(format!(
+            ": a list a place holds has no {lang} lowering of a loop over it yet \
+             (docs/adr/0086, section 7.3)"
+        )));
+    };
+    if path.contains(crate::forge::value_path::ELEMENT) {
+        return Err(refused(format!(
+            ": a list read through an index has no {lang} lowering of a loop over it yet \
+             (docs/adr/0086, section 7.3)"
+        )));
+    }
+    let typed = |ty: &crate::forge::value_type::ValueType| {
+        crate::forge::composed_lowering::within_of(&place.scope, &names.records).and_then(
+            |within| {
+                crate::forge::composed_lowering::machine_type(
+                    ty,
+                    within.as_deref(),
+                    &names.records,
+                    &names.enums,
+                    &*spelling,
+                )
+            },
+        )
+    };
+    let item_ty = typed(&element.ty).map_err(|why| refused(format!(": {why}")))?;
+    let list_ty = typed(&place.ty).map_err(|why| refused(format!(": {why}")))?;
+    Ok(WalkedList {
+        name: place_text(&path, renames, target),
+        element: WalkedElement::Place(element),
+        item_ty,
+        list_ty,
+        record: None,
+        reads_payload: crate::forge::expr::references_event_data_lexically(list),
+    })
+}
+
+/// The expression the place `path` is reached by, a path of fields with no
+/// element: the name it starts at as the walk renames it (`_event.data` to the
+/// payload, a variable to its field) or as the target spells a local (a loop's
+/// item), and each field after it as the target spells a record's field.
+fn place_text(path: &str, renames: &HashMap<&str, &str>, target: &dyn StaticTarget) -> String {
+    let payload = crate::forge::event_schema_check::EVENT_DATA_PATH;
+    let (base, rest) = match path.strip_prefix(payload) {
+        Some(rest) if rest.is_empty() || rest.starts_with('.') => (
+            renames
+                .get(payload)
+                .map_or_else(|| payload.to_string(), |accessor| accessor.to_string()),
+            rest,
+        ),
+        _ => {
+            let (root, rest) = path.split_at(path.find('.').unwrap_or(path.len()));
+            (
+                renames.get(root).map_or_else(
+                    || target.expr_target().local_spelling(root),
+                    |name| name.to_string(),
+                ),
+                rest,
+            )
+        }
+    };
+    rest.split('.')
+        .filter(|field| !field.is_empty())
+        .fold(base, |text, field| {
+            format!("{text}.{}", target.record_field(field))
+        })
 }
 
 /// The whole value `expr` gives `place`, an optional variable or an optional
