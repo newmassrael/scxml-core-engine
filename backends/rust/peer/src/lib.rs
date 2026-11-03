@@ -1801,7 +1801,7 @@ fn note_ended(list: &str, exchange: &'static str, outcome: &Outcome) {
         stalled = outcome.stalled(),
         rebuild = outcome.rebuild(),
         owed = outcome.owed,
-        token = outcome.token.is_some();
+        earned_token = outcome.token.is_some();
         "exchange_ended"
     );
 }

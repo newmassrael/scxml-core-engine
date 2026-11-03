@@ -560,7 +560,7 @@ fn a_round_and_a_failure_of_the_core_are_each_one_record_with_no_secret() {
         .collect();
     let ended = format!(
         "event=exchange_ended list={digest} exchange=round events={} pushed={} refused=0 \
-         stalled=false rebuild=false owed=0 token=false",
+         stalled=false rebuild=false owed=0 earned_token=false",
         outcome.events().len(),
         outcome.round.pushed
     );

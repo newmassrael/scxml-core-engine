@@ -184,12 +184,12 @@ async fn dial(url: &str, token: &str, tls: &Arc<ClientConfig>) -> Result<Socket,
     let upgrade = upgrade_request(url, token).map_err(Broke::Link)?;
     let connector = Connector::Rustls(Arc::clone(tls));
     // What a record says of the dial: where, and whether it presents a token; never the token.
-    log::debug!(endpoint = url, token = !token.is_empty(); "dialling");
+    log::debug!(endpoint = url, presents_token = !token.is_empty(); "dialling");
     match tokio_tungstenite::connect_async_tls_with_config(upgrade, None, false, Some(connector))
         .await
     {
         Ok((socket, _)) => {
-            log::info!(endpoint = url, token = !token.is_empty(); "connected");
+            log::info!(endpoint = url, presents_token = !token.is_empty(); "connected");
             Ok(socket)
         }
         Err(WsError::Http(response)) if response.status() == http::StatusCode::UNAUTHORIZED => {
