@@ -1,7 +1,8 @@
 # Mutation cases for what a relay of a shared list does with an operation that conflicts with what it
-# holds of its author (ADR 0083 section 4): it keeps it as proof whoever gives it, and answers
-# `conflict` with what it held to a client of protocol 2 and `accepted` to one of protocol 1, in the
-# version it was asked in.
+# holds of its author, and what a device's side does with its answer (ADR 0083 section 4): the relay
+# keeps it as proof whoever gives it, and answers `conflict` with what it held to a client of
+# protocol 2 and `accepted` to one of protocol 1, in the version it was asked in; the device's core
+# takes in what the relay held, ends its round when that froze its own chain, and says so.
 #
 # Each case takes one of those away or weakens it, and the tests under study must turn red. A check
 # no test notices is a check nothing holds in place.
@@ -11,9 +12,9 @@
 # Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
 # anchor quoted, never as a pass.
 
-mutation_tests -p sce-rust-relay --lib --test a_relay_answers_an_operation_that_conflicts_and_keeps_it_as_proof
-mutation_targets backends/rust/relay/src/relay.rs
-mutation_oracles backends/rust/relay/tests/a_relay_answers_an_operation_that_conflicts_and_keeps_it_as_proof.rs
+mutation_tests -p sce-rust-relay --lib --test a_relay_answers_an_operation_that_conflicts_and_keeps_it_as_proof --test a_device_told_its_operation_conflicts_freezes_at_once
+mutation_targets backends/rust/relay/src/relay.rs backends/rust/relay/src/client.rs
+mutation_oracles backends/rust/relay/tests/a_relay_answers_an_operation_that_conflicts_and_keeps_it_as_proof.rs backends/rust/relay/tests/a_device_told_its_operation_conflicts_freezes_at_once.rs
 
 # ── What the relay answers ─────────────────────────────────────────────────────────────────────
 
@@ -39,4 +40,24 @@ mutation_case "A relay answers a request it read in the oldest version and not i
 edit("backends/rust/relay/src/relay.rs",
      "                            (self.call(&session, asked, version, now_ms), version)",
      "                            (self.call(&session, asked, version, now_ms), OLDEST_VERSION)")
+PY
+
+# ── What a device's side does with the answer ──────────────────────────────────────────────────
+
+mutation_case "A courier does not take in what the relay held with a conflict" <<'PY'
+edit("backends/rust/relay/src/client.rs",
+     "            take(\n                &self.trust,\n                &mut self.state.parked,\n                &record,",
+     "            let _ = (\n                &self.trust,\n                &mut self.state.parked,\n                &record,")
+PY
+
+mutation_case "A device told its own operation conflicts goes on with its round" <<'PY'
+edit("backends/rust/relay/src/client.rs",
+     "        if !froze {\n            return None;\n        }",
+     "        if !froze || froze {\n            return None;\n        }")
+PY
+
+mutation_case "A round that froze the device's own chain does not say so" <<'PY'
+edit("backends/rust/relay/src/client.rs",
+     "                round.conflicted = Some(frozen);",
+     "                let _ = frozen;")
 PY

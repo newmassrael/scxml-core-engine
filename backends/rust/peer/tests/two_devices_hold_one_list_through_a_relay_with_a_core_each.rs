@@ -1832,6 +1832,11 @@ fn reads_its_chain_past_a_conflict(keyed: bool) {
         vec![(ALICE, 3)],
         "{case}: her core found the conflict the relay held"
     );
+    assert_eq!(
+        back.conflicted(),
+        Some(3),
+        "{case}: the round that found it says so"
+    );
     let dropped = back.dropped();
     assert_eq!(dropped.len(), after.len(), "{case}: {back:?}");
     for ((event, data, why), (sent, made)) in dropped.iter().zip(&after) {

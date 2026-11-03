@@ -220,6 +220,13 @@ pub struct Round {
     /// The round stopped before the end of what the relay holds: a record names an entry of the
     /// log the host does not have, or the device may not read yet. A later round goes on from there.
     pub stalled: bool,
+    /// The number this host's person's own chain is frozen from, when the round froze it: the relay
+    /// answered `conflict` to an operation of the device's own and the round took in what the relay
+    /// held, or the round read an operation that conflicts with one of the device's. Every host
+    /// that holds both freezes the device there; the device signs nothing more, and an
+    /// administrator takes it off and grants a new one (ADR 0083 section 4). A round that a
+    /// `conflict` froze ends there. `None` when the round froze nothing of the device's own.
+    pub conflicted: Option<u64>,
 }
 
 /// What a courier keeps of one relay between its rounds, apart from the link it speaks over and the
@@ -687,6 +694,20 @@ pub struct RoundMachine {
     /// The request put to the relay and not answered yet.
     asked: Option<Request>,
     outcome: Option<Result<Round, CourierError>>,
+    /// Where this host's person's own chain was frozen from when the machine was made: what a
+    /// round that froze it lower is told apart by ([`Round::conflicted`]).
+    frozen_at_start: Option<u64>,
+}
+
+/// Where this host's person's own chain is frozen from, when the trust holds operations of it that
+/// conflict.
+fn own_frozen(trust: &Trust) -> Option<u64> {
+    let (own, _) = trust.person()?;
+    trust
+        .equivocating()
+        .into_iter()
+        .find(|(node, _)| *node == own)
+        .map(|(_, from)| from)
 }
 
 /// What a machine is making.
@@ -896,6 +917,7 @@ impl RoundMachine {
             ..Round::default()
         };
         Self {
+            frozen_at_start: own_frozen(&trust),
             trust,
             state,
             mode: Mode::Round {
@@ -926,6 +948,7 @@ impl RoundMachine {
             Err(error) => (Phase::Over, Some(Err(error))),
         };
         Self {
+            frozen_at_start: own_frozen(&trust),
             trust,
             state,
             mode: Mode::Publish,
@@ -1033,6 +1056,18 @@ impl RoundMachine {
         if let Mode::Round { redeliver } = self.mode {
             round.evicted.extend(self.trust.take_evicted());
             round.restored.extend(self.trust.take_restored());
+            // The device's own chain froze in this round, lower than it was or where it was not.
+            let froze = own_frozen(&self.trust).filter(|from| Some(*from) != self.frozen_at_start);
+            if let Some(frozen) = froze {
+                round.conflicted = Some(frozen);
+                log::info!(
+                    list = list_digest(&self.trust.list()).as_str(),
+                    node = self.trust.person().map_or(0, |(own, _)| own),
+                    frozen = frozen,
+                    evicted = round.evicted.len();
+                    "own_chain_frozen"
+                );
+            }
             let len = self.trust.log_len();
             if len != self.state.roster_len || redeliver {
                 self.state.roster_len = len;
@@ -1380,6 +1415,65 @@ impl RoundMachine {
         self.round.dropped.extend(waited.dropped);
     }
 
+    /// The relay kept the operation it was given and answered `conflict` (`code`, ADR 0083 section
+    /// 4): it conflicts with what the relay held of its author. What the relay held is taken in as
+    /// from anyone, so that this host holds the proof the relay and every member hold, and the
+    /// relay was given a record it lacked. When that froze this host's person's own chain since the
+    /// exchange began, the device signs nothing more (the trust refuses it) and the exchange ends:
+    /// a round is summed up, and says so ([`Round::conflicted`]); a publication is not given, and
+    /// fails with the relay's answer. `None` when the exchange goes on: the author is another
+    /// device, which this courier carried, or the device's chain was frozen there already.
+    fn answer_conflict(&mut self, code: Code, reason: String) -> Option<Phase> {
+        let Code::Conflict {
+            node,
+            seq,
+            frozen,
+            held,
+            ..
+        } = &code
+        else {
+            return None;
+        };
+        let (node, seq, frozen, given) = (*node, *seq, *frozen, held.len());
+        let mut read = Round::default();
+        for (event, data) in held {
+            let record = Record::Operation {
+                event: event.clone(),
+                data: data.clone(),
+            };
+            take(
+                &self.trust,
+                &mut self.state.parked,
+                &record,
+                false,
+                &mut read,
+            );
+        }
+        self.round.events.append(&mut read.events);
+        self.round.refused.append(&mut read.refused);
+        self.round.pushed += 1;
+        let own = self.trust.person().is_some_and(|(own, _)| own == node);
+        let froze =
+            own && own_frozen(&self.trust).is_some_and(|from| Some(from) != self.frozen_at_start);
+        log::info!(
+            list = list_digest(&self.trust.list()).as_str(),
+            node = node,
+            seq = seq,
+            frozen = frozen,
+            held = given,
+            own = own,
+            ends = froze;
+            "conflict_answered"
+        );
+        if !froze {
+            return None;
+        }
+        Some(match self.mode {
+            Mode::Round { .. } => Phase::Finish,
+            Mode::Publish => self.fail(CourierError::Relay { code, reason }),
+        })
+    }
+
     /// The devices are done: the proof of conflicts the trust holds is given next.
     fn evidence(&self, then: AfterPush) -> Phase {
         Phase::Push(Push {
@@ -1523,6 +1617,26 @@ impl RoundMachine {
                             then,
                         })
                     }
+                    // Kept as proof: the round goes on to the next, unless it froze the device's own
+                    // chain.
+                    Response::Refused {
+                        code: code @ Code::Conflict { .. },
+                        reason,
+                    } => match self.answer_conflict(code, reason) {
+                        Some(end) => end,
+                        None => Phase::Push(Push {
+                            stage: PushStage::Devices(Devices {
+                                theirs,
+                                heads,
+                                device,
+                                ops: ops.map(|ops| Ops {
+                                    list: ops.list,
+                                    next: ops.next + 1,
+                                }),
+                            }),
+                            then,
+                        }),
+                    },
                     // A reader holds operations and may not write them anywhere.
                     Response::Refused {
                         code: Code::Forbidden,
@@ -1559,6 +1673,25 @@ impl RoundMachine {
                         },
                         then,
                     })
+                }
+                // The proof was kept, which is what it was given for.
+                Response::Refused {
+                    code: code @ Code::Conflict { .. },
+                    reason,
+                } => {
+                    if let Some((_, data)) = items.get(next) {
+                        self.state.evidence_sent.insert(data.clone());
+                    }
+                    match self.answer_conflict(code, reason) {
+                        Some(end) => end,
+                        None => Phase::Push(Push {
+                            stage: PushStage::Evidence {
+                                items,
+                                next: next + 1,
+                            },
+                            then,
+                        }),
+                    }
                 }
                 Response::Refused { reason, .. } => {
                     self.round.refused.push(reason);

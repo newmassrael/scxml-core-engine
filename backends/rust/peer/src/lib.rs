@@ -216,6 +216,16 @@ impl Outcome {
         self.round.stalled
     }
 
+    /// The number the device's own chain is frozen from, when this exchange froze it
+    /// ([`Round::conflicted`]): the relay answered `conflict` to an operation of the device's own,
+    /// or a round read one that conflicts with it (ADR 0083 section 4). The device signs nothing
+    /// more, every host that holds both freezes it at the same number, and the host tells its
+    /// person that an administrator has to take the device off and grant a new one. `None` when
+    /// nothing of the device's own froze.
+    pub fn conflicted(&self) -> Option<u64> {
+        self.rounds().find_map(|round| round.conflicted)
+    }
+
     fn rounds(&self) -> impl Iterator<Item = &Round> {
         std::iter::once(&self.round).chain(self.reread.iter())
     }

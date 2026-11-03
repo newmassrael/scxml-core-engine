@@ -372,6 +372,24 @@ operations from its heads as well as from what it gives back makes the device si
 and every host given both holds the conflict as proof, which is the limit ADR 0034 states for a relay
 that withholds.
 
+**A device told `conflict` for its own operation stops at once** (ADR 0083 section 4.2). A courier
+given `conflict` (section 3) for an operation it gave the relay, in step 2 or as proof, takes what the
+relay held (`held`) in as it would from anyone, so that it holds the proof the relay holds, and counts
+the operation as given, since the relay kept it. When the operation is of the host's own person and
+that froze the person's chain since the round began, the device signs nothing more (the trust refuses
+it, as for every frozen chain), the round ends there, reading no feed, and says so: `Round::conflicted`
+is the number the chain is frozen from, `Outcome::conflicted` in the core, and the outcome's
+`conflicted` in the C ABI (`docs/SCE_SHARED_LIST_PEER_ABI.md` section 5). The host tells its person
+that an administrator has to take the device off and grant a new one. A round says the same when it
+froze the person's chain by reading an operation that conflicts with one of the device's (from the
+feed, or reading its own chain back), and goes on to its end. A publication whose push is answered so
+is not given, and fails with the relay's answer. When the operation is another device's, which the
+courier carried, or the person's chain was frozen there already, the round goes on. Each answer is
+one record at `info`, `conflict_answered` (the list's digest, the author, the number, the frozen
+number, how many operations the relay held, whether it is the device's own, and whether the round
+ends), and a round that froze the person's chain one more, `own_chain_frozen` (the list's digest, the
+node, the frozen number, how many operations the machine is to be without).
+
 **A send the device may not sign yet is kept, not refused.** A machine sends whenever its person edits,
 offline as well, and right after its application starts, which for a device that keeps a sealed state
 is a restore. `keep` (and so `Keep` and `Peer::outbound`, through `Trust::keep_sent`) keeps what the

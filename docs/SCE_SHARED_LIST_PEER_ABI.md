@@ -50,7 +50,11 @@ reviewer learns one set of rules:
   the rate (`SCE_PEER_TRANSPORT_RATE_LIMITED`) and give the wait on its own clock
   (`sce_peer_link_set_pause`, `ScePeerPauseFn`, `SCE_PEER_PAUSE_*`); and a host installs the sink of
   what the library logs (`sce_peer_set_log_sink`, `ScePeerLogFn`, `SCE_PEER_LOG_*`, section 14),
-  with a status appended (`SCE_PEER_ERR_SINK_TAKEN`);
+  with a status appended (`SCE_PEER_ERR_SINK_TAKEN`). The outcome's `conflicted` (section 5, ADR
+  0083 section 4) moves no number: it is written only for an exchange that froze the device's own
+  chain, which a lane of version 6 reads by members' names and meets only when a relay of protocol 2
+  answers `conflict` or a round finds the device signed two histories; every other outcome's text is
+  the one it was. ADR 0083 counts it among version 7, which the core's outbox makes;
 - a handle (`ScePeer`, `ScePeerLink`, `ScePeerCancel`) is made and freed by the library and used by
   one thread at a time, but for the two calls section 11 lets any thread make at any time (raising a
   run's cancellation, telling a link the network changed);
@@ -232,6 +236,7 @@ The outcome is a JSON object, read by its members' names:
 | `dropped` | ended | the sends that waited and never will be signed, each `[name, payload text, reason]` (section 4) |
 | `rebuild` | ended | whether the host is to build its machine again and make a resync (an operation was evicted or restored, or a send was dropped) |
 | `stalled` | ended | whether the round stopped before the end of what the relay holds; a later round goes on from there |
+| `conflicted` | an exchange that froze the device's own chain | the number, as text, the device's own chain is frozen from: the relay answered `conflict` to an operation of the device's own (the round ended there), or a round read one that conflicts with it (`docs/SCE_SHARED_LIST_RELAY.md` sections 3 and 6). The device signs nothing more, every host that holds both freezes it at the same number, and the host tells its person that an administrator has to take the device off and grant a new one; the member is not written for any other exchange |
 | `reread` | ended | whether the group's device needed a second read from the start, whose events are in `events` after the round's |
 | `steps` | ended | what the group's device did with what was read, each `{"step": "joined" or "applied", "epoch": text}`, `{"step": "removed"}` or `{"step": "refused", "reason": text}` |
 | `owed` | ended | how many commits, Welcomes and keys given of the administrator's acts the relay is still owed once the exchange ended (section 7); one the relay did not take is among `refused` |

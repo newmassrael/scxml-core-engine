@@ -455,6 +455,13 @@ fn outcome_text(outcome: &Result<Outcome, CourierError>) -> String {
                     "expires_at_ms": token.expires_at_ms.to_string(),
                 });
             }
+            // Written only for an exchange that froze the device's own chain, so that the text of
+            // every other outcome is the one it was: a lane reads it by its name, and meets it only
+            // from a relay of protocol 2, which answers `conflict`, or a feed that shows the device
+            // signed two histories.
+            if let Some(frozen) = outcome.conflicted() {
+                value["conflicted"] = json!(frozen.to_string());
+            }
             value
         }
         Err(CourierError::Link(reason)) => {
@@ -2044,4 +2051,34 @@ pub unsafe extern "C" fn sce_peer_set_log_sink(
         log::set_max_level(level);
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An outcome names `conflicted`, the number as text, only for an exchange that froze the
+    /// device's own chain; the text of every other outcome is the one a lane read before it, and
+    /// nothing else of it moves when it is written.
+    #[test]
+    fn an_outcome_names_conflicted_only_when_the_exchange_froze_the_devices_own_chain() {
+        let text = |conflicted: Option<u64>| -> Value {
+            let outcome = Outcome {
+                round: Round {
+                    conflicted,
+                    ..Round::default()
+                },
+                reread: None,
+                steps: Vec::new(),
+                owed: 0,
+                token: None,
+            };
+            serde_json::from_str(&outcome_text(&Ok(outcome))).unwrap()
+        };
+        assert!(text(None).get("conflicted").is_none(), "{}", text(None));
+        assert_eq!(text(Some(3))["conflicted"], json!("3"));
+        let mut without = text(Some(3));
+        without.as_object_mut().unwrap().remove("conflicted");
+        assert_eq!(without, text(None));
+    }
 }
