@@ -43,11 +43,18 @@ public struct PayloadRefusal: Error, Equatable, CustomStringConvertible {
 /// (`Json.swift`), so a whole number stays exact until it is read at the width its
 /// schema declares. A nested value this document's schema does not name is kept, so
 /// a payload carrying more than the schema does still reads.
+///
+/// The fields of a record value are read the same way, at the record's path
+/// (`PayloadValue.record`).
 public struct PayloadFields {
     private var fields: [(key: String, value: JSONValue)]
 
-    private init(fields: [(key: String, value: JSONValue)]) {
+    /// The path of the record these are the fields of: empty for the payload.
+    private let prefix: String
+
+    fileprivate init(fields: [(key: String, value: JSONValue)], prefix: String = "") {
         self.fields = fields
+        self.prefix = prefix
     }
 
     /// Reads an event's data as the fields it names.
@@ -89,16 +96,35 @@ public struct PayloadFields {
     /// delivery does carry is read as it came, and held to its type as any other
     /// value is.
     public static func decode(_ data: String, defaults: String) throws -> PayloadFields {
-        var decoded = trimmingJSONWhitespace(data).isEmpty ? PayloadFields(fields: []) : try decode(data)
+        let decoded = trimmingJSONWhitespace(data).isEmpty ? PayloadFields(fields: []) : try decode(data)
+        return try decoded.withDefaults(defaults)
+    }
+
+    /// These fields, and the defaults of the fields a later revision of the schema
+    /// added where the value lacks them.
+    fileprivate func withDefaults(_ defaults: String) throws -> PayloadFields {
         guard case .object(let fallback)? = try? parseJSON(trimmingJSONWhitespace(defaults)) else {
             throw PayloadRefusal(
                 "the schema's defaults are not a JSON object, which the generator never writes"
             )
         }
-        for (name, value) in fallback where !decoded.fields.contains(where: { $0.key.utf8.elementsEqual(name.utf8) }) {
-            decoded.fields.append((key: name, value: value))
+        var merged = self
+        for (name, value) in fallback where !merged.fields.contains(where: { $0.key.utf8.elementsEqual(name.utf8) }) {
+            merged.fields.append((key: name, value: value))
         }
-        return decoded
+        return merged
+    }
+
+    /// The value of the field `name`, at its path: the delivered one, else the
+    /// default a later revision of the schema gave it, else a refusal naming the
+    /// path. A member the schema does not declare is never asked for, so it is
+    /// stepped over.
+    public func field(_ name: String) throws -> PayloadValue {
+        let path = joinPath(prefix, name)
+        guard let found = fields.first(where: { $0.key.utf8.elementsEqual(name.utf8) }) else {
+            throw PayloadRefusal("the event's data has no '\(path)'")
+        }
+        return PayloadValue(value: found.value, path: path)
     }
 
     /// A field of `optional<T>` (docs/adr/0055, section 4): absent where the
@@ -111,55 +137,134 @@ public struct PayloadFields {
     /// `read` is the reader of a present value, handed these fields:
     /// `try fields.optional("due") { try $0.signed64("due") }`.
     public func optional<T>(_ name: String, read: (PayloadFields) throws -> T) throws -> T? {
-        if case .null = try find(name) {
+        if try field(name).isNull {
             return nil
         }
         return try read(self)
     }
 
-    private func find(_ name: String) throws -> JSONValue {
-        guard let found = fields.first(where: { $0.key.utf8.elementsEqual(name.utf8) }) else {
-            throw PayloadRefusal("the event's data has no '\(name)'")
-        }
-        return found.value
-    }
-
-    /// A whole-number field's written spelling.
-    ///
-    /// A truth value is not a number here. JSON spells both, and a schema that
-    /// declared `uint32` and received `true` has been handed something its own type
-    /// says cannot occur.
-    private func number(_ name: String) throws -> String {
-        guard case .number(let text) = try find(name) else {
-            throw PayloadRefusal("'\(name)' is not a number")
-        }
-        return text
-    }
-
-    /// A signed whole number at the width its schema declares.
-    ///
-    /// A value the width cannot hold is refused and not wrapped: silently
-    /// truncating is how a guard on a boundary answers for a value the document
-    /// never received.
+    /// A signed whole number at the width its schema declares (`PayloadValue.signed`).
     public func signed<T: FixedWidthInteger & SignedInteger>(_ name: String) throws -> T {
-        let text = try number(name)
-        guard let whole = Int64(text) else {
-            throw PayloadRefusal("'\(name)' is not a whole number (\(text))")
-        }
-        guard let narrowed = T(exactly: whole) else {
-            throw PayloadRefusal("'\(name)' does not fit the width its schema declares (\(text))")
-        }
-        return narrowed
+        try field(name).signed()
     }
 
     /// An unsigned whole number at the width its schema declares.
     public func unsigned<T: FixedWidthInteger & UnsignedInteger>(_ name: String) throws -> T {
-        let text = try number(name)
-        guard let whole = UInt64(text) else {
-            throw PayloadRefusal("'\(name)' is not a whole number at or above zero (\(text))")
+        try field(name).unsigned()
+    }
+
+    /// A 64-bit signed field (`PayloadValue.signed64`).
+    public func signed64(_ name: String) throws -> Int64 {
+        try field(name).signed64()
+    }
+
+    /// A 64-bit unsigned field (`PayloadValue.unsigned64`).
+    public func unsigned64(_ name: String) throws -> UInt64 {
+        try field(name).unsigned64()
+    }
+
+    /// A 32-bit fractional field (`PayloadValue.float32`).
+    public func float32(_ name: String) throws -> Float {
+        try field(name).float32()
+    }
+
+    /// A 64-bit fractional field.
+    public func float64(_ name: String) throws -> Double {
+        try field(name).float64()
+    }
+
+    /// A truth-value field.
+    public func truth(_ name: String) throws -> Bool {
+        try field(name).truth()
+    }
+
+    /// A text field, as the text it carries; `PayloadValue.text(bound:)` holds it to
+    /// its bound.
+    public func text(_ name: String) throws -> String {
+        try field(name).name()
+    }
+
+    /// A byte-string field, at the capacity its schema declares when it declares
+    /// one (`PayloadValue.bytes(bound:)`).
+    public func bytes(_ name: String, capacity: Int? = nil) throws -> [UInt8] {
+        try field(name).bytes(bound: capacity ?? Int.max)
+    }
+}
+
+/// One value of an event's data, at the path through every depth that names it: a
+/// field's name, then each index and field name below it, joined by `/`
+/// (docs/adr/0086, section 4). A field may be of any type of the language, and
+/// three combinators walk the constructors that hold other values, each calling the
+/// reader of its part: `list(bound:_:)`, `optional(_:)` and `record(defaults:_:)`.
+/// A value outside its type is refused before anything of it is kept, and the
+/// refusal names the path: `'items/2/tags/0' is 9 bytes, past the 8 its type
+/// declares`.
+public struct PayloadValue {
+    fileprivate let value: JSONValue
+
+    /// The path that names this value.
+    public let path: String
+
+    fileprivate init(value: JSONValue, path: String) {
+        self.value = value
+        self.path = path
+    }
+
+    /// Whether the value is `null`, the one spelling of an absent value.
+    public var isNull: Bool {
+        if case .null = value {
+            return true
+        }
+        return false
+    }
+
+    /// A refusal of this value, saying `what` of it after its path:
+    /// `'items/1/level' (x) is not a variant of Level`.
+    public func refuse(_ what: String) -> PayloadRefusal {
+        PayloadRefusal("'\(path)' \(what)")
+    }
+
+    /// The refusal of `null` where the type is not optional, or `otherwise`.
+    private func wrongKind(_ otherwise: String) -> PayloadRefusal {
+        isNull ? refuse("is null, and its type is not optional") : refuse(otherwise)
+    }
+
+    /// A whole-number value's written spelling.
+    ///
+    /// A truth value is not a number here. JSON spells both, and a schema that
+    /// declared `uint32` and received `true` has been handed something its own type
+    /// says cannot occur.
+    private func number() throws -> String {
+        guard case .number(let text) = value else {
+            throw wrongKind("is not a number")
+        }
+        return text
+    }
+
+    /// A signed whole number at the width its type declares.
+    ///
+    /// A value the width cannot hold is refused and not wrapped: silently
+    /// truncating is how a guard on a boundary answers for a value the document
+    /// never received.
+    public func signed<T: FixedWidthInteger & SignedInteger>() throws -> T {
+        let text = try number()
+        guard let whole = Int64(text) else {
+            throw refuse("is not a whole number (\(text))")
         }
         guard let narrowed = T(exactly: whole) else {
-            throw PayloadRefusal("'\(name)' does not fit the width its schema declares (\(text))")
+            throw refuse("does not fit the width its schema declares (\(text))")
+        }
+        return narrowed
+    }
+
+    /// An unsigned whole number at the width its type declares.
+    public func unsigned<T: FixedWidthInteger & UnsignedInteger>() throws -> T {
+        let text = try number()
+        guard let whole = UInt64(text) else {
+            throw refuse("is not a whole number at or above zero (\(text))")
+        }
+        guard let narrowed = T(exactly: whole) else {
+            throw refuse("does not fit the width its schema declares (\(text))")
         }
         return narrowed
     }
@@ -171,117 +276,231 @@ public struct PayloadFields {
     /// through a double carries one past 2^53 with its low bits wrong and no error;
     /// a number past that is refused here on every engine, so the same payload
     /// gives the same field wherever it is read.
-    private func wide(_ name: String, signed: Bool) throws -> String {
-        switch try find(name) {
+    private func wide(signed: Bool) throws -> String {
+        switch value {
         case .text(let text) where isDecimal(text, signed: signed):
             return text
         case .text(let text):
-            throw PayloadRefusal("'\(name)' is not a whole number written as digits (\(text))")
+            throw refuse("is not a whole number written as digits (\(text))")
         case .number(let text):
             guard let whole = Int128(text) else {
-                throw PayloadRefusal("'\(name)' is not a whole number (\(text))")
+                throw refuse("is not a whole number (\(text))")
             }
             if whole.magnitude <= exactInADouble {
                 return text
             }
-            throw PayloadRefusal(
-                "'\(name)' is a number past 2^53 - 1, which is not exact everywhere (\(text)); "
+            throw refuse(
+                "is a number past 2^53 - 1, which is not exact everywhere (\(text)); "
                     + "a 64-bit integer that large is written as a text of its digits"
             )
         default:
-            throw PayloadRefusal("'\(name)' is not a number")
+            throw wrongKind("is not a number")
         }
     }
 
-    /// A 64-bit signed field: the canonical text of its digits, or a JSON number no
+    /// A 64-bit signed value: the canonical text of its digits, or a JSON number no
     /// larger than 2^53 - 1 in magnitude.
-    public func signed64(_ name: String) throws -> Int64 {
-        let text = try wide(name, signed: true)
-        guard let value = Int64(text) else {
-            throw PayloadRefusal("'\(name)' does not fit the width its schema declares (\(text))")
+    public func signed64() throws -> Int64 {
+        let text = try wide(signed: true)
+        guard let whole = Int64(text) else {
+            throw refuse("does not fit the width its schema declares (\(text))")
         }
-        return value
+        return whole
     }
 
-    /// A 64-bit unsigned field: the canonical text of its digits, or a JSON number
+    /// A 64-bit unsigned value: the canonical text of its digits, or a JSON number
     /// no larger than 2^53 - 1.
-    public func unsigned64(_ name: String) throws -> UInt64 {
-        let text = try wide(name, signed: false)
-        guard let value = UInt64(text) else {
-            throw PayloadRefusal("'\(name)' does not fit the width its schema declares (\(text))")
+    public func unsigned64() throws -> UInt64 {
+        let text = try wide(signed: false)
+        guard let whole = UInt64(text) else {
+            throw refuse("does not fit the width its schema declares (\(text))")
         }
-        return value
+        return whole
     }
 
-    /// A 32-bit fractional field: the binary32 nearest the number the payload
+    /// A 32-bit fractional value: the binary32 nearest the number the payload
     /// carries.
     ///
     /// A JSON number is a double wherever it is read, so the single is the one
     /// nearest that double (every engine rounds once, from the same double) and a
-    /// number past the largest single does not fit the field, as a whole number past
-    /// its width does not. Parsing the text to a `Float` directly would round from
-    /// the text instead, and give infinity for `1e39`.
-    public func float32(_ name: String) throws -> Float {
-        let text = try number(name)
+    /// number past the largest single does not fit, as a whole number past its width
+    /// does not. Parsing the text to a `Float` directly would round from the text
+    /// instead, and give infinity for `1e39`.
+    public func float32() throws -> Float {
+        let text = try number()
         guard let wide = Double(text) else {
-            throw PayloadRefusal("'\(name)' is not a number (\(text))")
+            throw refuse("is not a number (\(text))")
         }
         if abs(wide) > Double(Float.greatestFiniteMagnitude) {
-            throw PayloadRefusal("'\(name)' does not fit the width its schema declares (\(text))")
+            throw refuse("does not fit the width its schema declares (\(text))")
         }
         return Float(wide)
     }
 
-    /// A 64-bit fractional field.
-    public func float64(_ name: String) throws -> Double {
-        let text = try number(name)
-        guard let value = Double(text) else {
-            throw PayloadRefusal("'\(name)' is not a number (\(text))")
+    /// A 64-bit fractional value.
+    public func float64() throws -> Double {
+        let text = try number()
+        guard let real = Double(text) else {
+            throw refuse("is not a number (\(text))")
         }
-        return value
+        return real
     }
 
-    /// A truth-value field.
-    public func truth(_ name: String) throws -> Bool {
-        guard case .bool(let value) = try find(name) else {
-            throw PayloadRefusal("'\(name)' is not a truth value")
+    /// A truth value.
+    public func truth() throws -> Bool {
+        guard case .bool(let truth) = value else {
+            throw wrongKind("is not a truth value")
         }
-        return value
+        return truth
     }
 
-    /// A text field.
-    public func text(_ name: String) throws -> String {
-        guard case .text(let value) = try find(name) else {
-            throw PayloadRefusal("'\(name)' is not a text")
+    /// The text the value carries, held to no bound: what an enum's variant is named
+    /// by, which its reader matches against the names its enum declares.
+    public func name() throws -> String {
+        guard case .text(let text) = value else {
+            throw wrongKind("is not a text")
         }
-        return value
+        return text
     }
 
-    /// A byte-string field, at the capacity its schema declares when it declares
-    /// one.
+    /// A text of at most `bound` UTF-8 bytes (docs/adr/0086, section 4.4): one past
+    /// the bound is refused, at whatever depth it stands, and never cut.
+    public func text(bound: Int) throws -> String {
+        let text = try name()
+        let size = text.utf8.count
+        if size > bound {
+            throw pastBytes(size, bound)
+        }
+        return text
+    }
+
+    /// A byte string of at most `bound` bytes.
     ///
     /// JSON has no byte string, so the wire carries the byte-exact Latin-1 text the
     /// inject seam writes, and this reads it back the same way: every one of the 256
     /// values is one character and back. Printable ASCII, what a bytes guard
     /// compares, is the same bytes under either reading.
-    public func bytes(_ name: String, capacity: Int? = nil) throws -> [UInt8] {
-        guard case .text(let text) = try find(name) else {
-            throw PayloadRefusal("'\(name)' is not a byte string")
+    public func bytes(bound: Int) throws -> [UInt8] {
+        guard case .text(let text) = value else {
+            throw wrongKind("is not a byte string")
         }
         var out: [UInt8] = []
         out.reserveCapacity(text.utf8.count)
         for scalar in text.unicodeScalars {
             if scalar.value > 0xFF {
-                throw PayloadRefusal(
-                    "'\(name)' carries a character above U+00FF, which no single byte spells"
-                )
+                throw refuse("carries a character above U+00FF, which no single byte spells")
             }
             out.append(UInt8(scalar.value))
         }
-        if let capacity, out.count > capacity {
-            throw PayloadRefusal("'\(name)' is \(out.count) bytes, past the \(capacity) its schema declares")
+        if out.count > bound {
+            throw pastBytes(out.count, bound)
         }
         return out
+    }
+
+    private func pastBytes(_ held: Int, _ bound: Int) -> PayloadRefusal {
+        refuse("is \(held) bytes, past the \(bound) its type declares")
+    }
+
+    /// A value of `optional<T>` (docs/adr/0055): absent where the value is `null`,
+    /// and otherwise what `read` reads of it, held to `T`.
+    public func optional<T>(_ read: (PayloadValue) throws -> T) throws -> T? {
+        if isNull {
+            return nil
+        }
+        return try read(self)
+    }
+
+    /// A value of `list<T>[bound]`: an array of at most `bound` elements, each read
+    /// by `read` at the path of its index, in order.
+    ///
+    /// The bound is held before any element is read: an array longer than `bound`
+    /// is refused whole, and no element of it is decoded (ADR 0077, section 2).
+    public func list<T>(bound: Int, _ read: (PayloadValue) throws -> T) throws -> [T] {
+        guard case .array(let items) = value else {
+            throw wrongKind("is not a list")
+        }
+        if items.count > bound {
+            throw refuse("holds \(items.count) elements, past the \(bound) its type declares")
+        }
+        var out: [T] = []
+        out.reserveCapacity(items.count)
+        for (index, item) in items.enumerated() {
+            out.append(try read(PayloadValue(value: item, path: joinPath(path, String(index)))))
+        }
+        return out
+    }
+
+    /// A value of a record type: an object whose fields `read` reads through the
+    /// `PayloadFields` it is handed. `defaults`, for a record whose schema a later
+    /// revision added fields to, is the JSON object of their defaults, which the
+    /// generator spells from that schema, and a field the value lacks is read out of
+    /// it (docs/adr/0086, section 10.3).
+    public func record<T>(defaults: String? = nil, _ read: (PayloadFields) throws -> T) throws -> T {
+        guard case .object(let members) = value else {
+            throw wrongKind("is not a record")
+        }
+        var fields = PayloadFields(fields: members, prefix: path)
+        if let defaults {
+            fields = try fields.withDefaults(defaults)
+        }
+        return try read(fields)
+    }
+}
+
+/// `segment` below `prefix`, as a JSON Pointer's reference tokens are joined.
+private func joinPath(_ prefix: String, _ segment: String) -> String {
+    prefix.isEmpty ? segment : prefix + "/" + segment
+}
+
+/// A value a host built is past a bound its type declares: thrown by the check a
+/// generated raise runs before it encodes the event (docs/adr/0086, section 5.4).
+public struct BoundExceeded: Error, Equatable, CustomStringConvertible {
+    /// What is past which bound, at the path that names it.
+    public var reason: String
+
+    public init(_ reason: String) {
+        self.reason = reason
+    }
+
+    public var description: String {
+        reason
+    }
+}
+
+/// Holds a text a host built to the bound its type declares, in UTF-8 bytes. Swift has
+/// no checked constructor on a plain struct, so a generated raise runs the check its
+/// composition generates, one call per constructor, and refuses the event whole.
+public func checkText(_ path: String, _ value: String, bound: Int) throws {
+    let size = value.utf8.count
+    if size > bound {
+        throw BoundExceeded("'\(path)' is \(size) bytes, past the \(bound) its type declares")
+    }
+}
+
+/// Holds a byte string a host built to its bound (see `checkText`).
+public func checkBytes(_ path: String, _ value: [UInt8], bound: Int) throws {
+    if value.count > bound {
+        throw BoundExceeded("'\(path)' is \(value.count) bytes, past the \(bound) its type declares")
+    }
+}
+
+/// Holds a list a host built to its bound, and each element to its own type through
+/// `each`, at the path of its index (see `checkText`).
+public func checkList<T>(_ path: String, _ items: [T], bound: Int, _ each: (String, T) throws -> Void) throws {
+    if items.count > bound {
+        throw BoundExceeded("'\(path)' holds \(items.count) elements, past the \(bound) its type declares")
+    }
+    for (index, item) in items.enumerated() {
+        try each(joinPath(path, String(index)), item)
+    }
+}
+
+/// Holds an optional value a host built to its type through `present`, where it is
+/// present (see `checkText`).
+public func checkOptional<T>(_ path: String, _ value: T?, _ present: (String, T) throws -> Void) throws {
+    if let value {
+        try present(path, value)
     }
 }
 
@@ -498,6 +717,21 @@ public func payloadJSON(_ fields: [PayloadPair]) -> String {
     }
     out += "}"
     return out
+}
+
+/// The JSON spelling of one list (docs/adr/0086, section 3.1): an array of what
+/// `write` spells each element as, in the list's order. The empty list is `[]`.
+public func listJSON<T>(_ items: [T], _ write: (T) -> String) -> String {
+    "[" + items.map(write).joined(separator: ",") + "]"
+}
+
+/// The JSON spelling of one record: each pair is a field's id and its value, and the
+/// object writes them ascending by the id's UTF-8 bytes, whatever order they are
+/// given in (ARCHITECTURE.md, "JSON Object Key Order", at every depth). A value
+/// that is itself a list or a record is a `PayloadPair.json` of its writer's text.
+public func recordJSON(_ members: [PayloadPair]) -> String {
+    let sorted = members.sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
+    return "{" + sorted.map { quoteJSON($0.name) + ":" + $0.json }.joined(separator: ",") + "}"
 }
 
 /// The text of the digits a 64-bit signed integer crosses as.
