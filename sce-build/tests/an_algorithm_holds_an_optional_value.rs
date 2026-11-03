@@ -108,8 +108,12 @@ fn every_backend() -> Vec<(&'static str, Vec<&'static str>)> {
 }
 
 /// An algorithm of no import whose one parameter, return and local are declared
-/// `param`, `ret` and `local`, returning `null`.
+/// `param`, `ret` and `local`, returning `null`. The return and the local hold
+/// their value, so a text or byte string in them states its bound (docs/adr/0086,
+/// section 1.4); the parameter is a view of its argument and states none.
 fn slots(param: &str, ret: &str, local: &str) -> String {
+    let ret = held(ret);
+    let local = held(local);
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -125,6 +129,14 @@ fn slots(param: &str, ret: &str, local: &str) -> String {
 </scxml>
 "#
     )
+}
+
+/// `written` as a slot that holds its value declares it: every text and byte
+/// string inside an optional bounded, at 16 bytes.
+fn held(written: &str) -> String {
+    written
+        .replace("string&gt;", "string[16]&gt;")
+        .replace("bytes&gt;", "bytes[16]&gt;")
 }
 
 // ── The slots ────────────────────────────────────────────────────────────

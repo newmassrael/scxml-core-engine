@@ -973,10 +973,10 @@ fn rust_holds_an_optional_text_in_an_algorithms_slots() {
        sce:kind="algorithm" name="label_of" version="1.0">
   <sce:signature>
     <sce:param name="label" type="optional&lt;string&gt;"/>
-    <sce:return type="optional&lt;string&gt;"/>
+    <sce:return type="optional&lt;string[16]&gt;"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="kept" type="optional&lt;string&gt;" init="null"/>
+    <sce:var name="kept" type="optional&lt;string[16]&gt;" init="null"/>
     <sce:if cond="label !== null">
       <sce:assign target="kept" expr="label"/>
     </sce:if>
@@ -1042,10 +1042,10 @@ fn rust_crosses_an_adapter_with_an_optional_text_and_an_optional_enum_field() {
   <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
   <sce:signature>
     <sce:param name="items" type="list&lt;record:Due&gt;"/>
-    <sce:return type="optional&lt;string&gt;"/>
+    <sce:return type="optional&lt;string[16]&gt;"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="found" type="optional&lt;string&gt;" init="null"/>
+    <sce:var name="found" type="optional&lt;string[16]&gt;" init="null"/>
     <sce:foreach item="d" in="items">
       <sce:if cond="found === null &amp;&amp; d.title !== null">
         <sce:assign target="found" expr="d.title"/>

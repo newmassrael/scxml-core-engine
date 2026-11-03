@@ -4727,8 +4727,11 @@ prints the document so rewritten. A bracket and an attribute that bound the same
 type are refused as `validation/incompatible-attributes`, even when the numbers
 agree. A text, byte string or list with no bound is refused at the place in the
 type that lacks it, an event schema's field included; so is a bracket on a type
-with no length and an optional inside an optional. A parameter writes no bound: it
-is a view of its argument and holds the argument's. A composition a position does
+with no length and an optional inside an optional. An algorithm's return and
+local hold their value, so a text or byte string in either states its bound
+(`string[N]`, `optional<bytes[N]>`) or is refused at the type. A parameter is a
+view of its argument, of any bound, and holds the argument's, so its outermost
+type writes none; every bound inside it is stated. A composition a position does
 not lower yet (a list of texts, a list in an event schema's field, an optional
 list) is refused there by name as `generate/unsupported-feature`. The paragraphs
 below name the attribute spelling where they were written with it; the bracket

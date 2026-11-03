@@ -229,6 +229,14 @@ fn a_text_written_through_the_present_record_is_held_to_its_bound() {
     );
 }
 
+/// `written` as a slot that holds its value declares it: every text and byte
+/// string inside an optional bounded, at 16 bytes.
+fn held(written: &str) -> String {
+    written
+        .replace("string&gt;", "string[16]&gt;")
+        .replace("bytes&gt;", "bytes[16]&gt;")
+}
+
 /// An algorithm of no body to speak of whose parameter, return and local are declared
 /// `param`, `ret` and `local`, importing what they name.
 fn slots(param: &str, ret: &str, local: &str) -> String {
@@ -249,6 +257,11 @@ fn slots(param: &str, ret: &str, local: &str) -> String {
             "  <sce:import kind=\"event-schema\" src=\"schema_item_pick.scxml\" as=\"Item\"/>\n",
         );
     }
+    // The return and the local hold their value, so a text or byte string in them
+    // states its bound (docs/adr/0086, section 1.4); the parameter is a view of its
+    // argument and states none.
+    let ret = held(ret);
+    let local = held(local);
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -363,7 +376,7 @@ fn due_retitle() -> String {
   <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
   <sce:signature>
     <sce:param name="d" type="record:Due"/>
-    <sce:return type="optional&lt;string&gt;"/>
+    <sce:return type="optional&lt;string[16]&gt;"/>
   </sce:signature>
   <sce:body>
     <sce:if cond="d.status !== null">

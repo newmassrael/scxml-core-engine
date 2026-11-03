@@ -8430,11 +8430,18 @@ fn parse_algorithm_signature(
                     )
                 })?;
                 let element = format!("<sce:param name=\"{name}\">");
-                let (sce_type, bound) =
-                    read_algorithm_slot_type(&child, doc_name, &element, type_str, None)?;
-                // A parameter is a view of its argument and holds the
-                // argument's bound (SCE_FORGE.md §4.12): a bound written on it
-                // would be read by nothing (docs/adr/0086, section 1.2).
+                let (sce_type, bound) = read_algorithm_slot_type(
+                    &child,
+                    doc_name,
+                    &element,
+                    type_str,
+                    AlgorithmSlot::Parameter,
+                )?;
+                // The rule of a parameter: it is a view of its argument, of any
+                // bound, and holds the argument's (SCE_FORGE.md §4.12), so its
+                // outermost type states none, and one written there would be read
+                // by nothing (docs/adr/0086, section 1.2). Every bound inside it
+                // is stated, as in every type.
                 if let Some(bound) = bound {
                     return Err(located(
                         &child,
@@ -8482,7 +8489,9 @@ fn parse_algorithm_signature(
                         doc_name,
                         "<sce:return>",
                         type_str,
-                        Some("returns-max-size"),
+                        AlgorithmSlot::Held {
+                            legacy: "returns-max-size",
+                        },
                     )?;
                     return_type = Some(sce_type);
                     return_bound = bound;
@@ -8534,29 +8543,15 @@ fn parse_algorithm_signature(
                             },
                         ));
                     }
-                    (Some(_), Some(bound)) => {
+                    // A buffer's bound, or a text's (docs/adr/0086, section 1.4),
+                    // which the reader has already required of a held text.
+                    (_, Some(bound)) => {
                         returns_max_size = Some(bound.max);
                         returns_limit = bound.limit;
                     }
                     (None, None) if child.attribute("returns-max-size").is_none() => {}
-                    // A bracket on a return that is no buffer: nothing holds it.
-                    (None, Some(bound)) if child.attribute("returns-max-size").is_none() => {
-                        let type_str = child.attribute("type").unwrap_or_default();
-                        return Err(located(
-                            &child,
-                            doc_name,
-                            ValidationError::AttributeRuleViolated {
-                                element: "<sce:return>".into(),
-                                attr: "type".into(),
-                                value: type_as_written(&child, "type", type_str),
-                                rule: format!(
-                                    "no bound — {bound} bounds a bytes or list<T> return only, \
-                                     and this return is none"
-                                ),
-                            },
-                        ));
-                    }
-                    (None, _) => {
+                    // A bound beside a return with no length: nothing holds it.
+                    (None, None) => {
                         let stray = child.attribute("returns-max-size").unwrap_or_default();
                         return Err(located(
                             &child,
@@ -8568,8 +8563,8 @@ fn parse_algorithm_signature(
                                 },
                                 attr: "returns-max-size".into(),
                                 value: stray.into(),
-                                rule: "omitted — returns-max-size bounds a bytes or list<T> \
-                                       return only"
+                                rule: "omitted — returns-max-size bounds a bytes, string or \
+                                       list<T> return only"
                                     .into(),
                             },
                         ));
@@ -9029,7 +9024,7 @@ fn parse_algorithm_stmt(
                 doc_name,
                 &format!("<sce:var name=\"{name}\">"),
                 &type_str,
-                Some("capacity"),
+                AlgorithmSlot::Held { legacy: "capacity" },
             )?;
             // A record local is built whole from one `<sce:set>` per schema
             // field, or received whole from a call's `init` (SCE_FORGE.md
@@ -9142,23 +9137,10 @@ fn parse_algorithm_stmt(
                 };
                 (None, Some(bound))
             } else {
-                // A bracket on a local that is no buffer: nothing holds it.
-                if let (Some(bound), None) = (&bound, node.attribute("capacity")) {
-                    return Err(located(
-                        node,
-                        doc_name,
-                        ValidationError::AttributeRuleViolated {
-                            element: format!("<sce:var name=\"{name}\">"),
-                            attr: "type".into(),
-                            value: type_as_written(node, "type", &type_str),
-                            rule: format!(
-                                "no bound — {bound} bounds a bytes or list<T> buffer only, and \
-                                 this local is none"
-                            ),
-                        },
-                    ));
-                }
-                if let Some(stray) = node.attribute("capacity") {
+                // A text's bound (docs/adr/0086, section 1.4), which the reader
+                // has already required of a held text; a `capacity` beside a
+                // local with no length bounds nothing.
+                if let (None, Some(stray)) = (&bound, node.attribute("capacity")) {
                     return Err(located(
                         node,
                         doc_name,
@@ -9166,15 +9148,15 @@ fn parse_algorithm_stmt(
                             element: format!("<sce:var name=\"{name}\">"),
                             attr: "capacity".into(),
                             value: stray.into(),
-                            rule: "omitted — capacity is only valid on a type=\"bytes\" or \
-                                   type=\"list<T>\" buffer"
+                            rule: "omitted — capacity is only valid on a type=\"bytes\", \
+                                   type=\"string\" or type=\"list<T>\" local"
                                 .into(),
                         },
                     ));
                 }
                 (
                     Some(require_attr(node, "init", "<sce:var>", doc_name)?),
-                    None,
+                    bound,
                 )
             };
             Ok(AlgorithmStmt::Var {
@@ -12497,18 +12479,37 @@ pub(crate) fn read_static_variable_type(
     })
 }
 
+/// Which of an algorithm's slots a type is read for (docs/adr/0086, section 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AlgorithmSlot {
+    /// A parameter: a view of its argument, which holds the argument's bound and
+    /// so states none of its own at the outermost type; every bound inside it is
+    /// stated.
+    Parameter,
+    /// A return or a local, which holds its value: every text, byte string and
+    /// list states its bound, the outermost in its bracket or in `legacy`, the
+    /// attribute that stated it before the type held bounds.
+    Held { legacy: &'static str },
+}
+
 /// Read an algorithm's parameter, return or local `type=` through the one
-/// type grammar (docs/adr/0086, section 1): its type and its outermost bound,
-/// the bracket or `legacy`, the attribute that stated it before. Every bound
-/// inside the type is stated; the outermost one is the position's to require.
-/// A composition no algorithm lowers yet is refused by name.
+/// type grammar (docs/adr/0086, section 1): its type and its outermost bound.
+/// Every bound inside the type is stated. A held slot's outermost text or byte
+/// string that states no bound is refused at the type, naming it (section 1.4);
+/// a buffer's missing bound is the position's to refuse, naming the attribute
+/// its rule has always named. A composition no algorithm lowers yet is refused
+/// by name.
 fn read_algorithm_slot_type(
     node: &roxmltree::Node,
     doc_name: &str,
     element: &str,
     text: &str,
-    legacy: Option<&str>,
+    slot: AlgorithmSlot,
 ) -> Result<(AlgorithmValueType, Option<Bound>), Located<ForgeError>> {
+    let legacy = match slot {
+        AlgorithmSlot::Parameter => None,
+        AlgorithmSlot::Held { legacy } => Some(legacy),
+    };
     let written = read_written_type(
         node,
         doc_name,
@@ -12540,9 +12541,27 @@ fn read_algorithm_slot_type(
             node, doc_name, element, "type", text, &refusal,
         ));
     }
-    written.as_algorithm_type().map_err(|composition| {
+    let (sce_type, bound) = written.as_algorithm_type().map_err(|composition| {
         composition_refusal(node, doc_name, element, "an algorithm", &composition)
-    })
+    })?;
+    // A held text or byte string has a length, and the build sizes the value
+    // held by it: one that states no bound is no type of the language. A buffer
+    // (`bytes`, `list<T>`) is the exception only in the code its refusal carries.
+    if let (AlgorithmSlot::Held { .. }, None, false) = (slot, &bound, sce_type.is_append_buffer()) {
+        if let Some(outer) = written.outermost_bounded() {
+            return Err(type_rule_refusal(
+                node,
+                doc_name,
+                element,
+                "type",
+                text,
+                &TypeRefusal::Unbounded {
+                    place: outer.to_string(),
+                },
+            ));
+        }
+    }
+    Ok((sce_type, bound))
 }
 
 /// `node`'s unprefixed attribute `attr`, whose decoded value is `decoded`,

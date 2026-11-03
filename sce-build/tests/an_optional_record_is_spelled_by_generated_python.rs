@@ -236,6 +236,12 @@ fn every_optional_element_an_algorithm_holds_is_spelled_in_optional_of_its_type(
             r#"  <sce:import kind="event-schema" src="schema_item_pick.scxml" as="Item"/>"#,
         ),
     ] {
+        // The return and the local hold their value, so a text or byte string in
+        // them states its bound (docs/adr/0086, section 1.4); the parameter is a
+        // view of its argument and states none.
+        let kept = written
+            .replace("string&gt;", "string[16]&gt;")
+            .replace("bytes&gt;", "bytes[16]&gt;");
         let text = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -243,10 +249,10 @@ fn every_optional_element_an_algorithm_holds_is_spelled_in_optional_of_its_type(
 {imports}
   <sce:signature>
     <sce:param name="given" type="{written}"/>
-    <sce:return type="{written}"/>
+    <sce:return type="{kept}"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="held" type="{written}" init="null"/>
+    <sce:var name="held" type="{kept}" init="null"/>
     <sce:if cond="given !== null">
       <sce:return expr="given"/>
     </sce:if>

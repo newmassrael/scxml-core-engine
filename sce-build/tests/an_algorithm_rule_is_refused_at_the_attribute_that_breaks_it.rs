@@ -490,7 +490,7 @@ const RECORD_TEXT_AS_VALUE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     <sce:return type="uint8"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="copy" type="string"
+    <sce:var name="copy" type="string[8]"
              init="t.label"/>
     <sce:return expr="0"/>
   </sce:body>

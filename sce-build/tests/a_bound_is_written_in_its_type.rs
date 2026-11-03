@@ -44,7 +44,7 @@ fn label() -> DocumentLabel<'static> {
 }
 
 fn code_of(refusal: &Located<ForgeError>) -> String {
-    serde_json::to_value(&refusal.error.to_diagnostics()[0].code)
+    serde_json::to_value(refusal.error.to_diagnostics()[0].code)
         .expect("a code serialises")
         .as_str()
         .expect("a code is a string")
@@ -453,21 +453,116 @@ fn a_parameter_takes_its_arguments_bound_and_writes_none() {
 }
 
 #[test]
-fn a_bound_on_a_slot_that_holds_no_buffer_is_refused() {
+fn a_bound_on_a_slot_of_no_length_is_refused() {
     let returned = algorithm(r#"type="int64[4]""#, r#"type="list&lt;int64&gt;[4]""#);
     let refusal = parse_forge(&returned, label()).expect_err("a bound on a number");
     assert_eq!(code_of(&refusal), "validation/attribute-rule-violated");
-    let text = algorithm(
+    let local = algorithm(
         r#"type="list&lt;int64&gt;[4]""#,
         r#"type="list&lt;int64&gt;[4]""#,
     )
     .replace(
         r#"<sce:var name="out" type="list&lt;int64&gt;[4]"/>"#,
-        r#"<sce:var name="label" type="string[8]" init="'a'"/><sce:var name="out" type="list&lt;int64&gt;[4]"/>"#,
+        r#"<sce:var name="n2" type="int64" capacity="4" init="0"/><sce:var name="out" type="list&lt;int64&gt;[4]"/>"#,
     );
-    let refusal = parse_forge(&text, label()).expect_err("a bound on a text local");
+    let refusal = parse_forge(&local, label()).expect_err("a capacity on a number");
     assert_eq!(code_of(&refusal), "validation/attribute-rule-violated");
-    assert!(refusal.to_string().contains("buffer only"), "{refusal}");
+    assert!(refusal.to_string().contains("only valid on"), "{refusal}");
+}
+
+/// An algorithm whose parameter is `param`, whose return is `ret` and which
+/// holds one local `local` that starts at `init`, returning `result`.
+fn text_algorithm(param: &str, ret: &str, local: &str, init: &str, result: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe" version="1.0">
+  <sce:signature>
+    <sce:param name="given" {param}/>
+    <sce:return {ret}/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="kept" {local} init="{init}"/>
+    <sce:return expr="{result}"/>
+  </sce:body>
+</scxml>
+"#
+    )
+}
+
+/// The bound a held text states, as the model holds it: the local's capacity
+/// and the return's, or the refusal's code and sentence.
+fn held_bounds(document: &str) -> Result<(Option<u32>, Option<u32>), (String, String)> {
+    match parse_forge(document, label()) {
+        Ok(Some(ForgeDocument::Algorithm(model))) => {
+            let local = model.body.iter().find_map(|stmt| match stmt {
+                AlgorithmStmt::Var { capacity, .. } => Some(*capacity),
+                _ => None,
+            });
+            Ok((local.flatten(), model.signature.returns_max_size))
+        }
+        Ok(other) => panic!("not an algorithm: {other:?}"),
+        Err(refusal) => Err((code_of(&refusal), refusal.to_string())),
+    }
+}
+
+#[test]
+fn a_held_text_states_its_bound_and_a_parameter_states_none() {
+    // Each text and byte string a return or a local may hold, with no bound and
+    // with one: the oracle is that the one with no bound is refused at the type,
+    // naming the text, and the other is held at its bound (docs/adr/0086,
+    // section 1.4).
+    for (bare, bounded, init, place) in [
+        ("string", "string[8]", "'a'", "`string` has no bound"),
+        (
+            "optional&lt;string&gt;",
+            "optional&lt;string[8]&gt;",
+            "null",
+            "`string` has no bound",
+        ),
+        (
+            "optional&lt;bytes&gt;",
+            "optional&lt;bytes[8]&gt;",
+            "null",
+            "`bytes` has no bound",
+        ),
+    ] {
+        let number = r#"type="uint8""#;
+        let as_local =
+            |ty: &str| text_algorithm(number, number, &format!(r#"type="{ty}""#), init, "0");
+        let as_return =
+            |ty: &str| text_algorithm(number, &format!(r#"type="{ty}""#), number, "0", init);
+        for (slot, unbounded, held) in [
+            ("a local", as_local(bare), as_local(bounded)),
+            ("a return", as_return(bare), as_return(bounded)),
+        ] {
+            match held_bounds(&unbounded) {
+                Err((code, said)) => {
+                    assert_eq!(code, "validation/attribute-rule-violated", "{slot} {bare}");
+                    assert!(said.contains(place), "{slot} {bare}: {said}");
+                }
+                Ok(bounds) => panic!("{slot} {bare} states no bound and was held: {bounds:?}"),
+            }
+            let bounds = held_bounds(&held).unwrap_or_else(|e| panic!("{slot} {bounded}: {e:?}"));
+            let want = if slot == "a local" {
+                (Some(8), None)
+            } else {
+                (None, Some(8))
+            };
+            assert_eq!(bounds, want, "{slot} {bounded}");
+        }
+        // A parameter is a view of its argument, of any bound, and states none.
+        let viewed = text_algorithm(&format!(r#"type="{bare}""#), number, number, "0", "0");
+        assert_eq!(held_bounds(&viewed), Ok((None, None)), "a parameter {bare}");
+    }
+    // The attributes that stated a text's bound before are its synonyms.
+    let legacy = text_algorithm(
+        r#"type="uint8""#,
+        r#"type="string" returns-max-size="8""#,
+        r#"type="string" capacity="8""#,
+        "'a'",
+        "kept",
+    );
+    assert_eq!(held_bounds(&legacy), Ok((Some(8), Some(8))));
 }
 
 #[test]

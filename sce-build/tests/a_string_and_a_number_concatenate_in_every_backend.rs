@@ -64,10 +64,10 @@ const DOCUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
        version="1.0">
   <sce:signature>
     <sce:param name="n" type="int32"/>
-    <sce:return type="string"/>
+    <sce:return type="string[32]"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="r" type="string" init="''"/>
+    <sce:var name="r" type="string[32]" init="''"/>
     <sce:if cond="n >= 1 &amp;&amp; n &lt;= 66">
       <sce:assign target="r" expr="'E' + (7300 + n)"/>
     </sce:if>
@@ -85,10 +85,10 @@ const CONDITIONAL_LEFT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   <sce:signature>
     <sce:param name="n" type="int32"/>
     <sce:param name="flag" type="bool"/>
-    <sce:return type="string"/>
+    <sce:return type="string[32]"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="r" type="string" init="''"/>
+    <sce:var name="r" type="string[32]" init="''"/>
     <sce:assign target="r" expr="(flag ? 'A' : 'B') + n"/>
     <sce:return expr="r"/>
   </sce:body>
@@ -106,10 +106,10 @@ fn joins(operand_type: &str, operand: &str) -> String {
        version="1.0">
   <sce:signature>
     <sce:param name="x" type="{operand_type}"/>
-    <sce:return type="string"/>
+    <sce:return type="string[32]"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="r" type="string" init="''"/>
+    <sce:var name="r" type="string[32]" init="''"/>
     <sce:assign target="r" expr="'v=' + {operand}"/>
     <sce:return expr="r"/>
   </sce:body>
@@ -270,11 +270,11 @@ fn a_go_file_that_does_not_use_strconv_does_not_import_it() {
     // An unused import is a compile error in Go, so the import must follow the
     // text and not the document's kind.
     let document = DOCUMENT.replace("'E' + (7300 + n)", "n + 1").replace(
-        "<sce:return type=\"string\"/>",
+        "<sce:return type=\"string[32]\"/>",
         "<sce:return type=\"int32\"/>",
     );
     let document = document.replace(
-        "<sce:var name=\"r\" type=\"string\" init=\"''\"/>",
+        "<sce:var name=\"r\" type=\"string[32]\" init=\"''\"/>",
         "<sce:var name=\"r\" type=\"int32\" init=\"0\"/>",
     );
     let source = generated(&document, Language::Go);
