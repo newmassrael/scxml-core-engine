@@ -1706,5 +1706,12 @@ name = "an_event_field_of_any_type_is_refused_by_name_where_it_is_not_lowered"
 path = "tests/an_event_field_of_any_type_is_refused_by_name_where_it_is_not_lowered.rs"
 required-features = ["cli"]
 
+# A Rust machine reads a composed payload at any depth (docs/adr/0086, section 6).
+# It runs `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_rust_machine_reads_a_composed_payload_at_any_depth"
+path = "tests/a_rust_machine_reads_a_composed_payload_at_any_depth.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
