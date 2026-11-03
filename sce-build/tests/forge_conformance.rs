@@ -62,22 +62,37 @@ fn conformance_capacities() -> sce_build::forge::model::CodecCapacities {
         .codec_capacities()
 }
 
+/// A codec document by its canonical path, with the codec it declares.
+type CodecDocument = (std::path::PathBuf, sce_build::forge::model::CodecModel);
+
 /// Each codec of `documents` in `dir` and each codec they hold, by its file,
 /// once: what a compile of the set reads.
 fn codecs_of_set(
     dir: &std::path::Path,
     documents: &[&str],
 ) -> Vec<sce_build::forge::model::CodecModel> {
+    codec_documents_of_set(dir, documents)
+        .into_iter()
+        .map(|(_, m)| m)
+        .collect()
+}
+
+/// [`codecs_of_set`] with the canonical path of each codec's document. A
+/// document comes after every codec it holds, so the last of a set of one is
+/// the document itself.
+fn codec_documents_of_set(dir: &std::path::Path, documents: &[&str]) -> Vec<CodecDocument> {
     fn walk(
         path: &std::path::Path,
         seen: &mut std::collections::BTreeSet<std::path::PathBuf>,
-        out: &mut Vec<sce_build::forge::model::CodecModel>,
+        out: &mut Vec<CodecDocument>,
     ) {
-        if !seen.insert(path.to_path_buf()) {
+        let path =
+            std::fs::canonicalize(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        if !seen.insert(path.clone()) {
             return;
         }
         let text =
-            std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let stem = path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -95,7 +110,7 @@ fn codecs_of_set(
             walk(&base.join(&import.src), seen, out);
         }
         if let sce_build::forge::model::ForgeDocument::Codec(m) = parsed.document {
-            out.push(m);
+            out.push((path, m));
         }
     }
     let mut seen = std::collections::BTreeSet::new();
@@ -111,11 +126,75 @@ fn codecs_of_set(
 /// profile's capacity by the codec's view, so the set is generated with views,
 /// as the generator requires.
 fn holds_an_unbounded_list(dir: &std::path::Path, documents: &[&str]) -> bool {
-    codecs_of_set(dir, documents).iter().any(|m| {
-        m.fields
-            .iter()
-            .any(|f| (f.is_repeat() || f.is_tlv_chain()) && f.bound(&m.fields).is_none())
+    codecs_of_set(dir, documents)
+        .iter()
+        .any(states_an_unbounded_list)
+}
+
+/// Whether `m` has a list of its own the protocol bounds by nothing.
+fn states_an_unbounded_list(m: &sce_build::forge::model::CodecModel) -> bool {
+    m.fields
+        .iter()
+        .any(|f| (f.is_repeat() || f.is_tlv_chain()) && f.bound(&m.fields).is_none())
+}
+
+/// The documents of the Rust goldens `tests/forge/expected/` holds, by file
+/// name: every `codec_*.rs` but a round-trip sidecar (`*_test.rs`), as
+/// `scripts/check_clippy_codec.sh` gathers them into one crate. A golden is
+/// named after its document.
+fn rust_golden_documents() -> Vec<String> {
+    let dir = expected_dir();
+    let mut documents: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
+        .filter_map(|entry| {
+            let name = entry.expect("dir entry").file_name().into_string().ok()?;
+            let stem = name.strip_suffix(".rs")?;
+            (stem.starts_with("codec_") && !stem.ends_with("_test"))
+                .then(|| format!("{stem}.scxml"))
+        })
+        .collect();
+    documents.sort();
+    documents
+}
+
+/// The documents whose Rust golden is generated with views, by canonical path
+/// (docs/adr/0077 §7). The goldens of `tests/forge/expected/` are one crate, so
+/// they are one tree: a golden whose document holds a list the protocol bounds
+/// by nothing, itself or through a codec it holds, is generated with views, as
+/// the generator requires, and so is the golden of each codec it holds, since a
+/// parent's view names the view of each codec it holds. Read once per run; a
+/// golden an `UPDATE_GOLDEN` run adds is read from the next run on.
+fn rust_goldens_with_views() -> &'static std::collections::BTreeSet<std::path::PathBuf> {
+    static WITH_VIEWS: std::sync::OnceLock<std::collections::BTreeSet<std::path::PathBuf>> =
+        std::sync::OnceLock::new();
+    WITH_VIEWS.get_or_init(|| {
+        let mut with_views = std::collections::BTreeSet::new();
+        for document in rust_golden_documents() {
+            let reach = codec_documents_of_set(&resource_dir(), &[document.as_str()]);
+            if reach.iter().any(|(_, m)| states_an_unbounded_list(m)) {
+                with_views.extend(reach.into_iter().map(|(path, _)| path));
+            }
+        }
+        with_views
     })
+}
+
+/// [`golden_options_for`] of the golden of the one document `document` in
+/// `tests/forge/expected/`: a Rust golden takes views where the directory's
+/// tree needs them ([`rust_goldens_with_views`]), so the golden of a codec and
+/// the golden of a codec that holds it are generated with one answer.
+fn golden_options_of_document(
+    language: sce_build::generator::Language,
+    document: &str,
+) -> sce_build::ForgeCompileOptions {
+    let mut opts = golden_options_for(language, &resource_dir(), &[document]);
+    if matches!(language, sce_build::generator::Language::Rust) {
+        let path = resource_dir().join(document);
+        let path =
+            std::fs::canonicalize(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        opts.views |= rust_goldens_with_views().contains(&path);
+    }
+    opts
 }
 
 /// [`conformance_capacities`] of the codecs the set `documents` reaches: a
@@ -165,7 +244,7 @@ fn assert_standalone_forge_lang(
         scxml_name,
         expected_filename,
         language,
-        golden_options_for(language, &resource_dir(), &[document.as_str()]),
+        golden_options_of_document(language, &document),
     );
 }
 
@@ -2697,13 +2776,13 @@ fn origin_options() -> sce_build::ForgeCompileOptions {
     opts
 }
 
+/// The golden sits beside the ordinary ones and is a module of their crate, so
+/// it takes views as they do ([`golden_options_of_document`]).
 fn assert_origin_rust(scxml_name: &str) {
-    assert_standalone_forge_with(
-        scxml_name,
-        &format!("{scxml_name}.rs"),
-        sce_build::generator::Language::Rust,
-        origin_options(),
-    );
+    let language = sce_build::generator::Language::Rust;
+    let mut options = golden_options_of_document(language, &format!("{scxml_name}.scxml"));
+    options.owned_origin = true;
+    assert_standalone_forge_with(scxml_name, &format!("{scxml_name}.rs"), language, options);
 }
 
 #[test]
@@ -2743,8 +2822,9 @@ fn views_options() -> sce_build::ForgeCompileOptions {
 /// The goldens of the option live in their own directory, `expected/views/`: a
 /// parent's view names the view of each codec it lists, embeds or dispatches
 /// to, so the family has to be generated with the option on together, and the
-/// ordinary goldens (which are not) must not be moved to make it so. The
-/// directory is linted as a crate of its own (`scripts/check_clippy_codec.sh`).
+/// ordinary goldens must not be moved to make it so. They take the option only
+/// where their own tree needs it ([`rust_goldens_with_views`]). The directory
+/// is linted as a crate of its own (`scripts/check_clippy_codec.sh`).
 fn assert_views_rust(scxml_name: &str) {
     assert_standalone_forge_with(
         scxml_name,
@@ -13679,6 +13759,213 @@ fn rust_golden_syn_gate() {
             failures.join("\n  ")
         );
     }
+}
+
+/// Each item a Rust module names of a module beside it, as
+/// `(module, item)`: the `<item>` of `super::<module>::<item>`, in a `use`
+/// (each name of a group) or in a path.
+fn sibling_items_named(file: &syn::File) -> std::collections::BTreeSet<(String, String)> {
+    use syn::visit::Visit;
+
+    /// The first name of each import a `use` tree ends in.
+    fn heads<'a>(tree: &'a syn::UseTree, out: &mut Vec<&'a syn::Ident>) {
+        match tree {
+            syn::UseTree::Path(p) => out.push(&p.ident),
+            syn::UseTree::Name(n) => out.push(&n.ident),
+            syn::UseTree::Rename(r) => out.push(&r.ident),
+            syn::UseTree::Glob(_) => {}
+            syn::UseTree::Group(g) => g.items.iter().for_each(|t| heads(t, out)),
+        }
+    }
+
+    struct Named(std::collections::BTreeSet<(String, String)>);
+    impl<'ast> Visit<'ast> for Named {
+        fn visit_path(&mut self, path: &'ast syn::Path) {
+            let mut segments = path.segments.iter();
+            if let (Some(head), Some(module), Some(item)) =
+                (segments.next(), segments.next(), segments.next())
+            {
+                if head.ident == "super" {
+                    self.0
+                        .insert((module.ident.to_string(), item.ident.to_string()));
+                }
+            }
+            syn::visit::visit_path(self, path);
+        }
+
+        fn visit_use_tree(&mut self, tree: &'ast syn::UseTree) {
+            if let syn::UseTree::Path(head) = tree {
+                if let syn::UseTree::Path(module) = &*head.tree {
+                    if head.ident == "super" {
+                        let mut items = Vec::new();
+                        heads(&module.tree, &mut items);
+                        for item in items {
+                            self.0.insert((module.ident.to_string(), item.to_string()));
+                        }
+                    }
+                }
+            }
+            syn::visit::visit_use_tree(self, tree);
+        }
+    }
+
+    let mut named = Named(std::collections::BTreeSet::new());
+    named.visit_file(file);
+    named.0
+}
+
+/// The items a Rust module declares that a module beside it can name: each of
+/// its own items that is not private, and each name a public `use` gives.
+fn items_declared(file: &syn::File) -> std::collections::BTreeSet<String> {
+    /// The name each import a `use` tree ends in is given.
+    fn leaves(tree: &syn::UseTree, out: &mut std::collections::BTreeSet<String>) {
+        match tree {
+            syn::UseTree::Path(p) => leaves(&p.tree, out),
+            syn::UseTree::Name(n) => {
+                out.insert(n.ident.to_string());
+            }
+            syn::UseTree::Rename(r) => {
+                out.insert(r.rename.to_string());
+            }
+            syn::UseTree::Glob(_) => {}
+            syn::UseTree::Group(g) => g.items.iter().for_each(|t| leaves(t, out)),
+        }
+    }
+
+    let mut declared = std::collections::BTreeSet::new();
+    for item in &file.items {
+        let (vis, ident) = match item {
+            syn::Item::Const(i) => (&i.vis, &i.ident),
+            syn::Item::Enum(i) => (&i.vis, &i.ident),
+            syn::Item::Fn(i) => (&i.vis, &i.sig.ident),
+            syn::Item::Mod(i) => (&i.vis, &i.ident),
+            syn::Item::Static(i) => (&i.vis, &i.ident),
+            syn::Item::Struct(i) => (&i.vis, &i.ident),
+            syn::Item::Trait(i) => (&i.vis, &i.ident),
+            syn::Item::TraitAlias(i) => (&i.vis, &i.ident),
+            syn::Item::Type(i) => (&i.vis, &i.ident),
+            syn::Item::Union(i) => (&i.vis, &i.ident),
+            syn::Item::Use(i) => {
+                if !matches!(i.vis, syn::Visibility::Inherited) {
+                    leaves(&i.tree, &mut declared);
+                }
+                continue;
+            }
+            _ => continue,
+        };
+        if !matches!(vis, syn::Visibility::Inherited) {
+            declared.insert(ident.to_string());
+        }
+    }
+    declared
+}
+
+/// Each name a codec golden of `dir` takes from a module beside it that the
+/// directory's crate does not hold, or that the module does not declare, as
+/// `<golden>.rs: super::<module>::<item>`. The crate is the one
+/// `scripts/check_clippy_codec.sh` builds of the directory: every `codec_*.rs`
+/// but a round-trip sidecar (`*_test.rs`), each a module named for its file.
+fn names_no_golden_beside_declares(dir: &std::path::Path) -> Vec<String> {
+    let mut modules = std::collections::BTreeMap::new();
+    for entry in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
+        let path = entry.expect("dir entry").path();
+        let Some(module) = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.strip_suffix(".rs"))
+        else {
+            continue;
+        };
+        if !module.starts_with("codec_") || module.ends_with("_test") {
+            continue;
+        }
+        let code =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let file = syn::parse_file(&code).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        modules.insert(module.to_string(), file);
+    }
+    assert!(!modules.is_empty(), "no codec golden in {}", dir.display());
+    let declared: std::collections::BTreeMap<&str, std::collections::BTreeSet<String>> = modules
+        .iter()
+        .map(|(module, file)| (module.as_str(), items_declared(file)))
+        .collect();
+    let mut undeclared = Vec::new();
+    for (golden, file) in &modules {
+        for (module, item) in sibling_items_named(file) {
+            if !declared
+                .get(module.as_str())
+                .is_some_and(|items| items.contains(&item))
+            {
+                undeclared.push(format!("{golden}.rs: super::{module}::{item}"));
+            }
+        }
+    }
+    undeclared
+}
+
+/// The codec goldens of a directory are modules of one crate
+/// (`scripts/check_clippy_codec.sh`), so each names only what the goldens
+/// beside it declare: a parent generated with views names the view of each
+/// codec it holds, and that codec's golden is generated with its view
+/// (docs/adr/0077 §7). Held here as well as by the crate's build, which only
+/// the clippy lane runs.
+#[test]
+fn every_rust_codec_golden_names_only_what_the_goldens_beside_it_declare() {
+    for dir in [expected_dir(), expected_dir().join("views")] {
+        let undeclared = names_no_golden_beside_declares(&dir);
+        assert!(
+            undeclared.is_empty(),
+            "{}: a golden names an item no golden beside it declares:\n  {}",
+            dir.display(),
+            undeclared.join("\n  ")
+        );
+    }
+}
+
+/// A HELLO's locators state no bound, so its golden is generated with views,
+/// and its view names the view of the locator it holds; a locator states 255
+/// and nothing of its own asks for a view (docs/adr/0077 §7). Both goldens are
+/// generated as their golden tests generate them, so the locator's golden takes
+/// its view from the HELLO that holds it, beside it in one crate.
+#[test]
+fn the_golden_of_a_codec_a_viewed_golden_holds_declares_its_view() {
+    let language = sce_build::generator::Language::Rust;
+    let generate = |stem: &str| -> syn::File {
+        let document = format!("{stem}.scxml");
+        let path = resource_dir().join(&document);
+        let content =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let output = sce_build::compile_forge_with_imports(
+            &content,
+            sce_build::DocumentLabel::symmetric(stem),
+            language,
+            &resource_dir(),
+            &golden_options_of_document(language, &document),
+        )
+        .unwrap_or_else(|e| panic!("Forge codegen failed for {stem} ({language:?}): {e}"));
+        let (_, text) = &output.files[0];
+        syn::parse_file(text).unwrap_or_else(|e| panic!("{stem}: {e}"))
+    };
+    let hello = sibling_items_named(&generate("codec_zenoh_hello"));
+    let locator = items_declared(&generate("codec_zenoh_locator"));
+    let view = (
+        "codec_zenoh_locator".to_string(),
+        "CodecZenohLocatorView".to_string(),
+    );
+    assert!(
+        hello.contains(&view),
+        "a HELLO is generated with views and names its locators' view: {hello:?}"
+    );
+    let undeclared: Vec<&String> = hello
+        .iter()
+        .filter(|(module, _)| module == "codec_zenoh_locator")
+        .map(|(_, item)| item)
+        .filter(|item| !locator.contains(*item))
+        .collect();
+    assert!(
+        undeclared.is_empty(),
+        "a HELLO names of the locator what its golden does not declare: {undeclared:?}"
+    );
 }
 
 // ────────────────────────────────────────────────────────────────────

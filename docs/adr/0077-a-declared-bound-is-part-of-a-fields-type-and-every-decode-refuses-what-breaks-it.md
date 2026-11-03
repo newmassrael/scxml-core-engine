@@ -499,7 +499,10 @@ are one value held two ways. So:
   storage of the run is what it was. A depth the document states is still refused past with `TooManyElements`; that
   shape is held by fixtures of its own (`codec_chain_depth_plain`, `codec_chain_depth_gated`) and the reject vectors
   moved with it. A Rust tree of a set that holds a list of no bound is generated with views, as the generator
-  requires.
+  requires. The goldens of `tests/forge/expected/` are one crate and so one tree: the landing generated each as a tree
+  of its own document, so a HELLO's golden named the view of a locator whose golden had none, which only the build of
+  that crate saw. A golden is now generated with views where its codec, or a codec of the directory that holds it, has
+  a list of no bound of its own or in a codec it holds, and a test reads every name a golden takes from one beside it.
 
 ## Alternatives
 
