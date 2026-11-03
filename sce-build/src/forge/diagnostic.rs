@@ -2667,8 +2667,6 @@ pub enum DiagnosticCode {
     /// than keep that file unformatted.
     #[serde(rename = "cli/format-failed")]
     CliFormatFailed,
-    #[serde(rename = "cli/no-scxml-tag")]
-    CliNoScxmlTag,
     #[serde(rename = "cli/invalid-suite-package")]
     CliInvalidSuitePackage,
     /// The generator binary was not built from the sources it is being
@@ -4090,7 +4088,6 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliFormatStyleNotFound,
         CliFormatterUnavailable,
         CliFormatFailed,
-        CliNoScxmlTag,
         CliInvalidSuitePackage,
         CliGeneratorSourceDrift,
         CliGeneratorSourceUnverifiable,
@@ -5141,7 +5138,6 @@ impl DiagnosticCode {
             | CliFormatStyleNotFound
             | CliFormatterUnavailable
             | CliFormatFailed
-            | CliNoScxmlTag
             | CliInvalidSuitePackage
             | CliGeneratorSourceDrift
             | CliGeneratorSourceUnverifiable
@@ -5641,7 +5637,6 @@ impl DiagnosticCode {
             | CliFormatStyleNotFound
             | CliFormatterUnavailable
             | CliFormatFailed
-            | CliNoScxmlTag
             | CliInvalidSuitePackage
             | CliGeneratorSourceDrift
             | CliGeneratorSourceUnverifiable
@@ -6188,7 +6183,6 @@ impl DiagnosticCode {
             CliFormatStyleNotFound => "cli/format-style-not-found",
             CliFormatterUnavailable => "cli/formatter-unavailable",
             CliFormatFailed => "cli/format-failed",
-            CliNoScxmlTag => "cli/no-scxml-tag",
             CliInvalidSuitePackage => "cli/invalid-suite-package",
             CliGeneratorSourceDrift => "cli/generator-source-drift",
             CliGeneratorSourceUnverifiable => "cli/generator-source-unverifiable",
@@ -18340,13 +18334,6 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:3e1f7215f46a74ad","code":"cli/format-failed","stage":"cli","message":"clang-format could not format door_sm.h: unterminated comment","actual":"door_sm.h"}"#,
             ),
             (
-                "cli/no-scxml-tag",
-                CliError::NoScxmlTag {
-                    path: "notes.txt".into(),
-                },
-                r#"{"v":1,"id":"fnv1a:94f3f36322d6b380","code":"cli/no-scxml-tag","stage":"cli","message":"No <scxml> tag found in notes.txt","actual":"notes.txt"}"#,
-            ),
-            (
                 "cli/invalid-suite-package",
                 CliError::InvalidSuitePackage {
                     detail: "'crate' is not a usable rust conformance suite name: its module \
@@ -19539,7 +19526,6 @@ mod tests {
             // message; there is no candidate set a fix could choose from.
             | CliFormatterUnavailable
             | CliFormatFailed
-            | CliNoScxmlTag
             // The refusal names one fact about the run — the backend
             // emits no suite name, or the name is unspellable, or the
             // tree is this repository's own. None of the three has a
@@ -20428,7 +20414,7 @@ mod tests {
                 | CliMissingMetadataField | CliNotADirectory
                 | CliInvalidFormatOption | CliJsonSerialization
                 | CliProjectRootNotFound | CliFormatStyleNotFound
-                | CliFormatterUnavailable | CliFormatFailed | CliNoScxmlTag
+                | CliFormatterUnavailable | CliFormatFailed
                 | CliInvalidSuitePackage
                 | CliGeneratorSourceDrift | CliGeneratorSourceUnverifiable
                 | CliUsage | CliQueryNoMatch | CliClosureInputUnusable
@@ -20624,9 +20610,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            492,
+            491,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 493 distinct variants to match the DiagnosticCode \
+             expected 491 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21698,7 +21684,6 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CliFormatStyleNotFound
             | CliFormatterUnavailable
             | CliFormatFailed
-            | CliNoScxmlTag
             | CliInvalidSuitePackage
             | CliGeneratorSourceDrift
             | CliGeneratorSourceUnverifiable

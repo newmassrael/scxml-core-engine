@@ -149,9 +149,6 @@ pub enum CliError {
     #[error("clang-format could not format {file}: {detail}")]
     FormatFailed { file: String, detail: String },
 
-    #[error("No <scxml> tag found in {path}")]
-    NoScxmlTag { path: String },
-
     /// `--suite-package` names what an emitted W3C conformance suite
     /// calls itself, and there are three ways to name it wrongly: the
     /// backend emits nothing that spells a suite, the name cannot be
@@ -615,12 +612,6 @@ impl SingleDiagnostic for CliError {
                 DiagnosticCode::CliFormatFailed,
                 vec![file.clone(), detail.clone()],
                 Some(file.clone()),
-                None,
-            ),
-            CliError::NoScxmlTag { path } => (
-                DiagnosticCode::CliNoScxmlTag,
-                vec![path.clone()],
-                Some(path.clone()),
                 None,
             ),
             CliError::InvalidSuitePackage { detail } => (

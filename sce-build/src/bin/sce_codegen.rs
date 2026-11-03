@@ -4,12 +4,11 @@
 // sce-codegen — Unified SCXML code generator CLI.
 //
 // Replaces Python scripts: codegen.py, generate_kotlin_w3c.py,
-// fix_scxml_name.py, read_test_metadata.py
+// read_test_metadata.py
 //
 // Subcommands:
 //   generate       — Single SCXML → code (replaces codegen.py)
 //   generate-w3c   — Batch W3C test generation (replaces generate_kotlin_w3c.py)
-//   fix-scxml-name — Fix SCXML name attribute (replaces fix_scxml_name.py)
 //   read-metadata  — Extract metadata description (replaces read_test_metadata.py)
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -2703,13 +2702,6 @@ enum Commands {
         #[arg(long, value_name = "DIR")]
         output_dir: Option<String>,
     },
-    /// Fix SCXML name attribute (ensure <scxml name="testXXX">)
-    FixScxmlName {
-        /// SCXML file path
-        scxml: String,
-        /// Desired name value
-        name: String,
-    },
     /// Read metadata.txt description field
     ReadMetadata {
         /// Path to metadata.txt
@@ -4068,7 +4060,6 @@ fn main() {
             output_dir.as_deref(),
             error_format,
         ),
-        Commands::FixScxmlName { scxml, name } => cmd_fix_scxml_name(&scxml, &name),
         Commands::ReadMetadata { metadata_file } => cmd_read_metadata(&metadata_file),
         Commands::Manifest { dir } => cmd_manifest(&dir),
         Commands::Requirements {
@@ -4327,7 +4318,6 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
                 .to_string(),
         ),
         Commands::Check(_)
-        | Commands::FixScxmlName { .. }
         | Commands::ReadMetadata { .. }
         | Commands::Manifest { .. }
         | Commands::Requirements { .. }
@@ -10970,46 +10960,6 @@ impl W3cBackend for PythonBackend {
             outln!("Cleaned: {}", self.sm_base.display());
         }
     }
-}
-
-// ── Subcommand: fix-scxml-name ──────────────────────────────────
-
-fn cmd_fix_scxml_name(scxml_path: &str, name: &str) {
-    let content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
-        cli_exit(CliError::ReadInput {
-            path: scxml_path.to_string(),
-            source: e,
-        })
-    });
-
-    // Find first <scxml...> tag
-    let re_scxml = regex::Regex::new(r"(?s)<scxml[^>]*?>").unwrap();
-    let fixed = match re_scxml.find(&content) {
-        Some(m) => {
-            let first_scxml = m.as_str();
-            // Remove existing name attribute
-            let re_name = regex::Regex::new(r#"\s+name="[^"]*""#).unwrap();
-            let cleaned = re_name.replace(first_scxml, "").to_string();
-            // Add new name attribute
-            let with_name = cleaned.replacen("<scxml", &format!("<scxml name=\"{name}\""), 1);
-            format!(
-                "{}{}{}",
-                &content[..m.start()],
-                with_name,
-                &content[m.end()..]
-            )
-        }
-        None => cli_exit(CliError::NoScxmlTag {
-            path: scxml_path.to_string(),
-        }),
-    };
-
-    fs::write(scxml_path, fixed).unwrap_or_else(|e| {
-        cli_exit(CliError::WriteOutput {
-            path: scxml_path.to_string(),
-            source: e,
-        })
-    });
 }
 
 // ── Subcommand: read-metadata ───────────────────────────────────

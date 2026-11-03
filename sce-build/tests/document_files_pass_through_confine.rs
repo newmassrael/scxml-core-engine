@@ -176,7 +176,6 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         &[
             ("load_deploy_config", 1),
             ("cmd_check", 1),
-            ("cmd_fix_scxml_name", 1),
             ("cmd_read_metadata", 1),
             ("cmd_manifest", 1),
             ("read_review_input", 1),

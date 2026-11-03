@@ -1061,7 +1061,6 @@ references against a real document and drift silently.
 | `cli/invalid-suite-package` | `cli` | no |  |
 | `cli/json-serialization` | `cli` | no |  |
 | `cli/missing-metadata-field` | `cli` | no |  |
-| `cli/no-scxml-tag` | `cli` | no |  |
 | `cli/not-a-directory` | `cli` | no |  |
 | `cli/profile-unusable` | `cli` | no |  |
 | `cli/project-root-not-found` | `cli` | no |  |

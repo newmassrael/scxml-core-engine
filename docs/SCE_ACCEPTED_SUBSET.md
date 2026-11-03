@@ -8848,7 +8848,7 @@ completed), and a selection for a document that imports no model is
 
 ---
 
-## Appendix — `DiagnosticCode` index (492 codes)
+## Appendix — `DiagnosticCode` index (491 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -9184,7 +9184,6 @@ Codes that the author can avoid by writing a better SCXML /
 | `cli/format-style-not-found` | Cli |
 | `cli/formatter-unavailable` | Cli |
 | `cli/format-failed` | Cli |
-| `cli/no-scxml-tag` | Cli |
 | `cli/invalid-suite-package` | Cli |
 | `cli/generator-source-drift` | Cli |
 | `cli/generator-source-unverifiable` | Cli |

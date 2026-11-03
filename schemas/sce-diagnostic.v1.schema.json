@@ -334,7 +334,6 @@
         "cli/format-style-not-found",
         "cli/formatter-unavailable",
         "cli/format-failed",
-        "cli/no-scxml-tag",
         "cli/invalid-suite-package",
         "cli/generator-source-drift",
         "cli/generator-source-unverifiable",
