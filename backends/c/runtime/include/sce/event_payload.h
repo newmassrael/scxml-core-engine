@@ -903,6 +903,7 @@ SCE_C_UNUSED static inline const char *sce_payload_list_open(const char *p, uint
     if (*p != '[') {
         return sce_payload_wrong_kind(p, SCE_PAYLOAD_REFUSE_NOT_LIST);
     }
+    /* A cursor whose list was refused hands out no element. */
     out->next = sce_payload_skip_space(p + 1);
     out->count = 0u;
     out->index = 0u;
@@ -910,12 +911,13 @@ SCE_C_UNUSED static inline const char *sce_payload_list_open(const char *p, uint
     if (*q == ']') {
         return NULL;
     }
+    uint32_t count = 0u;
     for (;;) {
-        if (out->count == UINT32_MAX) {
+        if (count == UINT32_MAX) {
             return SCE_PAYLOAD_REFUSE_PAST_COUNT;
         }
-        out->count++;
-        if (out->count > bound) {
+        count++;
+        if (count > bound) {
             /* Counted, never decoded: the walk stops at the first element past
                the bound. */
             return SCE_PAYLOAD_REFUSE_PAST_COUNT;
@@ -929,7 +931,11 @@ SCE_C_UNUSED static inline const char *sce_payload_list_open(const char *p, uint
             q = sce_payload_skip_space(q + 1);
             continue;
         }
-        return (*q == ']') ? NULL : SCE_PAYLOAD_REFUSE_NOT_LIST;
+        if (*q != ']') {
+            return SCE_PAYLOAD_REFUSE_NOT_LIST;
+        }
+        out->count = count;
+        return NULL;
     }
 }
 

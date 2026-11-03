@@ -747,6 +747,12 @@ static void check_top_level_bounds_and_records(void) {
         fprintf(stderr, "FAIL: an array that never closes was opened as a list\n");
         failures++;
     }
+    /* A cursor whose list was refused hands out no element, whatever it counted. */
+    if (!refused_as(sce_payload_list_open("[1,2,3]", 2u, &list), SCE_PAYLOAD_REFUSE_PAST_COUNT) ||
+        sce_payload_list_next(&list, &v)) {
+        fprintf(stderr, "FAIL: a list past its bound handed out an element\n");
+        failures++;
+    }
     if (!refused_as(sce_payload_field(&fields, "gone", &v), SCE_PAYLOAD_REFUSE_MISSING)) {
         fprintf(stderr, "FAIL: a missing field was found\n");
         failures++;
