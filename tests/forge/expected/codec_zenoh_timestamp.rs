@@ -17,6 +17,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
+
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
@@ -318,6 +319,34 @@ impl CodecZenohTimestampWire {
     }
 }
 
+
+// ── View (ADR 0049) ──────────────────────────────────────────────────
+// `CodecZenohTimestamp` holds no bounded list, embedded body or variant, so a
+// view of it would hold what it holds. Its view is the codec itself under the
+// name every codec's view has, which lets a codec that embeds, lists or
+// dispatches to it name `CodecZenohTimestampView` whatever kind of codec it is.
+#[allow(dead_code)]
+pub type CodecZenohTimestampView<'a> = CodecZenohTimestamp<'a>;
+
+#[allow(dead_code)]
+impl<'a> CodecZenohTimestamp<'a> {
+    /// Fill `_out` with what this value says, as the view of any other codec
+    /// does (`CodecZenohTimestampView` is this type, so it takes part in the same
+    /// call).
+    // The name every view's method has (ADR 0049), which borrows because a
+    // view is read, not consumed. Clippy leaves an exported method's name
+    // alone; a crate that includes this module privately is asked to rename
+    // it, and the one name is what lets a codec reach every view it holds.
+    #[allow(clippy::wrong_self_convention)]
+    // A codec with no list holds every field alike at every profile, so the
+    // value at any `D` is filled field by field (docs/adr/0077 §7).
+    pub fn into_builder<D>(&self, _out: &mut CodecZenohTimestampIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecZenohTimestampLentStorage {
+        _out.time = self.time;
+        _out.zid_len = self.zid_len;
+        _out.zid = self.zid;
+        Ok(())
+    }
+}
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohTimestamp<'a>` above is a zero-copy view borrowing the decode

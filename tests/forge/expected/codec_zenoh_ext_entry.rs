@@ -20,6 +20,10 @@ use sce_forge_runtime::codec::VecSink;
 use super::codec_zenoh_ext_unit::CodecZenohExtUnit;
 use super::codec_zenoh_ext_zint::CodecZenohExtZint;
 
+use super::codec_zenoh_ext_unit::CodecZenohExtUnitView;
+use super::codec_zenoh_ext_zint::CodecZenohExtZintView;
+use super::codec_zenoh_ext_zbuf::CodecZenohExtZbufView;
+
 /// A tag `CodecZenohExtEntry` names no arm for, which its default arm holds: a
 /// value inside the 2 bits the tag is read from and outside
 /// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
@@ -195,7 +199,7 @@ impl<S: CodecZenohExtEntryStorage> CodecZenohExtEntryIn<S> {
         let mut _frame = *cursor;
         match Self::store_into(cursor, _out) {
             Err(CodecError::CapacityExceeded) => {
-                CodecZenohExtEntry::store_into(&mut _frame, &mut CodecZenohExtEntry::default())?;
+                CodecZenohExtEntryView::decode(&mut _frame)?;
                 Err(CodecError::CapacityExceeded)
             }
             stored => stored,
@@ -453,6 +457,20 @@ impl<S: CodecZenohExtEntryStorage> CodecZenohExtEntrySource for CodecZenohExtEnt
     }
 }
 
+impl<'a> CodecZenohExtEntrySource for CodecZenohExtEntryView<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecZenohExtEntryVariantSource<'_, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource, impl super::codec_zenoh_ext_zint::CodecZenohExtZintSource, impl super::codec_zenoh_ext_zbuf::CodecZenohExtZbufSource, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource> {
+        match &self.body {
+            CodecZenohExtEntryViewVariant::CodecZenohExtUnit(_b) => CodecZenohExtEntryVariantSource::CodecZenohExtUnit(_b),
+            CodecZenohExtEntryViewVariant::CodecZenohExtZint(_b) => CodecZenohExtEntryVariantSource::CodecZenohExtZint(_b),
+            CodecZenohExtEntryViewVariant::CodecZenohExtZbuf(_b) => CodecZenohExtEntryVariantSource::CodecZenohExtZbuf(_b),
+            CodecZenohExtEntryViewVariant::Default { tag, body } => CodecZenohExtEntryVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
 /// The codec `CodecZenohExtEntry` itself: what writes a value read through
 /// [`CodecZenohExtEntrySource`], holding no value and naming no storage profile. Every
 /// form of the value, a parent and a view write through it, so a profile
@@ -543,6 +561,189 @@ impl CodecZenohExtEntryWire {
     }
 }
 
+
+// ── View (ADR 0049) ──────────────────────────────────────────────────
+// `CodecZenohExtEntryView` is what a decode of `CodecZenohExtEntry` learned, not a
+// copy of what the wire repeated: a scalar, a string or a bytes field is held
+// as `CodecZenohExtEntry` holds it, an embedded body or a variant arm as its
+// own view, and a bounded list as the frame it was read from, how many entries
+// it holds and what a walk needs to read them again (`ListView`). Its size
+// depends on the number of fields and not on any `sce:max-count`, so moving
+// one copies a few words however long its lists may be. `decode` refuses the
+// frames `CodecZenohExtEntry::decode` refuses, with the same error: the entries
+// are decoded once to check them, and a walk afterwards cannot fail.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodecZenohExtEntryViewVariant<'a> {
+    CodecZenohExtUnit(CodecZenohExtUnitView),
+    CodecZenohExtZint(CodecZenohExtZintView),
+    CodecZenohExtZbuf(CodecZenohExtZbufView<'a>),
+    Default {
+        tag: CodecZenohExtEntryUnknownTag,
+        body: CodecZenohExtUnitView,
+    },
+}
+
+impl<'a> Default for CodecZenohExtEntryViewVariant<'a> {
+    fn default() -> Self {
+        Self::CodecZenohExtUnit(CodecZenohExtUnitView::default())
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct CodecZenohExtEntryView<'a> {
+    pub header: u8,
+    pub body: CodecZenohExtEntryViewVariant<'a>,
+}
+
+#[allow(dead_code)]
+impl<'a> CodecZenohExtEntryView<'a> {
+    /// A view with every field at its own type's [`Default`]: the destination
+    /// [`Self::decode_into`] fills.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Decode the next frame from `cursor`: the bytes, the bounds and the
+    /// errors of [`CodecZenohExtEntry::decode`], held as a view. On success the
+    /// cursor advances past the consumed bytes.
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out)?;
+        Ok(_out)
+    }
+
+    /// [`Self::decode`] into a destination the caller owns, so a view that
+    /// embeds or dispatches to this one is filled where it will live. On
+    /// `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
+        // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
+        // sit before the variant suffix on the wire).
+        let raw = cursor.peek_slice(1)?;
+        let header = raw[0];
+        cursor.advance(1)?;
+        // Dispatch on the tag field; each arm decodes its body codec
+        // from the cursor. The default arm (when declared) carries the
+        // runtime tag value so encode can round-trip it back onto the
+        // wire.
+        // Each arm is installed in `_out.body` holding its body's default and
+        // that body is decoded where it sits, so no arm body is returned up
+        // through the variant wrapper.
+        match (header >> 5) & 0x03 {
+            0u8 => {
+                _out.body = CodecZenohExtEntryViewVariant::CodecZenohExtUnit(CodecZenohExtUnitView::default());
+                if let CodecZenohExtEntryViewVariant::CodecZenohExtUnit(_b) = &mut _out.body {
+                    CodecZenohExtUnitView::decode_into(cursor, _b)?;
+                }
+            }
+            1u8 => {
+                _out.body = CodecZenohExtEntryViewVariant::CodecZenohExtZint(CodecZenohExtZintView::default());
+                if let CodecZenohExtEntryViewVariant::CodecZenohExtZint(_b) = &mut _out.body {
+                    CodecZenohExtZintView::decode_into(cursor, _b)?;
+                }
+            }
+            2u8 => {
+                _out.body = CodecZenohExtEntryViewVariant::CodecZenohExtZbuf(CodecZenohExtZbufView::default());
+                if let CodecZenohExtEntryViewVariant::CodecZenohExtZbuf(_b) = &mut _out.body {
+                    CodecZenohExtZbufView::decode_into(cursor, _b)?;
+                }
+            }
+            other => {
+                _out.body = CodecZenohExtEntryViewVariant::Default {
+                    tag: CodecZenohExtEntryUnknownTag(other),
+                    body: CodecZenohExtUnitView::default(),
+                };
+                if let CodecZenohExtEntryViewVariant::Default { body: _b, .. } = &mut _out.body {
+                    CodecZenohExtUnitView::decode_into(cursor, _b)?;
+                }
+            }
+        }
+        _out.header = header;
+        Ok(())
+    }
+
+    /// Fill `_out`, the builder form [`CodecZenohExtEntry`] a sender fills and
+    /// encodes, with what this view says: every field, each embedded body, the
+    /// variant arm, and each list entry as the walk yields it, built in the
+    /// destination where it will live. Fails only where the destination cannot
+    /// hold it, which a destination of the same declared bounds does.
+    // The name every view's method has (ADR 0049), which borrows because a
+    // view is read, not consumed. Clippy leaves an exported method's name
+    // alone; a crate that includes this module privately is asked to rename
+    // it, and the one name is what lets a codec reach every view it holds.
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_builder<D>(&self, _out: &mut CodecZenohExtEntryIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecZenohExtEntryLentStorage {
+        _out.header = self.header;
+        match &self.body {
+            CodecZenohExtEntryViewVariant::CodecZenohExtUnit(_b) => {
+                _out.body = CodecZenohExtEntryVariantIn::CodecZenohExtUnit(Default::default());
+                if let CodecZenohExtEntryVariantIn::CodecZenohExtUnit(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecZenohExtEntryViewVariant::CodecZenohExtZint(_b) => {
+                _out.body = CodecZenohExtEntryVariantIn::CodecZenohExtZint(Default::default());
+                if let CodecZenohExtEntryVariantIn::CodecZenohExtZint(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecZenohExtEntryViewVariant::CodecZenohExtZbuf(_b) => {
+                _out.body = CodecZenohExtEntryVariantIn::CodecZenohExtZbuf(Default::default());
+                if let CodecZenohExtEntryVariantIn::CodecZenohExtZbuf(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecZenohExtEntryViewVariant::Default { tag, body } => {
+                _out.body = CodecZenohExtEntryVariantIn::Default {
+                    tag: *tag,
+                    body: Default::default(),
+                };
+                if let CodecZenohExtEntryVariantIn::Default { body: _o, .. } = &mut _out.body {
+                    body.into_builder(_o)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+
+    /// Encode what this view says into the caller-owned sink: the bytes
+    /// [`CodecZenohExtEntry::encode`] writes for the value [`Self::into_builder`]
+    /// fills, written straight from the view, walking each list, without the
+    /// builder. It writes the canonical wire, not the frame the view was decoded
+    /// from, so a frame `decode` accepted in a form that is not canonical is
+    /// not passed on as it came.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
+        CodecZenohExtEntryWire::encode_source(self, w)
+    }
+
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
+    /// value (docs/adr/0065).
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::new();
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
+    }
+
+    pub fn ext_id(&self) -> u8 {
+        self.header & 0x0F
+    }
+
+    pub fn m(&self) -> bool {
+        (self.header & 0x10) != 0
+    }
+
+    pub fn enc(&self) -> u8 {
+        (self.header >> 5) & 0x03
+    }
+
+    pub fn z(&self) -> bool {
+        (self.header & 0x80) != 0
+    }
+
+}
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohExtEntry<'a>` above is a zero-copy view borrowing the decode

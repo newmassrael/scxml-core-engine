@@ -20,6 +20,16 @@ use sce_forge_runtime::codec::VecSink;
 use super::codec_zenoh_undecl_kexpr::CodecZenohUndeclKexpr;
 use super::codec_zenoh_decl_final::CodecZenohDeclFinal;
 
+use super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprView;
+use super::codec_zenoh_undecl_kexpr::CodecZenohUndeclKexprView;
+use super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberView;
+use super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberView;
+use super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableView;
+use super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableView;
+use super::codec_zenoh_decl_token::CodecZenohDeclTokenView;
+use super::codec_zenoh_undecl_token::CodecZenohUndeclTokenView;
+use super::codec_zenoh_decl_final::CodecZenohDeclFinalView;
+
 /// A tag `CodecZenohDeclaration` names no arm for, which its default arm holds: a
 /// value inside the 5 bits the tag is read from and outside
 /// every arm's tag (docs/adr/0065 §6 R3). A default arm is written with the tag
@@ -207,7 +217,7 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationIn<S> {
         let mut _frame = *cursor;
         match Self::store_into(cursor, _out) {
             Err(CodecError::CapacityExceeded) => {
-                CodecZenohDeclaration::store_into(&mut _frame, &mut CodecZenohDeclaration::default())?;
+                CodecZenohDeclarationView::decode(&mut _frame)?;
                 Err(CodecError::CapacityExceeded)
             }
             stored => stored,
@@ -532,6 +542,26 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationSource for CodecZenoh
     }
 }
 
+impl<'a> CodecZenohDeclarationSource for CodecZenohDeclarationView<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecZenohDeclarationVariantSource<'_, impl super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprSource, impl super::codec_zenoh_undecl_kexpr::CodecZenohUndeclKexprSource, impl super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberSource, impl super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberSource, impl super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableSource, impl super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableSource, impl super::codec_zenoh_decl_token::CodecZenohDeclTokenSource, impl super::codec_zenoh_undecl_token::CodecZenohUndeclTokenSource, impl super::codec_zenoh_decl_final::CodecZenohDeclFinalSource, impl super::codec_zenoh_decl_final::CodecZenohDeclFinalSource> {
+        match &self.body {
+            CodecZenohDeclarationViewVariant::CodecZenohDeclKexpr(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_b),
+            CodecZenohDeclarationViewVariant::CodecZenohUndeclKexpr(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclKexpr(_b),
+            CodecZenohDeclarationViewVariant::CodecZenohDeclSubscriber(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_b),
+            CodecZenohDeclarationViewVariant::CodecZenohUndeclSubscriber(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_b),
+            CodecZenohDeclarationViewVariant::CodecZenohDeclQueryable(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b),
+            CodecZenohDeclarationViewVariant::CodecZenohUndeclQueryable(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_b),
+            CodecZenohDeclarationViewVariant::CodecZenohDeclToken(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_b),
+            CodecZenohDeclarationViewVariant::CodecZenohUndeclToken(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_b),
+            CodecZenohDeclarationViewVariant::CodecZenohDeclFinal(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclFinal(_b),
+            CodecZenohDeclarationViewVariant::Default { tag, body } => CodecZenohDeclarationVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
 /// The codec `CodecZenohDeclaration` itself: what writes a value read through
 /// [`CodecZenohDeclarationSource`], holding no value and naming no storage profile. Every
 /// form of the value, a parent and a view write through it, so a profile
@@ -647,6 +677,270 @@ impl CodecZenohDeclarationWire {
     }
 }
 
+
+// ── View (ADR 0049) ──────────────────────────────────────────────────
+// `CodecZenohDeclarationView` is what a decode of `CodecZenohDeclaration` learned, not a
+// copy of what the wire repeated: a scalar, a string or a bytes field is held
+// as `CodecZenohDeclaration` holds it, an embedded body or a variant arm as its
+// own view, and a bounded list as the frame it was read from, how many entries
+// it holds and what a walk needs to read them again (`ListView`). Its size
+// depends on the number of fields and not on any `sce:max-count`, so moving
+// one copies a few words however long its lists may be. `decode` refuses the
+// frames `CodecZenohDeclaration::decode` refuses, with the same error: the entries
+// are decoded once to check them, and a walk afterwards cannot fail.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodecZenohDeclarationViewVariant<'a> {
+    CodecZenohDeclKexpr(CodecZenohDeclKexprView<'a>),
+    CodecZenohUndeclKexpr(CodecZenohUndeclKexprView),
+    CodecZenohDeclSubscriber(CodecZenohDeclSubscriberView<'a>),
+    CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriberView<'a>),
+    CodecZenohDeclQueryable(CodecZenohDeclQueryableView<'a>),
+    CodecZenohUndeclQueryable(CodecZenohUndeclQueryableView<'a>),
+    CodecZenohDeclToken(CodecZenohDeclTokenView<'a>),
+    CodecZenohUndeclToken(CodecZenohUndeclTokenView<'a>),
+    CodecZenohDeclFinal(CodecZenohDeclFinalView),
+    Default {
+        tag: CodecZenohDeclarationUnknownTag,
+        body: CodecZenohDeclFinalView,
+    },
+}
+
+impl<'a> Default for CodecZenohDeclarationViewVariant<'a> {
+    fn default() -> Self {
+        Self::CodecZenohDeclFinal(CodecZenohDeclFinalView::default())
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct CodecZenohDeclarationView<'a> {
+    pub header: u8,
+    pub body: CodecZenohDeclarationViewVariant<'a>,
+}
+
+#[allow(dead_code)]
+impl<'a> CodecZenohDeclarationView<'a> {
+    /// A view with every field at its own type's [`Default`]: the destination
+    /// [`Self::decode_into`] fills.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Decode the next frame from `cursor`: the bytes, the bounds and the
+    /// errors of [`CodecZenohDeclaration::decode`], held as a view. On success the
+    /// cursor advances past the consumed bytes.
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out)?;
+        Ok(_out)
+    }
+
+    /// [`Self::decode`] into a destination the caller owns, so a view that
+    /// embeds or dispatches to this one is filled where it will live. On
+    /// `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
+        // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
+        // sit before the variant suffix on the wire).
+        let raw = cursor.peek_slice(1)?;
+        let header = raw[0];
+        cursor.advance(1)?;
+        // Dispatch on the tag field; each arm decodes its body codec
+        // from the cursor. The default arm (when declared) carries the
+        // runtime tag value so encode can round-trip it back onto the
+        // wire.
+        // Each arm is installed in `_out.body` holding its body's default and
+        // that body is decoded where it sits, so no arm body is returned up
+        // through the variant wrapper.
+        match header & 0x1F {
+            0u8 => {
+                _out.body = CodecZenohDeclarationViewVariant::CodecZenohDeclKexpr(CodecZenohDeclKexprView::default());
+                if let CodecZenohDeclarationViewVariant::CodecZenohDeclKexpr(_b) = &mut _out.body {
+                    CodecZenohDeclKexprView::decode_into(cursor, _b, (header >> 5) & 0x1)?;
+                }
+            }
+            1u8 => {
+                _out.body = CodecZenohDeclarationViewVariant::CodecZenohUndeclKexpr(CodecZenohUndeclKexprView::default());
+                if let CodecZenohDeclarationViewVariant::CodecZenohUndeclKexpr(_b) = &mut _out.body {
+                    CodecZenohUndeclKexprView::decode_into(cursor, _b)?;
+                }
+            }
+            2u8 => {
+                _out.body = CodecZenohDeclarationViewVariant::CodecZenohDeclSubscriber(CodecZenohDeclSubscriberView::default());
+                if let CodecZenohDeclarationViewVariant::CodecZenohDeclSubscriber(_b) = &mut _out.body {
+                    CodecZenohDeclSubscriberView::decode_into(cursor, _b, (header >> 5) & 0x1)?;
+                }
+            }
+            3u8 => {
+                _out.body = CodecZenohDeclarationViewVariant::CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriberView::default());
+                if let CodecZenohDeclarationViewVariant::CodecZenohUndeclSubscriber(_b) = &mut _out.body {
+                    CodecZenohUndeclSubscriberView::decode_into(cursor, _b, (header >> 7) & 0x1)?;
+                }
+            }
+            4u8 => {
+                _out.body = CodecZenohDeclarationViewVariant::CodecZenohDeclQueryable(CodecZenohDeclQueryableView::default());
+                if let CodecZenohDeclarationViewVariant::CodecZenohDeclQueryable(_b) = &mut _out.body {
+                    CodecZenohDeclQueryableView::decode_into(cursor, _b, (header >> 5) & 0x1, (header >> 7) & 0x1)?;
+                }
+            }
+            5u8 => {
+                _out.body = CodecZenohDeclarationViewVariant::CodecZenohUndeclQueryable(CodecZenohUndeclQueryableView::default());
+                if let CodecZenohDeclarationViewVariant::CodecZenohUndeclQueryable(_b) = &mut _out.body {
+                    CodecZenohUndeclQueryableView::decode_into(cursor, _b, (header >> 7) & 0x1)?;
+                }
+            }
+            6u8 => {
+                _out.body = CodecZenohDeclarationViewVariant::CodecZenohDeclToken(CodecZenohDeclTokenView::default());
+                if let CodecZenohDeclarationViewVariant::CodecZenohDeclToken(_b) = &mut _out.body {
+                    CodecZenohDeclTokenView::decode_into(cursor, _b, (header >> 5) & 0x1)?;
+                }
+            }
+            7u8 => {
+                _out.body = CodecZenohDeclarationViewVariant::CodecZenohUndeclToken(CodecZenohUndeclTokenView::default());
+                if let CodecZenohDeclarationViewVariant::CodecZenohUndeclToken(_b) = &mut _out.body {
+                    CodecZenohUndeclTokenView::decode_into(cursor, _b, (header >> 7) & 0x1)?;
+                }
+            }
+            26u8 => {
+                _out.body = CodecZenohDeclarationViewVariant::CodecZenohDeclFinal(CodecZenohDeclFinalView::default());
+                if let CodecZenohDeclarationViewVariant::CodecZenohDeclFinal(_b) = &mut _out.body {
+                    CodecZenohDeclFinalView::decode_into(cursor, _b)?;
+                }
+            }
+            other => {
+                _out.body = CodecZenohDeclarationViewVariant::Default {
+                    tag: CodecZenohDeclarationUnknownTag(other),
+                    body: CodecZenohDeclFinalView::default(),
+                };
+                if let CodecZenohDeclarationViewVariant::Default { body: _b, .. } = &mut _out.body {
+                    CodecZenohDeclFinalView::decode_into(cursor, _b)?;
+                }
+            }
+        }
+        _out.header = header;
+        Ok(())
+    }
+
+    /// Fill `_out`, the builder form [`CodecZenohDeclaration`] a sender fills and
+    /// encodes, with what this view says: every field, each embedded body, the
+    /// variant arm, and each list entry as the walk yields it, built in the
+    /// destination where it will live. Fails only where the destination cannot
+    /// hold it, which a destination of the same declared bounds does.
+    // The name every view's method has (ADR 0049), which borrows because a
+    // view is read, not consumed. Clippy leaves an exported method's name
+    // alone; a crate that includes this module privately is asked to rename
+    // it, and the one name is what lets a codec reach every view it holds.
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_builder<D>(&self, _out: &mut CodecZenohDeclarationIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecZenohDeclarationLentStorage {
+        _out.header = self.header;
+        match &self.body {
+            CodecZenohDeclarationViewVariant::CodecZenohDeclKexpr(_b) => {
+                _out.body = CodecZenohDeclarationVariantIn::CodecZenohDeclKexpr(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohDeclKexpr(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecZenohDeclarationViewVariant::CodecZenohUndeclKexpr(_b) => {
+                _out.body = CodecZenohDeclarationVariantIn::CodecZenohUndeclKexpr(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohUndeclKexpr(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecZenohDeclarationViewVariant::CodecZenohDeclSubscriber(_b) => {
+                _out.body = CodecZenohDeclarationVariantIn::CodecZenohDeclSubscriber(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohDeclSubscriber(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecZenohDeclarationViewVariant::CodecZenohUndeclSubscriber(_b) => {
+                _out.body = CodecZenohDeclarationVariantIn::CodecZenohUndeclSubscriber(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohUndeclSubscriber(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecZenohDeclarationViewVariant::CodecZenohDeclQueryable(_b) => {
+                _out.body = CodecZenohDeclarationVariantIn::CodecZenohDeclQueryable(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohDeclQueryable(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecZenohDeclarationViewVariant::CodecZenohUndeclQueryable(_b) => {
+                _out.body = CodecZenohDeclarationVariantIn::CodecZenohUndeclQueryable(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohUndeclQueryable(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecZenohDeclarationViewVariant::CodecZenohDeclToken(_b) => {
+                _out.body = CodecZenohDeclarationVariantIn::CodecZenohDeclToken(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohDeclToken(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecZenohDeclarationViewVariant::CodecZenohUndeclToken(_b) => {
+                _out.body = CodecZenohDeclarationVariantIn::CodecZenohUndeclToken(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohUndeclToken(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecZenohDeclarationViewVariant::CodecZenohDeclFinal(_b) => {
+                _out.body = CodecZenohDeclarationVariantIn::CodecZenohDeclFinal(Default::default());
+                if let CodecZenohDeclarationVariantIn::CodecZenohDeclFinal(_o) = &mut _out.body {
+                    _b.into_builder(_o)?;
+                }
+            }
+            CodecZenohDeclarationViewVariant::Default { tag, body } => {
+                _out.body = CodecZenohDeclarationVariantIn::Default {
+                    tag: *tag,
+                    body: Default::default(),
+                };
+                if let CodecZenohDeclarationVariantIn::Default { body: _o, .. } = &mut _out.body {
+                    body.into_builder(_o)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Worst-case encoded byte count for this codec, as
+    /// [`CodecZenohDeclaration::MAX_ENCODED_BYTES`].
+    pub const MAX_ENCODED_BYTES: usize = 65571;
+
+    /// Encode what this view says into the caller-owned sink: the bytes
+    /// [`CodecZenohDeclaration::encode`] writes for the value [`Self::into_builder`]
+    /// fills, written straight from the view, walking each list, without the
+    /// builder. It writes the canonical wire, not the frame the view was decoded
+    /// from, so a frame `decode` accepted in a form that is not canonical is
+    /// not passed on as it came.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
+        CodecZenohDeclarationWire::encode_source(self, w)
+    }
+
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
+    /// value (docs/adr/0065).
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
+    }
+
+    pub fn mid(&self) -> u8 {
+        self.header & 0x1F
+    }
+
+    pub fn n(&self) -> bool {
+        (self.header & 0x20) != 0
+    }
+
+    pub fn m(&self) -> bool {
+        (self.header & 0x40) != 0
+    }
+
+    pub fn z(&self) -> bool {
+        (self.header & 0x80) != 0
+    }
+
+}
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohDeclaration<'a>` above is a zero-copy view borrowing the decode

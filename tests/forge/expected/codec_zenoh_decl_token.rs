@@ -17,6 +17,8 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
+use super::codec_zenoh_wireexpr::CodecZenohWireexprView;
+
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
@@ -112,7 +114,7 @@ impl<S: CodecZenohDeclTokenStorage> CodecZenohDeclTokenIn<S> {
         let mut _frame = *cursor;
         match Self::store_into(cursor, _out, n) {
             Err(CodecError::CapacityExceeded) => {
-                CodecZenohDeclToken::store_into(&mut _frame, &mut CodecZenohDeclToken::default(), n)?;
+                CodecZenohDeclTokenView::decode(&mut _frame, n)?;
                 Err(CodecError::CapacityExceeded)
             }
             stored => stored,
@@ -230,6 +232,15 @@ impl<S: CodecZenohDeclTokenStorage> CodecZenohDeclTokenSource for CodecZenohDecl
     }
 }
 
+impl<'a> CodecZenohDeclTokenSource for CodecZenohDeclTokenView<'a> {
+    fn id(&self) -> u32 {
+        self.id
+    }
+    fn wireexpr(&self) -> &impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource {
+        &self.wireexpr
+    }
+}
+
 /// The codec `CodecZenohDeclToken` itself: what writes a value read through
 /// [`CodecZenohDeclTokenSource`], holding no value and naming no storage profile. Every
 /// form of the value, a parent and a view write through it, so a profile
@@ -302,6 +313,107 @@ impl CodecZenohDeclTokenWire {
     }
 }
 
+
+// ── View (ADR 0049) ──────────────────────────────────────────────────
+// `CodecZenohDeclTokenView` is what a decode of `CodecZenohDeclToken` learned, not a
+// copy of what the wire repeated: a scalar, a string or a bytes field is held
+// as `CodecZenohDeclToken` holds it, an embedded body or a variant arm as its
+// own view, and a bounded list as the frame it was read from, how many entries
+// it holds and what a walk needs to read them again (`ListView`). Its size
+// depends on the number of fields and not on any `sce:max-count`, so moving
+// one copies a few words however long its lists may be. `decode` refuses the
+// frames `CodecZenohDeclToken::decode` refuses, with the same error: the entries
+// are decoded once to check them, and a walk afterwards cannot fail.
+#[allow(dead_code)]
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct CodecZenohDeclTokenView<'a> {
+    pub id: u32,
+    pub wireexpr: CodecZenohWireexprView<'a>,
+}
+
+#[allow(dead_code)]
+impl<'a> CodecZenohDeclTokenView<'a> {
+    /// A view with every field at its own type's [`Default`]: the destination
+    /// [`Self::decode_into`] fills.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Decode the next frame from `cursor`: the bytes, the bounds and the
+    /// errors of [`CodecZenohDeclToken::decode`], held as a view. On success the
+    /// cursor advances past the consumed bytes.
+    pub fn decode(cursor: &mut SceCursor<'a>, n: u8) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out, n)?;
+        Ok(_out)
+    }
+
+    /// [`Self::decode`] into a destination the caller owns, so a view that
+    /// embeds or dispatches to this one is filled where it will live. On
+    /// `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self, n: u8) -> Result<(), CodecError> {
+        // Declared-but-unconsumed flag inputs: defensive suppress per declared
+        // `<sce:flag-input>` so codecs that haven't (yet) consumed an
+        // input via `present-if` compile cleanly. The validator enforces
+        // declaration; consumption is a per-codec design choice.
+        let _ = n;
+        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        // The positional `raw[byte_off]` path is valid only when every
+        // field's absolute offset is fixed at codegen time; this branch
+        // handles every codec where it is not — present-if-gated fields
+        // (runtime presence), VLE / repeat / TLV-chain / embed fields
+        // (runtime width), string fields (UTF-8 decode), and a fixed field
+        // after a variable-length payload (offset depends on the payload
+        // length). Each field reads its own bytes from the cursor and
+        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
+        // every other field flows through `present_if_decode_stmt`, whose
+        // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
+        let id = cursor.read_vle_u32()?;
+        CodecZenohWireexprView::decode_into(cursor, &mut _out.wireexpr, n)?;
+        _out.id = id;
+        Ok(())
+    }
+
+    /// Fill `_out`, the builder form [`CodecZenohDeclToken`] a sender fills and
+    /// encodes, with what this view says: every field, each embedded body, the
+    /// variant arm, and each list entry as the walk yields it, built in the
+    /// destination where it will live. Fails only where the destination cannot
+    /// hold it, which a destination of the same declared bounds does.
+    // The name every view's method has (ADR 0049), which borrows because a
+    // view is read, not consumed. Clippy leaves an exported method's name
+    // alone; a crate that includes this module privately is asked to rename
+    // it, and the one name is what lets a codec reach every view it holds.
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_builder<D>(&self, _out: &mut CodecZenohDeclTokenIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecZenohDeclTokenLentStorage {
+        _out.id = self.id;
+        self.wireexpr.into_builder(&mut _out.wireexpr)?;
+        Ok(())
+    }
+
+    /// Worst-case encoded byte count for this codec, as
+    /// [`CodecZenohDeclToken::MAX_ENCODED_BYTES`].
+    pub const MAX_ENCODED_BYTES: usize = 65558;
+
+    /// Encode what this view says into the caller-owned sink: the bytes
+    /// [`CodecZenohDeclToken::encode`] writes for the value [`Self::into_builder`]
+    /// fills, written straight from the view, walking each list, without the
+    /// builder. It writes the canonical wire, not the frame the view was decoded
+    /// from, so a frame `decode` accepted in a form that is not canonical is
+    /// not passed on as it came.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
+        CodecZenohDeclTokenWire::encode_source(self, w)
+    }
+
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
+    /// value (docs/adr/0065).
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
+    }
+}
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohDeclToken<'a>` above is a zero-copy view borrowing the decode
