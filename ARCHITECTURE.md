@@ -1180,10 +1180,12 @@ a host-invoke ending from another thread: Kotlin and the generated C++ engine.
 **The invariant.** A macrostep runs to completion: no input is observed in the
 middle of one (§scxml-C-1). Every engine holds it by the same mechanism.
 
-1. **Owner thread.** A session tree (a root and every child session it started)
-   has one owner thread, the thread that drives its event loop. All of the
-   tree's state belongs to it: the configuration, the queues, the data model,
-   the scheduled sends, the running invocations and the child sessions.
+1. **Owner thread.** An event loop has one owner thread, the thread that
+   drives it. All of the state of the sessions it runs belongs to it: the
+   configuration, the queues, the data model, the scheduled sends, the running
+   invocations and the child sessions it drives. Where a parent drives its
+   children, a session tree is one loop with one owner; where a child runs a
+   loop of its own (Kotlin's coroutine mode), that loop has its own owner.
 2. **Owner-thread operations.** Every call that changes that state is one:
    raising an external event, ending a host invocation (completion or failure,
    in the root or in a named session of the tree), applying a Mesh delivery,
@@ -1191,8 +1193,9 @@ middle of one (§scxml-C-1). Every engine holds it by the same mechanism.
    outcome. The language enforces confinement where it can (Rust `!Sync`, Swift
    non-`Sendable`), checks it where it cannot (Kotlin always, C++ in debug
    builds), and documents it otherwise (Go, Python, C11).
-3. **One inbox per tree.** The only part of an engine that is safe to use from
-   any thread is its inbox: a multi-producer, single-consumer queue. What may be
+3. **One inbox per loop.** The only part of an engine that is safe to use from
+   any thread is its inbox: a multi-producer, single-consumer queue. An input
+   for a session that runs a loop of its own is forwarded to that loop's inbox. What may be
    posted is closed: an external event, a host-invoke ending, a Mesh delivery
    for a session. A post returns whether the inbox took it. A bounded inbox
    (C11, `no_std` Rust) refuses when full and says so; nothing is dropped

@@ -86,9 +86,11 @@ whose thread safety is left to each router.
 A statechart's macrostep runs to completion: no input is observed in the middle of one (§scxml-C-1, the external
 queue; the UML and Harel run-to-completion step). Every engine of SCE holds that invariant by one mechanism.
 
-- A session tree (a root and every child it started, ADR 0045) has one **owner thread**. It is the thread that drives
-  the tree's event loop. Every state of the tree belongs to it: the configuration, the queues, the data model, the
-  scheduled sends, the running invocations, the child sessions.
+- An **event loop** has one **owner thread**: the thread that drives it. Every state of the sessions that loop runs
+  belongs to it: the configuration, the queues, the data model, the scheduled sends, the running invocations, the
+  child sessions it drives. In most runtimes a session tree (a root and every child it started, ADR 0045) is one loop,
+  because the parent drives its children; there the tree has one owner. A runtime whose child sessions run loops of
+  their own (Kotlin's coroutine mode) has one owner per such loop, and the rule applies to each.
 - Every operation that changes that state is an **owner-thread operation**. The existing synchronous calls
   (`raiseExternal`, `completeHostInvoke`, `failHostInvoke`, `completeHostInvokeIn`, `applyMeshCalls`, `tick` and their
   spellings) keep their signatures and their synchronous outcome, and become owner-thread operations by contract.
@@ -103,8 +105,11 @@ host is the arrangement measured above to fail.
 
 ### D2. One inbox per session tree carries everything that comes from another thread
 
-- Each session tree has one **inbox**: a multi-producer, single-consumer queue. It is the only part of an engine that
-  is safe to use from any thread. A host obtains a handle to it (`inbox()` and its spellings). The handle is
+- Each event loop has one **inbox**: a multi-producer, single-consumer queue. It is the only part of an engine that
+  is safe to use from any thread. An input addressed to a session (a host-invoke ending that names a session of the
+  tree) is applied by the loop that runs that session: a loop that reaches a child running a loop of its own forwards
+  the input to that child's inbox, and a direct owner-thread call that does so answers whether the child's inbox took
+  it. A host obtains a handle to it (`inbox()` and its spellings). The handle is
   `Send + Sync` in Rust, `Sendable` in Swift, and documented as thread-safe elsewhere.
 - What may be posted is closed and typed. It is the inputs that today have a cross-thread caller:
   - an external event (what `raiseExternal` takes);
