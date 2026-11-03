@@ -105,7 +105,7 @@ struct RecordingEngine {
     // event to the engine's inbox rather than raising it, and the owner raises it
     // later with `raiseExternal`. The double's inbox does both at once, so what
     // `events` records is what the owner would raise; `refusing` is an inbox that
-    // takes nothing (closed, or full).
+    // takes nothing (closed, or out of memory).
     struct InboxExternalEvent {
         EventWithMetadata event;
     };
@@ -214,7 +214,7 @@ TEST(MeshDispatchTest, RpcRequestUnknownEventNameIsDropped) {
 }
 
 // docs/adr/0083: an inbound event reaches the engine through its inbox, and an
-// inbox that refuses it (the run ended, or it is full) leaves the envelope
+// inbox that refuses it (the run ended, or memory ran out) leaves the envelope
 // undelivered, which the caller is told rather than left to assume.
 TEST(MeshDispatchTest, AnEventTheInboxRefusesIsReportedUndelivered) {
     RecordingEngine engine;

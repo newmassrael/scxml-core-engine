@@ -1199,13 +1199,12 @@ private:
      *
      * Applies, on the owner, what other threads posted, in the order the inbox
      * took it, each by the owner-thread operation of the same name
-     * (`applyInboxInput`). At most `ENGINE_INBOX_CAPACITY` inputs per boundary,
-     * so posters that never stop cannot hold the owner here; what is left is
-     * applied at the next one.
+     * (`applyInboxInput`). What the inbox held when the boundary was reached, so
+     * posters that never stop cannot hold the owner here; what they post
+     * meanwhile is applied at the next one.
      */
     void drainInbox() {
-        inbox_.state().drain(::SCE::Core::ENGINE_INBOX_CAPACITY,
-                             [this](InboxInput &&input) { applyInboxInput(std::move(input)); });
+        inbox_.state().drain([this](InboxInput &&input) { applyInboxInput(std::move(input)); });
     }
 
     /**
@@ -1283,17 +1282,19 @@ public:
      * boundary, before the external queue is consulted, in the order the inbox
      * took it. `post` answers whether the inbox took the input: it refuses one
      * once the run has ended or been stopped (until the next `initialize` or
-     * `enterAt`), and when it holds `SCE::Core::ENGINE_INBOX_CAPACITY` inputs the
-     * owner has not applied. A post taken before the first run is applied at that
-     * run's first boundary. `wakeWith` installs what each post calls, so a host
-     * that drives the engine itself knows when to drive it.
+     * `enterAt`), and when the heap refuses the memory for it. It is unbounded
+     * otherwise (docs/adr/0083, D2), and never refuses a post for contention. A
+     * post taken before the first run is applied at that run's first boundary.
+     * `wakeWith` installs what each post calls, so a host that drives the
+     * engine itself knows when to drive it.
      */
     Inbox inbox() const {
         return inbox_.handle();
     }
 
-    /// How many posts this engine's inbox refused: closed, or full. A post that
-    /// returned `false` to a caller who could not act on it is still counted here.
+    /// How many posts this engine's inbox refused: closed, or out of memory. A
+    /// post that returned `false` to a caller who could not act on it is still
+    /// counted here.
     uint64_t refusedInboxPosts() const {
         return inbox_.state().refusedPosts();
     }

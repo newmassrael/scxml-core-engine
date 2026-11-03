@@ -195,17 +195,18 @@ protected:
 
 }  // namespace
 
-// Four threads post fifty inputs each while the owner, woken by the waker the host
+// Eight threads post sixty inputs each while the owner, woken by the waker the host
 // installed, drives the machine. The order the inbox took the posts in is recorded
 // under one lock with the post, so it is the order of the inbox itself; the machine
 // must take them in that order, and a machine of its own replaying the same posts
 // on one thread must end where this one did.
 TEST_F(WhatAnotherThreadPostsEntersThroughTheInbox,
        PostsFromManyThreadsDuringMacrostepsAreTakenAsASingleThreadedReplayTakesThem) {
-    constexpr int PRODUCERS = 4;
-    // 200 posts in all: far below the inbox's capacity, so none is refused whatever
-    // the scheduler does to the owner.
-    constexpr int PER_PRODUCER = 50;
+    constexpr int PRODUCERS = 8;
+    // 480 posts in all: several of the queue's segments, so a run where the owner
+    // falls behind grows the inbox and one where it keeps up retires segments, and
+    // none is refused either way (the inbox is unbounded).
+    constexpr int PER_PRODUCER = 60;
 
     Machine sm;
     Host host;
@@ -270,7 +271,7 @@ TEST_F(WhatAnotherThreadPostsEntersThroughTheInbox,
     // What the last producer posted after the owner's last macrostep.
     sm.step();
 
-    ASSERT_TRUE(refused.empty()) << "an open inbox below its capacity refused " << refused.size() << " posts";
+    ASSERT_TRUE(refused.empty()) << "an open inbox refused " << refused.size() << " posts";
     ASSERT_EQ(posted.size(), static_cast<std::size_t>(PRODUCERS * PER_PRODUCER));
     {
         std::lock_guard<std::mutex> lock(wakeMutex);

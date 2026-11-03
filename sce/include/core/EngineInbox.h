@@ -6,11 +6,16 @@
 //
 // A multi-producer, single-consumer queue of what other threads have for an
 // engine, which the engine's owner applies at its next macrostep boundary, each
-// input by the owner-thread operation of the same name. The queue is the forge
-// SCQ queue (`sce/forge/queue.h`, the one `mesh/EventQueueBridge.h` wraps), so a
-// post never waits for a macrostep and a stalled poster hides nothing another
-// thread posted. What an input is belongs to the engine: a closed set, each
-// carrying what the operation that applies it takes.
+// input by the owner-thread operation of the same name. What an input is belongs
+// to the engine: a closed set, each carrying what the operation that applies it
+// takes.
+//
+// The queue is the forge LSCQ (`sce/forge/queue_segmented.h`): Nikolaev's list
+// of SCQ rings, lock-free on both sides and unbounded but for the memory it is
+// given. A hosted inbox is unbounded on every runtime (ADR 0083, D2), so a post
+// is refused only when the inbox is closed or the heap refuses a segment, never
+// because the inbox is full. A stalled poster hides nothing another thread
+// posted, and a post never waits for a macrostep.
 //
 // A header of the shared layer because the rule is both C++ engines': the
 // generated engine has its inbox here, and the Interpreter takes the same one
@@ -19,6 +24,7 @@
 #pragma once
 
 #include "sce/forge/queue.h"
+#include "sce/forge/queue_segmented.h"
 
 #include <atomic>
 #include <cstddef>
@@ -26,20 +32,52 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <thread>
 #include <utility>
 
 namespace SCE::Core {
 
-/// How many posted inputs an engine's inbox holds that its owner has not applied
-/// yet. The inbox is bounded, as the SCQ queue is: a post that finds it full is
-/// refused, the poster is told (`post` answers `false`) and the engine counts it
-/// (`refusedPosts`), so nothing is dropped without a word. What fills it is what
-/// other threads post between two macrostep boundaries of one owner; the bound is
-/// far above what a host or a Mesh router delivers in that time, and a poster that
-/// reaches it is one whose owner has stopped driving the engine.
-inline constexpr std::size_t ENGINE_INBOX_CAPACITY = 1024;
+/**
+ * @brief The allocator a hosted engine's inbox takes its segments from: the C++
+ *        heap, aligned as each segment asks
+ *
+ * The contract is the one `sce/forge/queue_segmented.h` states for a segmented
+ * queue's allocator. It lives here, beside the engine, and not in the forge
+ * runtime: SCE_FORGE.md §2.1 (C2) keeps allocators out of that runtime, and a
+ * segmented queue borrows the allocator its user injects. A hosted engine is that
+ * user, and the heap is what a hosted program has. The heap can block, which is
+ * what `kProgress` says; it refuses by returning null, which the queue reports as
+ * `OutOfMemory`. Stateless, so any number of threads may call it at once.
+ */
+struct HostedSegmentAllocator {
+    static constexpr ::SCE::Forge::Queue::Progress kProgress = ::SCE::Forge::Queue::Progress::Blocking;
+
+    void *allocate(std::size_t size, std::size_t align) noexcept {
+        return ::operator new(size, std::align_val_t(align), std::nothrow);
+    }
+
+    void deallocate(void *block, std::size_t, std::size_t align) noexcept {
+        ::operator delete(block, std::align_val_t(align));
+    }
+};
+
+/// How many inputs one segment of an inbox's queue holds. A post that finds the
+/// newest segment full takes a new one from the allocator, so this is the grain the
+/// inbox grows and shrinks by, not a bound on what it holds.
+inline constexpr std::size_t ENGINE_INBOX_SEGMENT = 64;
+
+/// How many threads may be inside a post or a drain of one inbox at the same
+/// instant: the queue's producer places and its hazard-pointer slots, both sides
+/// together (the LSCQ's `R` and `H`, which are compile-time). A post that finds
+/// every place taken waits for one, yielding, and is never refused for it, so
+/// this bounds how many posts proceed at once and not how many are taken. Sixty-
+/// four is far above the threads a host posts from — a transport's receive
+/// threads, a deadline scheduler, the host's own workers — so the wait is reached
+/// only under contention a host does not have, and the domain it sizes costs one
+/// cache line a slot, made with the inbox's first post.
+inline constexpr std::size_t ENGINE_INBOX_PARTICIPANTS = 64;
 
 /**
  * @brief What an engine and every handle to its inbox share
@@ -56,15 +94,19 @@ inline constexpr std::size_t ENGINE_INBOX_CAPACITY = 1024;
  * @tparam Input The engine's closed set of inputs. Moved into a node of its own
  *         on the posting thread, so the queue's slots hold one pointer each
  *         whatever the input weighs.
+ * @tparam Allocator Where the queue's segments come from (the contract of
+ *         `sce/forge/queue_segmented.h`). The heap for an engine; a test injects
+ *         one that refuses.
  */
-template <typename Input> class EngineInboxState {
+template <typename Input, typename Allocator = HostedSegmentAllocator> class EngineInboxState {
 public:
-    EngineInboxState() = default;
+    explicit EngineInboxState(Allocator allocator = Allocator()) : allocator_(std::move(allocator)) {}
 
     ~EngineInboxState() {
         // Every handle is gone, so nobody posts; what is still queued is destroyed
-        // with the queue.
-        delete queue_.load(std::memory_order_acquire);
+        // with the queue, and the queue gives its segments back to `allocator_`,
+        // which outlives it.
+        delete ring_.load(std::memory_order_acquire);
     }
 
     EngineInboxState(const EngineInboxState &) = delete;
@@ -76,23 +118,26 @@ public:
      * @brief Post @p input; whether the inbox took it
      *
      * Refused when the inbox is closed (the run ended, or was stopped, or the
-     * engine is gone), when it holds `ENGINE_INBOX_CAPACITY` inputs, and when more
-     * threads than that are posting at the same instant. A refusal is counted.
+     * engine is gone) and when memory for it is refused. A refusal is counted.
      * After a post the inbox took, the waker the host installed is called on this
      * thread.
      */
     bool post(Input input) {
-        // Allocated before the post is counted in: an allocation that throws must
-        // not leave a count a close would wait on for ever.
-        auto node = std::make_unique<Input>(std::move(input));
-        Queue &ring = queue();
+        // Made before the post is counted in, so nothing below can throw while a
+        // close is waiting on the count.
+        std::unique_ptr<Input> node(new (std::nothrow) Input(std::move(input)));
+        Ring *ring = node ? madeRing() : nullptr;
+        if (ring == nullptr) {
+            refused_.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
         // Counted in before the gate is read, so a close waits for every post that
         // saw the inbox open, and no post that saw it open lands after the close
         // took what the inbox held.
         const std::uint64_t gate = gate_.fetch_add(ONE_POST, std::memory_order_acq_rel);
         bool taken = false;
         if ((gate & CLOSED) == 0) {
-            taken = push(ring, std::move(node));
+            taken = push(*ring, std::move(node));
         }
         gate_.fetch_sub(ONE_POST, std::memory_order_acq_rel);
         if (!taken) {
@@ -121,33 +166,39 @@ public:
     }
 
     /**
-     * @brief Apply, with @p apply, what the inbox holds, oldest first, at most
-     *        @p limit inputs; how many were applied
+     * @brief Apply, with @p apply, what the inbox held when this was called, oldest
+     *        first; how many inputs were applied
      *
-     * The owner's. Bounded so posters that never stop cannot hold the owner at one
-     * boundary: what is left is applied at the next one.
+     * The owner's. What other threads post while this runs waits for the next
+     * boundary, so posters that never stop cannot hold the owner at this one.
      */
-    template <typename Apply> std::size_t drain(std::size_t limit, Apply &&apply) {
-        Queue *ring = queue_.load(std::memory_order_acquire);
+    template <typename Apply> std::size_t drain(Apply &&apply) {
+        Ring *ring = ring_.load(std::memory_order_acquire);
         if (ring == nullptr) {
             return 0;
         }
-        // Only the owner consumes, so the one consumer place is free.
-        auto consumer = ring->consumer();
-        if (!consumer) {
+        const std::size_t due = held_.load(std::memory_order_acquire);
+        if (due == 0) {
             return 0;
         }
-        std::size_t applied = 0;
-        while (applied < limit) {
-            std::optional<std::unique_ptr<Input>> taken = consumer->try_pop();
-            if (!taken) {
-                break;
+        for (;;) {
+            // A consumer needs a slot of the domain, which posters in flight hold
+            // only for the length of a push.
+            if (auto consumer = ring->queue.consumer()) {
+                std::size_t applied = 0;
+                while (applied < due) {
+                    std::optional<std::unique_ptr<Input>> taken = consumer->try_pop();
+                    if (!taken) {
+                        break;
+                    }
+                    held_.fetch_sub(1, std::memory_order_acq_rel);
+                    ++applied;
+                    apply(std::move(**taken));
+                }
+                return applied;
             }
-            held_.fetch_sub(1, std::memory_order_acq_rel);
-            ++applied;
-            apply(std::move(**taken));
+            std::this_thread::yield();
         }
-        return applied;
     }
 
     /// Open the inbox: posts are taken from now on. The owner's.
@@ -165,8 +216,8 @@ public:
     void close() noexcept {
         gate_.fetch_or(CLOSED, std::memory_order_acq_rel);
         while ((gate_.load(std::memory_order_acquire) & ~CLOSED) != 0) {
-            // A post in flight is a lock-free push, finished in a bounded number of
-            // its own steps.
+            // A post in flight is a push, finished in a bounded number of its own
+            // steps once it holds a place.
             std::this_thread::yield();
         }
     }
@@ -208,7 +259,19 @@ public:
     }
 
 private:
-    using Queue = ::SCE::Forge::Queue::Scq<std::unique_ptr<Input>, ENGINE_INBOX_CAPACITY, ENGINE_INBOX_CAPACITY>;
+    using Queue =
+        ::SCE::Forge::Queue::Lscq<std::unique_ptr<Input>, ENGINE_INBOX_SEGMENT, ENGINE_INBOX_PARTICIPANTS,
+                                  ENGINE_INBOX_PARTICIPANTS, Allocator, ::SCE::Forge::Queue::Progress::Blocking>;
+
+    /// The queue and the hazard-pointer domain it borrows, made together by the
+    /// first post. The domain is declared first, so the queue, whose destruction
+    /// flushes the domain, goes before it.
+    struct Ring {
+        typename Queue::Domain domain;
+        Queue queue;
+
+        explicit Ring(Allocator &allocator) noexcept : domain(), queue(allocator, domain) {}
+    };
 
     /// The gate's closed bit.
     static constexpr std::uint64_t CLOSED = 1;
@@ -216,32 +279,44 @@ private:
     static constexpr std::uint64_t ONE_POST = 2;
 
     /// The queue, made by the first post: an engine nobody posts to never pays for
-    /// one, which matters to a host running many sessions.
-    Queue &queue() {
-        Queue *existing = queue_.load(std::memory_order_acquire);
+    /// one, which matters to a host running many sessions. Null when the memory for
+    /// it, or for its first segment, is refused; the next post asks again.
+    Ring *madeRing() noexcept {
+        Ring *existing = ring_.load(std::memory_order_acquire);
         if (existing != nullptr) {
-            return *existing;
+            return existing;
         }
-        auto made = std::make_unique<Queue>();
-        if (queue_.compare_exchange_strong(existing, made.get(), std::memory_order_acq_rel,
-                                           std::memory_order_acquire)) {
-            return *made.release();
+        Ring *made = new (std::nothrow) Ring(allocator_);
+        if (made == nullptr) {
+            return nullptr;
+        }
+        if (!made->queue.valid()) {
+            delete made;
+            return nullptr;
+        }
+        if (ring_.compare_exchange_strong(existing, made, std::memory_order_acq_rel, std::memory_order_acquire)) {
+            return made;
         }
         // Another post made it first; this one is given back.
-        return *existing;
+        delete made;
+        return existing;
     }
 
-    bool push(Queue &ring, std::unique_ptr<Input> node) {
-        auto producer = ring.producer();
-        if (!producer) {
-            return false;
+    /// Push @p node; false only when the allocator refused a segment. A producer
+    /// handle is taken for the push and given back after it; when every place is
+    /// taken, this waits for one rather than refuse the post.
+    bool push(Ring &ring, std::unique_ptr<Input> node) {
+        for (;;) {
+            if (auto producer = ring.queue.producer()) {
+                held_.fetch_add(1, std::memory_order_acq_rel);
+                if (producer->try_push(std::move(node)) == ::SCE::Forge::Queue::PushStatus::Ok) {
+                    return true;
+                }
+                held_.fetch_sub(1, std::memory_order_acq_rel);
+                return false;
+            }
+            std::this_thread::yield();
         }
-        held_.fetch_add(1, std::memory_order_acq_rel);
-        if (producer->try_push(std::move(node)) == ::SCE::Forge::Queue::PushStatus::Ok) {
-            return true;
-        }
-        held_.fetch_sub(1, std::memory_order_acq_rel);
-        return false;
     }
 
     void wake() {
@@ -255,7 +330,10 @@ private:
         }
     }
 
-    std::atomic<Queue *> queue_{nullptr};
+    /// Declared before `ring_`'s queue can need it, and outlives it: the destructor
+    /// deletes the ring first.
+    Allocator allocator_;
+    std::atomic<Ring *> ring_{nullptr};
     /// The closed bit, and `ONE_POST` for each post in flight.
     std::atomic<std::uint64_t> gate_{0};
     /// Posts taken and not yet applied.
@@ -272,9 +350,10 @@ private:
  * Copyable and cheap to copy; every copy names the same inbox, and stays valid
  * after the engine is gone (its posts are refused then).
  */
-template <typename Input> class EngineInbox {
+template <typename Input, typename Allocator = HostedSegmentAllocator> class EngineInbox {
 public:
-    explicit EngineInbox(std::shared_ptr<EngineInboxState<Input>> state) noexcept : state_(std::move(state)) {}
+    explicit EngineInbox(std::shared_ptr<EngineInboxState<Input, Allocator>> state) noexcept
+        : state_(std::move(state)) {}
 
     /// Post @p input; whether the inbox took it. See `EngineInboxState::post`.
     bool post(Input input) const {
@@ -287,7 +366,7 @@ public:
     }
 
 private:
-    std::shared_ptr<EngineInboxState<Input>> state_;
+    std::shared_ptr<EngineInboxState<Input, Allocator>> state_;
 };
 
 /**
@@ -298,9 +377,10 @@ private:
  * heard by nobody. Movable with its engine; not copyable, because a copy of an
  * engine sharing the original's inbox would be a second consumer of it.
  */
-template <typename Input> class EngineInboxOwner {
+template <typename Input, typename Allocator = HostedSegmentAllocator> class EngineInboxOwner {
 public:
-    EngineInboxOwner() : state_(std::make_shared<EngineInboxState<Input>>()) {}
+    explicit EngineInboxOwner(Allocator allocator = Allocator())
+        : state_(std::make_shared<EngineInboxState<Input, Allocator>>(std::move(allocator))) {}
 
     ~EngineInboxOwner() {
         if (state_) {
@@ -324,17 +404,17 @@ public:
     EngineInboxOwner &operator=(const EngineInboxOwner &) = delete;
 
     /// A handle to this inbox, for any thread.
-    EngineInbox<Input> handle() const {
-        return EngineInbox<Input>(state_);
+    EngineInbox<Input, Allocator> handle() const {
+        return EngineInbox<Input, Allocator>(state_);
     }
 
     /// The shared state, for the engine's own (owner-side) use.
-    EngineInboxState<Input> &state() const noexcept {
+    EngineInboxState<Input, Allocator> &state() const noexcept {
         return *state_;
     }
 
 private:
-    std::shared_ptr<EngineInboxState<Input>> state_;
+    std::shared_ptr<EngineInboxState<Input, Allocator>> state_;
 };
 
 }  // namespace SCE::Core

@@ -6170,8 +6170,8 @@ struct TransportRouter {
         // owner raises it at its next macrostep boundary (docs/adr/0083,
         // ARCHITECTURE.md "Engine Threading"). The inbox answers whether it
         // took the event; one it refused (closed because the run ended, or
-        // full) is counted by the engine (`refusedInboxPosts`), since no
-        // caller is left here to tell.
+        // the heap refused it) is counted by the engine
+        // (`refusedInboxPosts`), since no caller is left here to tell.
         SenderEngine* sender_ptr = sessions_[0];
         std::string captured_invoke_id = invokeId;
         invoke_correlation_.registerInvoke(invoke_uuid, target, respondersFor(target),

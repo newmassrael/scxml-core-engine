@@ -124,7 +124,11 @@ host is the arrangement measured above to fail.
   declares) refuses a post when full and says so; nothing is dropped silently. A hosted runtime's inbox is unbounded.
 - A post wakes the owner through a waker the host installs (`Hal::wake` in Rust; a runtime with its own loop, such as
   Kotlin's coroutine mode or the Interpreter's worker, wakes itself).
-- The C++ implementation is the forge SCQ queue that `EventQueueBridge.h` already wraps. C11 uses the same algorithm
+- The C++ implementation is the forge LSCQ (`sce/forge/queue_segmented.h`): a list of the SCQ rings
+  `EventQueueBridge.h` wraps, lock-free on both sides like them, and unbounded but for the heap, which a hosted inbox
+  must be (amended at step 3: the bounded SCQ alone would have refused a post when full, a refusal no other hosted
+  runtime makes). Its segments come from a heap allocator beside the engine (`core/EngineInbox.h`), since the forge
+  runtime holds no allocator of its own (SCE_FORGE.md §2.1, C2). C11 uses the same algorithm
   (`queue.h`, `queue_irq.h` for a post from an interrupt). Kotlin's coroutine mode keeps its `Channel` as the inbox and
   widens what it carries. The other runtimes use their standard library's concurrent queue.
 

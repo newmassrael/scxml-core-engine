@@ -179,6 +179,8 @@ add_executable(sce_scxml_tests
     simple_scxml_test.cpp
     core/TypeRegistryTest.cpp
     core/InvokeHelperTest.cpp
+    # docs/adr/0083 D2: an engine's inbox, with its allocator injected.
+    core/EngineInboxTest.cpp
     concurrency/TypeRegistryThreadSafetyTest.cpp
     common/EventDataHelperTest.cpp
     common/TestSummaryExitStatusTest.cpp
