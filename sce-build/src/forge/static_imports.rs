@@ -21,7 +21,7 @@ use std::path::Path;
 use crate::forge::error::{ForgeError, ImportError, Located};
 use crate::forge::generator::StatelessFunction;
 use crate::forge::model::{
-    AlgorithmModel, AlgorithmValueType, CodecModel, EnumRef, FieldType, ForgeDocument, ForgeField,
+    AlgorithmModel, AlgorithmValueType, CodecModel, EntryType, EnumRef, ForgeDocument, ForgeField,
     ForgeImport, ForgeKind, ListElemType, OptionalElemType, OutOfBounds, ParsedForge, SceType,
 };
 use crate::forge::type_ctx::{CalleeKind, StaticCallee, StaticSlot, StaticValueSignature};
@@ -86,7 +86,7 @@ fn enum_document(imports: &[ForgeImport], base_dir: &Path, alias: &str) -> Optio
 /// A field of a record schema, as a record handed to an algorithm is judged by it.
 struct SchemaField {
     id: String,
-    ty: FieldType,
+    ty: EntryType,
     /// The `sce:max-size` the schema declares on it, if any.
     max_size: Option<u32>,
     /// The enum document an enum field holds a value of, read from the schema's
@@ -376,8 +376,8 @@ fn value_signature(
             // value of an enum crosses by the declared name of its variant, as an
             // enum field does.
             let ty = match &field.ty {
-                FieldType::Scalar(ty) => ty,
-                FieldType::Optional { elem } => {
+                EntryType::Scalar(ty) => ty,
+                EntryType::Optional { elem } => {
                     if let SceType::Enum(reference) = elem {
                         let what = format!("the field `{}` of its record `{alias}`", field.id);
                         crossable_enum(&what, &reference.alias, field.enum_document.as_ref())?;

@@ -35,7 +35,7 @@
 
 use std::fmt;
 
-use crate::forge::model::{AlgorithmValueType, FieldType, ListElemType, OptionalElemType, SceType};
+use crate::forge::model::{AlgorithmValueType, EntryType, ListElemType, OptionalElemType, SceType};
 
 /// A bound written in a type: the most elements of a list, or the most bytes of
 /// a text or a byte string. `limit` is the name a build may give another number
@@ -505,7 +505,7 @@ impl ValueType {
     /// it that the field's text or byte string states. `None` for a text or a
     /// byte string with no bound, which no event schema of the language holds
     /// (docs/adr/0086, section 1.4).
-    pub fn of_field(ty: &FieldType, max_size: Option<u32>, limit: Option<&str>) -> Option<Self> {
+    pub fn of_field(ty: &EntryType, max_size: Option<u32>, limit: Option<&str>) -> Option<Self> {
         let bound = || {
             max_size.map(|max| Bound {
                 max,
@@ -518,8 +518,8 @@ impl ValueType {
             other => Some(Self::Scalar(other.clone())),
         };
         match ty {
-            FieldType::Scalar(t) => leaf(t),
-            FieldType::Optional { elem } => leaf(elem).map(|elem| Self::Optional {
+            EntryType::Scalar(t) => leaf(t),
+            EntryType::Optional { elem } => leaf(elem).map(|elem| Self::Optional {
                 elem: Box::new(elem),
             }),
         }
@@ -754,13 +754,13 @@ impl WrittenType {
     /// The type as an event schema's field holds it today: a scalar, a text or
     /// a byte string, or an optional one, with the bound of its text. Any other
     /// type is a composition the field's lowerings do not hold yet.
-    pub fn as_field_type(&self) -> Result<(FieldType, Option<Bound>), Composition> {
+    pub fn as_field_type(&self) -> Result<(EntryType, Option<Bound>), Composition> {
         if let Some((t, max)) = leaf(self) {
-            return Ok((FieldType::Scalar(t), max));
+            return Ok((EntryType::Scalar(t), max));
         }
         match self {
             Self::Optional { elem } => leaf(elem)
-                .map(|(t, max)| (FieldType::Optional { elem: t }, max))
+                .map(|(t, max)| (EntryType::Optional { elem: t }, max))
                 .ok_or_else(|| Composition::of(&**elem)),
             _ => Err(Composition::of(self)),
         }
@@ -1624,12 +1624,12 @@ mod tests {
         let read = |t: &str| WrittenType::read(t).unwrap();
         assert_eq!(
             read("string[8]").as_field_type(),
-            Ok((FieldType::Scalar(SceType::String), Some(Bound::of(8))))
+            Ok((EntryType::Scalar(SceType::String), Some(Bound::of(8))))
         );
         assert_eq!(
             read("optional<bytes[n=4]>").as_field_type(),
             Ok((
-                FieldType::Optional {
+                EntryType::Optional {
                     elem: SceType::Bytes
                 },
                 Some(Bound::named("n", 4))
@@ -1637,7 +1637,7 @@ mod tests {
         );
         assert_eq!(
             read("enum:Level").as_field_type(),
-            Ok((FieldType::Scalar(enum_ty("Level")), None))
+            Ok((EntryType::Scalar(enum_ty("Level")), None))
         );
         for (text, place, constructor) in [
             ("list<uint8>[2]", "list<uint8>[2]", "list"),

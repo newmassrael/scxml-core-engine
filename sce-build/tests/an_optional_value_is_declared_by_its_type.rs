@@ -522,7 +522,7 @@ fn statechart_due(data: &str, body: &str) -> String {
 
 #[test]
 fn a_schema_field_holds_an_optional_scalar_and_the_forge_ast_spells_it() {
-    use sce_build::forge::model::{FieldType, ForgeDocument};
+    use sce_build::forge::model::{EntryType, ForgeDocument};
     let parsed = sce_build::forge::parser::parse_forge_with_imports(
         SCHEMA_DUE,
         sce_build::DocumentLabel::symmetric("schema_item_due"),
@@ -540,23 +540,23 @@ fn a_schema_field_holds_an_optional_scalar_and_the_forge_ast_spells_it() {
             .map(|f| f.sce_type.clone())
             .unwrap_or_else(|| panic!("the field `{id}` is read"))
     };
-    assert_eq!(declared("id"), FieldType::Scalar(SceType::Uint32));
+    assert_eq!(declared("id"), EntryType::Scalar(SceType::Uint32));
     assert_eq!(
         declared("due"),
-        FieldType::Optional {
+        EntryType::Optional {
             elem: SceType::Int64
         }
     );
     assert_eq!(
         declared("title"),
-        FieldType::Optional {
+        EntryType::Optional {
             elem: SceType::String
         }
     );
     assert!(
         matches!(
             declared("status"),
-            FieldType::Optional {
+            EntryType::Optional {
                 elem: SceType::Enum(_)
             }
         ),

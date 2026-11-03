@@ -13,7 +13,7 @@
 
 use std::path::Path;
 
-use sce_build::forge::model::{FieldType, ForgeDocument, SceType, SchemaField};
+use sce_build::forge::model::{EntryType, ForgeDocument, SceType, SchemaField};
 use sce_build::forge::parser::parse_forge_with_imports;
 use sce_build::DocumentLabel;
 use sce_rust_trust::message::{self, Kind, SignedEvent};
@@ -35,7 +35,7 @@ fn declared(name: &str) -> (String, Vec<SchemaField>) {
 }
 
 /// How the trust layer reads a field of the type the schema gives it.
-fn kind_of(field_type: &FieldType) -> Option<Kind> {
+fn kind_of(field_type: &EntryType) -> Option<Kind> {
     match field_type.scalar()? {
         SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => {
             Some(Kind::Unsigned)

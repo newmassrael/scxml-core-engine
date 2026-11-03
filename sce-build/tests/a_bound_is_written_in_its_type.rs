@@ -28,7 +28,7 @@ use std::process::{Command, Output};
 
 use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::forge::error::{ForgeError, Located};
-use sce_build::forge::model::{AlgorithmStmt, FieldType, ForgeDocument, SceType};
+use sce_build::forge::model::{AlgorithmStmt, EntryType, ForgeDocument, SceType};
 use sce_build::forge::parser::parse_forge;
 use sce_build::DocumentLabel;
 
@@ -318,13 +318,13 @@ fn a_field_holds_the_same_type_whichever_spelling_states_its_bound() {
             "string[12]",
             "string",
             r#"sce:max-size="12""#,
-            FieldType::Scalar(SceType::String),
+            EntryType::Scalar(SceType::String),
         ),
         (
             "optional<bytes[4]>",
             "optional<bytes>",
             r#"sce:max-size="4""#,
-            FieldType::Optional {
+            EntryType::Optional {
                 elem: SceType::Bytes,
             },
         ),

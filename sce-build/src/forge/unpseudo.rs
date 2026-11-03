@@ -48,8 +48,8 @@ use crate::forge::model::{
     TestVector, TestVectorValue, TlvEntryFlagBind, TlvEntryId, TlvTerminateStrategy, VariantArm,
 };
 use crate::forge::model::{
-    CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
-    EnumVariant, EventSchemaModel, FieldType, FilterModel, FilterType, ForgeDocument, ForgeField,
+    CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EntryType,
+    EnumModel, EnumVariant, EventSchemaModel, FilterModel, FilterType, ForgeDocument, ForgeField,
     InboxConfig, InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass,
     LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry, LookupModel, MissPolicy,
     ObserverModel, OutOfBounds, OverflowPolicy, RangeRule, RateOfChangeRule, ReassemblyConfig,
@@ -629,7 +629,7 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
 /// `optional<T>` (docs/adr/0055), written as one word as the renderer writes
 /// it.
 fn parse_schema_field(line: &Line<'_>) -> Result<SchemaField, ParseError> {
-    parse_typed_field(line, FieldType::from_attr)
+    parse_typed_field(line, EntryType::from_attr)
 }
 
 /// A field line, its type read by `read_type`.
@@ -2325,7 +2325,7 @@ fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, P
             .and_then(|v| v.strip_suffix(':'))
             .ok_or_else(|| fail("a cbor entry needs `<id>:`".to_string()))?;
         let type_word = lw.get(2).copied().unwrap_or("");
-        let sce_type = FieldType::from_attr(type_word)
+        let sce_type = EntryType::from_attr(type_word)
             .ok_or_else(|| fail(format!("`{type_word}` is not an sce:type")))?;
         if lw.get(3).copied() != Some("key") {
             return Err(fail(
@@ -2420,7 +2420,7 @@ fn parse_content_line_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<Codec
             .and_then(|v| v.strip_suffix(':'))
             .ok_or_else(|| fail("a content-line entry needs `<id>:`".to_string()))?;
         let type_word = lw.get(2).copied().unwrap_or("");
-        let sce_type = FieldType::from_attr(type_word)
+        let sce_type = EntryType::from_attr(type_word)
             .ok_or_else(|| fail(format!("`{type_word}` is not an sce:type")))?;
         if lw.get(3).copied() != Some("property") {
             return Err(fail(

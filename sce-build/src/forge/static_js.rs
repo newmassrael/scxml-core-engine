@@ -2293,7 +2293,7 @@ mod tests {
         let target = JsTarget::new(BTreeMap::new());
         let field = |id: &str, elem: SceType| SchemaField {
             id: id.to_string(),
-            sce_type: crate::forge::model::FieldType::Optional { elem },
+            sce_type: crate::forge::model::EntryType::Optional { elem },
             direction: crate::forge::model::Direction::In,
             expr: None,
             expr_spelling: None,
@@ -2348,7 +2348,7 @@ mod tests {
         );
         // A field that is never absent is no optional read.
         let mut plain = field("id", SceType::Uint32);
-        plain.sce_type = crate::forge::model::FieldType::Scalar(SceType::Uint32);
+        plain.sce_type = crate::forge::model::EntryType::Scalar(SceType::Uint32);
         assert_eq!(
             target.payload_optional_read("_event.data", &plain, &[]),
             None

@@ -27,7 +27,7 @@ use crate::forge::expr::{
     transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal,
     RUST_LIST_DESTINATION,
 };
-use crate::forge::model::{EnumModel, EventSchemaModel, FieldType, SceType, SchemaField};
+use crate::forge::model::{EntryType, EnumModel, EventSchemaModel, SceType, SchemaField};
 use crate::forge::narrowing::{Chain, Facts, Writes};
 use crate::forge::static_datamodel::{indexed_element, is_null_literal, proving};
 use crate::forge::type_ctx::{
@@ -541,11 +541,11 @@ fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EventSche
     // a `bool` on every generated backend, and the rest as its own step 9 spells it.
     spec.schemas.get(alias).filter(|schema| {
         schema.fields.iter().all(|f| match &f.sce_type {
-            FieldType::Scalar(ty) => record_field_copies(ty, f.max_size),
+            EntryType::Scalar(ty) => record_field_copies(ty, f.max_size),
             // ... and a text that may be absent is bounded by the schema as a
             // text is, since the algorithm's record holds it in a buffer of that
             // bound.
-            FieldType::Optional { elem } => {
+            EntryType::Optional { elem } => {
                 (!matches!(elem, SceType::String) || f.max_size.is_some())
                     && match spec.lang {
                         Some(lang) => crate::forge::generator::algorithm_optional_spelled(
@@ -585,7 +585,7 @@ fn enum_crossing_function_names(ty: &str) -> (String, String) {
 fn swift_field_unwritten(field: &crate::forge::model::SchemaField) -> Option<&'static str> {
     if matches!(
         &field.sce_type,
-        FieldType::Optional { elem }
+        EntryType::Optional { elem }
             if !crate::forge::generator::algorithm_optional_spelled(
                 Language::Swift,
                 &crate::forge::model::OptionalElemType::Scalar(elem.clone()),
@@ -745,13 +745,13 @@ impl AdapterSpec<'_> {
             // The present value of an optional enum crosses by the same declared
             // name, mapped where it is present and absent where it is absent
             // (docs/adr/0055, step 9).
-            FieldType::Optional {
+            EntryType::Optional {
                 elem: ty @ SceType::Enum(_),
             } => self.optional_enum_crossing(target, ty, value, crossing),
-            FieldType::Scalar(SceType::Enum(reference)) => {
+            EntryType::Scalar(SceType::Enum(reference)) => {
                 self.enum_crossing(target, &reference.alias, value, crossing)
             }
-            FieldType::Scalar(_) | FieldType::Optional { .. } => Some(text(value)),
+            EntryType::Scalar(_) | EntryType::Optional { .. } => Some(text(value)),
         }
     }
 
@@ -1825,7 +1825,7 @@ pub trait StaticTarget {
         statement: &str,
         _callee: &str,
         _args: &[String],
-        _arg_types: &[FieldType],
+        _arg_types: &[EntryType],
         failed: &str,
     ) -> String {
         self.receiving_call(statement, failed)
@@ -1961,8 +1961,8 @@ impl KotlinTarget {
                 // (docs/adr/0055); `contentEquals` and `contentHashCode` take an
                 // absent one as they are.
                 match field.sce_type {
-                    FieldType::Optional { .. } => format!("{member} = {member}?.copyOf()"),
-                    FieldType::Scalar(_) => format!("{member} = {member}.copyOf()"),
+                    EntryType::Optional { .. } => format!("{member} = {member}?.copyOf()"),
+                    EntryType::Scalar(_) => format!("{member} = {member}.copyOf()"),
                 }
             })
             .collect();
@@ -2380,10 +2380,10 @@ impl StaticTarget for KotlinTarget {
                 // An optional field is the optional type over its present
                 // value's (docs/adr/0055).
                 let field_ty = match &field.sce_type {
-                    FieldType::Optional { .. } => self
+                    EntryType::Optional { .. } => self
                         .optional_type(&present)
                         .expect("Kotlin spells an optional value"),
-                    FieldType::Scalar(_) => present,
+                    EntryType::Scalar(_) => present,
                 };
                 format!("val {}: {field_ty}", self.record_field(&field.id))
             })
@@ -2408,10 +2408,10 @@ impl StaticTarget for KotlinTarget {
                     _ => format!("SavedValues.of({value})"),
                 };
                 let saved = match &field.sce_type {
-                    FieldType::Optional { .. } => {
+                    EntryType::Optional { .. } => {
                         format!("SavedValues.optional({member}) {{ {} }}", write("it"))
                     }
-                    FieldType::Scalar(_) => write(&member),
+                    EntryType::Scalar(_) => write(&member),
                 };
                 format!("\"{}\" to {saved}", field.id)
             })
@@ -2444,11 +2444,11 @@ impl StaticTarget for KotlinTarget {
                 let saved = format!("SavedValues.field(value, what, \"{id}\")");
                 let what = format!("\"$what.{id}\"");
                 match &field.sce_type {
-                    FieldType::Optional { .. } => format!(
+                    EntryType::Optional { .. } => format!(
                         "{name} = SavedValues.optional({saved}, {what}) {{ e, w -> {} }}",
                         read("e", "w")
                     ),
-                    FieldType::Scalar(_) => format!("{name} = {}", read(&saved, &what)),
+                    EntryType::Scalar(_) => format!("{name} = {}", read(&saved, &what)),
                 }
             })
             .collect();
@@ -2956,13 +2956,13 @@ impl StaticTarget for RustTarget {
                             // The machine holds the text within the schema's bound,
                             // which is the bound the algorithm's record holds it in:
                             // the copy is the one a text already held to it takes.
-                            (FieldType::Scalar(SceType::String), Some(bound)) => {
+                            (EntryType::Scalar(SceType::String), Some(bound)) => {
                                 format!("::sce_portable_bytes::SceString::<{bound}>::held(&{read})")
                             }
                             // ... and a text that may be absent is copied where it is
                             // present, and stays absent (docs/adr/0055, step 9).
                             (
-                                FieldType::Optional {
+                                EntryType::Optional {
                                     elem: SceType::String,
                                 },
                                 Some(bound),
@@ -2995,10 +2995,10 @@ impl StaticTarget for RustTarget {
                     // construction, so the machine's `String` takes it whole.
                     spec.record_field_crossing(self, f, &read, Crossing::FromAlgorithm, |read| {
                         match &f.sce_type {
-                            FieldType::Scalar(SceType::String) => {
+                            EntryType::Scalar(SceType::String) => {
                                 format!("{read}.as_str().to_string()")
                             }
-                            FieldType::Optional {
+                            EntryType::Optional {
                                 elem: SceType::String,
                             } => format!(
                                 "{read}.as_ref().map(|sce_present| sce_present.as_str().to_string())"
@@ -3278,10 +3278,10 @@ impl StaticTarget for RustTarget {
                 // An optional field is held in the optional type over its present
                 // value's (docs/adr/0055).
                 let field_ty = match field.sce_type {
-                    FieldType::Optional { .. } => self
+                    EntryType::Optional { .. } => self
                         .optional_type(&present)
                         .expect("Rust spells an optional value"),
-                    FieldType::Scalar(_) => present,
+                    EntryType::Scalar(_) => present,
                 };
                 format!("    pub {}: {field_ty},\n", self.record_field(&field.id))
             })
@@ -7106,10 +7106,10 @@ impl StaticTarget for CppTarget {
                 // An optional field is held in the optional type over its
                 // present value's (docs/adr/0055).
                 let field_ty = match field.sce_type {
-                    FieldType::Optional { .. } => self
+                    EntryType::Optional { .. } => self
                         .optional_type(&present)
                         .expect("C++ spells an optional value"),
-                    FieldType::Scalar(_) => present,
+                    EntryType::Scalar(_) => present,
                 };
                 format!("    {field_ty} {};\n", self.record_field(&field.id))
             })
@@ -7134,10 +7134,10 @@ impl StaticTarget for CppTarget {
                     ),
                 };
                 let saved = match field.sce_type {
-                    FieldType::Optional { .. } => {
+                    EntryType::Optional { .. } => {
                         format!("::SCE::Saved::savedWriteOptional({member}, {writer})")
                     }
-                    FieldType::Scalar(_) => format!("{writer}({member})"),
+                    EntryType::Scalar(_) => format!("{writer}({member})"),
                 };
                 format!(
                     "    members.set(\"{}\", {saved});\n",
@@ -7176,10 +7176,10 @@ impl StaticTarget for CppTarget {
                 let what = format!("what + \".{id}\"");
                 let held = format!("::SCE::Saved::savedField(value, what, \"{id}\")");
                 let read = match &field.sce_type {
-                    FieldType::Optional { .. } => {
+                    EntryType::Optional { .. } => {
                         format!("::SCE::Saved::savedReadOptional({held}, {what}, {reader})")
                     }
-                    FieldType::Scalar(_) => format!("({reader})({held}, {what})"),
+                    EntryType::Scalar(_) => format!("({reader})({held}, {what})"),
                 };
                 // In the order `fields` declares the struct, one member each.
                 format!(
@@ -7456,7 +7456,7 @@ impl StaticTarget for CppTarget {
         _statement: &str,
         callee: &str,
         args: &[String],
-        _arg_types: &[FieldType],
+        _arg_types: &[EntryType],
         failed: &str,
     ) -> String {
         let locals: String = args
@@ -8287,10 +8287,10 @@ impl StaticTarget for GoTarget<'_> {
         let go_field_type = |field: &crate::forge::model::SchemaField| {
             let present = go_present(field);
             match field.sce_type {
-                FieldType::Optional { .. } => self
+                EntryType::Optional { .. } => self
                     .optional_type(&present)
                     .expect("Go spells an optional value"),
-                FieldType::Scalar(_) => present,
+                EntryType::Scalar(_) => present,
             }
         };
         let fields: String = schema
@@ -8312,11 +8312,11 @@ impl StaticTarget for GoTarget<'_> {
                 // through the slice into what the machine holds
                 // (docs/adr/0005, decision 2).
                 let answer = match &field.sce_type {
-                    FieldType::Scalar(SceType::Bytes) => {
+                    EntryType::Scalar(SceType::Bytes) => {
                         format!("append([]byte{{}}, r.{}...)", self.record_field(&field.id))
                     }
                     // ... and so is the present value of an optional one.
-                    FieldType::Optional {
+                    EntryType::Optional {
                         elem: SceType::Bytes,
                     } => self
                         .optional_map(
@@ -8356,8 +8356,8 @@ impl StaticTarget for GoTarget<'_> {
                 };
                 let member = self.record_field(&field.id);
                 let saved = match &field.sce_type {
-                    FieldType::Optional { .. } => format!("optional.Wire(r.{member}, {writer})"),
-                    FieldType::Scalar(_) => format!("({writer})(r.{member})"),
+                    EntryType::Optional { .. } => format!("optional.Wire(r.{member}, {writer})"),
+                    EntryType::Scalar(_) => format!("({writer})(r.{member})"),
                 };
                 format!(
                     "\tsaved.Set(\"{}\", {saved})\n",
@@ -8384,13 +8384,13 @@ impl StaticTarget for GoTarget<'_> {
                 };
                 let what = format!("what + \".{id}\"");
                 let read = match &field.sce_type {
-                    FieldType::Optional { .. } => {
+                    EntryType::Optional { .. } => {
                         let present = go_present(field);
                         format!(
                             "sce.SavedReadOptional(saved, {what}, {reader}, optional.None[{present}], optional.Some[{present}])"
                         )
                     }
-                    FieldType::Scalar(_) => format!("({reader})(saved, {what})"),
+                    EntryType::Scalar(_) => format!("({reader})(saved, {what})"),
                 };
                 format!(
                     "\t{{\n\t\tsaved, err := sce.SavedField(value, what, \"{id}\")\n\t\tif err != nil {{\n\t\t\treturn record, err\n\t\t}}\n\t\tif record.{member}, err = {read}; err != nil {{\n\t\t\treturn record, err\n\t\t}}\n\t}}\n",
@@ -8649,7 +8649,7 @@ impl StaticTarget for GoTarget<'_> {
         _statement: &str,
         callee: &str,
         args: &[String],
-        _arg_types: &[FieldType],
+        _arg_types: &[EntryType],
         failed: &str,
     ) -> String {
         let locals: String = args
@@ -9040,7 +9040,7 @@ impl StaticTarget for PythonTarget {
                         // of its variant where it is present, and is absent on the
                         // other side where it is absent here (docs/adr/0055,
                         // section 2): the variant is mapped, `None` is not.
-                        FieldType::Optional {
+                        EntryType::Optional {
                             elem: SceType::Enum(reference),
                         } => spec
                             .enum_crossing(self, &reference.alias, PYTHON_PRESENT, crossing)
@@ -9257,10 +9257,10 @@ impl StaticTarget for PythonTarget {
                 // An optional field is held in the optional type over its
                 // present value's (docs/adr/0055).
                 let field_ty = match field.sce_type {
-                    FieldType::Optional { .. } => self
+                    EntryType::Optional { .. } => self
                         .optional_type(&present)
                         .expect("Python spells an optional value over its present one"),
-                    FieldType::Scalar(_) => present,
+                    EntryType::Scalar(_) => present,
                 };
                 format!("    {}: {field_ty}\n", self.record_field(&field.id))
             })
@@ -9281,11 +9281,11 @@ impl StaticTarget for PythonTarget {
                     other => format!("sce_saved.saved_write_{}", other.as_attr()),
                 };
                 let saved = match (&field.sce_type, field.sce_type.present_type()) {
-                    (FieldType::Optional { .. }, _) => {
+                    (EntryType::Optional { .. }, _) => {
                         format!("sce_saved.saved_write_optional(self.{member}, {writer})")
                     }
-                    (FieldType::Scalar(_), SceType::Enum(_)) => format!("self.{member}.to_saved()"),
-                    (FieldType::Scalar(_), other) => {
+                    (EntryType::Scalar(_), SceType::Enum(_)) => format!("self.{member}.to_saved()"),
+                    (EntryType::Scalar(_), other) => {
                         format!("sce_saved.saved_write_{}(self.{member})", other.as_attr())
                     }
                 };
@@ -9324,10 +9324,10 @@ impl StaticTarget for PythonTarget {
                 );
                 let held = format!("sce_saved.saved_field(value, what, {id})");
                 let read = match &field.sce_type {
-                    FieldType::Optional { .. } => {
+                    EntryType::Optional { .. } => {
                         format!("sce_saved.saved_read_optional({held}, {what}, {reader})")
                     }
-                    FieldType::Scalar(_) => format!("({reader})({held}, {what})"),
+                    EntryType::Scalar(_) => format!("({reader})({held}, {what})"),
                 };
                 format!("            {}={read},\n", self.record_field(&field.id))
             })
@@ -9564,7 +9564,7 @@ impl StaticTarget for PythonTarget {
         statement: &str,
         _callee: &str,
         _args: &[String],
-        _arg_types: &[FieldType],
+        _arg_types: &[EntryType],
         failed: &str,
     ) -> String {
         let on_failure = if failed.is_empty() { "pass" } else { failed };
@@ -11423,7 +11423,7 @@ impl StaticTarget for CTarget {
         _statement: &str,
         callee: &str,
         args: &[String],
-        arg_types: &[FieldType],
+        arg_types: &[EntryType],
         failed: &str,
     ) -> String {
         // An argument that may be absent is held in the struct `sce/forge/optional.h`
@@ -11435,10 +11435,10 @@ impl StaticTarget for CTarget {
             .enumerate()
             .map(|(i, (arg, ty))| {
                 let held = match ty {
-                    FieldType::Scalar(scalar) => {
+                    EntryType::Scalar(scalar) => {
                         crate::forge::generator::c_type(scalar).to_string()
                     }
-                    FieldType::Optional { .. } => {
+                    EntryType::Optional { .. } => {
                         crate::forge::generator::host_param_type(Language::C11, ty)
                     }
                 };
@@ -12533,10 +12533,10 @@ impl StaticTarget for SwiftTarget {
         let held_of = |field: &crate::forge::model::SchemaField| {
             let present = present_of(field);
             match &field.sce_type {
-                FieldType::Optional { .. } => self
+                EntryType::Optional { .. } => self
                     .optional_type(&present)
                     .expect("Swift spells an optional value"),
-                FieldType::Scalar(_) => present,
+                EntryType::Scalar(_) => present,
             }
         };
         // Every field has a value at its zero, so the record is `SceDefault`: the value
@@ -12549,7 +12549,7 @@ impl StaticTarget for SwiftTarget {
             .map(|field| {
                 let held = held_of(field);
                 let zero = match (&field.sce_type, field.sce_type.present_type()) {
-                    (FieldType::Optional { .. }, _) => "nil".to_string(),
+                    (EntryType::Optional { .. }, _) => "nil".to_string(),
                     (_, SceType::Enum(_)) => format!("{held}.allCases[0]"),
                     (_, other) => crate::forge::generator::swift_zero_value(other).to_string(),
                 };
@@ -12803,7 +12803,7 @@ impl StaticTarget for SwiftTarget {
         _statement: &str,
         callee: &str,
         args: &[String],
-        arg_types: &[FieldType],
+        arg_types: &[EntryType],
         failed: &str,
     ) -> String {
         // Each local takes the type the host method declares for it, so a literal is
@@ -12939,7 +12939,7 @@ pub(crate) struct StaticArgument {
     /// The type the host method declares for it
     /// ([`crate::forge::native_action::static_argument_type`]): a scalar, or an
     /// optional scalar for an argument that may be absent (docs/adr/0055, step 10).
-    pub ty: FieldType,
+    pub ty: EntryType,
     /// Whether it reads the triggering event's typed payload, so the call
     /// must sit under the payload channel's guard.
     pub reads_payload: bool,
@@ -12999,7 +12999,7 @@ pub(crate) fn receive_static_statement(
     lang: Language,
     statement: &str,
     callee: &str,
-    args: &[(String, FieldType)],
+    args: &[(String, EntryType)],
     machine: &str,
     raises_error: bool,
     construct: &str,
@@ -13013,7 +13013,7 @@ pub(crate) fn receive_static_statement(
     } else {
         String::new()
     };
-    let (texts, types): (Vec<String>, Vec<FieldType>) = args.iter().cloned().unzip();
+    let (texts, types): (Vec<String>, Vec<EntryType>) = args.iter().cloned().unzip();
     Some(target.receiving_host_call(statement, callee, &texts, &types, &failed))
 }
 
@@ -13082,12 +13082,12 @@ fn payload_record_value(
             )));
         }
         let text = match (&field.sce_type, field.max_size) {
-            (FieldType::Scalar(SceType::String), Some(bound)) => {
+            (EntryType::Scalar(SceType::String), Some(bound)) => {
                 bounded = true;
                 let held = target.bounded_string(&read.text, bound);
                 target.record_string_runtime(bound, &held)
             }
-            (FieldType::Scalar(SceType::Bytes), Some(bound)) => {
+            (EntryType::Scalar(SceType::Bytes), Some(bound)) => {
                 bounded = true;
                 let held = target.bounded_bytes(&read.text, bound);
                 target.record_bytes_runtime(bound, &held)
@@ -13095,7 +13095,7 @@ fn payload_record_value(
             // An optional text is held to the bound where it is present, and
             // absent where it is absent (docs/adr/0055).
             (
-                FieldType::Optional {
+                EntryType::Optional {
                     elem: elem @ (SceType::String | SceType::Bytes),
                 },
                 Some(bound),
@@ -13877,7 +13877,7 @@ fn lower_action(
         // is not asked about again.
         "native_action" => {
             for param in &action.params {
-                if let Ok(FieldType::Optional { elem }) =
+                if let Ok(EntryType::Optional { elem }) =
                     crate::forge::native_action::static_argument_type(ctx, param)
                 {
                     if !target.holds_host_optional(&elem) {

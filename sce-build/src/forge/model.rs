@@ -1128,9 +1128,9 @@ pub struct ForgeField<T = SceType> {
     pub default_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
-/// A field of an event schema: typed by [`FieldType`], a scalar or an optional
+/// A field of an event schema: typed by [`EntryType`], a scalar or an optional
 /// scalar (docs/adr/0055).
-pub type SchemaField = ForgeField<FieldType>;
+pub type SchemaField = ForgeField<EntryType>;
 
 impl<T> ForgeField<T> {
     /// The same field declared `sce_type`: everything else it says is kept.
@@ -1532,7 +1532,7 @@ pub struct EventSchemaModel {
     /// the receive side. `sce_type` may be a primitive
     /// (Uint8/Int32/Float64/Bool/String/Bytes) or
     /// [`SceType::Enum`] referring to an imported `sce:kind="enum"`
-    /// document, or an optional value of either ([`FieldType`],
+    /// document, or an optional value of either ([`EntryType`],
     /// docs/adr/0055).
     pub fields: Vec<SchemaField>,
     /// `<datamodel sce:payload="none"/>`: the specification says the event
@@ -3194,7 +3194,7 @@ pub struct CborEntry {
     /// The map key, `0..=23` — a key whose CBOR head is one byte.
     pub key: u8,
     /// An unsigned integer, `bool`, `string`, `bytes` or `enum:<alias>`, or `optional<T>` of one of them (docs/adr/0055, section 8): a bare type is an entry a decode of a map without this key refuses, and `optional<T>` one that may be absent.
-    pub sce_type: FieldType,
+    pub sce_type: EntryType,
     /// `sce:length`: the exact byte length of a `bytes` entry; any other
     /// length is refused on decode and on encode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3272,7 +3272,7 @@ pub struct ContentLineEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub param: Option<String>,
     /// `string`, an integer, `bool` or `enum:<alias>`, or `optional<T>` of one of them (docs/adr/0055, section 8); a parameter is a `string` or an `enum:<alias>`, or `optional<T>` of one. A bare type is an entry a decode of a component without it refuses, and `optional<T>` one that may be absent; of each line that exists, for a parameter of a repeated property.
-    pub sce_type: FieldType,
+    pub sce_type: EntryType,
     /// `sce:value="text"` on a `string` value: an RFC 5545 TEXT, so `\\`,
     /// `\;`, `\,` and `\n` are escapes on both sides.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -4836,23 +4836,26 @@ impl OptionalElemType {
     }
 }
 
-/// The type of a field of an event schema and of an entry of a CBOR or
-/// content-line codec (docs/adr/0055): the value type restricted to a scalar or
-/// an optional scalar. Neither has record or list members, so neither is a case
-/// here for a reader to refuse.
+/// The type of an entry: a scalar or an optional scalar (docs/adr/0055,
+/// docs/adr/0086 section 1.7). An entry of a CBOR or content-line codec is
+/// typed by it, since a codec describes a foreign protocol's frame and not a
+/// value of the language; so is a value of the language seen as one leaf, the
+/// view a lowering that holds no list, record or nested optional reads an
+/// event schema's field through (a native action's argument, a host's
+/// parameter). Neither has record or list members, so neither is a case here
+/// for a reader to refuse.
 ///
-/// A constructor, never a flag beside the scalar: every reader of a schema's
-/// field or a codec's entry matches it, so the compiler names each one that has
-/// not said what it does with a value that may be absent.
+/// A constructor, never a flag beside the scalar: every reader of an entry
+/// matches it, so the compiler names each one that has not said what it does
+/// with a value that may be absent.
 ///
-/// Serialized untagged, as [`AlgorithmValueType`] is: a scalar field keeps the
-/// bare string it always was (`"int64"`), so the forge-AST of a schema that
-/// declares no optional field is byte-identical, and an optional one is
+/// Serialized untagged, as [`AlgorithmValueType`] is: a scalar entry keeps the
+/// bare string it always was (`"int64"`), and an optional one is
 /// `{"optional": "int64"}`, the spelling a variable of the same type has.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(untagged)]
-pub enum FieldType {
+pub enum EntryType {
     /// A scalar: a fixed-width number, `bool`, `string`, `bytes` or a value of
     /// an enum. Every value of the field is present.
     Scalar(SceType),
@@ -4864,7 +4867,7 @@ pub enum FieldType {
     },
 }
 
-impl FieldType {
+impl EntryType {
     /// The scalar type, or `None` for an optional one: an optional scalar is
     /// not a scalar, since a value of it may be absent.
     pub fn scalar(&self) -> Option<&SceType> {
@@ -4907,9 +4910,8 @@ impl FieldType {
     /// `enum:<alias>`, or `optional<T>` over one. `None` for anything else, a
     /// list, a record and a nested optional among them. The plain inverse for
     /// text SCE wrote itself; a document's `sce:type` is read by
-    /// `parser::read_entry_type` for a codec's entry and through the one type
-    /// grammar for a schema's field ([`crate::forge::value_type`]), which add the
-    /// refusals a document needs.
+    /// `parser::read_entry_type` for a codec's entry, which adds the refusals a
+    /// document needs.
     pub fn from_attr(s: &str) -> Option<Self> {
         match AlgorithmValueType::optional_inner(s) {
             Some(inner) => SceType::from_attr(inner.trim()).map(|elem| Self::Optional { elem }),

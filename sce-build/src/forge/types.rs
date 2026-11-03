@@ -27,7 +27,7 @@
 //   Users must rewrite to a decimal float literal. This matches textbook
 //   strict type checking and prevents silent precision loss.
 
-use crate::forge::model::{FieldType, SceType};
+use crate::forge::model::{EntryType, SceType};
 use crate::forge::quantity::{NumericBaseType, Quantity, Rational, UnitTag};
 use std::collections::HashMap;
 
@@ -761,10 +761,10 @@ impl InferredType {
     /// The type a field of an event schema is read as (docs/adr/0055): a
     /// scalar field as [`Self::from_sce_type`] maps its type, and an optional
     /// one as the optional value it is.
-    pub fn of_field(ty: &FieldType) -> Self {
+    pub fn of_field(ty: &EntryType) -> Self {
         match ty {
-            FieldType::Scalar(t) => Self::from_sce_type(t),
-            FieldType::Optional { elem } => Self::Optional(OptionalElem::of(elem)),
+            EntryType::Scalar(t) => Self::from_sce_type(t),
+            EntryType::Optional { elem } => Self::Optional(OptionalElem::of(elem)),
         }
     }
 }

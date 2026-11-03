@@ -708,7 +708,7 @@ pub struct RecordField {
     /// The type the schema declares: a scalar, or an optional scalar
     /// (docs/adr/0055), which an algorithm's record holds over a number or a
     /// `bool` ([`RecordImport::first_unheld_optional_field`]).
-    pub ty: FieldType,
+    pub ty: EntryType,
     /// The schema's `sce:max-size` on the field: the bound, in UTF-8 bytes,
     /// of a `string` field (SCE_FORGE.md §4.12). `None` when the schema
     /// declares none, which a `string` field of a record cannot lack.
@@ -1583,11 +1583,11 @@ pub(crate) fn rust_param_type(ty: &SceType) -> String {
 /// (`Option<&str>`, `Option<&[u8]>`), as an algorithm's parameter borrows it;
 /// C++ takes the optional by value over the type the machine holds the present
 /// value in, as its algorithm slots do.
-pub(crate) fn host_param_type(lang: crate::generator::Language, ty: &FieldType) -> String {
+pub(crate) fn host_param_type(lang: crate::generator::Language, ty: &EntryType) -> String {
     let ctx = LangCtx::primitive(lang);
     match ty {
-        FieldType::Scalar(scalar) => ctx.param_type(scalar),
-        FieldType::Optional { elem } => match lang {
+        EntryType::Scalar(scalar) => ctx.param_type(scalar),
+        EntryType::Optional { elem } => match lang {
             crate::generator::Language::C11 => crate::forge::static_lowering::c11_optional_type(
                 c_type(elem),
             )
@@ -3592,10 +3592,10 @@ fn render_event_schema(
             let held = match &f.sce_type {
                 // C11 holds a text over the buffer of the field's own bound
                 // (docs/adr/0055, step 9), which no algorithm slot has.
-                FieldType::Optional { elem } if _lang == crate::generator::Language::C11 => {
+                EntryType::Optional { elem } if _lang == crate::generator::Language::C11 => {
                     Some(c11_schema_field_optional(&l, imports, elem, f)?.ty)
                 }
-                FieldType::Optional { elem } => {
+                EntryType::Optional { elem } => {
                     let held = algorithm_optional_type(
                         &l,
                         imports,
@@ -3622,7 +3622,7 @@ fn render_event_schema(
                         ) => held,
                     })
                 }
-                FieldType::Scalar(_) => None,
+                EntryType::Scalar(_) => None,
             };
             let spelled = |plain: std::borrow::Cow<'static, str>| {
                 held.clone().map_or(plain, std::borrow::Cow::Owned)
@@ -3631,9 +3631,9 @@ fn render_event_schema(
             // element is. Any other is at the zero of its type, or an enum's first
             // case: the unit of the enum the schema imports names it.
             let swift_zero = match (&f.sce_type, f.sce_type.present_type()) {
-                (FieldType::Optional { .. }, _) => "nil".to_string(),
-                (FieldType::Scalar(_), SceType::Enum(_)) => format!("{resolved}.allCases[0]"),
-                (FieldType::Scalar(_), present) => swift_zero_value(present).to_string(),
+                (EntryType::Optional { .. }, _) => "nil".to_string(),
+                (EntryType::Scalar(_), SceType::Enum(_)) => format!("{resolved}.allCases[0]"),
+                (EntryType::Scalar(_), present) => swift_zero_value(present).to_string(),
             };
             Ok(serde_json::json!({
                 "id": f.id,
@@ -3831,7 +3831,7 @@ fn render_event_schema(
     let mut optional_defs = std::collections::BTreeSet::new();
     if _lang == crate::generator::Language::C11 {
         for f in &m.fields {
-            if let FieldType::Optional { elem } = &f.sce_type {
+            if let EntryType::Optional { elem } = &f.sce_type {
                 if let Some(def) = c11_schema_field_optional(&l, imports, elem, f)?.declaration {
                     optional_defs.insert(def);
                 }
@@ -4117,10 +4117,10 @@ pub fn build_rust_event_payload(
             // `null` is an absent value, and a delivery that lacks the key is
             // refused, as it is for a field of `T` (docs/adr/0055, section 4).
             let reader = match f.sce_type {
-                FieldType::Optional { .. } => {
+                EntryType::Optional { .. } => {
                     crate::forge::rust_optional::payload_read(&f.id, &present_reader)
                 }
-                FieldType::Scalar(_) => present_reader,
+                EntryType::Scalar(_) => present_reader,
             };
             lift_fields.push_str(&format!("                    {}: {reader},\n", f.id));
         }
@@ -4268,10 +4268,10 @@ fn rust_record_field_type(l: &LangCtx, f: &SchemaField) -> String {
     match f.sce_type {
         // An optional field is held in the backend's one optional type over its
         // present value's (docs/adr/0055).
-        FieldType::Optional { .. } => l
+        EntryType::Optional { .. } => l
             .optional_of(&present)
             .expect("Rust spells an optional value"),
-        FieldType::Scalar(_) => present,
+        EntryType::Scalar(_) => present,
     }
 }
 
@@ -4396,7 +4396,7 @@ fn rust_record_wire_of(
             // An optional value is `null` where it is absent, its key written
             // all the same (docs/adr/0055, section 4), so the quotes of a 64-bit
             // integer are the present value's own.
-            FieldType::Optional { .. } => {
+            EntryType::Optional { .. } => {
                 let written = crate::forge::rust_optional::payload_written(&held, &|v| {
                     let text = present(v);
                     match f.sce_type.present_type() {
@@ -4407,8 +4407,8 @@ fn rust_record_wire_of(
                 });
                 ("{}", written)
             }
-            FieldType::Scalar(_) if wide => ("\\\"{}\\\"", present(&held)),
-            FieldType::Scalar(_) => ("{}", present(&held)),
+            EntryType::Scalar(_) if wide => ("\\\"{}\\\"", present(&held)),
+            EntryType::Scalar(_) => ("{}", present(&held)),
         };
         if !items.is_empty() {
             items.push_str(", ");
@@ -4516,7 +4516,7 @@ fn c11_record_wire_of(
         // An optional field (docs/adr/0055, section 4) is written with its key
         // always, `null` where it is absent, through the wire writer of a
         // `sce-static` machine, the one kind of machine whose payload holds one.
-        if let FieldType::Optional { elem } = &f.sce_type {
+        if let EntryType::Optional { elem } = &f.sce_type {
             let field = format!("{receiver}->{id}");
             let present = match elem {
                 SceType::Bool => format!("sce_forge_wire_bool({field}.value)"),
@@ -4699,7 +4699,7 @@ fn c11_payload_field_decl(l: &LangCtx, f: &SchemaField) -> String {
     // An optional field (docs/adr/0055) is the struct `sce/forge/optional.h`
     // declares over its present value's type, which a text holds in the buffer of
     // its bound, so a record taken whole from the payload holds the same type.
-    if let FieldType::Optional { elem } = &f.sce_type {
+    if let EntryType::Optional { elem } = &f.sce_type {
         let ty =
             crate::forge::static_lowering::c11_optional_type(&c11_optional_present(l, elem, f))
                 .expect(
@@ -4941,7 +4941,7 @@ pub fn build_c11_event_payload(
             let id = &f.id;
             // An optional field (docs/adr/0055) is `null` absent and a value
             // present, and a delivery that lacks it is refused: its own read.
-            if let FieldType::Optional { elem } = &f.sce_type {
+            if let EntryType::Optional { elem } = &f.sce_type {
                 field_reads.push_str(&c11_optional_payload_read(f, elem, event, static_enums));
                 field_lines.push_str(&c11_payload_field_decl(&l, f));
                 continue;
@@ -5188,11 +5188,11 @@ fn go_payload_reader(
 ) -> String {
     let present = go_payload_present_reader(f, obj, static_enums);
     match &f.sce_type {
-        FieldType::Scalar(_) => present,
+        EntryType::Scalar(_) => present,
         // An optional field (docs/adr/0055) is `null` absent, a value present,
         // and refused where the delivery lacks it; its present value is read as
         // a field of `T` is, only where it is carried.
-        FieldType::Optional { elem } => format!(
+        EntryType::Optional { elem } => format!(
             "optional.Lift({obj}, \"{}\", func() ({}, error) {{ return {present} }})",
             f.id,
             go_payload_present_type(elem, static_enums)
@@ -5316,10 +5316,10 @@ fn go_payload_data_value(
 ) -> String {
     let present = |value: &str| go_payload_wire_value(f.sce_type.present_type(), value);
     match &f.sce_type {
-        FieldType::Scalar(_) => present(&f.id),
+        EntryType::Scalar(_) => present(&f.id),
         // An optional field is written as `null` where it is absent: the key is
         // always written (docs/adr/0055, section 4).
-        FieldType::Optional { elem } => format!(
+        EntryType::Optional { elem } => format!(
             "optional.Wire({}, func(v {}) any {{ return {} }})",
             f.id,
             go_payload_present_type(elem, static_enums),
@@ -5436,8 +5436,8 @@ pub fn build_go_event_payload(
             // present value's (docs/adr/0055).
             let present = l.type_name(f.sce_type.present_type()).into_owned();
             let ty = match &f.sce_type {
-                FieldType::Scalar(_) => present,
-                FieldType::Optional { .. } => l
+                EntryType::Scalar(_) => present,
+                EntryType::Optional { .. } => l
                     .optional_of(&present)
                     .expect("Go spells an optional value"),
             };
@@ -5594,12 +5594,12 @@ fn swift_payload_reader(
 ) -> String {
     let present = swift_payload_present_reader(f, static_enums);
     match &f.sce_type {
-        FieldType::Scalar(_) => present,
+        EntryType::Scalar(_) => present,
         // An optional field (docs/adr/0055, section 4) is absent where the delivery
         // carries `null`, refused where it lacks the key, and otherwise read as a
         // field of `T` is (`PayloadFields.optional`). The closure's own `fields` is
         // the one the present reader names.
-        FieldType::Optional { .. } => {
+        EntryType::Optional { .. } => {
             format!(
                 "try fields.optional(\"{}\") {{ fields in {present} }}",
                 f.id
@@ -5652,7 +5652,7 @@ pub(crate) fn swift_payload_pair(f: &SchemaField) -> String {
     // An optional field is written as `null` where it is absent and as its present
     // value's wire value where it is present, the key always written
     // (docs/adr/0055, section 4; `optionalJSON`).
-    if let FieldType::Optional { .. } = &f.sce_type {
+    if let EntryType::Optional { .. } = &f.sce_type {
         let wire = match f.sce_type.present_type() {
             SceType::Enum(_) => "WireValue.text($0.declaredName)",
             SceType::Uint64 => "WireValue.unsigned64($0)",
@@ -5741,8 +5741,8 @@ pub fn build_swift_event_payload(
             // A field that may be absent is the optional type over its present
             // value's, and holds nothing yet as absent (docs/adr/0055).
             let (ty, zero) = match &f.sce_type {
-                FieldType::Optional { .. } => (format!("{ty}?"), "nil".to_string()),
-                FieldType::Scalar(_) => (ty, zero),
+                EntryType::Optional { .. } => (format!("{ty}?"), "nil".to_string()),
+                EntryType::Scalar(_) => (ty, zero),
             };
             field_lines.push_str(&format!("    var {}: {ty} = {zero}\n", f.id));
             reads.push_str(&format!(
@@ -5956,8 +5956,8 @@ if (!refusal.empty()) {{\n                return refusal;\n            }}\n",
         ),
     };
     match &f.sce_type {
-        FieldType::Scalar(_) => read(&format!("payload.{}", f.id)),
-        FieldType::Optional { .. } => format!(
+        EntryType::Scalar(_) => read(&format!("payload.{}", f.id)),
+        EntryType::Optional { .. } => format!(
             "            {{\n            \
 bool absent = false;\n            \
 refusal = fields.readAbsent(\"{id}\", absent);\n            \
@@ -5993,8 +5993,8 @@ pub(crate) fn cpp_payload_data_item(f: &SchemaField) -> String {
         )
     };
     match &f.sce_type {
-        FieldType::Scalar(_) => field(id),
-        FieldType::Optional { .. } => format!(
+        EntryType::Scalar(_) => field(id),
+        EntryType::Optional { .. } => format!(
             "({id}.has_value() ? {} : ::SCE::Common::EventPayloadFields::absent(\"{id}\"))",
             field(&format!("*{id}"))
         ),
@@ -6125,8 +6125,8 @@ pendingPayloadTag_ = {TAG}::None;\n",
             // present value's (docs/adr/0055).
             let present = l.type_name(f.sce_type.present_type()).into_owned();
             let ty = match &f.sce_type {
-                FieldType::Scalar(_) => present.clone(),
-                FieldType::Optional { .. } => l
+                EntryType::Scalar(_) => present.clone(),
+                EntryType::Optional { .. } => l
                     .optional_of(&present)
                     .expect("C++ spells an optional value"),
             };
@@ -6268,11 +6268,11 @@ pub struct KotlinEventPayload {
 fn kotlin_payload_reader(f: &SchemaField, l: &LangCtx) -> String {
     let present = kotlin_payload_present_reader(f, l);
     match &f.sce_type {
-        FieldType::Scalar(_) => present,
+        EntryType::Scalar(_) => present,
         // An optional field (docs/adr/0055, section 4) is absent where the
         // delivery carries `null`, refused where it lacks the key, and otherwise
         // read as a field of `T` is (`EventPayload.Fields.optional`).
-        FieldType::Optional { .. } => {
+        EntryType::Optional { .. } => {
             format!("fields.optional(\"{}\") {{ _ -> {present} }}", f.id)
         }
     }
@@ -6419,8 +6419,8 @@ pub fn build_kotlin_event_payload(
             // present value's (docs/adr/0055).
             let present = l.type_name(f.sce_type.present_type()).into_owned();
             let ty = match &f.sce_type {
-                FieldType::Scalar(_) => present,
-                FieldType::Optional { .. } => l
+                EntryType::Scalar(_) => present,
+                EntryType::Optional { .. } => l
                     .optional_of(&present)
                     .expect("Kotlin spells an optional value"),
             };
@@ -6442,7 +6442,7 @@ pub fn build_kotlin_event_payload(
             // An enum rides as the name its document declares for the value; an
             // absent value as `null`, its key always written (docs/adr/0055).
             let written = match (&f.sce_type, f.sce_type.present_type()) {
-                (FieldType::Optional { .. }, SceType::Enum(_)) => {
+                (EntryType::Optional { .. }, SceType::Enum(_)) => {
                     format!("{}?.declaredName", f.id)
                 }
                 (_, SceType::Enum(_)) => format!("{}.declaredName", f.id),
@@ -28530,7 +28530,7 @@ fn swift_event_schema_unlowered(m: &EventSchemaModel, imports: &[ImportContext])
 /// held in the unit of the enum, so `enum` says what of that enum is not written
 /// (`None` when all of it is, and for a field of any other type).
 fn swift_schema_fields_unlowered<'a>(
-    mut fields: impl Iterator<Item = (&'a str, &'a FieldType, Option<String>)>,
+    mut fields: impl Iterator<Item = (&'a str, &'a EntryType, Option<String>)>,
 ) -> Option<String> {
     fields.find_map(|(id, ty, enum_unlowered)| {
         // A field that may be absent is the `T?` over one of the types a field holds,
@@ -28538,7 +28538,7 @@ fn swift_schema_fields_unlowered<'a>(
         // but a byte string.
         if matches!(
             ty,
-            FieldType::Optional { elem }
+            EntryType::Optional { elem }
                 if !algorithm_optional_spelled(
                     crate::generator::Language::Swift,
                     &OptionalElemType::Scalar(elem.clone()),
@@ -28584,7 +28584,7 @@ pub(crate) enum SwiftImportKind {
 /// The `(id, type, enum)` fields of an event schema, in declaration order: for a field
 /// of an enum, `enum` says what of that enum the Swift backend does not write
 /// ([`swift_schema_fields_unlowered`]).
-pub(crate) type SchemaFields = Vec<(String, FieldType, Option<String>)>;
+pub(crate) type SchemaFields = Vec<(String, EntryType, Option<String>)>;
 
 /// The imports a generation resolved, as the Swift lowering reads them.
 fn swift_imports_of_context(imports: &[ImportContext]) -> Vec<SwiftImport> {
@@ -34278,7 +34278,7 @@ pub(crate) fn judge_text_write<'r>(
     let ast = expr::parse_to_ast(rhs).map_err(TextRefusal::Unreadable)?;
     match &ast.kind {
         // The absent value stands only in a field that may be absent.
-        expr::ExprKind::NullLit if matches!(dest.ty, FieldType::Optional { .. }) => {
+        expr::ExprKind::NullLit if matches!(dest.ty, EntryType::Optional { .. }) => {
             Ok(TextSource::Absent)
         }
         expr::ExprKind::StringLit { value, .. } => {
@@ -34295,7 +34295,7 @@ pub(crate) fn judge_text_write<'r>(
                 .and_then(|path| {
                     let (record, field) = path.split_once('.')?;
                     let field = record_of(record)?.field(field)?;
-                    matches!(field.ty, FieldType::Scalar(SceType::String))
+                    matches!(field.ty, EntryType::Scalar(SceType::String))
                         .then(|| (record.to_string(), field))
                 })
                 .ok_or(TextRefusal::Shape(
@@ -34329,14 +34329,14 @@ fn lower_field_text_write(
     ctx: &AlgorithmLowerCtx<'_>,
 ) -> Result<String, ForgeError> {
     match &dest.ty {
-        FieldType::Scalar(_) => lower_text_write(rhs, spelling, dest, ctx),
+        EntryType::Scalar(_) => lower_text_write(rhs, spelling, dest, ctx),
         // Go's absent value names the type it is absent of.
-        FieldType::Optional { elem }
+        EntryType::Optional { elem }
             if rhs.trim() == "null" && ctx.lang == crate::generator::Language::Go =>
         {
             Ok(go_optional_none(&ctx.l.type_name(elem)))
         }
-        FieldType::Optional { .. } if rhs.trim() == "null" => expr::transpile_into(
+        EntryType::Optional { .. } if rhs.trim() == "null" => expr::transpile_into(
             rhs,
             ctx.l.expr_target(),
             ctx.type_ctx,
@@ -34344,9 +34344,9 @@ fn lower_field_text_write(
             crate::forge::types::InferredType::of_field(&dest.ty),
         )
         .map_err(|refusal| ExpressionSite::new(rhs, spelling).place(refusal)),
-        FieldType::Optional { .. } => {
+        EntryType::Optional { .. } => {
             let held = RecordField {
-                ty: FieldType::Scalar(SceType::String),
+                ty: EntryType::Scalar(SceType::String),
                 ..dest.clone()
             };
             let text = lower_text_write(rhs, spelling, &held, ctx)?;
@@ -34390,7 +34390,7 @@ fn lower_text_write(
     use crate::generator::Language;
     let lang = ctx.lang;
     // Kotlin's `String?` and Python's `Optional[str]` take a text as it is.
-    if matches!(dest.ty, FieldType::Optional { .. })
+    if matches!(dest.ty, EntryType::Optional { .. })
         && !matches!(lang, Language::Kotlin | Language::Python)
     {
         return Err(crate::forge::static_lowering::optional_not_lowered(
@@ -36040,7 +36040,7 @@ fn lower_algorithm_stmt(
                     let alias = optional_records.get(root.trim())?;
                     let record = resolve_record(imports, alias, None, "<sce:assign>").ok()?;
                     let field = record.field(rest.trim().strip_prefix("value.")?)?;
-                    matches!(field.ty, FieldType::Scalar(_)).then(|| (root.trim(), field))
+                    matches!(field.ty, EntryType::Scalar(_)).then(|| (root.trim(), field))
                 });
                 if let Some((root, field)) = present_field {
                     let value =
@@ -36063,7 +36063,7 @@ fn lower_algorithm_stmt(
                 // C11 holds an optional text in the struct its runtime declares over
                 // the buffer, which is no text to bound ([`c11_whole_optional`]).
                 (field.holds_text()
-                    && !(lang == Language::C11 && matches!(field.ty, FieldType::Optional { .. })))
+                    && !(lang == Language::C11 && matches!(field.ty, EntryType::Optional { .. })))
                 .then(|| (root.trim(), field))
             });
             // The field of the present value of an optional record, `x.value.f`
@@ -36088,7 +36088,7 @@ fn lower_algorithm_stmt(
                             ))
                             .into()
                         })?;
-                    let value = if matches!(field.ty, FieldType::Scalar(SceType::String)) {
+                    let value = if matches!(field.ty, EntryType::Scalar(SceType::String)) {
                         lower_text_write(rhs, expr_spelling.as_ref(), field, ctx)?
                     } else {
                         let rhs_site = ExpressionSite::new(rhs, expr_spelling.as_ref());
@@ -38765,7 +38765,7 @@ pub(crate) struct AlgorithmTypes<'a> {
     members: Vec<(String, SceType)>,
     /// `"<name>.<field>"` for a record's fields, each typed as its schema
     /// declares it — a scalar, or an optional scalar (docs/adr/0055).
-    record_members: Vec<(String, FieldType)>,
+    record_members: Vec<(String, EntryType)>,
     /// `"<name>.<field>"` for each `string` field of a record: the members
     /// whose text lives in a buffer of the schema's bound
     /// ([`crate::forge::types::TypeCtx::record_text`]).
@@ -39030,7 +39030,7 @@ impl<'a> AlgorithmTypes<'a> {
             let record = resolve_record(imports, alias, *spelling, element)?;
             for field in &record.fields {
                 let path = format!("{name}.{}", field.id);
-                if matches!(field.ty, FieldType::Scalar(SceType::String)) {
+                if matches!(field.ty, EntryType::Scalar(SceType::String)) {
                     text_members.push(path.clone());
                 }
                 record_members.push((path, field.ty.clone()));
@@ -39070,7 +39070,7 @@ impl<'a> AlgorithmTypes<'a> {
             let record = resolve_record(imports, alias, *spelling, element)?;
             for field in &record.fields {
                 let path = format!("{name}.value.{}", field.id);
-                if matches!(field.ty, FieldType::Scalar(SceType::String)) {
+                if matches!(field.ty, EntryType::Scalar(SceType::String)) {
                     text_members.push(path.clone());
                 }
                 record_members.push((path, field.ty.clone()));
@@ -39131,8 +39131,8 @@ impl<'a> AlgorithmTypes<'a> {
             .map(|(_, ty)| ty);
         let field = || {
             self.record_members.iter().find_map(|(name, ty)| match ty {
-                FieldType::Scalar(ty) => (name == path).then_some(ty),
-                FieldType::Optional { elem } => crate::forge::static_enum::present_value_of(path)
+                EntryType::Scalar(ty) => (name == path).then_some(ty),
+                EntryType::Optional { elem } => crate::forge::static_enum::present_value_of(path)
                     .is_some_and(|holder| holder == name)
                     .then_some(elem),
             })
@@ -39469,7 +39469,7 @@ fn render_algorithm(
                 match field.ty {
                     // The text a comparison reads, in the type the backend
                     // compares a string as.
-                    FieldType::Scalar(SceType::String) => record_text_operand(lang, &member),
+                    EntryType::Scalar(SceType::String) => record_text_operand(lang, &member),
                     _ => member,
                 },
             ));
@@ -39504,7 +39504,7 @@ fn render_algorithm(
                     &event_schema_field_ident(&field.id, lang),
                     false,
                 )?,
-                Language::C11 if matches!(field.ty, FieldType::Scalar(SceType::String)) => {
+                Language::C11 if matches!(field.ty, EntryType::Scalar(SceType::String)) => {
                     format!(
                         "{local}.value.{}",
                         event_schema_field_ident(&field.id, lang)
@@ -39523,7 +39523,7 @@ fn render_algorithm(
             record_renames.push((
                 format!("{name}.value.{}", field.id),
                 match field.ty {
-                    FieldType::Scalar(SceType::String) => record_text_operand(lang, &member),
+                    EntryType::Scalar(SceType::String) => record_text_operand(lang, &member),
                     _ => member,
                 },
             ));
@@ -41359,8 +41359,8 @@ mod tests {
     /// present value as its own wire spelling; a field of `T` is as it was.
     #[test]
     fn a_python_payload_holds_an_optional_field_as_none_or_its_value() {
-        use crate::forge::model::{Direction, EventSchemaModel, FieldType, SchemaField};
-        let field = |id: &str, sce_type: FieldType, max_size: Option<u32>| SchemaField {
+        use crate::forge::model::{Direction, EntryType, EventSchemaModel, SchemaField};
+        let field = |id: &str, sce_type: EntryType, max_size: Option<u32>| SchemaField {
             id: id.to_string(),
             sce_type,
             direction: Direction::In,
@@ -41379,7 +41379,7 @@ mod tests {
             default: None,
             default_spelling: None,
         };
-        let optional = |elem: SceType| FieldType::Optional { elem };
+        let optional = |elem: SceType| EntryType::Optional { elem };
         let mut model = crate::model::SCXMLModel {
             name: "due".to_string(),
             ..Default::default()
@@ -41390,7 +41390,7 @@ mod tests {
                 name: "schema_due".to_string(),
                 event_name: "due.set".to_string(),
                 fields: vec![
-                    field("id", FieldType::Scalar(SceType::Uint32), None),
+                    field("id", EntryType::Scalar(SceType::Uint32), None),
                     field("due", optional(SceType::Int64), None),
                     field("title", optional(SceType::String), Some(16)),
                     field("ratio", optional(SceType::Float32), None),
@@ -41515,11 +41515,11 @@ mod tests {
 
     #[test]
     fn c11_payload_field_decl_bytes_uses_bounded_buffer() {
-        use crate::forge::model::{Direction, FieldType, ForgeField};
+        use crate::forge::model::{Direction, EntryType, ForgeField};
         let l = LangCtx::primitive(crate::generator::Language::C11);
         let mk = |sce_type, max_size| ForgeField {
             id: "raw".to_string(),
-            sce_type: FieldType::Scalar(sce_type),
+            sce_type: EntryType::Scalar(sce_type),
             direction: Direction::In,
             expr: None,
             expr_spelling: None,

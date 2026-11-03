@@ -705,21 +705,21 @@ pub(crate) fn enum_variables(
 fn enum_field_aliases(
     schema: &crate::forge::model::EventSchemaModel,
 ) -> impl Iterator<Item = (String, &str)> {
-    use crate::forge::model::{FieldType, SceType};
+    use crate::forge::model::{EntryType, SceType};
     schema
         .fields
         .iter()
         .filter_map(|field| match &field.sce_type {
-            FieldType::Scalar(SceType::Enum(reference)) => {
+            EntryType::Scalar(SceType::Enum(reference)) => {
                 Some((field.id.clone(), reference.alias.as_str()))
             }
-            FieldType::Optional {
+            EntryType::Optional {
                 elem: SceType::Enum(reference),
             } => Some((
                 crate::forge::static_enum::present_value_path(&field.id),
                 reference.alias.as_str(),
             )),
-            FieldType::Scalar(_) | FieldType::Optional { .. } => None,
+            EntryType::Scalar(_) | EntryType::Optional { .. } => None,
         })
 }
 
@@ -1870,11 +1870,11 @@ impl<'a> Judge<'a> {
         self.schema_enums_named(var, alias, schema)?;
         self.schema_strings_bounded(var, alias, schema)?;
         for (field, init) in schema.fields.iter().zip(ordered) {
-            use crate::forge::model::{FieldType, SceType};
+            use crate::forge::model::{EntryType, SceType};
             // A field of an enum starts at one of its variants, as a variable
             // of it does.
             match &field.sce_type {
-                FieldType::Scalar(SceType::Enum(reference)) => {
+                EntryType::Scalar(SceType::Enum(reference)) => {
                     self.expr_of_enum(
                         ctx,
                         &init.expr,
@@ -1883,7 +1883,7 @@ impl<'a> Judge<'a> {
                     )?;
                     continue;
                 }
-                FieldType::Optional {
+                EntryType::Optional {
                     elem: SceType::Enum(reference),
                 } => {
                     self.expr_of_optional_enum(
@@ -1894,7 +1894,7 @@ impl<'a> Judge<'a> {
                     )?;
                     continue;
                 }
-                FieldType::Scalar(_) | FieldType::Optional { .. } => {}
+                EntryType::Scalar(_) | EntryType::Optional { .. } => {}
             }
             self.expr(
                 ctx,
@@ -1906,15 +1906,15 @@ impl<'a> Judge<'a> {
             // that declares none was refused above. An optional one starts
             // absent, or at such a literal (docs/adr/0055).
             let holder = match &field.sce_type {
-                FieldType::Scalar(SceType::String) => Some(StringHolder::STRING_FIELD),
-                FieldType::Scalar(SceType::Bytes) => Some(StringHolder::BYTES_FIELD),
-                FieldType::Optional {
+                EntryType::Scalar(SceType::String) => Some(StringHolder::STRING_FIELD),
+                EntryType::Scalar(SceType::Bytes) => Some(StringHolder::BYTES_FIELD),
+                EntryType::Optional {
                     elem: SceType::String,
                 } if !is_null_literal(&init.expr) => Some(StringHolder::STRING_FIELD),
-                FieldType::Optional {
+                EntryType::Optional {
                     elem: SceType::Bytes,
                 } if !is_null_literal(&init.expr) => Some(StringHolder::BYTES_FIELD),
-                FieldType::Scalar(_) | FieldType::Optional { .. } => None,
+                EntryType::Scalar(_) | EntryType::Optional { .. } => None,
             };
             if let (Some(holder), Some(max_size)) = (holder, field.max_size) {
                 self.string_field_start(
@@ -3775,7 +3775,7 @@ impl<'a> Judge<'a> {
         for field in &schema.fields {
             // An enum is untyped to an expression: the schema holds it to the enum.
             let slot = match &field.sce_type {
-                crate::forge::model::FieldType::Scalar(crate::forge::model::SceType::Enum(_)) => {
+                crate::forge::model::EntryType::Scalar(crate::forge::model::SceType::Enum(_)) => {
                     InferredType::Unknown
                 }
                 declared => InferredType::of_field(declared),

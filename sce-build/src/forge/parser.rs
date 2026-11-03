@@ -11541,8 +11541,8 @@ fn read_field_revision(
     // Read only on an optional field (docs/adr/0055, section 6): written on a
     // field of `T`, nothing reads it, and the parse refuses it as unread.
     let optional_since = match field.sce_type {
-        FieldType::Optional { .. } => read_optional_since(data, &element, since, latest, doc_name)?,
-        FieldType::Scalar(_) => None,
+        EntryType::Optional { .. } => read_optional_since(data, &element, since, latest, doc_name)?,
+        EntryType::Scalar(_) => None,
     };
     field.since = since;
     field.optional_since = optional_since;
@@ -11993,7 +11993,7 @@ pub(crate) fn read_type_attr(
     })
 }
 
-/// Read a CBOR or content-line codec entry's `sce:type` ([`FieldType`]): what
+/// Read a CBOR or content-line codec entry's `sce:type` ([`EntryType`]): what
 /// [`read_type_attr`] reads in [`TypeGrammar::ScalarOrEnumRef`], and
 /// `optional<T>` (docs/adr/0055) over a scalar or a value of an imported enum.
 ///
@@ -12007,7 +12007,7 @@ pub(crate) fn read_entry_type(
     element: String,
     attr: &str,
     text: &str,
-) -> Result<FieldType, Located<ForgeError>> {
+) -> Result<EntryType, Located<ForgeError>> {
     if !text.trim().starts_with(AlgorithmValueType::OPTIONAL_PREFIX) {
         return read_type_attr(
             node,
@@ -12017,7 +12017,7 @@ pub(crate) fn read_entry_type(
             attr,
             text,
         )
-        .map(FieldType::Scalar);
+        .map(EntryType::Scalar);
     }
     match read_optional_elem(
         node,
@@ -12027,7 +12027,7 @@ pub(crate) fn read_entry_type(
         text,
         OptionalElems::Scalar,
     )? {
-        OptionalElemType::Scalar(elem) => Ok(FieldType::Optional { elem }),
+        OptionalElemType::Scalar(elem) => Ok(EntryType::Optional { elem }),
         // `OptionalElems::Scalar` admits no record, so the reader has already
         // refused one; were it to hand one back, the refusal is the same.
         OptionalElemType::Record { .. } => Err(optional_elem_refusal(
@@ -12380,7 +12380,7 @@ fn read_schema_value_type(
     doc_name: &str,
     element: &str,
     text: &str,
-) -> Result<(FieldType, Option<u32>, Option<String>), Located<ForgeError>> {
+) -> Result<(EntryType, Option<u32>, Option<String>), Located<ForgeError>> {
     let written = read_written_type(
         data,
         doc_name,

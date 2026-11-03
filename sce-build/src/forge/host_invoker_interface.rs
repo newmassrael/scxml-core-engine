@@ -35,7 +35,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::filters;
 use crate::forge::error::GenerateError;
-use crate::forge::model::{EventSchemaModel, FieldType, SceType, SchemaField};
+use crate::forge::model::{EntryType, EventSchemaModel, SceType, SchemaField};
 use crate::generator::Language;
 use crate::model::{Invoke, SCXMLModel};
 
@@ -137,8 +137,8 @@ pub enum RequestFieldSpelling {
 /// the second kind ([`typed_invoke::validate`](crate::forge::typed_invoke::validate)).
 fn record_field_type(lang: Language, f: &SchemaField, present: &str) -> String {
     match &f.sce_type {
-        FieldType::Scalar(_) => present.to_string(),
-        FieldType::Optional { .. } => crate::forge::generator::optional_of(lang, present)
+        EntryType::Scalar(_) => present.to_string(),
+        EntryType::Optional { .. } => crate::forge::generator::optional_of(lang, present)
             .unwrap_or_else(|| {
                 panic!(
                     "{} spells an optional field of a host-run record in a type of its own, \
@@ -455,11 +455,11 @@ type {name} struct {{\n{fields}}}\n\n",
                         };
                         let held = format!("r.{}", exported(&f.id));
                         let value = match &f.sce_type {
-                            FieldType::Scalar(_) => present(&held),
+                            EntryType::Scalar(_) => present(&held),
                             // An absent value is `nil`, which `PayloadJSON` writes
                             // as `null`, its key written all the same
                             // (docs/adr/0055, section 4).
-                            FieldType::Optional { .. } => format!(
+                            EntryType::Optional { .. } => format!(
                                 "optional.Wire({held}, func(v {}) any {{ return {} }})",
                                 crate::forge::generator::go_type(f.sce_type.present_type()),
                                 present("v")
@@ -611,8 +611,8 @@ pub fn render_swift(model: &SCXMLModel, machine_name: &str) -> String {
             for f in &schema.fields {
                 let present = crate::forge::generator::swift_type(f.sce_type.present_type());
                 let ty = match &f.sce_type {
-                    FieldType::Scalar(_) => present.to_string(),
-                    FieldType::Optional { .. } => format!("{present}?"),
+                    EntryType::Scalar(_) => present.to_string(),
+                    EntryType::Optional { .. } => format!("{present}?"),
                 };
                 fields.push_str(&format!("    public var {}: {ty}\n", f.id));
                 params.push(format!("{}: {ty}", f.id));
@@ -805,7 +805,7 @@ pub fn render_python(model: &SCXMLModel) -> String {
                         // integer as the text of its digits. An absent optional
                         // field is the `None` it is, which `json.dumps` writes
                         // as `null` (docs/adr/0055, section 4).
-                        let optional = matches!(f.sce_type, FieldType::Optional { .. });
+                        let optional = matches!(f.sce_type, EntryType::Optional { .. });
                         let held = format!("self.{}", f.id);
                         match crate::forge::generator::python_payload_wire_value(
                             f.sce_type.present_type(),
@@ -1429,7 +1429,7 @@ pub fn render_c11(model: &SCXMLModel, sm: &str) -> Result<C11HostInvokerInterfac
             let what_snake = what.to_ascii_lowercase();
             let name = format!("{sm}_{snake}_{what_snake}_t");
             for field in &schema.fields {
-                let FieldType::Optional { elem } = &field.sce_type else {
+                let EntryType::Optional { elem } = &field.sce_type else {
                     continue;
                 };
                 if header_includes.is_empty() {

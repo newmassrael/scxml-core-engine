@@ -9,7 +9,7 @@
 use sce_build::forge::codegen_matrix::emitting;
 use sce_build::forge::content_line_codec;
 use sce_build::forge::model::{
-    CodecEncoding, CodecModel, ContentLineEntry, FieldType, ForgeDocument, ForgeKind, SceType,
+    CodecEncoding, CodecModel, ContentLineEntry, EntryType, ForgeDocument, ForgeKind, SceType,
 };
 use sce_build::forge::parser::parse_forge;
 use sce_build::forge::{pseudo, unpseudo};
@@ -115,17 +115,17 @@ fn every_entry_is_read_with_its_property_its_parameter_and_its_bounds() {
     assert_eq!(entry("exdate").max_count, Some(64));
     assert_eq!(
         entry("sequence").sce_type,
-        FieldType::Optional {
+        EntryType::Optional {
             elem: SceType::Uint32
         }
     );
     assert_eq!(
         entry("allDay").sce_type,
-        FieldType::Optional {
+        EntryType::Optional {
             elem: SceType::Bool
         }
     );
-    assert_eq!(entry("uid").sce_type, FieldType::Scalar(SceType::String));
+    assert_eq!(entry("uid").sce_type, EntryType::Scalar(SceType::String));
 }
 
 #[test]

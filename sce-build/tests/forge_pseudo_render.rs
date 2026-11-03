@@ -17,8 +17,8 @@ use sce_build::forge::model::{
     AlgorithmStmt, AlgorithmValueType, BackpressurePolicy, BitSize, BoundedCollectionModel,
     BufferPoolModel, BufferPoolVariant, CachePolicy, CallArg, CapacitySource, CodecField,
     CodecModel, CodecTestVector, CodecVariant, CollectionOrdering, ConcurrencyMode, ConditionModel,
-    DecodedField, DecodedFieldValue, DecodedValue, Direction, Endian, EnumModel, EnumVariant,
-    EventSchemaModel, FieldType, FilterModel, FilterType, FlagDef, FlagInput, FoldBody,
+    DecodedField, DecodedFieldValue, DecodedValue, Direction, Endian, EntryType, EnumModel,
+    EnumVariant, EventSchemaModel, FilterModel, FilterType, FlagDef, FlagInput, FoldBody,
     ForgeDocument, ForgeField, InboxConfig, InterpolationAxis, InterpolationMethod,
     InterpolationModel, LinkClass, LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry,
     LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, PeekByteSpec,
@@ -735,7 +735,7 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
         name: "tick".to_string(),
         event_name: "bus.tick".to_string(),
         fields: vec![field("seq", SceType::Uint8, Direction::In)
-            .with_type(FieldType::Scalar(SceType::Uint8))],
+            .with_type(EntryType::Scalar(SceType::Uint8))],
         payload_none: false,
         datamodel_markers: Vec::new(),
         revision: None,
@@ -750,7 +750,7 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
         name: "due".to_string(),
         event_name: "item.due".to_string(),
         fields: vec![
-            field("due", SceType::Int64, Direction::In).with_type(FieldType::Optional {
+            field("due", SceType::Int64, Direction::In).with_type(EntryType::Optional {
                 elem: SceType::Int64,
             }),
         ],

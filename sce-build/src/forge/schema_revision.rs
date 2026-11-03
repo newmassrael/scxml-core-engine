@@ -38,7 +38,7 @@ use std::path::Path;
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
 use crate::forge::model::{
-    EnumModel, EnumVariant, EventSchemaModel, FieldType, ForgeDocument, NumericLiteral,
+    EntryType, EnumModel, EnumVariant, EventSchemaModel, ForgeDocument, NumericLiteral,
     ParsedForge, SceType, SchemaField,
 };
 
@@ -340,9 +340,9 @@ pub fn added_at(field: &SchemaField) -> u32 {
 /// earlier revision.
 pub fn field_at(field: &SchemaField, revision: u32) -> std::borrow::Cow<'_, SchemaField> {
     match (&field.sce_type, field.optional_since) {
-        (FieldType::Optional { elem }, Some(widened)) if revision < widened => {
+        (EntryType::Optional { elem }, Some(widened)) if revision < widened => {
             let mut before = field.clone();
-            before.sce_type = FieldType::Scalar(elem.clone());
+            before.sce_type = EntryType::Scalar(elem.clone());
             before.optional_since = None;
             std::borrow::Cow::Owned(before)
         }
@@ -709,7 +709,7 @@ fn unaliased(field: &SchemaField) -> std::borrow::Cow<'_, SchemaField> {
     }
     // Whether the field is optional is kept: only the alias is left out.
     let mut field = field.clone();
-    let (FieldType::Scalar(held) | FieldType::Optional { elem: held }) = &mut field.sce_type;
+    let (EntryType::Scalar(held) | EntryType::Optional { elem: held }) = &mut field.sce_type;
     *held = SceType::Enum(crate::forge::model::EnumRef {
         alias: String::new(),
     });
@@ -729,7 +729,7 @@ mod tests {
     fn field(id: &str, ty: SceType, since: Option<u32>, default: Option<&str>) -> SchemaField {
         SchemaField {
             id: id.to_string(),
-            sce_type: FieldType::Scalar(ty),
+            sce_type: EntryType::Scalar(ty),
             direction: Direction::In,
             expr: None,
             expr_spelling: None,
@@ -1062,10 +1062,10 @@ mod tests {
     /// `field` as `optional<T>` of its type, widened by revision `widened`
     /// (`None`: optional from the revision that added it).
     fn optional(mut field: SchemaField, widened: Option<u32>) -> SchemaField {
-        let FieldType::Scalar(present) = field.sce_type.clone() else {
+        let EntryType::Scalar(present) = field.sce_type.clone() else {
             panic!("an optional field is made from a field of T");
         };
-        field.sce_type = FieldType::Optional { elem: present };
+        field.sce_type = EntryType::Optional { elem: present };
         field.optional_since = widened;
         field
     }
@@ -1179,7 +1179,7 @@ mod tests {
         let widened = optional(level(), Some(3));
         assert_eq!(
             field_at(&widened, 2).sce_type,
-            FieldType::Scalar(SceType::Uint8)
+            EntryType::Scalar(SceType::Uint8)
         );
         assert_eq!(field_at(&widened, 2).optional_since, None);
         assert_eq!(field_at(&widened, 3).sce_type, widened.sce_type);

@@ -47,7 +47,7 @@ use crate::forge::error::{
 };
 use crate::forge::event_schema_check::schema_is_native_payload_eligible;
 use crate::forge::generator::host_param_type;
-use crate::forge::model::{EventSchemaModel, FieldType, ForgeKind, SceType};
+use crate::forge::model::{EntryType, EventSchemaModel, ForgeKind, SceType};
 use crate::generator::Language;
 use crate::model::{Action, Param, SCXMLModel};
 use std::collections::{BTreeMap, BTreeSet};
@@ -262,10 +262,10 @@ pub(crate) fn canonical_type(ty: &SceType) -> &'static str {
 /// parameter type for each position, so two calls that disagree on it — one
 /// passing `x`, an optional, and another a plain `int64` — are a signature
 /// conflict like any other, and nothing is coerced to make them agree.
-fn canonical_argument_type(ty: &FieldType) -> String {
+fn canonical_argument_type(ty: &EntryType) -> String {
     match ty {
-        FieldType::Scalar(scalar) => canonical_type(scalar).to_string(),
-        FieldType::Optional { elem } => format!("{OPTIONAL_PREFIX}{}>", canonical_type(elem)),
+        EntryType::Scalar(scalar) => canonical_type(scalar).to_string(),
+        EntryType::Optional { elem } => format!("{OPTIONAL_PREFIX}{}>", canonical_type(elem)),
     }
 }
 
@@ -834,7 +834,7 @@ pub(crate) enum ArgumentRefusal {
     Untyped(crate::forge::types::InferredType),
     /// It is an optional value of an element no host method takes (a value of an
     /// enum or a record, docs/adr/0055): the scalar an optional value is over is
-    /// a host method's parameter, [`FieldType::Optional`].
+    /// a host method's parameter, [`EntryType::Optional`].
     Optional(crate::forge::types::InferredType),
 }
 
@@ -853,7 +853,7 @@ pub(crate) enum ArgumentRefusal {
 pub(crate) fn static_argument_type(
     ctx: &crate::forge::types::TypeCtx<'_>,
     arg: &Param,
-) -> Result<FieldType, ArgumentRefusal> {
+) -> Result<EntryType, ArgumentRefusal> {
     let ty = crate::forge::expr::judge_into(
         &arg.expr,
         ctx,
@@ -865,11 +865,11 @@ pub(crate) fn static_argument_type(
         // present or absent.
         return elem
             .scalar()
-            .map(|elem| FieldType::Optional { elem })
+            .map(|elem| EntryType::Optional { elem })
             .ok_or(ArgumentRefusal::Optional(ty));
     }
     ty.to_sce_type()
-        .map(FieldType::Scalar)
+        .map(EntryType::Scalar)
         .ok_or(ArgumentRefusal::Untyped(ty))
 }
 
@@ -1104,14 +1104,14 @@ fn realization_member(lang: Language) -> &'static str {
 /// One host operation's signature: the ordered `(parameter name, declared
 /// type)` pairs its generated interface method takes.
 ///
-/// The declared [`FieldType`] — a scalar, or an optional scalar for an argument
+/// The declared [`EntryType`] — a scalar, or an optional scalar for an argument
 /// that may be absent (docs/adr/0055, step 10) — is kept rather than a rendered
 /// per-language type string, because one `SceType` does not always map to one
 /// parameter — C11 lowers `bytes` to a `const uint8_t *` plus its `size_t`
 /// length sibling, a pair no single type string can express. The per-language
 /// expansion happens once, at emit, in [`params_for`] and [`args_for`], which
 /// is also the one place their arities are kept equal.
-type Signature = Vec<(String, FieldType)>;
+type Signature = Vec<(String, EntryType)>;
 
 /// Per-transition payload context for lowering an arg-bearing `<sce:action>`.
 struct PayloadBinding<'a> {
@@ -1221,10 +1221,10 @@ fn call_expression(lang: Language, name: &str, args: &[String]) -> String {
 /// make a byte run readable at all in C. Keeping that expansion here (and its
 /// mirror in [`args_for`]) is what lets the signature table stay in declared
 /// `SceType`s while each backend spells them its own way.
-fn params_for(lang: Language, pname: &str, ty: &FieldType) -> Vec<String> {
+fn params_for(lang: Language, pname: &str, ty: &EntryType) -> Vec<String> {
     let ident = param_ident(lang, pname);
     match (lang, ty) {
-        (Language::C11, FieldType::Scalar(SceType::Bytes)) => vec![
+        (Language::C11, EntryType::Scalar(SceType::Bytes)) => vec![
             format!("const uint8_t *{ident}"),
             format!("size_t {ident}_len"),
         ],
@@ -1659,7 +1659,7 @@ impl CallRendering<'_> {
             }
             // The signature keeps the first call site's; the types the arguments
             // are held in while a failing one is received are this site's own.
-            let typed_args: Vec<(String, FieldType)> = call_args
+            let typed_args: Vec<(String, EntryType)> = call_args
                 .iter()
                 .cloned()
                 .zip(params.iter().map(|(_, ty)| ty.clone()))
@@ -1726,7 +1726,7 @@ impl CallRendering<'_> {
             // An eligible schema holds no optional field (docs/adr/0055).
             let ty = f.sce_type.present_type();
             call_args.extend(args_for(lang, &accessor, field, ty));
-            params.push((pname, FieldType::Scalar(ty.clone())));
+            params.push((pname, EntryType::Scalar(ty.clone())));
         }
 
         self.payload_events.insert(binding.event.to_string());
@@ -2345,10 +2345,10 @@ fn kotlin_recording_host(
         let fields: Vec<String> = sig
             .iter()
             .map(|(n, t)| match t {
-                FieldType::Scalar(SceType::Bytes) => {
+                EntryType::Scalar(SceType::Bytes) => {
                     format!("val {}: List<Byte>", param_ident(lang, n))
                 }
-                FieldType::Optional {
+                EntryType::Optional {
                     elem: SceType::Bytes,
                 } => format!("val {}: List<Byte>?", param_ident(lang, n)),
                 _ => format!("val {}: {}", param_ident(lang, n), host_param_type(lang, t)),
@@ -2357,8 +2357,8 @@ fn kotlin_recording_host(
         let args: Vec<String> = sig
             .iter()
             .map(|(n, t)| match t {
-                FieldType::Scalar(SceType::Bytes) => format!("{}.toList()", param_ident(lang, n)),
-                FieldType::Optional {
+                EntryType::Scalar(SceType::Bytes) => format!("{}.toList()", param_ident(lang, n)),
+                EntryType::Optional {
                     elem: SceType::Bytes,
                 } => format!("{}?.toList()", param_ident(lang, n)),
                 _ => param_ident(lang, n),
@@ -2421,14 +2421,14 @@ fn rust_recording_host(
     // The type a recorded call holds an argument in: the owned copy of a borrowed
     // text or byte string, present or inside the `Option` an argument that may be
     // absent is taken in.
-    let owned = |t: &FieldType| -> String {
+    let owned = |t: &EntryType| -> String {
         match t {
-            FieldType::Scalar(SceType::String) => "String".to_string(),
-            FieldType::Scalar(SceType::Bytes) => "Vec<u8>".to_string(),
-            FieldType::Optional {
+            EntryType::Scalar(SceType::String) => "String".to_string(),
+            EntryType::Scalar(SceType::Bytes) => "Vec<u8>".to_string(),
+            EntryType::Optional {
                 elem: SceType::String,
             } => "Option<String>".to_string(),
-            FieldType::Optional {
+            EntryType::Optional {
                 elem: SceType::Bytes,
             } => "Option<Vec<u8>>".to_string(),
             _ => host_param_type(lang, t),
@@ -2493,12 +2493,12 @@ fn rust_recording_host(
             .map(|(n, t)| {
                 let id = param_ident(lang, n);
                 match t {
-                    FieldType::Scalar(SceType::String) => format!("{id}: {id}.to_string()"),
-                    FieldType::Scalar(SceType::Bytes) => format!("{id}: {id}.to_vec()"),
-                    FieldType::Optional {
+                    EntryType::Scalar(SceType::String) => format!("{id}: {id}.to_string()"),
+                    EntryType::Scalar(SceType::Bytes) => format!("{id}: {id}.to_vec()"),
+                    EntryType::Optional {
                         elem: SceType::String,
                     } => format!("{id}: {id}.map(str::to_string)"),
-                    FieldType::Optional {
+                    EntryType::Optional {
                         elem: SceType::Bytes,
                     } => format!("{id}: {id}.map(<[u8]>::to_vec)"),
                     _ => id,
@@ -2564,7 +2564,7 @@ fn rust_recording_host(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::model::{Direction, FieldType, SchemaField};
+    use crate::forge::model::{Direction, EntryType, SchemaField};
     use crate::parser::SCXMLParser;
 
     fn parse(scxml: &str) -> SCXMLModel {
@@ -2580,7 +2580,7 @@ mod tests {
             fields: vec![
                 SchemaField {
                     id: "payload".to_string(),
-                    sce_type: FieldType::Scalar(SceType::Bytes),
+                    sce_type: EntryType::Scalar(SceType::Bytes),
                     direction: Direction::In,
                     expr: None,
                     expr_spelling: None,
@@ -2599,7 +2599,7 @@ mod tests {
                 },
                 SchemaField {
                     id: "offset".to_string(),
-                    sce_type: FieldType::Scalar(SceType::Uint32),
+                    sce_type: EntryType::Scalar(SceType::Uint32),
                     direction: Direction::In,
                     expr: None,
                     expr_spelling: None,
@@ -3083,8 +3083,8 @@ mod tests {
         sigs.insert(
             "append_fragment".to_string(),
             vec![
-                ("payload".to_string(), FieldType::Scalar(SceType::Bytes)),
-                ("offset".to_string(), FieldType::Scalar(SceType::Uint32)),
+                ("payload".to_string(), EntryType::Scalar(SceType::Bytes)),
+                ("offset".to_string(), EntryType::Scalar(SceType::Uint32)),
             ],
         );
         sigs.insert("reset_slot".to_string(), Vec::new());
@@ -3308,8 +3308,8 @@ mod tests {
         sigs.insert(
             "append_fragment".to_string(),
             vec![
-                ("payload".to_string(), FieldType::Scalar(SceType::Bytes)),
-                ("offset".to_string(), FieldType::Scalar(SceType::Uint32)),
+                ("payload".to_string(), EntryType::Scalar(SceType::Bytes)),
+                ("offset".to_string(), EntryType::Scalar(SceType::Uint32)),
             ],
         );
         sigs.insert("reset_slot".to_string(), Vec::new());
@@ -3398,7 +3398,7 @@ mod tests {
     /// `show(day, note, blob, urgent)`, each argument one that may be absent
     /// (docs/adr/0055, step 10).
     fn optional_signatures() -> BTreeMap<String, Signature> {
-        let optional = |elem| FieldType::Optional { elem };
+        let optional = |elem| EntryType::Optional { elem };
         let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
         sigs.insert(
             "show".to_string(),
@@ -3455,7 +3455,7 @@ mod tests {
     /// is handed.
     #[test]
     fn c11_takes_a_number_and_a_bool_that_may_be_absent_in_the_struct_of_its_element() {
-        let optional = |elem| FieldType::Optional { elem };
+        let optional = |elem| EntryType::Optional { elem };
         let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
         sigs.insert(
             "show".to_string(),
@@ -3506,8 +3506,8 @@ mod tests {
     /// calls of one action name that disagree on it are the conflict two types make.
     #[test]
     fn a_signature_tells_a_value_from_the_same_value_that_may_be_absent() {
-        let present = FieldType::Scalar(SceType::Int64);
-        let absent = FieldType::Optional {
+        let present = EntryType::Scalar(SceType::Int64);
+        let absent = EntryType::Optional {
             elem: SceType::Int64,
         };
         assert_eq!(canonical_argument_type(&present), "int64");

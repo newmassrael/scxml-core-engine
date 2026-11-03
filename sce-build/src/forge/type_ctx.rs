@@ -681,8 +681,8 @@ fn static_record_paths<'v>(
                     // An optional field is read as the optional value it is
                     // (docs/adr/0055), whatever its element.
                     let readable = match &field.sce_type {
-                        FieldType::Scalar(SceType::Enum(_)) | FieldType::Optional { .. } => true,
-                        FieldType::Scalar(_) => matches!(
+                        EntryType::Scalar(SceType::Enum(_)) | EntryType::Optional { .. } => true,
+                        EntryType::Scalar(_) => matches!(
                             ty,
                             InferredType::Int { .. }
                                 | InferredType::Float { .. }

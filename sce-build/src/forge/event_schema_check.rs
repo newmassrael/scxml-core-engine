@@ -61,7 +61,7 @@ use crate::forge::expr::{
 };
 use crate::forge::expression_site::ExpressionSite;
 use crate::forge::model::{
-    EnumModel, EventSchemaModel, FieldType, ForgeKind, SceType, SchemaField,
+    EntryType, EnumModel, EventSchemaModel, ForgeKind, SceType, SchemaField,
 };
 use crate::forge::types::{InferredType, TypeCtx};
 use crate::model::{Action, Param, SCXMLModel, Transition};
@@ -352,8 +352,8 @@ pub fn name_schema_enums(model: &mut SCXMLModel) {
         for field in &mut schema.fields {
             // An optional enum field holds a value of the same document when
             // present (docs/adr/0055), so it is named alike.
-            let (FieldType::Scalar(SceType::Enum(reference))
-            | FieldType::Optional {
+            let (EntryType::Scalar(SceType::Enum(reference))
+            | EntryType::Optional {
                 elem: SceType::Enum(reference),
             }) = &mut field.sce_type
             else {
@@ -499,8 +499,8 @@ pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
     // the struct would need a carrier for absence, which is each backend's step
     // to declare, so a schema that holds one keeps the dynamic baseline.
     schema.fields.iter().all(|f| match &f.sce_type {
-        FieldType::Scalar(SceType::Enum(_)) | FieldType::Optional { .. } => false,
-        FieldType::Scalar(_) => true,
+        EntryType::Scalar(SceType::Enum(_)) | EntryType::Optional { .. } => false,
+        EntryType::Scalar(_) => true,
     })
 }
 
@@ -2157,7 +2157,7 @@ mod tests {
     fn field(id: &str, ty: SceType) -> SchemaField {
         SchemaField {
             id: id.to_string(),
-            sce_type: FieldType::Scalar(ty),
+            sce_type: EntryType::Scalar(ty),
             direction: Direction::In,
             expr: None,
             expr_spelling: None,
