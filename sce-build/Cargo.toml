@@ -1685,5 +1685,12 @@ name = "an_inline_child_is_named_by_the_document_that_holds_it"
 path = "tests/an_inline_child_is_named_by_the_document_that_holds_it.rs"
 required-features = ["cli"]
 
+# Every bound of a value type is written in the type (docs/adr/0086, section 1), and
+# `bound-spelling` moves a legacy one there. It runs `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_bound_is_written_in_its_type"
+path = "tests/a_bound_is_written_in_its_type.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
