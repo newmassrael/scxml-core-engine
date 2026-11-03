@@ -3394,10 +3394,12 @@ impl SCXMLParser {
             model.imported_type_scope =
                 crate::forge::import_source::type_scope(&model.forge_imports, dir);
             // A schema whose field is a list, a record or an optional over
-            // either is held whole; each use of it that reads its fields one
-            // entry at a time is refused by name here, before any reader of the
-            // entry views below (docs/adr/0086, section 7.3).
-            crate::forge::event_schema_check::check_composed_uses(&model, diag_label)?;
+            // either is held whole: the statechart's expressions are typed over
+            // it at any depth (docs/adr/0086, section 6), the readers of the
+            // entry views below read it as no schema of theirs, and each use no
+            // backend lowers yet is refused by name where the machine is
+            // generated (`crate::forge::event_schema_check::check_composed_uses`).
+            //
             // A record variable's schema has to declare a field: a schema
             // with none names an event that carries no data, and no backend
             // emits a payload struct for it.

@@ -12448,8 +12448,10 @@ fn read_schema_value_type(
 /// it, the bracket or its legacy synonym `sce:capacity` with the `sce:limit`
 /// beside it. Every bound inside the type is stated; whether the outermost one
 /// is, is judged where the variable's other rules are
-/// (`enforce_static_datamodel`), and is checked again here. A composition no
-/// variable lowers yet is refused by name.
+/// (`enforce_static_datamodel`), and is checked again here. Every type of the
+/// language is read and judged (docs/adr/0086, section 6); a composition no
+/// backend lowers yet is refused by name where the machine is generated
+/// ([`crate::forge::event_schema_check::check_composed_uses`]).
 pub(crate) fn read_static_variable_type(
     data: &roxmltree::Node,
     doc_name: &str,
@@ -12484,15 +12486,6 @@ pub(crate) fn read_static_variable_type(
             data, doc_name, element, "sce:type", text, &refusal,
         ));
     }
-    written.slot_view().map_err(|composition| {
-        composition_refusal(
-            data,
-            doc_name,
-            element,
-            "a statechart's variable",
-            &composition,
-        )
-    })?;
     Ok(written)
 }
 

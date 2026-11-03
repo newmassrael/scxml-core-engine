@@ -61,7 +61,7 @@ PY
 # and the lowering is asked to type what the judge never did.
 mutation_case "the item is untyped" <<'PY'
 edit("sce-build/src/forge/type_ctx.rs",
-     "            Some(ty) => inner.insert_var(self.item.as_str(), ty),\n",
+     "            Some(place) => inner.insert_var(self.item.as_str(), InferredType::of_value(&place.ty)),\n",
      "            Some(_) => inner.insert_var(self.item.as_str(), InferredType::Unknown),\n")
 PY
 

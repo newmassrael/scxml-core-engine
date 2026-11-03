@@ -4734,13 +4734,32 @@ view of its argument, of any bound, and holds the argument's, so its outermost
 type writes none; every bound inside it is stated. An event schema's field holds
 any type of the grammar, a list, a record and an optional over either included,
 and its schema unit declares it. A statechart imports such a schema and takes its
-event on every target, holding the schema whole. A position that does not lower a
-composition yet refuses it by name where it reads it, as
-`generate/unsupported-feature`, naming the field, the type and the position: a list
-of texts in a variable, an optional list, a read of `_event.data` on a transition
-taken on the event of a schema whose field is composed, a `<send>` or `<raise>` of
-that event, a statechart's variable that names a record holding a composition at any
-depth, a host-run request or result, and an algorithm. The paragraphs
+event on every target, holding the schema whole.
+
+A statechart reads a composed payload as it reads a variable of the same type, at
+any depth (docs/adr/0086, section 6): every place, a variable, `_event.data` or a
+loop's item and the fields, elements and present values read after it
+(`_event.data.items[i].tags[j]`), is typed by walking the one value type, each
+record's fields in the scope of the document that declares it. `check` judges
+`len(x)` of any list, an index into a list of any element, a field of a record
+element, a `<foreach>` over any list the payload, a variable or an enclosing
+loop's item holds, and `<assign location="kept" expr="_event.data.items"/>`, a
+copy into a list variable whose type the value's fits (section 5.1); one that
+may not fit is `scxml/static-datamodel-rule`, naming the first place it may not
+and the narrowing, an `<sce:append>` of each element in a `<foreach>`. A
+composed value (a list, a record, an optional value of either) as an operand, or
+two compared, is `expression/unsupported-construct`; it is read through its
+fields, elements and length, and tested against `null` where it may be absent.
+
+What no backend lowers yet is refused by name where the machine is generated, in
+the one gate every route asks first (`check` with or without a backend,
+`generate`), as `generate/unsupported-feature`, naming the field, the type and
+the position: a variable whose type is a composition no variable lowers (a list
+of texts, an optional list), a variable that names a record holding a
+composition at any depth, a read of `_event.data` on a transition taken on the
+event of a schema whose field is composed, a `<send>` or `<raise>` of that event,
+and a list taken whole into a list variable. A host-run request or result and an
+algorithm that name such a record are refused where they are read. The paragraphs
 below name the attribute spelling where they were written with it; the bracket
 states the same bound.
 

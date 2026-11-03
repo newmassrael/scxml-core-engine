@@ -213,20 +213,26 @@ pub fn check_records_carry_payload(
     Ok(())
 }
 
-/// Refuse by name each use of an imported event schema whose field is a list,
-/// a record or an optional over either, where the use reads the schema's
-/// fields one entry at a time (docs/adr/0086, section 7.3): a statechart's
-/// variable whose type names such a record at any depth, a read of
-/// `_event.data` on a transition taken on the schema's event, and a `<send>` or
-/// `<raise>` of that event.
+/// Refuse by name each composed value (docs/adr/0086) a statechart's
+/// expressions are typed over and no backend lowers yet (section 7.3): a
+/// variable whose type is a composition no slot's lowering holds
+/// ([`crate::forge::value_type::WrittenType::slot_view`]), a variable whose
+/// type names, at any depth, a record of a schema whose field is a list, a
+/// record or an optional over either, a read of `_event.data` on a transition
+/// taken on such a schema's event, a `<send>` or `<raise>` of that event, and
+/// a list taken whole into a list variable from a place.
 ///
-/// A statechart may import such a schema and take its event: a transition that
-/// reads nothing of the event's data reads nothing of its type. Every reader
-/// past this check takes the entry views
-/// ([`SCXMLModel::entry_event_schemas`], [`SCXMLModel::entry_records`]), which
-/// leave such a schema out, so none of them meets the schema's event as an
-/// event that carries no schema. A host-run invocation's request and result are
-/// refused where the invoke is judged ([`crate::forge::typed_invoke::validate`]).
+/// The one place that decides what is lowered: it runs in the gate every route
+/// asks before it generates or judges a machine
+/// ([`crate::analyzer::can_generate_static`]), after the document's
+/// expressions were judged at any depth where it was parsed
+/// ([`crate::forge::static_datamodel::check`]), so no lowering meets a
+/// composed value, and each backend's step that lowers one narrows this. Every
+/// lowering takes the entry views ([`SCXMLModel::entry_event_schemas`],
+/// [`SCXMLModel::entry_records`]), which leave such a schema out, and none of
+/// them meets the schema's event as an event that carries no schema. A
+/// host-run invocation's request and result are refused where the invoke is
+/// judged ([`crate::forge::typed_invoke::validate`]).
 pub fn check_composed_uses(
     scxml: &SCXMLModel,
     diag_label: &str,
@@ -252,21 +258,37 @@ pub fn check_composed_uses(
             .values()
             .flat_map(|state| state.datamodel.iter()),
     );
+    let mut lists = std::collections::BTreeSet::new();
     for var in variables {
         let Some(ty) = var.value_type.as_ref() else {
             continue;
         };
+        let at = var
+            .value_type_spelling
+            .as_ref()
+            .map(|spelling| (spelling.row(), Some(spelling.col())));
+        if let Err(composition) = ty.slot_view() {
+            return Err(Located::new(
+                crate::forge::error::GenerateError::unsupported(composition.sentence(
+                    &format!("<data id=\"{}\">", var.id),
+                    "a statechart's variable",
+                ))
+                .into(),
+                diag_label,
+                at.map(|(row, _)| row),
+                at.and_then(|(_, col)| col),
+            ));
+        }
         for alias in ty.record_aliases() {
             let Some(schema) = scxml.imported_records.get(alias) else {
                 continue;
             };
             if let Err(composed) = schema.entry_schema() {
-                let at = var
-                    .value_type_spelling
-                    .as_ref()
-                    .map(|spelling| (spelling.row(), Some(spelling.col())));
                 return Err(refused(schema, composed, "a statechart's variable", at));
             }
+        }
+        if ty.list_elem().is_some() {
+            lists.insert(var.id.as_str());
         }
     }
     let composed_schema = |event: &str| {
@@ -306,7 +328,7 @@ pub fn check_composed_uses(
     // included, in the order the states are written.
     let mut states: Vec<_> = scxml.states.values().collect();
     states.sort_by_key(|s| s.document_order);
-    let blocks = states
+    let blocks: Vec<_> = states
         .into_iter()
         .flat_map(|state| state.executable_blocks())
         .chain(
@@ -314,15 +336,24 @@ pub fn check_composed_uses(
                 .history_states
                 .values()
                 .map(|history| history.default_actions.as_slice()),
-        );
+        )
+        .collect();
     let mut sent = None;
-    for action in blocks.flatten() {
+    let mut copied = None;
+    for action in blocks.iter().copied().flatten() {
         action.walk(&mut |a| {
             let carries = matches!(a.action_type.as_str(), "send" | "raise");
             if sent.is_none() && carries {
                 if let Some((schema, composed)) = composed_schema(a.event.as_str()) {
                     sent = Some((schema, composed, a));
                 }
+            }
+            if copied.is_none()
+                && a.action_type == "assign"
+                && lists.contains(a.location.trim())
+                && reads_a_place(&a.expr)
+            {
+                copied = Some(a);
             }
         });
     }
@@ -334,7 +365,34 @@ pub fn check_composed_uses(
             at_location(&action.source_location),
         ));
     }
+    if let Some(action) = copied {
+        let at = at_location(&action.source_location);
+        return Err(Located::new(
+            crate::forge::error::GenerateError::unsupported(format!(
+                "<assign location=\"{}\" expr=\"{}\">: a list taken whole from `{}` is a value \
+                 of the language, and no backend lowers a whole copy of a list yet \
+                 (docs/adr/0086, section 7.3)",
+                action.location.trim(),
+                action.expr.trim(),
+                action.expr.trim()
+            ))
+            .into(),
+            diag_label,
+            at.map(|(row, _)| row),
+            at.and_then(|(_, col)| col),
+        ));
+    }
     Ok(())
+}
+
+/// Whether `expr` is a place a value is held at, a name and the fields,
+/// elements and present values read after it
+/// ([`crate::forge::expr::place_path`]), rather than a call or an operation.
+fn reads_a_place(expr: &str) -> bool {
+    crate::forge::expr::parse_to_ast(expr.trim())
+        .ok()
+        .and_then(|ast| crate::forge::expr::place_path(&ast))
+        .is_some()
 }
 
 /// Whether an expression `action` itself carries, not one of an action nested

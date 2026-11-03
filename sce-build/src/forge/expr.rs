@@ -856,8 +856,98 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_optional_misuse(ast, &ctx.proven, source)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
     reject_ill_typed_total_operations(ast, source)?;
+    reject_composed_operands(ast, ctx, source, ReadThrough::Whole)?;
     lower_bytes_eq(ast, ctx);
     Ok(())
+}
+
+/// Where a node stands for [`reject_composed_operands`]: whether a composed
+/// value may stand there.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReadThrough {
+    /// The whole expression, which the statement that holds it judges: a
+    /// `<foreach>`'s list, a value taken whole by an `<assign>`.
+    Whole,
+    /// A place a composed value is read through: the object of a field read
+    /// or of an index, the argument of `len`, the subject of a test against
+    /// `null`.
+    Part,
+    /// Anywhere else: an operand, an index, a call's argument, a branch.
+    Operand,
+}
+
+/// Refuse a composed value — a list, a record, or an optional value of either,
+/// at a place the scope types by the one value type ([`TypeCtx::value_of`]) —
+/// as an operand, compared or combined (docs/adr/0086, section 6.1): no
+/// backend compares or combines two lists or two records alike. Such a value is
+/// read through its fields, its elements and its length, tested against `null`
+/// where it may be absent, and taken whole only by the statement that holds the
+/// expression ([`ReadThrough::Whole`]).
+///
+/// A scope that holds no value of the one value type (every kind but a
+/// `sce-static` statechart) holds no such place, and nothing is refused.
+fn reject_composed_operands(
+    expr: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    source: &str,
+    stands: ReadThrough,
+) -> Result<(), Refusal> {
+    if stands == ReadThrough::Operand {
+        let composed = place_path(expr)
+            .and_then(|path| ctx.value_of(&path))
+            .filter(crate::forge::value_path::Place::is_composed);
+        if let Some(place) = composed {
+            let observed = expr
+                .span
+                .clone()
+                .and_then(|span| source.get(span))
+                .map(str::to_string);
+            return Err(ExprError::UnsupportedConstruct {
+                construct: format!(
+                    "`{}`, a value of `{}`, as an operand (a list or a record is read through \
+                     its fields, its elements and its length, and is taken whole only into a \
+                     variable whose type it fits or by a <foreach>)",
+                    observed.as_deref().unwrap_or_default(),
+                    place.ty
+                ),
+                observed,
+            }
+            .at(expr.span.clone()));
+        }
+    }
+    let null_test = |subject: &TypedExpr, other: &TypedExpr| {
+        matches!(other.kind, ExprKind::NullLit) && subject.ty.is_optional()
+    };
+    match &expr.kind {
+        ExprKind::Member { object, .. } => {
+            reject_composed_operands(object, ctx, source, ReadThrough::Part)
+        }
+        ExprKind::Index { object, index } => {
+            reject_composed_operands(object, ctx, source, ReadThrough::Part)?;
+            reject_composed_operands(index, ctx, source, ReadThrough::Operand)
+        }
+        ExprKind::Call { callee, args, .. } if is_len_builtin(callee, args) => {
+            reject_composed_operands(&args[0], ctx, source, ReadThrough::Part)
+        }
+        ExprKind::Binary {
+            op: BinOp::StrictEq | BinOp::StrictNeq,
+            left,
+            right,
+        } if null_test(left, right) || null_test(right, left) => {
+            let stands = |node: &TypedExpr| {
+                if matches!(node.kind, ExprKind::NullLit) {
+                    ReadThrough::Operand
+                } else {
+                    ReadThrough::Part
+                }
+            };
+            reject_composed_operands(left, ctx, source, stands(left))?;
+            reject_composed_operands(right, ctx, source, stands(right))
+        }
+        _ => expr.children().into_iter().try_for_each(|child| {
+            reject_composed_operands(child, ctx, source, ReadThrough::Operand)
+        }),
+    }
 }
 
 /// Refuse a field of the element a list of records is indexed at that the

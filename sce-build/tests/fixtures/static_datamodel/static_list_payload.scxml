@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A statechart that reads a composed payload as it reads a variable of the same
+  type (docs/adr/0086, sections 6 and 14.1): it takes `batch.sent`, copies its
+  `items` whole into `kept`, walks `kept` and each item's `tags` in nested
+  <foreach>es, walks the payload's `items` with an index, measures a list at each
+  depth, reads `grid[i][j]` and an element that may be absent. Every place is typed
+  by walking the one value type, each record's fields in the scope of the document
+  that declares it (`Item` as `event_batch.scxml` imports it).
+
+  `check` accepts every expression here. No backend lowers a composed value yet, so
+  the machine is refused by name, `generate/unsupported-feature`, where it is
+  generated (section 7.3); the send of section 14.1 comes with the lowering.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="idle"
+       datamodel="sce-static"
+       name="static_list_payload">
+  <sce:import kind="event-schema" src="event_batch.scxml" as="Batch"/>
+  <sce:import kind="event-schema" src="event_batch_item.scxml" as="Item"/>
+  <datamodel>
+    <data id="kept" sce:type="list&lt;record:Item&gt;[3]"/>
+    <data id="tags_seen" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="counted" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="cell" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="first_maybe" sce:type="optional&lt;uint16&gt;" expr="null"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="batch.sent" target="idle">
+      <assign location="kept" expr="_event.data.items"/>
+      <assign location="counted"
+              expr="len(_event.data.items) + len(_event.data.grid) + len(_event.data.levels)"/>
+      <foreach array="kept" item="each">
+        <foreach array="each.tags" item="word">
+          <assign location="tags_seen" expr="tags_seen + 1"/>
+        </foreach>
+      </foreach>
+      <foreach array="_event.data.items" item="row" index="i">
+        <assign location="tags_seen"
+                expr="tags_seen + len(row.tags) + len(_event.data.items[i].tags)"/>
+      </foreach>
+      <if cond="len(_event.data.grid) &gt; 1 &amp;&amp; len(_event.data.grid[1]) &gt; 0">
+        <assign location="cell" expr="_event.data.grid[1][0]"/>
+      </if>
+      <if cond="len(_event.data.maybe) &gt; 0">
+        <assign location="first_maybe" expr="_event.data.maybe[0]"/>
+      </if>
+    </transition>
+  </state>
+</scxml>

@@ -290,7 +290,10 @@ pub fn check(
             // The payload is the triggering event's, so each transition
             // judges against its own.
             let schema = event_schemas.get(&transition.event);
-            let paths = scope.paths(schema.map(|schema| schema.name.as_str()));
+            // `_event.data` is a record of the schema whole, whatever its
+            // fields hold, and is read at any depth (docs/adr/0086, section 6).
+            let whole = model.imported_event_schemas.get(&transition.event);
+            let paths = scope.paths(whole.map(|schema| schema.name.as_str()));
             let ctx = judge.ctx(&paths);
             // An enum field of the payload is a value of the enum the schema
             // names, as a record's field is, and the payload taken whole is a
@@ -306,7 +309,7 @@ pub fn check(
                 // reason), and a read of it was accepted here and written into
                 // the generated machine as the expression the author wrote,
                 // which names no value there.
-                if schema.is_none()
+                if whole.is_none()
                     && crate::forge::expr::references_event_data_lexically(&transition.cond)
                 {
                     let spelling = transition.cond_spelling.as_ref();
@@ -759,14 +762,52 @@ impl crate::forge::value_type::TypeIdentity for StatechartNames {
     }
 }
 
-/// Whether a list of the type `returned`, named in the statechart's own aliases,
-/// may be taken whole into the list variable `target`: the relation "fits"
-/// (docs/adr/0086, section 5.1), its element the variable's own and its bound at
-/// most the variable's. A variable whose type states no bound holds nothing:
-/// it is judged as a bound of 0, so its element is still judged first.
+/// The names a value read through a record of another document gives the
+/// records and enums it holds, beside the statechart's own (docs/adr/0086,
+/// section 5.1): `from` is the scope the value's aliases are read in
+/// ([`crate::forge::value_path::Place::scope`]), `to` the statechart's. Two
+/// records are one type when their aliases resolve to one record document; two
+/// enums when theirs resolve to enums of the same variants, numbers and
+/// underlying type, or, where neither scope reads the enum, when the aliases
+/// are one.
+struct ScopedNames<'s> {
+    from: Option<&'s crate::forge::value_type::TypeScope>,
+    to: Option<&'s crate::forge::value_type::TypeScope>,
+}
+
+impl crate::forge::value_type::TypeIdentity for ScopedNames<'_> {
+    fn same_record(&self, from: &str, to: &str) -> bool {
+        let identity = |scope: Option<&crate::forge::value_type::TypeScope>, alias: &str| {
+            scope
+                .and_then(|scope| scope.records.get(alias))
+                .map(|record| record.identity.clone())
+        };
+        matches!(
+            (identity(self.from, from), identity(self.to, to)),
+            (Some(a), Some(b)) if a == b
+        )
+    }
+    fn same_enum(&self, from: &str, to: &str) -> bool {
+        let held = |scope: Option<&crate::forge::value_type::TypeScope>, alias: &str| {
+            scope.and_then(|scope| scope.enums.get(alias)).cloned()
+        };
+        match (held(self.from, from), held(self.to, to)) {
+            (Some(a), Some(b)) => a == b,
+            (None, None) => from == to,
+            _ => false,
+        }
+    }
+}
+
+/// Whether a list of the type `returned` may be taken whole into the list
+/// variable `target`: the relation "fits" (docs/adr/0086, section 5.1), its
+/// element the variable's own and its bound at most the variable's, each record
+/// and enum told apart by `names`. A variable whose type states no bound holds
+/// nothing: it is judged as a bound of 0, so its element is still judged first.
 fn list_fits(
     returned: &crate::forge::value_type::ValueType,
     target: &Variable,
+    names: &dyn crate::forge::value_type::TypeIdentity,
 ) -> Result<(), crate::forge::value_type::Misfit> {
     let held = target.value_type.clone().map(|ty| {
         if ty.stated_outer_bound().is_some() {
@@ -778,7 +819,7 @@ fn list_fits(
         }
     });
     match held.map(|ty| ty.bounded()) {
-        Some(Ok(to)) => crate::forge::value_type::fits(returned, &to, &StatechartNames),
+        Some(Ok(to)) => crate::forge::value_type::fits(returned, &to, names),
         Some(Err(_)) | None => Err(crate::forge::value_type::Misfit {
             path: String::new(),
             from: returned.to_string(),
@@ -1684,7 +1725,7 @@ impl<'a> Judge<'a> {
             )),
             max: crate::forge::value_type::Bound::of(returned.max_size),
         };
-        match list_fits(&returned_ty, list) {
+        match list_fits(&returned_ty, list, &StatechartNames) {
             Ok(()) => {}
             Err(misfit) if misfit.why == crate::forge::value_type::MisfitReason::Bound => {
                 return Err(place(format!(
@@ -1855,7 +1896,7 @@ impl<'a> Judge<'a> {
                 elem: Box::new(elem),
                 max: crate::forge::value_type::Bound::of(max),
             };
-            if list_fits(&returned, target).is_err() {
+            if list_fits(&returned, target, &StatechartNames).is_err() {
                 return Err(place(format!(
                     "`{}` may return at most {max}, and `{}` holds at most {} (its \
                      sce:capacity)",
@@ -3411,6 +3452,12 @@ impl<'a> Judge<'a> {
                     {
                         return self.state_from_call(ctx, action, list, callee);
                     }
+                    // A list a place holds, at any depth, taken whole: a copy that
+                    // cannot fail when its type fits the variable's
+                    // (docs/adr/0086, section 6.1).
+                    if let Some(held) = self.whole_place(ctx, &action.expr) {
+                        return self.list_copy(ctx, action, list, &held, state);
+                    }
                     // A call of an algorithm that does return a list, refused for a
                     // reason the author can act on: say which, rather than that a list
                     // "takes what an imported algorithm returns" when this one does not.
@@ -3676,8 +3723,9 @@ impl<'a> Judge<'a> {
         Ok(())
     }
 
-    /// A `<foreach>` over a list variable (§scxml-4.6): `item` is each element,
-    /// typed as the list's element, and `index` — when written — its position,
+    /// A `<foreach>` over a list (§scxml-4.6) a variable, the payload or an
+    /// enclosing loop's item holds: `item` is each element, a value of the
+    /// list's element type, and `index` — when written — its position,
     /// a `uint32` as `len` is. Both are local to the body, so each is a name
     /// nothing in scope already means, a name the generated code can declare in
     /// every backend (it is spelled as written), and not the other's.
@@ -3702,23 +3750,15 @@ impl<'a> Judge<'a> {
                 value,
             )
         };
-        let Some(list) = self.list_var(array) else {
+        // The list is a place a value holds, at any depth: a list variable, a
+        // list the payload holds, or one an enclosing loop's item holds
+        // (docs/adr/0086, section 6.1).
+        let Some(element) = ctx.value_of(array).and_then(|list| list.element()) else {
             return Err(place(
                 "array",
-                "a <foreach> of this data model walks a list variable: array names one of the \
-                 lists the machine declares"
+                "a <foreach> of this data model walks a list variable, or a list the event's \
+                 payload or an enclosing loop's item holds: array names one of them"
                     .to_string(),
-                array,
-            ));
-        };
-        let Some(elem) = list
-            .value_type
-            .as_ref()
-            .and_then(crate::forge::model::AlgorithmValueType::list_elem)
-        else {
-            return Err(place(
-                "array",
-                "a <foreach> of this data model walks a list variable".to_string(),
                 array,
             ));
         };
@@ -3760,19 +3800,22 @@ impl<'a> Judge<'a> {
                 return Err(place(attr, format!("a <foreach> {attr} is {why}"), name));
             }
         }
-        let loop_variables = crate::forge::type_ctx::LoopVariables::new(
+        // A record item is a record an append in the body may take by name,
+        // under the alias the statechart names its schema by.
+        let record_item = self.statechart_record_alias(&element);
+        let loop_variables = crate::forge::type_ctx::LoopVariables::of_place(
             item,
             (!index.is_empty()).then_some(index),
-            elem,
-            self.schemas,
+            Some(element),
+            record_item
+                .as_deref()
+                .and_then(|alias| self.schemas.get(alias)),
         );
         let mut inner = loop_variables.bind(ctx);
         // A fact proven before the loop holds in its body only if nothing in
         // the body ends it: a turn follows the end of the one before
         // (docs/adr/0055, section 3).
         inner.proven = narrowing::loop_entry(&ctx.proven, &action.actions);
-        // A record item is a record an append in the body may take by name.
-        let record_item = elem.record_alias().map(str::to_string);
         let enum_paths = record_item
             .as_deref()
             .and_then(|alias| self.schemas.get(alias))
@@ -3802,6 +3845,88 @@ impl<'a> Judge<'a> {
             self.loop_records.borrow_mut().pop();
         }
         judged
+    }
+
+    /// The alias this statechart names the record `place` holds by: the alias
+    /// the place names it by where the place is read in the statechart's own
+    /// scope, and otherwise the alias of the statechart's import of the same
+    /// record document. `None` for a value that is no record, or a record the
+    /// statechart does not import.
+    fn statechart_record_alias(&self, place: &crate::forge::value_path::Place) -> Option<String> {
+        let crate::forge::value_type::ValueType::Record { alias } = &place.ty else {
+            return None;
+        };
+        if place.scope.is_empty() {
+            return Some(alias.clone());
+        }
+        let base = &self.scope.type_scope;
+        let identity = crate::forge::value_path::record_identity(Some(base), place)?;
+        base.records
+            .iter()
+            .find(|(_, record)| record.identity == identity)
+            .map(|(alias, _)| alias.clone())
+    }
+
+    /// The place `written` names, when it is one taken whole: a name a value
+    /// is held under and the fields, elements and present values read after it
+    /// ([`TypeCtx::value_of`]). `None` for an expression that is no place, and
+    /// for a list variable, which is no value an expression reads
+    /// ([`StaticScope::list_read_as_value`]).
+    fn whole_place(
+        &self,
+        ctx: &TypeCtx<'_>,
+        written: &str,
+    ) -> Option<crate::forge::value_path::Place> {
+        if self.scope.list_read_as_value(written).is_some() {
+            return None;
+        }
+        let ast = crate::forge::expr::parse_to_ast(written.trim()).ok()?;
+        ctx.value_of(&crate::forge::expr::place_path(&ast)?)
+    }
+
+    /// `<assign location="kept" expr="_event.data.items"/>`: the list variable
+    /// `list` takes the value `held` holds whole (docs/adr/0086, section 6.1),
+    /// a copy that cannot fail where the value's type fits the variable's
+    /// (section 5.1). One that may not fit is refused, naming the first place
+    /// where it may not and the narrowing that takes it: an `<sce:append>` of
+    /// each element in a `<foreach>` over it.
+    fn list_copy(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        list: &Variable,
+        held: &crate::forge::value_path::Place,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let spelling = action.spellings.get("expr");
+        // Its names and indices are judged as any expression's are.
+        self.expr(
+            ctx,
+            &action.expr,
+            spelling,
+            Expected::Hint(InferredType::Unknown),
+        )?;
+        let base = &self.scope.type_scope;
+        let names = ScopedNames {
+            from: crate::forge::value_path::scope_at(base, &held.scope),
+            to: Some(base),
+        };
+        list_fits(&held.ty, list, &names).map_err(|misfit| {
+            let written = action.expr.trim();
+            self.rule_at(
+                format!("<assign location=\"{}\" expr=\"{written}\">", list.id),
+                &format!(
+                    "{}: `{}` takes it only element by element, an <sce:append> of each in a \
+                     <foreach> over `{written}`",
+                    misfit.sentence(written),
+                    list.id
+                ),
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                written,
+            )
+        })
     }
 
     /// A record variable of the schema `alias` takes the element of a list of that
@@ -4372,7 +4497,8 @@ mod tests {
                             max: held_max.map(Bound::of),
                         };
                         let target = variable(to, "");
-                        let got = list_fits(&returned, &target).map_err(|m| (m.why, m.path));
+                        let got = list_fits(&returned, &target, &StatechartNames)
+                            .map_err(|m| (m.why, m.path));
                         let expected = if from_elem != to_elem {
                             Err((MisfitReason::Constructor, "/*".to_string()))
                         } else if held_max.is_some_and(|held| returned_max <= held) {
