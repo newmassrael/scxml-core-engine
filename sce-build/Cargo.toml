@@ -1555,6 +1555,14 @@ name = "a_carried_child_the_generator_refuses_refuses_its_parent"
 path = "tests/a_carried_child_the_generator_refuses_refuses_its_parent.rs"
 required-features = ["cli"]
 
+# `orchestrate --go-module-prefix` reaches every statechart of the set and every
+# child one carries. It spawns `sce-codegen orchestrate` and `check`, so it
+# carries the `cli` gate.
+[[test]]
+name = "a_document_set_is_given_its_go_module_prefix"
+path = "tests/a_document_set_is_given_its_go_module_prefix.rs"
+required-features = ["cli"]
+
 # `machines.<m>.scheduler.session_runtime` (SCE Protocol-Synthesis RFC
 # §synth-5-Q, Session runtime of a tokio host). It runs `sce-codegen orchestrate` against a
 # deploy with and without the block, so it carries the `cli` gate.

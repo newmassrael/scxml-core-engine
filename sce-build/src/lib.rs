@@ -1828,6 +1828,7 @@ pub fn compile_scxml_lang_typed_with_section(
             driver_root,
             section_class,
             options,
+            forge: None,
             digest: RunDigest::Unavailable(FILE_ENTRY_POINTS),
         },
         |_| Ok(()),
@@ -1862,6 +1863,7 @@ pub fn compile_scxml_lang_with_deploy(
             driver_root: None,
             section_class: None,
             options: &generator::StatechartCodegenOptions::default(),
+            forge: None,
             digest: RunDigest::Unavailable(FILE_ENTRY_POINTS),
         },
         |model| {
@@ -1893,6 +1895,11 @@ struct StatechartRun<'a> {
     section_class: Option<&'a str>,
     /// The Rust codegen decisions and the host's declarations.
     options: &'a generator::StatechartCodegenOptions,
+    /// What the run gives every forge document it compiles, which the machine
+    /// and every child it carries are given too: the Go module path a machine
+    /// imports the packages it calls by, and what a kind declared inside a
+    /// machine is compiled with. `None` for an entry that takes none.
+    forge: Option<&'a ForgeCompileOptions>,
     /// The digest the files are written under, or the route that has none.
     digest: RunDigest<'a>,
 }
@@ -1918,6 +1925,7 @@ fn compile_scxml_lang_typed_mutated(
         driver_root,
         section_class,
         options,
+        forge,
         digest,
     } = *run;
     let ParsedSCXML {
@@ -1966,6 +1974,7 @@ fn compile_scxml_lang_typed_mutated(
     // the same dep channel without each `generate_*` learning about
     // build-system metadata it doesn't otherwise touch.
     let emit_options = ModelEmitOptions {
+        forge,
         codegen: Some(options),
         ..ModelEmitOptions::default()
     };
@@ -5938,6 +5947,15 @@ fn compile_document_set(
                 driver_root: deploy_driver_root.as_deref(),
                 section_class: deploy_section_class.as_deref(),
                 options: &codegen_options,
+                // The set's own options reach each statechart and every child
+                // it carries, as they reach each forge document of the set and
+                // as `generate` gives its one document its own: the Go module
+                // path a machine imports the packages it calls by
+                // (`--go-module-prefix`), and what a kind declared inside a
+                // machine is compiled with. Given none, a set of statecharts
+                // calling an imported algorithm was refused for want of a
+                // prefix its caller had named.
+                forge: Some(options),
                 // The digest the caller writes these files under is what a
                 // declared table or function carries, the document's and
                 // each child's; without one neither can be generated, and a

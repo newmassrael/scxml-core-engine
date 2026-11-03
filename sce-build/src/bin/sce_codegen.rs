@@ -3842,7 +3842,11 @@ struct OrchestrateArgs {
     emit_ast_dir: Option<String>,
     /// Go module path hosting the generated forge packages.
     /// Required to build any Go document carrying `<sce:import>`;
-    /// ignored for other backends.
+    /// ignored for other backends. Every document of the set is given it:
+    /// each forge document, each statechart (whose machine imports the
+    /// packages of the algorithms it calls by it, as `generate
+    /// --go-module-prefix` gives it to one document) and each child a
+    /// statechart carries, and each kind declared inside any of them.
     ///
     /// `check`'s document-set route takes this flag and names this
     /// subcommand as the producer whose verdict it mirrors. Without
@@ -3856,7 +3860,8 @@ struct OrchestrateArgs {
     /// Build-time const-fold iteration budget, capping the total
     /// iteration count across every `<sce:fold>` body in the
     /// document. Mirrors `generate` and `check`; unset uses the
-    /// RFC §synth-5-F default of 1_000_000.
+    /// RFC §synth-5-F default of 1_000_000. Given to every document of the
+    /// set as `--go-module-prefix` is.
     #[arg(long)]
     const_fold_budget: Option<u64>,
     /// Declare an Event I/O Processor `type` this build's host serves,
