@@ -3543,7 +3543,7 @@ impl StaticTarget for RustTarget {
         let capacity = capacity.expect("a list variable declares its bound where it is read");
         BoundedList {
             ty: crate::forge::composed_lowering::rust_bounded_list(
-                &crate::forge::generator::rust_type(elem),
+                crate::forge::generator::rust_type(elem),
                 capacity,
             ),
             def: None,
