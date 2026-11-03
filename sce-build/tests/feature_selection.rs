@@ -168,6 +168,44 @@ fn the_c11_backend_writes_one_machine_for_every_build() {
     );
 }
 
+/// The C++ backend keeps the variability as C11 does (ADR 0057 §10), in its
+/// header and in the method bodies the header includes. The header is
+/// formatted after it is written, so the refusal is asked for by its
+/// condition and its message, not by how its line is broken.
+#[test]
+fn the_cpp_backend_writes_one_machine_for_every_build() {
+    let (dir, machine) = product_line();
+    let out = dir.path().join("out");
+    let run = sce_codegen(&["generate", path(&machine), "-l", "cpp", "-o", path(&out)]);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let methods = std::fs::read_to_string(out.join("machine_sm.inl")).expect("the methods");
+    assert!(
+        methods.contains("#if defined(SCE_FEATURE_SESSION_UNICAST_ACCEPT)\n"),
+        "the gated state's code is under its presence"
+    );
+    let header = std::fs::read_to_string(out.join("machine_sm.h")).expect("the header");
+    assert!(
+        header.contains(
+            "#if (defined(SCE_FEATURE_SESSION_UNICAST_ACCEPT) && !defined(SCE_FEATURE_SESSION_UNICAST))\n\
+             #error"
+        ) && header.contains(
+            "\"feature `session-unicast-accept` requires `session-unicast`, \
+             which this build leaves out (feature model `features`)\""
+        ),
+        "the model's edge is a refusal in the header"
+    );
+    let check = sce_codegen(&["check", path(&machine), "-l", "cpp"]);
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+}
+
 #[test]
 fn a_selection_generates_the_variant_it_denotes() {
     let (dir, machine) = product_line();

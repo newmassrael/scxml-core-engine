@@ -4945,9 +4945,11 @@ fn select_variant(parser: SCXMLParser, features: &Option<Vec<String>>) -> SCXMLP
 /// carries the same children with the same text; a child that a variant
 /// removes or changes is a file that one output cannot be for every build, so
 /// it is refused like any construct the generator does not keep variable.
+/// `language` is the backend whose generation for every build is refused.
 fn children_not_in_every_variant(
     document: &SCXMLModel,
     variants: &sce_build::variant_lift::Variants,
+    language: Language,
     scxml_path: &str,
 ) -> Option<Located<ForgeError>> {
     let children = |model: &SCXMLModel| -> BTreeMap<String, Option<String>> {
@@ -4973,6 +4975,7 @@ fn children_not_in_every_variant(
         ForgeError::from(
             sce_build::forge::error::GenerateError::CodegenFeatureLiftingMismatch {
                 model: variants.product_line().model_name().to_string(),
+                language: sce_build::manifest::language_wire_name(language).to_string(),
                 features: variant.features.clone(),
                 difference: format!(
                     "the in-line child `{child}` is not the same in every variant, and a run writes \
@@ -6174,13 +6177,16 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             // ADR 0057 §9: the variants a backend that keeps the variability
             // renders the document with, derived as `generate` derives them,
             // so the verdict on that backend is the verdict `generate` reaches.
-            let variants = if features.is_none()
-                && langs.iter().any(|lang| lang.keeps_variability())
-                && model
-                    .product_line
-                    .as_ref()
-                    .is_some_and(|line| line.is_gated())
-            {
+            // The first such backend the run names is the one a refusal names:
+            // the sweep stops at it.
+            let lifting = langs.iter().copied().find(|lang| lang.keeps_variability());
+            let variants = if let Some(lifting) = lifting.filter(|_| {
+                features.is_none()
+                    && model
+                        .product_line
+                        .as_ref()
+                        .is_some_and(|line| line.is_gated())
+            }) {
                 let variants = sce_build::variant_lift::Variants::derive(
                     &model,
                     scxml_path,
@@ -6189,7 +6195,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 )
                 .unwrap_or_else(|refused: PreparationRefusal| refused.exit(error_format));
                 if let Some(refused) = variants.as_ref().and_then(|variants| {
-                    children_not_in_every_variant(&model, variants, scxml_path)
+                    children_not_in_every_variant(&model, variants, lifting, scxml_path)
                 }) {
                     error_format.emit_forge_and_exit(&refused);
                 }
@@ -7553,7 +7559,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         .unwrap_or_else(|refused: PreparationRefusal| refused.exit(error_format));
         if let Some(refused) = variants
             .as_ref()
-            .and_then(|variants| children_not_in_every_variant(&model, variants, scxml_path))
+            .and_then(|variants| children_not_in_every_variant(&model, variants, lang, scxml_path))
         {
             error_format.emit_forge_and_exit(&refused);
         }

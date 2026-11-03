@@ -275,12 +275,16 @@ impl Line {
     }
 }
 
-/// The punctuators of C and C++ longer than one character, longest first.
+/// The punctuators of C longer than one character, longest first (ISO C
+/// 6.4.6).
 const PUNCTUATORS: &[&str] = &[
-    "%:%:", "...", "<<=", ">>=", "->*", "<=>", "##", "%:", "<:", ":>", "<%", "%>", "::", ".*",
-    "->", "++", "--", "<<", ">>", "<=", ">=", "==", "!=", "&&", "||", "*=", "/=", "%=", "+=", "-=",
-    "&=", "^=", "|=",
+    "%:%:", "...", "<<=", ">>=", "##", "%:", "<:", ":>", "<%", "%>", "->", "++", "--", "<<", ">>",
+    "<=", ">=", "==", "!=", "&&", "||", "*=", "/=", "%=", "+=", "-=", "&=", "^=", "|=",
 ];
+
+/// The punctuators C++ adds to C's, longest first ([lex.operators]). Each is
+/// tried before C's, so that `->*` is not read as `->` and `*`.
+const CPP_PUNCTUATORS: &[&str] = &["->*", "<=>", "::", ".*"];
 
 /// The end of a directive's line, as a token: a directive ends at its line,
 /// so two runs of tokens that break their directives at other places are
@@ -416,12 +420,20 @@ fn token(text: &str, chars: &[(usize, char)], i: usize, cpp: bool) -> Result<usi
     if c == '"' || c == '\'' {
         return Ok(literal(chars, i, c));
     }
-    for punctuator in PUNCTUATORS {
-        if punctuator
+    let at = |spelling: &str| {
+        spelling
             .chars()
             .enumerate()
             .all(|(k, p)| char_at(i + k) == Some(p))
-        {
+    };
+    // [lex.pptoken]: `<::` not followed by `:` or `>` is `<` and `::`, not the
+    // alternative token `<:`, so that `vector<::T>` names `::T`.
+    if cpp && at("<::") && !matches!(char_at(i + 3), Some(':' | '>')) {
+        return Ok(i + 1);
+    }
+    let added: &[&str] = if cpp { CPP_PUNCTUATORS } else { &[] };
+    for punctuator in added.iter().chain(PUNCTUATORS) {
+        if at(punctuator) {
             return Ok(i + punctuator.chars().count());
         }
     }
@@ -1147,6 +1159,23 @@ mod tests {
     }
 
     #[test]
+    fn a_less_than_before_a_scope_is_no_bracket_of_cpp() {
+        let spelled = |text: &str, cpp: bool| -> Vec<String> {
+            lex(text, cpp).unwrap()[0]
+                .tokens
+                .iter()
+                .map(|t| t.spelling.clone())
+                .collect()
+        };
+        assert_eq!(
+            spelled("p<::T> a<::>b<:::c->*d", true),
+            ["p", "<", "::", "T", ">", "a", "<:", ":>", "b", "<:", "::", "c", "->*", "d"]
+        );
+        // C has neither `::` nor the rule: `<:` is `[` wherever it is written.
+        assert_eq!(spelled("p<::T>", false), ["p", "<:", ":", "T", ">"]);
+    }
+
+    #[test]
     fn a_member_is_a_balanced_run_of_lines() {
         let text = "int f(void) {\n    return 1;\n}\nint g;\n";
         let source = c().read(text, &mut Interner::default()).unwrap();
@@ -1166,6 +1195,18 @@ mod tests {
             "{out}"
         );
         assert_resolves(&out, &with, text);
+    }
+
+    #[test]
+    fn a_comment_over_a_member_some_variants_write_is_written_once() {
+        let with = "/* the checks */\nint a;\nint b;\n";
+        let without = "/* the checks */\nint b;\n";
+        let out = merged(with, without);
+        assert_eq!(
+            out,
+            "/* the checks */\n#if defined(SCE_FEATURE_A)\nint a;\n#endif\nint b;\n"
+        );
+        assert_resolves(&out, with, without);
     }
 
     #[test]

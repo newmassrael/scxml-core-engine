@@ -11463,6 +11463,7 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
         },
         GenerateError::CodegenFeatureLiftingMismatch {
             model,
+            language,
             features,
             difference: _,
         } => DiagnosticPayload {
@@ -11471,7 +11472,7 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             expected: None,
             actual: None,
             fix: None,
-            key_fragments: vec![model.clone(), features.join(",")],
+            key_fragments: vec![model.clone(), language.clone(), features.join(",")],
         },
         GenerateError::QueueStorageRuntimeMissing {
             queue_name,
@@ -15265,13 +15266,14 @@ mod tests {
                 "codegen/feature-lifting-mismatch",
                 GenerateError::CodegenFeatureLiftingMismatch {
                     model: "session_features".into(),
+                    language: "rust".into(),
                     features: vec!["session-unicast".into()],
                     difference: "in enum `MachineState`: the lifted machine has `Accepting , Idle` \
                                  where the variant has `Idle`"
                         .into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:9b762368b8c0494b","code":"codegen/feature-lifting-mismatch","stage":"generate","message":"the Rust machine generated for every build of the feature model 'session_features' is not, with the features [session-unicast] on, the machine that variant generates on its own (in enum `MachineState`: the lifted machine has `Accepting , Idle` where the variant has `Idle`): this is a defect of the generator; generate the variant with --features"}"#,
+                r#"{"v":1,"id":"fnv1a:71766cc87b1bc038","code":"codegen/feature-lifting-mismatch","stage":"generate","message":"the rust machine generated for every build of the feature model 'session_features' is not, with the features [session-unicast] on, the machine that variant generates on its own (in enum `MachineState`: the lifted machine has `Accepting , Idle` where the variant has `Idle`): this is a defect of the generator; generate the variant with --features"}"#,
             ),
             // ── §synth-5-P Queue kind ──
             (

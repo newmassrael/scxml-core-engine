@@ -5179,7 +5179,7 @@ if(SCE_C_RUNTIME_POSIX)
             COMMAND ${CMAKE_C_COMPILER} -std=c11 -fsyntax-only
                     "-I$<JOIN:$<TARGET_PROPERTY:sce_c_runtime,INTERFACE_INCLUDE_DIRECTORIES>,;-I>"
                     -DSCE_FEATURE_SESSION_UNICAST_ACCEPT
-                    "${_SCE_FEATURE_DIR}/lifted/session_sm.c"
+                    ${_SCE_FEATURE_LIFTED_SOURCES}
             COMMAND_EXPAND_LISTS
         )
         # The compiler fails either way; the test is that it fails on the

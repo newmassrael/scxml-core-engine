@@ -274,8 +274,10 @@ impl<D: Dialect + ?Sized> Merge<'_, D> {
             .max_by_key(|&version| versions[version].set.len())
             .expect("a list has a version");
         let mut out = String::new();
+        let mut previous: Option<&Slot> = None;
         for slot in &slots {
-            let (version, member) = slot_lead_source(slot);
+            let (version, member) = lead_source(slot, previous);
+            previous = Some(slot);
             let lead = lead_of(&versions[version], member);
             let indent = lead
                 .rsplit('\n')
@@ -323,10 +325,13 @@ impl<D: Dialect + ?Sized> Merge<'_, D> {
             .iter()
             .flat_map(|group| group.set.iter().copied())
             .collect();
-        if let Some(merged) = self.inside(versions, slot)? {
-            let lender = slot_lead_source(slot);
-            return self.selected(versions, &union, within, lender, &merged);
-        }
+        let deeper = match self.inside(versions, slot) {
+            Ok(merged) => {
+                let lender = slot_lead_source(slot);
+                return self.selected(versions, &union, within, lender, &merged);
+            }
+            Err(deeper) => deeper,
+        };
         // The groups of a slot are written by disjoint sets of variants, so
         // none of two or more holds in every build of `within`.
         let alternatives = slot
@@ -341,7 +346,10 @@ impl<D: Dialect + ?Sized> Merge<'_, D> {
                 }
                 Ok(((self.spell)(&group.set, within), text))
             })
-            .collect::<Result<Vec<_>, Unmerged>>()?;
+            .collect::<Result<Vec<_>, Unmerged>>()
+            // The members could not be selected whole because a list inside
+            // them could not be merged: that list's refusal is the cause.
+            .map_err(|whole| deeper.unwrap_or(whole))?;
         Ok(self.dialect.alternatives(&alternatives, indent))
     }
 
@@ -380,9 +388,10 @@ impl<D: Dialect + ?Sized> Merge<'_, D> {
 
     /// The slot's members merged inside the deepest list outside which they
     /// are alike, written as the member that holds the most variants writes it
-    /// with that list's content replaced; `None` when they differ outside
-    /// every list.
-    fn inside(&self, versions: &[Version<'_>], slot: &Slot) -> Result<Option<String>, Unmerged> {
+    /// with that list's content replaced. The error is `None` when they differ
+    /// outside every list, and otherwise the refusal of the deepest list they
+    /// differ in.
+    fn inside(&self, versions: &[Version<'_>], slot: &Slot) -> Result<String, Option<Unmerged>> {
         let members: Vec<(usize, &Member)> = slot
             .groups
             .iter()
@@ -409,6 +418,7 @@ impl<D: Dialect + ?Sized> Merge<'_, D> {
             shared.push(groups.iter().map(|group| group.content).collect());
             trees = groups.iter().map(|group| group.trees.as_slice()).collect();
         }
+        let mut deepest = None;
         for offsets in shared.iter().rev() {
             let lists: Option<Vec<&List>> = offsets
                 .iter()
@@ -429,8 +439,12 @@ impl<D: Dialect + ?Sized> Merge<'_, D> {
                     list,
                 })
                 .collect();
-            let Ok(content) = self.list(&inner) else {
-                continue;
+            let content = match self.list(&inner) {
+                Ok(content) => content,
+                Err(refused) => {
+                    deepest.get_or_insert(refused);
+                    continue;
+                }
             };
             let lender = (0..members.len())
                 .max_by_key(|&i| slot.groups[i].set.len())
@@ -438,13 +452,13 @@ impl<D: Dialect + ?Sized> Merge<'_, D> {
             let (version, member) = members[lender];
             let text = versions[version].source.text;
             let list = lists[lender];
-            return Ok(Some(format!(
+            return Ok(format!(
                 "{}{content}{}",
                 &text[member.range.start..list.content.start],
                 &text[list.content.end..member.range.end]
-            )));
+            ));
         }
-        Ok(None)
+        Err(deepest)
     }
 }
 
@@ -469,6 +483,37 @@ fn slot_lead_source(slot: &Slot) -> (usize, usize) {
         .max_by_key(|group| group.set.len())
         .expect("a slot has a group");
     group.at[0]
+}
+
+/// The member whose leading text a slot is written after, `previous` the slot
+/// written before it: one that follows a member of `previous` in its own
+/// version, or starts its version's list where `previous` is none, so that the
+/// text between the two is a version's own; of those, the one that stands for
+/// the most variants. A slot no member of which so follows is led as the
+/// slot's members are ([`slot_lead_source`]).
+///
+/// Leading text a version writes before a member that is first only in it (a
+/// comment over a run of members, say) is then written once, before the slot
+/// it leads in that version, and not again before the next.
+fn lead_source(slot: &Slot, previous: Option<&Slot>) -> (usize, usize) {
+    let follows = |&(version, member): &(usize, usize)| match previous {
+        None => member == 0,
+        Some(previous) => {
+            member > 0
+                && previous
+                    .groups
+                    .iter()
+                    .any(|group| group.at.contains(&(version, member - 1)))
+        }
+    };
+    slot.groups
+        .iter()
+        .filter_map(|group| {
+            let at = group.at.iter().find(|&at| follows(at))?;
+            Some((group.set.len(), *at))
+        })
+        .max_by_key(|(variants, _)| *variants)
+        .map_or_else(|| slot_lead_source(slot), |(_, at)| at)
 }
 
 /// The text between a member and the one before it in its list.

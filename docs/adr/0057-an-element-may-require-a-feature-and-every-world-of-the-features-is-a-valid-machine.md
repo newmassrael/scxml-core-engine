@@ -489,7 +489,17 @@ that backend gap to be closed, as its own change, rather than holding to a weake
   `c11_feature_conformance_refuses_a_broken_edge` holds a build that breaks the edge to the header's `#error`. Two
   machines of one name in one program needed the host's table nested under the prefix like every other symbol
   (`native_action::render_with_options`); it had kept the bare name.
-- Still to do: C++, then Swift.
+- **The C++ dialect and lane** (2026-11-04). C++ is the C11 dialect read with C++'s tokens: `generate` and `check`
+  with `-l cpp` write the header and the `.inl` of method bodies for every build, the header ending with the same
+  `#error`s. C++ adds `::`, `.*`, `->*` and `<=>` to C's punctuators, and reads `<::` as `<` and `::` where the
+  next character is neither `:` nor `>` ([lex.pptoken]): before that rule `shared_ptr<::SCE::IScriptEngine>` opened
+  a `[` nothing closed, and the namespace that held it could not be selected. `tests/CMakeLists.txt` builds
+  `cpp_feature_conformance_{none,unicast,accept}` and `cpp_feature_conformance_refuses_a_broken_edge` as the C11
+  lane does, the two machines kept apart by their namespace prefixes. Two changes of the core came with it: a slot's
+  leading text is taken from a version in which the slot follows the one written before it, so a comment over a
+  member only some variants write is written once rather than again before the next member; and a refusal names the
+  deepest list that could not be merged, not the member that holds it.
+- Still to do: Swift.
 
 ## Questions left open
 

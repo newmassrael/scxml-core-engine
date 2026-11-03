@@ -6107,15 +6107,16 @@ pub enum GenerateError {
     /// (ADR 0057 §9). The generator merged the variants' machines wrongly, or
     /// wrote a construct the merge cannot select; either is the generator's
     /// defect, and the variant generated with `--features` is correct for the
-    /// build.
+    /// build. `language` is the backend's wire name.
     #[error(
-        "the Rust machine generated for every build of the feature model '{model}' is not, \
-         with the features [{}] on, the machine that variant generates on its own ({difference}): \
-         this is a defect of the generator; generate the variant with --features",
+        "the {language} machine generated for every build of the feature model '{model}' is \
+         not, with the features [{}] on, the machine that variant generates on its own \
+         ({difference}): this is a defect of the generator; generate the variant with --features",
         features.join(", ")
     )]
     CodegenFeatureLiftingMismatch {
         model: String,
+        language: String,
         features: Vec<String>,
         difference: String,
     },

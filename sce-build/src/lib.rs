@@ -2111,24 +2111,28 @@ pub fn emit_model_artifacts(
                 variants,
                 &variant_dialect::rust::Rust,
             ),
-            (generator::Language::C11, Some(variants)) => emit_lifted_artifacts(
-                model,
-                template_dir,
-                input_stem,
-                source_name,
-                options,
-                variants,
-                &variant_dialect::preprocessor::Preprocessor::new(
-                    generator::Language::C11,
-                    line.model().features().map(|f| line.model().name(f)),
-                ),
-            ),
+            (language @ (generator::Language::C11 | generator::Language::Cpp), Some(variants)) => {
+                emit_lifted_artifacts(
+                    model,
+                    template_dir,
+                    input_stem,
+                    source_name,
+                    options,
+                    variants,
+                    &variant_dialect::preprocessor::Preprocessor::new(
+                        language,
+                        line.model().features().map(|f| line.model().name(f)),
+                    ),
+                )
+            }
             // Every backend is named: one added to `Language` is decided here, not
             // inherited from the arm (`a_backend_is_decided_at_every_site_and_listed_once`).
-            (generator::Language::Rust | generator::Language::C11, None)
+            (
+                generator::Language::Rust | generator::Language::C11 | generator::Language::Cpp,
+                None,
+            )
             | (
-                generator::Language::Cpp
-                | generator::Language::Kotlin
+                generator::Language::Kotlin
                 | generator::Language::Go
                 | generator::Language::Python
                 | generator::Language::Swift,
@@ -2512,6 +2516,7 @@ fn emit_lifted_artifacts<D: variant_dialect::Dialect>(
         forge::error::Located::new(
             forge::error::GenerateError::CodegenFeatureLiftingMismatch {
                 model: variants.product_line().model_name().to_string(),
+                language: forge::codegen_matrix::language_wire_name(dialect.backend()).to_string(),
                 features: features.to_vec(),
                 difference,
             }

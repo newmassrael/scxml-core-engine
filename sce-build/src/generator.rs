@@ -163,12 +163,8 @@ impl Language {
     /// variant, named by `--features`.
     pub fn keeps_variability(self) -> bool {
         match self {
-            Language::Rust | Language::C11 => true,
-            Language::Cpp
-            | Language::Kotlin
-            | Language::Go
-            | Language::Python
-            | Language::Swift => false,
+            Language::Rust | Language::C11 | Language::Cpp => true,
+            Language::Kotlin | Language::Go | Language::Python | Language::Swift => false,
         }
     }
 
