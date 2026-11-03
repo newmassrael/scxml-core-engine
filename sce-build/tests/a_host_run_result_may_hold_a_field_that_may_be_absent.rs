@@ -412,7 +412,7 @@ fn every_backend_writes_a_64_bit_result_field_as_the_text_of_its_digits() {
 /// to hold it.
 #[test]
 fn an_optional_text_that_declares_no_bound_is_refused_on_every_backend() {
-    for language in ["c11", "rust", "cpp", "kotlin", "go", "python"] {
+    for language in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let (ok, said, _) = run(
             "generate",
             language,
