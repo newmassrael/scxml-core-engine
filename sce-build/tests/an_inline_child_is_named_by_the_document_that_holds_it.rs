@@ -294,14 +294,28 @@ fn a_child_is_labelled_by_the_document_and_the_invokes_that_lead_to_it() {
         parsed_under, want,
         "the labels the children were parsed under"
     );
-    let prepared: Vec<String> = carried(&doc, &model)
-        .into_iter()
-        .map(|child| child.label)
-        .collect();
+    let children = carried(&doc, &model);
+    let prepared: Vec<&str> = children.iter().map(|child| child.label.as_str()).collect();
     assert_eq!(
         prepared, want,
         "the labels the children were prepared under"
     );
+    // The label is no path: the document a child's relative references were
+    // written from is read back from it through the invoke path the child's
+    // generated files carry.
+    for child in &children {
+        let invoke_path = child
+            .model
+            .inline_invoke_path
+            .as_deref()
+            .expect("a child written in-line carries its invoke path");
+        assert_eq!(
+            sce_build::inline_child_document(&child.label, invoke_path),
+            Some(doc.as_str()),
+            "{} does not lead back to the document that holds it",
+            child.label
+        );
+    }
 }
 
 /// A record about the whole of a child, raised under its label with no row

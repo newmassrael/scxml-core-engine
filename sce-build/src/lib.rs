@@ -1226,6 +1226,14 @@ pub fn inline_child_label(document: &str, invoke_path: &str) -> String {
     format!("{document}#{invoke_path}")
 }
 
+/// The document an [`inline_child_label`] names, given the invoke path it
+/// ends in; `None` for a label that does not end in it. The label is no path
+/// (an invoke path holds `/`), so what is resolved relative to the child, as
+/// its author wrote it, is resolved from this document's directory.
+pub fn inline_child_document<'l>(label: &'l str, invoke_path: &str) -> Option<&'l str> {
+    label.strip_suffix(invoke_path)?.strip_suffix('#')
+}
+
 /// SCE Protocol-Synthesis RFC §5.2 — resolve every `<sce:driver
 /// href="..."/>` reference on the SCXML root against the SCXML file's
 /// parent directory (the default driver root). Each successful
@@ -2727,7 +2735,15 @@ fn emit_inline_kind_siblings(
     if model.inline_kinds.is_empty() {
         return Ok(());
     }
-    let base_dir = Path::new(scxml_path)
+    // A machine written in-line is named by the document that holds it and
+    // its invoke path, and its author wrote what its kinds import from that
+    // document.
+    let document = model
+        .inline_invoke_path
+        .as_deref()
+        .and_then(|path| inline_child_document(scxml_path, path))
+        .unwrap_or(scxml_path);
+    let base_dir = Path::new(document)
         .parent()
         .unwrap_or_else(|| Path::new("."));
     for inline in &model.inline_kinds {
