@@ -68,6 +68,7 @@ use serde_json::Value;
 use crate::client::{CourierError, LinkError};
 use crate::driver::Exchange;
 use crate::limits::Windows;
+use crate::logs::{list_digest, refused};
 use crate::protocol::{Code, Create, Join, Login, Request, Response};
 use crate::token::{equal, hmac_sha256, Authority};
 
@@ -228,9 +229,9 @@ fn op_of(text: &str) -> Option<String> {
 /// What a relay that offers no login says to `request` on a connection with no token.
 pub(crate) fn not_offered(request: &str) -> Response {
     if is_anonymous(request) {
-        Response::refused(Code::Invalid, "this relay does not offer login")
+        refused!(Code::Invalid, "this relay does not offer login")
     } else {
-        Response::refused(Code::Unauthorized, "no token")
+        refused!(Code::Unauthorized, "no token")
     }
 }
 
@@ -362,14 +363,31 @@ impl Doorway {
     /// Whether a connection that presents no token the relay takes is taken from `source` at
     /// `now_ms`.
     pub(crate) fn open(&mut self, source: Option<IpAddr>, now_ms: u64) -> Opened {
+        let source = source_of(source);
         match self.connections.take(
-            source_of(source),
+            source,
             self.policy.connections_per_minute,
             MINUTE_MS,
             now_ms,
         ) {
-            Ok(()) => Opened::Taken,
-            Err(retry_after_ms) => Opened::RateLimited { retry_after_ms },
+            Ok(()) => {
+                log::debug!(
+                    source = source_word(source).as_str(),
+                    sources = self.connections.len();
+                    "anonymous_opened"
+                );
+                Opened::Taken
+            }
+            Err(retry_after_ms) => {
+                note_source_limited(
+                    &self.connections,
+                    source,
+                    "connections_per_minute",
+                    self.policy.connections_per_minute,
+                    retry_after_ms,
+                );
+                Opened::RateLimited { retry_after_ms }
+            }
         }
     }
 
@@ -383,13 +401,13 @@ impl Doorway {
         now_ms: u64,
     ) -> Result<Asked, Response> {
         if text.len() > max_request_bytes {
-            return Err(Response::refused(
+            return Err(refused!(
                 Code::TooLarge,
                 format!("a request is at most {max_request_bytes} bytes"),
             ));
         }
         let no_creation = || {
-            Response::refused(
+            refused!(
                 Code::Invalid,
                 "this relay does not offer `create`: a list is created with a token of its \
                  authority",
@@ -398,36 +416,55 @@ impl Doorway {
         let request = Request::from_json(text).map_err(|reason| {
             match (op_of(text).as_deref(), &self.creation) {
                 (Some("create"), None) => no_creation(),
-                _ => Response::refused(Code::Invalid, reason),
+                _ => refused!(Code::Invalid, reason),
             }
         })?;
         let source = source_of(source);
-        let limited = |retry_after_ms| {
-            Response::refused(
-                Code::RateLimited { retry_after_ms },
-                "this source has spent its allowance",
-            )
-        };
-        match request {
+        let op = request.op();
+        let asked = match request {
             Request::Challenge { list, node } => {
                 self.challenges
                     .take(source, self.policy.challenges_per_minute, MINUTE_MS, now_ms)
-                    .map_err(limited)?;
+                    .map_err(|retry_after_ms| {
+                        source_limited(
+                            &self.challenges,
+                            source,
+                            "challenges_per_minute",
+                            self.policy.challenges_per_minute,
+                            retry_after_ms,
+                        )
+                    })?;
                 if list.is_empty() {
-                    return Err(Response::refused(Code::Invalid, "a list has a name"));
+                    return Err(refused!(Code::Invalid, "a list has a name"));
                 }
                 Ok(Asked::Challenge { list, node })
             }
             Request::Login(login) => {
                 self.logins
                     .take(source, self.policy.logins_per_minute, MINUTE_MS, now_ms)
-                    .map_err(limited)?;
+                    .map_err(|retry_after_ms| {
+                        source_limited(
+                            &self.logins,
+                            source,
+                            "logins_per_minute",
+                            self.policy.logins_per_minute,
+                            retry_after_ms,
+                        )
+                    })?;
                 self.check(login, now_ms).map(Asked::Login)
             }
             Request::Join(join) => {
                 self.joins
                     .take(source, self.policy.joins_per_minute, MINUTE_MS, now_ms)
-                    .map_err(limited)?;
+                    .map_err(|retry_after_ms| {
+                        source_limited(
+                            &self.joins,
+                            source,
+                            "joins_per_minute",
+                            self.policy.joins_per_minute,
+                            retry_after_ms,
+                        )
+                    })?;
                 let nonce = self.challenge_holds(
                     &join.invitation.list,
                     join.invitation.node,
@@ -441,16 +478,28 @@ impl Doorway {
                 let creation = self.creation.ok_or_else(no_creation)?;
                 self.creations
                     .take(source, creation.creations_per_minute, MINUTE_MS, now_ms)
-                    .map_err(limited)?;
+                    .map_err(|retry_after_ms| {
+                        source_limited(
+                            &self.creations,
+                            source,
+                            "creations_per_minute",
+                            creation.creations_per_minute,
+                            retry_after_ms,
+                        )
+                    })?;
                 self.check_creation(*create, creation.work_bits, now_ms)
                     .map(Asked::Create)
             }
-            _ => Err(Response::refused(
+            _ => Err(refused!(
                 Code::Unauthorized,
                 "a connection with no token the relay takes asks for a challenge, logs in, joins \
                  or creates, and nothing else",
             )),
+        };
+        if asked.is_ok() {
+            log::debug!(op = op, source = source_word(source).as_str(); "anonymous_asked");
         }
+        asked
     }
 
     /// A creation whose challenge this relay made for its list and node, that has not expired and
@@ -471,26 +520,26 @@ impl Doorway {
             .and_then(|text| Entry::from_json(text))
             .filter(|entry| entry.list == login.list)
             .ok_or_else(|| {
-                Response::refused(
+                refused!(
                     Code::Invalid,
                     "a creation's first entry is the genesis of the list it creates",
                 )
             })?;
         let administrator = creation::first_administrator(&genesis).ok_or_else(|| {
-            Response::refused(
+            refused!(
                 Code::Invalid,
                 "a creation's first entry is the genesis of the list it creates",
             )
         })?;
         let checked = self.check(login, now_ms)?;
         if !creation::work_holds(&checked.nonce, &genesis.hash(), work, bits) {
-            return Err(Response::refused(
+            return Err(refused!(
                 Code::Unauthorized,
                 format!("the work does not begin with the {bits} zero bits this relay asks"),
             ));
         }
         if !creation::certifies(&checked.login.list, &administrator) {
-            return Err(Response::refused(
+            return Err(refused!(
                 Code::Forbidden,
                 "a list created with no token is named by the key its genesis names first \
                  (n1.<salt>.<digest>), and this name is not that",
@@ -517,6 +566,12 @@ impl Doorway {
         let random = hmac_sha256(&self.key, &drawn);
         let mut nonce = random[..16].to_vec();
         nonce.extend_from_slice(&self.tag(list, node, expires_at_ms, &random[..16]));
+        log::debug!(
+            list = list_digest(list).as_str(),
+            node = node,
+            held = held;
+            "challenge_given"
+        );
         Response::Challenge {
             audience: audience.to_string(),
             nonce: encoding::encode(&nonce),
@@ -548,7 +603,7 @@ impl Doorway {
     /// A login whose challenge this relay made for its list and node, that has not expired and was
     /// not used.
     fn check(&mut self, login: Login, now_ms: u64) -> Result<Checked, Response> {
-        let unauthorized = |why: &str| Response::refused(Code::Unauthorized, why);
+        let unauthorized = |why: &str| refused!(Code::Unauthorized, why);
         let nonce = encoding::decode(&login.nonce)
             .ok_or_else(|| unauthorized("the nonce is not one this relay gives"))?;
         let nonce =
@@ -573,7 +628,7 @@ impl Doorway {
         expires_at_ms: u64,
         now_ms: u64,
     ) -> Result<[u8; 32], Response> {
-        let unauthorized = |why: &str| Response::refused(Code::Unauthorized, why);
+        let unauthorized = |why: &str| refused!(Code::Unauthorized, why);
         let nonce: [u8; 32] = nonce
             .try_into()
             .map_err(|_| unauthorized("the nonce is not one this relay gives"))?;
@@ -598,7 +653,7 @@ impl Doorway {
     fn nonce_free(&mut self, nonce: &[u8; 32], now_ms: u64) -> Result<(), Response> {
         self.forget_used(now_ms);
         if self.used.contains(nonce) {
-            return Err(Response::refused(
+            return Err(refused!(
                 Code::Unauthorized,
                 "the challenge was used already",
             ));
@@ -610,6 +665,13 @@ impl Doorway {
                 .map_or(CHALLENGE_MS, |(expires_at_ms, _)| {
                     expires_at_ms.saturating_sub(now_ms)
                 });
+            log::info!(
+                limit = "used_nonces",
+                allowed = self.policy.used_nonces,
+                held = self.used.len(),
+                retry_after_ms = retry_after_ms;
+                "rate_limited"
+            );
             return Err(Response::refused(
                 Code::RateLimited { retry_after_ms },
                 "the relay holds as many used challenges as it keeps",
@@ -656,9 +718,10 @@ impl Doorway {
     pub(crate) fn admissible(&mut self, checked: &Checked, now_ms: u64) -> Result<(), Response> {
         self.nonce_free(&checked.nonce, now_ms)?;
         let node = (checked.login.list.clone(), checked.login.node);
+        let per_hour = self.policy.logins_per_node_per_hour;
         self.nodes
-            .admits(&node, self.policy.logins_per_node_per_hour, HOUR_MS, now_ms)
-            .map_err(node_limited)
+            .admits(&node, per_hour, HOUR_MS, now_ms)
+            .map_err(|retry_after_ms| node_limited(&self.nodes, &node, per_hour, retry_after_ms))
     }
 
     /// The token of a login the list's side admitted: its nonce is used from now on, and the node
@@ -675,13 +738,10 @@ impl Doorway {
         if let Err(refused) = self.nonce_free(&checked.nonce, now_ms) {
             return refused;
         }
-        if let Err(retry_after_ms) = self.nodes.take(
-            (login.list.clone(), login.node),
-            self.policy.logins_per_node_per_hour,
-            HOUR_MS,
-            now_ms,
-        ) {
-            return node_limited(retry_after_ms);
+        let node = (login.list.clone(), login.node);
+        let per_hour = self.policy.logins_per_node_per_hour;
+        if let Err(retry_after_ms) = self.nodes.take(node.clone(), per_hour, HOUR_MS, now_ms) {
+            return node_limited(&self.nodes, &node, per_hour, retry_after_ms);
         }
         self.use_nonce(checked.nonce, login.expires_at_ms);
         self.token(login, authority, now_ms)
@@ -693,7 +753,7 @@ impl Doorway {
     /// again.
     pub(crate) fn spend_create(&mut self, checked: &Checked, now_ms: u64) -> Result<(), Response> {
         let Some(creation) = self.creation else {
-            return Err(Response::refused(
+            return Err(refused!(
                 Code::Invalid,
                 "this relay does not offer `create`",
             ));
@@ -703,6 +763,12 @@ impl Doorway {
             self.relay_creations
                 .take((), creation.creations_per_hour, HOUR_MS, now_ms)
         {
+            log::info!(
+                limit = "creations_per_hour",
+                allowed = creation.creations_per_hour,
+                retry_after_ms = retry_after_ms;
+                "rate_limited"
+            );
             return Err(Response::refused(
                 Code::RateLimited { retry_after_ms },
                 "the relay has taken as many creations as it takes this hour",
@@ -716,6 +782,12 @@ impl Doorway {
     /// creation's.
     pub(crate) fn token(&self, login: &Login, authority: &Authority, now_ms: u64) -> Response {
         let expires_at_ms = now_ms.saturating_add(self.policy.token_seconds.saturating_mul(1000));
+        log::info!(
+            list = list_digest(&login.list).as_str(),
+            node = login.node,
+            expires_at_ms = expires_at_ms;
+            "token_issued"
+        );
         Response::Token {
             token: authority.issue(&login.list, login.node, expires_at_ms),
             expires_at_ms,
@@ -724,10 +796,76 @@ impl Doorway {
 }
 
 /// The refusal of a login whose node has logged in as often as it may this hour.
-fn node_limited(retry_after_ms: u64) -> Response {
+fn node_limited(
+    table: &Windows<(String, u64)>,
+    node: &(String, u64),
+    per_hour: u32,
+    retry_after_ms: u64,
+) -> Response {
+    let limit = if table.holds(node) {
+        "logins_per_node_per_hour"
+    } else {
+        "sources"
+    };
+    log::info!(
+        limit = limit,
+        allowed = per_hour,
+        retry_after_ms = retry_after_ms,
+        nodes = table.len(),
+        list = list_digest(&node.0).as_str(),
+        node = node.1;
+        "rate_limited"
+    );
     Response::refused(
         Code::RateLimited { retry_after_ms },
         "this node has logged in as often as it may this hour",
+    )
+}
+
+/// How a record names a source: its address (an IPv6 one by its /64), or `none` for a transport
+/// that names no address.
+fn source_word(source: Option<IpAddr>) -> String {
+    source.map_or_else(|| "none".to_string(), |address| address.to_string())
+}
+
+/// Log the refusal of a request from `source` for the doorway's allowance `limit` (so many each
+/// window, kept in `table`): the limit's name, or `sources` when the table holds as many sources as
+/// it may and this one is not among them, how long until it may, and how many sources are held.
+fn note_source_limited(
+    table: &Windows<Option<IpAddr>>,
+    source: Option<IpAddr>,
+    limit: &'static str,
+    per_window: u32,
+    retry_after_ms: u64,
+) {
+    let limit = if table.holds(&source) {
+        limit
+    } else {
+        "sources"
+    };
+    log::info!(
+        limit = limit,
+        allowed = per_window,
+        retry_after_ms = retry_after_ms,
+        sources = table.len(),
+        source = source_word(source).as_str();
+        "rate_limited"
+    );
+}
+
+/// The refusal of a request from `source` for the doorway's allowance `limit`, logged
+/// ([`note_source_limited`]).
+fn source_limited(
+    table: &Windows<Option<IpAddr>>,
+    source: Option<IpAddr>,
+    limit: &'static str,
+    per_window: u32,
+    retry_after_ms: u64,
+) -> Response {
+    note_source_limited(table, source, limit, per_window, retry_after_ms);
+    Response::refused(
+        Code::RateLimited { retry_after_ms },
+        "this source has spent its allowance",
     )
 }
 
@@ -1255,5 +1393,247 @@ mod tests {
         };
         assert_eq!(encoding::decode(&nonce).map(|bytes| bytes.len()), Some(32));
         assert_eq!(expires_at_ms, CHALLENGE_MS);
+    }
+
+    fn login_of(node: u64, nonce: &str) -> Login {
+        Login {
+            list: "home".to_string(),
+            node,
+            nonce: nonce.to_string(),
+            expires_at_ms: 1,
+            signature: "AAAA".to_string(),
+            entries: Vec::new(),
+        }
+    }
+
+    fn checked(node: u64, nonce: u8) -> Checked {
+        Checked {
+            login: login_of(node, "AAAA"),
+            nonce: [nonce; 32],
+            signature: [0; 64],
+        }
+    }
+
+    fn join_text() -> String {
+        let invitation = sce_rust_trust::invitation::Invitation::sign(
+            &sce_rust_trust::Identity::from_seed([9; 32]),
+            "relay.example",
+            "home",
+            [1; 32],
+            2,
+            86_400_000,
+            sce_rust_trust::invitation::key_of(&[4; 32]).public(),
+        );
+        let proof = Proof::make(
+            &[4; 32],
+            &invitation,
+            &[6; 32],
+            60_000,
+            sce_rust_trust::Identity::from_seed([2; 32]).public(),
+            b"package",
+        );
+        Request::Join(Box::new(Join {
+            invitation,
+            proof,
+            key_package: None,
+        }))
+        .to_json()
+    }
+
+    /// The records of this thread that refuse for the rate.
+    fn limits_logged() -> Vec<String> {
+        crate::logs::capture::taken()
+            .into_iter()
+            .map(|taken| taken.line)
+            .filter(|line| line.starts_with("event=rate_limited "))
+            .collect()
+    }
+
+    /// Every allowance of the doorway that refuses is one record naming it, with how long until
+    /// the source may ask again and the counts behind it: connections, challenges, logins, joins
+    /// and creations a minute from a source, a table of sources that is full, logins of a node an
+    /// hour, used challenges the relay keeps, and creations of the relay an hour. No record holds a
+    /// nonce, a signature or the list's name.
+    #[test]
+    fn every_limit_of_the_doorway_is_one_record_that_names_it() {
+        crate::logs::capture::start();
+        let one = LoginPolicy {
+            connections_per_minute: 1,
+            challenges_per_minute: 1,
+            logins_per_minute: 1,
+            logins_per_node_per_hour: 1,
+            joins_per_minute: 1,
+            used_nonces: 1,
+            sources: 2,
+            ..LoginPolicy::default()
+        };
+        let creation = CreationPolicy {
+            work_bits: 1,
+            creations_per_minute: 1,
+            creations_per_hour: 1,
+        };
+        let here = Some(at("192.0.2.7"));
+        let there = Some(at("192.0.2.8"));
+        let elsewhere = Some(at("192.0.2.9"));
+        let digest = list_digest("home");
+        let ask = |doorway: &mut Doorway, text: &str| {
+            let _ = doorway.ask(here, text, 64 * 1024, 0);
+        };
+        let mut every = Vec::new();
+
+        let mut doorway = Doorway::with_key(one, [3; 32]).with_creation(creation);
+        assert_eq!(doorway.open(here, 0), Opened::Taken);
+        assert!(matches!(doorway.open(here, 0), Opened::RateLimited { .. }));
+        assert_eq!(doorway.open(there, 0), Opened::Taken);
+        assert!(matches!(
+            doorway.open(elsewhere, 0),
+            Opened::RateLimited { .. }
+        ));
+        let limits = limits_logged();
+        assert_eq!(
+            limits,
+            vec![
+                "event=rate_limited limit=connections_per_minute allowed=1 retry_after_ms=60000 \
+                 sources=1 source=192.0.2.7"
+                    .to_string(),
+                "event=rate_limited limit=sources allowed=1 retry_after_ms=60000 sources=2 \
+                 source=192.0.2.9"
+                    .to_string(),
+            ]
+        );
+        every.extend(limits);
+
+        let challenge = r#"{"v":1,"op":"challenge","list":"home","node":"2"}"#;
+        let login = Request::Login(login_of(2, "AAAA")).to_json();
+        let create = Request::Create(Box::new(Create {
+            login: Login {
+                entries: vec!["e".to_string()],
+                ..login_of(2, "AAAA")
+            },
+            work: 0,
+        }))
+        .to_json();
+        let join = join_text();
+        for (text, limit) in [
+            (challenge.to_string(), "challenges_per_minute"),
+            (login, "logins_per_minute"),
+            (join.clone(), "joins_per_minute"),
+            (create, "creations_per_minute"),
+        ] {
+            // The first is refused for what it is (a nonce that is none, a challenge another
+            // relay made, a creation of no genesis) or answered, and the second for the rate.
+            ask(&mut doorway, &text);
+            ask(&mut doorway, &text);
+            let limits = limits_logged();
+            assert_eq!(
+                limits,
+                vec![format!(
+                    "event=rate_limited limit={limit} allowed=1 retry_after_ms=60000 sources=1 \
+                     source=192.0.2.7"
+                )],
+                "{limit}"
+            );
+            every.extend(limits);
+        }
+
+        // A node that logged in as often as it may this hour: refused before the list's side
+        // takes anything, and after, by the node's table.
+        let mut doorway = Doorway::with_key(one, [3; 32]);
+        assert!(doorway.admissible(&checked(2, 1), 0).is_ok());
+        assert!(matches!(
+            doorway.redeem(&checked(2, 1), &Authority::new([7; 32], "relay"), 0),
+            Response::Token { .. }
+        ));
+        crate::logs::capture::taken();
+        let refused = doorway.admissible(&checked(2, 2), 0);
+        assert!(matches!(
+            refused,
+            Err(Response::Refused {
+                code: Code::RateLimited { .. },
+                ..
+            })
+        ));
+        let limits = limits_logged();
+        assert_eq!(
+            limits,
+            vec![
+                "event=rate_limited limit=used_nonces allowed=1 held=1 retry_after_ms=1"
+                    .to_string()
+            ],
+            "the one used challenge is kept until its instant"
+        );
+        every.extend(limits);
+        let mut doorway = Doorway::with_key(
+            LoginPolicy {
+                used_nonces: 8,
+                ..one
+            },
+            [3; 32],
+        );
+        doorway.redeem(&checked(2, 1), &Authority::new([7; 32], "relay"), 0);
+        crate::logs::capture::taken();
+        assert!(doorway.admissible(&checked(2, 2), 0).is_err());
+        let limits = limits_logged();
+        assert_eq!(
+            limits,
+            vec![format!(
+                "event=rate_limited limit=logins_per_node_per_hour allowed=1 \
+                 retry_after_ms=3600000 nodes=1 list={digest} node=2"
+            )]
+        );
+        every.extend(limits);
+
+        // The relay's creations of the hour.
+        let mut doorway =
+            Doorway::with_key(LoginPolicy::default(), [3; 32]).with_creation(creation);
+        assert!(doorway.spend_create(&checked(1, 1), 0).is_ok());
+        assert!(doorway.spend_create(&checked(1, 2), 0).is_err());
+        let limits = limits_logged();
+        assert_eq!(
+            limits,
+            vec![
+                "event=rate_limited limit=creations_per_hour allowed=1 retry_after_ms=3600000"
+                    .to_string()
+            ]
+        );
+        every.extend(limits);
+
+        let nonce = encoding::encode(&[6u8; 32]);
+        for line in &every {
+            assert!(!line.contains("home"), "a list's name: {line}");
+            assert!(!line.contains("AAAA"), "a nonce or a signature: {line}");
+            assert!(!line.contains(&nonce), "a join's nonce: {line}");
+        }
+    }
+
+    /// A refusal of what an anonymous request is, and a challenge and a token given, are each one
+    /// record: the code and the reason, and the node with the list's digest.
+    #[test]
+    fn a_refusal_a_challenge_and_a_token_of_the_doorway_are_each_one_record() {
+        crate::logs::capture::start();
+        let mut doorway = Doorway::with_key(LoginPolicy::default(), [3; 32]);
+        let _ = doorway.ask(None, "not json", 1024, 0);
+        let _ = doorway.ask(None, &"x".repeat(2048), 1024, 0);
+        let _ = doorway.ask(None, &Request::Heads.to_json(), 1024, 0);
+        doorway.challenge("home", 2, true, "relay", 0);
+        doorway.token(&login_of(2, "AAAA"), &Authority::new([7; 32], "relay"), 0);
+        let digest = list_digest("home");
+        let lines: Vec<String> = crate::logs::capture::taken()
+            .into_iter()
+            .map(|taken| taken.line)
+            .collect();
+        assert_eq!(
+            lines,
+            vec![
+                "event=refused code=invalid reason=\"it is not JSON\"".to_string(),
+                "event=refused code=too_large reason=\"a request is at most 1024 bytes\""
+                    .to_string(),
+                "event=refused code=unauthorized reason=\"a connection with no token the relay \
+                 takes asks for a challenge, logs in, joins or creates, and nothing else\""
+                    .to_string(),
+                format!("event=challenge_given list={digest} node=2 held=true"),
+                format!("event=token_issued list={digest} node=2 expires_at_ms=3600000"),
+            ]
+        );
     }
 }

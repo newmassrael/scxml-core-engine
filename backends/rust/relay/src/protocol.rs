@@ -285,6 +285,28 @@ pub struct Login {
 }
 
 impl Request {
+    /// The word the protocol names the request by (its `"op"`): what a record of it says, since
+    /// what it carries is the members' and no record's.
+    pub fn op(&self) -> &'static str {
+        match self {
+            Request::Entries { .. } => "entries",
+            Request::Append { .. } => "append",
+            Request::Submit { .. } => "submit",
+            Request::Checkpoint { .. } => "checkpoint",
+            Request::PublishKeyPackage { .. } => "key_package",
+            Request::PublishCommit { .. } => "commit",
+            Request::PublishWelcome { .. } => "welcome",
+            Request::PublishKeyGrant { .. } => "key_grant",
+            Request::Feed { .. } => "feed",
+            Request::Operations { .. } => "operations",
+            Request::Heads => "heads",
+            Request::Challenge { .. } => "challenge",
+            Request::Login(_) => "login",
+            Request::Join(_) => "join",
+            Request::Create(_) => "create",
+        }
+    }
+
     /// What the request costs a session's allowance: a read is one, a write is dearer.
     pub fn is_write(&self) -> bool {
         matches!(
@@ -482,7 +504,8 @@ pub enum Code {
 }
 
 impl Code {
-    fn tag(&self) -> &'static str {
+    /// The word the protocol names the refusal by (`"refused"` of a response).
+    pub fn tag(&self) -> &'static str {
         match self {
             Code::Unauthorized => "unauthorized",
             Code::Forbidden => "forbidden",
@@ -554,6 +577,21 @@ pub enum Response {
 }
 
 impl Response {
+    /// The word the protocol names the response by: its `"ok"`, or `"refused"`.
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Response::Entries { .. } => "entries",
+            Response::Appended { .. } => "appended",
+            Response::Accepted { .. } => "accepted",
+            Response::Feed { .. } => "feed",
+            Response::Operations { .. } => "operations",
+            Response::Heads { .. } => "heads",
+            Response::Challenge { .. } => "challenge",
+            Response::Token { .. } => "token",
+            Response::Refused { .. } => "refused",
+        }
+    }
+
     pub fn refused(code: Code, reason: impl Into<String>) -> Self {
         Response::Refused {
             code,
@@ -858,6 +896,9 @@ mod tests {
                 work: u64::MAX,
             })),
         ] {
+            // The word a record names a request by is the `op` its text carries.
+            let written: Value = serde_json::from_str(&request.to_json()).unwrap();
+            assert_eq!(written["op"].as_str(), Some(request.op()), "{request:?}");
             assert_eq!(Request::from_json(&request.to_json()), Ok(request));
         }
     }
@@ -1059,6 +1100,16 @@ mod tests {
             Response::refused(Code::RateLimited { retry_after_ms: 40 }, "slow down"),
             Response::refused(Code::Behind, "send the log"),
         ] {
+            // The word a record names a response by is its `ok`, or `refused`, and a refusal's
+            // code is the word its text carries.
+            let written: Value = serde_json::from_str(&response.to_json()).unwrap();
+            match &response {
+                Response::Refused { code, .. } => {
+                    assert_eq!(response.tag(), "refused");
+                    assert_eq!(written["refused"].as_str(), Some(code.tag()));
+                }
+                _ => assert_eq!(written["ok"].as_str(), Some(response.tag()), "{response:?}"),
+            }
             assert_eq!(Response::from_json(&response.to_json()), Ok(response));
         }
     }

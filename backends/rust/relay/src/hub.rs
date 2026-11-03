@@ -21,7 +21,8 @@ use std::sync::{Mutex, MutexGuard};
 
 use crate::limits::Limits;
 use crate::login::{self, Asked, Doorway, Opened};
-use crate::protocol::{Code, Request, Response};
+use crate::logs::refused;
+use crate::protocol::{Code, Request};
 use crate::relay::{token_reason, Lapsed, Relay};
 use crate::store::Store;
 use crate::token::{Authority, Session, TokenError};
@@ -186,12 +187,10 @@ impl<S: Store + Send + 'static> Hub for Shards<S> {
     fn handle(&self, token: &str, request: &str, now_ms: u64) -> String {
         let session = match self.authority.verify(token, now_ms) {
             Ok(session) => session,
-            Err(error) => {
-                return Response::refused(Code::Unauthorized, token_reason(error)).to_json()
-            }
+            Err(error) => return refused!(Code::Unauthorized, token_reason(error)).to_json(),
         };
         if request.len() > self.max_request_bytes {
-            return Response::refused(
+            return refused!(
                 Code::TooLarge,
                 format!("a request is at most {} bytes", self.max_request_bytes),
             )
@@ -199,7 +198,7 @@ impl<S: Store + Send + 'static> Hub for Shards<S> {
         }
         let request = match Request::from_json(request) {
             Ok(request) => request,
-            Err(reason) => return Response::refused(Code::Invalid, reason).to_json(),
+            Err(reason) => return refused!(Code::Invalid, reason).to_json(),
         };
         let slot = &self.slots[slot_of(&session.list, self.slots.len())];
         slot.lock()
@@ -293,6 +292,7 @@ impl<S: Store + Send + 'static> Hub for Shards<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::Response;
     use crate::store::MemoryStore;
 
     #[test]

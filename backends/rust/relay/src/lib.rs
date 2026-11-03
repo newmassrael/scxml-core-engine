@@ -18,6 +18,8 @@
 //!   ([`JoinMachine`]); and a relay that takes a creation with no token ([`CreationPolicy`]) is
 //!   given a list by the login of its device, under a name that certifies its genesis.
 //! * [`limits`] - the allowance of each device and the bounds on a request and a reply.
+//! * [`logs`] - the one form a record of what the relay, a device's side and the driver decided is
+//!   written in, through the `log` facade, whichever sink the program installs.
 //! * [`store`] - the append-only record a relay starts from, checked again as it is read, and the
 //!   mark of each list created with no token, which lapses when no login touches it
 //!   ([`Relay::lapse`]).
@@ -47,6 +49,7 @@ pub mod driver;
 pub mod hub;
 pub mod limits;
 pub mod login;
+pub mod logs;
 pub mod protocol;
 pub mod relay;
 pub mod store;

@@ -9,9 +9,23 @@
 //! reads from a `<N>` prefix. What a line names is a count, an address, a path or a reason: never a
 //! key, a token or what a list holds; the callers keep to that, and the relay never hands them
 //! either.
+//!
+//! Two kinds of call write lines. The program's own (a start, a stop, a sweep) call [`Log`]. The
+//! relay library logs each of its decisions through the `log` facade (`sce_rust_relay::logs`), and
+//! the program installs [`Log::install`] as the facade's sink, which writes each record in the same
+//! form, the library's words after the level, and the module that decided it as `target`. How much
+//! of the library's is written is `SCE_RELAY_LOG` ([`level_from_environment`]): `info` unless it
+//! says otherwise, which shows every refusal, limit and admission and no request answered as asked.
 
 use std::fmt::Display;
 use std::io::Write;
+
+/// `value` as one word of a line: the relay library's form ([`sce_rust_relay::logs::word`]), so
+/// that a line of the program's and a record of the library's are read back alike.
+pub use sce_rust_relay::logs::word;
+
+/// The variable that says how much of the relay library's records is written.
+pub const LEVEL_VARIABLE: &str = "SCE_RELAY_LOG";
 
 /// How much a line matters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +33,8 @@ pub enum Level {
     Error,
     Warning,
     Info,
+    Debug,
+    Trace,
 }
 
 impl Level {
@@ -27,6 +43,8 @@ impl Level {
             Level::Error => "error",
             Level::Warning => "warning",
             Level::Info => "info",
+            Level::Debug => "debug",
+            Level::Trace => "trace",
         }
     }
 
@@ -36,7 +54,43 @@ impl Level {
             Level::Error => 3,
             Level::Warning => 4,
             Level::Info => 6,
+            Level::Debug | Level::Trace => 7,
         }
+    }
+
+    /// The level of a record of the facade.
+    fn of(level: log::Level) -> Self {
+        match level {
+            log::Level::Error => Level::Error,
+            log::Level::Warn => Level::Warning,
+            log::Level::Info => Level::Info,
+            log::Level::Debug => Level::Debug,
+            log::Level::Trace => Level::Trace,
+        }
+    }
+}
+
+/// How much of the relay library's records `text` (the value of [`LEVEL_VARIABLE`]) asks for: `off`,
+/// `error`, `warning` (or `warn`), `info`, `debug` or `trace`, in any case. `None` for another word.
+pub fn level_of(text: &str) -> Option<log::LevelFilter> {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "off" => Some(log::LevelFilter::Off),
+        "error" => Some(log::LevelFilter::Error),
+        "warning" | "warn" => Some(log::LevelFilter::Warn),
+        "info" => Some(log::LevelFilter::Info),
+        "debug" => Some(log::LevelFilter::Debug),
+        "trace" => Some(log::LevelFilter::Trace),
+        _ => None,
+    }
+}
+
+/// How much of the relay library's records this process writes: what [`LEVEL_VARIABLE`] says, or
+/// `info` when it says nothing. `Err` with the word when it says something [`level_of`] does not
+/// read, which the program says and writes `info`.
+pub fn level_from_environment() -> Result<log::LevelFilter, String> {
+    match std::env::var(LEVEL_VARIABLE) {
+        Err(_) => Ok(log::LevelFilter::Info),
+        Ok(text) => level_of(&text).ok_or(text),
     }
 }
 
@@ -67,14 +121,20 @@ impl Log {
         Self { journal: true }
     }
 
-    /// The line for `event` at `level` with `fields`, as it is written.
-    pub fn line(&self, level: Level, event: &str, fields: Fields<'_>) -> String {
+    /// The start of a line at `level`: the journal's prefix when there is one, and the level.
+    fn head(&self, level: Level) -> String {
         let mut line = String::new();
         if self.journal {
             line.push_str(&format!("<{}>", level.priority()));
         }
         line.push_str("level=");
         line.push_str(level.word());
+        line
+    }
+
+    /// The line for `event` at `level` with `fields`, as it is written.
+    pub fn line(&self, level: Level, event: &str, fields: Fields<'_>) -> String {
+        let mut line = self.head(level);
         line.push_str(" event=");
         line.push_str(&word(event));
         for (key, value) in fields {
@@ -83,6 +143,17 @@ impl Log {
             line.push('=');
             line.push_str(&word(&value.to_string()));
         }
+        line
+    }
+
+    /// The line for a record of the relay library, as it is written: its level, the library's
+    /// words (`sce_rust_relay::logs::line`), and the module that decided it.
+    pub fn record_line(&self, record: &log::Record<'_>) -> String {
+        let mut line = self.head(Level::of(record.level()));
+        line.push(' ');
+        line.push_str(&sce_rust_relay::logs::line(record));
+        line.push_str(" target=");
+        line.push_str(&word(record.target()));
         line
     }
 
@@ -104,33 +175,42 @@ impl Log {
     pub fn error(&self, event: &str, fields: Fields<'_>) {
         self.say(Level::Error, event, fields);
     }
+
+    /// Install this log as the sink of the relay library's records, writing those at `level` and
+    /// above: once for the process, `false` when a sink was installed already (and this one is not).
+    pub fn install(&self, level: log::LevelFilter) -> bool {
+        // The sink lives as long as the process, as the facade asks of one.
+        let sink: &'static Sink = Box::leak(Box::new(Sink { log: *self, level }));
+        if log::set_logger(sink).is_err() {
+            return false;
+        }
+        log::set_max_level(level);
+        true
+    }
 }
 
-/// `value` as one word of a line: as it is when nothing in it would split the line or be read as
-/// its syntax, and in quotes otherwise, with a quote, a backslash and a control character escaped.
-pub fn word(value: &str) -> String {
-    let plain = !value.is_empty()
-        && !value
-            .chars()
-            .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '"' | '=' | '\\'));
-    if plain {
-        return value.to_string();
+/// The facade's sink a process installs ([`Log::install`]).
+struct Sink {
+    log: Log,
+    level: log::LevelFilter,
+}
+
+impl log::Log for Sink {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.level() <= self.level
     }
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('"');
-    for c in value.chars() {
-        match c {
-            '"' => quoted.push_str("\\\""),
-            '\\' => quoted.push_str("\\\\"),
-            '\n' => quoted.push_str("\\n"),
-            '\r' => quoted.push_str("\\r"),
-            '\t' => quoted.push_str("\\t"),
-            c if c.is_control() => quoted.push_str(&format!("\\u{{{:x}}}", u32::from(c))),
-            c => quoted.push(c),
+
+    fn log(&self, record: &log::Record<'_>) {
+        if !self.enabled(record.metadata()) {
+            return;
         }
+        let line = self.log.record_line(record);
+        let _ = writeln!(std::io::stderr().lock(), "{line}");
     }
-    quoted.push('"');
-    quoted
+
+    fn flush(&self) {
+        let _ = std::io::stderr().lock().flush();
+    }
 }
 
 #[cfg(test)]
@@ -163,20 +243,45 @@ mod tests {
         assert!(journal
             .line(Level::Info, "ready", &[])
             .starts_with("<6>level=info"));
+        assert!(journal
+            .line(Level::Debug, "answered", &[])
+            .starts_with("<7>level=debug"));
     }
 
     #[test]
     fn a_value_that_would_split_the_line_is_quoted() {
-        assert_eq!(word("plain"), "plain");
-        assert_eq!(word(""), "\"\"");
-        assert_eq!(word("two words"), "\"two words\"");
-        assert_eq!(word("a=b"), "\"a=b\"");
-        assert_eq!(word("say \"x\""), "\"say \\\"x\\\"\"");
-        assert_eq!(word("back\\slash"), "\"back\\\\slash\"");
-        assert_eq!(word("line\nbreak"), "\"line\\nbreak\"");
-        assert_eq!(word("bell\u{7}"), "\"bell\\u{7}\"");
         // One line, whatever the value.
         let line = Log::plain().line(Level::Error, "x", &[("reason", &"a\nb\rc")]);
         assert_eq!(line.lines().count(), 1, "{line}");
+        assert_eq!(word("two words"), "\"two words\"");
+    }
+
+    /// A record of the relay library is written as a line of the program's is: its level, its
+    /// event and pairs in the library's form, and the module that decided it.
+    #[test]
+    fn a_record_of_the_library_is_a_line_in_the_same_form() {
+        let line = Log::journal().record_line(
+            &log::Record::builder()
+                .level(log::Level::Info)
+                .target("sce_rust_relay::login")
+                .args(format_args!("rate_limited"))
+                .build(),
+        );
+        assert_eq!(
+            line,
+            "<6>level=info event=rate_limited target=sce_rust_relay::login"
+        );
+    }
+
+    #[test]
+    fn the_level_of_the_library_is_read_from_its_word() {
+        assert_eq!(level_of("info"), Some(log::LevelFilter::Info));
+        assert_eq!(level_of(" DEBUG "), Some(log::LevelFilter::Debug));
+        assert_eq!(level_of("warn"), Some(log::LevelFilter::Warn));
+        assert_eq!(level_of("warning"), Some(log::LevelFilter::Warn));
+        assert_eq!(level_of("off"), Some(log::LevelFilter::Off));
+        assert_eq!(level_of("error"), Some(log::LevelFilter::Error));
+        assert_eq!(level_of("trace"), Some(log::LevelFilter::Trace));
+        assert_eq!(level_of("loud"), None);
     }
 }

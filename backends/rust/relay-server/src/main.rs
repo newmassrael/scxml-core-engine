@@ -39,7 +39,7 @@ use sce_rust_relay::tls::{self, Roots, ServerConfig};
 use sce_rust_relay::{Authority, Doorway, FileStore, Shards};
 use sce_rust_relay_server::config::{self, Config, Settings, TlsFiles};
 use sce_rust_relay_server::exit;
-use sce_rust_relay_server::logline::Log;
+use sce_rust_relay_server::logline::{level_from_environment, Log, LEVEL_VARIABLE};
 use sce_rust_relay_server::notify::notify;
 use sce_rust_relay_server::probe::{self, Target, TargetError};
 use sce_rust_relay_server::secret::{self, SecretError, SecretErrorKind};
@@ -184,6 +184,16 @@ struct ProbeArgs {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let log = Log::from_environment();
+    // The relay library's records, each decision with its reason and counts, are written as the
+    // program's lines are, at the level `SCE_RELAY_LOG` says.
+    let level = level_from_environment().unwrap_or_else(|word| {
+        log.warning(
+            "log_level_unknown",
+            &[("variable", &LEVEL_VARIABLE), ("word", &word)],
+        );
+        log::LevelFilter::Info
+    });
+    log.install(level);
     let status = match cli.command {
         Command::Serve(args) => serve(&log, &args),
         Command::Check(args) => check(&log, &args),

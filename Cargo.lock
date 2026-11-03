@@ -3849,6 +3849,7 @@ version = "0.1.0"
 dependencies = [
  "futures-util",
  "getrandom 0.2.17",
+ "log",
  "rcgen",
  "sce-rust-mesh",
  "sce-rust-relay-transport",
@@ -3866,6 +3867,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "futures-util",
+ "log",
  "rcgen",
  "rustls-pki-types",
  "sce-rust-relay",

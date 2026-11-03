@@ -26,6 +26,8 @@ path = "src/main.rs"
 # The relay, its server with TLS (`serve`), and its file store.
 sce-rust-relay = { path = "../relay", features = ["serve"] }
 tokio = { version = "1", default-features = false, features = ["net", "rt", "rt-multi-thread", "signal", "sync", "time", "macros"] }
+# The sink of the relay library's records (`logline::Log::install`), which writes each as a line.
+log = { workspace = true, features = ["kv"] }
 # The configuration file, read as a document so that a key nobody reads is refused by name.
 toml_edit = { version = "0.25", default-features = false, features = ["parse"] }
 # A certificate chain and a private key from the PEM files a certificate authority hands out.

@@ -31,6 +31,7 @@ use sha2::{Digest, Sha256};
 
 use crate::limits::{Allowances, Limits};
 use crate::login::{self, Asked, Checked, Doorway, Opened};
+use crate::logs::{list_digest, refused};
 use crate::protocol::{Code, Join, Joined, Login, Record, Request, Response};
 use crate::store::{Openly, Store};
 use crate::token::{Authority, Session, TokenError};
@@ -334,7 +335,7 @@ impl<S: Store> Relay<S> {
         now_ms: u64,
     ) -> Response {
         if let Some(reason) = &self.failed {
-            return Response::refused(Code::Unavailable, reason.clone());
+            return refused!(Code::Unavailable, reason.clone());
         }
         let Join {
             invitation,
@@ -343,16 +344,16 @@ impl<S: Store> Relay<S> {
         } = *join;
         let list = invitation.list.clone();
         if invitation.audience != audience {
-            return Response::refused(Code::Unauthorized, "the invitation is for another relay");
+            return refused!(Code::Unauthorized, "the invitation is for another relay");
         }
         let Some(state) = self.lists.get(&list) else {
-            return Response::refused(Code::Behind, "the relay holds no log of this list");
+            return refused!(Code::Behind, "the relay holds no log of this list");
         };
         if now_ms >= invitation.expires_at_ms {
-            return Response::refused(Code::Unauthorized, "the invitation has expired");
+            return refused!(Code::Unauthorized, "the invitation has expired");
         }
         if state.outstanding_joins(now_ms) >= outstanding {
-            return Response::refused(
+            return refused!(
                 Code::TooLarge,
                 "this list holds as many joins waiting for an administrator as the relay keeps",
             );
@@ -360,16 +361,25 @@ impl<S: Store> Relay<S> {
         if let Err(full) = self.room(&list) {
             return full;
         }
+        let node = invitation.node;
         let record = Record::KeyPackage {
-            node: invitation.node,
+            node,
             data: key_package.unwrap_or_default(),
             join: Some(Box::new(Joined { invitation, proof })),
         };
         if let Err((code, reason)) = check_group_record(state, &record, &self.limits) {
-            return Response::refused(code, reason);
+            return refused!(code, reason);
         }
         match self.keep(&list, record) {
-            Ok(cursor) => Response::Accepted { new: true, cursor },
+            Ok(cursor) => {
+                log::info!(
+                    list = list_digest(&list).as_str(),
+                    node = node,
+                    cursor = cursor;
+                    "join_kept"
+                );
+                Response::Accepted { new: true, cursor }
+            }
             Err(response) => response,
         }
     }
@@ -394,14 +404,14 @@ impl<S: Store> Relay<S> {
             .get(&login.list)
             .map(|state| state.trust.log_len())
         else {
-            return Err(Response::refused(
+            return Err(refused!(
                 Code::Behind,
                 "the relay holds no log of this list",
             ));
         };
         for text in &login.entries {
             let Some(entry) = Entry::from_json(text) else {
-                return Err(Response::refused(
+                return Err(refused!(
                     Code::Invalid,
                     "an entry brought with the login is not an entry of a log",
                 ));
@@ -425,18 +435,28 @@ impl<S: Store> Relay<S> {
                 .map(|(_, key)| key)
         });
         let Some(key) = key else {
-            return Err(Response::refused(
+            return Err(refused!(
                 Code::Forbidden,
                 format!("node {} is no member of this list", login.node),
             ));
         };
         if !signed(&key) {
-            return Err(Response::refused(
+            return Err(refused!(
                 Code::Unauthorized,
                 "the login is not signed by the key the log gives the node",
             ));
         }
-        self.touch(&login.list, now_ms)
+        let touched = self.touch(&login.list, now_ms);
+        if touched.is_ok() {
+            log::info!(
+                list = list_digest(&login.list).as_str(),
+                node = login.node,
+                brought = login.entries.len(),
+                log_len = self.lists.get(&login.list).map_or(0, |state| state.trust.log_len());
+                "login_admitted"
+            );
+        }
+        touched
     }
 
     /// A login touched `list` at `now_ms`. The mark of a list created openly is written again when
@@ -459,7 +479,7 @@ impl<S: Store> Relay<S> {
         };
         if let Err(error) = self.store.mark(list, &touched) {
             let reason = self.store_failed("take a list's mark", &error);
-            return Err(Response::refused(Code::Unavailable, reason));
+            return Err(refused!(Code::Unavailable, reason));
         }
         if let Some(state) = self.lists.get_mut(list) {
             state.openly = Some(touched);
@@ -482,7 +502,7 @@ impl<S: Store> Relay<S> {
         now_ms: u64,
     ) -> Result<(), Response> {
         if let Some(reason) = &self.failed {
-            return Err(Response::refused(Code::Unavailable, reason.clone()));
+            return Err(refused!(Code::Unavailable, reason.clone()));
         }
         let login = checked.login();
         let signed = |key: &PublicKey| checked.signed_by(key, audience);
@@ -490,31 +510,30 @@ impl<S: Store> Relay<S> {
             return self.admit_login(login, signed, now_ms);
         }
         if self.lists.len() >= self.limits.max_lists {
-            return Err(Response::refused(
+            return Err(refused!(
                 Code::TooLarge,
                 "the relay holds as many lists as it keeps",
             ));
         }
         if login.entries.len() > self.limits.max_records_per_list {
-            return Err(Response::refused(
+            return Err(refused!(
                 Code::TooLarge,
                 "this list holds as many records as the relay keeps",
             ));
         }
         let mut state = ListState::new(&login.list);
         for text in &login.entries {
-            let entry = Entry::from_json(text).ok_or_else(|| {
-                Response::refused(Code::Invalid, "an entry of the creation is not one")
-            })?;
+            let entry = Entry::from_json(text)
+                .ok_or_else(|| refused!(Code::Invalid, "an entry of the creation is not one"))?;
             match state.trust.append(&entry) {
                 Ok(true) => {}
                 Ok(false) => {
-                    return Err(Response::refused(
+                    return Err(refused!(
                         Code::Invalid,
                         "an entry of the creation is given twice",
                     ))
                 }
-                Err(error) => return Err(Response::refused(Code::Invalid, format!("{error:?}"))),
+                Err(error) => return Err(refused!(Code::Invalid, format!("{error:?}"))),
             }
         }
         let key = state
@@ -524,7 +543,7 @@ impl<S: Store> Relay<S> {
             .find(|(node, _)| *node == login.node)
             .map(|(_, key)| key)
             .ok_or_else(|| {
-                Response::refused(
+                refused!(
                     Code::Forbidden,
                     format!(
                         "node {} is no member of the list its creation gives",
@@ -533,7 +552,7 @@ impl<S: Store> Relay<S> {
                 )
             })?;
         if !signed(&key) {
-            return Err(Response::refused(
+            return Err(refused!(
                 Code::Unauthorized,
                 "the creation is not signed by the key the log gives the node",
             ));
@@ -544,7 +563,7 @@ impl<S: Store> Relay<S> {
         };
         if let Err(error) = self.store.mark(&login.list, &mark) {
             let reason = self.store_failed("take a list's mark", &error);
-            return Err(Response::refused(Code::Unavailable, reason));
+            return Err(refused!(Code::Unavailable, reason));
         }
         state.openly = Some(mark);
         state.touched_at_ms = now_ms;
@@ -552,6 +571,13 @@ impl<S: Store> Relay<S> {
         for text in &login.entries {
             self.keep(&login.list, Record::Entry(text.clone()))?;
         }
+        log::info!(
+            list = list_digest(&login.list).as_str(),
+            node = login.node,
+            entries = login.entries.len(),
+            lists = self.lists.len();
+            "list_created"
+        );
         Ok(())
     }
 
@@ -562,6 +588,19 @@ impl<S: Store> Relay<S> {
     /// anything, as a record it did not take does, and the sweep there: a relay started again reads
     /// the list whole or not at all. What the sweep did is returned, and names no list.
     pub fn lapse(&mut self, idle_ms: u64, now_ms: u64) -> Lapsed {
+        let lapsed = self.sweep_lapsed(idle_ms, now_ms);
+        log::info!(
+            removed = lapsed.removed,
+            kept = lapsed.kept,
+            failures = lapsed.failures.len(),
+            idle_ms = idle_ms;
+            "lapsed"
+        );
+        lapsed
+    }
+
+    /// What [`Self::lapse`] does, before it is logged.
+    fn sweep_lapsed(&mut self, idle_ms: u64, now_ms: u64) -> Lapsed {
         let mut lapsed = Lapsed::default();
         if let Some(reason) = &self.failed {
             lapsed.failures.push(reason.clone());
@@ -607,10 +646,10 @@ impl<S: Store> Relay<S> {
     /// Answer a request text made with `token` at `now_ms`, as a response text.
     pub fn handle(&mut self, token: &str, request: &str, now_ms: u64) -> String {
         let response = match self.authority.verify(token, now_ms) {
-            Err(error) => Response::refused(Code::Unauthorized, token_reason(error)),
+            Err(error) => refused!(Code::Unauthorized, token_reason(error)),
             Ok(session) => {
                 if request.len() > self.limits.max_request_bytes {
-                    Response::refused(
+                    refused!(
                         Code::TooLarge,
                         format!(
                             "a request is at most {} bytes",
@@ -620,7 +659,7 @@ impl<S: Store> Relay<S> {
                 } else {
                     match Request::from_json(request) {
                         Ok(request) => self.call(&session, request, now_ms),
-                        Err(reason) => Response::refused(Code::Invalid, reason),
+                        Err(reason) => refused!(Code::Invalid, reason),
                     }
                 }
             }
@@ -629,9 +668,27 @@ impl<S: Store> Relay<S> {
     }
 
     /// Answer `request` made by `session` at `now_ms`.
+    ///
+    /// A request answered as asked is logged at `debug` with what it was and what answered it; a
+    /// refusal is logged where it was decided, with its reason.
     pub fn call(&mut self, session: &Session, request: Request, now_ms: u64) -> Response {
+        let op = request.op();
+        let response = self.answer_session(session, request, now_ms);
+        if !matches!(response, Response::Refused { .. }) {
+            log::debug!(
+                op = op,
+                list = list_digest(&session.list).as_str(),
+                node = session.node,
+                answer = response.tag();
+                "answered"
+            );
+        }
+        response
+    }
+
+    fn answer_session(&mut self, session: &Session, request: Request, now_ms: u64) -> Response {
         if let Some(reason) = &self.failed {
-            return Response::refused(Code::Unavailable, reason.clone());
+            return refused!(Code::Unavailable, reason.clone());
         }
         let cost = if request.is_write() {
             self.limits.write_cost
@@ -642,6 +699,19 @@ impl<S: Store> Relay<S> {
             self.allowances
                 .take(&session.list, session.node, cost, now_ms, &self.limits)
         {
+            // Refused before anything of the request was done: the allowance is the first thing
+            // a session's request is held to, after a relay that takes nothing at all.
+            log::info!(
+                limit = "per_device_allowance",
+                op = request.op(),
+                cost = cost,
+                burst = self.limits.burst,
+                refill_per_second = self.limits.refill_per_second,
+                retry_after_ms = retry_after_ms,
+                list = list_digest(&session.list).as_str(),
+                node = session.node;
+                "rate_limited"
+            );
             return Response::refused(
                 Code::RateLimited { retry_after_ms },
                 "this device has spent its allowance",
@@ -667,7 +737,7 @@ impl<S: Store> Relay<S> {
             Request::Feed { .. } | Request::Operations { .. } | Request::Heads => READER,
         };
         if role < needs {
-            return Response::refused(
+            return refused!(
                 Code::Forbidden,
                 format!(
                     "node {} has role {role} in this list and this needs {needs}",
@@ -679,12 +749,12 @@ impl<S: Store> Relay<S> {
             Request::Entries { from } => self.entries(&session.list, from),
             Request::Append { entry } => match Entry::from_json(&entry) {
                 Some(parsed) => self.append(&session.list, entry, parsed),
-                None => Response::refused(Code::Invalid, "it is not an entry of a log"),
+                None => refused!(Code::Invalid, "it is not an entry of a log"),
             },
             Request::Submit { event, data } => self.submit(&session.list, event, data),
             Request::Checkpoint { checkpoint } => match Checkpoint::from_json(&checkpoint) {
                 Some(parsed) => self.checkpoint(&session.list, checkpoint, parsed),
-                None => Response::refused(Code::Invalid, "it is not a checkpoint"),
+                None => refused!(Code::Invalid, "it is not a checkpoint"),
             },
             Request::PublishKeyPackage { data } => self.publish_group(
                 &session.list,
@@ -714,7 +784,7 @@ impl<S: Store> Relay<S> {
             Request::Challenge { .. }
             | Request::Login(_)
             | Request::Join(_)
-            | Request::Create(_) => Response::refused(
+            | Request::Create(_) => refused!(
                 Code::Invalid,
                 "a challenge, a login, a join and a creation are not a session's requests",
             ),
@@ -730,7 +800,7 @@ impl<S: Store> Relay<S> {
             return full;
         }
         let Some(state) = self.lists.get(list) else {
-            return Response::refused(Code::Behind, "the relay holds no log of this list");
+            return refused!(Code::Behind, "the relay holds no log of this list");
         };
         match check_group_record(state, &record, &self.limits) {
             Ok(false) => Response::Accepted {
@@ -741,7 +811,7 @@ impl<S: Store> Relay<S> {
                 Ok(cursor) => Response::Accepted { new: true, cursor },
                 Err(response) => response,
             },
-            Err((code, reason)) => Response::refused(code, reason),
+            Err((code, reason)) => refused!(code, reason),
         }
     }
 
@@ -772,12 +842,12 @@ impl<S: Store> Relay<S> {
     fn keep(&mut self, list: &str, record: Record) -> Result<u64, Response> {
         if let Err(error) = self.store.append(list, &record) {
             let reason = self.store_failed("take a record", &error);
-            return Err(Response::refused(Code::Unavailable, reason));
+            return Err(refused!(Code::Unavailable, reason));
         }
         let state = self
             .lists
             .get_mut(list)
-            .ok_or_else(|| Response::refused(Code::Unavailable, "the list is gone"))?;
+            .ok_or_else(|| refused!(Code::Unavailable, "the list is gone"))?;
         state.note(&record);
         state.records.push(record);
         Ok(state.records.len() as u64)
@@ -788,6 +858,7 @@ impl<S: Store> Relay<S> {
     /// more until it is restarted from what the store holds, and says why to whoever asks.
     fn store_failed(&mut self, what: &str, error: &io::Error) -> String {
         let reason = format!("the store did not {what}: {error}");
+        log::error!(what = what, reason = reason.as_str(); "store_failed");
         self.failed = Some(reason.clone());
         reason
     }
@@ -795,7 +866,7 @@ impl<S: Store> Relay<S> {
     /// Whether the list has room for one more record.
     fn room(&self, list: &str) -> Result<(), Response> {
         if self.records(list) >= self.limits.max_records_per_list {
-            return Err(Response::refused(
+            return Err(refused!(
                 Code::TooLarge,
                 "this list holds as many records as the relay keeps",
             ));
@@ -809,7 +880,7 @@ impl<S: Store> Relay<S> {
         }
         let new_list = !self.lists.contains_key(list);
         if new_list && self.lists.len() >= self.limits.max_lists {
-            return Response::refused(Code::TooLarge, "the relay holds as many lists as it keeps");
+            return refused!(Code::TooLarge, "the relay holds as many lists as it keeps");
         }
         let state = self
             .lists
@@ -823,21 +894,27 @@ impl<S: Store> Relay<S> {
         }
         match taken {
             Ok(true) => match self.keep(list, Record::Entry(text)) {
-                Ok(_) => Response::Appended {
-                    new: true,
-                    len: self.lists[list].trust.log_len(),
-                },
+                Ok(_) => {
+                    let len = self.lists[list].trust.log_len();
+                    log::info!(
+                        list = list_digest(list).as_str(),
+                        len = len,
+                        new_list = new_list;
+                        "log_appended"
+                    );
+                    Response::Appended { new: true, len }
+                }
                 Err(response) => response,
             },
             Ok(false) => Response::Appended {
                 new: false,
                 len: log_len,
             },
-            Err(LogError::Gap { expected }) => Response::refused(
+            Err(LogError::Gap { expected }) => refused!(
                 Code::Behind,
                 format!("the relay holds the log up to {expected} and not this far"),
             ),
-            Err(error) => Response::refused(Code::Invalid, format!("{error:?}")),
+            Err(error) => refused!(Code::Invalid, format!("{error:?}")),
         }
     }
 
@@ -846,7 +923,7 @@ impl<S: Store> Relay<S> {
             return full;
         }
         let Some(state) = self.lists.get(list) else {
-            return Response::refused(Code::Behind, "the relay holds no log of this list");
+            return refused!(Code::Behind, "the relay holds no log of this list");
         };
         match state.trust.take_operation(&event, &data) {
             Ok(taken) if taken.new => match self.keep(list, Record::Operation { event, data }) {
@@ -857,9 +934,9 @@ impl<S: Store> Relay<S> {
                 new: false,
                 cursor: state.records.len() as u64,
             },
-            Err(TakeError::NotReached(reason)) => Response::refused(Code::Behind, reason),
+            Err(TakeError::NotReached(reason)) => refused!(Code::Behind, reason),
             Err(TakeError::Refused(reason) | TakeError::NoKey(reason)) => {
-                Response::refused(Code::Invalid, reason)
+                refused!(Code::Invalid, reason)
             }
         }
     }
@@ -869,7 +946,7 @@ impl<S: Store> Relay<S> {
             return full;
         }
         let Some(state) = self.lists.get(list) else {
-            return Response::refused(Code::Behind, "the relay holds no log of this list");
+            return refused!(Code::Behind, "the relay holds no log of this list");
         };
         match state.trust.take_checkpoint(&checkpoint) {
             Ok(true) => match self.keep(list, Record::Checkpoint(text)) {
@@ -880,21 +957,21 @@ impl<S: Store> Relay<S> {
                 new: false,
                 cursor: state.records.len() as u64,
             },
-            Err(CheckpointError::LogNotHeld { log }) => Response::refused(
+            Err(CheckpointError::LogNotHeld { log }) => refused!(
                 Code::Behind,
                 format!("the relay does not hold entry {log} of the log"),
             ),
-            Err(error) => Response::refused(Code::Invalid, format!("{error:?}")),
+            Err(error) => refused!(Code::Invalid, format!("{error:?}")),
         }
     }
 
     fn feed(&self, list: &str, cursor: u64, limit: u32) -> Response {
         let Some(state) = self.lists.get(list) else {
-            return Response::refused(Code::Forbidden, "the relay holds no such list");
+            return refused!(Code::Forbidden, "the relay holds no such list");
         };
         let total = state.records.len() as u64;
         if cursor > total {
-            return Response::refused(
+            return refused!(
                 Code::Invalid,
                 format!("the cursor is {cursor} and the relay holds {total} records"),
             );
@@ -910,7 +987,7 @@ impl<S: Store> Relay<S> {
 
     fn operations(&self, list: &str, node: u64, from: u64, to: u64) -> Response {
         let Some(state) = self.lists.get(list) else {
-            return Response::refused(Code::Forbidden, "the relay holds no such list");
+            return refused!(Code::Forbidden, "the relay holds no such list");
         };
         let to = to.min(from.saturating_add(self.limits.max_range.saturating_sub(1)));
         Response::Operations {
@@ -920,7 +997,7 @@ impl<S: Store> Relay<S> {
 
     fn heads(&self, list: &str) -> Response {
         let Some(state) = self.lists.get(list) else {
-            return Response::refused(Code::Forbidden, "the relay holds no such list");
+            return refused!(Code::Forbidden, "the relay holds no such list");
         };
         Response::Heads {
             heads: state.trust.heads(),
@@ -1124,5 +1201,162 @@ pub(crate) fn token_reason(error: TokenError) -> &'static str {
         TokenError::BadTag => "the token was not issued by this relay",
         TokenError::WrongAudience => "the token is for another relay",
         TokenError::Expired => "the token has expired",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sce_rust_trust::membership::{Body, Log, Profile};
+    use sce_rust_trust::Identity;
+
+    use super::*;
+    use crate::logs::capture;
+    use crate::store::MemoryStore;
+
+    fn genesis(list: &str) -> Entry {
+        let administrator = Identity::from_seed([9; 32]);
+        Log::genesis_draft(
+            list,
+            Body::Genesis {
+                administrators: vec![administrator.public()],
+                quorum: 1,
+                profile: Profile::Untrusted,
+            },
+        )
+        .sign(&administrator)
+        .finish()
+    }
+
+    fn lines() -> Vec<String> {
+        capture::taken()
+            .into_iter()
+            .map(|taken| taken.line)
+            .collect()
+    }
+
+    /// Each decision a session's request meets is one record with its reason and counts, in the
+    /// order they were met: a token the relay did not issue, an entry appended that begins a list,
+    /// the request answered, the device's allowance spent (naming the limit, the cost, the burst,
+    /// the refill and the wait), a role that does not reach what the request needs, and a read
+    /// answered. The list is named by its digest and never by its name, and the token is in no
+    /// record.
+    #[test]
+    fn every_decision_of_a_sessions_request_is_one_record() {
+        capture::start();
+        let authority = Authority::new([7; 32], "relay-a");
+        let limits = Limits {
+            burst: 2,
+            refill_per_second: 1,
+            write_cost: 2,
+            ..Limits::default()
+        };
+        let mut relay = Relay::open(MemoryStore::new(), authority.clone(), limits).unwrap();
+        let token = authority.issue("home", 1, u64::MAX);
+        let digest = list_digest("home");
+        relay.handle("nonsense", &Request::Heads.to_json(), 0);
+        let append = Request::Append {
+            entry: genesis("home").to_json(),
+        };
+        relay.handle(&token, &append.to_json(), 0);
+        relay.handle(&token, &Request::Heads.to_json(), 0);
+        relay.handle(&token, &Request::Heads.to_json(), 10_000);
+        relay.handle(&token, &Request::Entries { from: 0 }.to_json(), 20_000);
+
+        let lines = lines();
+        assert_eq!(lines.len(), 6, "{lines:#?}");
+        assert!(
+            lines[0].starts_with("event=refused code=unauthorized reason="),
+            "{}",
+            lines[0]
+        );
+        assert_eq!(
+            lines[1],
+            format!("event=log_appended list={digest} len=1 new_list=true")
+        );
+        assert_eq!(
+            lines[2],
+            format!("event=answered op=append list={digest} node=1 answer=appended")
+        );
+        assert_eq!(
+            lines[3],
+            format!(
+                "event=rate_limited limit=per_device_allowance op=heads cost=1 burst=2 \
+                 refill_per_second=1 retry_after_ms=1000 list={digest} node=1"
+            )
+        );
+        assert_eq!(
+            lines[4],
+            "event=refused code=forbidden reason=\"node 1 has role 0 in this list and this needs 1\""
+        );
+        assert_eq!(
+            lines[5],
+            format!("event=answered op=entries list={digest} node=1 answer=entries")
+        );
+        for line in &lines {
+            assert!(!line.contains(&token), "a token in a record: {line}");
+            assert!(!line.contains("home"), "a list's name in a record: {line}");
+        }
+    }
+
+    /// A store that takes nothing.
+    struct Refusing;
+
+    impl Store for Refusing {
+        fn load(&mut self) -> io::Result<Vec<(String, Record)>> {
+            Ok(Vec::new())
+        }
+
+        fn append(&mut self, _: &str, _: &Record) -> io::Result<()> {
+            Err(io::Error::other("the disk is full"))
+        }
+
+        fn marks(&mut self) -> io::Result<Vec<(String, Openly)>> {
+            Ok(Vec::new())
+        }
+
+        fn mark(&mut self, _: &str, _: &Openly) -> io::Result<()> {
+            Err(io::Error::other("the disk is full"))
+        }
+
+        fn remove(&mut self, _: &str) -> io::Result<()> {
+            Err(io::Error::other("the disk is full"))
+        }
+    }
+
+    /// A record the store did not take is logged at `error` with what was not done and why, and
+    /// every request after it is refused `unavailable` at `error`; a sweep of lapsed lists says
+    /// what it did in counts.
+    #[test]
+    fn a_store_that_takes_nothing_is_logged_as_an_error_and_so_is_every_refusal_after_it() {
+        capture::start();
+        let authority = Authority::new([7; 32], "relay-a");
+        let mut relay = Relay::open(Refusing, authority.clone(), Limits::default()).unwrap();
+        let token = authority.issue("home", 1, u64::MAX);
+        let append = Request::Append {
+            entry: genesis("home").to_json(),
+        };
+        relay.handle(&token, &append.to_json(), 0);
+        relay.handle(&token, &Request::Heads.to_json(), 0);
+        let lapsed = relay.lapse(1_000, 0);
+        assert_eq!(lapsed.failures.len(), 1);
+
+        let taken = capture::taken();
+        assert_eq!(taken.len(), 4, "{taken:#?}");
+        assert_eq!(taken[0].level, log::Level::Error);
+        assert_eq!(
+            taken[0].line,
+            "event=store_failed what=\"take a record\" reason=\"the store did not take a record: \
+             the disk is full\""
+        );
+        assert_eq!(taken[1].level, log::Level::Error);
+        assert!(taken[1].line.starts_with("event=refused code=unavailable"));
+        assert_eq!(taken[2].level, log::Level::Error);
+        assert!(taken[2].line.starts_with("event=refused code=unavailable"));
+        assert_eq!(taken[3].level, log::Level::Info);
+        assert_eq!(
+            taken[3].line,
+            "event=lapsed removed=0 kept=0 failures=1 idle_ms=1000"
+        );
+        assert!(taken[3].target.ends_with("relay"), "{}", taken[3].target);
     }
 }

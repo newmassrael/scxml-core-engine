@@ -138,6 +138,7 @@ where
     #[allow(clippy::result_large_err)]
     let verdict = |request: &Request, response: Response| -> Result<Response, ErrorResponse> {
         if request.uri().path() != PATH {
+            log::info!(status = 404u16; "upgrade_refused");
             return Err(refusal(http::StatusCode::NOT_FOUND, "no such relay path"));
         }
         let headers = request.headers();
@@ -164,11 +165,16 @@ where
             // A token the relay issued that expired, or none: an anonymous connection, when the
             // relay offers login.
             Some(Err(TokenError::Expired)) | None => {}
-            Some(Err(_)) => {
+            Some(Err(error)) => {
+                log::info!(
+                    status = 401u16,
+                    reason = crate::relay::token_reason(error);
+                    "upgrade_refused"
+                );
                 return Err(refusal(
                     http::StatusCode::UNAUTHORIZED,
                     "not a token of this relay",
-                ))
+                ));
             }
         }
         match hub.open_anonymous(source, now) {
@@ -180,14 +186,18 @@ where
                 });
                 Ok(response)
             }
-            Opened::NotOffered => Err(refusal(
-                http::StatusCode::UNAUTHORIZED,
-                if presented.is_some() {
-                    "not a token of this relay"
-                } else {
-                    "no token"
-                },
-            )),
+            Opened::NotOffered => {
+                log::info!(status = 401u16, reason = "login_not_offered"; "upgrade_refused");
+                Err(refusal(
+                    http::StatusCode::UNAUTHORIZED,
+                    if presented.is_some() {
+                        "not a token of this relay"
+                    } else {
+                        "no token"
+                    },
+                ))
+            }
+            // The doorway logged which limit refused it (`Doorway::open`).
             Opened::RateLimited { retry_after_ms } => {
                 let mut refused = refusal(
                     http::StatusCode::TOO_MANY_REQUESTS,
@@ -237,20 +247,22 @@ async fn exchange<S, H>(
     H: Hub,
 {
     let mut answered: u32 = 0;
-    loop {
+    let closed = loop {
         // The stop first: a server that is stopping answers no request it has not begun.
         let next = tokio::select! {
             biased;
-            () = raised(watch.stop) => break,
+            () = raised(watch.stop) => break "stopping",
             next = ws.next() => next,
-            () = after(watch.idle) => break,
+            () = after(watch.idle) => break if caller.anonymous { "anonymous_idle" } else { "idle" },
         };
-        let Some(Ok(message)) = next else { break };
+        let Some(Ok(message)) = next else {
+            break "gone";
+        };
         let text = match message {
             Message::Text(text) => text.to_string(),
-            Message::Close(_) => break,
+            Message::Close(_) => break "closed_by_device",
             Message::Ping(_) | Message::Pong(_) => continue,
-            _ => break,
+            _ => break "not_a_request",
         };
         let answer = {
             let (hub, clock, token, source) = (
@@ -264,19 +276,35 @@ async fn exchange<S, H>(
             })
             .await
         };
-        let Ok(answer) = answer else { break };
+        let Ok(answer) = answer else {
+            break "relay_failed";
+        };
         if let Some(tally) = watch.tally {
             tally.requests.fetch_add(1, Ordering::Relaxed);
         }
         let sent = within(watch.idle, ws.send(Message::Text(answer.into()))).await;
         if !matches!(sent, Some(Ok(()))) {
-            break;
+            break "answer_not_taken";
         }
         answered = answered.saturating_add(1);
         if watch.requests.is_some_and(|most| answered >= most) {
-            break;
+            break "anonymous_requests";
         }
-    }
+    };
+    // Why the connection closed, and how many requests it made: a bound of an anonymous connection
+    // that closed it (`anonymous_requests`, `anonymous_idle`) at `info`, as every limit is.
+    let level = if matches!(closed, "anonymous_requests" | "anonymous_idle") {
+        log::Level::Info
+    } else {
+        log::Level::Debug
+    };
+    log::log!(
+        level,
+        reason = closed,
+        answered = answered,
+        anonymous = caller.anonymous;
+        "connection_closed"
+    );
     let _ = within(watch.idle, ws.close(None)).await;
 }
 

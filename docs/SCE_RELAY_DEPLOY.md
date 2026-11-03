@@ -89,6 +89,21 @@ sce-relay`): `level=info event=listening transport=wss address=[::]:443`, `event
 and `level=error event=refused status=78 reason="..."` naming the file or setting that is wrong. A line
 names counts, addresses, paths and reasons; never a key, a token or anything a list holds.
 
+Each decision of the relay itself is a line of the same form too, with the module that made it as
+`target`: every refusal, with its code and reason (`event=refused code=forbidden reason="..."`); every
+refusal for a limit, naming the limit, how long until the device may ask again and the counts behind it
+(`event=rate_limited limit=per_device_allowance op=submit cost=2 burst=120 refill_per_second=20
+retry_after_ms=50 list=1a2b3c4d node=2`, and `connections_per_minute`, `challenges_per_minute`,
+`logins_per_minute`, `logins_per_node_per_hour`, `joins_per_minute`, `creations_per_minute`,
+`creations_per_hour`, `used_nonces`, `sources` for a table that holds as many sources as it may, and a
+connection with no token closed at `anonymous_requests` or `anonymous_idle`); every login admitted,
+token issued, list created, join kept, entry of a log appended and sweep of lapsed lists; and a store
+that did not take a record, at `error`. A list is named by a digest of its name (`list=1a2b3c4d`), never
+by its name. How much is written is `SCE_RELAY_LOG` in the unit's environment
+(`Environment=SCE_RELAY_LOG=debug`): `info` unless it says otherwise; `debug` adds a line for every
+request answered as asked and every connection closed; `warning`, `error` and `off` write less. A word it
+does not read is said once (`event=log_level_unknown`) and `info` is written.
+
 ## 3. The authority's key
 
 The authority's key signs every token the relay takes (`docs/SCE_SHARED_LIST_RELAY.md` section 2). Make
