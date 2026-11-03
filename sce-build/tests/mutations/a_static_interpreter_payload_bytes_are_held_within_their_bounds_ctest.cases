@@ -31,14 +31,14 @@ mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterprete
 
 mutation_case "a payload's byte string is read by the library as a value of no type" <<'PY'
 edit("sce-build/src/forge/static_js/sce_static.js",
-     "    if (type === 'bytes') {",
-     "    if (type === 'bytes-unread') {")
+     "    if (kind === 'bytes' || kind === 'bounded-bytes') {",
+     "    if (kind === 'bytes-unread' || kind === 'bounded-bytes-unread') {")
 PY
 
 mutation_case "a character past U+00FF is let through by the library's reader of a byte string" <<'PY'
 edit("sce-build/src/forge/static_js/sce_static.js",
-     "      if (value.charCodeAt(i) > 0xFF) {\n        fail('the byte string holds a character past U+00FF, which is no byte');",
-     "      if (value.charCodeAt(i) > 0x10FFFF) {\n        fail('the byte string holds a character past U+00FF, which is no byte');")
+     "      if (value.charCodeAt(i) > 0xFF) {\n        fail(where === undefined",
+     "      if (value.charCodeAt(i) > 0x10FFFF) {\n        fail(where === undefined")
 PY
 
 mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'

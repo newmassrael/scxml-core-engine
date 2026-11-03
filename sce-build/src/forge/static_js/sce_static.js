@@ -214,7 +214,6 @@
 
   function field(data, name, type, fallback) {
     var revised = fallback !== undefined;
-    var optional = type !== null && typeof type === 'object' && !Array.isArray(type);
     if (data === undefined || data === null || (revised && data === '')) {
       if (!revised) {
         fail('the event carries no data');
@@ -230,93 +229,168 @@
     } else if (revised) {
       value = fallback;
     } else {
-      fail('the event data has no ' + name);
+      fail('the event data has no \'' + name + '\'');
     }
-    if (optional) {
-      if (value === null) {
-        return null;
-      }
-      type = type.optional;
-    }
+    return readValue(value, type, name);
+  }
+
+  /* What a type descriptor describes. A scalar is named by its type, an enum by
+     the array of its names, and a composed type by an object with one key that
+     names its constructor: {optional: T}, {list: T, max: B}, {record: {id: T,
+     ...}, defaults: {...}}, {string: B}, {bytes: B} (docs/adr/0086, section 4.3). */
+  function kindOf(type) {
     if (Array.isArray(type)) {
+      return 'enum';
+    }
+    if (type !== null && typeof type === 'object') {
+      var keys = ['optional', 'list', 'record', 'string', 'bytes'];
+      for (var i = 0; i < keys.length; i++) {
+        if (Object.prototype.hasOwnProperty.call(type, keys[i])) {
+          return keys[i] === 'string' ? 'bounded-string' : keys[i] === 'bytes' ? 'bounded-bytes' : keys[i];
+        }
+      }
+      fail('a type descriptor names no constructor');
+    }
+    return type;
+  }
+
+  function below(path, segment) {
+    return path + '/' + String(segment);
+  }
+
+  /* One value of an event's data as its type declares it, at the path through
+     every depth that names it: a field's name, then each index and field name
+     below it, joined by a slash (docs/adr/0086, section 4). A value outside its
+     type is refused before anything of it is kept, the refusal naming the path;
+     a list past its bound is refused before any element of it is read, and a key
+     a record's schema does not declare is stepped over. A field of a record a
+     later revision of its schema added is read out of the record's defaults. */
+  function readValue(value, type, path) {
+    var kind = kindOf(type);
+    var where = '\'' + path + '\' ';
+    if (kind === 'optional') {
+      return value === null ? null : readValue(value, type.optional, path);
+    }
+    if (value === null) {
+      fail(where + 'is null, and its type is not optional');
+    }
+    if (kind === 'list') {
+      if (!Array.isArray(value)) {
+        fail(where + 'is not a list');
+      }
+      if (value.length > type.max) {
+        fail(where + 'holds ' + String(value.length) + ' elements, past the ' + String(type.max) + ' its type declares');
+      }
+      return value.map(function (item, index) { return readValue(item, type.list, below(path, index)); });
+    }
+    if (kind === 'record') {
+      if (typeof value !== 'object' || Array.isArray(value)) {
+        fail(where + 'is not a record');
+      }
+      var held = {};
+      Object.keys(type.record).forEach(function (id) {
+        var member;
+        if (Object.prototype.hasOwnProperty.call(value, id)) {
+          member = value[id];
+        } else if (type.defaults !== undefined && Object.prototype.hasOwnProperty.call(type.defaults, id)) {
+          member = type.defaults[id];
+        } else {
+          fail('the event data has no \'' + below(path, id) + '\'');
+        }
+        held[id] = readValue(member, type.record[id], below(path, id));
+      });
+      return held;
+    }
+    if (kind === 'enum') {
       if (typeof value !== 'string') {
-        fail(name + ' is not text');
+        fail(where + 'is not a text');
       }
       if (type.indexOf(value) < 0) {
-        fail(name + ' (' + value + ') is not a variant of its enum');
+        fail(where + '(' + value + ') is not a variant of its enum');
       }
       return value;
     }
-    var range = RANGES[type];
+    var range = RANGES[kind];
     if (range !== undefined) {
       var whole;
-      if ((type === 'int64' || type === 'uint64') && typeof value === 'string') {
+      if ((kind === 'int64' || kind === 'uint64') && typeof value === 'string') {
         /* A 64-bit integer crosses as the text of its digits: a number past
            2^53 - 1 is not exact in the data a Number carries, so it is written
            as text on every engine and read from it here. */
-        if (!(type === 'int64' ? /^(0|-?[1-9][0-9]*)$/ : /^(0|[1-9][0-9]*)$/).test(value)) {
-          fail(name + ' is not a whole number written as digits');
+        if (!(kind === 'int64' ? /^(0|-?[1-9][0-9]*)$/ : /^(0|[1-9][0-9]*)$/).test(value)) {
+          fail(where + 'is not a whole number written as digits');
         }
         whole = BigInt(value);
       } else {
         if (typeof value !== 'number') {
-          fail(name + ' is not a number');
+          fail(where + 'is not a number');
         }
         if (!Number.isSafeInteger(value)) {
-          fail(name + ' is not an integer a Number holds exactly');
+          fail(where + 'is not an integer a Number holds exactly');
         }
         whole = BigInt(value);
       }
       if (whole < range.min || whole > range.max) {
-        fail(name + ' does not fit ' + type);
+        fail(where + 'does not fit ' + kind);
       }
       return canonical(whole);
     }
-    if (type === 'float32' || type === 'float64') {
+    if (kind === 'float32' || kind === 'float64') {
       if (typeof value !== 'number') {
-        fail(name + ' is not a number');
+        fail(where + 'is not a number');
       }
-      if (type === 'float32') {
+      if (kind === 'float32') {
         /* A Number is a binary64: the field a schema declares float32 holds the
            binary32 nearest it, and a number past the range of a single does not
            fit it, as an integer past its width does not. */
         if (Math.abs(value) > FLOAT32_MAX) {
-          fail(name + ' does not fit float32');
+          fail(where + 'does not fit float32');
         }
         return Math.fround(value);
       }
       return value;
     }
-    if (type === 'bool') {
+    if (kind === 'bool') {
       if (typeof value !== 'boolean') {
-        fail(name + ' is not a truth value');
+        fail(where + 'is not a truth value');
       }
       return value;
     }
-    if (type === 'string') {
+    if (kind === 'string' || kind === 'bounded-string') {
       if (typeof value !== 'string') {
-        fail(name + ' is not text');
+        fail(where + 'is not a text');
+      }
+      /* A text is held to the bound its type declares wherever it stands, the
+         top level of a payload included (docs/adr/0086, section 4.4). */
+      var size = utf8Length(value);
+      if (kind === 'bounded-string' && size > type.string) {
+        fail(where + 'is ' + String(size) + ' bytes, past the ' + String(type.string) + ' its type declares');
       }
       return value;
     }
-    if (type === 'bytes') {
+    if (kind === 'bytes' || kind === 'bounded-bytes') {
       /* The wire spells a byte string as its byte-exact Latin-1 text, one
-         character to a byte, so the field is the text and no longer than its
-         schema's bound only where it is written (boundedBytes). */
-      return byteText(value, name + ' is not text');
+         character to a byte, so the value is the text, held to the bound its
+         type declares when the type is written with one. */
+      byteText(value, where + 'is not a byte string', where);
+      if (kind === 'bounded-bytes' && value.length > type.bytes) {
+        fail(where + 'is ' + String(value.length) + ' bytes, past the ' + String(type.bytes) + ' its type declares');
+      }
+      return value;
     }
-    fail('a field of type ' + String(type) + ' has no reader');
+    fail('a value of type ' + String(type) + ' has no reader');
   }
 
   /* A byte string is the text of its bytes, one character to a byte: a value that
-     is not text, or holds a character past U+00FF, is no byte string. */
-  function byteText(value, notText) {
+     is not text, or holds a character past U+00FF, is no byte string. A reader
+     of a payload names the path of the value as where. */
+  function byteText(value, notText, where) {
     if (typeof value !== 'string') {
       fail(notText);
     }
     for (var i = 0; i < value.length; i++) {
       if (value.charCodeAt(i) > 0xFF) {
-        fail('the byte string holds a character past U+00FF, which is no byte');
+        fail(where === undefined ? 'the byte string holds a character past U+00FF, which is no byte' : where + 'carries a character above U+00FF, which no single byte spells');
       }
     }
     return value;

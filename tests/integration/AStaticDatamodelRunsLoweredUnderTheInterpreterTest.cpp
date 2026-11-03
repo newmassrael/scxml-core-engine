@@ -1277,6 +1277,183 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryReducesAVal
     engine_->destroySession(session);
 }
 
+// The library's `field` reads a value of any bounded type at its path, or refuses it
+// there before anything of it is kept (docs/adr/0086, sections 4 and 14.3): every element
+// kind, at list depths 1 to 3, each bound 2, with an empty value, a maximal one, one past
+// the bound at the innermost and the outermost list, a bad element, `null` where the
+// element is not optional, an unknown key and an older revision, and a top-level text
+// held to its bound. The cases are a program the engine runs, whose oracle is the
+// construction: each case is built with the value, or the path and the sentence, it must
+// come to. The program answers how many cases it asked and which disagreed.
+static const char kComposedPayloadCases[] = R"JS((function () {
+  var B = 2;
+  var CONTROLS = '\u0001\u0001\u0001';
+  var REC = {record: {a: 'uint8', b: {string: 3}, c: 'uint8'}, defaults: {c: 9}};
+  var REC_LIST = {record: {tags: {list: {string: 3}, max: 2}}};
+  var PAST = 'holds 3 elements, past the 2 its type declares';
+  var kinds = [
+    {name: 'uint8', type: 'uint8', max: 255, bad: 256000000000, below: '', sentence: 'does not fit uint8'},
+    {name: 'uint16', type: 'uint16', max: 65535, bad: 256000000000, below: '', sentence: 'does not fit uint16'},
+    {name: 'uint32', type: 'uint32', max: 4294967295, bad: 256000000000, below: '', sentence: 'does not fit uint32'},
+    {name: 'uint64', type: 'uint64', max: '18446744073709551615', want: BigInt('18446744073709551615'), bad: '-1', below: '', sentence: 'is not a whole number written as digits'},
+    {name: 'int8', type: 'int8', max: -128, bad: 1.5, below: '', sentence: 'is not an integer a Number holds exactly'},
+    {name: 'int16', type: 'int16', max: -32768, bad: 1.5, below: '', sentence: 'is not an integer a Number holds exactly'},
+    {name: 'int32', type: 'int32', max: -2147483648, bad: 1.5, below: '', sentence: 'is not an integer a Number holds exactly'},
+    {name: 'int64', type: 'int64', max: '-9223372036854775808', want: BigInt('-9223372036854775808'), bad: 9007199254740992, below: '', sentence: 'is not an integer a Number holds exactly'},
+    {name: 'float32', type: 'float32', max: -1.1754943508222875e-38, bad: 1e39, below: '', sentence: 'does not fit float32'},
+    {name: 'float64', type: 'float64', max: -2.2250738585072014e-308, bad: true, below: '', sentence: 'is not a number'},
+    {name: 'bool', type: 'bool', max: false, bad: 0, below: '', sentence: 'is not a truth value'},
+    {name: 'enum', type: ['low', 'medium', 'high'], max: 'medium', bad: 'lowest', below: '', sentence: 'is not a variant of its enum'},
+    {name: 'string[3]', type: {string: 3}, max: CONTROLS, bad: 'abcd', below: '', sentence: 'is 4 bytes, past the 3 its type declares'},
+    {name: 'bytes[3]', type: {bytes: 3}, max: CONTROLS, bad: 'Ā', below: '', sentence: 'carries a character above U+00FF'},
+    {name: 'optional<uint8>', type: {optional: 'uint8'}, max: null, bad: 256000000000, below: '', sentence: 'does not fit uint8'},
+    {name: 'record', type: REC, max: {a: 255, b: CONTROLS, c: 255}, bad: {a: 'x', b: ''}, below: '/a', sentence: 'is not a number'},
+    {name: 'record of a list', type: REC_LIST, max: {tags: [CONTROLS, CONTROLS]}, bad: {tags: ['', '', 'x']}, below: '/tags', sentence: PAST}
+  ];
+  function nest(type, depth) {
+    for (var i = 0; i < depth; i++) {
+      type = {list: type, max: B};
+    }
+    return type;
+  }
+  function full(leaf, depth) {
+    if (depth === 0) {
+      return leaf;
+    }
+    var items = [];
+    for (var i = 0; i < B; i++) {
+      items.push(full(leaf, depth - 1));
+    }
+    return items;
+  }
+  function withLast(value, depth, leaf) {
+    if (depth === 0) {
+      return leaf;
+    }
+    var items = value.slice();
+    items[items.length - 1] = withLast(items[items.length - 1], depth - 1, leaf);
+    return items;
+  }
+  function onePast(value, depth, level) {
+    var items = value.slice();
+    if (level === 1) {
+      items.push(items[0]);
+    } else {
+      items[items.length - 1] = onePast(items[items.length - 1], depth - 1, level - 1);
+    }
+    return items;
+  }
+  function innermost(depth) {
+    var path = 'v';
+    for (var i = 1; i < depth; i++) {
+      path += '/1';
+    }
+    return path;
+  }
+  function same(a, b) {
+    if (Array.isArray(a) || Array.isArray(b)) {
+      if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+        return false;
+      }
+      for (var i = 0; i < a.length; i++) {
+        if (!same(a[i], b[i])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (a !== null && b !== null && typeof a === 'object' && typeof b === 'object') {
+      var ka = Object.keys(a).sort();
+      var kb = Object.keys(b).sort();
+      if (ka.join(',') !== kb.join(',')) {
+        return false;
+      }
+      for (var j = 0; j < ka.length; j++) {
+        if (!same(a[ka[j]], b[ka[j]])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return typeof a === typeof b && String(a) === String(b);
+  }
+  var cases = 0;
+  var failures = [];
+  function expect(label, run, want, path, sentence) {
+    cases++;
+    try {
+      var got = run();
+      if (sentence !== undefined || !same(got, want)) {
+        failures.push(label + ': read ' + String(got));
+      }
+    } catch (e) {
+      var message = String(e && e.message);
+      if (sentence === undefined || message.indexOf('\'' + path + '\'') < 0 || message.indexOf(sentence) < 0) {
+        failures.push(label + ': ' + message);
+      }
+    }
+  }
+  function read(type, value) {
+    return SceStatic.field({v: value, zz: {unknown: [1, null]}}, 'v', type);
+  }
+  kinds.forEach(function (kind) {
+    var want = kind.want === undefined ? kind.max : kind.want;
+    for (var depth = 1; depth <= 3; depth++) {
+      var type = nest(kind.type, depth);
+      var max = full(kind.max, depth);
+      var leaf = innermost(depth) + '/1';
+      var label = kind.name + ' at depth ' + depth + ', ';
+      expect(label + 'empty', function () { return read(type, []); }, []);
+      expect(label + 'maximal', function () { return read(type, max); }, full(want, depth));
+      expect(label + 'one past the innermost bound', function () { return read(type, onePast(max, depth, depth)); }, undefined, innermost(depth), PAST);
+      expect(label + 'one past the outermost bound', function () { return read(type, onePast(max, depth, 1)); }, undefined, 'v', PAST);
+      if (kind.name === 'optional<uint8>') {
+        expect(label + 'a present element among absent ones', function () { return read(type, withLast(max, depth, 7)); }, withLast(full(want, depth), depth, 7));
+      } else {
+        expect(label + 'null where the element is not optional', function () { return read(type, withLast(max, depth, null)); }, undefined, leaf, 'is null, and its type is not optional');
+      }
+      expect(label + 'a bad element', function () { return read(type, withLast(max, depth, kind.bad)); }, undefined, leaf + kind.below, kind.sentence);
+      if (kind.name === 'record') {
+        expect(label + 'an unknown key', function () { return read(type, withLast(max, depth, {zz: [{q: 1}], c: 255, b: CONTROLS, a: 255})); }, full(want, depth));
+        expect(label + 'an element of an older revision', function () { return read(type, withLast(max, depth, {a: 1, b: ''})); }, withLast(full(want, depth), depth, {a: 1, b: '', c: 9}));
+      } else {
+        expect(label + 'an unknown key', function () { return read(type, max); }, full(want, depth));
+        expect(label + 'a delivery of the revision before the list', function () { return SceStatic.field({zz: 1}, 'v', type, []); }, []);
+      }
+    }
+  });
+  expect('a top-level text past its bound', function () { return SceStatic.field({note: 'abcde'}, 'note', {string: 4}); }, undefined, 'note', 'is 5 bytes, past the 4 its type declares');
+  expect('a list past its bound before its first element is read', function () { return SceStatic.field({v: ['x', 1, 2]}, 'v', {list: 'uint8', max: 2}); }, undefined, 'v', PAST);
+  expect('a record that lacks a field', function () { return SceStatic.field({r: {a: 1}}, 'r', {record: {a: 'uint8', b: 'uint8'}}); }, undefined, 'r/b', 'the event data has no');
+  expect('a number where a record stands', function () { return SceStatic.field({s: 5}, 's', REC); }, undefined, 's', 'is not a record');
+  return JSON.stringify({cases: cases, failures: failures});
+})())JS";
+
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryReadsAValueOfAnyBoundedTypeAtItsPath) {
+    const char *bin = std::getenv("SCE_CODEGEN_BIN");
+    ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN must be set by CMake add_test ENVIRONMENT";
+    // Any document that is lowered installs the library; an algorithm is the
+    // smallest, and `lower-algorithm` hands over the expression that installs it.
+    const Ran ran =
+        capture(std::string("\"") + bin + "\" lower-algorithm sce:std/time/second_of_day.scxml 2>/dev/null");
+    ASSERT_EQ(0, ran.status);
+    const auto line = nlohmann::json::parse(ran.output, nullptr, false);
+    ASSERT_TRUE(line.is_object()) << ran.output.substr(0, 200);
+
+    const std::string session = "composed_payload_lowered";
+    ASSERT_TRUE(engine_->createSession(session, ""));
+    const auto installed = engine_->executeScript(session, line.at("install").get<std::string>()).get();
+    ASSERT_TRUE(installed.isSuccess()) << installed.getErrorMessage();
+
+    const auto answered = engine_->evaluateExpression(session, kComposedPayloadCases).get();
+    ASSERT_TRUE(answered.isSuccess()) << answered.getErrorMessage();
+    const auto report = nlohmann::json::parse(answered.getValue<std::string>(), nullptr, false);
+    ASSERT_TRUE(report.is_object()) << answered.getValue<std::string>().substr(0, 200);
+    EXPECT_EQ(report.at("cases").get<int>(), 17 * 3 * 8 + 4) << "the cross product shrank";
+    EXPECT_TRUE(report.at("failures").empty()) << report.at("failures").dump(2);
+    engine_->destroySession(session);
+}
+
 // SCE_MESH.md, Errors: a send to a peer from a machine whose host registered no Mesh
 // router is a configuration fault of the host and raises error.execution, as it does
 // on every other backend. It is not an event the sender takes from itself:
