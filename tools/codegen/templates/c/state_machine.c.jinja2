@@ -2452,9 +2452,10 @@ SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_root_start_refusal(void)
    one references (`-ffunction-sections -fdata-sections -Wl,--gc-sections`)
    drops the function, then the table, then its strings, from a program that
    never calls it. Each string is a named object of its own and not a literal,
-   because a compiler gathers a file's literals into one section that any
-   other literal of this file keeps alive; a named object has a section of its
-   own. Names declared in the function cannot meet a name of the machine's.
+   because the literals a file's data points to share one mergeable section,
+   which a linker that keeps a section whole keeps for any other literal in it;
+   a named object has a section of its own. Names declared in the function
+   cannot meet a name of the machine's.
    `sce-build/tests/a_program_that_never_names_the_transition_table_carries_none_of_it.rs`
    measures this. #}
 /* §synth-6.2.6: the transition table the header declares. */
