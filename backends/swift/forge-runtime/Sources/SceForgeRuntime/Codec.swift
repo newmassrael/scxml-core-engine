@@ -253,6 +253,21 @@ public func chainIdentifier<T: FixedWidthInteger>(_ value: T) -> UInt64 {
     UInt64(truncatingIfNeeded: value)
 }
 
+/// The bytes `write` puts in a sink of their own, or `nil` when it refuses: what a holder of a codec
+/// that is not itself a codec (a procedure) asks of the codec's `encode`, which writes into a sink
+/// and throws, in a place that can do neither. The closure is a plain `throws` one: a closure that
+/// is not annotated is inferred to throw `any Error`, whatever typed error the codec's own `encode`
+/// throws, and the answer to every error is the same `nil`.
+public func encodeToBytes(_ write: (inout BytesSink) throws -> Void) -> [UInt8]? {
+    var sink = BytesSink()
+    do {
+        try write(&sink)
+    } catch {
+        return nil
+    }
+    return sink.bytes
+}
+
 /// The write-side of an encode: the destination of the bytes, owned by the caller.
 public protocol SceSink {
     /// Appends `data`. A bounded sink answers `bufferOverflow` and writes nothing when `data` does

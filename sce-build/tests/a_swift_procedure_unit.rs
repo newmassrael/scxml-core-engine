@@ -173,13 +173,27 @@ fn the_data_of_the_event_is_the_property_the_runtime_holds() {
 }
 
 #[test]
-fn an_import_of_a_codec_is_refused_by_name() {
-    let refusal = swift_of("tests/forge/resources/crossfile_procedure_codec.scxml")
-        .expect_err("a procedure holds no codec yet");
+fn a_codec_is_a_value_the_class_holds_and_asks_for_the_bytes_it_writes() {
+    let code = swift_of("tests/forge/resources/crossfile_procedure_codec.scxml")
+        .expect("a procedure that holds a codec is written");
+    // A value, so the procedure may set its fields.
     assert!(
-        refusal.contains("an import of codec") && refusal.contains("has no Swift lowering yet"),
-        "{refusal}"
+        code.contains("\n    private var frame = CodecSimpleFrame()\n"),
+        "{code}"
     );
+    // Its `encode` writes into a sink and throws; the class asks it once, and a refusal is no payload.
+    assert!(
+        code.contains("private func sceEncodeFrame() -> [UInt8]? {\n        encodeToBytes { try frame.encode(into: &$0) }\n    }"),
+        "{code}"
+    );
+    assert!(code.contains("sceEncodeFrame()"), "{code}");
+}
+
+#[test]
+fn a_field_of_a_held_codec_is_set_as_a_member_of_the_class_is() {
+    let code = swift_of("tests/forge/resources/crossfile_procedure_codec_mutate.scxml")
+        .expect("a procedure that sets a field of a codec is written");
+    assert!(code.contains("frame.msgId = msgId"), "{code}");
 }
 
 #[test]

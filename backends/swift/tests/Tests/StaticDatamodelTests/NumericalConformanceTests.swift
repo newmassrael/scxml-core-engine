@@ -636,6 +636,68 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(captured == expectedPayloads, "procedure_startup_check case \(n): dispatched_payload_bytes")
     }}
 
+// MARK: - procedure: crossfile_procedure_codec
+
+@Test func crossfileProcedureCodecMatchesReference() throws {
+
+    for (n, testCase) in try oracleCases("pure_functions", "crossfile_procedure_codec").enumerated() {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt32.self)
+        guard let expected = testCase.member("expected") else {
+            throw OracleError(description: "crossfile_procedure_codec case \(n): the oracle states no expected result")
+        }
+        let expectedCompleted = try oracleTruth(expected.member("completed"))
+        let expectedFinal = try oracleText(expected.member("final_state"))
+        let expectedPayloads: [[UInt8]]
+        if let payloads = expected.member("dispatched_payload_bytes") {
+            expectedPayloads = try oracleArray(payloads).map { try oracleBytes($0) }
+        } else {
+            expectedPayloads = []
+        }
+        let responseData = try testCase.member("handler_response_data").map { try oracleText($0) } ?? ""
+
+        var captured: [[UInt8]] = []
+        let handler: ProcedureServiceHandler = { request in
+            if let payload = request.payload { captured.append(payload) }
+            return ProcedureServiceResponse(success: true, data: responseData)
+        }
+        let result = CrossfileProcedureCodec.execute(handler, arg0)
+        #expect(result.completed == expectedCompleted, "crossfile_procedure_codec case \(n): completed")
+        #expect(result.finalState == expectedFinal, "crossfile_procedure_codec case \(n): final_state")
+        #expect(captured == expectedPayloads, "crossfile_procedure_codec case \(n): dispatched_payload_bytes")
+    }}
+
+// MARK: - procedure: crossfile_procedure_codec_mutate
+
+@Test func crossfileProcedureCodecMutateMatchesReference() throws {
+
+    for (n, testCase) in try oracleCases("pure_functions", "crossfile_procedure_codec_mutate").enumerated() {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt8.self)
+        guard let expected = testCase.member("expected") else {
+            throw OracleError(description: "crossfile_procedure_codec_mutate case \(n): the oracle states no expected result")
+        }
+        let expectedCompleted = try oracleTruth(expected.member("completed"))
+        let expectedFinal = try oracleText(expected.member("final_state"))
+        let expectedPayloads: [[UInt8]]
+        if let payloads = expected.member("dispatched_payload_bytes") {
+            expectedPayloads = try oracleArray(payloads).map { try oracleBytes($0) }
+        } else {
+            expectedPayloads = []
+        }
+        let responseData = try testCase.member("handler_response_data").map { try oracleText($0) } ?? ""
+
+        var captured: [[UInt8]] = []
+        let handler: ProcedureServiceHandler = { request in
+            if let payload = request.payload { captured.append(payload) }
+            return ProcedureServiceResponse(success: true, data: responseData)
+        }
+        let result = CrossfileProcedureCodecMutate.execute(handler, arg0)
+        #expect(result.completed == expectedCompleted, "crossfile_procedure_codec_mutate case \(n): completed")
+        #expect(result.finalState == expectedFinal, "crossfile_procedure_codec_mutate case \(n): final_state")
+        #expect(captured == expectedPayloads, "crossfile_procedure_codec_mutate case \(n): dispatched_payload_bytes")
+    }}
+
 // MARK: - procedure: crossfile_procedure_filter
 
 @Test func crossfileProcedureFilterMatchesReference() throws {

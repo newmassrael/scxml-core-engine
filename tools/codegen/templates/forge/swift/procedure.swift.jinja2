@@ -53,7 +53,14 @@ public final class {{ class_name }}: ProcedureStateMachine {
     private var {{ f.id }}: {{ f.swift_type }} = {{ f.default_value }}
 {% endfor %}
 {% for imp in member_imports %}
-    private let {{ imp.name }} = {{ imp.type }}()
+    private {{ "var" if imp.mutable else "let" }} {{ imp.name }} = {{ imp.type }}()
+{% endfor %}
+{% for imp in member_imports if imp.encode_helper %}
+
+    /// The bytes `{{ imp.name }}` writes, or `nil` when it refuses the values the procedure set.
+    private func {{ imp.encode_helper }}() -> [UInt8]? {
+        encodeToBytes { try {{ imp.name }}.encode(into: &$0) }
+    }
 {% endfor %}
 {% if helper_fields %}
 

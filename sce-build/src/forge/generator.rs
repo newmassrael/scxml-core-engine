@@ -29855,8 +29855,16 @@ fn stateful_import_method_renames(
                 // bare-Member usage (e.g. taking a method's address).
                 generator::Language::C11 => continue,
                 // A member of the validator's class, called by its name inside the class's
-                // own method; the unit of a filter names its method as the document does.
-                generator::Language::Swift => format!("{}.{method}", imp.member_name),
+                // own method; the unit of a filter names its method as the document does. A
+                // codec's `encode` writes into a sink and can refuse, so the class has a method
+                // of its own that answers the bytes, or none ([`swift_encode_helper`]).
+                generator::Language::Swift => {
+                    if *method == "encode" {
+                        swift_encode_helper(&imp.member_name)
+                    } else {
+                        format!("{}.{method}", imp.member_name)
+                    }
+                }
             };
             out.push((qualified_key, expansion));
         }
@@ -30753,6 +30761,21 @@ pub(crate) fn swift_procedure_unlowered(
                 .swift_unlowered
                 .as_ref()
                 .map(|why| format!("{} '{}' with {why}", import.kind, import.alias)),
+            // A codec is held as a member whose fields the procedure sets and whose bytes it
+            // sends. `<alias>.encode()` is given no flag input, so a codec that takes one is named.
+            "codec" => import
+                .swift_unlowered
+                .as_ref()
+                .map(|why| format!("codec '{}' with {why}", import.alias))
+                .or_else(|| {
+                    (!import.codec_flag_inputs.is_empty()).then(|| {
+                        format!(
+                            "the <sce:import as=\"{}\">, a codec that takes a flag input, which \
+                             `{}.encode()` is not given",
+                            import.alias, import.alias
+                        )
+                    })
+                }),
             kind => Some(format!(
                 "the <sce:import as=\"{}\">, an import of {kind} that a procedure holds or calls",
                 import.alias
@@ -30848,6 +30871,16 @@ fn swift_procedure_refusal(m: &ProcedureModel, construct: &str) -> String {
     )
 }
 
+/// The method of a Swift procedure that answers the bytes a codec it holds writes, or `nil` when
+/// the codec refuses the value: what `<alias>.encode()` is in an expression of the procedure.
+///
+/// A Swift codec's `encode(into:)` writes into a sink and throws, which an expression cannot do,
+/// so the procedure wraps it once ([`SceForgeRuntime.encodeToBytes`]); the answer is an optional
+/// payload, which the service request already takes, so a refusal sends no payload.
+fn swift_encode_helper(member: &str) -> String {
+    format!("sceEncode{}", filters::to_pascal_case(member.to_string()))
+}
+
 /// A procedure as a Swift class that adopts the runtime's `ProcedureStateMachine`: the states
 /// and events as enumerations nested in it, the variables and helpers as properties, the entry
 /// actions, transitions and assigns as the methods the protocol requires.
@@ -30928,9 +30961,16 @@ fn render_procedure_swift(
 
     // `_event.data` is the property the runtime protocol holds, and the alias of an imported
     // function is the call its unit spells.
+    // A held unit is read by its alias: the method a filter or a codec is called by, and the field of
+    // a codec a procedure sets, are members of the class, written as the member is.
+    let method_renames = stateful_import_method_renames(imports, &generator::Language::Swift, None);
+    let field_renames = stateful_import_field_renames(imports, &generator::Language::Swift, None);
     let mut owned_rename: std::collections::HashMap<&str, String> =
         std::collections::HashMap::from([("_event.data", "pendingEventData".to_string())]);
     owned_rename.extend(stateless_import_renames(imports));
+    for (key, expansion) in method_renames.iter().chain(&field_renames) {
+        owned_rename.insert(key.as_str(), expansion.clone());
+    }
     let rename_map: std::collections::HashMap<&str, &str> =
         owned_rename.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
@@ -30969,9 +31009,14 @@ fn render_procedure_swift(
         .iter()
         .filter(|import| import.is_stateful)
         .map(|import| {
+            let codec = import.kind == "codec";
             serde_json::json!({
                 "name": swift_local_spelling(&import.member_name),
                 "type": import.member_type,
+                // A filter is a class and is shared by whoever holds it; a codec is a value the
+                // procedure sets the fields of.
+                "mutable": codec,
+                "encode_helper": codec.then(|| swift_encode_helper(&import.member_name)),
             })
         })
         .collect();

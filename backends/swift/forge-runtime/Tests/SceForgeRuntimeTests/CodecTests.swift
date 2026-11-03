@@ -244,6 +244,17 @@ import Testing
     #expect(cursor.remaining == 2)
 }
 
+@Test func theBytesAWriteLeavesInASinkOfItsOwnAreAnsweredAndARefusalIsNil() {
+    #expect(encodeToBytes { try $0.writeBytes([1, 2, 3]) } == [1, 2, 3])
+    #expect(encodeToBytes { _ in throw CodecError.lengthOutOfRange } == nil)
+    // A write that refuses after it wrote has no bytes to give: the answer is nil and not a prefix.
+    #expect(
+        encodeToBytes { sink in
+            try sink.writeBytes([1])
+            throw CodecError.tooManyElements
+        } == nil)
+}
+
 @Test func anEntrysIdentifierIsTheSameNumberWhateverTypeItIsReadFrom() {
     #expect(chainIdentifier(true) == 1)
     #expect(chainIdentifier(false) == 0)
