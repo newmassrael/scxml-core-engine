@@ -96,7 +96,7 @@ fn run(
         }
     }
     files.sort();
-    let records = String::from_utf8_lossy(&output.stderr)
+    let records: Vec<serde_json::Value> = String::from_utf8_lossy(&output.stderr)
         .lines()
         .map(str::trim)
         .filter(|line| line.starts_with('{'))
