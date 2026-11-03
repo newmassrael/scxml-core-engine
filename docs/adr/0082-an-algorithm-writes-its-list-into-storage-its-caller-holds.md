@@ -1,8 +1,8 @@
 # ADR 0082 — An algorithm writes its list into storage its caller holds
 
-- Status: Proposed (2026-11-03). The owner ordered the work started on the recommendation of that day, under the
+- Status: Accepted (2026-11-03). The owner ordered the work started on the recommendation of that day, under the
   rule of 2026-10-26 and 2026-10-27: the most long-term correct structure, textbook in its foundations, cost
-  ignored. This draft is for the owner's review; it becomes Accepted when the owner accepts it.
+  ignored, and accepted the draft the same day.
 - Date: 2026-11-03
 - Amends:
   - SCE_FORGE.md §4.12, whose byte-buffer-build and bounded-list tables give C11 a "by-value
@@ -220,4 +220,4 @@ changes each backend says how (ADR 0078):
 
 ## Questions left open
 
-None that block the work. This draft waits for the owner's acceptance. The first step after it is step 2 above.
+None. Decided 2026-11-03; the first step is 2 above.
