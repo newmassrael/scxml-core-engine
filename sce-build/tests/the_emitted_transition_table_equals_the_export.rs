@@ -14,11 +14,12 @@
 // runs on a host with no toolchain. Where a toolchain is found, the same output is
 // also built in the backend's own toolchain and the table it holds is compared with
 // the export at the level the language allows: C++ by static assertions over every
-// field, Python by importing the module, and Rust, Go, Kotlin, C and Swift by
-// building a program against the real runtime and running it. A table that reads
-// back right and does not compile, or compiles to other values, is still wrong.
-// The Swift program is also run by the Swift lane (`scripts/test_swift_backend.sh`),
-// on the compiler `bx.toml` pins and with a skip refused.
+// field, Rust by a constant item asserting the same, Python by importing the module,
+// and Rust, Go, Kotlin, C and Swift by building a program against the real runtime
+// and running it. A table that reads back right and does not compile, or compiles
+// to other values, is still wrong. The Swift program is also run by the Swift lane
+// (`scripts/test_swift_backend.sh`), on the compiler `bx.toml` pins and with a skip
+// refused.
 //
 // Absent the declaration, nothing changes: the generated files are held
 // byte-identical by the committed-tree drift gates, and this file checks that none
@@ -1114,8 +1115,63 @@ fn held_to(lang: &str) -> (serde_json::Value, Vec<Entry>, PathBuf, PathBuf) {
     (header, spelled, work, doc)
 }
 
+/// Every field of every entry of the Rust table, as a condition a constant
+/// expression can evaluate: `==` on an enum or a string is a trait call, which a
+/// constant expression cannot make, so an id is matched by its pattern and a string
+/// compared by `same`, which the program defines.
+fn rust_constant_conditions(
+    machine: &str,
+    table: &str,
+    spelled: &[Entry],
+) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (i, e) in spelled.iter().enumerate() {
+        let at = format!("{table}[{i}]");
+        let to = match &e.to {
+            Some(s) => format!("matches!({at}.to, Some({machine}State::{s}))"),
+            None => format!("{at}.to.is_none()"),
+        };
+        let event = match &e.event {
+            Some(v) => format!("matches!({at}.event, Some({machine}Event::{v}))"),
+            None => format!("{at}.event.is_none()"),
+        };
+        for (field, cond) in [
+            (
+                "from",
+                format!("matches!({at}.from, {machine}State::{})", e.from),
+            ),
+            ("to", to),
+            ("event", event),
+            (
+                "targets",
+                format!("same({at}.targets, {})", literal_of("rust", &e.targets)),
+            ),
+            (
+                "events",
+                format!("same({at}.events, {})", literal_of("rust", &e.events)),
+            ),
+            ("index", format!("{at}.index == {}", e.index)),
+            (
+                "annotation",
+                format!(
+                    "same({at}.annotation, {})",
+                    literal_of("rust", &e.annotation)
+                ),
+            ),
+        ] {
+            out.push((format!("entry {i} {field}"), cond));
+        }
+    }
+    out
+}
+
 /// The generated Rust is built as a crate of its own against the real runtime, and
-/// its table is compared with the export when that program runs.
+/// its table is held to the export twice: by the compiler, as a constant
+/// expression, and when that program runs.
+///
+/// The constant half is what Rust can say and Go, Kotlin, Python and C cannot: the
+/// table is a constant, so a crate that compiles holds every field of it. The run
+/// half compares with `==`, the way a host reads the table.
 #[test]
 fn the_rust_table_compiles_and_holds_the_export() {
     let Some(cargo) = toolchain::locate("cargo") else {
@@ -1128,11 +1184,23 @@ fn the_rust_table_compiles_and_holds_the_export() {
     let machine = machine_name();
 
     let mut program = format!(
-        "#[path = {:?}]\nmod machine;\nuse machine::*;\n\nfn main() {{\n    let t = {machine}Transition::ALL;\n    assert_eq!(t.len(), {});\n    assert_eq!({machine}Transition::SOURCE_HASH, {:?});\n",
+        "#[path = {:?}]\nmod machine;\nuse machine::*;\n\n\
+         /// Whether two strings are the same bytes, in a constant expression.\n\
+         const fn same(a: &str, b: &str) -> bool {{\n    let (a, b) = (a.as_bytes(), b.as_bytes());\n    if a.len() != b.len() {{\n        return false;\n    }}\n    let mut i = 0;\n    while i < a.len() {{\n        if a[i] != b[i] {{\n            return false;\n        }}\n        i += 1;\n    }}\n    true\n}}\n\n\
+         const _: () = {{\n    let t = &{machine}Transition::ALL;\n    assert!(t.len() == {n}, \"entry count\");\n    assert!(same({machine}Transition::SOURCE_HASH, {hash:?}), \"source hash\");\n",
         out.join(format!("{STEM}_sm.rs")).to_str().unwrap(),
+        n = spelled.len(),
+        hash = header["source_hash"].as_str().unwrap(),
+    );
+    for (what, cond) in rust_constant_conditions(&machine, "t", &spelled) {
+        program.push_str(&format!("    assert!({cond}, {what:?});\n"));
+    }
+    program.push_str("};\n\n");
+    program.push_str(&format!(
+        "fn main() {{\n    let t = {machine}Transition::ALL;\n    assert_eq!(t.len(), {});\n    assert_eq!({machine}Transition::SOURCE_HASH, {:?});\n",
         spelled.len(),
         header["source_hash"].as_str().unwrap(),
-    );
+    ));
     for (what, cond) in field_conditions("rust", &machine, "t", &spelled) {
         program.push_str(&format!("    assert!({cond}, {what:?});\n"));
     }
