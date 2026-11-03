@@ -41,7 +41,7 @@ use sce_build::parser::SCXMLParser;
 fn host(child: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="running" datamodel="null">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="running" datamodel="ecmascript">
   <state id="running">
     <invoke type="scxml" id="kid">
       <content>
@@ -57,25 +57,25 @@ fn host(child: &str) -> String {
 }
 
 /// A child the generator generates: two states, one taken from the other.
-const GENERATED_CHILD: &str = r#"        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="null">
+const GENERATED_CHILD: &str = r#"        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="ecmascript">
           <state id="c"><transition event="go" target="end"/></state>
           <final id="end"/>
         </scxml>"#;
 
 /// The same child, whose transition names a state it does not declare
 /// (W3C SCXML 3.5: `target` names states of the document).
-const REFUSED_CHILD: &str = r#"        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="null">
+const REFUSED_CHILD: &str = r#"        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="ecmascript">
           <state id="c"><transition event="go" target="nowhere"/></state>
           <final id="end"/>
         </scxml>"#;
 
 /// A child that starts, in turn, a child of its own written in `<content>`,
 /// whose transition names a state it does not declare.
-const REFUSED_GRANDCHILD: &str = r#"        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="null">
+const REFUSED_GRANDCHILD: &str = r#"        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="ecmascript">
           <state id="c">
             <invoke type="scxml" id="grand">
               <content>
-                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="g" datamodel="null">
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="g" datamodel="ecmascript">
                   <state id="g"><transition event="go" target="nowhere"/></state>
                   <final id="end"/>
                 </scxml>
@@ -186,12 +186,12 @@ fn a_grandchilds_refusal_is_placed_in_the_document() {
 /// refusal raised against the grandchild is moved through the child that
 /// carries it to the row its author wrote in the document, as the gate's is,
 /// rather than left in the child's coordinates under a name nobody wrote.
-const DECLARING_GRANDCHILD: &str = r#"        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="null">
+const DECLARING_GRANDCHILD: &str = r#"        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="ecmascript">
           <state id="c">
             <invoke type="scxml" id="grand">
               <content>
                 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-                       version="1.0" initial="off" datamodel="null" sce:transition-function="emit">
+                       version="1.0" initial="off" datamodel="ecmascript" sce:transition-function="emit">
                   <state id="off"><transition event="on" target="lit"/></state>
                   <state id="lit"><transition event="off" target="off"/></state>
                 </scxml>
@@ -522,7 +522,7 @@ fn generate_w3c_skips_the_fixture_and_writes_nothing_of_it() {
 /// A statechart that starts, in its one state, the child document
 /// `test900sub1.scxml` beside it, by `src`.
 const HOST_OF_A_FILE_CHILD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="running" datamodel="null">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="running" datamodel="ecmascript">
   <state id="running">
     <invoke type="scxml" id="kid" src="file:test900sub1.scxml"/>
     <transition event="done.invoke.kid" target="pass"/>

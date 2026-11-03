@@ -19,7 +19,7 @@ use sce_build::generator::Language;
 
 /// A statechart with no child, which both entry points compile.
 const LONE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle" datamodel="null">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle" datamodel="ecmascript">
   <state id="idle"><transition event="go" target="pass"/></state>
   <final id="pass"/>
 </scxml>
@@ -28,11 +28,11 @@ const LONE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 /// A statechart that starts, in its one state, a child written in
 /// `<content>`, which the generator generates.
 const HOST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="running" datamodel="null">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="running" datamodel="ecmascript">
   <state id="running">
     <invoke type="scxml" id="kid">
       <content>
-        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="null">
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="ecmascript">
           <state id="c"><transition event="go" target="end"/></state>
           <final id="end"/>
         </scxml>
