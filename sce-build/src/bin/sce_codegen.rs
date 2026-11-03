@@ -1744,7 +1744,8 @@ struct Cli {
     /// names (its document, what that document includes and imports, the
     /// source set its `source-hash` covers, the deploy, the templates and
     /// this program), less every file the run produces; with
-    /// `--plan-children`, those of every child generation it planned too.
+    /// `--plan-children`, those of every child generation it planned too. A
+    /// file the run named and did not find is written `?<path>`.
     ///
     /// The answer of a plan is a function of what it read and of its
     /// arguments, so a build that keeps the answer can tell when it is still
@@ -3643,9 +3644,11 @@ enum Commands {
     /// else is run. For each request, `<results>/<name>.request` keeps its
     /// line, and then either `<name>.plan` holds what the plan printed, with
     /// `<name>.reads` the files it read (`--plan-reads`), or `<name>.error`
-    /// holds what the refused run wrote on stderr. A `.plan` is dated when
-    /// its `.request` was written, before the plan read anything, so a file
-    /// the plan read and that changed while it ran is newer than the answer.
+    /// holds what the refused run wrote on stderr. Every `.plan` is dated
+    /// when the batch began, before any plan read anything, and strictly
+    /// after every file written before it: a file a plan read that changed
+    /// while it ran is not older than the answer, and one staged just before
+    /// the batch is.
     /// The command fails only when it cannot answer: a refused plan is an
     /// answer.
     PlanBatch {
@@ -8467,6 +8470,17 @@ fn write_depfile_entry(depfile_path: &str, entry: &DepfileEntry) {
 /// against the working directory the run was given, so a reader in another
 /// directory reads the same files.
 ///
+/// Two things a depfile can leave in are taken out or said apart, because a
+/// build reading the list on its next configure would find either one
+/// missing and plan again, every time, with nothing changed:
+/// - every file the plan produced, its child generations' included, compared
+///   as written ([`plain_absolute`]): a file a later generation reads and an
+///   earlier one wrote is the plan's own, and before the build has run it is
+///   on no disk;
+/// - a file that is not there (`sce_build::confine::exists`) is written
+///   `?<path>`: the plan looked for it and did not find it, so its answer is
+///   current while the file stays absent, and not once it appears.
+///
 /// A plan whose generations did not all record what they read (`read` is
 /// `None`) writes no list: an answer without one is never reused, and one
 /// with a list short of a file would be reused after that file changed.
@@ -8474,9 +8488,26 @@ fn write_plan_reads(read: Option<&DepfileEntry>) {
     let (Some(path), Some(entry)) = (plan_reads(), read) else {
         return;
     };
+    let tree = pending_tree();
+    let produced: BTreeSet<PathBuf> = tree
+        .produced()
+        .chain(
+            tree.generations
+                .iter()
+                .flat_map(|generation| &generation.files),
+        )
+        .map(|file| plain_absolute(file))
+        .collect();
+    drop(tree);
     let mut list = String::new();
     for file in depfile_prerequisites(entry) {
+        if produced.contains(&plain_absolute(&file)) {
+            continue;
+        }
         let file = std::path::absolute(&file).unwrap_or(file);
+        if !sce_build::confine::exists(&file) {
+            list.push('?');
+        }
         list.push_str(&file.display().to_string());
         list.push('\n');
     }
@@ -8486,6 +8517,24 @@ fn write_plan_reads(read: Option<&DepfileEntry>) {
             source: e,
         })
     });
+}
+
+/// `path` made absolute against the working directory, `.` and `..` folded
+/// as written: the one spelling two names of a file a run produced compare
+/// in, whether or not it is on disk yet.
+fn plain_absolute(path: &Path) -> PathBuf {
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut plain = PathBuf::new();
+    for part in absolute.components() {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir if plain.file_name().is_some() => {
+                plain.pop();
+            }
+            other => plain.push(other.as_os_str()),
+        }
+    }
+    plain
 }
 
 /// The prerequisites `entry` names once what the run produced is taken back
@@ -14120,6 +14169,8 @@ fn cmd_plan_batch(requests_path: &str, results: &str, jobs: Option<usize>) {
         Some(jobs) => jobs,
         None => std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get),
     };
+    // Every answer of the batch is dated once, before any plan reads a file.
+    let dated = a_date_past_every_earlier_one(&results.join("batch.stamp"));
 
     let next = AtomicUsize::new(0);
     let refused = AtomicUsize::new(0);
@@ -14127,7 +14178,7 @@ fn cmd_plan_batch(requests_path: &str, results: &str, jobs: Option<usize>) {
         for _ in 0..jobs.min(requests.len()) {
             scope.spawn(|| {
                 while let Some(request) = requests.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    if !answer_plan_request(&program, &results, request) {
+                    if !answer_plan_request(&program, &results, request, dated) {
                         refused.fetch_add(1, Ordering::Relaxed);
                     }
                 }
@@ -14225,35 +14276,69 @@ fn is_kept_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
 }
 
+/// The date the file system gives a file it writes now, past every date it
+/// gave before this call: the date `plan-batch` gives its answers.
+///
+/// The file system dates a file by a clock coarser than a process's, often
+/// by milliseconds and on some file systems by seconds, so a document staged
+/// just before the batch starts can carry the very date a request written
+/// just after it does. A reader that takes a tie for "newer", as it must
+/// (a file written while a plan ran can tie with the answer too), would then
+/// plan that document again on every configure. So the batch writes a stamp
+/// until the file system's date for it moves on, and dates every answer by
+/// that: any file written before the batch began is strictly older, and any
+/// written after it is not. Waiting is bounded: a file system whose dates do
+/// not move within three seconds gets the last one, and ties are planned again.
+fn a_date_past_every_earlier_one(stamp: &Path) -> std::time::SystemTime {
+    let first = date_written_now(stamp);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let now = date_written_now(stamp);
+        if now > first || std::time::Instant::now() >= deadline {
+            return now;
+        }
+    }
+}
+
+/// Write `stamp` and give back the date the file system gave it.
+fn date_written_now(stamp: &Path) -> std::time::SystemTime {
+    write_kept(stamp, b"plan-batch\n");
+    fs::metadata(stamp)
+        .and_then(|metadata| metadata.modified())
+        .unwrap_or_else(|source| {
+            cli_exit(CliError::ReadInput {
+                path: stamp.display().to_string(),
+                source,
+            })
+        })
+}
+
 /// Answer one request of a `plan-batch` run, by a run of `program` with the
 /// request's arguments and `--plan-reads`, and keep the answer under
 /// `results`: `<name>.request` holds the request's line; then `<name>.plan`
 /// what the plan printed and `<name>.reads` what it read, or `<name>.error`
 /// what the refused run wrote on stderr. Returns whether the plan answered.
 ///
-/// The `.plan` is dated when the `.request` was written, by the file system,
-/// which dates the files the plan reads too: a file the plan read that
-/// changed after the plan began is at least as new as the answer, so a
-/// reader that reuses an answer only when every file it read is older never
-/// reuses that one. What was kept from an earlier answer is removed before
-/// the run, so a batch stopped halfway leaves no answer that is not its own.
-fn answer_plan_request(program: &Path, results: &Path, request: &PlanRequest) -> bool {
+/// The `.plan` is dated `dated`, which the batch took before any plan began
+/// ([`a_date_past_every_earlier_one`]): a file the plan read that changed
+/// after the plan began is at least as new as the answer, so a reader that
+/// reuses an answer only when every file it read is older never reuses that
+/// one. What was kept from an earlier answer is removed before the run, so a
+/// batch stopped halfway leaves no answer that is not its own.
+fn answer_plan_request(
+    program: &Path,
+    results: &Path,
+    request: &PlanRequest,
+    dated: std::time::SystemTime,
+) -> bool {
     let kept = |extension: &str| results.join(format!("{}.{extension}", request.name));
     let (plan, reads, error) = (kept("plan"), kept("reads"), kept("error"));
     let (plan_part, reads_part) = (kept("plan.part"), kept("reads.part"));
     for stale in [&plan, &plan_part, &reads_part] {
         remove_kept(stale);
     }
-    let asked = kept("request");
-    write_kept(&asked, format!("{}\n", request.line).as_bytes());
-    let dated = fs::metadata(&asked)
-        .and_then(|metadata| metadata.modified())
-        .unwrap_or_else(|source| {
-            cli_exit(CliError::ReadInput {
-                path: asked.display().to_string(),
-                source,
-            })
-        });
+    write_kept(&kept("request"), format!("{}\n", request.line).as_bytes());
 
     let run = std::process::Command::new(program)
         .arg("--plan-reads")

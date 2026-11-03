@@ -207,9 +207,9 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("clean_stale", 9),
             ("cmd_verify", 1),
             ("walk", 2),
-            // The date of the request a `plan-batch` run has just written,
-            // which its answer is dated by.
-            ("answer_plan_request", 1),
+            // The date of the stamp a `plan-batch` run has just written,
+            // which its answers are dated by.
+            ("date_written_now", 1),
         ],
     ),
     (

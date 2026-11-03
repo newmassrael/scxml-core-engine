@@ -61,34 +61,45 @@
 # arguments, beside the list of the files the plan read (`<key>.reads`,
 # `sce-codegen --plan-reads`, the prerequisites the depfile of the same run
 # names: its document, what it includes and imports, its source set, its
-# deploy, the templates and the generator). A kept answer is reused only when
-# neither the generator nor any file of its list is newer than it, compared
-# as CMake compares files (`IS_NEWER_THAN`, which calls a tie newer). The
-# generator dates an answer when its request was written, before the plan
-# read anything, so a file that changed while it ran is never older than
-# it. An answer with no list is never reused.
+# deploy, the templates and the generator; the files the plan produced left
+# out; a file it looked for and did not find written `?<path>`). A kept
+# answer is reused only when neither the generator nor any file of its list
+# is newer than it, compared as CMake compares files (`IS_NEWER_THAN`, which
+# calls a tie newer), and every file it did not find is still absent. The
+# generator dates every answer of a batch when the batch begins, before any
+# plan read anything and strictly after every file written before it, so a
+# file that changed while a plan ran is never older than the answer and a
+# document staged just before the batch never ties with it. An answer with
+# no list is never reused.
 #
 # Every plan not kept is asked of `sce-codegen plan-batch`, which runs each
 # request as the `--plan generate` run a single ask would make, as many at a
 # time as there are processors (`SCE_CODEGEN_PLAN_JOBS`), and keeps each
-# answer where the next ask finds it. Three moments send it more than one:
+# answer where the next ask finds it. A route asks every plan it will declare
+# before it declares one ("request first, declare after"):
 #   - when this module is first included, every answer the last configure of
-#     this build tree asked for that is no longer current, which is every
-#     plan after the generator is rebuilt (`_sce_codegen_plan_refresh`);
-#   - a route that knows its plans before it declares them queues them
-#     (`sce_codegen_plan_request`) and sends them together
-#     (`sce_codegen_plan_prefetch`), as the conformance route does for every
-#     fixture the registry lists;
-#   - any other plan not kept is sent alone, when it is asked.
+#     this build tree asked for that is no longer current is asked again in
+#     one batch, which is every plan after the generator is rebuilt
+#     (`_sce_codegen_plan_refresh`);
+#   - a route queues the plans of its generations
+#     (`sce_codegen_plan_request`, `sce_codegen_generation_request`) and sends
+#     them together (`sce_codegen_plan_prefetch`) before declaring them: the
+#     conformance route for every fixture the registry lists, and, after their
+#     last registration, the C11 conformance and C++ integration fixtures; the
+#     C11 integration fixtures and the Mesh fixtures, whose targets compile
+#     each one's files right after it is registered, declare at the end of
+#     their directory (`cmake_language(DEFER)`) and hand their callers a
+#     generator expression for the files;
+#   - a plan asked otherwise and not kept is sent alone, when it is asked.
 # At the end of the configure, the answers no plan asked for are removed,
 # the list of the asked ones is kept for the next configure, and one line
 # says how many plans were asked, how many were kept, and how many the
-# generator was sent (`_sce_codegen_plan_settle`).
+# generator was sent (`_sce_codegen_plan_settle`), followed, when a kept
+# answer was not current, by why (`stale.txt` holds every reason).
 #
-# What the cache cannot see is what no list names: a file the plan looked
-# for and did not find, which a new file of that name could change, and a
-# file put back with an older date than the answer. A depfile has the same
-# blind spots; removing `<build>/sce-codegen-plans` asks every plan again.
+# What the cache cannot see is what no list names, and a file put back with
+# an older date than the answer. A depfile has the same blind spots;
+# removing `<build>/sce-codegen-plans` asks every plan again.
 
 include_guard(GLOBAL)
 
@@ -186,23 +197,55 @@ endfunction()
 #
 #   Set VAR to TRUE when the answer kept at <entry> is the one the generator
 #   would give now: it is there with the list of the files its plan read, and
-#   neither the generator nor any of those files is newer than it. A file of
-#   the list that is gone is newer, as `IS_NEWER_THAN` reads a missing file,
-#   and so is one dated the same instant as the answer.
+#   neither the generator nor any of those files is newer than it, and every
+#   file the plan looked for and did not find (`?<path>`) is still absent. A
+#   file of the list that is gone is newer, as `IS_NEWER_THAN` reads a missing
+#   file, and so is one dated the same instant as the answer.
+#
+#   An answer that is not current says why: the reason is kept for
+#   `_sce_codegen_plan_settle` to report, so a configure that asks the
+#   generator again names what made it.
 function(_sce_codegen_plan_fresh VAR ENTRY)
     set(${VAR} FALSE PARENT_SCOPE)
-    if(NOT EXISTS "${ENTRY}.plan" OR NOT EXISTS "${ENTRY}.reads")
-        return()
+    set(_WHY "")
+    if(NOT EXISTS "${ENTRY}.plan")
+        set(_WHY "no answer is kept")
+    elseif(NOT EXISTS "${ENTRY}.reads")
+        set(_WHY "the answer has no list of what its plan read")
+    elseif("${SCE_CODEGEN}" IS_NEWER_THAN "${ENTRY}.plan")
+        set(_WHY "${SCE_CODEGEN} is newer")
+    else()
+        file(STRINGS "${ENTRY}.reads" _READS ENCODING UTF-8)
+        foreach(_READ IN LISTS _READS)
+            if("${_READ}" MATCHES "^\\?(.*)$")
+                if(EXISTS "${CMAKE_MATCH_1}")
+                    set(_WHY "${CMAKE_MATCH_1}, absent when it was planned, is there")
+                    break()
+                endif()
+            elseif(NOT EXISTS "${_READ}")
+                set(_WHY "${_READ}, which it read, is gone")
+                break()
+            elseif("${_READ}" IS_NEWER_THAN "${ENTRY}.plan")
+                if("${ENTRY}.plan" IS_NEWER_THAN "${_READ}")
+                    set(_WHY "${_READ} is dated the same instant as the answer")
+                else()
+                    set(_WHY "${_READ} is newer")
+                endif()
+                break()
+            endif()
+        endforeach()
     endif()
-    if("${SCE_CODEGEN}" IS_NEWER_THAN "${ENTRY}.plan")
-        return()
-    endif()
-    file(STRINGS "${ENTRY}.reads" _READS ENCODING UTF-8)
-    foreach(_READ IN LISTS _READS)
-        if("${_READ}" IS_NEWER_THAN "${ENTRY}.plan")
-            return()
+    if(NOT "${_WHY}" STREQUAL "")
+        set(_DOCUMENT "${ENTRY}")
+        if(EXISTS "${ENTRY}.request")
+            file(READ "${ENTRY}.request" _ASKED)
+            if("${_ASKED}" MATCHES "\tgenerate\t([^\t\n]*)")
+                set(_DOCUMENT "${CMAKE_MATCH_1}")
+            endif()
         endif()
-    endforeach()
+        set_property(GLOBAL APPEND PROPERTY _SCE_CODEGEN_PLAN_STALE "${_DOCUMENT}: ${_WHY}")
+        return()
+    endif()
     set(${VAR} TRUE PARENT_SCOPE)
 endfunction()
 
@@ -352,6 +395,29 @@ function(_sce_codegen_plan_settle)
         "SCE: generation plans: ${_COUNT_ASKED} asked, ${_COUNT_KEPT} answered from the "
         "cache; ${_COUNT_SENT} sent to sce-codegen in ${_COUNT_BATCHES} batch(es) "
         "(${_CACHE})")
+
+    # Why each kept answer that was asked again was not current: every reason
+    # in `stale.txt`, and the first few said, an answer never kept aside. A
+    # configure that changed nothing has none to say.
+    get_property(_STALE GLOBAL PROPERTY _SCE_CODEGEN_PLAN_STALE)
+    list(REMOVE_DUPLICATES _STALE)
+    string(JOIN "\n" _STALE_TEXT ${_STALE})
+    file(WRITE "${_CACHE}/stale.txt" "${_STALE_TEXT}\n")
+    set(_SAID "")
+    foreach(_REASON IN LISTS _STALE)
+        if(NOT "${_REASON}" MATCHES ": no answer is kept$")
+            list(APPEND _SAID "${_REASON}")
+        endif()
+    endforeach()
+    list(LENGTH _SAID _SAID_COUNT)
+    if(_SAID_COUNT GREATER 0)
+        list(SUBLIST _SAID 0 5 _FIRST)
+        string(JOIN "\n    " _FIRST_TEXT ${_FIRST})
+        message(STATUS
+            "SCE: ${_SAID_COUNT} kept plan answer(s) were not current, among them:\n"
+            "    ${_FIRST_TEXT}\n"
+            "  every reason: ${_CACHE}/stale.txt")
+    endif()
 endfunction()
 
 # sce_codegen_plan_request(STEM <stem> DOCUMENT <document> OUTPUT_DIR <dir>
@@ -920,6 +986,69 @@ macro(_sce_codegen_plan_publish TO FROM)
     endforeach()
 endmacro()
 
+# _sce_codegen_generation_plan_options(<VAR> <PARSED> <CALLER>)
+#
+#   The options `sce_codegen_plan` is asked with for one generation whose
+#   options `cmake_parse_arguments` parsed into `<PARSED>_*` in the caller's
+#   scope: the one spelling for `sce_codegen_generation`, which asks the plan,
+#   and `sce_codegen_generation_request`, which asks it ahead. The stem is the
+#   document's name when not given, and the deploy is passed as the run's
+#   `--deploy`. CALLER names the call in a refusal.
+function(_sce_codegen_generation_plan_options VAR PARSED CALLER)
+    foreach(_REQUIRED DOCUMENT OUTPUT_DIR LANGUAGE)
+        if("${${PARSED}_${_REQUIRED}}" STREQUAL "")
+            message(FATAL_ERROR "${CALLER}: ${_REQUIRED} is required")
+        endif()
+    endforeach()
+    set(_STEM "${${PARSED}_STEM}")
+    if("${_STEM}" STREQUAL "")
+        get_filename_component(_STEM "${${PARSED}_DOCUMENT}" NAME_WLE)
+    endif()
+    set(_OPTIONS
+        STEM "${_STEM}"
+        DOCUMENT "${${PARSED}_DOCUMENT}"
+        OUTPUT_DIR "${${PARSED}_OUTPUT_DIR}"
+        LANGUAGE "${${PARSED}_LANGUAGE}")
+    if(${PARSED}_CHILD_GENERATIONS)
+        list(APPEND _OPTIONS CHILD_GENERATIONS)
+    endif()
+    foreach(_PASSED INPUT_ROOT CHILDREN_HELD_IN CLAIM)
+        if(NOT "${${PARSED}_${_PASSED}}" STREQUAL "")
+            list(APPEND _OPTIONS ${_PASSED} "${${PARSED}_${_PASSED}}")
+        endif()
+    endforeach()
+    list(APPEND _OPTIONS ARGS)
+    if(${PARSED}_DEPLOY)
+        list(APPEND _OPTIONS --deploy "${${PARSED}_DEPLOY}")
+    endif()
+    list(APPEND _OPTIONS ${${PARSED}_ARGS})
+    set(${VAR} "${_OPTIONS}" PARENT_SCOPE)
+endfunction()
+
+# sce_codegen_generation_request(DOCUMENT <document> OUTPUT_DIR <dir>
+#     LANGUAGE <cpp|c11> [STEM <stem>] [DEPLOY <deploy.yaml>]
+#     [INPUT_ROOT <dir>] [CHILDREN_HELD_IN <dir>] [CHILD_GENERATIONS]
+#     [CLAIM <global property>] [ARGS <arg>...] [COMMENT <text>])
+#
+#   Ask ahead for the plan a later `sce_codegen_generation(<PREFIX> ...)`
+#   with the same options asks (`sce_codegen_plan_request`), so that the
+#   generations a caller declares one after another are planned in one batch
+#   (`sce_codegen_plan_prefetch`) before the first of them. COMMENT is taken
+#   so a caller can pass the very options it declares with; it changes no
+#   request.
+function(sce_codegen_generation_request)
+    cmake_parse_arguments(PARSE_ARGV 0 _SCGR "CHILD_GENERATIONS"
+        "STEM;DOCUMENT;OUTPUT_DIR;LANGUAGE;DEPLOY;INPUT_ROOT;CHILDREN_HELD_IN;CLAIM;COMMENT"
+        "ARGS")
+    if(_SCGR_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR
+            "sce_codegen_generation_request: unexpected argument(s): "
+            "${_SCGR_UNPARSED_ARGUMENTS}")
+    endif()
+    _sce_codegen_generation_plan_options(_OPTIONS _SCGR "sce_codegen_generation_request")
+    sce_codegen_plan_request(${_OPTIONS})
+endfunction()
+
 # sce_codegen_generation(<PREFIX>
 #     DOCUMENT <document> OUTPUT_DIR <dir> LANGUAGE <cpp|c11>
 #     [STEM <stem>]
@@ -1000,37 +1129,11 @@ function(sce_codegen_generation PREFIX)
                 "sce_codegen_generation(${PREFIX}): CHILD names a generation of the plan "
                 "FROM names")
         endif()
-        foreach(_REQUIRED DOCUMENT OUTPUT_DIR LANGUAGE)
-            if("${_SCGA_${_REQUIRED}}" STREQUAL "")
-                message(FATAL_ERROR "sce_codegen_generation(${PREFIX}): ${_REQUIRED} is required")
-            endif()
-        endforeach()
-        set(_STEM "${_SCGA_STEM}")
-        if("${_STEM}" STREQUAL "")
-            get_filename_component(_STEM "${_SCGA_DOCUMENT}" NAME_WLE)
-        endif()
-        set(_RUN_ARGS "")
+        _sce_codegen_generation_plan_options(_PLAN_OPTIONS _SCGA "sce_codegen_generation(${PREFIX})")
         if(_SCGA_DEPLOY)
-            set(_RUN_ARGS --deploy "${_SCGA_DEPLOY}")
             list(APPEND _DEPENDS "${_SCGA_DEPLOY}")
         endif()
-        list(APPEND _RUN_ARGS ${_SCGA_ARGS})
-        set(_PLAN_OPTIONS "")
-        if(_SCGA_CHILD_GENERATIONS)
-            list(APPEND _PLAN_OPTIONS CHILD_GENERATIONS)
-        endif()
-        foreach(_PASSED INPUT_ROOT CHILDREN_HELD_IN CLAIM)
-            if(NOT "${_SCGA_${_PASSED}}" STREQUAL "")
-                list(APPEND _PLAN_OPTIONS ${_PASSED} "${_SCGA_${_PASSED}}")
-            endif()
-        endforeach()
-        sce_codegen_plan(_SCGA_PLAN
-            STEM "${_STEM}"
-            DOCUMENT "${_SCGA_DOCUMENT}"
-            OUTPUT_DIR "${_SCGA_OUTPUT_DIR}"
-            LANGUAGE "${_SCGA_LANGUAGE}"
-            ${_PLAN_OPTIONS}
-            ARGS ${_RUN_ARGS})
+        sce_codegen_plan(_SCGA_PLAN ${_PLAN_OPTIONS})
         if(_SCGA_INPUT_ROOT)
             set(_INPUT_ROOT_ARGS --input-root "${_SCGA_INPUT_ROOT}")
         endif()

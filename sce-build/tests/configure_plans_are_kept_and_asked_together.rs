@@ -128,7 +128,7 @@ fn a_plan_lists_what_it_read_and_answers_as_it_does_without_the_list() {
     );
     assert!(!out.exists(), "a plan asked for its reads wrote the output");
 
-    let read = lines_of(&reads);
+    let (read, absent) = read_list(&reads);
     assert!(
         read.contains(&text(&door)),
         "the document the plan read is not in its list: {read:?}"
@@ -145,13 +145,56 @@ fn a_plan_lists_what_it_read_and_answers_as_it_does_without_the_list() {
         "the templates the plan rendered are not in its list: {read:?}"
     );
     assert!(
-        read.iter().all(|line| Path::new(line).is_absolute()),
-        "a path of the list is relative, so a reader elsewhere reads another file: {read:?}"
+        read.iter()
+            .chain(&absent)
+            .all(|line| Path::new(line).is_absolute()),
+        "a path of the list is relative, so a reader elsewhere reads another file: \
+         {read:?} {absent:?}"
     );
     assert!(
-        read.iter().all(|line| !Path::new(line).starts_with(&out)),
-        "the list names a file the plan writes: {read:?}"
+        read.iter().all(|line| Path::new(line).exists()),
+        "the list says a file was read that is not there, which a reader takes as changed \
+         on every configure: {read:?}"
     );
+    assert!(
+        absent.iter().all(|line| !Path::new(line).exists()),
+        "the list says a file is absent that is there: {absent:?}"
+    );
+    assert!(
+        read.iter()
+            .chain(&absent)
+            .all(|line| !Path::new(line).starts_with(&out)),
+        "the list names a file the plan writes: {read:?} {absent:?}"
+    );
+}
+
+/// Every file a plan's answer says it writes, its child generations'
+/// included: a line without a tab is the run's own file, a
+/// `<child>\t<file>` line one of a child generation's, and a
+/// `<child>\t\t<argument>...` line states arguments and names no file.
+fn planned_files(plan: &Output) -> Vec<String> {
+    String::from_utf8_lossy(&plan.stdout)
+        .lines()
+        .filter_map(|line| match line.split_once('\t') {
+            None => Some(line.to_string()),
+            Some((_, rest)) if rest.starts_with('\t') => None,
+            Some((_, file)) => Some(file.to_string()),
+        })
+        .collect()
+}
+
+/// A plan's list of reads, split as a reader splits it: the files it read,
+/// and the files it looked for and did not find (`?<path>`).
+fn read_list(path: &Path) -> (Vec<String>, Vec<String>) {
+    let mut read = Vec::new();
+    let mut absent = Vec::new();
+    for line in lines_of(path) {
+        match line.strip_prefix('?') {
+            Some(missing) => absent.push(missing.to_string()),
+            None => read.push(line),
+        }
+    }
+    (read, absent)
 }
 
 #[test]
@@ -199,19 +242,23 @@ fn a_plan_of_children_lists_no_file_the_plan_writes() {
             String::from_utf8_lossy(&plan.stdout).contains('\t'),
             "{language}: no child generation was planned, so this proves nothing about one"
         );
-        let read = lines_of(&reads);
+        let (read, absent) = read_list(&reads);
         assert!(
             read.contains(&text(&fixture_dir("216").join("test216.scxml"))),
             "{language}: the fixture is not in the list: {read:?}"
         );
+        // Neither as read nor as absent: a file the plan writes is on no
+        // disk before the build, and after it every build rewrites it, so
+        // either way its answer would be planned again on every configure.
         let written: Vec<&String> = read
             .iter()
+            .chain(&absent)
             .filter(|line| Path::new(line).starts_with(&out))
             .collect();
         assert!(
             written.is_empty(),
-            "{language}: the list names files the plan writes, which no configure finds on \
-             disk before the build, so the answer would never be reused: {written:?}"
+            "{language}: the list names files the plan writes, so the answer would be \
+             planned again on every configure: {written:?}"
         );
     }
 }
@@ -311,12 +358,45 @@ fn a_batch_answers_each_request_as_the_plan_of_it_alone_does() {
                 "{name}: the batch's answer is not the plan's own"
             );
             assert!(kept("reads").is_file(), "{name}: no list of reads was kept");
+            // No file the plan writes, its children's included, is in the
+            // list, as read or as absent, and every file listed as read is
+            // there: a configure would otherwise find the answer stale every
+            // time, with nothing changed.
+            let (read, absent) = read_list(&kept("reads"));
+            let written = planned_files(&alone);
+            let named: Vec<&String> = read
+                .iter()
+                .chain(&absent)
+                .filter(|line| written.contains(*line))
+                .collect();
+            assert!(
+                named.is_empty(),
+                "{name}: the list names files the plan writes: {named:?}"
+            );
+            let missing: Vec<&String> = read
+                .iter()
+                .filter(|line| !Path::new(line).exists())
+                .collect();
+            assert!(
+                missing.is_empty(),
+                "{name}: the list says files were read that are not there: {missing:?}"
+            );
             assert!(!kept("error").exists(), "{name}: an answer kept a refusal");
-            assert_eq!(
-                modified(&kept("plan")),
-                modified(&kept("request")),
-                "{name}: the answer is not dated when its request was written, so a file \
-                 changed while the plan ran could be older than the answer"
+            // Dated before the plan read anything: no later than the request
+            // the batch wrote before running it, so a file changed while the
+            // plan ran is not older than the answer.
+            assert!(
+                modified(&kept("plan")) <= modified(&kept("request")),
+                "{name}: the answer is dated after its plan began"
+            );
+            // And strictly after every file written before the batch began,
+            // so a document staged just before it is older than the answer
+            // and not tied with it.
+            assert!(
+                modified(&kept("plan")) > modified(&requests_file),
+                "{name}: the answer is not dated past the files written before the batch, \
+                 so a document staged just before it ties with the answer and is planned \
+                 again on every configure"
             );
         } else {
             assert_eq!(
