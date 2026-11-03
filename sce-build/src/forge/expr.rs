@@ -4666,7 +4666,15 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
             rename_identifiers(index, renames);
         }
         ExprKind::Call { callee, args, .. } => {
-            rename_identifiers(callee, renames);
+            // A call of a builtin is the vocabulary's whatever the document names
+            // ([`vocabulary_names`]), so its callee is no name of the author's and no
+            // rename of one reaches it: an author's local `len`, which a backend may
+            // spell otherwise (C11's destination `(*len)`, docs/adr/0082), leaves
+            // `len(len)` the length of that local.
+            let builtin = matches!(&callee.kind, ExprKind::Ident(name) if EXPR_BUILTINS.contains(&name.as_str()));
+            if !builtin {
+                rename_identifiers(callee, renames);
+            }
             for arg in args {
                 rename_identifiers(arg, renames);
             }
@@ -13992,6 +14000,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(out, "pendingEventData_ + 1");
+    }
+
+    /// An author's local named as a builtin keeps the builtin a builtin: the rename
+    /// of the local (C11 reaches an algorithm's buffer through its destination,
+    /// `(*len)`, docs/adr/0082) reaches the argument and not the callee, so
+    /// `len(len)` is the length of the local and not a call of it.
+    #[test]
+    fn a_rename_of_a_local_named_as_a_builtin_leaves_the_builtin() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("len", InferredType::BytesBuffer);
+        let mut renames = HashMap::new();
+        renames.insert("len", "(*len)");
+        let out = transpile_typed(
+            "len(len)",
+            ExprTarget::C,
+            &ctx,
+            &renames,
+            InferredType::Unknown,
+        )
+        .unwrap();
+        assert!(
+            !out.contains("(*len)("),
+            "the builtin is called as the local: {out}"
+        );
+        assert!(out.contains("(*len)"), "the local is renamed: {out}");
     }
 
     #[test]
