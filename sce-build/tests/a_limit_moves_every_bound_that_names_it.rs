@@ -215,10 +215,12 @@ fn what_a_build_gives_the_name_is_what_the_files_it_writes_hold() {
     assert_eq!(hash(&machine_moved), hash(&again));
 }
 
-/// The C11 backend returns an algorithm's list by value on the stack, a few copies of it at
-/// a call, so a bound a stack cannot hold is a crash at the call and not a refusal the
-/// machine could report. It is refused where the bound is built in, by the algorithm and by
-/// the machine that calls it, and the backends whose lists live on the heap take it.
+/// A C11 machine holds an algorithm's list on the stack at the call, a few copies of it, so
+/// a bound a stack cannot hold is a crash at the call and not a refusal the machine could
+/// report. It is refused where the bound is built in, by the machine that calls the
+/// algorithm, and the backends whose lists live on the heap take it. The algorithm itself
+/// takes it: it writes its list into a destination its caller holds (docs/adr/0082), and
+/// a caller may hold one of any size where it chooses.
 #[test]
 fn a_bound_the_c_stack_cannot_hold_is_refused_where_it_is_built_in() {
     let (dir, path) = documents(&algorithm(4, ROOM), &machine(4, ROOM));
@@ -240,19 +242,22 @@ fn a_bound_the_c_stack_cannot_hold_is_refused_where_it_is_built_in() {
     };
     // A list of bytes holds a byte an element: 200000 of them are 200 KB, which a stack
     // holds, and 300000 are more than the 256 KiB a list may take.
-    for document in [&path, &algorithm_path] {
-        let (ok, out) = generate_c("room=200000", document);
-        assert!(ok, "{}: a bound a stack holds:\n{out}", document.display());
-        let (ok, out) = generate_c("room=300000", document);
+    let (ok, out) = generate_c("room=200000", &path);
+    assert!(ok, "{}: a bound a stack holds:\n{out}", path.display());
+    let (ok, out) = generate_c("room=300000", &path);
+    assert!(!ok, "{}: expected a refusal, got:\n{out}", path.display());
+    assert!(
+        out.contains("stack") && out.contains("--limit"),
+        "{}: the refusal must say what to do:\n{out}",
+        path.display()
+    );
+    // The algorithm takes both: its list is its caller's to hold.
+    for given in ["room=200000", "room=300000"] {
+        let (ok, out) = generate_c(given, &algorithm_path);
         assert!(
-            !ok,
-            "{}: expected a refusal, got:\n{out}",
-            document.display()
-        );
-        assert!(
-            out.contains("stack") && out.contains("--limit"),
-            "{}: the refusal must say what to do:\n{out}",
-            document.display()
+            ok,
+            "{}: the algorithm writes into its caller's destination at {given}:\n{out}",
+            algorithm_path.display()
         );
     }
     // The backends whose lists live on the heap take the same bound.

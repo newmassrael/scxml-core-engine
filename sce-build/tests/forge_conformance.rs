@@ -20575,8 +20575,8 @@ fn run_cobs_vectors_c11(dir: &std::path::Path, test_id: &str) -> Result<(), Stri
          static bool check(int idx, const uint8_t *in, size_t in_len,\n\
          \x20                 const uint8_t *want, size_t want_len) {{\n\
          \x20   sce_forge_bytes_view_t view = {{ .data = in, .len = in_len }};\n\
-         \x20   algorithm_cobs_encode_result_t got = algorithm_cobs_encode(view);\n\
-         \x20   if (!got.ok) {{ printf(\"vector %d: ok flag false\\n\", idx); return false; }}\n\
+         \x20   algorithm_cobs_encode_bytes_t got;\n\
+         \x20   if (!algorithm_cobs_encode(view, &got)) {{ printf(\"vector %d: not written\\n\", idx); return false; }}\n\
          \x20   if (got.len != want_len || memcmp(got.bytes, want, want_len) != 0) {{\n\
          \x20       printf(\"vector %d: COBS output mismatch\\n\", idx);\n\
          \x20       return false;\n\
@@ -20586,14 +20586,14 @@ fn run_cobs_vectors_c11(dir: &std::path::Path, test_id: &str) -> Result<(), Stri
          \n\
          int main(void) {{\n\
          {cases}\n\
-         \x20   /* §4.12: past `returns-max-size` the result reports failure\n\
+         \x20   /* §4.12: past `returns-max-size` the call reports failure\n\
          \x20    * rather than truncating silently. 40 non-zero bytes encode to\n\
-         \x20    * 41, which the 32-byte buffer cannot hold. */\n\
+         \x20    * 41, which the 32-byte destination cannot hold. */\n\
          \x20   {{ static uint8_t big[40];\n\
          \x20     for (size_t i = 0; i < sizeof(big); ++i) big[i] = (uint8_t)(i + 1);\n\
          \x20     sce_forge_bytes_view_t view = {{ .data = big, .len = sizeof(big) }};\n\
-         \x20     algorithm_cobs_encode_result_t got = algorithm_cobs_encode(view);\n\
-         \x20     if (got.ok) {{ printf(\"overflow: ok flag stayed true\\n\"); return 1; }}\n\
+         \x20     algorithm_cobs_encode_bytes_t got;\n\
+         \x20     if (algorithm_cobs_encode(view, &got)) {{ printf(\"overflow: reported written\\n\"); return 1; }}\n\
          \x20     if (got.len > 32u) {{ printf(\"overflow: wrote past the cap\\n\"); return 1; }} }}\n\
          \x20   return 0;\n\
          }}\n"

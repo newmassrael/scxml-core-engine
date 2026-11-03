@@ -12,10 +12,11 @@
    per case to make every invocation start from a clean buffer. Numeric
    args copy into the case struct directly.
 
-   A `list<T>` return (SCE_FORGE.md §4.12) is the algorithm's
-   `<fn>_result_t { items[N], len, ok }`. Its expected elements are baked
-   into an array as long as the longest case (at least one slot, since C11
-   has no empty array), and compared by `ok`, then length, then element.
+   A `list<T>` return (SCE_FORGE.md §4.12) is written into the caller's
+   `<fn>_list_t { items[N], len }` and the call answers whether it was
+   (docs/adr/0082). Its expected elements are baked into an array as long as
+   the longest case (at least one slot, since C11 has no empty array), and
+   compared by that answer, then length, then element.
 
    A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
    `<Pascal>Payload_t`, baked into the case table with a designated
@@ -24,7 +25,9 @@
    renders.
 
    A `may-fail` algorithm (SCE_FORGE.md §3.4.1) returns its
-   `<fn>_result_t` with `ok` false and `why` naming the failure. A case that
+   `<fn>_result_t` with `ok` false and `why` naming the failure; one that
+   returns a list or bytes answers `false` and records the failure in the
+   record the harness hands it. A case that
    names a failure (`"fails": "overflow"`) is baked with `fails` set and no
    `expected`, and is judged by the failure's contract name before anything
    reads `expected`. #}
@@ -35,6 +38,7 @@
    header declares for the variant the oracle names, and compared as the number
    it is. #}
 {% macro c_field(fld, raw) %}{% if fld.enum_document is defined %}{% for v in fld.variants %}{% if v.name == raw %}{{ v.ident }}{% endif %}{% endfor %}{% elif fld.type == "string" %}{ {{ raw | c_literal(fld.type) }} }{% else %}{{ raw | c_literal(fld.type) }}{% endif %}{% endmacro %}
+{% set destination = f.output.list_of is defined or f.output.type == "bytes" %}
 {% set call_args %}{% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endset %}
 {% if f.output.list_of is defined or f.output.type == "bytes" %}
 {% set ns = namespace(width=1) %}
@@ -154,7 +158,34 @@ static void test_{{ f.name }}(void) {
         {{ arg_ty | c_type }} arg{{ loop.index0 }} = cases[i].input_arg{{ loop.index0 }};
 {% endif %}
 {% endfor %}
+{% if destination %}
+{# The destination the algorithm writes its list or bytes into, held here by the
+   harness as any caller holds it (docs/adr/0082), and the record a `may-fail`
+   one passes its failure on into. #}
+        {{ f.function }}_{% if f.output.type == "bytes" %}bytes{% else %}list{% endif %}_t actual;
 {% if f.may_fail %}
+        sce_forge_algorithm_failure_t failure = { false, SCE_FORGE_ALGORITHM_OVERFLOW };
+{% endif %}
+        const bool ok = {{ f.function }}({{ call_args }}{% if f.args %}, {% endif %}&actual{% if f.may_fail %}, &failure{% endif %});
+{% if f.may_fail %}
+        if (cases[i].fails != NULL) {
+            if (ok || strcmp(cases[i].fails, sce_forge_algorithm_error_name(failure.error)) != 0) {
+                fprintf(stderr,
+                    "FAIL: {{ f.name }} case %zu: expected failure %s, got %s\n",
+                    i, cases[i].fails, ok ? "a value" : sce_forge_algorithm_error_name(failure.error));
+                ++g_failures;
+            }
+            continue;
+        }
+        if (!ok) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu: expected a value, failed with %s\n",
+                i, sce_forge_algorithm_error_name(failure.error));
+            ++g_failures;
+            continue;
+        }
+{% endif %}
+{% elif f.may_fail %}
         const {{ f.function }}_result_t result = {{ f.function }}({{ call_args }});
         if (cases[i].fails != NULL) {
             if (result.ok || strcmp(cases[i].fails, sce_forge_algorithm_error_name(result.why)) != 0) {
@@ -193,11 +224,10 @@ static void test_{{ f.name }}(void) {
 {% endif %}
 {% endfor %}
 {% elif f.output.list_of is defined %}
-        {{ f.function }}_result_t actual = {% if f.may_fail %}result{% else %}{{ f.function }}({{ call_args }}){% endif %};
-        if (!actual.ok || actual.len != cases[i].expected_len) {
+        if (!ok || actual.len != cases[i].expected_len) {
             fprintf(stderr,
                 "FAIL: {{ f.name }} case %zu: ok=%d len=%zu expected_len=%zu\n",
-                i, (int)actual.ok, actual.len, cases[i].expected_len);
+                i, (int)ok, ok ? actual.len : (size_t)0, cases[i].expected_len);
             ++g_failures;
             continue;
         }
@@ -246,13 +276,12 @@ static void test_{{ f.name }}(void) {
         }
 {% endif %}
 {% elif f.output.type == "bytes" %}
-{# A `bytes` return is the algorithm's `<fn>_result_t { bytes[N], len, ok }`,
-   compared by `ok`, then length, then byte. #}
-        {{ f.function }}_result_t actual = {% if f.may_fail %}result{% else %}{{ f.function }}({{ call_args }}){% endif %};
-        if (!actual.ok || actual.len != cases[i].expected_len) {
+{# A `bytes` return is written into `<fn>_bytes_t { bytes[N], len }`,
+   compared by whether it was written, then length, then byte. #}
+        if (!ok || actual.len != cases[i].expected_len) {
             fprintf(stderr,
                 "FAIL: {{ f.name }} case %zu: ok=%d len=%zu expected_len=%zu\n",
-                i, (int)actual.ok, (size_t)actual.len, cases[i].expected_len);
+                i, (int)ok, ok ? (size_t)actual.len : (size_t)0, cases[i].expected_len);
             ++g_failures;
             continue;
         }

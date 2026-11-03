@@ -98,7 +98,7 @@ succeeded:
 
 | Backend | Destination | Return | Failure |
 |---|---|---|---|
-| C11 | `<symbol>_list_t *out`, a struct `{ T items[N]; size_t len; }` (bytes: `uint8_t bytes[N]`) | `bool` | a `may-fail` algorithm also takes `sce_forge_algorithm_failure_t *failure`, which it records into, as a body's checked operations already do |
+| C11 | `<symbol>_list_t *out`, a struct `{ T items[N]; size_t len; }` (bytes: `<symbol>_bytes_t`, over `uint8_t bytes[N]`) | `bool` | a `may-fail` algorithm also takes `sce_forge_algorithm_failure_t *failure`, which it records into, as a body's checked operations already do |
 | Rust (both profiles) | `out: &mut SceOwnedList<T, N>` (bytes: `&mut SceBytes<N>`) | `Result<(), E>` with the `E` of today | as today |
 
 The body's one buffer (SCE_FORGE.md §4.12, v1 scope) is the destination itself. It starts by emptying it, appends
@@ -190,6 +190,16 @@ changes each backend says how (ADR 0078):
 3. The C11 algorithm. The destination struct, the `bool` return and the failure pointer; the conformance harness
    and the COBS gate move with it. The machine keeps calling through an adapter that holds the destination in a
    local until step 4, so this landing changes no machine's behaviour.
+   *Landed 2026-11-03.* The destination is the parameter after the declared ones, under the buffer's name, and the
+   body reads and writes it as `(*out)` (a rename of the buffer's name, so every expression and append reads it the
+   same way). A `may-fail` body keeps its own `sce_failure_` and passes a failure on into the caller's
+   `sce_caller_failure_`. `<symbol>_result_t`, `_take` and `_within` are gone for these algorithms. The algorithm
+   is no longer refused a large bound (`render_algorithm`), since its caller holds the storage; the machine still
+   is. A statechart's direct call is already the statement of §3, with its destination a local of the statement
+   (`<symbol>_list_t sce_list_`) rather than `scratch`, and its bound held by `sce_forge_algorithm_held_within`
+   only after a call that wrote. An adapter calls the algorithm into its own local and hands its result struct
+   back by value as before. Whether a call writes a destination is typed, not read off a name: the callee's
+   `CallReading::IntoDestination`, carried on the call as `into_destination`, which Rust's spelling now reads too.
 4. The C11 machine. `scratch`, the statement of §3, and the removal of `_take`, `_within` and
    `list_result_type` for lists. The stack refusal goes (§4). The refusal test becomes the large-bound test, and the
    `-fstack-usage` gate is added.

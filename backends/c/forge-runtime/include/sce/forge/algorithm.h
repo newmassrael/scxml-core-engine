@@ -82,6 +82,21 @@ static inline void sce_forge_algorithm_fail(sce_forge_algorithm_failure_t *f, sc
 }
 
 /*
+ * Whether a list of `len` elements, which an algorithm wrote into a destination
+ * (docs/adr/0082), fits the `capacity` of the variable that takes it: true when
+ * it does, and false with a capacity failure recorded in `f` when it does not,
+ * so the variable keeps what it held. The machine holds the same list wherever
+ * it runs, whatever bound the algorithm's own destination has.
+ */
+static inline bool sce_forge_algorithm_held_within(sce_forge_algorithm_failure_t *f, size_t len, uint32_t capacity) {
+    if (len > (size_t)capacity) {
+        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);
+        return false;
+    }
+    return true;
+}
+
+/*
  * `value`, handed back, when it holds no more than `capacity` UTF-8 bytes — the
  * bound a string variable of a `sce-static` machine declares — and "" with a
  * capacity failure recorded in `f` otherwise, which the statement around it

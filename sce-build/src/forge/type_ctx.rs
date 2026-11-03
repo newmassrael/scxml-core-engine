@@ -1631,6 +1631,10 @@ impl StaticScope {
                             // ([`StatelessSignature::list_return`]), so the call hands
                             // its caller a failure to receive.
                             may_fail: true,
+                            // The list is written into a destination the call hands
+                            // in where the backend's algorithm takes one
+                            // (docs/adr/0082).
+                            reading: crate::forge::types::CallReading::IntoDestination,
                             ..FuncSig::new(
                                 returned
                                     .params

@@ -34902,15 +34902,15 @@ impl<'a> ListSpelling<'a> {
         format!("SceOwnedList<{}, {cap}>", self.elem_name)
     }
 
-    /// The function's return type for a list. Rust returns only whether it
-    /// wrote its destination ([`Self::rust_destination`]), which carries the
-    /// capacity; C11's result struct carries it in its own typedef.
-    fn return_type(&self, primary_symbol: &str, may_fail: bool) -> String {
+    /// The function's return type for a list. Rust and C11 return only whether
+    /// they wrote the caller's destination ([`Self::rust_destination`],
+    /// [`Self::c11_destination_typedef`]), which carries the capacity.
+    fn return_type(&self, may_fail: bool) -> String {
         use crate::generator::Language;
         let t = &self.elem_name;
         match self.lang {
             Language::Rust => format!("Result<(), {}>", rust_algorithm_failure(may_fail)),
-            Language::C11 => format!("{primary_symbol}_result_t"),
+            Language::C11 => "bool".to_string(),
             Language::Cpp => format!("std::vector<{t}>"),
             Language::Go => format!("[]{t}"),
             Language::Python => format!("list[{t}]"),
@@ -34922,28 +34922,28 @@ impl<'a> ListSpelling<'a> {
         }
     }
 
-    /// The C11 result struct a list-returning function hands back by value.
-    fn c11_result_typedef(&self, cap: u32, primary_symbol: &str, may_fail: bool) -> String {
-        let t = &self.elem_name;
-        c11_result_struct(
-            &format!("    {t} items[{cap}];\n    size_t len;\n"),
-            primary_symbol,
-            may_fail,
+    /// The C11 destination a list-returning function writes into, which its
+    /// caller holds where it chooses (docs/adr/0082): `<symbol>_list_t`.
+    fn c11_destination_typedef(&self, cap: u32, primary_symbol: &str) -> String {
+        format!(
+            "typedef struct {{\n    {} items[{cap}];\n    size_t len;\n}} {};\n\n",
+            self.elem_name,
+            c11_list_destination_type(primary_symbol)
         )
     }
 
     /// Declaration of an empty buffer local of capacity `cap`.
-    fn declare(&self, pad: &str, local: &str, cap: u32, c11_result: &str) -> String {
+    fn declare(&self, pad: &str, local: &str, cap: u32) -> String {
         use crate::generator::Language;
         let t = &self.elem_name;
         match self.lang {
             // The buffer is the caller's destination, a parameter of its name
             // (docs/adr/0082): it is emptied where the body declares it.
             Language::Rust => format!("{pad}{local}.clear();\n"),
+            Language::C11 => format!("{pad}{}.len = 0u;\n", c11_destination(local)),
             Language::Cpp => {
                 format!("{pad}std::vector<{t}> {local};\n{pad}{local}.reserve({cap});\n")
             }
-            Language::C11 => format!("{pad}{c11_result} {local} = {{ .len = 0u, .ok = true }};\n"),
             Language::Go => format!("{pad}{local} := make([]{t}, 0, {cap})\n"),
             // A `list` exposes no pre-size API; the capacity reaches the
             // Python backend through the return's `returns-max-size`, as for
@@ -34982,7 +34982,7 @@ impl<'a> ListSpelling<'a> {
                 };
                 format!(
                     "{pad}if ({local}.len < {cap}u) {{ {local}.items[{local}.len++] = {value}; }} else {{ {} }}\n",
-                    channel.c11_capacity_exceeded(local)
+                    channel.c11_capacity_exceeded()
                 )
             }
             Language::Go if record => format!("{pad}{local} = append({local}, {e})\n"),
@@ -35108,7 +35108,6 @@ struct AlgorithmBodyCfg<'a> {
     return_value: Option<&'a crate::forge::model::AlgorithmValueType>,
     imports: &'a [ImportContext],
     append_buffers: &'a std::collections::HashMap<String, AppendBufferDecl>,
-    c11_result_type: Option<&'a str>,
     records: &'a std::collections::HashMap<String, String>,
     optional_records: &'a std::collections::HashMap<String, String>,
     borrowed_records: &'a std::collections::HashSet<String>,
@@ -35150,7 +35149,6 @@ fn lower_algorithm_body(
         return_value: cfg.return_value,
         imports: cfg.imports,
         append_buffers: cfg.append_buffers,
-        c11_result_type: cfg.c11_result_type,
         records: cfg.records,
         optional_records: cfg.optional_records,
         borrowed_records: cfg.borrowed_records,
@@ -35261,12 +35259,6 @@ struct AlgorithmLowerCtx<'a> {
     /// capacity to bound the result struct's fixed array on each
     /// `<sce:append>`; Rust bakes the bound into its container type.
     append_buffers: &'a std::collections::HashMap<String, AppendBufferDecl>,
-    /// SCE byte-buffer-build (§4.12): the C11 result-struct typedef name
-    /// (`<symbol>_result_t`) when the algorithm returns a buffer, else
-    /// `None`. The buffer `<sce:var>` lowers to a by-value local of this type
-    /// (the no-malloc carrier that doubles as the return value). Other
-    /// backends use a language-native growable buffer and ignore this.
-    c11_result_type: Option<&'a str>,
     /// Every record parameter, local and foreach item over a list of records
     /// (SCE_FORGE.md §4.12), keyed by the SCXML name, to the event-schema
     /// alias that types it — what a member assignment, a record local, a
@@ -35435,7 +35427,6 @@ fn lower_algorithm_stmt(
         return_value,
         imports,
         append_buffers,
-        c11_result_type,
         records,
         optional_records,
         borrowed_records,
@@ -35490,24 +35481,7 @@ fn lower_algorithm_stmt(
                 // A `list<T>` takes the list spelling; a `bytes` buffer keeps
                 // the byte containers below, byte-for-byte as before.
                 if let Some(elem) = sce_type.list_elem() {
-                    let result_ty = match lang {
-                        Language::C11 => c11_result_type.ok_or_else(|| {
-                            GenerateError::InvalidConfig(format!(
-                                "algorithm list buffer '{name}' lowered for C11 with no \
-                                 result-struct type — the algorithm must declare the list \
-                                 return (byte-buffer-build validator gates this)"
-                            ))
-                        })?,
-                        Language::Rust
-                        | Language::Cpp
-                        | Language::Kotlin
-                        | Language::Go
-                        | Language::Python
-                        | Language::Swift => "",
-                    };
-                    out.push_str(
-                        &ListSpelling::new(l, elem, imports)?.declare(pad, &local, cap, result_ty),
-                    );
+                    out.push_str(&ListSpelling::new(l, elem, imports)?.declare(pad, &local, cap));
                     return Ok(());
                 }
                 let line = match lang {
@@ -35520,16 +35494,7 @@ fn lower_algorithm_stmt(
                              {pad}{local}.reserve({cap});\n"
                         )
                     }
-                    Language::C11 => {
-                        let result_ty = c11_result_type.ok_or_else(|| {
-                            GenerateError::InvalidConfig(format!(
-                                "algorithm bytes buffer '{name}' lowered for C11 with no \
-                                 result-struct type — the algorithm must declare a `bytes` \
-                                 return (byte-buffer-build validator gates this)"
-                            ))
-                        })?;
-                        format!("{pad}{result_ty} {local} = {{ .len = 0u, .ok = true }};\n")
-                    }
+                    Language::C11 => format!("{pad}{}.len = 0u;\n", c11_destination(&local)),
                     Language::Go => format!("{pad}{local} := make([]byte, 0, {cap})\n"),
                     // `bytearray` exposes no pre-size API; the capacity reaches
                     // the Python backend through the return's `returns-max-size`.
@@ -36156,7 +36121,17 @@ fn lower_algorithm_stmt(
                 }
             };
             let cap_n = buffer.cap;
-            let local = l.local_id(target_key);
+            // C11's buffer is the caller's destination, behind the pointer of its
+            // name (docs/adr/0082).
+            let local = match lang {
+                Language::C11 => c11_destination(&l.local_id(target_key)),
+                Language::Rust
+                | Language::Cpp
+                | Language::Kotlin
+                | Language::Go
+                | Language::Python
+                | Language::Swift => l.local_id(target_key),
+            };
             // A `list<T>` takes one element, lowered into the element's slot:
             // `transpile_into` judges the value against the slot the way every
             // other typed write does (an integer slot takes integers only, a
@@ -36244,7 +36219,7 @@ fn lower_algorithm_stmt(
                     Language::Kotlin => format!("{pad}{local}.addAll({e})\n"),
                     Language::C11 => {
                         let n = cap_n;
-                        let overflow = channel.c11_capacity_exceeded(&local);
+                        let overflow = channel.c11_capacity_exceeded();
                         // Hoist the source view so a compound RHS evaluates once.
                         format!(
                             "{pad}{{\n\
@@ -36282,7 +36257,7 @@ fn lower_algorithm_stmt(
                         let n = cap_n;
                         format!(
                             "{pad}if ({local}.len < {n}u) {{ {local}.bytes[{local}.len++] = (uint8_t)({e}); }} else {{ {} }}\n",
-                            channel.c11_capacity_exceeded(&local)
+                            channel.c11_capacity_exceeded()
                         )
                     }
                     // The expression was typed as an unsigned byte, so it is a `UInt8`.
@@ -38197,33 +38172,16 @@ fn c11_take_of_a_scalar(value_type: &str, primary_symbol: &str) -> String {
     )
 }
 
-/// C11's `<symbol>_take` of a result that is its own value — a list, whose
-/// `items` and `len` are the struct's: the struct itself, or the failure recorded
-/// in the caller's `sce_failure_` and a zero one the statement around it never
-/// uses.
-fn c11_take_whole(primary_symbol: &str) -> String {
-    let why = "result.why";
-    format!(
-        "static inline {primary_symbol}_result_t {primary_symbol}_take(\
-         sce_forge_algorithm_failure_t *failure, {primary_symbol}_result_t result) {{\n\
-         \x20   if (!result.ok) {{\n\
-         \x20       sce_forge_algorithm_fail(failure, {why});\n\
-         \x20       return ({primary_symbol}_result_t){{0}};\n\
-         \x20   }}\n\
-         \x20   return result;\n\
-         }}\n\n\
-         /* The list a caller takes into a list variable of `capacity` elements: this\n\
-         \x20* result, or the capacity failure recorded in the caller's `sce_failure_`. */\n\
-         static inline {primary_symbol}_result_t {primary_symbol}_within(\
-         sce_forge_algorithm_failure_t *failure, {primary_symbol}_result_t result, \
-         uint32_t capacity) {{\n\
-         \x20   if (result.len > capacity) {{\n\
-         \x20       sce_forge_algorithm_fail(failure, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);\n\
-         \x20       return ({primary_symbol}_result_t){{0}};\n\
-         \x20   }}\n\
-         \x20   return result;\n\
-         }}\n\n"
-    )
+/// The C11 type of the destination a list-returning algorithm writes into,
+/// `{ T items[N]; size_t len; }`, held where its caller chooses (docs/adr/0082).
+pub(crate) fn c11_list_destination_type(primary_symbol: &str) -> String {
+    format!("{primary_symbol}_list_t")
+}
+
+/// The C11 type of the destination a `bytes`-returning algorithm writes into,
+/// `{ uint8_t bytes[N]; size_t len; }` (docs/adr/0082).
+fn c11_bytes_destination_type(primary_symbol: &str) -> String {
+    format!("{primary_symbol}_bytes_t")
 }
 
 /// The error a Rust algorithm's `Result` carries. A buffer append past its
@@ -38257,10 +38215,25 @@ struct ReturnChannel<'a> {
     /// The declared return as the backend spells its value, before any
     /// failure channel wraps it (`std::int32_t`, `std::vector<…>`).
     value_type: &'a str,
-    /// C11's result struct, `<symbol>_result_t` — the buffer a buffer return
-    /// builds in place, or a scalar's `{ value, ok, why }` when the algorithm
-    /// declares `may-fail`.
+    /// C11's result struct, `<symbol>_result_t`: a scalar's or a record's
+    /// `{ value, ok, why }` when the algorithm declares `may-fail`.
     c11_result: &'a str,
+    /// Whether the algorithm returns its buffer, which C11 writes into the
+    /// caller's destination (docs/adr/0082): its body then answers `bool` and
+    /// passes a failure on into the caller's [`C11_CALLER_FAILURE`].
+    c11_destination: bool,
+}
+
+/// The name of the C11 parameter a `may-fail` algorithm that returns a list or
+/// bytes records its failure into, the caller's own record (docs/adr/0082). The
+/// body keeps its `sce_failure_` as every C11 body does and passes it on here
+/// when a statement leaves one.
+const C11_CALLER_FAILURE: &str = "sce_caller_failure_";
+
+/// How a C11 body spells its buffer, which is the caller's destination behind the
+/// pointer of the buffer's own name (docs/adr/0082): `(*out).len`, `(*out).items`.
+fn c11_destination(local: &str) -> String {
+    format!("(*{local})")
 }
 
 impl ReturnChannel<'_> {
@@ -38280,16 +38253,17 @@ impl ReturnChannel<'_> {
             )
     }
 
-    /// C11's statement returning the buffer `local` whose append ran past its
-    /// capacity (§4.12). In a `may-fail` algorithm it also names the failure,
-    /// so the caller reads one `why` for every failure the contract admits.
-    fn c11_capacity_exceeded(&self, local: &str) -> String {
+    /// C11's statement that leaves a body whose append ran past its buffer's
+    /// capacity (§4.12): `false`, and in a `may-fail` algorithm the failure
+    /// recorded in the caller's record, so the caller reads one failure for
+    /// every one the contract admits.
+    fn c11_capacity_exceeded(&self) -> String {
         if self.may_fail {
             format!(
-                "{local}.ok = false; {local}.why = SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED; return {local};"
+                "sce_forge_algorithm_fail({C11_CALLER_FAILURE}, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED); return false;"
             )
         } else {
-            format!("{local}.ok = false; return {local};")
+            "return false;".to_string()
         }
     }
 
@@ -38321,11 +38295,10 @@ impl ReturnChannel<'_> {
                     ty = self.value_type,
                 )
             }
-            // A buffer is its own result struct, `ok` already set; a scalar
-            // is computed first and then wrapped.
-            Language::C11 if self.may_fail && buffer => {
-                format!("{}{pad}return {value};\n", self.check(pad))
-            }
+            // A buffer is already in the caller's destination (docs/adr/0082): the
+            // return says only that it was written. A scalar is computed first
+            // and then wrapped.
+            Language::C11 if buffer => format!("{}{pad}return true;\n", self.check(pad)),
             Language::C11 if self.may_fail => format!(
                 "{pad}{{\n\
                  {pad}    const {ty} sce_value_ = {value};\n\
@@ -38376,6 +38349,11 @@ impl ReturnChannel<'_> {
             Language::Cpp if self.may_fail => format!(
                 "{pad}if (sce_failure_.failed()) return {}::failure(sce_failure_.error());\n",
                 self.cpp_result()
+            ),
+            // A body that writes the caller's destination answers `false` and
+            // passes its failure on into the caller's record (docs/adr/0082).
+            Language::C11 if self.may_fail && self.c11_destination => format!(
+                "{pad}if (sce_failure_.failed) {{ sce_forge_algorithm_fail({C11_CALLER_FAILURE}, sce_failure_.error); return false; }}\n"
             ),
             Language::C11 if self.may_fail => format!(
                 "{pad}if (sce_failure_.failed) {{ return ({}){{ .ok = false, .why = sce_failure_.error }}; }}\n",
@@ -38559,6 +38537,11 @@ impl ReturnChannel<'_> {
             Language::Cpp => format!(
                 "{pad}return {}::failure(SCE::Forge::AlgorithmError::Precondition);\n",
                 self.cpp_result()
+            ),
+            // A body that writes the caller's destination answers `false` with the
+            // failure in the caller's record (docs/adr/0082).
+            Language::C11 if self.c11_destination => format!(
+                "{pad}sce_forge_algorithm_fail({C11_CALLER_FAILURE}, SCE_FORGE_ALGORITHM_PRECONDITION); return false;\n"
             ),
             Language::C11 => format!(
                 "{pad}return ({}){{ .ok = false, .why = SCE_FORGE_ALGORITHM_PRECONDITION }};\n",
@@ -39299,19 +39282,21 @@ impl<'a> AlgorithmTypes<'a> {
     }
 }
 
-/// The most bytes one list may take in the C11 backend where it crosses a call of an
+/// The most bytes one list may take in a C11 machine where it crosses a call of an
 /// algorithm, a few copies of it at once.
 ///
-/// C11 hands an algorithm's list back by value, in a struct with the whole bound of
-/// elements in it (`<symbol>_result_t { items[N]; … }`): the result, the buffer the
-/// algorithm builds it in, what its `_take` and `_within` return and the copy the machine
-/// makes of the argument it passes are each one such struct on the stack, five or so at a
-/// call. A bound that makes one of them megabytes is not a refusal the machine can
-/// report, it is a stack that is gone at the call (measured by reading the generated
-/// `todo_peer`: at the bound of a team's calendar, 65536 values of 88 bytes, a call needs
-/// about thirty megabytes of the eight a stack has). So it is refused where the bound is
-/// built in, naming what to do: build with a smaller one, or for a backend whose lists
-/// live on the heap (`sce:limit`, docs/SCE_ACCEPTED_SUBSET.md §2.15).
+/// A C11 algorithm writes its list into a destination its caller holds
+/// (docs/adr/0082), so the algorithm itself takes no bound from the stack and is not
+/// refused one. The machine still holds its copies on the stack at the call: the
+/// destination a direct call declares, and for a call that hands the algorithm the
+/// machine's records, the adapter's copy of those records, its destination, and the
+/// result struct it hands back by value through its `_take` and `_within`. A bound
+/// that makes one of them megabytes is not a refusal the machine can report, it is a
+/// stack that is gone at the call (measured by reading the generated `todo_peer`: at
+/// the bound of a team's calendar, 65536 values of 88 bytes, a call needed about thirty
+/// megabytes of the eight a stack has). So the machine is refused it where the bound
+/// is built in, naming what to do: build with a smaller one, or for a backend whose
+/// lists live on the heap (`sce:limit`, docs/SCE_ACCEPTED_SUBSET.md §2.15).
 ///
 /// 256 KiB a list is about five megabytes of stack at a call, which an eight-megabyte
 /// stack holds with room for what calls it, and it holds the lists the repository builds
@@ -39356,8 +39341,8 @@ pub(crate) fn c11_list_too_large(
     let bytes = element_bytes * u64::from(bound);
     (bytes > C11_LIST_STACK_LIMIT_BYTES).then(|| {
         GenerateError::unsupported(format!(
-            "{what} holds up to {bound} elements of {element_bytes} bytes, which the C11 \
-             backend passes by value on the stack at every call of an algorithm: {bytes} bytes \
+            "{what} holds up to {bound} elements of {element_bytes} bytes, which a C11 \
+             machine holds on the stack at every call of an algorithm: {bytes} bytes \
              a copy, more than the {C11_LIST_STACK_LIMIT_BYTES} it holds. Build it with a \
              smaller bound (`sce-codegen --limit name=N`, docs/SCE_ACCEPTED_SUBSET.md §2.15) or \
              for a backend whose lists live on the heap"
@@ -39604,29 +39589,14 @@ fn render_algorithm(
         })?),
         None => None,
     };
-    // C11 returns the list by value, on the stack: a bound a stack cannot hold is refused
-    // here, where the bound is built in, and not at the call (`C11_LIST_STACK_LIMIT_BYTES`).
-    if let (Language::C11, Some(list), Some(cap)) = (lang, return_list.as_ref(), list_return_cap) {
-        let element_bytes = match list.elem {
-            ListElemType::Scalar(t) => c11_scalar_bytes(t, None),
-            ListElemType::Record { alias } => resolve_record(imports, alias, None, "<sce:return>")?
-                .fields
-                .iter()
-                .map(|f| c11_field_bytes(&f.ty, f.max_size))
-                .sum(),
-        };
-        if let Some(refusal) = c11_list_too_large(
-            &format!("the list algorithm `{}` returns", m.name),
-            element_bytes,
-            cap,
-        ) {
-            return Err(refusal.into());
-        }
-    }
-    // Rust writes a returned list or bytes into a destination its caller holds
-    // (docs/adr/0082), the last parameter: the body's one buffer, which is the
-    // value it returns (§4.12, v1 scope), under the buffer's own name.
-    if let (Language::Rust, Some(returned)) = (lang, declared_return) {
+    // Rust and C11 write a returned list or bytes into a destination their caller
+    // holds (docs/adr/0082), a parameter after the declared ones: the body's one
+    // buffer, which is the value it returns (§4.12, v1 scope), under the buffer's
+    // own name. A `may-fail` C11 algorithm also takes the caller's failure record,
+    // last. The bound is then the caller's storage and never a frame of this
+    // function, so no bound is refused here.
+    let mut destination_buffer: Option<String> = None;
+    if let (Language::Rust | Language::C11, Some(returned)) = (lang, declared_return) {
         if returned.is_append_buffer() {
             let mut buffers = std::collections::HashMap::new();
             collect_append_buffers(&m.body, &mut buffers);
@@ -39643,11 +39613,23 @@ fn render_algorithm(
                     .into())
                 }
             };
-            let destination = match &return_list {
-                Some(list) => list.rust_destination(buffer.cap),
-                None => format!("SceBytes<{}>", buffer.cap),
+            let local = l.local_id(&name);
+            let parameter = match (lang, &return_list) {
+                (Language::Rust, Some(list)) => {
+                    format!("{local}: &mut {}", list.rust_destination(buffer.cap))
+                }
+                (Language::Rust, None) => format!("{local}: &mut SceBytes<{}>", buffer.cap),
+                (_, Some(_)) => {
+                    format!("{} *{local}", c11_list_destination_type(&primary_symbol))
+                }
+                (_, None) => format!("{} *{local}", c11_bytes_destination_type(&primary_symbol)),
             };
-            let parameter = format!("{}: &mut {destination}", l.local_id(&name));
+            let parameter = if lang == Language::C11 && m.signature.may_fail {
+                format!("{parameter}, sce_forge_algorithm_failure_t *{C11_CALLER_FAILURE}")
+            } else {
+                parameter
+            };
+            destination_buffer = Some(name);
             params_str = if params_str.is_empty() {
                 parameter
             } else {
@@ -39683,7 +39665,7 @@ fn render_algorithm(
         ) if return_list.is_some() => return_list
             .as_ref()
             .zip(list_return_cap)
-            .map(|(list, _)| list.return_type(&primary_symbol, may_fail))
+            .map(|(list, _)| list.return_type(may_fail))
             .expect("guarded by the arm"),
         (
             _,
@@ -39716,8 +39698,8 @@ fn render_algorithm(
             | Language::Python
             | Language::C11,
         ) => {
-            // The capacity is the buffer's (the Rust destination's, C11's
-            // result struct's); its absence is refused here all the same.
+            // The capacity is the buffer's, the caller's destination's on both
+            // bounded backends; its absence is refused here all the same.
             bytes_return_cap.ok_or_else(|| {
                 GenerateError::InvalidConfig(format!(
                     "algorithm '{}' returns `bytes` but declares no \
@@ -39727,10 +39709,10 @@ fn render_algorithm(
                 ))
             })?;
             match lang {
-                // The bytes are written into the caller's `SceBytes<N>`
-                // (docs/adr/0082).
+                // The bytes are written into the caller's `SceBytes<N>` or
+                // `<symbol>_bytes_t` (docs/adr/0082).
                 Language::Rust => format!("Result<(), {}>", rust_algorithm_failure(may_fail)),
-                Language::C11 => format!("{primary_symbol}_result_t"),
+                Language::C11 => "bool".to_string(),
                 Language::Cpp => "std::vector<std::uint8_t>".to_string(),
                 Language::Go => "[]byte".to_string(),
                 Language::Python => "bytes".to_string(),
@@ -39770,6 +39752,7 @@ fn render_algorithm(
         may_fail,
         value_type: &value_type,
         c11_result: &c11_result_name,
+        c11_destination: lang == Language::C11 && destination_buffer.is_some(),
     };
     // Kotlin and C++ wrap every return, a buffer's included — their buffers
     // grow and have no failure of their own (§4.12).
@@ -39781,7 +39764,8 @@ fn render_algorithm(
             format!("com.sce.forge.runtime.AlgorithmResult<{return_type}>")
         }
         Language::Cpp if may_fail => channel.cpp_result(),
-        // A buffer return is already its result struct (§4.12).
+        // A buffer return answers `bool` and its failure goes into the caller's
+        // record (docs/adr/0082).
         Language::C11 if may_fail && !returns_buffer => c11_result_name.clone(),
         // Named, so a failure returns the value's zero (`ReturnChannel::check`).
         Language::Go if may_fail => format!("(sceValue {return_type}, sceErr error)"),
@@ -39803,16 +39787,6 @@ fn render_algorithm(
     let mut append_buffers: std::collections::HashMap<String, AppendBufferDecl> =
         std::collections::HashMap::new();
     collect_append_buffers(&m.body, &mut append_buffers);
-    let c11_result_type = match lang {
-        Language::C11 if returns_buffer => Some(format!("{primary_symbol}_result_t")),
-        Language::Rust
-        | Language::Cpp
-        | Language::Kotlin
-        | Language::Go
-        | Language::Python
-        | Language::C11
-        | Language::Swift => None,
-    };
     // SCE byte-buffer-build (§4.12): the C++ buffer/return lower to
     // `std::vector`, which needs `<vector>`. Gate the include so algorithms
     // without a buffer keep their previous header surface byte-equivalent.
@@ -39855,21 +39829,11 @@ fn render_algorithm(
                     "use sce_portable_bytes::{SceOwnedList, CapacityExceeded};\n\n".to_string()
                 }
                 Language::Kotlin => list.kotlin_buffer_import().to_string(),
-                // A `may-fail` list rides in its result struct whole, and its
-                // `_take` hands that struct to a caller that passes the failure on
-                // (`expr::pass_failure_on`): the list is read from `items`/`len`.
-                Language::C11 => format!(
-                    "{}{}",
-                    list.c11_result_typedef(
-                        list_return_cap.expect("checked when building return_type"),
-                        &primary_symbol,
-                        may_fail,
-                    ),
-                    if may_fail {
-                        c11_take_whole(&primary_symbol)
-                    } else {
-                        String::new()
-                    }
+                // The destination the caller holds and the function writes
+                // (docs/adr/0082); the list is read from `items`/`len`.
+                Language::C11 => list.c11_destination_typedef(
+                    list_return_cap.expect("checked when building return_type"),
+                    &primary_symbol,
                 ),
                 Language::Cpp | Language::Go | Language::Python => String::new(),
                 Language::Swift => no_swift_emitter("render_algorithm"),
@@ -39884,12 +39848,12 @@ fn render_algorithm(
         (Some(SceType::Bytes), Language::Kotlin) => {
             "import com.sce.forge.runtime.SceByteBuf\n\n".to_string()
         }
+        // The destination the caller holds and the function writes (docs/adr/0082).
         (Some(SceType::Bytes), Language::C11) => {
             let n = bytes_return_cap.expect("checked when building return_type");
-            c11_result_struct(
-                &format!("    uint8_t bytes[{n}];\n    size_t len;\n"),
-                &primary_symbol,
-                may_fail,
+            format!(
+                "typedef struct {{\n    uint8_t bytes[{n}];\n    size_t len;\n}} {};\n\n",
+                c11_bytes_destination_type(&primary_symbol)
             )
         }
         // SCE_FORGE.md §3.4.1: a `may-fail` scalar or record return rides in
@@ -39990,6 +39954,12 @@ fn render_algorithm(
         }
     }
     const_renames_owned.extend(record_renames.iter().cloned());
+    // C11 reads its buffer through the caller's destination, the pointer of the
+    // buffer's name (docs/adr/0082): `len(out)` is `(*out).len`, `out[i]`
+    // `(*out).items[i]`.
+    if let (Language::C11, Some(name)) = (lang, destination_buffer.as_ref()) {
+        const_renames_owned.push((name.clone(), c11_destination(&l.local_id(name))));
+    }
     let const_renames: std::collections::HashMap<&str, &str> = const_renames_owned
         .iter()
         .map(|(k, v)| (k.as_str(), v.as_str()))
@@ -40020,7 +39990,6 @@ fn render_algorithm(
             return_value: declared_return,
             imports,
             append_buffers: &append_buffers,
-            c11_result_type: c11_result_type.as_deref(),
             records: &records,
             optional_records: &optional_records,
             borrowed_records: &types.borrowed_records,

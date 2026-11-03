@@ -2194,6 +2194,7 @@ fn lower_stateful_import_calls(ast: &mut TypedExpr, lowerings: &[ImportLowering]
                                 params: new_params,
                                 // A stateful import's method returns a value.
                                 fails: false,
+                                into_destination: false,
                             };
                             return;
                         }
@@ -2718,6 +2719,11 @@ pub(crate) enum ExprKind {
         /// Written by [`infer_types`] with `params`; a call it is `true` for
         /// is refused anywhere but a `may-fail` algorithm's body.
         fails: bool,
+        /// The function the call resolved to writes the list it returns into a
+        /// destination the call hands it ([`CallReading::IntoDestination`],
+        /// docs/adr/0082), which Rust and C11 spell. Written by [`infer_types`]
+        /// with `fails`.
+        into_destination: bool,
     },
     /// A borrowed `bytes`-view projection of a `Str`-typed source. Not
     /// produced by the parser — [`infer_types`] wraps a call argument in
@@ -4525,6 +4531,7 @@ impl<'a> Parser<'a> {
                             args,
                             params: Vec::new(),
                             fails: false,
+                            into_destination: false,
                         },
                     ))?;
                 }
@@ -5225,6 +5232,7 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             args,
             params: call_params,
             fails: call_fails,
+            into_destination,
         } => {
             infer_types(callee, ctx);
             for a in args.iter_mut() {
@@ -5255,6 +5263,12 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                 _ => None,
             };
             *call_fails = resolved.as_ref().is_some_and(|(_, _, may_fail)| *may_fail);
+            *into_destination = match &callee.kind {
+                ExprKind::Ident(name) => ctx
+                    .lookup_func(name.as_str())
+                    .is_some_and(|s| s.reading == CallReading::IntoDestination),
+                _ => false,
+            };
             match resolved {
                 Some((ret, params, _)) => {
                     // Wildcard-keyexpr Str-argument projection: a `Str`
@@ -6129,6 +6143,7 @@ fn wrap_in_found(expr: &mut TypedExpr, wrapper: &str) {
         args,
         params,
         fails,
+        ..
     } = &mut expr.kind
     else {
         return;
@@ -6142,6 +6157,7 @@ fn wrap_in_found(expr: &mut TypedExpr, wrapper: &str) {
             args: std::mem::take(args),
             params: std::mem::take(params),
             fails: false,
+            into_destination: false,
         },
         ty: InferredType::Unknown,
         span,
@@ -6243,7 +6259,9 @@ fn lower_call_readings(expr: &mut TypedExpr, ctx: &TypeCtx<'_>, target: ExprTarg
         _ => return,
     };
     match reading {
-        CallReading::Value => {}
+        // Spelled by the emitters of the backends that hand a destination in
+        // (`ExprKind::Call::into_destination`), and the list itself elsewhere.
+        CallReading::Value | CallReading::IntoDestination => {}
         CallReading::Found => {
             if let Some(wrapper) = found_wrapper(target).filter(|_| fails) {
                 wrap_in_found(expr, wrapper);
@@ -6360,6 +6378,7 @@ fn lower_string_concatenation(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                         args: vec![part],
                         params: Vec::new(),
                         fails: false,
+                        into_destination: false,
                     })
                 };
                 let mut args = vec![
@@ -6372,6 +6391,7 @@ fn lower_string_concatenation(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                     args,
                     params: Vec::new(),
                     fails: false,
+                    into_destination: false,
                 };
                 return;
             }
@@ -6555,6 +6575,7 @@ fn wrap_in_call(node: &mut TypedExpr, callee: &str, ty: InferredType) {
             args: vec![inner],
             params: Vec::new(),
             fails: false,
+            into_destination: false,
         },
         ty,
         span: None,
@@ -7131,6 +7152,7 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             args,
             params,
             fails,
+            ..
         } => {
             if is_len_builtin(callee, args) {
                 let size = format!("({}).size()", emit_cpp(&args[0], InferredType::Unknown)?);
@@ -7832,6 +7854,7 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             args,
             params,
             fails,
+            ..
         } => {
             if is_len_builtin(callee, args) {
                 let measured = emit_kotlin(&args[0], InferredType::Unknown)?;
@@ -8852,6 +8875,7 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             args,
             params,
             fails,
+            into_destination,
         } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
@@ -8877,10 +8901,7 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             // A generated algorithm writes the list it returns into a destination
             // the call holds (docs/adr/0082), and the call's value is that list. A
             // list is taken only from an algorithm that declares `may-fail`.
-            if *fails
-                && matches!(expr.ty, InferredType::List(_))
-                && !symbol.starts_with(RUST_STATE_ADAPTER_PREFIX)
-            {
+            if *into_destination && *fails {
                 emitted_args.push("&mut sce_out".to_string());
                 let call = format!("{symbol}({})", emitted_args.join(", "));
                 let written = pass_failure_on(ExprTarget::Rust, &symbol, &call, expr.ty)
@@ -9380,6 +9401,7 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             args,
             params,
             fails,
+            ..
         } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
@@ -9749,18 +9771,15 @@ pub(crate) const STATE_ADAPTER_PREFIX: &str = "sceAdapt_";
 /// this is an adapter, whose answer is a type the lattice does not name.
 pub(crate) const SWIFT_STATE_ADAPTER_PREFIX: &str = "call_";
 
-/// What the name of the adapter a Rust statechart declares for such a call begins
-/// with. The adapter answers the machine's own `Vec`, and a generated algorithm that
-/// returns a list writes it into a destination its caller holds (docs/adr/0082), so a
-/// call of a list is spelled two ways and this tells them apart. A generated
-/// algorithm is called through its module (`day_run::day_run(…)`), never by a bare
-/// name that begins with this.
-pub(crate) const RUST_STATE_ADAPTER_PREFIX: &str = "call_";
-
 /// The empty destination a Rust caller hands an algorithm that returns a list
 /// (docs/adr/0082). Its element and bound are the algorithm's parameter's, which the
 /// call infers.
 pub(crate) const RUST_LIST_DESTINATION: &str = "sce_portable_bytes::SceOwnedList::new()";
+
+/// The local a C11 statement declares for the list an algorithm writes, of the
+/// algorithm's `<symbol>_list_t` (docs/adr/0082). The call the expression layer
+/// spells names it, and the statement that holds the call declares it.
+pub(crate) const C_LIST_DESTINATION: &str = "sce_list_";
 
 /// `call` — a call to a `may-fail` algorithm, spelled `symbol(args)` in
 /// `target` — as the calling `may-fail` body passes its failure on and keeps
@@ -10103,6 +10122,7 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             args,
             params,
             fails,
+            ..
         } => {
             if is_len_builtin(callee, args) {
                 let measured = emit_python(&args[0], InferredType::Unknown)?;
@@ -10744,6 +10764,7 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
             args,
             params,
             fails,
+            ..
         } => {
             if is_len_builtin(callee, args) {
                 let measured = emit_js(&args[0], InferredType::Unknown)?;
@@ -11235,6 +11256,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             args,
             params,
             fails,
+            into_destination,
         } => {
             if is_len_builtin(callee, args) {
                 let len = c_length(&args[0])?;
@@ -11262,6 +11284,15 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 a.push(emit_c(arg, argument_type(params, i))?);
             }
             let symbol = wrap_postfix(callee, emit_c(callee, InferredType::Unknown)?);
+            // A generated algorithm writes the list it returns into the destination
+            // the statement around the call declares, and records its failure in
+            // that statement's `sce_failure_` (docs/adr/0082): the call is whether it
+            // wrote. A list is taken only from an algorithm that declares `may-fail`.
+            if *into_destination && *fails {
+                a.push(format!("&{C_LIST_DESTINATION}"));
+                a.push("&sce_failure_".to_string());
+                return Ok(format!("{symbol}({})", a.join(", ")));
+            }
             let call = format!("{symbol}({})", a.join(", "));
             if *fails {
                 pass_failure_on(ExprTarget::C, &symbol, &call, expr.ty)?

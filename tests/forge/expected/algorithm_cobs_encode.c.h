@@ -18,12 +18,11 @@
 typedef struct {
     uint8_t bytes[32];
     size_t len;
-    bool ok;
-} algorithm_cobs_encode_result_t;
+} algorithm_cobs_encode_bytes_t;
 
-static inline algorithm_cobs_encode_result_t algorithm_cobs_encode(sce_forge_bytes_view_t data) {
+static inline bool algorithm_cobs_encode(sce_forge_bytes_view_t data, algorithm_cobs_encode_bytes_t *out) {
     uint32_t n = (data).len;
-    algorithm_cobs_encode_result_t out = { .len = 0u, .ok = true };
+    (*out).len = 0u;
     uint32_t p = 0;
     bool done = false;
     while (done == false) {
@@ -34,10 +33,10 @@ static inline algorithm_cobs_encode_result_t algorithm_cobs_encode(sce_forge_byt
             run = run + 1;
         }
         uint8_t code = run + 1;
-        if (out.len < 32u) { out.bytes[out.len++] = (uint8_t)(code); } else { out.ok = false; return out; }
+        if ((*out).len < 32u) { (*out).bytes[(*out).len++] = (uint8_t)(code); } else { return false; }
         uint32_t k = p;
         while (k < q) {
-            if (out.len < 32u) { out.bytes[out.len++] = (uint8_t)(data.data[k]); } else { out.ok = false; return out; }
+            if ((*out).len < 32u) { (*out).bytes[(*out).len++] = (uint8_t)(data.data[k]); } else { return false; }
             k = k + 1;
         }
         if (q >= n) {
@@ -47,7 +46,7 @@ static inline algorithm_cobs_encode_result_t algorithm_cobs_encode(sce_forge_byt
                 p = q + 1;
                 if (p >= n) {
                     uint8_t last = 1;
-                    if (out.len < 32u) { out.bytes[out.len++] = (uint8_t)(last); } else { out.ok = false; return out; }
+                    if ((*out).len < 32u) { (*out).bytes[(*out).len++] = (uint8_t)(last); } else { return false; }
                     done = true;
                 }
             } else {
@@ -55,7 +54,7 @@ static inline algorithm_cobs_encode_result_t algorithm_cobs_encode(sce_forge_byt
             }
         }
     }
-    return out;
+    return true;
 }
 
 #endif  /* SCE_FORGE_ALGORITHM_COBS_ENCODE_H */

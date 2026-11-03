@@ -813,3 +813,26 @@ Landing: the commit that adds this section.
 - Generated statecharts and the Mesh library call the new signature already. C11 and the heap backends (C++, Go,
   Kotlin, Python, Swift) are unchanged in this landing.
 
+## A C11 algorithm writes the list or bytes it returns into a destination (ADR 0082 step 3)
+
+Landing: the commit that adds this section.
+
+- A generated C11 algorithm that returns a `list<T>` or `bytes` takes one more parameter after the declared ones, named
+  as the body's buffer is: `<symbol>_list_t *` (`{ T items[N]; size_t len; }`) or `<symbol>_bytes_t *`
+  (`{ uint8_t bytes[N]; size_t len; }`). A `may-fail` one also takes `sce_forge_algorithm_failure_t *`, last, and records
+  its failure there. It returns `bool`: whether it wrote the destination.
+- `<symbol>_result_t`, `<symbol>_take` and `<symbol>_within` are gone for these algorithms. A scalar or record return
+  keeps its `<symbol>_result_t` and `<symbol>_take` as before.
+- A call `T_result_t r = f(a, b); if (!r.ok) …; use(r.items, r.len)` becomes
+  `f_list_t out; sce_forge_algorithm_failure_t failure = { false, SCE_FORGE_ALGORITHM_OVERFLOW };
+  if (!f(a, b, &out, &failure)) { … failure.error … } use(out.items, out.len)`. Without `may-fail` there is no `failure`
+  argument and `false` means the list did not fit its bound.
+- The destination is yours to place: a static object, a member of your own state, or the heap. The algorithm takes no
+  bound from its own frame, so a C11 algorithm is no longer refused a list larger than 256 KiB. What the destination
+  holds after `false` is not specified.
+- An input may not be the destination: the body reads its inputs while it writes.
+- `sce_forge_algorithm_held_within(failure, len, capacity)` is new in `sce/forge/algorithm.h`: whether a list of `len`
+  fits `capacity`, recording the capacity failure when it does not.
+- A generated C11 statechart calls the new signature already. It still holds the list on its stack at the call, and is
+  still refused a list larger than 256 KiB there.
+

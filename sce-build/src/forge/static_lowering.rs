@@ -25,7 +25,7 @@ use crate::filters;
 use crate::forge::error::GenerateError;
 use crate::forge::expr::{
     transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal,
-    RUST_LIST_DESTINATION, RUST_STATE_ADAPTER_PREFIX,
+    C_LIST_DESTINATION, RUST_LIST_DESTINATION,
 };
 use crate::forge::model::{EnumModel, EventSchemaModel, FieldType, SceType, SchemaField};
 use crate::forge::narrowing::{Chain, Facts, Writes};
@@ -1592,6 +1592,25 @@ pub trait StaticTarget {
     fn list_result_type(&self, _symbol: &str) -> Option<String> {
         None
     }
+    /// [`Self::list_result_type`] of the list a statechart's adapter `adapter`
+    /// answers, which is the adapter's own type and not the algorithm's.
+    fn state_list_result_type(&self, adapter: &str) -> Option<String> {
+        self.list_result_type(adapter)
+    }
+    /// The statement that takes the list an algorithm writes, computed by `value`,
+    /// into a variable with `write`: [`Self::receiving_write_of`] of the value on a
+    /// target whose call answers the list, and on C11, whose algorithm writes it into
+    /// a destination (docs/adr/0082), the statement that declares the destination
+    /// `value` names, calls, and writes the variable only when the call succeeded.
+    fn receiving_list(
+        &self,
+        write: &dyn Fn(&str) -> String,
+        value: &str,
+        held: &str,
+        failed: &str,
+    ) -> String {
+        self.receiving_write_of(write, value, held, failed)
+    }
     /// The most bytes one list may take where it crosses a call of an algorithm, for a
     /// target that passes it by value on the stack. `None` for the others, whose lists
     /// live on the heap.
@@ -2764,10 +2783,8 @@ impl StaticTarget for RustTarget {
             _ => format!("&{held}"),
         }
     }
-    // Named apart from a generated algorithm's call, which the expression layer
-    // spells with a destination where it returns a list (docs/adr/0082).
     fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
-        format!("{RUST_STATE_ADAPTER_PREFIX}{coded}")
+        format!("call_{coded}")
     }
     fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
         format!("sce_forge_runtime::algorithm::within(({value}).as_slice(), {capacity})?.to_vec()")
@@ -9954,7 +9971,8 @@ impl StaticTarget for CTarget {
     fn generated_invoke_id(&self) -> Option<&'static str> {
         Some("_runtime_id_buf")
     }
-    // An algorithm's list is passed and returned by value, a few copies of it at a call.
+    // The machine holds an algorithm's list on the stack at the call, a few copies of
+    // it where an adapter converts it.
     fn list_stack_limit_bytes(&self) -> Option<u64> {
         Some(crate::forge::generator::C11_LIST_STACK_LIMIT_BYTES)
     }
@@ -10293,6 +10311,19 @@ impl StaticTarget for CTarget {
         let scalar_or_record_value = |from: &str| converted(from);
         // The algorithm's own result struct.
         let call_result = format!("{}_result_t", spec.call);
+        // A list the algorithm returns is written into the adapter's destination `r`
+        // and its failure into the adapter's record (docs/adr/0082).
+        let destination = crate::forge::generator::c11_list_destination_type(&spec.call);
+        let written = format!(
+            "{}({})",
+            spec.call,
+            arguments
+                .iter()
+                .map(String::as_str)
+                .chain(["&r", "&sce_why_"])
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         Some(match (spec.callee.may_fail, &shape) {
             (true, Shape::Value(ty)) => format!(
                 "typedef struct {{\n    {ty} value;\n    bool ok;\n    sce_forge_algorithm_error_t why;\n}} {result_type};\n\n\
@@ -10305,7 +10336,7 @@ impl StaticTarget for CTarget {
                 "typedef struct {{\n    {ty} items[{max}u];\n    size_t len;\n    bool ok;\n    sce_forge_algorithm_error_t why;\n}} {result_type};\n\n\
                  static inline {result_type} {name}_take(sce_forge_algorithm_failure_t *failure, {result_type} result) {{\n    if (!result.ok) {{\n        sce_forge_algorithm_fail(failure, result.why);\n        return ({result_type}){{0}};\n    }}\n    return result;\n}}\n\n\
                  static inline {result_type} {name}_within(sce_forge_algorithm_failure_t *failure, {result_type} result, uint32_t capacity) {{\n    if (result.len > capacity) {{\n        sce_forge_algorithm_fail(failure, SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED);\n        return ({result_type}){{0}};\n    }}\n    return result;\n}}\n\n\
-                 static inline {result_type} {name}({}) {{\n{prelude}    {call_result} r = {call};\n    if (!r.ok) {{\n        return ({result_type}){{ .ok = false, .why = r.why }};\n    }}\n    {result_type} out = {{ .ok = true }};\n    for (size_t i = 0; i < r.len && i < {max}u; ++i) {{\n{list_fill}    }}\n    out.len = r.len;\n    return out;\n}}",
+                 static inline {result_type} {name}({}) {{\n{prelude}    {destination} r;\n    sce_forge_algorithm_failure_t sce_why_ = {{ false, SCE_FORGE_ALGORITHM_OVERFLOW }};\n    if (!{written}) {{\n        return ({result_type}){{ .ok = false, .why = sce_why_.error }};\n    }}\n    {result_type} out = {{ .ok = true }};\n    for (size_t i = 0; i < r.len && i < {max}u; ++i) {{\n{list_fill}    }}\n    out.len = r.len;\n    return out;\n}}",
                 declarations.join(", "),
             ),
             (false, Shape::Value(ty)) => {
@@ -10955,11 +10986,14 @@ impl StaticTarget for CTarget {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }
-    // The list an algorithm returned is its result struct, read from `items` and
-    // `len`; the machine's own list is the library's `{len, data[bound]}`, which the
-    // algorithm's own `_within` has held to the variable's bound.
-    fn list_within(&self, value: &str, capacity: u32, symbol: &str, _elem: &SceType) -> String {
-        format!("{symbol}_within(&sce_failure_, {value}, {capacity}u)")
+    // The algorithm writes its list into the destination the statement declares
+    // (docs/adr/0082), and the call answers whether it did: only a list it wrote is
+    // held to the variable's bound, so a failed call's destination is never read.
+    // The machine's own list is the library's `{len, data[bound]}`.
+    fn list_within(&self, value: &str, capacity: u32, _symbol: &str, _elem: &SceType) -> String {
+        format!(
+            "({value} && sce_forge_algorithm_held_within(&sce_failure_, {C_LIST_DESTINATION}.len, {capacity}u))"
+        )
     }
     fn assign_list(&self, target: &str, value: &str) -> String {
         format!(
@@ -10968,7 +11002,27 @@ impl StaticTarget for CTarget {
         )
     }
     fn list_result_type(&self, symbol: &str) -> Option<String> {
-        Some(format!("{symbol}_result_t"))
+        Some(crate::forge::generator::c11_list_destination_type(symbol))
+    }
+    // An adapter answers its own result struct, by value, holding the machine's
+    // records it converted from the algorithm's destination.
+    fn state_list_result_type(&self, adapter: &str) -> Option<String> {
+        Some(format!("{adapter}_result_t"))
+    }
+    // The destination is a local of the algorithm's `<symbol>_list_t`, which the
+    // call writes, and the variable takes it only when nothing failed.
+    fn receiving_list(
+        &self,
+        write: &dyn Fn(&str) -> String,
+        value: &str,
+        held: &str,
+        failed: &str,
+    ) -> String {
+        format!(
+            "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; {held} {C_LIST_DESTINATION}; \
+             (void){value}; if (sce_failure_.failed) {{ {failed} return; }} {} }}",
+            write(C_LIST_DESTINATION)
+        )
     }
     // The count and the buffer the id is formatted into are fields of the
     // machine (`SCXMLModel::needs_auto_send_id`), and the runtime's helper
@@ -13225,7 +13279,8 @@ fn lower_action(
                             target.list_result_type(renames.get(alias.as_str()).copied()?)
                         })
                         .or_else(|| {
-                            state_list.and_then(|(adapter, _)| target.list_result_type(adapter))
+                            state_list
+                                .and_then(|(adapter, _)| target.state_list_result_type(adapter))
                         });
                     // ... and the record an adapter gave back.
                     let held_record = state_call.as_ref().and_then(|(_, ret)| match ret {
@@ -13240,6 +13295,18 @@ fn lower_action(
                                 &write,
                                 &value.text,
                                 held_record.as_deref().unwrap_or_default(),
+                                &failed(construct),
+                            ),
+                            true,
+                        ),
+                        // A list the algorithm itself returns is written where the
+                        // statement holds it (docs/adr/0082); an adapter's is its
+                        // own value.
+                        _ if held_list.is_some() && value.can_fail && returned_list.is_some() => (
+                            target.receiving_list(
+                                &write,
+                                &value.text,
+                                held_list.as_deref().unwrap_or_default(),
                                 &failed(construct),
                             ),
                             true,

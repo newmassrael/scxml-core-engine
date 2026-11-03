@@ -390,6 +390,7 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             args,
             params,
             fails,
+            ..
         } => {
             if is_len_builtin(callee, args) {
                 let length = length_of(&args[0])?;

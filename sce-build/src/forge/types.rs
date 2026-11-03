@@ -1161,6 +1161,11 @@ pub enum CallReading {
     /// The function answers a validation result, whose `valid` is the value: one
     /// check by a validator built for the call.
     Validity,
+    /// The function is an algorithm that returns a list, which a statechart takes
+    /// whole. On the backends whose algorithms write the list into a destination
+    /// their caller holds, Rust and C11 (docs/adr/0082), the call hands one in and
+    /// its value is that destination; on the others it answers the list.
+    IntoDestination,
 }
 
 impl FuncSig {
