@@ -1324,8 +1324,9 @@ pub struct Variable {
     /// A `list<T>` or `string` variable's declared bound, `sce:capacity`: the
     /// most elements, or UTF-8 bytes, it ever holds, on every backend. An append
     /// or an assignment past it is an execution error, not growth. `None` for
-    /// any other variable.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// any other variable, serialised as `null`: a template probes `capacity`
+    /// with `is not none` (the module's `Option<T>` convention).
+    #[serde(default)]
     pub capacity: Option<u32>,
     /// The name a build gives another number for (`sce:limit`, [`crate::limits`]):
     /// `capacity` is already the number the build gave it, when it gave one.

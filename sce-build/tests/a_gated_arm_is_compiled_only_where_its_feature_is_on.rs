@@ -198,7 +198,9 @@ fn every_rust_item_of_a_gated_arm_carries_its_cfg_and_no_other_does() {
 }
 
 /// The imports the gated arms alone use are under the feature, in each form a
-/// codec imports a body by; the query's are not.
+/// codec imports a body by; the query's are not. Every body here borrows from
+/// the frame, so it is imported by its owned form and its view and never by
+/// its bare name (docs/adr/0077 §7).
 #[test]
 fn an_import_only_a_gated_arm_uses_is_under_its_feature() {
     let code = generate(
@@ -210,10 +212,10 @@ fn an_import_only_a_gated_arm_uses_is_under_its_feature() {
     );
     let lines: Vec<&str> = code.lines().collect();
     for import in [
-        "use super::codec_zenoh_msg_put::CodecZenohMsgPut;",
-        "use super::codec_zenoh_msg_del::CodecZenohMsgDel;",
-        "use super::codec_zenoh_msg_put::CodecZenohMsgPutView;",
         "use super::codec_zenoh_msg_put::CodecZenohMsgPutOwned;",
+        "use super::codec_zenoh_msg_del::CodecZenohMsgDelOwned;",
+        "use super::codec_zenoh_msg_put::CodecZenohMsgPutView;",
+        "use super::codec_zenoh_msg_del::CodecZenohMsgDelView;",
     ] {
         assert_eq!(
             line_before(&lines, import),
@@ -222,9 +224,9 @@ fn an_import_only_a_gated_arm_uses_is_under_its_feature() {
         );
     }
     for import in [
-        "use super::codec_zenoh_query::CodecZenohQuery;",
+        "use super::codec_zenoh_query::CodecZenohQueryOwned;",
         "use super::codec_zenoh_query::CodecZenohQueryView;",
-        "use super::codec_zenoh_wireexpr::CodecZenohWireexpr;",
+        "use super::codec_zenoh_wireexpr::CodecZenohWireexprOwned;",
     ] {
         assert!(
             !line_before(&lines, import).starts_with("#[cfg"),

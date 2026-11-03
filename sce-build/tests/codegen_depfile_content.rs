@@ -1201,73 +1201,96 @@ fn source_set_members_are_declared_prerequisites() {
 /// vectors and so every backend legitimately declares the file. That leaves
 /// the other half of the rule — a route that reads nothing from the oracle
 /// must not name it — resting on a catalog shape the probe never produces.
-/// This constructs that shape: strip the `rejects` arrays, and the five
-/// non-C11 routes have nothing left to bake, while C11 still bakes the
-/// tolerance and the per-fixture cases.
+/// This constructs that shape twice. With the `rejects` arrays stripped, a
+/// route that prints a codec's plan still bakes its byte cases stated as the
+/// interface presents the value, its `sources` (docs/adr/0081 §5: Rust so
+/// far), and C11 still bakes the tolerance and the per-fixture cases; the
+/// others have nothing left to bake. With the `sources` stripped as well, only
+/// C11 has.
 #[test]
 fn the_oracle_is_declared_only_where_it_is_read() {
+    /// What a catalog shape strips, and the languages that still read the
+    /// oracle with it stripped.
+    struct Shape {
+        strips: &'static [&'static str],
+        readers: &'static [Language],
+    }
+    let shapes = [
+        Shape {
+            strips: &["rejects"],
+            readers: &[Language::C11, Language::Rust],
+        },
+        Shape {
+            strips: &["rejects", "sources"],
+            readers: &[Language::C11],
+        },
+    ];
     let mut violations = Vec::new();
-    let mut stripped_total = 0usize;
+    let mut probes = 0usize;
 
-    for lang in languages() {
-        let work = TempDir::new().expect("tempdir");
-        let manifest = stage_conformance_catalog(&work.path().join("forge"));
-        let oracle = manifest
-            .parent()
-            .expect("manifest has a parent")
-            .join("numerical_reference.json");
+    for shape in &shapes {
+        let stripping = shape.strips.join(" and ");
+        for lang in languages() {
+            let work = TempDir::new().expect("tempdir");
+            let manifest = stage_conformance_catalog(&work.path().join("forge"));
+            let oracle = manifest
+                .parent()
+                .expect("manifest has a parent")
+                .join("numerical_reference.json");
 
-        let text = std::fs::read_to_string(&oracle).expect("oracle catalog is readable");
-        let mut doc: serde_json::Value =
-            serde_json::from_str(&text).expect("oracle catalog is JSON");
-        let mut stripped = 0usize;
-        if let Some(codecs) = doc.get_mut("codecs").and_then(|c| c.as_object_mut()) {
-            for (_, entry) in codecs.iter_mut() {
-                if let Some(obj) = entry.as_object_mut() {
-                    if obj.remove("rejects").is_some() {
-                        stripped += 1;
+            let text = std::fs::read_to_string(&oracle).expect("oracle catalog is readable");
+            let mut doc: serde_json::Value =
+                serde_json::from_str(&text).expect("oracle catalog is JSON");
+            let mut stripped = vec![0usize; shape.strips.len()];
+            if let Some(codecs) = doc.get_mut("codecs").and_then(|c| c.as_object_mut()) {
+                for (_, entry) in codecs.iter_mut() {
+                    if let Some(obj) = entry.as_object_mut() {
+                        for (key, count) in shape.strips.iter().zip(stripped.iter_mut()) {
+                            if obj.remove(*key).is_some() {
+                                *count += 1;
+                            }
+                        }
                     }
                 }
             }
-        }
-        // A strip that removed nothing would leave the two arms
-        // indistinguishable and pass without testing anything.
-        assert!(
-            stripped > 0,
-            "{lang}: the catalog carries no reject vectors to strip, so this probe cannot \
-             tell a declaring route from a reading one",
-        );
-        stripped_total += stripped;
-        std::fs::write(
-            &oracle,
-            serde_json::to_string_pretty(&doc).expect("re-serializes"),
-        )
-        .expect("oracle catalog is writable");
+            // A strip that removed nothing would leave the two arms
+            // indistinguishable and pass without testing anything.
+            for (key, count) in shape.strips.iter().zip(&stripped) {
+                assert!(
+                    *count > 0,
+                    "{lang}: the catalog carries no `{key}` to strip, so this probe cannot \
+                     tell a declaring route from a reading one",
+                );
+            }
+            probes += 1;
+            std::fs::write(
+                &oracle,
+                serde_json::to_string_pretty(&doc).expect("re-serializes"),
+            )
+            .expect("oracle catalog is writable");
 
-        let out = work.path().join("out");
-        let depfile = work.path().join("out.d");
-        if let Err(e) =
-            generate_conformance(&manifest, &out, lang, &template_root(), Some(&depfile))
-        {
-            violations.push(format!("{lang}: render without reject vectors failed\n{e}"));
-            continue;
-        }
-        let named = depfile_prerequisites(&depfile)
-            .iter()
-            .any(|p| p.file_name().and_then(|n| n.to_str()) == Some("numerical_reference.json"));
-        // C11 bakes the tolerance and the per-fixture cases, so it reads the
-        // oracle whatever the reject vectors do; the other five had nothing
-        // else to take from it.
-        let expected = lang == Language::C11.canonical_name();
-        if named != expected {
-            violations.push(format!(
-                "{lang}: with no reject vectors in the catalog the oracle is {} as a \
-                 prerequisite, expected {}. Declaration has to track what the render \
-                 actually baked — naming a file this route no longer reads only forces \
-                 rebuilds, and not naming one it does read reuses a stale harness",
-                if named { "named" } else { "absent" },
-                if expected { "named" } else { "absent" },
-            ));
+            let out = work.path().join("out");
+            let depfile = work.path().join("out.d");
+            if let Err(e) =
+                generate_conformance(&manifest, &out, lang, &template_root(), Some(&depfile))
+            {
+                violations.push(format!("{lang}: render without {stripping} failed\n{e}"));
+                continue;
+            }
+            let named = depfile_prerequisites(&depfile).iter().any(|p| {
+                p.file_name().and_then(|n| n.to_str()) == Some("numerical_reference.json")
+            });
+            let expected = shape.readers.iter().any(|l| l.canonical_name() == lang);
+            if named != expected {
+                violations.push(format!(
+                    "{lang}: with no {stripping} in the catalog the oracle is {} as a \
+                     prerequisite, expected {}. Declaration has to track what the render \
+                     actually baked — naming a file this route no longer reads only forces \
+                     rebuilds, and not naming one it does read reuses a stale harness",
+                    if named { "named" } else { "absent" },
+                    if expected { "named" } else { "absent" },
+                ));
+            }
         }
     }
 
@@ -1276,11 +1299,10 @@ fn the_oracle_is_declared_only_where_it_is_read() {
         "the oracle prerequisite does not track what the render baked:\n\n{}",
         violations.join("\n\n"),
     );
-    assert!(
-        stripped_total >= languages().len(),
-        "stripped {stripped_total} reject arrays across {} probes — under one per probe \
-         means a probe ran against an unmodified catalog",
-        languages().len(),
+    assert_eq!(
+        probes,
+        shapes.len() * languages().len(),
+        "a probe was skipped, so a green result covers less than it claims",
     );
 }
 
