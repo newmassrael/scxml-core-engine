@@ -677,8 +677,10 @@ pub unsafe extern "C" fn sce_peer_with_group(
 /// Open a new list as its administrator, with the hub's profile `profile` (`SCE_PEER_PROFILE_*`)
 /// ([`Peer::open_list`]): the genesis names the administrator's key the device holds, a grant makes
 /// the device's person a member with the highest role, and the group is made when the core holds a
-/// device of it. `genesis` is set to the hash (32 bytes) of the genesis, which a person is invited
-/// with. The entries go to the relay with the next round.
+/// device of it, with the entry that names its first epoch, so that the list is sealed from its
+/// first write. `genesis` is set to the hash (32 bytes) of the genesis, which a person is invited
+/// with. The entries go to the relay with the next round, and the commit of the first epoch after
+/// it.
 ///
 /// # Safety
 /// `peer` is a live handle; `genesis` is valid for a write of 32 bytes.
@@ -734,7 +736,8 @@ pub unsafe extern "C" fn sce_peer_grant(
 /// Admit the device of `node`, which signs with the 32-byte public `key`, to the list and its group
 /// with the role `role` (1 to 3), from the newest key package of it a round read
 /// ([`Peer::add_member`]): the grant and the commit are one change. The entries go to the relay with
-/// the next round, the commit and the Welcome after it.
+/// the next round, the commit, the Welcome and the keys of the epochs before the device's own after
+/// it.
 ///
 /// # Safety
 /// `peer` is a live handle; `key` points at 32 readable bytes.

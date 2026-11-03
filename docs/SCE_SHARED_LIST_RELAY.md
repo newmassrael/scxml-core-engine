@@ -255,8 +255,11 @@ created with no token began, `since`, whose change in the relay's heads makes th
 relay from its start and give the proof again) changes only where a step of a round was completed,
 and what a round took in and did not hand over, because the link failed, the answer never came or the
 host abandoned it, is handed over first by the next round; the state is one text for a host's storage.
-`Publication` builds and checks the requests that give the relay a key package, a commit, a Welcome or
-a checkpoint (`a_round_driven_by_hand_asks_what_a_courier_asks`).
+`Publication` builds and checks the requests that give the relay a key package, a commit, a Welcome,
+the key of an epoch given to a device (`key_grant`, `docs/SCE_SHARED_LIST_MLS.md` section 4) or a
+checkpoint (`a_round_driven_by_hand_asks_what_a_courier_asks`). A courier that reads a key given to its
+own person's device takes it in (`Trust::receive_grant`) and tries the operations it parked for want
+of it again in the same round.
 
 The peer core (`sce-rust-peer`, ADR 0079) composes a device's `Trust`, the round machine and the
 device of the list's MLS group, and speaks to its host in texts. The machine's outbound
@@ -271,13 +274,16 @@ and starts no thread, so the C ABI every application lane links is a thin layer 
 scenario of two devices and this relay that C, C++, Python, Go, Kotlin and Swift replay with no relay.
 
 **A host opens and runs a list through the core.** The device that holds an administrator's key
-opens the list (`Peer::open_list`: the genesis, the grant of its own person, and the group when it
-holds a device of it), grants a role (`Peer::grant`), admits a device to a list keyed by its group
-from the key package a round read (`Peer::add_member`) and takes one off (`Peer::remove_member`). Each
+opens the list (`Peer::open_list`: the genesis, the grant of its own person, and, when it holds a
+device of the group, the group and the entry that names its first epoch, so that the list is sealed
+from its first write), grants a role (`Peer::grant`), admits a device to a list keyed by its group
+from the key package a round read, giving it the keys of the epochs before its own
+(`Peer::add_member`), and takes one off (`Peer::remove_member`). Each
 act writes the entries of the log and makes the group's change in one call, and makes the commit
 before it writes an entry, so that a refused act wrote nothing. The entries reach the relay with the
-next round, as every entry the relay lacks does (step 1 above); a commit and a Welcome cannot go before
-them, since the relay keeps a commit only once its log names it, so the core keeps them as owed and
+next round, as every entry the relay lacks does (step 1 above); a commit, a Welcome and a key given
+cannot go before them, since the relay keeps each only once its log names or begins its epoch, so the
+core keeps them as owed and
 gives them after the round that ends (`Publication`, the exchange `Peer::publish` makes), keeps one
 the relay did not take for the round after, and saves them with its state. What a device stands at
 (its role, the members, whether it waits for its own chain, what the relay is still owed) is
@@ -358,9 +364,10 @@ Not built, and not claimed:
   library was built is distrusted only by a new build of it.
 - **The group's messages of a list that lapsed.** A list created with no token lapses and its
   devices create it again, giving the relay back the log, the operations, the checkpoints and the
-  proof of conflicts they hold (section 2). The group's commits and Welcomes, and a key package left
-  under an invitation, are not given back: a device that holds none of them keeps none, and one that
-  had not read a commit before the list lapsed is admitted to the group again.
+  proof of conflicts they hold (section 2). The group's commits and Welcomes, the keys given to a
+  device, and a key package left under an invitation, are not given back: a device that holds none of
+  them keeps none, and one that had not read a commit or a key given before the list lapsed is
+  admitted to the group again.
 - **Other lists' rules.** The relay verifies the standard record list's events, and no other
   document's: an application builds its list on that part.
 

@@ -150,7 +150,8 @@ removal is for a device: **taking a person off is a removal for each of their de
 log does not do by itself (`Member::remove_person` in `sce-rust-mls` does it), and a device that
 is lost is taken off while the person's others go on. A new device holds no key of the epochs before
 it joined; a device of the same person that holds them sends them (`Member::history_grants`, then
-`receive_grant`), which is the history policy: none unless someone sends it.
+`receive_grant`), which is the history policy: none unless someone sends it. The peer core sends
+them to every device it admits to a list keyed by its group (`Peer::add_member`, section 4).
 
 A hub's machine is told, by `Trust::hub_role_events`, that anyone who could write at some entry
 is a writer: the machine has no log to judge by, and must not refuse what its host let through. A
@@ -286,6 +287,20 @@ meaningless over sealed values; the members' copies compute theirs.
 A host that holds keys takes no write that is not sealed, and none sealed under an epoch it
 holds no key of (it says which; after it is given the key, a `record_list.resync` brings the write).
 
+**When content is sealed is the log's word**: from the entry that begins the list's first epoch,
+and a write that names an entry before it is in the clear and holds (section 3). A list is sealed
+from its first write only when that entry comes before anyone writes, and once a write is in a
+relay's clear no later epoch takes it back. A list keyed by its MLS group names its first epoch when
+it is opened (`Peer::open_list`: the genesis, the owner's grant, then the entry that names the
+commit that moves the group of one to epoch 1, `docs/SCE_SHARED_LIST_MLS.md` section 2), so the third
+entry of its log seals everything after it and its first device's writes are never in the clear. A
+host whose device is in the list's group says so (`Trust::keyed_by_a_group`), and then signs no write
+of its person's while the log names no epoch: the write waits (`Sent::Waiting`) until an epoch is
+begun and its key held, and is refused by `seal_sent`, rather than leave in the clear. A list whose
+keys an administrator draws is in the clear until the first `Trust::rotate_epoch`, so an
+administrator who wants such a list sealed from its first write rotates before anyone writes; a list
+with no group and no drawn key keeps its content in the clear by its log's word.
+
 ### Keys
 
 Where the key of an epoch comes from is one of two things, and a list has one of them: a key an
@@ -299,7 +314,9 @@ a host does not hold is not refused: it is `TakeError::NoKey`, which a courier p
 A key is given to a member with `Trust::grant_key(epoch, member_key)`: sealed under what the
 giver's signing key and the member's agree on (X25519 over the same keys), so it travels over
 any channel, the hub's included. `receive_grant` takes it when it is for this list and person,
-from a member who could write or an administrator, and opens.
+from a member who could write or an administrator, and opens. A relay carries one for a device
+(`key_grant`, `docs/SCE_SHARED_LIST_MLS.md` section 4), and the peer core gives a device it admits to a
+list keyed by its group the key of every epoch before its own that way (`Peer::add_member`).
 
 ### Taking a member off
 

@@ -27,7 +27,8 @@
 //! - an administrator's acts ([`Peer::open_list`], [`Peer::grant`], [`Peer::add_member`],
 //!   [`Peer::remove_member`]) write the entries of the membership log and make the group's change
 //!   that goes with them in one call; the entries go to the relay with the next round, and the
-//!   commit and the Welcome a change of the group makes are given to it after that round;
+//!   commit and the Welcome a change of the group makes, and the keys of the epochs before it that
+//!   a device admitted is given, are given to it after that round;
 //! - a device logs in at a relay with its person's key ([`Peer::login`], ADR 0080): the same
 //!   exchange over the same transport, made on a connection that presents no token, or one that
 //!   expired, whose outcome holds the token the relay issued ([`Outcome::token`]); the host gives the
@@ -131,9 +132,9 @@ pub struct Outcome {
     pub reread: Option<Round>,
     /// What the group's device did with what was read, in order.
     pub steps: Vec<GroupStep>,
-    /// How many of the commits and Welcomes the administrator's acts made the relay is still owed
-    /// once the exchange ended. They are given after each round, in order, and kept until the relay
-    /// takes them; one it did not take is among the refusals, with why.
+    /// How many of the commits, Welcomes and keys given the administrator's acts made the relay is
+    /// still owed once the exchange ended. They are given after each round, in order, and kept until
+    /// the relay takes them; one it did not take is among the refusals, with why.
     pub owed: usize,
     /// The token a login earned ([`Peer::login`]), and when it expires by the relay's clock; `None`
     /// for every other exchange.
@@ -500,7 +501,8 @@ pub struct Standing {
     pub epoch: u32,
     /// The epochs whose keys the device holds: what it can open.
     pub keys: Vec<u32>,
-    /// How many of the commits and Welcomes the administrator's acts made the relay is still owed.
+    /// How many of the commits, Welcomes and keys given the administrator's acts made the relay is
+    /// still owed.
     pub owed: usize,
     /// How many sends of the machine wait to be signed ([`Kept::Waiting`]): what a host shows as
     /// not sent yet.
@@ -535,8 +537,8 @@ pub struct Peer {
     group: Option<Member>,
     /// The administrator's key the device holds, when it holds one.
     administrator: Option<Identity>,
-    /// The commits and Welcomes the administrator's acts made that the relay has not taken, in the
-    /// order they were made.
+    /// The commits, Welcomes and keys given the administrator's acts made that the relay has not
+    /// taken, in the order they were made.
     owed: Vec<Publication>,
     /// A login ([`Self::login`]) or a join ([`Self::join`]) under way: an exchange of its own, which
     /// keeps nothing of the relay's client and runs instead of a round.
@@ -669,6 +671,7 @@ impl Peer {
     /// of each epoch it reaches.
     pub fn with_group(mut self, device: Device, node: u64) -> Self {
         self.group = Some(Member::new(device, self.trust.clone(), node));
+        self.note_keying();
         self
     }
 
@@ -694,6 +697,19 @@ impl Peer {
     /// keyed by its group from its first entry and every member after is admitted to both at once
     /// ([`Self::add_member`]). The entries go to the relay with the next round. What is returned is
     /// the hash of the genesis, which a person is invited with ([`Self::invited`]).
+    ///
+    /// **A list keyed by its group is sealed from its first write.** The epoch a group is made at
+    /// has no commit, so no entry of the log can name it, and the log decides that content is
+    /// sealed from the entry that begins the first epoch: a group of one would leave everything its
+    /// device writes before it admits anyone in the relay's clear, for good. So the opening moves
+    /// the group to its first epoch with a commit of the device's own leaf (an MLS self-update,
+    /// which adds no one) and writes the entry that names it after the grant: the third entry of
+    /// the log, before the device can sign anything. The relay is owed that commit, as it is the
+    /// commit of every epoch ([`Outcome::owed`]). Naming the epoch the group is made at instead
+    /// would take an entry of the log no commit stands behind, which every member's group checks
+    /// the log's epochs against; the self-update is the commit MLS has for a group that changes no
+    /// member. What the device writes before a device is admitted is sealed under the key of that
+    /// epoch, which a device admitted later is given ([`Self::add_member`]).
     ///
     /// What can refuse is asked before anything is written (an administrator's key, a person, a log
     /// with no genesis, a group not made yet); a core invited to another genesis is refused by its
@@ -733,8 +749,34 @@ impl Peer {
                 .device_mut()
                 .create_group()
                 .map_err(PeerError::Group)?;
+            self.note_keying();
+            self.name_first_epoch()?;
         }
         Ok(genesis.hash())
+    }
+
+    /// The list is keyed by its group and the log names no epoch of it: the group moves to its
+    /// first epoch with a commit of the device's own leaf, the entry that names it is written, and
+    /// the relay is owed the commit ([`Self::open_list`]).
+    fn name_first_epoch(&mut self) -> Result<(), PeerError> {
+        let administrator = self
+            .administrator
+            .as_ref()
+            .ok_or(PeerError::NoAdministrator)?;
+        let member = self.group.as_mut().ok_or(PeerError::NoGroupDevice)?;
+        let issued = member.update(administrator).map_err(PeerError::Group)?;
+        self.owe(issued, None);
+        Ok(())
+    }
+
+    /// Tell the trust when the list is keyed by a group the core's device is in, so that no write
+    /// of the device's person is signed while the log names no epoch of it
+    /// ([`Trust::keyed_by_a_group`]): what holds a list that an earlier core opened, whose log
+    /// named no epoch at its opening, until its first member is admitted.
+    fn note_keying(&self) {
+        if self.keying() == Keying::Group {
+            self.trust.keyed_by_a_group();
+        }
     }
 
     /// Grant the device of `node`, which signs with `key`, the role `role` ([`READER`] to
@@ -783,6 +825,17 @@ impl Peer {
     /// the device's Welcome after it ([`Outcome::owed`]): the relay keeps a commit only once its log
     /// names it.
     ///
+    /// **The device is given the list's history.** A Welcome gives the key of the epoch it begins
+    /// and of none before, as MLS does, and a list's content is one list: a device that held only
+    /// the writes of its own epochs would hold rows the others hold without the writes that made
+    /// them, and the first device's writes before anyone was admitted would open for no one but it.
+    /// So the act gives the device the key of every epoch before its own that the administrator's
+    /// device holds, each sealed to the key the device signs with (`Trust::grant_key`, from the
+    /// person's key), and the relay is owed them after the Welcome; the device's next round takes
+    /// them in and opens what was sealed under them. A device taken off later keeps what it was
+    /// given, as it keeps the keys of the epochs it was a member in; nothing written after its
+    /// removal opens for it.
+    ///
     /// A device this core invited ([`Self::invite`]) is admitted only from the key package of a
     /// join a round read whose proof holds under the invitation's key and names `key`
     /// ([`Self::joined`]), and [`PeerError::NotJoined`] otherwise: a relay knows the invitation's
@@ -813,7 +866,19 @@ impl Peer {
         let issued = member
             .add_member(administrator, node, role, key, &package)
             .map_err(PeerError::Group)?;
+        let before: Vec<u32> = self
+            .trust
+            .epochs()
+            .into_iter()
+            .filter(|epoch| *epoch < issued.epoch)
+            .collect();
+        let history = member.history_grants(&key, &before);
         self.owe(issued, Some(node));
+        self.owed.extend(
+            history
+                .into_iter()
+                .map(|(epoch, grant)| Publication::KeyGrant { epoch, node, grant }),
+        );
         self.admitted(node);
         Ok(())
     }
@@ -1128,7 +1193,9 @@ impl Peer {
     /// keeps a sealed state is a restore. What the device may not sign yet is kept, in order, with
     /// every send after it ([`Kept::Waiting`], and the reason): an invited device that has not read
     /// the log that lets it write, one whose list keys its content under an epoch it holds no key
-    /// of yet, a device restored from a sealed state before a round has read its own chain back
+    /// of yet, one whose list is keyed by its group and whose log names no epoch of it yet (a list
+    /// an earlier core opened, until its first member is admitted: no write leaves in the clear),
+    /// a device restored from a sealed state before a round has read its own chain back
     /// (see [`Self::restore_sealed`]). The round that reads what it waits for signs it and gives it
     /// the relay ([`Outcome::taken`]); a round whose log says the person never may (a reader, a
     /// device taken off) refuses it then, and says so ([`Outcome::dropped`], [`Outcome::rebuild`]).
@@ -1400,6 +1467,7 @@ impl Peer {
         if group.is_some() {
             self.group = group;
         }
+        self.note_keying();
         self.running = None;
         self.asking = None;
         self.outcome = None;
@@ -1579,7 +1647,7 @@ impl Peer {
             // the log names and the relay lacks is one no member can apply until it has it.
             (Purpose::Deliver { mut outcome }, Err(error)) => {
                 outcome.round.refused.push(format!(
-                    "a commit or Welcome the relay is owed was not given: {error:?}"
+                    "a commit, Welcome or key the relay is owed was not given: {error:?}"
                 ));
                 outcome.owed = self.owed.len();
                 self.outcome = Some(Ok(*outcome));

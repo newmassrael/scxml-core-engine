@@ -18,7 +18,8 @@
 // devices and they still agree; that a relay that answers less than it holds leaves a device short
 // and refuses it nothing, until a resync reads what the relay holds; that a write the relay made up
 // is refused by the core of every device it is given to and reaches no copy; and that a list keyed
-// by its group admits every device from its key package and is sealed at the relay.
+// by its group admits every device from its key package and is sealed at the relay from its first
+// write, which every device admitted later opens.
 //
 // Properties, not bytes: a run is the same run every time it is run with the same seed, but the
 // group's keys are drawn, so what is asked is what holds of any run.
@@ -274,22 +275,39 @@ fn a_write_the_relay_made_up_is_refused_by_the_core_of_every_device_given_it() {
     assert!(!refused.contains_key("alice"), "{refused:?}");
 }
 
-/// A list keyed by its group: every device holds a device of the group, bob's and carol's leave a
-/// key package with the relay, and alice's device admits each in one act, bob first. Each joins
-/// from the Welcome a round brings it; bob's applies the commit that admits carol after it, so he
-/// holds every key alice's holds, and carol the key of the epoch she was admitted at, which is
-/// the latest. What the three write then is held alike by every copy and is sealed at the relay,
-/// which holds none of it in the clear. The group's keys are drawn, so what is asked is what holds
-/// whatever they are.
+/// A list keyed by its group: every device holds a device of the group, and the list is sealed
+/// from its first write, so what alice's device writes while she is alone in it reaches the relay
+/// sealed. Bob's and carol's leave a key package with the relay, and alice's device admits each in
+/// one act, bob first, giving each the keys of the epochs before its own. Each joins from the
+/// Welcome a round brings it; bob's applies the commit that admits carol after it, so each holds
+/// every key alice's holds, and every copy holds what alice wrote alone. What the three write then
+/// is held alike by every copy and is sealed at the relay, which holds none of it in the clear. The
+/// group's keys are drawn, so what is asked is what holds whatever they are.
 #[test]
 fn a_list_keyed_by_its_group_is_held_through_the_core_on_every_device() {
     let bob = kotlin_device("bob");
     let mut devices = Devices::new(19, bob.as_ref(), Keying::Group, ample());
+    devices.title("alice", 4, "before anyone");
+    devices.give_sends();
+    let alone = devices.rounds(&["alice"], Begin::Round(RoundKind::Sync));
+    assert_eq!(alone["alice"].failed, None, "{:?}", alone["alice"]);
+    assert!(
+        !devices.feed().contains("before anyone"),
+        "the relay holds what alice wrote alone in the clear"
+    );
     devices.admit_through_the_group();
     let keys = devices.keys("alice");
-    assert_eq!(keys.len(), 2, "an epoch for each device admitted: {keys:?}");
+    assert_eq!(
+        keys.len(),
+        3,
+        "the epoch the opening began, and one for each device admitted: {keys:?}"
+    );
     assert_eq!(devices.keys("bob"), keys);
-    assert_eq!(devices.keys("carol").last(), keys.last());
+    assert_eq!(
+        devices.keys("carol"),
+        keys,
+        "carol was given the keys of the epochs before hers"
+    );
     let bob_steps = devices.device_mut("bob").steps.clone();
     let at = |step: &str| bob_steps.iter().position(|taken| taken == step);
     assert!(

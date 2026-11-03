@@ -37,6 +37,19 @@ An administrator's change is two entries of the log and a commit: the grant (or 
 `final_seq`), the entry that names the commit, and the commit itself, merged after the log holds it.
 `Member::add_member` and `Member::remove_member` do it and give back what is for the relay.
 
+**A list keyed by its group names its first epoch when it is opened.** The epoch a group is made at
+(0) has no commit, so no entry can name it, and the log decides that content is sealed from the entry
+that begins the first epoch (`docs/SCE_SHARED_LIST_TRUST.md` section 4): a group of one whose log named
+no epoch until its first member was added would leave everything its device wrote alone in the
+relay's clear, for good. So the opening makes a commit that adds and removes no one and renews the
+device's own leaf (an MLS self-update, RFC 9420 section 12.4, `Device::stage_update`), and writes the
+entry that names it right after the owner's grant (`Member::update`, which `Peer::open_list` calls):
+epoch 1, before anything is written, with secrets of its own. The relay is given that commit as it is
+given every other. Naming epoch 0 instead was not taken: it is an entry no commit stands behind, the
+one thing every member's group checks the log's epochs by. The first member a list admits joins at
+epoch 2. A device whose group exists while its log names no epoch (a list an earlier core opened)
+signs no write until the log names one (`Trust::keyed_by_a_group`).
+
 ## 3. A removed member
 
 The grant that takes a device off (role 0, `final_seq`) comes first, then the commit that removes its
@@ -44,9 +57,14 @@ leaf, named by the next entry. The epoch after it is one the device cannot deriv
 commit and finds itself removed (`Applied::Removed`), or never receives it, because the relay lets a
 device that is off the log read nothing more; either way `Device::epoch_key` is `Removed` and what is
 sealed afterwards does not open for it (`this host holds no key of epoch N`). What it was given before
-stays what it was: nothing takes back a key a member held. A new member is given no history by
-default (it holds no key of the epochs before it joined, and the operations sealed under them are
-parked, not refused); an administrator may give it an older epoch's key (`Trust::grant_key`).
+stays what it was: nothing takes back a key a member held. A Welcome gives a new member no key of
+the epochs before it joined, and the operations sealed under them are parked, not refused; a member
+may give it an older epoch's key (`Trust::grant_key`, which the new member takes with
+`Trust::receive_grant`). **The peer core gives it the list's history**: `Peer::add_member` gives the
+device the key of every epoch before its own that the administrator's device holds, each sealed to the
+device's key, through the relay (section 4), since a list's content is one list and a member that held
+only its own epochs' writes would hold rows without the writes that made them. A host that drives a
+`Member` itself gives history only when it sends it (`Member::history_grants`).
 
 ### A person's devices
 
@@ -62,10 +80,15 @@ and applies the commits it missed in order.
 
 ## 4. What a relay carries
 
-A relay keeps three more kinds of record and reads none of them: a key package a device leaves for an
+A relay keeps four more kinds of record and reads none of them: a key package a device leaves for an
 administrator to add it with (any session may leave its own, a bounded number of them), the commit the
-log names for an epoch (kept only if its hash is the one the log names), and a Welcome for a device
-(kept for an epoch the log has begun). A host's courier hands them to its `Member`
+log names for an epoch (kept only if its hash is the one the log names), a Welcome for a device (kept
+for an epoch the log has begun), and the key of an epoch given to a device (`key_grant`: the text
+`Trust::grant_key` writes, sealed to that device's key, from a device that writes, kept for an epoch
+the log has begun). A courier takes in a key given to its own person's device (`Trust::receive_grant`:
+for this list and this person, from a member or an administrator the log names) and tries the
+operations it parked for want of it again at once; a key given to another device is not its to open.
+A host's courier hands the other three to its `Member`
 (`Member::absorb`), which does what the log allows in order (`Member::advance`): a device in no group
 joins from a Welcome addressed to it, a device in the group applies the commit the log names for the
 next epoch, and each gives its `Trust` the key of the epoch it reaches. A commit the log does not name
@@ -83,8 +106,8 @@ and never of confidentiality or integrity.
 
 An operation sealed under an epoch whose key a host does not hold is **parked**: the courier tries it
 again each round, since the key may come (the commit reaches the host), and goes on past it. It is not
-refused, because it holds, and not an error, because for an epoch before the host joined it never
-opens.
+refused, because it holds, and not an error, because for an epoch before the host joined it opens
+only once a member gives the host the key (section 3).
 
 ## 5. What a device keeps
 

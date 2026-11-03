@@ -252,6 +252,25 @@ when it is called production.
   `Peer::trust` stays, for what a host reads of the trust; `Peer::group_mut` is gone. Not done: a list with several
   administrators, a linked device and an amendment through the core, and a removal from a list whose keys an
   administrator draws, which the core refuses.
+- **A list keyed by its group is sealed from its first write** (2026-11-03). "Keyed by its group from its first
+  entry" held for the group and not for the content: the log decides that content is sealed from the entry that
+  begins the first epoch, and a group of one has no epoch the log names until its first member is added, so the
+  store of a deployed relay held every write the first device made alone in the clear (genesis, its grant, a key
+  package, the second grant, then `mls_epoch` 1; only the writes after it sealed). `Peer::open_list` now moves the
+  group of one to epoch 1 with a commit that adds no one (an MLS self-update, `Member::update`) and writes the entry
+  that names it right after the owner's grant, before the device can sign anything; the relay is owed that commit
+  as any other. Naming epoch 0 was not taken: no commit stands behind it, and every member's group checks the log's
+  epochs by their commits. A Welcome gives no key of the epochs before it, so `Peer::add_member` gives the device
+  the key of every epoch before its own that the administrator's device holds (`Trust::grant_key`), carried by a
+  new relay record (`key_grant`, kept for an epoch the log began, from a device that writes) that the device's
+  courier takes in and retries its parked operations with. A core whose device is in its list's group says so to
+  its trust (`Trust::keyed_by_a_group`), which then signs no write of its person's while the log names no epoch:
+  what a list an earlier core opened does until its first member is admitted. The first member admitted joins at
+  epoch 2, and a lane sees one more key and one more owed publication; the ABI's texts keep their shape and its
+  version. A relay must run this code before a core of it admits a device, or the keys it is owed stay owed. What
+  a relay already holds in the clear stays there: no epoch takes back a write. Drawn keys have the same shape (in
+  the clear until the first `Trust::rotate_epoch`), but no API promises them from the first write, and the core
+  opens no list under them.
 - **Step 5** landed in this repository 2026-11-02. The transport trait is `Transport` of a crate of its own,
   `sce-rust-relay-transport`, with no dependency beyond the standard library, so that a binding written elsewhere
   depends on the contract alone: a request text out and the response text back by a deadline and until a

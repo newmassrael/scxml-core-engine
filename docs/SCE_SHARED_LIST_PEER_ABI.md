@@ -224,7 +224,7 @@ The outcome is a JSON object, read by its members' names:
 | `stalled` | ended | whether the round stopped before the end of what the relay holds; a later round goes on from there |
 | `reread` | ended | whether the group's device needed a second read from the start, whose events are in `events` after the round's |
 | `steps` | ended | what the group's device did with what was read, each `{"step": "joined" or "applied", "epoch": text}`, `{"step": "removed"}` or `{"step": "refused", "reason": text}` |
-| `owed` | ended | how many commits and Welcomes of the administrator's acts the relay is still owed once the exchange ended (section 7); one the relay did not take is among `refused` |
+| `owed` | ended | how many commits, Welcomes and keys given of the administrator's acts the relay is still owed once the exchange ended (section 7); one the relay did not take is among `refused` |
 | `token` | a login that ended | `{"token": text, "expires_at_ms": text}`: the token the relay issued, and when it expires by the relay's clock; the member is not written for any other exchange |
 | `failure` | failed | `"link"` (the transport), `"relay"` (the relay refused the round as a whole) or `"unexpected"` (an answer that is not the answer to the request) |
 | `code` | failed by the relay | the relay protocol's word for the refusal (`"forbidden"`, `"rate_limited"`, ...), and `retry_after_ms` as text when it is a rate limit |
@@ -256,9 +256,9 @@ What a device keeps between runs is **one sealed state**: its person's key, the 
 it holds, the keys of the epochs it holds (none of an epoch the list had destroyed), the group's
 device (its MLS state, and the commits, Welcomes and key packages it was given and waits to use), the
 membership log, what the trust holds, the state of the relay's client as it would be if the exchange
-that runs stopped there, the commits and Welcomes the relay is still owed (section 7), and what the
-machine sent that waits to be signed (section 4), with what became of the sends that waited that an
-outcome has not said yet. The keys
+that runs stopped there, the commits, Welcomes and keys given the relay is still owed (section 7),
+and what the machine sent that waits to be signed (section 4), with what became of the sends that
+waited that an outcome has not said yet. The keys
 are given once, when the device is set up (`sce_peer_set_identity`, `sce_peer_set_administrator`,
 `sce_peer_with_group`); from then on a host never handles a protocol secret in the clear, and gives
 no key again to restore (ADR 0079 section 6).
@@ -397,8 +397,12 @@ with them together, so that no host can do one without the other:
   administrator, a quorum of one, the hub's profile `SCE_PEER_PROFILE_UNTRUSTED` or `_TRUSTED_HUB`)
   and a grant that makes the device's person a member with the highest role (3), and, when the core
   holds a device of the group (`sce_peer_with_group`, called before), makes the group with that device
-  alone in it: a list is keyed by its group from its first entry, or not at all. The hash of the
-  genesis is what a person is invited with (`sce_peer_invited`).
+  alone in it: a list is keyed by its group from its first entry, or not at all. A list keyed by its
+  group is sealed from its first write: the same call moves the group of one to its first epoch with a
+  commit that adds no one (an MLS self-update) and writes the entry that names it after the grant, so
+  the log is three entries, the relay is owed that commit (`owed` is 1), and nothing the device writes
+  is ever in the relay's clear. The first device admitted joins at epoch 2. The hash of the genesis is
+  what a person is invited with (`sce_peer_invited`).
 - `sce_peer_grant` gives a device a role of 1 (may read), 2 (may also write) or 3 (may also do what an
   owner does), or another role or key to a member; one that takes writing away carries where the
   device's chain ends, as the log requires. On a list keyed by its group it is refused for a device the
@@ -406,7 +410,11 @@ with them together, so that no host can do one without the other:
   members differ from the group's, and every later commit would be refused for it.
 - `sce_peer_add_member` admits a device to a list keyed by its group from the newest key package of it
   a round read from the relay (the device leaves one with `sce_peer_publish_key_package`): the grant,
-  the commit that adds the device and the entry that names the commit.
+  the commit that adds the device and the entry that names the commit. The device is given the list's
+  history: the key of every epoch before its own that the administrator's device holds, each sealed to
+  the device's key, which the relay is owed after the Welcome and the device's next round takes in, so
+  that it opens what was written before it was admitted (a Welcome gives the key of its own epoch
+  alone).
 - `sce_peer_remove_member` takes a device off, its chain ending at the last operation of it the
   administrator's device holds; on a list keyed by its group the same call makes the commit that moves
   the group to an epoch without it, since a removal the group did not follow would leave what is
@@ -416,8 +424,9 @@ with them together, so that no host can do one without the other:
 
 The log is append-only and a commit made and not merged can be given up, so an act asks everything
 that can refuse it and makes its commit before it writes an entry: an act that is refused wrote
-nothing. The entries go to the relay with the next round. A commit and a Welcome go after them, since
-the relay keeps a commit only once its log names it: the round that ends gives the relay what it is
+nothing. The entries go to the relay with the next round. A commit, a Welcome and a key given go after
+them, since the relay keeps each only once its log names or begins its epoch: the round that ends
+gives the relay what it is
 owed, in order, before its outcome is given, and `owed` in the outcome says how many it still is. One
 the relay did not take (the transport failed, the relay refused it) stays owed, is among the
 outcome's refusals, and is given again after the next round; it is in the save, so a device stopped
@@ -438,7 +447,7 @@ refusal's words:
 | `members` | the members now, in the order of their nodes, each `{"node": text, "role": number}` |
 | `epoch` | the latest epoch the log begins, 0 when none |
 | `keys` | the epochs whose keys the device holds: what it can open |
-| `owed` | how many commits and Welcomes the relay is still owed (section 7) |
+| `owed` | how many commits, Welcomes and keys given the relay is still owed (section 7) |
 | `waiting` | how many sends of the machine wait to be signed (section 4): what a host shows as not sent yet |
 
 The standing says nothing of a token: the core holds none, and the token a login earned is the

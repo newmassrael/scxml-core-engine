@@ -334,11 +334,11 @@ fn an_invited_device_joins_a_list_keyed_by_its_group_and_both_show_one_fingerpri
         let admitted = network.round(admin, 1);
         assert_eq!(admitted["refused"], json!([]), "{admitted}");
 
-        // Bob joins the group from the Welcome.
+        // Bob joins the group from the Welcome, at the epoch after the one the opening began.
         let welcomed = network.round(bob, 2);
         assert_eq!(
             welcomed["steps"],
-            json!([{"step": "joined", "epoch": "1"}]),
+            json!([{"step": "joined", "epoch": "2"}]),
             "{welcomed}"
         );
 

@@ -10,7 +10,10 @@
 // devices come to hold the same; that what a device that may not write sends is refused, and
 // reaches no one; that a host that answers out of turn is told so; that the group key is followed by
 // the core, and the administrator's core admits a device to the list and its group in one act, so
-// that what alice writes under the group's epoch opens on bob's device; that what the relay is owed
+// that what alice writes under the group's epoch opens on bob's device; that a list keyed by its
+// group is sealed from its first write, so that what alice writes alone reaches the relay sealed and
+// opens for bob once he is admitted and given the key of the epoch before his, and that a list whose
+// log names no epoch of its group signs nothing in the clear; that what the relay is owed
 // of such an act outlives a save and a failed round; that an administrator's act the core cannot do
 // is refused with its reason and writes nothing; that a device taken off is refused by the relay;
 // and that a device whose machine is built again from its own log of commands writes nothing twice,
@@ -26,9 +29,9 @@
 
 use sce_rust_peer::{
     CourierError, DataKey, Device, GroupStep, Kept, LogError, MlsError, Outcome, Peer, PeerError,
-    Profile, Publication, RoundKind,
+    Profile, Publication, RoundKind, OWNER,
 };
-use sce_rust_relay::{Authority, Limits, MemoryStore, Relay};
+use sce_rust_relay::{Authority, Limits, MemoryStore, Record, Relay, Request, Response};
 use sce_rust_trust::membership::{Body, Entry, Log};
 use sce_rust_trust::Identity;
 use serde_json::{json, Value};
@@ -72,6 +75,13 @@ fn write(id: u32, node: u64, wall: i64, value: i64) -> String {
     .to_string()
 }
 
+/// A write of the title `text` to field 1 of row `id`, stamped by `node` at `wall`.
+fn titled(id: u32, node: u64, wall: i64, text: &str) -> String {
+    json!({"id": id, "field": 1, "value": "0", "text": text,
+           "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()})
+    .to_string()
+}
+
 /// The note, as `record_list.supersede` carries it, that `by` wrote over the write of row `id`
 /// that `node` stamped at `wall`, in the change stamped `at`.
 fn supersede(id: u32, node: u64, wall: i64, by: u64, at: i64) -> String {
@@ -106,6 +116,32 @@ impl Network {
     fn round(&mut self, peer: &mut Peer, node: u64, kind: RoundKind) -> Outcome {
         peer.start(kind).unwrap();
         self.finish(peer, node)
+    }
+
+    /// The writes the relay holds of the list, each as the operation it keeps, read from the start
+    /// of its feed by alice's device.
+    fn writes_held(&mut self) -> Vec<Value> {
+        let text = self.carry(
+            ALICE,
+            &Request::Feed {
+                cursor: 0,
+                limit: 500,
+            }
+            .to_json(),
+        );
+        let Ok(Response::Feed { records, more, .. }) = Response::from_json(&text) else {
+            panic!("the relay gives its feed: {text}");
+        };
+        assert!(!more, "the feed is read whole");
+        records
+            .into_iter()
+            .filter_map(|record| match record {
+                Record::Operation { event, data } if event == WRITE => {
+                    Some(serde_json::from_str(&data).unwrap())
+                }
+                _ => None,
+            })
+            .collect()
     }
 
     /// The exchange `peer` runs, carried to its end.
@@ -479,7 +515,11 @@ fn the_core_follows_the_group_and_what_is_sealed_under_its_epoch_opens() {
     network.round(&mut alice, ALICE, RoundKind::Sync);
 
     alice.add_member(BOB, 2, person(BOB).public()).unwrap();
-    assert_eq!(alice.standing().owed, 2, "the commit and his Welcome");
+    assert_eq!(
+        alice.standing().owed,
+        3,
+        "the commit, his Welcome and the key of the epoch before his"
+    );
     assert_eq!(alice.trust().role(BOB), 2);
     let admitted = network.round(&mut alice, ALICE, RoundKind::Sync);
     assert!(admitted.refused().is_empty(), "{:?}", admitted.refused());
@@ -490,12 +530,17 @@ fn the_core_follows_the_group_and_what_is_sealed_under_its_epoch_opens() {
     );
 
     let joined = network.round(&mut bob, BOB, RoundKind::Sync);
-    assert_eq!(joined.steps, vec![GroupStep::Joined(1)], "{joined:?}");
+    assert_eq!(joined.steps, vec![GroupStep::Joined(2)], "{joined:?}");
+    assert!(joined.refused().is_empty(), "{:?}", joined.refused());
     assert_eq!(
         bob.group().unwrap().device().epoch_key(),
         alice.group().unwrap().device().epoch_key()
     );
-    assert_eq!(bob.trust().epochs(), vec![1]);
+    assert_eq!(
+        bob.trust().epochs(),
+        vec![1, 2],
+        "the epoch the opening began, given, and his own"
+    );
     assert_eq!(bob.standing().keys, alice.standing().keys);
 
     assert_eq!(
@@ -515,7 +560,7 @@ fn the_core_follows_the_group_and_what_is_sealed_under_its_epoch_opens() {
     let removed = network.round(&mut alice, ALICE, RoundKind::Sync);
     assert!(removed.refused().is_empty(), "{:?}", removed.refused());
     assert_eq!(removed.owed, 0);
-    assert_eq!(alice.trust().epochs(), vec![1, 2]);
+    assert_eq!(alice.trust().epochs(), vec![1, 2, 3]);
     assert_eq!(
         alice.outbound(WRITE, &write(2, ALICE, 4000, 6)),
         Kept::Taken
@@ -524,7 +569,11 @@ fn the_core_follows_the_group_and_what_is_sealed_under_its_epoch_opens() {
     let cut = network.round(&mut bob, BOB, RoundKind::Sync);
     assert!(named(&cut, WRITE).is_empty(), "{:?}", cut.events());
     assert_eq!(bob.standing().role, 0);
-    assert_eq!(bob.trust().epochs(), vec![1], "no key of the epoch after");
+    assert_eq!(
+        bob.trust().epochs(),
+        vec![1, 2],
+        "no key of the epoch after"
+    );
 }
 
 /// What the relay is owed of an administrator's act is kept: in the save, so that a device that
@@ -542,7 +591,7 @@ fn what_the_relay_is_owed_outlives_a_save_and_a_failed_round() {
     // Alice's device stops with the commit and the Welcome not given, and starts again from its
     // sealed state, its group's device and its keys with it.
     let mut alice = restarted(alice, ALICE);
-    assert_eq!(alice.standing().owed, 2);
+    assert_eq!(alice.standing().owed, 3);
     assert!(alice.group().is_some(), "the group's device came back");
 
     // The round ends, and the transport fails as the commit is given: it is owed still, and the
@@ -560,18 +609,177 @@ fn what_the_relay_is_owed_outlives_a_save_and_a_failed_round() {
         .take_outcome()
         .expect("the round ended")
         .expect("the round held, though what it owed was not given");
-    assert_eq!(lost.owed, 2, "{lost:?}");
+    assert_eq!(lost.owed, 3, "{lost:?}");
     assert!(
         lost.refused().iter().any(|why| why.contains("owed")),
         "{:?}",
         lost.refused()
     );
-    assert_eq!(alice.standing().owed, 2);
+    assert_eq!(alice.standing().owed, 3);
 
     let given = network.round(&mut alice, ALICE, RoundKind::Sync);
     assert_eq!(given.owed, 0, "{given:?}");
     let joined = network.round(&mut bob, BOB, RoundKind::Sync);
+    assert_eq!(joined.steps, vec![GroupStep::Joined(2)], "{joined:?}");
+    assert_eq!(bob.trust().epochs(), vec![1, 2]);
+}
+
+/// A list keyed by its group is sealed from its first write. Its opening moves the group of one to
+/// an epoch the log names, before anything is written, so what alice's device writes while she is
+/// alone in the list (a title and a number) reaches the relay sealed: the relay holds no value and
+/// no text of it in the clear. Bob's device, admitted after, joins at the epoch that admits him and
+/// is given the key of the first, and his machine is told both writes, opened, in the round that
+/// reads them.
+#[test]
+fn what_the_first_device_writes_alone_is_sealed_at_the_relay_and_opens_for_one_admitted_later() {
+    let mut network = Network::new(Limits::default());
+    let mut alice = alice_with_group();
+    let bodies: Vec<Body> = alice
+        .trust()
+        .entries()
+        .iter()
+        .map(|entry| entry.body.clone())
+        .collect();
+    assert_eq!(bodies.len(), 3, "{bodies:?}");
+    assert!(
+        matches!(bodies[2], Body::MlsEpoch { epoch: 1, .. }),
+        "the entry that names the first epoch follows the owner's grant: {bodies:?}"
+    );
+    let standing = alice.standing();
+    assert_eq!((standing.epoch, standing.keys.clone()), (1, vec![1]));
+    assert_eq!(standing.owed, 1, "the commit of the first epoch");
+
+    assert_eq!(
+        alice.outbound(WRITE, &titled(1, ALICE, 1000, "buy milk")),
+        Kept::Taken
+    );
+    assert_eq!(
+        alice.outbound(WRITE, &write(2, ALICE, 1500, 7)),
+        Kept::Taken
+    );
+    let opened = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert!(opened.refused().is_empty(), "{:?}", opened.refused());
+    assert_eq!(
+        opened.owed, 0,
+        "the relay took the commit of the first epoch"
+    );
+
+    let held = network.writes_held();
+    assert_eq!(held.len(), 2, "{held:?}");
+    for write in &held {
+        assert_eq!(write["value"], "0", "no number in the clear: {write}");
+        let text = write["text"].as_str().unwrap_or_default();
+        assert!(
+            !text.is_empty(),
+            "the content is sealed into the text: {write}"
+        );
+        assert!(!text.contains("buy milk"), "no title in the clear: {write}");
+    }
+
+    let mut bob = bob_with_a_key_package(&mut network);
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    alice.add_member(BOB, 2, person(BOB).public()).unwrap();
+    let admitted = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert!(admitted.refused().is_empty(), "{:?}", admitted.refused());
+    assert_eq!(
+        admitted.owed, 0,
+        "the commit, the Welcome and the key given"
+    );
+
+    let joined = network.round(&mut bob, BOB, RoundKind::Sync);
+    assert!(joined.refused().is_empty(), "{:?}", joined.refused());
+    assert_eq!(joined.steps, vec![GroupStep::Joined(2)], "{joined:?}");
+    assert_eq!(bob.trust().epochs(), vec![1, 2]);
+    let told = named(&joined, WRITE);
+    assert_eq!(told.len(), 2, "{:?}", joined.events());
+    assert!(
+        told.iter().any(|write| write["text"] == "buy milk"),
+        "the title opened: {told:?}"
+    );
+    assert!(
+        told.iter().any(|write| write["value"] == "7"),
+        "the number opened: {told:?}"
+    );
+
+    // What bob writes is sealed under the epoch he joined at, and opens on alice's device; the
+    // relay still holds nothing in the clear.
+    assert_eq!(bob.outbound(WRITE, &write(3, BOB, 2000, 9)), Kept::Taken);
+    network.round(&mut bob, BOB, RoundKind::Sync);
+    let theirs = network.round(&mut alice, ALICE, RoundKind::Sync);
+    let from_bob = named(&theirs, WRITE);
+    assert_eq!(from_bob.len(), 1, "{:?}", theirs.events());
+    assert_eq!(from_bob[0]["value"], "9");
+    let held = network.writes_held();
+    assert_eq!(held.len(), 3, "{held:?}");
+    assert!(held.iter().all(|write| write["value"] == "0"), "{held:?}");
+}
+
+/// A list an earlier core opened, whose log names no epoch of its group (the genesis and the
+/// owner's grant, and the group made with no entry after them): what its device writes waits, and is
+/// not signed in the clear, until the log names an epoch. Admitting the first member names one;
+/// the write that waited is signed under it by the next round, reaches the relay sealed, and opens
+/// for the member, who joined at that epoch and is given no key before it, since there is none.
+#[test]
+fn a_list_whose_log_names_no_epoch_of_its_group_signs_no_write_until_it_names_one() {
+    let mut network = Network::new(Limits::default());
+    let mut device = Device::new(LIST, ALICE, person(ALICE));
+    device.create_group().unwrap();
+    let mut alice = Peer::open(LIST).with_group(device, ALICE);
+    alice.set_identity(ALICE, person(ALICE));
+    alice.set_administrator(administrator());
+    alice.trust().append(&genesis()).unwrap();
+    alice
+        .trust()
+        .administer(
+            &administrator(),
+            alice
+                .trust()
+                .grant_body(ALICE, OWNER, person(ALICE).public()),
+        )
+        .unwrap();
+    assert_eq!(alice.standing().epoch, 0);
+
+    let kept = alice.outbound(WRITE, &titled(1, ALICE, 1000, "buy milk"));
+    assert!(
+        matches!(&kept, Kept::Waiting(why) if why.contains("names no epoch")),
+        "{kept:?}"
+    );
+    assert_eq!(alice.standing().waiting, 1);
+    let opened = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert!(opened.refused().is_empty(), "{:?}", opened.refused());
+    assert!(
+        network.writes_held().is_empty(),
+        "nothing signed, and nothing in the relay's clear"
+    );
+
+    let mut bob = bob_with_a_key_package(&mut network);
+    network.round(&mut alice, ALICE, RoundKind::Sync);
+    alice.add_member(BOB, 2, person(BOB).public()).unwrap();
+    assert_eq!(
+        alice.standing().owed,
+        2,
+        "the commit and his Welcome: no epoch before his to give"
+    );
+    let admitted = network.round(&mut alice, ALICE, RoundKind::Sync);
+    assert!(admitted.refused().is_empty(), "{:?}", admitted.refused());
+    assert_eq!(admitted.taken().len(), 1, "the write that waited, signed");
+    assert_eq!(alice.standing().waiting, 0);
+    let held = network.writes_held();
+    assert_eq!(held.len(), 1, "{held:?}");
+    assert_eq!(held[0]["value"], "0");
+    assert!(
+        !held[0].to_string().contains("buy milk"),
+        "sealed: {}",
+        held[0]
+    );
+
+    let joined = network.round(&mut bob, BOB, RoundKind::Sync);
     assert_eq!(joined.steps, vec![GroupStep::Joined(1)], "{joined:?}");
+    let again = network.round(&mut bob, BOB, RoundKind::Sync);
+    let mut told = named(&joined, WRITE);
+    told.extend(named(&again, WRITE));
+    assert_eq!(told.len(), 1, "{:?} {:?}", joined.events(), again.events());
+    assert_eq!(told[0]["text"], "buy milk");
 }
 
 /// Alice's administrator's device and bob's are each stopped and made again from their sealed
@@ -604,16 +812,21 @@ fn a_device_restored_from_its_sealed_state_goes_on_with_no_key_given_again() {
     assert!(admitted.refused().is_empty(), "{:?}", admitted.refused());
     assert_eq!(admitted.owed, 0);
     let joined = network.round(&mut bob, BOB, RoundKind::Sync);
-    assert_eq!(joined.steps, vec![GroupStep::Joined(1)], "{joined:?}");
+    assert_eq!(joined.steps, vec![GroupStep::Joined(2)], "{joined:?}");
+    assert_eq!(
+        bob.trust().epochs(),
+        vec![1, 2],
+        "the key of the epoch before his was given from the key alice's state kept"
+    );
 
     let epoch_key = bob.group().unwrap().device().epoch_key();
     let mut bob = restarted(bob, BOB);
     assert_eq!(
         bob.standing().keys,
-        vec![1],
-        "the key of the epoch came back"
+        vec![1, 2],
+        "the keys of the epochs came back"
     );
-    assert_eq!(bob.group().unwrap().device().epoch().ok(), Some(1));
+    assert_eq!(bob.group().unwrap().device().epoch().ok(), Some(2));
     assert_eq!(bob.group().unwrap().device().epoch_key(), epoch_key);
     assert_eq!(alice.group().unwrap().device().epoch_key(), epoch_key);
     network.round(&mut bob, BOB, RoundKind::Sync);
@@ -639,10 +852,14 @@ fn a_device_restored_from_its_sealed_state_goes_on_with_no_key_given_again() {
     alice.remove_member(BOB).unwrap();
     let removed = network.round(&mut alice, ALICE, RoundKind::Sync);
     assert!(removed.refused().is_empty(), "{:?}", removed.refused());
-    assert_eq!(alice.trust().epochs(), vec![1, 2]);
+    assert_eq!(alice.trust().epochs(), vec![1, 2, 3]);
     network.round(&mut bob, BOB, RoundKind::Sync);
     assert_eq!(bob.standing().role, 0);
-    assert_eq!(bob.trust().epochs(), vec![1], "no key of the epoch after");
+    assert_eq!(
+        bob.trust().epochs(),
+        vec![1, 2],
+        "no key of the epoch after"
+    );
 }
 
 /// A sealed state is refused whole, and the core it was given to takes nothing of it, when the key is

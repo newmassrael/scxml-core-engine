@@ -132,11 +132,12 @@ int32_t sce_peer_for_a_hub(ScePeer *peer);
 int32_t sce_peer_with_group(ScePeer *peer, uint64_t node, const uint8_t *seed /* 32 bytes */);
 
 /* An administrator's acts. Opening a list writes the genesis and the grant of the device's person, makes
- * the group when the core holds a device of it, and sets *genesis to the hash (32 bytes) a person is
- * invited with. A role is 1 to 3. On a list keyed by its group a device is admitted with
- * sce_peer_add_member (the grant and the commit are one change), from the newest key package of it a
- * round read, and taken off the list and the group at once. The entries go to the relay with the next
- * round, and the commits and Welcomes after it. */
+ * the group when the core holds a device of it with the entry that names its first epoch (so that the
+ * list is sealed from its first write), and sets *genesis to the hash (32 bytes) a person is invited
+ * with. A role is 1 to 3. On a list keyed by its group a device is admitted with sce_peer_add_member
+ * (the grant and the commit are one change), from the newest key package of it a round read, and is
+ * given the keys of the epochs before its own; it is taken off the list and the group at once. The
+ * entries go to the relay with the next round, and the commits, Welcomes and keys given after it. */
 int32_t sce_peer_open_list(ScePeer *peer, int32_t profile /* SCE_PEER_PROFILE_* */, uint8_t *genesis /* 32 bytes */);
 int32_t sce_peer_grant(ScePeer *peer, uint64_t node, uint32_t role, const uint8_t *key /* 32 bytes */);
 int32_t sce_peer_add_member(ScePeer *peer, uint64_t node, uint32_t role, const uint8_t *key /* 32 bytes */);

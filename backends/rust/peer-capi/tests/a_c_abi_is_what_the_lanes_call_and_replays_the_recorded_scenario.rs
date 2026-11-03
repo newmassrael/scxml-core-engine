@@ -987,15 +987,15 @@ fn the_administrators_acts_on_a_group_go_through_the_abi() {
         assert_eq!(left["outcome"], "ended", "{left}");
         network.round(admin, 1);
 
-        // One call admits him to the list and to the group; the relay is owed the commit and his
-        // Welcome until the next round gives them.
+        // One call admits him to the list and to the group; the relay is owed the commit, his
+        // Welcome and the key of the epoch the opening began until the next round gives them.
         assert_eq!(
             sce_peer_add_member(admin, 2, 2, public_of(bob).as_ptr()),
             SCE_PEER_OK,
             "{}",
             last_error()
         );
-        assert_eq!(standing_of(admin)["owed"], 2);
+        assert_eq!(standing_of(admin)["owed"], 3);
         let admitted = network.round(admin, 1);
         assert_eq!(admitted["refused"], json!([]), "{admitted}");
         assert_eq!(admitted["owed"], 0, "{admitted}");
@@ -1006,11 +1006,11 @@ fn the_administrators_acts_on_a_group_go_through_the_abi() {
         let joined = network.round(joiner, 2);
         assert_eq!(
             joined["steps"],
-            json!([{"step": "joined", "epoch": "1"}]),
+            json!([{"step": "joined", "epoch": "2"}]),
             "{joined}"
         );
-        assert_eq!(standing_of(joiner)["keys"], json!([1]));
-        assert_eq!(standing_of(admin)["keys"], json!([1]));
+        assert_eq!(standing_of(joiner)["keys"], json!([1, 2]));
+        assert_eq!(standing_of(admin)["keys"], json!([1, 2]));
 
         // His device is stopped and made again from its sealed state, given nothing but the list
         // and the genesis: its person, its group's device and the key of the epoch come back, and
@@ -1040,7 +1040,7 @@ fn the_administrators_acts_on_a_group_go_through_the_abi() {
             last_error()
         );
         let restored = standing_of(joiner);
-        assert_eq!(restored["keys"], json!([1]), "{restored}");
+        assert_eq!(restored["keys"], json!([1, 2]), "{restored}");
         assert_eq!(restored["awaits_own_chain"], true, "{restored}");
         let back = network.round(joiner, 2);
         assert_eq!(back["refused"], json!([]), "{back}");
@@ -1082,13 +1082,17 @@ fn the_administrators_acts_on_a_group_go_through_the_abi() {
         assert_eq!(removed["refused"], json!([]), "{removed}");
         assert_eq!(removed["owed"], 0, "{removed}");
         let after = standing_of(admin);
-        assert_eq!(after["keys"], json!([1, 2]), "{after}");
+        assert_eq!(after["keys"], json!([1, 2, 3]), "{after}");
         assert_eq!(after["members"], json!([{"node": "1", "role": 3}]));
         let cut = network.round(joiner, 2);
         assert_eq!(cut["outcome"], "ended", "{cut}");
         let off = standing_of(joiner);
         assert_eq!(off["role"], 0, "{off}");
-        assert_eq!(off["keys"], json!([1]), "no key of the epoch after: {off}");
+        assert_eq!(
+            off["keys"],
+            json!([1, 2]),
+            "no key of the epoch after: {off}"
+        );
 
         sce_peer_free(joiner);
         sce_peer_free(admin);
