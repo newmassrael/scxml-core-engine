@@ -52,7 +52,8 @@ const SCAN_ROOTS: &[&str] = &["cmake", "tests", "backends"];
 /// A site is a command as written, not a generation the build runs: the
 /// Mesh fixtures of the test tree, 139 commands written out one per file
 /// until 2026-11-03, are now every one declared by the single command in
-/// `sce_codegen_generation` (cmake/SCECodegenPlan.cmake), which is why the
+/// `_sce_codegen_generation_declare` (cmake/SCECodegenPlan.cmake), which
+/// every `sce_codegen_generation` call is declared by, which is why the
 /// floor fell from 150 to the 38 sites measured then.
 const MIN_CODEGEN_INVOCATIONS: usize = 38;
 

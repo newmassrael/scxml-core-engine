@@ -23,7 +23,7 @@
 # in memory with the same arguments, so there is nothing to keep in step. This
 # module is the one place that asks it: `SCEStaticIntegrationFixture.cmake`
 # and `SCEStaticW3CTest.cmake` both declare what `sce_codegen_plan` answers,
-# the test tree declares every generation it runs through
+# the test trees declare every generation they run through
 # `sce_codegen_generation`, which asks it and declares the command, and
 # `the_conformance_cmake_route_declares_what_the_generator_plans` holds all
 # three to that.
@@ -75,27 +75,46 @@
 # Every plan not kept is asked of `sce-codegen plan-batch`, which runs each
 # request as the `--plan generate` run a single ask would make, as many at a
 # time as there are processors (`SCE_CODEGEN_PLAN_JOBS`), and keeps each
-# answer where the next ask finds it. A route asks every plan it will declare
-# before it declares one ("request first, declare after"):
+# answer where the next ask finds it. Every plan the tree declares is asked
+# before any is declared ("request first, declare after"):
 #   - when this module is first included, every answer the last configure of
 #     this build tree asked for that is no longer current is asked again in
 #     one batch, which is every plan after the generator is rebuilt
 #     (`_sce_codegen_plan_refresh`);
-#   - a route queues the plans of its generations
-#     (`sce_codegen_plan_request`, `sce_codegen_generation_request`) and sends
-#     them together (`sce_codegen_plan_prefetch`) before declaring them: the
-#     conformance route for every fixture the registry lists, and, after their
-#     last registration, the C11 conformance and C++ integration fixtures; the
-#     C11 integration fixtures and the Mesh fixtures, whose targets compile
-#     each one's files right after it is registered, declare at the end of
-#     their directory (`cmake_language(DEFER)`) and hand their callers a
-#     generator expression for the files;
+#   - a route that declares its own commands from `sce_codegen_plan` queues
+#     the plans of its fixtures (`sce_codegen_plan_request`) and sends them
+#     together (`sce_codegen_plan_prefetch`) before declaring them: the
+#     conformance route for every fixture the registry lists, and, after
+#     their last registration, the C11 conformance and C++ integration
+#     fixtures; the C11 integration fixtures, whose targets compile each
+#     one's files right after it is registered, declare at the end of their
+#     directory (`cmake_language(DEFER)`);
+#   - every other generation is a call of `sce_codegen_generation`, which
+#     queues its plan when it is called and declares nothing then: every
+#     generation called in a directory is declared when that directory ends
+#     (`_sce_codegen_generations_declare`), after every plan queued by then
+#     was sent in one batch, and the call hands its caller generator
+#     expressions for the files a target compiles;
 #   - a plan asked otherwise and not kept is sent alone, when it is asked.
 # At the end of the configure, the answers no plan asked for are removed,
 # the list of the asked ones is kept for the next configure, and one line
-# says how many plans were asked, how many were kept, and how many the
-# generator was sent (`_sce_codegen_plan_settle`), followed, when a kept
-# answer was not current, by why (`stale.txt` holds every reason).
+# says how many plans were asked, how many were kept, how many the generator
+# was sent and how many of those were sent alone (`_sce_codegen_plan_settle`),
+# followed, when a kept answer was not current, by why (`stale.txt` holds
+# every reason).
+#
+# Why `sce_codegen_generation` defers its own declaration rather than each
+# caller asking ahead and declaring after: a request and a declaration
+# written at the call would be the one generation's options written twice,
+# two lists to keep word for word in step, and a caller that wrote only the
+# second would send its plan alone with nothing to say so. Made by the one
+# call, the request and the declaration are read from the one list the call
+# was given. What a caller gives up is the plan's answer when the call
+# returns, and no caller needs it then: a target takes the files as a
+# generator expression, which the declaration fills before the build system
+# is generated, and the child generations a plan holds
+# (`CHILD_GENERATIONS`) are declared by the declaration itself rather than
+# by the caller reading the plan.
 #
 # What the cache cannot see is what no list names, and a file put back with
 # an older date than the answer. A depfile has the same blind spots;
@@ -304,6 +323,9 @@ function(_sce_codegen_plan_answer RESULT_VAR OUTPUT_VAR ERROR_VAR)
     if(_FRESH)
         _sce_codegen_plan_count(KEPT 1)
     else()
+        # Asked ahead by no request, or asked ahead and answered by no batch:
+        # one process for one plan, which the settle line counts.
+        _sce_codegen_plan_count(ALONE 1)
         _sce_codegen_plan_ask("${_LINE}")
     endif()
     if(EXISTS "${_ENTRY}.plan")
@@ -385,16 +407,19 @@ function(_sce_codegen_plan_settle)
             file(REMOVE "${_FILE}")
         endif()
     endforeach()
-    foreach(_COUNTER ASKED KEPT SENT BATCHES)
+    foreach(_COUNTER ASKED KEPT SENT BATCHES ALONE)
         get_property(_COUNT_${_COUNTER} GLOBAL PROPERTY "_SCE_CODEGEN_PLAN_${_COUNTER}")
         if("${_COUNT_${_COUNTER}}" STREQUAL "")
             set(_COUNT_${_COUNTER} 0)
         endif()
     endforeach()
+    # ALONE is how many of the SENT went one to a batch because no batch had
+    # answered them when they were asked: each is a process the configure
+    # waited for by itself.
     message(STATUS
         "SCE: generation plans: ${_COUNT_ASKED} asked, ${_COUNT_KEPT} answered from the "
-        "cache; ${_COUNT_SENT} sent to sce-codegen in ${_COUNT_BATCHES} batch(es) "
-        "(${_CACHE})")
+        "cache; ${_COUNT_SENT} sent to sce-codegen in ${_COUNT_BATCHES} batch(es), "
+        "${_COUNT_ALONE} of them alone (${_CACHE})")
 
     # Why each kept answer that was asked again was not current: every reason
     # in `stale.txt`, and the first few said, an answer never kept aside. A
@@ -479,12 +504,31 @@ function(sce_codegen_plan_prefetch)
     _sce_codegen_plan_ask(${_STALE})
 endfunction()
 
+# _sce_codegen_plan_settle_last()
+#
+#   Schedule the settle again, after every call deferred to the end of the
+#   top-level directory so far. Deferred calls run in the order they were
+#   scheduled, and the settle was scheduled when this module was included: a
+#   declaration deferred to the end of the top-level directory after that
+#   would ask its plans after the settle had written the list of the asked
+#   ones and removed every answer not on it.
+function(_sce_codegen_plan_settle_last)
+    get_property(_CALL GLOBAL PROPERTY _SCE_CODEGEN_PLAN_SETTLE_CALL)
+    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CANCEL_CALL "${_CALL}")
+    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" ID_VAR _CALL
+        CALL _sce_codegen_plan_settle)
+    set_property(GLOBAL PROPERTY _SCE_CODEGEN_PLAN_SETTLE_CALL "${_CALL}")
+endfunction()
+
 # Once per configure, before any plan is asked: bring up to date what the last
 # configure asked for, and settle the cache when the configure ends. A script
 # (`cmake -P`) has no configure to end.
 if(NOT CMAKE_SCRIPT_MODE_FILE)
     _sce_codegen_plan_refresh()
-    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL _sce_codegen_plan_settle)
+    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" ID_VAR _SCE_CODEGEN_PLAN_SETTLE_CALL
+        CALL _sce_codegen_plan_settle)
+    set_property(GLOBAL PROPERTY _SCE_CODEGEN_PLAN_SETTLE_CALL "${_SCE_CODEGEN_PLAN_SETTLE_CALL}")
+    unset(_SCE_CODEGEN_PLAN_SETTLE_CALL)
 endif()
 
 # _sce_codegen_plan_machine(<MACHINE_VAR> <DEPFILE_VAR> <STEM> <LANGUAGE>)
@@ -990,10 +1034,10 @@ endmacro()
 #
 #   The options `sce_codegen_plan` is asked with for one generation whose
 #   options `cmake_parse_arguments` parsed into `<PARSED>_*` in the caller's
-#   scope: the one spelling for `sce_codegen_generation`, which asks the plan,
-#   and `sce_codegen_generation_request`, which asks it ahead. The stem is the
-#   document's name when not given, and the deploy is passed as the run's
-#   `--deploy`. CALLER names the call in a refusal.
+#   scope: the one list `sce_codegen_generation` asks ahead with and keeps for
+#   the declaration to plan with. The stem is the document's name when not
+#   given, and the deploy is passed as the run's `--deploy`. CALLER names the
+#   call in a refusal.
 function(_sce_codegen_generation_plan_options VAR PARSED CALLER)
     foreach(_REQUIRED DOCUMENT OUTPUT_DIR LANGUAGE)
         if("${${PARSED}_${_REQUIRED}}" STREQUAL "")
@@ -1025,30 +1069,6 @@ function(_sce_codegen_generation_plan_options VAR PARSED CALLER)
     set(${VAR} "${_OPTIONS}" PARENT_SCOPE)
 endfunction()
 
-# sce_codegen_generation_request(DOCUMENT <document> OUTPUT_DIR <dir>
-#     LANGUAGE <cpp|c11> [STEM <stem>] [DEPLOY <deploy.yaml>]
-#     [INPUT_ROOT <dir>] [CHILDREN_HELD_IN <dir>] [CHILD_GENERATIONS]
-#     [CLAIM <global property>] [ARGS <arg>...] [COMMENT <text>])
-#
-#   Ask ahead for the plan a later `sce_codegen_generation(<PREFIX> ...)`
-#   with the same options asks (`sce_codegen_plan_request`), so that the
-#   generations a caller declares one after another are planned in one batch
-#   (`sce_codegen_plan_prefetch`) before the first of them. COMMENT is taken
-#   so a caller can pass the very options it declares with; it changes no
-#   request.
-function(sce_codegen_generation_request)
-    cmake_parse_arguments(PARSE_ARGV 0 _SCGR "CHILD_GENERATIONS"
-        "STEM;DOCUMENT;OUTPUT_DIR;LANGUAGE;DEPLOY;INPUT_ROOT;CHILDREN_HELD_IN;CLAIM;COMMENT"
-        "ARGS")
-    if(_SCGR_UNPARSED_ARGUMENTS)
-        message(FATAL_ERROR
-            "sce_codegen_generation_request: unexpected argument(s): "
-            "${_SCGR_UNPARSED_ARGUMENTS}")
-    endif()
-    _sce_codegen_generation_plan_options(_OPTIONS _SCGR "sce_codegen_generation_request")
-    sce_codegen_plan_request(${_OPTIONS})
-endfunction()
-
 # sce_codegen_generation(<PREFIX>
 #     DOCUMENT <document> OUTPUT_DIR <dir> LANGUAGE <cpp|c11>
 #     [STEM <stem>]
@@ -1060,90 +1080,172 @@ endfunction()
 #     [ARGS <arg>...]
 #     [COMMENT <text>])
 #
-#   One generation of DOCUMENT into OUTPUT_DIR, declared from its plan: ask
-#   `sce_codegen_plan` which files the run writes, then declare the command
-#   that runs it with exactly those as its OUTPUT and BYPRODUCTS, the depfile
-#   it asks the generator for as its DEPFILE, and what it reads before that
-#   depfile exists (the document, the deploy, the staged children, the
-#   generator) as its DEPENDS. Every file of the run has this command as its
-#   one producer, and no file name is written at the call: a run with a
-#   deploy declares the transport it writes beside the machine because the
-#   plan names it.
+#   One generation of DOCUMENT into OUTPUT_DIR, declared from its plan: the
+#   command that runs it is declared with exactly the files the plan names as
+#   its OUTPUT and BYPRODUCTS, the depfile it asks the generator for as its
+#   DEPFILE, and what it reads before that depfile exists (the document, the
+#   deploy, the staged children, the generator) as its DEPENDS. Every file of
+#   the run has this command as its one producer, and no file name is written
+#   at the call: a run with a deploy declares the transport it writes beside
+#   the machine because the plan names it.
+#
+#   The call asks the plan ahead (`sce_codegen_plan_request`) and declares
+#   nothing. Every generation called in a directory is declared when the
+#   directory ends (`_sce_codegen_generations_declare`), after every plan
+#   queued by then was sent to the generator in one batch: a plan is never
+#   asked alone, and a caller has nothing to ask ahead itself. A call after
+#   the generations of its directory were declared is refused, as one the
+#   build would never run.
 #
 #   STEM     The machine's name, which names its files: the document's name
 #            without `.scxml` when not given.
 #   DEPLOY   The deploy the run is generated with (`--deploy`), which the
 #            plan is asked with too and the command depends on.
+#   CHILD_GENERATIONS
+#            Plan, and declare, the generation of every child document the
+#            run writes or stages and of every child document those write in
+#            turn (`sce_codegen_plan` says which), each a command of its own
+#            run with the arguments and input root the plan states for it,
+#            depending on its document and on the machine of the generation
+#            that writes it.
 #   ARGS     The rest of the arguments that change what the run emits
 #            (`--partition <name>` ...). Formatting is the build's
 #            (`sce_codegen_format_args`) and is given to the command alone.
-#   COMMENT  What the build prints when it runs the command.
+#   COMMENT  What the build prints when it runs the command (a child
+#            generation's says which child it generates).
 #   The others are `sce_codegen_plan`'s.
 #
-# sce_codegen_generation(<PREFIX> FROM <plan> CHILD <name> [COMMENT <text>])
-#
-#   The generation of the child document <name> the plan <plan> holds (asked
-#   with CHILD_GENERATIONS), declared the same way and run with the arguments
-#   and input root the plan states for it: it depends on its document and on
-#   the machine of the generation that writes it.
-#
-#   Either form sets, in the caller's scope, every variable
-#   `sce_codegen_plan` sets: `<PREFIX>_HEADERS` and `<PREFIX>_SOURCES` are
-#   what a target compiles of the run, and `<PREFIX>_GENERATIONS` names the
-#   children a CHILD_GENERATIONS plan holds, each declared by the second form.
+#   Sets, in the caller's scope, as generator expressions the declaration
+#   fills before the build system is generated, so a target's sources take
+#   them as they are and nothing reads them while the tree is configured:
+#     <PREFIX>_HEADERS   every header the run writes, and with
+#                        CHILD_GENERATIONS every header its child generations
+#                        write: what a target compiles of it
+#     <PREFIX>_SOURCES   likewise every C translation unit
 function(sce_codegen_generation PREFIX)
     cmake_parse_arguments(PARSE_ARGV 1 _SCGA "CHILD_GENERATIONS"
-        "STEM;DOCUMENT;OUTPUT_DIR;LANGUAGE;DEPLOY;INPUT_ROOT;CHILDREN_HELD_IN;CLAIM;FROM;CHILD;COMMENT"
+        "STEM;DOCUMENT;OUTPUT_DIR;LANGUAGE;DEPLOY;INPUT_ROOT;CHILDREN_HELD_IN;CLAIM;COMMENT"
         "ARGS")
     if(_SCGA_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR
             "sce_codegen_generation(${PREFIX}): unexpected argument(s): "
-            "${_SCGA_UNPARSED_ARGUMENTS}")
+            "${_SCGA_UNPARSED_ARGUMENTS}. A child document's generation is declared by "
+            "the generation whose plan holds it (CHILD_GENERATIONS), not by a call.")
+    endif()
+    get_property(_DECLARED DIRECTORY PROPERTY _SCE_CODEGEN_GENERATIONS_DECLARED)
+    if(_DECLARED)
+        message(FATAL_ERROR
+            "sce_codegen_generation(${PREFIX}) comes after the generations of "
+            "${CMAKE_CURRENT_SOURCE_DIR} were declared: it would never be generated")
     endif()
 
+    # The one list the plan is asked ahead with and planned with when it is
+    # declared, kept for the declaration.
+    _sce_codegen_generation_plan_options(_PLAN_OPTIONS _SCGA "sce_codegen_generation(${PREFIX})")
+    sce_codegen_plan_request(${_PLAN_OPTIONS})
+
+    get_property(_ID GLOBAL PROPERTY _SCE_CODEGEN_GENERATION_COUNT)
+    if("${_ID}" STREQUAL "")
+        set(_ID 0)
+    endif()
+    math(EXPR _ID "${_ID} + 1")
+    set_property(GLOBAL PROPERTY _SCE_CODEGEN_GENERATION_COUNT "${_ID}")
+    if(NOT TARGET sce_codegen_generations)
+        # Holds, per generation, the files the declaration found it writes,
+        # for the generator expressions each caller is handed: a property of
+        # a target is the one place a generator expression reads a value set
+        # after the expression was written.
+        add_library(sce_codegen_generations INTERFACE)
+    endif()
+    get_property(_REGISTERED DIRECTORY PROPERTY _SCE_CODEGEN_GENERATIONS)
+    if("${_REGISTERED}" STREQUAL "")
+        # The first generation of this directory: its declaration, and every
+        # later one's, is made when the directory ends.
+        cmake_language(DEFER CALL _sce_codegen_generations_declare)
+        if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+            _sce_codegen_plan_settle_last()
+        endif()
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY _SCE_CODEGEN_GENERATIONS "${_ID}")
+    set_property(GLOBAL PROPERTY "_SCE_CODEGEN_GENERATION_${_ID}_PLAN_OPTIONS" "${_PLAN_OPTIONS}")
+    foreach(_KEPT DEPLOY INPUT_ROOT COMMENT)
+        set_property(GLOBAL PROPERTY "_SCE_CODEGEN_GENERATION_${_ID}_${_KEPT}" "${_SCGA_${_KEPT}}")
+    endforeach()
+    foreach(_KIND HEADERS SOURCES)
+        set(${PREFIX}_${_KIND}
+            "$<TARGET_PROPERTY:sce_codegen_generations,SCE_GENERATION_${_ID}_${_KIND}>"
+            PARENT_SCOPE)
+    endforeach()
+endfunction()
+
+# _sce_codegen_generations_declare()
+#
+#   At the end of a directory: send every plan queued and not kept to the
+#   generator in one batch, then declare every generation
+#   `sce_codegen_generation` was called for in the directory, with every
+#   child generation a CHILD_GENERATIONS plan holds, and fill the headers and
+#   sources each call's generator expressions name.
+function(_sce_codegen_generations_declare)
+    set_property(DIRECTORY PROPERTY _SCE_CODEGEN_GENERATIONS_DECLARED TRUE)
+    sce_codegen_plan_prefetch()
+    get_property(_IDS DIRECTORY PROPERTY _SCE_CODEGEN_GENERATIONS)
+    foreach(_ID IN LISTS _IDS)
+        _sce_codegen_generation_declare(_RUN ${_ID})
+        set(_HEADERS ${_RUN_HEADERS})
+        set(_SOURCES ${_RUN_SOURCES})
+        foreach(_CHILD IN LISTS _RUN_GENERATIONS)
+            _sce_codegen_generation_declare(_CHILD_RUN ${_ID} FROM _RUN CHILD "${_CHILD}")
+            list(APPEND _HEADERS ${_CHILD_RUN_HEADERS})
+            list(APPEND _SOURCES ${_CHILD_RUN_SOURCES})
+        endforeach()
+        set_property(TARGET sce_codegen_generations
+            PROPERTY "SCE_GENERATION_${_ID}_HEADERS" ${_HEADERS})
+        set_property(TARGET sce_codegen_generations
+            PROPERTY "SCE_GENERATION_${_ID}_SOURCES" ${_SOURCES})
+    endforeach()
+endfunction()
+
+# _sce_codegen_generation_declare(<PREFIX> <ID> [FROM <plan> CHILD <name>])
+#
+#   Declare the command of the generation `sce_codegen_generation` kept as
+#   <ID>, from the plan asked with the options it was asked ahead with; or,
+#   with FROM and CHILD, of the generation of the child document <name> the
+#   plan <plan> of that generation holds, run with the arguments and input
+#   root the plan states for it. Sets, in the caller's scope, every variable
+#   `sce_codegen_plan` sets, as <PREFIX>_<NAME>. Called by
+#   `_sce_codegen_generations_declare` alone, after the batch.
+function(_sce_codegen_generation_declare PREFIX ID)
+    cmake_parse_arguments(PARSE_ARGV 2 _SCGD "" "FROM;CHILD" "")
+    set(_KEPT "_SCE_CODEGEN_GENERATION_${ID}")
     set(_DEPENDS "")
     set(_INPUT_ROOT_ARGS "")
-    if(_SCGA_FROM)
-        foreach(_GIVEN STEM DOCUMENT OUTPUT_DIR LANGUAGE DEPLOY INPUT_ROOT CHILDREN_HELD_IN
-                CLAIM ARGS)
-            if(NOT "${_SCGA_${_GIVEN}}" STREQUAL "")
-                message(FATAL_ERROR
-                    "sce_codegen_generation(${PREFIX} FROM ${_SCGA_FROM}): ${_GIVEN} is the "
-                    "plan's to state, not this call's")
-            endif()
-        endforeach()
-        if(_SCGA_CHILD_GENERATIONS)
-            message(FATAL_ERROR
-                "sce_codegen_generation(${PREFIX} FROM ${_SCGA_FROM}): CHILD_GENERATIONS is "
-                "the plan's to state")
-        endif()
-        sce_codegen_plan(_SCGA_PLAN FROM "${_SCGA_FROM}" CHILD "${_SCGA_CHILD}")
+    if(_SCGD_FROM)
+        sce_codegen_plan(_SCGA_PLAN FROM "${_SCGD_FROM}" CHILD "${_SCGD_CHILD}")
         # A child's document is read from the output directory, and the
         # source set it was planned with is the run's.
         if(_SCGA_PLAN_INPUT_ROOT)
             set(_INPUT_ROOT_ARGS --input-root "${_SCGA_PLAN_INPUT_ROOT}")
         endif()
+        string(CONCAT _COMMENT
+            "Generating ${_SCGA_PLAN_STEM} (${_SCGA_PLAN_LANGUAGE}), a child generation "
+            "the plan of ${${_SCGD_FROM}_STEM} holds")
     else()
-        if(_SCGA_CHILD)
-            message(FATAL_ERROR
-                "sce_codegen_generation(${PREFIX}): CHILD names a generation of the plan "
-                "FROM names")
-        endif()
-        _sce_codegen_generation_plan_options(_PLAN_OPTIONS _SCGA "sce_codegen_generation(${PREFIX})")
-        if(_SCGA_DEPLOY)
-            list(APPEND _DEPENDS "${_SCGA_DEPLOY}")
+        get_property(_PLAN_OPTIONS GLOBAL PROPERTY "${_KEPT}_PLAN_OPTIONS")
+        get_property(_DEPLOY GLOBAL PROPERTY "${_KEPT}_DEPLOY")
+        get_property(_INPUT_ROOT GLOBAL PROPERTY "${_KEPT}_INPUT_ROOT")
+        get_property(_COMMENT GLOBAL PROPERTY "${_KEPT}_COMMENT")
+        if(_DEPLOY)
+            list(APPEND _DEPENDS "${_DEPLOY}")
         endif()
         sce_codegen_plan(_SCGA_PLAN ${_PLAN_OPTIONS})
-        if(_SCGA_INPUT_ROOT)
-            set(_INPUT_ROOT_ARGS --input-root "${_SCGA_INPUT_ROOT}")
+        if(_INPUT_ROOT)
+            set(_INPUT_ROOT_ARGS --input-root "${_INPUT_ROOT}")
+        endif()
+        if("${_COMMENT}" STREQUAL "")
+            set(_COMMENT "Generating ${_SCGA_PLAN_STEM} (${_SCGA_PLAN_LANGUAGE})")
         endif()
     endif()
     list(APPEND _DEPENDS ${_SCGA_PLAN_DEPENDS})
-
-    set(_COMMENT "${_SCGA_COMMENT}")
-    if("${_COMMENT}" STREQUAL "")
-        set(_COMMENT "Generating ${_SCGA_PLAN_STEM} (${_SCGA_PLAN_LANGUAGE})")
-    endif()
 
     # A machine another plan of the same claim declared is that plan's
     # command's to write.

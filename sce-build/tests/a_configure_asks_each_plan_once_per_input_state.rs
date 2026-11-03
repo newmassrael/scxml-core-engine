@@ -8,8 +8,13 @@
 // on three plans of the shapes the routes ask: a document alone, a document
 // whose generation writes a child document with a generation of its own, and
 // a parent staged with its deploy when the tree is configured, whose deploy
-// places its in-line child on a partition of its own:
-//   - plans asked ahead go to the generator in one batch;
+// places its in-line child on a partition of its own; and on a generation
+// declared through `sce_codegen_generation` in the top-level directory:
+//   - plans asked ahead go to the generator in one batch, and a plan no
+//     request asked ahead is sent alone and counted so;
+//   - a generation is asked ahead when it is called, declared when its
+//     directory ends, after the settle of the cache was moved behind it, and
+//     the generator expression it hands back names the machine it planned;
 //   - a configure with nothing changed asks the generator nothing, and reads
 //     the answers it was given before;
 //   - an edited document and a rebuilt generator are asked again, in the batch
@@ -61,17 +66,22 @@ fn cmake_version() -> Option<(u32, u32)> {
 struct Costs {
     /// Plans the configure asked for.
     asked: u32,
-    /// Of them, the ones answered from what was kept when they were asked.
+    /// Of them, the ones answered from what was kept when they were asked,
+    /// whether a batch asked ahead had just kept them or an earlier
+    /// configure had.
     kept: u32,
     /// Requests sent to the generator, whenever they were sent.
     sent: u32,
     /// The batches they were sent in.
     batches: u32,
+    /// Of the requests sent, the ones sent one to a batch when they were
+    /// asked, because no request asked them ahead.
+    alone: u32,
 }
 
 fn costs(log: &str) -> Costs {
     let said = regex::Regex::new(
-        r"generation plans: (\d+) asked, (\d+) answered from the cache; (\d+) sent to sce-codegen in (\d+) batch",
+        r"generation plans: (\d+) asked, (\d+) answered from the cache; (\d+) sent to sce-codegen in (\d+) batch\(es\), (\d+) of them alone",
     )
     .expect("pattern");
     let found = said
@@ -83,15 +93,17 @@ fn costs(log: &str) -> Costs {
         kept: count(2),
         sent: count(3),
         batches: count(4),
+        alone: count(5),
     }
 }
 
-fn spent(asked: u32, kept: u32, sent: u32, batches: u32) -> Costs {
+fn spent(asked: u32, kept: u32, sent: u32, batches: u32, alone: u32) -> Costs {
     Costs {
         asked,
         kept,
         sent,
         batches,
+        alone,
     }
 }
 
@@ -181,7 +193,7 @@ fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generato
                  LANGUAGE cpp CHILD_GENERATIONS\n\
                  ARGS --deploy \"${{MESH}}/deploy_synth_inline.yaml\")\n\
              message(STATUS \"PROBE_FILES=${{_DEPLOYED_FILES}};${{_DEPLOYED_GENERATIONS}}\")\n\
-             # The one asked when it is declared.\n\
+             # The one asked when it is declared, which is sent alone.\n\
              sce_codegen_plan(_PROBE\n\
                  STEM test144\n\
                  DOCUMENT \"{document}\"\n\
@@ -189,7 +201,16 @@ fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generato
                  LANGUAGE cpp\n\
                  CHILD_GENERATIONS\n\
                  ARGS ${{PROBE_ARGS}})\n\
-             message(STATUS \"PROBE_FILES=${{_PROBE_FILES}}\")\n",
+             message(STATUS \"PROBE_FILES=${{_PROBE_FILES}}\")\n\
+             # A generation, asked ahead when it is called and declared when\n\
+             # this directory ends, after its batch; the headers it hands back\n\
+             # are read once the build system is generated.\n\
+             sce_codegen_generation(_DECLARED\n\
+                 DOCUMENT \"{document}\"\n\
+                 OUTPUT_DIR \"${{CMAKE_BINARY_DIR}}/declared\"\n\
+                 LANGUAGE cpp)\n\
+             file(GENERATE OUTPUT \"${{CMAKE_BINARY_DIR}}/declared_headers.txt\"\n\
+                 CONTENT \"${{_DECLARED_HEADERS}}\")\n",
             module = text(&repo_root().join("cmake/SCECodegenPlan.cmake")),
             mesh = text(&repo_root().join("tests/mesh")),
             hybrid = text(&hybrid),
@@ -222,19 +243,32 @@ fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generato
     let first = configure(&[]);
     assert_eq!(
         costs(&first),
-        spent(3, 2, 3, 2),
-        "the two plans asked ahead were not sent in one batch, and the third alone:\n{first}"
+        spent(4, 3, 4, 3, 1),
+        "the two plans asked ahead were not sent in one batch, the third alone and the \
+         generation's in the batch its directory's end sends:\n{first}"
     );
     let files = planned_files(&first);
     assert!(
         files.contains("test144_sm.h") && files.contains("parent_synth_inline_sm.h"),
         "the plans do not name the machines: {files}"
     );
+    let declared = fs::read_to_string(build.join("declared_headers.txt"))
+        .expect("the build system was generated with the generation's headers");
+    assert!(
+        declared
+            .split(';')
+            .any(|header| header.ends_with("/declared/test144_sm.h")),
+        "the generator expression the generation handed back does not name the machine its \
+         declaration planned: {declared:?}"
+    );
 
+    // A second configure that asked any plan again would say so here; one whose
+    // deferred declaration came after the settle would ask the generation's,
+    // whose answer the settle had removed as asked by no plan.
     let second = configure(&[]);
     assert_eq!(
         costs(&second),
-        spent(3, 3, 0, 0),
+        spent(4, 4, 0, 0, 0),
         "a configure with nothing changed asked the generator again; the reasons the \
          configure gives:\n{second}"
     );
@@ -248,9 +282,9 @@ fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generato
     let third = configure(&[]);
     assert_eq!(
         costs(&third),
-        spent(3, 3, 1, 1),
-        "the plan of an edited document was not asked again, alone, in the batch before \
-         any plan is asked for:\n{third}"
+        spent(4, 4, 2, 1, 0),
+        "the two plans of an edited document were not asked again, together, in the batch \
+         before any plan is asked for:\n{third}"
     );
     assert_eq!(planned_files(&third), files);
 
@@ -258,7 +292,7 @@ fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generato
     let fourth = configure(&[]);
     assert_eq!(
         costs(&fourth),
-        spent(3, 3, 3, 1),
+        spent(4, 4, 4, 1, 0),
         "a rebuilt generator's plans were not asked again in one batch before any plan is \
          asked for:\n{fourth}"
     );
@@ -266,7 +300,7 @@ fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generato
     let fifth = configure(&["-DPROBE_ARGS=--limit;probe_bound=3"]);
     assert_eq!(
         costs(&fifth),
-        spent(3, 2, 1, 1),
+        spent(4, 3, 1, 1, 1),
         "a plan asked with another argument was answered from another plan's answer:\n{fifth}"
     );
     assert_eq!(planned_files(&fifth), files);
@@ -282,7 +316,7 @@ fn a_configure_reuses_a_kept_plan_until_its_document_an_argument_or_the_generato
         .collect();
     assert_eq!(
         keys.len(),
-        3,
+        4,
         "an answer no plan asks for any more was kept, or one a plan asks was removed: \
          {keys:?}"
     );

@@ -340,22 +340,28 @@ plan once per state of its inputs, and many at once, without changing an answer:
 - **Request first, declare after.** `sce-codegen plan-batch` answers a list of requests, a
   process each (a generation keeps its output mode, its in-memory tree and its held documents
   in process state, and a refusal ends the process), one per processor at a time
-  (`SCE_CODEGEN_PLAN_JOBS`), so each answer is byte for byte the single plan's. Every route
-  queues the plans of the generations it will declare (`sce_codegen_plan_request`,
-  `sce_codegen_generation_request`) and sends them in one batch (`sce_codegen_plan_prefetch`)
-  before it declares any: the conformance route for every registered fixture, the C11
-  conformance and C++ integration fixtures after their last registration
-  (`sce_declare_registered_static_w3c_c_tests`, `sce_declare_registered_static_integration_tests`),
-  and the C11 integration and Mesh fixtures, whose targets compile each one's files right
-  after it is registered, at the end of their directory (`cmake_language(DEFER)`), each caller
-  holding a generator expression for the files its target compiles. When the module is first
-  included, every answer the last configure asked that is no longer current is asked again in
-  one batch (every plan after the generator is rebuilt). A plan asked otherwise and not kept
-  is sent alone.
+  (`SCE_CODEGEN_PLAN_JOBS`), so each answer is byte for byte the single plan's. A route that
+  declares its own commands queues the plans of its fixtures (`sce_codegen_plan_request`) and
+  sends them in one batch (`sce_codegen_plan_prefetch`) before it declares any: the
+  conformance route for every registered fixture, the C11 conformance and C++ integration
+  fixtures after their last registration (`sce_declare_registered_static_w3c_c_tests`,
+  `sce_declare_registered_static_integration_tests`), and the C11 integration fixtures, whose
+  targets compile each one's files right after it is registered, at the end of their directory
+  (`cmake_language(DEFER)`). Every other generation is a `sce_codegen_generation` call, which
+  queues its plan and declares nothing when it is called: every generation called in a
+  directory is declared when the directory ends, after the batch, and the call hands its
+  caller generator expressions for the headers and sources a target compiles. A generation
+  asked with `CHILD_GENERATIONS` declares the child generations its plan holds in the same
+  step, so no caller reads a plan's answer while the tree is configured. When the module is
+  first included, every answer the last configure asked that is no longer current is asked
+  again in one batch (every plan after the generator is rebuilt). A plan asked otherwise and
+  not kept is sent alone.
 - **Settled at the end.** The answers no plan asked for are removed, the asked list is kept
   for the next configure, and one status line reports how many plans were asked, how many
-  were answered from the cache and how many the generator was sent, followed by why any kept
-  answer was not current (every reason in `<build>/sce-codegen-plans/stale.txt`).
+  were answered from the cache, how many the generator was sent and in how many batches, and
+  how many of those were sent alone, followed by why any kept answer was not current (every
+  reason in `<build>/sce-codegen-plans/stale.txt`). A deferred declaration in the top-level
+  directory moves the settle behind it, so it is counted and kept like any other.
 - **CI.** The lanes that keep their CMake build state between runs keep
   `build/sce-codegen-plans` too. After a checkout every kept answer is older than the
   documents and is asked again, but the kept list of what was asked lets the configure ask

@@ -76,6 +76,8 @@ const W3C_ROUTE: &str = include_str!("../../cmake/SCEStaticW3CTest.cmake");
 const INTEGRATION_ROUTE: &str = include_str!("../../cmake/SCEStaticIntegrationFixture.cmake");
 /// The one module that asks the generator for a plan.
 const PLAN_MODULE: &str = include_str!("../../cmake/SCECodegenPlan.cmake");
+/// Where [`PLAN_MODULE`] is, as git names it.
+const PLAN_MODULE_PATH: &str = "cmake/SCECodegenPlan.cmake";
 /// The test tree's build, which declares every generation it runs, the Mesh
 /// fixtures' among them, through `sce_codegen_generation`
 /// ([`test_tree_violations`]).
@@ -910,9 +912,9 @@ fn the_generation_command_is_declared_from_its_plan() {
 
 /// The Mesh rule-3 override declares both of its generations, the parent's
 /// and the one of the partition the deploy places its in-line child on, from
-/// the plan of the parent's document: the parent's is asked with
-/// CHILD_GENERATIONS and the child's is read FROM it, with nothing of its
-/// own stated.
+/// the plan of the parent's document: one call asks the parent's plan with
+/// CHILD_GENERATIONS, and the module declares the child's generation the
+/// plan holds, read FROM it, with nothing of its own stated.
 #[test]
 fn the_mesh_override_declares_the_partitions_generation_from_the_parents_plan() {
     let code = cmake_code(TEST_TREE);
@@ -925,26 +927,41 @@ fn the_mesh_override_declares_the_partitions_generation_from_the_parents_plan() 
                 .is_some_and(|prefix| prefix.contains(MESH_OVERRIDE))
         })
         .collect();
-    let parent = generations
-        .iter()
-        .filter(|generation| generation.args.iter().any(|arg| arg == "CHILD_GENERATIONS"))
-        .count();
-    let children: Vec<&Invocation> = generations
-        .iter()
-        .filter(|generation| generation.args.iter().any(|arg| arg == "FROM"))
-        .collect();
     assert_eq!(
-        (parent, children.len()),
-        (1, 1),
-        "the Mesh rule-3 override asks the parent's plan for its children's generations and \
-         declares the partition's from it"
+        generations.len(),
+        1,
+        "the Mesh rule-3 override declares its two generations by one call, the parent's"
     );
-    for stated in ["ARGS", "DEPLOY", "DOCUMENT", "--deploy", "--as-child"] {
+    assert!(
+        generations[0]
+            .args
+            .iter()
+            .any(|arg| arg == "CHILD_GENERATIONS"),
+        "the Mesh rule-3 override does not ask the parent's plan for its children's \
+         generations, so the partition's has no command"
+    );
+    for stated in ["FROM", "CHILD", "--as-child"] {
         assert!(
-            !children[0].args.iter().any(|arg| arg == stated),
-            "the partition's generation states `{stated}` itself; it is the plan's to state"
+            !generations[0].args.iter().any(|arg| arg == stated),
+            "the Mesh rule-3 override states `{stated}`; the partition's generation is the \
+             plan's to state"
         );
     }
+    let module = cmake_code(PLAN_MODULE);
+    let declared = in_order(
+        function_body(&module, "_sce_codegen_generations_declare"),
+        &[
+            "_sce_codegen_generation_declare(_RUN ",
+            "IN LISTS _RUN_GENERATIONS",
+            "_sce_codegen_generation_declare(_CHILD_RUN ",
+            "FROM _RUN CHILD",
+        ],
+    );
+    assert!(
+        declared.is_ok(),
+        "cmake/SCECodegenPlan.cmake does not declare each generation a CHILD_GENERATIONS \
+         plan holds from that plan: {declared:?}"
+    );
 }
 
 /// The Mesh rule-3 override's former stage 3, a generation of the child's
@@ -1285,12 +1302,15 @@ fn unrequested_plans(text: &str) -> Vec<String> {
 
 /// Both build-time routes ask every plan they declare ahead, with the options
 /// they then declare it with: the integration route's C++ and C11 fixtures
-/// alike, and the conformance route's fixtures.
+/// alike, and the conformance route's fixtures. So does the module for every
+/// generation `sce_codegen_generation` declares: the call asks with the one
+/// list the declaration then plans with.
 #[test]
 fn every_plan_a_route_declares_is_asked_ahead() {
     for (route, text) in [
         ("cmake/SCEStaticW3CTest.cmake", W3C_ROUTE),
         ("cmake/SCEStaticIntegrationFixture.cmake", INTEGRATION_ROUTE),
+        (PLAN_MODULE_PATH, PLAN_MODULE),
     ] {
         let found: Vec<String> = ahead_violations(text)
             .into_iter()
@@ -1353,13 +1373,22 @@ fn last(code: &str, needle: &str) -> Option<usize> {
     code.rfind(needle)
 }
 
-/// Every way the routes and their callers depart from "request first, declare
-/// after": each route queues the plans of every generation it will declare,
-/// sends them in one batch (`sce_codegen_plan_prefetch`), and only then
-/// declares, and a caller declares its registered fixtures after the last
+/// Every way the routes, the module and their callers depart from "request
+/// first, declare after": each route queues the plans of every generation it
+/// will declare, sends them in one batch (`sce_codegen_plan_prefetch`), and
+/// only then declares; `sce_codegen_generation` queues its plan and defers
+/// its declaration to the end of the directory, which sends the batch before
+/// it declares; and a caller declares its registered fixtures after the last
 /// registration and before the first target that compiles them.
-fn order_violations(w3c: &str, integration: &str, tree: &str, c11: &str) -> Vec<String> {
-    let (w3c, integration, tree, c11) = (
+fn order_violations(
+    module: &str,
+    w3c: &str,
+    integration: &str,
+    tree: &str,
+    c11: &str,
+) -> Vec<String> {
+    let (module, w3c, integration, tree, c11) = (
+        cmake_code(module),
         cmake_code(w3c),
         cmake_code(integration),
         cmake_code(tree),
@@ -1424,27 +1453,35 @@ fn order_violations(w3c: &str, integration: &str, tree: &str, c11: &str) -> Vec<
         ),
     );
     must(
-        "tests/CMakeLists.txt, sce_mesh_fixture_generations",
+        "cmake/SCECodegenPlan.cmake, sce_codegen_generation",
         in_order(
-            function_body(&tree, "sce_mesh_fixture_generations"),
+            function_body(&module, "sce_codegen_generation"),
             &[
-                "cmake_language(DEFER CALL _sce_declare_mesh_fixture_generations",
-                "_sce_mesh_fixture_generation(REQUEST",
+                "sce_codegen_plan_request(",
+                "cmake_language(DEFER CALL _sce_codegen_generations_declare)",
             ],
         ),
     );
     must(
-        "tests/CMakeLists.txt, _sce_declare_mesh_fixture_generations",
+        "cmake/SCECodegenPlan.cmake, _sce_codegen_generations_declare",
         in_order(
-            function_body(&tree, "_sce_declare_mesh_fixture_generations"),
+            function_body(&module, "_sce_codegen_generations_declare"),
             &[
                 "sce_codegen_plan_prefetch(",
-                "_sce_mesh_fixture_generation(DECLARE",
+                "_sce_codegen_generation_declare(",
             ],
         ),
     );
     // A registering call declares nothing itself.
+    let generation = function_body(&module, "sce_codegen_generation");
     for (what, body, declares) in [
+        (
+            "sce_codegen_generation",
+            generation,
+            "_sce_codegen_generation_declare(",
+        ),
+        ("sce_codegen_generation", generation, "sce_codegen_plan("),
+        ("sce_codegen_generation", generation, "add_custom_command("),
         (
             "sce_generate_static_integration_c_test",
             function_body(&integration, "sce_generate_static_integration_c_test"),
@@ -1460,16 +1497,11 @@ fn order_violations(w3c: &str, integration: &str, tree: &str, c11: &str) -> Vec<
             function_body(&w3c, "sce_generate_static_w3c_c_test"),
             "_sce_generate_w3c_fixture(",
         ),
-        (
-            "sce_mesh_fixture_generations",
-            function_body(&tree, "sce_mesh_fixture_generations"),
-            "(DECLARE",
-        ),
     ] {
         if body.contains(declares) {
             found.push(format!(
-                "{what} declares a generation when it is called, before the plans of the \
-                 fixtures registered after it were asked"
+                "{what} declares a generation when it is called (`{declares}`), before the \
+                 plans of the fixtures registered after it were asked"
             ));
         }
     }
@@ -1528,7 +1560,13 @@ fn order_violations(w3c: &str, integration: &str, tree: &str, c11: &str) -> Vec<
 /// batches, not one process per plan.
 #[test]
 fn the_routes_ask_every_plan_before_they_declare_one() {
-    let found = order_violations(W3C_ROUTE, INTEGRATION_ROUTE, TEST_TREE, C11_TESTS);
+    let found = order_violations(
+        PLAN_MODULE,
+        W3C_ROUTE,
+        INTEGRATION_ROUTE,
+        TEST_TREE,
+        C11_TESTS,
+    );
     assert!(
         found.is_empty(),
         "a route declares a generation before it asked the plans of the others:\n  {}",
@@ -1537,9 +1575,49 @@ fn the_routes_ask_every_plan_before_they_declare_one() {
 }
 
 /// A declaration made before the batch is sent, and a registration made
-/// after the declaration, are refused.
+/// after the declaration, are refused; so is a `sce_codegen_generation`
+/// that declares where it is called, or whose deferred declaration declares
+/// before it sends the batch.
 #[test]
 fn a_declaration_before_its_batch_is_refused() {
+    let eager = PLAN_MODULE.replace(
+        "    sce_codegen_plan_request(${_PLAN_OPTIONS})\n",
+        "    sce_codegen_plan_request(${_PLAN_OPTIONS})\n    \
+         _sce_codegen_generation_declare(${PREFIX} 0)\n",
+    );
+    assert_ne!(
+        eager, PLAN_MODULE,
+        "the module no longer asks ahead as this case expects"
+    );
+    let found = order_violations(&eager, W3C_ROUTE, INTEGRATION_ROUTE, TEST_TREE, C11_TESTS);
+    assert!(
+        found
+            .iter()
+            .any(|v| v.contains("sce_codegen_generation declares a generation when it is called")),
+        "a generation declared where it is called was accepted: {found:?}"
+    );
+    let unbatched = PLAN_MODULE.replace(
+        "    sce_codegen_plan_prefetch()\n    get_property(_IDS",
+        "    get_property(_IDS",
+    );
+    assert_ne!(
+        unbatched, PLAN_MODULE,
+        "the declaration no longer sends the batch first"
+    );
+    let found = order_violations(
+        &unbatched,
+        W3C_ROUTE,
+        INTEGRATION_ROUTE,
+        TEST_TREE,
+        C11_TESTS,
+    );
+    assert!(
+        found
+            .iter()
+            .any(|v| v.contains("_sce_codegen_generations_declare")),
+        "a deferred declaration that sends no batch first was accepted: {found:?}"
+    );
+
     assert!(in_order(
         "sce_codegen_plan_prefetch()\n_sce_generate_w3c_fixture(1 o c11)",
         &["sce_codegen_plan_prefetch(", "_sce_generate_w3c_fixture("]
@@ -1555,7 +1633,7 @@ fn a_declaration_before_its_batch_is_refused() {
         "sce_declare_registered_static_w3c_c_tests()\n\
          sce_generate_static_w3c_c_test(999 \"${SCE_C_GENERATED_DIR}\")",
     );
-    let found = order_violations(W3C_ROUTE, INTEGRATION_ROUTE, TEST_TREE, &late);
+    let found = order_violations(PLAN_MODULE, W3C_ROUTE, INTEGRATION_ROUTE, TEST_TREE, &late);
     assert!(
         found
             .iter()

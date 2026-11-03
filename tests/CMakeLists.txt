@@ -3258,16 +3258,10 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     #   document, `<SOURCE_DIR>/<machine>.scxml` (SOURCE_DIR is MESH_TEST_DIR
     #   when not given), into OUTPUT_DIR, with DEPLOY and ARGS when given, each
     #   declared from its plan. HEADERS_VAR is set to every header they write,
-    #   which is what the fixture's targets compile.
-    #
-    #   The call asks ahead for every machine's plan; every fixture of this
-    #   directory is declared when the directory ends
-    #   (`_sce_declare_mesh_fixture_generations`), after the plans of all of
-    #   them were asked of the generator in one batch. Each fixture's targets
-    #   follow its call and compile its headers at once, so the headers are
-    #   not known when the call returns: HEADERS_VAR names them as a generator
-    #   expression, which a target's sources take and the generate step reads
-    #   once the declaration has filled it.
+    #   which is what the fixture's targets compile: the generator expressions
+    #   `sce_codegen_generation` hands each call, since every generation of
+    #   this directory is declared when the directory ends, after the plans of
+    #   all of them were asked of the generator in one batch.
     function(sce_mesh_fixture_generations HEADERS_VAR)
         cmake_parse_arguments(PARSE_ARGV 1 _MFG ""
             "OUTPUT_DIR;DEPLOY;SOURCE_DIR;LABEL" "MACHINES;ARGS")
@@ -3275,12 +3269,6 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
             message(FATAL_ERROR
                 "sce_mesh_fixture_generations(${HEADERS_VAR}): OUTPUT_DIR and MACHINES are "
                 "required (unexpected: ${_MFG_UNPARSED_ARGUMENTS})")
-        endif()
-        get_property(_DECLARED DIRECTORY PROPERTY _SCE_MESH_FIXTURES_DECLARED)
-        if(_DECLARED)
-            message(FATAL_ERROR
-                "sce_mesh_fixture_generations(${HEADERS_VAR}) comes after the fixtures of "
-                "this directory were declared: it would never be generated")
         endif()
         set(_SOURCE_DIR "${MESH_TEST_DIR}")
         if(_MFG_SOURCE_DIR)
@@ -3290,80 +3278,18 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         if(_MFG_LABEL)
             set(_LABEL "${_MFG_LABEL}")
         endif()
-        get_property(_ID DIRECTORY PROPERTY _SCE_MESH_FIXTURE_COUNT)
-        if("${_ID}" STREQUAL "")
-            set(_ID 0)
-            # The first fixture of this directory: its declarations, and every
-            # later fixture's, are made when the directory ends.
-            if(NOT TARGET sce_mesh_generated_headers)
-                # Holds, per fixture, the headers its generations write, for
-                # the generator expression each caller is handed.
-                add_library(sce_mesh_generated_headers INTERFACE)
-            endif()
-            cmake_language(DEFER CALL _sce_declare_mesh_fixture_generations)
-        endif()
-        math(EXPR _ID "${_ID} + 1")
-        set_property(DIRECTORY PROPERTY _SCE_MESH_FIXTURE_COUNT "${_ID}")
-        set_property(DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_OUTPUT_DIR" "${_MFG_OUTPUT_DIR}")
-        set_property(DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_SOURCE_DIR" "${_SOURCE_DIR}")
-        set_property(DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_DEPLOY" "${_MFG_DEPLOY}")
-        set_property(DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_ARGS" "${_MFG_ARGS}")
-        set_property(DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_LABEL" "${_LABEL}")
-        set_property(DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_MACHINES" "${_MFG_MACHINES}")
+        set(_HEADERS "")
         foreach(_MACHINE ${_MFG_MACHINES})
-            _sce_mesh_fixture_generation(REQUEST ${_ID} ${_MACHINE})
+            sce_codegen_generation(_MFG
+                DOCUMENT "${_SOURCE_DIR}/${_MACHINE}.scxml"
+                OUTPUT_DIR "${_MFG_OUTPUT_DIR}"
+                LANGUAGE cpp
+                DEPLOY "${_MFG_DEPLOY}"
+                ARGS ${_MFG_ARGS}
+                COMMENT "${_LABEL}: Generating ${_MACHINE}")
+            list(APPEND _HEADERS ${_MFG_HEADERS})
         endforeach()
-        set(${HEADERS_VAR}
-            "$<TARGET_PROPERTY:sce_mesh_generated_headers,SCE_MESH_HEADERS_${_ID}>"
-            PARENT_SCOPE)
-    endfunction()
-
-    # _sce_declare_mesh_fixture_generations()
-    #
-    #   At the end of this directory: send every plan its Mesh fixtures asked
-    #   ahead in one batch, then declare every machine's generation from the
-    #   answers, and fill the headers each fixture's generator expression names.
-    function(_sce_declare_mesh_fixture_generations)
-        set_property(DIRECTORY PROPERTY _SCE_MESH_FIXTURES_DECLARED TRUE)
-        get_property(_COUNT DIRECTORY PROPERTY _SCE_MESH_FIXTURE_COUNT)
-        sce_codegen_plan_prefetch()
-        foreach(_ID RANGE 1 ${_COUNT})
-            get_property(_MACHINES DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${_ID}_MACHINES")
-            set(_HEADERS "")
-            foreach(_MACHINE ${_MACHINES})
-                _sce_mesh_fixture_generation(DECLARE ${_ID} ${_MACHINE})
-                list(APPEND _HEADERS ${_MACHINE_HEADERS})
-            endforeach()
-            set_property(TARGET sce_mesh_generated_headers
-                PROPERTY "SCE_MESH_HEADERS_${_ID}" ${_HEADERS})
-        endforeach()
-    endfunction()
-
-    # _sce_mesh_fixture_generation(<REQUEST|DECLARE> <ID> <MACHINE>)
-    #
-    #   One machine of the fixture registered as <ID>: its plan asked ahead
-    #   (REQUEST), or its generation declared from the plan (DECLARE, which
-    #   sets `_MACHINE_HEADERS` in the caller's scope). One list of options
-    #   for both, so the generation declared is the one asked ahead.
-    function(_sce_mesh_fixture_generation MODE ID MACHINE)
-        foreach(_OPTION OUTPUT_DIR SOURCE_DIR DEPLOY ARGS LABEL)
-            get_property(_${_OPTION} DIRECTORY PROPERTY "_SCE_MESH_FIXTURE_${ID}_${_OPTION}")
-        endforeach()
-        set(_OPTIONS
-            DOCUMENT "${_SOURCE_DIR}/${MACHINE}.scxml"
-            OUTPUT_DIR "${_OUTPUT_DIR}"
-            LANGUAGE cpp)
-        if(_DEPLOY)
-            list(APPEND _OPTIONS DEPLOY "${_DEPLOY}")
-        endif()
-        list(APPEND _OPTIONS ARGS ${_ARGS})
-        if(MODE STREQUAL "REQUEST")
-            sce_codegen_generation_request(${_OPTIONS})
-        else()
-            sce_codegen_generation(_MFG ${_OPTIONS}
-                COMMENT "${_LABEL}: Generating ${MACHINE}")
-            set(_MACHINE_HEADERS ${_MFG_HEADERS} PARENT_SCOPE)
-        endif()
+        set(${HEADERS_VAR} ${_HEADERS} PARENT_SCOPE)
     endfunction()
 
     # ── MeshEnvelope codec unit tests ─────────────────────────────
@@ -4322,19 +4248,12 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     configure_file("${MESH_TEST_DIR}/deploy_synth_inline.yaml"
         "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml" COPYONLY)
 
-    # Stage 2: the parent's generation. What it writes (its machine and
-    # transport, the child's document) is declared from the generator's
-    # answer (`sce_codegen_generation`, cmake/SCECodegenPlan.cmake), not
-    # listed here; stage 3 depends on the child's document through it.
-    sce_codegen_generation(_MESH_SYNTH_OVERRIDE_PARENT
-        DOCUMENT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
-        OUTPUT_DIR "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}" LANGUAGE cpp
-        DEPLOY "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
-        CHILD_GENERATIONS
-        COMMENT "Mesh §9.6.6: Generating parent_synth_inline and the document of its child")
-    set(_MESH_SYNTH_OVERRIDE_HEADERS ${_MESH_SYNTH_OVERRIDE_PARENT_HEADERS})
-
-    # Stage 3: the child's partition's generation, with --deploy, from the
+    # Stages 2 and 3, from one call. Stage 2 is the parent's generation: what
+    # it writes (its machine and transport, the child's document) is declared
+    # from the generator's answer (`sce_codegen_generation`,
+    # cmake/SCECodegenPlan.cmake), not listed here.
+    #
+    # Stage 3 is the child's partition's generation, with --deploy, from the
     # document stage 2 wrote. Running against it engages
     # `classify_remote_scxml_invokes` and `collect_scxml_remote_peers` on the
     # child's model; the §9.6.6 rule-3 infix inversion inside the latter adds
@@ -4346,22 +4265,23 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # transport, which no other rule writes. It is the generation the
     # parent's plan holds for the child (`--plan-children` plans the run of
     # each partition the deploy places an in-line child on, from the
-    # document the parent's run would write), declared from it with the
-    # arguments it states, and it waits for the parent's machine as well as
-    # the child's document, as every planned child generation waits for the
-    # generation that writes its document. The deploy it reads is one the
-    # parent's generation depends on, and that generation rewrites the
-    # document this one reads.
-    foreach(_CHILD ${_MESH_SYNTH_OVERRIDE_PARENT_GENERATIONS})
-        sce_codegen_generation(_MESH_SYNTH_OVERRIDE_CHILD
-            FROM _MESH_SYNTH_OVERRIDE_PARENT CHILD "${_CHILD}"
-            COMMENT "Mesh §9.6.6: Generating ${_CHILD} on its own partition (rule 3)")
-        list(APPEND _MESH_SYNTH_OVERRIDE_HEADERS ${_MESH_SYNTH_OVERRIDE_CHILD_HEADERS})
-    endforeach()
+    # document the parent's run would write), which CHILD_GENERATIONS
+    # declares beside the parent's with the arguments the plan states, and
+    # it waits for the parent's machine as well as the child's document, as
+    # every planned child generation waits for the generation that writes
+    # its document. The deploy it reads is one the parent's generation
+    # depends on, and that generation rewrites the document this one reads.
+    # The headers the call hands back are both generations'.
+    sce_codegen_generation(_MESH_SYNTH_OVERRIDE_PARENT
+        DOCUMENT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
+        OUTPUT_DIR "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}" LANGUAGE cpp
+        DEPLOY "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
+        CHILD_GENERATIONS
+        COMMENT "Mesh §9.6.6: Generating parent_synth_inline and the document of its child")
 
     add_executable(mesh_synth_invoke_override_e2e_test
         mesh/test_mesh_synth_invoke_override_e2e.cpp
-        ${_MESH_SYNTH_OVERRIDE_HEADERS}
+        ${_MESH_SYNTH_OVERRIDE_PARENT_HEADERS}
     )
 
     target_include_directories(mesh_synth_invoke_override_e2e_test
