@@ -149,26 +149,62 @@ impl<K: Ord> Windows<K> {
         window_ms: u64,
         now_ms: u64,
     ) -> Result<(), u64> {
-        let window_ms = window_ms.max(1);
-        let refill = u64::from(per_window.max(1));
-        let capacity = refill.saturating_mul(window_ms);
+        let (window_ms, refill, capacity) = bucket_of(per_window, window_ms);
+        self.room_for(&key, window_ms, now_ms)?;
+        let bucket = self.spent.entry(key).or_insert((capacity, now_ms));
+        spend(bucket, capacity, window_ms, refill, now_ms)
+    }
+
+    /// What [`Self::take`] would answer for `key` at `now_ms`, with nothing spent: so that a caller
+    /// refuses for the rate before it does anything, and spends only once what it judged holds.
+    /// Only the sweep of the keys a window has passed since they spent is done, which changes no
+    /// answer: a key whose bucket is full is the same as a key never seen.
+    pub(crate) fn admits(
+        &mut self,
+        key: &K,
+        per_window: u32,
+        window_ms: u64,
+        now_ms: u64,
+    ) -> Result<(), u64> {
+        let (window_ms, refill, capacity) = bucket_of(per_window, window_ms);
+        self.room_for(key, window_ms, now_ms)?;
+        let mut bucket = self.spent.get(key).copied().unwrap_or((capacity, now_ms));
+        spend(&mut bucket, capacity, window_ms, refill, now_ms)
+    }
+
+    /// Sweep the table when a window has passed since it was last swept, and say whether it has
+    /// room for `key`: it holds it, or holds fewer keys than its bound. `Err` is how long until the
+    /// next sweep.
+    fn room_for(&mut self, key: &K, window_ms: u64, now_ms: u64) -> Result<(), u64> {
         if now_ms.saturating_sub(self.swept_at) >= window_ms {
             self.spent
                 .retain(|_, (_, at)| now_ms.saturating_sub(*at) < window_ms);
             self.swept_at = now_ms;
         }
-        if !self.spent.contains_key(&key) && self.spent.len() >= self.most {
+        if !self.spent.contains_key(key) && self.spent.len() >= self.most {
             return Err(window_ms.saturating_sub(now_ms.saturating_sub(self.swept_at)));
         }
-        let bucket = self.spent.entry(key).or_insert((capacity, now_ms));
-        spend(bucket, capacity, window_ms, refill, now_ms)
+        Ok(())
     }
 
     /// How many keys the table holds.
-    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.spent.len()
     }
+
+    /// Whether the table holds `key`: after a refusal, one it does not hold was refused because the
+    /// table holds as many keys as it may, and not for its own rate.
+    pub(crate) fn holds(&self, key: &K) -> bool {
+        self.spent.contains_key(key)
+    }
+}
+
+/// The window (at least a millisecond), the units a bucket gains each millisecond (at least one) and
+/// what it holds full, for `per_window` in each `window_ms`.
+fn bucket_of(per_window: u32, window_ms: u64) -> (u64, u64, u64) {
+    let window_ms = window_ms.max(1);
+    let refill = u64::from(per_window.max(1));
+    (window_ms, refill, refill.saturating_mul(window_ms))
 }
 
 #[cfg(test)]
@@ -289,6 +325,51 @@ mod tests {
             assert_eq!(windows.take("c", 3, 60_000, 80_000), Ok(()));
         }
         assert!(windows.take("c", 3, 60_000, 80_000).is_err());
+    }
+
+    /// What `admits` answers is what `take` then answers, at every instant of a window and for a
+    /// key held, a key not held and a key a full table refuses, and `admits` spends nothing: the
+    /// oracle is `take` on a copy of the table.
+    #[test]
+    fn a_window_admits_what_it_would_take_and_spends_nothing() {
+        let fresh = || {
+            let mut windows = Windows::new(2);
+            windows.take("a", 3, 60_000, 0).unwrap();
+            windows.take("a", 3, 60_000, 0).unwrap();
+            windows.take("b", 3, 60_000, 0).unwrap();
+            windows
+        };
+        for now in [0, 1, 19_999, 20_000, 40_000, 59_999, 60_000, 120_000] {
+            for key in ["a", "b", "c"] {
+                let mut asked = fresh();
+                let mut spent = fresh();
+                let admitted = asked.admits(&key, 3, 60_000, now);
+                assert_eq!(admitted, spent.take(key, 3, 60_000, now), "{key} at {now}");
+                // Asked again, the same answer: nothing was spent.
+                assert_eq!(
+                    asked.admits(&key, 3, 60_000, now),
+                    admitted,
+                    "{key} at {now}"
+                );
+                assert!(!asked.holds(&"c"), "admits holds no key it did not hold");
+            }
+        }
+        let mut windows = fresh();
+        assert_eq!(
+            windows.admits(&"c", 3, 60_000, 0),
+            Err(60_000),
+            "the table is full"
+        );
+        assert!(!windows.holds(&"c"), "a refused key is not held");
+        for _ in 0..5 {
+            assert!(windows.admits(&"b", 3, 60_000, 0).is_ok());
+        }
+        assert!(windows.take("b", 3, 60_000, 0).is_ok());
+        assert!(windows.take("b", 3, 60_000, 0).is_ok());
+        assert!(
+            windows.take("b", 3, 60_000, 0).is_err(),
+            "admits spent none of the three"
+        );
     }
 
     #[test]

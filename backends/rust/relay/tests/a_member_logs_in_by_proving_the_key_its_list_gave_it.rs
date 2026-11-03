@@ -529,6 +529,85 @@ fn a_source_and_a_node_are_held_to_their_allowances() {
     assert!(reason.contains("source"), "three logins a minute: {reason}");
 }
 
+/// A login refused for the rate is refused before the relay took anything, so that the device
+/// that asks it again once the wait is over asks something that was never half done: the entry it
+/// brought (carol's grant, which the relay was not given) is not appended when its node has logged in
+/// as often as it may this hour, by a relay of one slot and by one of several.
+#[test]
+fn a_login_refused_for_the_rate_takes_nothing_it_brought() {
+    let once = LoginPolicy {
+        logins_per_node_per_hour: 1,
+        ..policy()
+    };
+    let carol = vec![entries()[3].to_json()];
+    let operator = authority().issue(LIST, 1, u64::MAX);
+    let log_len = |answer: String| match Response::from_json(&answer).unwrap() {
+        Response::Entries { len, .. } => len,
+        other => panic!("{other:?}"),
+    };
+    let entries_of = Request::Entries { from: 0 }.to_json();
+
+    let mut relay = relay(once, 3);
+    let first = challenge(&mut relay, 2, NOW);
+    token_of(&anonymous(
+        &mut relay,
+        &signed(2, 2, AUDIENCE, &first, Vec::new()),
+        NOW,
+    ));
+    let second = challenge(&mut relay, 2, NOW);
+    let (code, reason) = refused(&anonymous(
+        &mut relay,
+        &signed(2, 2, AUDIENCE, &second, carol.clone()),
+        NOW,
+    ));
+    assert!(matches!(code, Code::RateLimited { .. }), "{code:?}");
+    assert!(reason.contains("this hour"), "{reason}");
+    assert_eq!(relay.records(LIST), 3, "carol's grant was not appended");
+    assert_eq!(log_len(relay.handle(&operator, &entries_of, NOW)), 3);
+
+    let shards = Shards::open(
+        4,
+        |_| Ok(MemoryStore::new()),
+        authority(),
+        Limits::default(),
+    )
+    .unwrap()
+    .with_login(Doorway::with_key(once, [3; 32]));
+    for entry in entries().into_iter().take(3) {
+        let answer = shards.handle(
+            &operator,
+            &Request::Append {
+                entry: entry.to_json(),
+            }
+            .to_json(),
+            NOW,
+        );
+        assert!(answer.contains("\"appended\""), "{answer}");
+    }
+    let ask = |request: &Request| {
+        Response::from_json(&shards.answer(None, None, &request.to_json(), NOW)).unwrap()
+    };
+    let challenge_of = || match ask(&Request::Challenge {
+        list: LIST.to_string(),
+        node: 2,
+    }) {
+        Response::Challenge {
+            nonce,
+            expires_at_ms,
+            ..
+        } => (nonce, expires_at_ms),
+        other => panic!("{other:?}"),
+    };
+    token_of(&ask(&signed(2, 2, AUDIENCE, &challenge_of(), Vec::new())));
+    let (code, _) = refused(&ask(&signed(2, 2, AUDIENCE, &challenge_of(), carol)));
+    assert!(matches!(code, Code::RateLimited { .. }), "{code:?}");
+    assert_eq!(
+        log_len(shards.handle(&operator, &entries_of, NOW)),
+        3,
+        "carol's grant was not appended in the list's slot"
+    );
+}
+
 #[test]
 fn a_connection_with_no_token_asks_for_a_challenge_and_logs_in_and_nothing_else() {
     let mut relay = relay(policy(), 4);

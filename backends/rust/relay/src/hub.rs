@@ -229,13 +229,18 @@ impl<S: Store + Send + 'static> Hub for Shards<S> {
                 let holds = held(self.slot(&list)).holds(&list);
                 held(doorway).challenge(&list, node, holds, self.authority.audience(), now_ms)
             }
+            // The doorway's allowances are asked before the slot takes the entries the login brought
+            // (`Doorway::admissible`), and spent after the signature held.
             Ok(Asked::Login(checked)) => {
                 let audience = self.authority.audience();
-                let admitted = held(self.slot(&checked.login().list)).admit_login(
-                    checked.login(),
-                    |key| checked.signed_by(key, audience),
-                    now_ms,
-                );
+                let admissible = held(doorway).admissible(&checked, now_ms);
+                let admitted = admissible.and_then(|()| {
+                    held(self.slot(&checked.login().list)).admit_login(
+                        checked.login(),
+                        |key| checked.signed_by(key, audience),
+                        now_ms,
+                    )
+                });
                 match admitted {
                     Err(refused) => refused,
                     Ok(()) => held(doorway).redeem(&checked, &self.authority, now_ms),

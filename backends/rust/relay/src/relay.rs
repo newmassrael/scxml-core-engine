@@ -265,12 +265,20 @@ impl<S: Store> Relay<S> {
                 }
             }
             Ok(Asked::Login(checked)) => {
+                // The doorway's allowances first, so that a login refused for the rate is refused
+                // before the entries it brought are taken (`Doorway::admissible`).
+                let admissible = match self.doorway.as_mut() {
+                    None => Err(login::not_offered(request)),
+                    Some(doorway) => doorway.admissible(&checked, now_ms),
+                };
                 let audience = self.authority.audience().to_string();
-                let admitted = self.admit_login(
-                    checked.login(),
-                    |key| checked.signed_by(key, &audience),
-                    now_ms,
-                );
+                let admitted = admissible.and_then(|()| {
+                    self.admit_login(
+                        checked.login(),
+                        |key| checked.signed_by(key, &audience),
+                        now_ms,
+                    )
+                });
                 match (admitted, self.doorway.as_mut()) {
                     (Err(refused), _) => refused,
                     (Ok(()), None) => login::not_offered(request),

@@ -646,8 +646,25 @@ impl Doorway {
         }
     }
 
+    /// Whether the login `checked` would be redeemed at `now_ms` as far as the doorway goes: its
+    /// nonce may still be used and the relay has room to keep it as used, and its node has a login
+    /// of the hour left. Asked before the list's side takes the entries the login brought
+    /// (`Relay::admit_login`), so that every refusal of a login for the rate comes before the relay
+    /// did anything, and a device that asks the same login again once the wait is over asks
+    /// something that was never half done. It spends nothing: the node spends its login of the hour
+    /// in [`Self::redeem`], once the signature held, so that a stranger spends no member's.
+    pub(crate) fn admissible(&mut self, checked: &Checked, now_ms: u64) -> Result<(), Response> {
+        self.nonce_free(&checked.nonce, now_ms)?;
+        let node = (checked.login.list.clone(), checked.login.node);
+        self.nodes
+            .admits(&node, self.policy.logins_per_node_per_hour, HOUR_MS, now_ms)
+            .map_err(node_limited)
+    }
+
     /// The token of a login the list's side admitted: its nonce is used from now on, and the node
-    /// spends one of its logins of the hour.
+    /// spends one of its logins of the hour. What it refuses, [`Self::admissible`] refused before
+    /// the list's side took anything, unless another login of the same node or nonce came between
+    /// the two on a relay of several slots, whose doorway and slots are locked apart.
     pub(crate) fn redeem(
         &mut self,
         checked: &Checked,
@@ -664,10 +681,7 @@ impl Doorway {
             HOUR_MS,
             now_ms,
         ) {
-            return Response::refused(
-                Code::RateLimited { retry_after_ms },
-                "this node has logged in as often as it may this hour",
-            );
+            return node_limited(retry_after_ms);
         }
         self.use_nonce(checked.nonce, login.expires_at_ms);
         self.token(login, authority, now_ms)
@@ -707,6 +721,14 @@ impl Doorway {
             expires_at_ms,
         }
     }
+}
+
+/// The refusal of a login whose node has logged in as often as it may this hour.
+fn node_limited(retry_after_ms: u64) -> Response {
+    Response::refused(
+        Code::RateLimited { retry_after_ms },
+        "this node has logged in as often as it may this hour",
+    )
 }
 
 /// `bytes` framed as the trust layer frames a part: its length as eight bytes big-endian, then it.
