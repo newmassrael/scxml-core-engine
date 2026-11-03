@@ -20,6 +20,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::generator::Language;
 use tempfile::tempdir;
 
 fn repo_root() -> PathBuf {
@@ -287,7 +288,10 @@ fn the_legacy_spelling_generates_what_the_bracket_generates() {
         "name=\"legacy_bound_spelling\"",
         "name=\"event_batch_item\"",
     );
-    for language in ["rust", "kotlin", "cpp", "go", "python", "swift", "c"] {
+    for language in Language::ALL
+        .iter()
+        .map(|language| language.canonical_name())
+    {
         let args = ["generate", "-l", language];
         let (ok, from_legacy, records) = run(&args, "event_batch_item.scxml", &legacy);
         assert!(
