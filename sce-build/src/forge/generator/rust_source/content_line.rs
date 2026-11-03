@@ -12,17 +12,19 @@
 //! a list of values, is an iterator of line records, and a record is a source
 //! of its own (the parameters and the value or values of one line).
 //!
-//! The encoding rule is the runtime's `ContentLineWriter`: folding at 75
-//! octets, TEXT escapes and quoting are its. What is written here is which
-//! property follows which, in declaration order, and which refusals precede a
-//! line: a required property absent, a parameter with no value of its property
-//! to stand on. A refusal found by writing into a sink that only counts leaves
-//! the caller's sink untouched.
+//! What the encode writes, and which refusals precede a line, is the codec's
+//! encode plan ([`ContentLinePlan`], docs/adr/0081); this module spells it in
+//! Rust. The encoding rule is the runtime's `ContentLineWriter`: folding at 75
+//! octets, TEXT escapes and quoting are its. A refusal found by writing into a
+//! sink that only counts leaves the caller's sink untouched.
 
 use super::super::*;
-use crate::forge::codec_totality::{self, RefusalKind, Totality};
+use crate::forge::codec_totality::RefusalKind;
 use crate::forge::content_line_codec::bound_literal;
-use crate::forge::model::{ContentLineEntry, ContentLineModel};
+use crate::forge::encode_plan::{
+    ContentLinePlan, LineShape, LineValue, Param, ParamValue, Property,
+};
+use crate::forge::model::ContentLineEntry;
 use crate::generator::Language;
 
 /// The runtime's codec module, as the generated text spells it.
@@ -38,26 +40,24 @@ pub(in super::super) struct Input<'a> {
     pub(in super::super) inline_encode: bool,
 }
 
-struct Plan<'a> {
+/// The Rust printer of a content-line codec's encode plan.
+struct Printer<'a> {
     input: &'a Input<'a>,
-    model: &'a ContentLineModel,
-    /// Where the encode can refuse a value (docs/adr/0065), which every
-    /// refusal written here must be in.
-    totality: Totality,
+    /// The plan, whose totality every refusal written here must be in.
+    plan: ContentLinePlan<'a>,
 }
 
-impl Plan<'_> {
+impl Printer<'_> {
     /// `return Err(CodecError::LineRequiredMissing);` for the entry `e`.
     fn required_missing(&self, e: &ContentLineEntry) -> String {
         format!(
             "return Err({});",
-            self.totality
+            self.plan
+                .totality
                 .require(RefusalKind::LineRequiredMissing, &e.id)
         )
     }
-}
 
-impl Plan<'_> {
     fn l(&self) -> &LangCtx {
         self.input.l
     }
@@ -109,51 +109,64 @@ impl Plan<'_> {
         }
     }
 
-    /// The statements that write the value `v` of `e` on the line.
-    fn write_value(&self, e: &ContentLineEntry) -> String {
-        let text = e.text;
-        let max_size = bound_literal(Language::Rust, e.max_size);
+    /// The statement that writes the value `v` of the property `p` on the line.
+    fn write_value(&self, p: &Property<'_>) -> String {
+        let e = p.entry;
         // A value the line writer can refuse: recorded where it is written.
-        if e.separator.is_some() || matches!(e.present_type(), SceType::String | SceType::Enum(_)) {
-            self.totality.require(RefusalKind::LineBadValue, &e.id);
+        if matches!(
+            p.value,
+            LineValue::Values { .. } | LineValue::Text { .. } | LineValue::Enum { .. }
+        ) {
+            self.plan.totality.require(RefusalKind::LineBadValue, &e.id);
         }
-        if let Some(separator) = &e.separator {
-            let max_values = bound_literal(Language::Rust, e.max_values);
-            return format!(
-                "out.strings_of(v, b'{separator}', {text}, {max_size}, {max_values})?;"
-            );
-        }
-        match e.present_type() {
-            SceType::String => format!("out.string(v, {text}, {max_size})?;"),
-            SceType::Enum(r) => format!(
+        match &p.value {
+            LineValue::Values {
+                separator,
+                text,
+                max_size,
+                max_values,
+            } => format!(
+                "out.strings_of(v, b'{separator}', {text}, {}, {})?;",
+                bound_literal(Language::Rust, *max_size),
+                bound_literal(Language::Rust, *max_values)
+            ),
+            LineValue::Text { text, max_size } => format!(
+                "out.string(v, {text}, {})?;",
+                bound_literal(Language::Rust, *max_size)
+            ),
+            LineValue::Enum { alias } => format!(
                 "out.enum_value(TEXTS_{}, u64::from({}))?;",
-                r.alias.to_uppercase(),
+                alias.to_uppercase(),
                 self.l().codec_carrier_expr(e.present_type(), "v")
             ),
-            SceType::Bool => "out.boolean(v)?;".to_string(),
-            SceType::Uint64 => "out.uint(v)?;".to_string(),
-            SceType::Int64 => "out.int(v)?;".to_string(),
-            ty if ty.is_signed() => "out.int(i64::from(v))?;".to_string(),
-            _ => "out.uint(u64::from(v))?;".to_string(),
+            LineValue::Bool => "out.boolean(v)?;".to_string(),
+            LineValue::Uint { wide: true } => "out.uint(v)?;".to_string(),
+            LineValue::Int { wide: true } => "out.int(v)?;".to_string(),
+            LineValue::Int { wide: false } => "out.int(i64::from(v))?;".to_string(),
+            LineValue::Uint { wide: false } => "out.uint(u64::from(v))?;".to_string(),
         }
     }
 
     /// The statements that write the parameter `p`, read from `holder`.
-    fn write_param(&self, p: &ContentLineEntry, holder: &str) -> Vec<String> {
-        let accessor = self.member(&p.id);
-        let param = p.param.as_deref().unwrap_or_default();
-        let max_size = bound_literal(Language::Rust, p.max_size);
+    fn write_param(&self, p: &Param<'_>, holder: &str) -> Vec<String> {
+        let accessor = self.member(&p.entry.id);
+        let param = p.entry.param.as_deref().unwrap_or_default();
         // Every parameter's value is one the line writer can refuse.
-        self.totality.require(RefusalKind::LineBadValue, &p.id);
-        let call = |value: &str| match p.present_type() {
-            SceType::Enum(r) => format!(
+        self.plan
+            .totality
+            .require(RefusalKind::LineBadValue, &p.entry.id);
+        let call = |value: &str| match &p.value {
+            ParamValue::Enum { alias } => format!(
                 "out.enum_param(\"{param}\", TEXTS_{}, u64::from({}))?;",
-                r.alias.to_uppercase(),
-                self.l().codec_carrier_expr(p.present_type(), value)
+                alias.to_uppercase(),
+                self.l().codec_carrier_expr(p.entry.present_type(), value)
             ),
-            _ => format!("out.param(\"{param}\", {value}, {max_size})?;"),
+            ParamValue::Text { max_size } => format!(
+                "out.param(\"{param}\", {value}, {})?;",
+                bound_literal(Language::Rust, *max_size)
+            ),
         };
-        if p.is_required() {
+        if p.required {
             vec![call(&format!("{holder}.{accessor}()"))]
         } else {
             vec![
@@ -165,9 +178,9 @@ impl Plan<'_> {
     }
 
     /// The accessor type of a parameter.
-    fn param_type(&self, p: &ContentLineEntry) -> String {
-        let value = self.value_type(p);
-        if p.is_required() {
+    fn param_type(&self, p: &Param<'_>) -> String {
+        let value = self.value_type(p.entry);
+        if p.required {
             value
         } else {
             self.l().codec_optional_of(&value)
@@ -178,63 +191,67 @@ impl Plan<'_> {
         format!("impl Iterator<Item = {item}> + Clone")
     }
 
-    /// The type an accessor of the entry's value returns.
-    fn entry_type(&self, e: &ContentLineEntry) -> String {
-        if self.model.reads_records(e) {
-            format!(
+    /// The type an accessor of the property's value returns.
+    fn entry_type(&self, p: &Property<'_>) -> String {
+        match p.shape {
+            LineShape::Records { .. } => format!(
                 "impl Iterator<Item = impl {}Source> + Clone",
-                self.record_type(e)
-            )
-        } else if self.model.reads_values(e) {
-            self.items_type("&str")
-        } else if e.repeated {
-            self.items_type(&self.value_type(e))
-        } else if e.is_required() {
-            self.value_type(e)
-        } else {
-            self.l().codec_optional_of(&self.value_type(e))
+                self.record_type(p.entry)
+            ),
+            LineShape::One { values: true, .. } => self.items_type("&str"),
+            LineShape::Repeated { .. } => self.items_type(&self.value_type(p.entry)),
+            LineShape::One { required: true, .. } => self.value_type(p.entry),
+            LineShape::One {
+                required: false, ..
+            } => self.l().codec_optional_of(&self.value_type(p.entry)),
         }
     }
 
     /// The type an accessor of the value of one line record returns.
-    fn record_value_type(&self, e: &ContentLineEntry) -> String {
-        if e.separator.is_some() {
+    fn record_value_type(&self, p: &Property<'_>) -> String {
+        if matches!(p.value, LineValue::Values { .. }) {
             self.items_type("&str")
         } else {
-            self.value_type(e)
+            self.value_type(p.entry)
         }
+    }
+
+    /// The member a line record's value or values are read by.
+    fn record_value(&self, p: &Property<'_>) -> String {
+        self.member(if matches!(p.value, LineValue::Values { .. }) {
+            "values"
+        } else {
+            "value"
+        })
     }
 
     fn record_traits(&self) -> String {
         let mut out = String::new();
-        for e in self
-            .model
-            .entries
+        for p in self
+            .plan
+            .properties
             .iter()
-            .filter(|e| e.param.is_none() && self.model.reads_records(e))
+            .filter(|p| matches!(p.shape, LineShape::Records { .. }))
         {
+            let e = p.entry;
             let record = self.record_type(e);
-            let value = self.member(if e.separator.is_some() {
-                "values"
-            } else {
-                "value"
-            });
-            let value_ty = self.record_value_type(e);
+            let value = self.record_value(p);
+            let value_ty = self.record_value_type(p);
             let mut items = String::new();
             let mut ref_items = String::new();
             let mut builder_items = String::new();
-            for p in self.model.parameters_of(e) {
-                let (acc, ty) = (self.member(&p.id), self.param_type(p));
+            for param in &p.params {
+                let (acc, ty) = (self.member(&param.entry.id), self.param_type(param));
                 items.push_str(&format!(
                     "    /// Parameter `{}`.\n    fn {acc}(&self) -> {ty};\n",
-                    p.param.as_deref().unwrap_or_default()
+                    param.entry.param.as_deref().unwrap_or_default()
                 ));
                 ref_items.push_str(&format!(
                     "    fn {acc}(&self) -> {ty} {{\n        (**self).{acc}()\n    }}\n"
                 ));
                 builder_items.push_str(&format!(
                     "    fn {acc}(&self) -> {ty} {{\n        {}\n    }}\n",
-                    self.read_scalar(p, &acc, !p.is_required())
+                    self.read_scalar(param.entry, &acc, !param.required)
                 ));
             }
             items.push_str(&format!(
@@ -245,7 +262,7 @@ impl Plan<'_> {
             ));
             builder_items.push_str(&format!(
                 "    fn {value}(&self) -> {value_ty} {{\n        {}\n    }}\n",
-                if e.separator.is_some() {
+                if matches!(p.value, LineValue::Values { .. }) {
                     self.read_items(e, &value)
                 } else {
                     self.read_scalar(e, &value, false)
@@ -267,110 +284,120 @@ impl Plan<'_> {
     /// where one is required, and no more than its `sce:max-count`, where the
     /// protocol states one. A source's list is not held to the bound, so the
     /// encode holds it there, as every backend does.
-    fn judge_lines(&self, e: &ContentLineEntry, accessor: &str, body: &mut Vec<String>) {
-        if e.is_required() {
+    fn judge_lines(
+        &self,
+        e: &ContentLineEntry,
+        required: bool,
+        at_most: Option<u32>,
+        accessor: &str,
+        body: &mut Vec<String>,
+    ) {
+        if required {
             body.push(format!(
                 "if src.{accessor}().next().is_none() {{\n    {}\n}}",
                 self.required_missing(e)
             ));
         }
-        if let Some(max_count) = e.max_count {
+        if let Some(max_count) = at_most {
             body.push(format!(
                 "if src.{accessor}().count() > {max_count} {{\n    return Err({});\n}}",
-                self.totality.require(RefusalKind::LineTooMany, &e.id)
+                self.plan.totality.require(RefusalKind::LineTooMany, &e.id)
             ));
         }
     }
 
-    fn write_entry(&self, e: &ContentLineEntry, body: &mut Vec<String>) {
+    fn write_entry(&self, p: &Property<'_>, body: &mut Vec<String>) {
+        let e = p.entry;
         let accessor = self.member(&e.id);
         let property = &e.property;
-        let params: Vec<&ContentLineEntry> = self.model.parameters_of(e).collect();
-        if self.model.reads_records(e) {
-            self.judge_lines(e, &accessor, body);
-            body.push(format!("for record in src.{accessor}() {{"));
-            let value = self.member(if e.separator.is_some() {
-                "values"
-            } else {
-                "value"
-            });
-            body.push(format!("    let v = record.{value}();"));
-            body.push(format!("    out.property(\"{property}\")?;"));
-            for p in &params {
-                body.extend(
-                    self.write_param(p, "record")
-                        .into_iter()
-                        .map(|l| format!("    {l}")),
-                );
-            }
-            body.push(format!("    {}", self.write_value(e)));
-            body.push("}".to_string());
-        } else if e.repeated {
-            self.judge_lines(e, &accessor, body);
-            body.push(format!("for v in src.{accessor}() {{"));
-            body.push(format!("    out.property(\"{property}\")?;"));
-            body.push(format!("    {}", self.write_value(e)));
-            body.push("}".to_string());
-        } else if e.is_required() {
-            body.push("{".to_string());
-            body.push(format!("    let v = src.{accessor}();"));
-            body.push(format!("    out.property(\"{property}\")?;"));
-            for p in &params {
-                body.extend(
-                    self.write_param(p, "src")
-                        .into_iter()
-                        .map(|l| format!("    {l}")),
-                );
-            }
-            body.push(format!("    {}", self.write_value(e)));
-            body.push("}".to_string());
-        } else {
-            // A property that may be absent: its line, or nothing; a parameter
-            // with no value of its property has no line to stand on.
-            let values = self.model.reads_values(e);
-            let any_param = params
-                .iter()
-                .map(|p| format!("src.{}().is_some()", self.member(&p.id)))
-                .collect::<Vec<_>>()
-                .join(" || ");
-            if values {
-                body.push("{".to_string());
-                body.push(format!("    let v = src.{accessor}();"));
-                body.push("    if v.clone().next().is_some() {".to_string());
-                body.push(format!("        out.property(\"{property}\")?;"));
-                for p in &params {
-                    body.extend(
-                        self.write_param(p, "src")
-                            .into_iter()
-                            .map(|l| format!("        {l}")),
-                    );
-                }
-                body.push(format!("        {}", self.write_value(e)));
-                if params.is_empty() {
-                    body.push("    }".to_string());
-                } else {
-                    body.push(format!("    }} else if {any_param} {{"));
-                    body.push(format!("        {}", self.required_missing(e)));
-                    body.push("    }".to_string());
-                }
-                body.push("}".to_string());
-            } else {
-                body.push(format!("if let Some(v) = src.{accessor}() {{"));
+        match p.shape {
+            LineShape::Records { required, at_most } => {
+                self.judge_lines(e, required, at_most, &accessor, body);
+                body.push(format!("for record in src.{accessor}() {{"));
+                body.push(format!("    let v = record.{}();", self.record_value(p)));
                 body.push(format!("    out.property(\"{property}\")?;"));
-                for p in &params {
+                for param in &p.params {
                     body.extend(
-                        self.write_param(p, "src")
+                        self.write_param(param, "record")
                             .into_iter()
                             .map(|l| format!("    {l}")),
                     );
                 }
-                body.push(format!("    {}", self.write_value(e)));
-                if params.is_empty() {
+                body.push(format!("    {}", self.write_value(p)));
+                body.push("}".to_string());
+            }
+            LineShape::Repeated { required, at_most } => {
+                self.judge_lines(e, required, at_most, &accessor, body);
+                body.push(format!("for v in src.{accessor}() {{"));
+                body.push(format!("    out.property(\"{property}\")?;"));
+                body.push(format!("    {}", self.write_value(p)));
+                body.push("}".to_string());
+            }
+            LineShape::One { required: true, .. } => {
+                body.push("{".to_string());
+                body.push(format!("    let v = src.{accessor}();"));
+                body.push(format!("    out.property(\"{property}\")?;"));
+                for param in &p.params {
+                    body.extend(
+                        self.write_param(param, "src")
+                            .into_iter()
+                            .map(|l| format!("    {l}")),
+                    );
+                }
+                body.push(format!("    {}", self.write_value(p)));
+                body.push("}".to_string());
+            }
+            // A property that may be absent: its line, or nothing; a parameter
+            // with no value of its property has no line to stand on.
+            LineShape::One {
+                required: false,
+                values,
+            } => {
+                let any_param = p
+                    .params
+                    .iter()
+                    .map(|param| format!("src.{}().is_some()", self.member(&param.entry.id)))
+                    .collect::<Vec<_>>()
+                    .join(" || ");
+                if values {
+                    body.push("{".to_string());
+                    body.push(format!("    let v = src.{accessor}();"));
+                    body.push("    if v.clone().next().is_some() {".to_string());
+                    body.push(format!("        out.property(\"{property}\")?;"));
+                    for param in &p.params {
+                        body.extend(
+                            self.write_param(param, "src")
+                                .into_iter()
+                                .map(|l| format!("        {l}")),
+                        );
+                    }
+                    body.push(format!("        {}", self.write_value(p)));
+                    if p.params.is_empty() {
+                        body.push("    }".to_string());
+                    } else {
+                        body.push(format!("    }} else if {any_param} {{"));
+                        body.push(format!("        {}", self.required_missing(e)));
+                        body.push("    }".to_string());
+                    }
                     body.push("}".to_string());
                 } else {
-                    body.push(format!("}} else if {any_param} {{"));
-                    body.push(format!("    {}", self.required_missing(e)));
-                    body.push("}".to_string());
+                    body.push(format!("if let Some(v) = src.{accessor}() {{"));
+                    body.push(format!("    out.property(\"{property}\")?;"));
+                    for param in &p.params {
+                        body.extend(
+                            self.write_param(param, "src")
+                                .into_iter()
+                                .map(|l| format!("    {l}")),
+                        );
+                    }
+                    body.push(format!("    {}", self.write_value(p)));
+                    if p.params.is_empty() {
+                        body.push("}".to_string());
+                    } else {
+                        body.push(format!("}} else if {any_param} {{"));
+                        body.push(format!("    {}", self.required_missing(e)));
+                        body.push("}".to_string());
+                    }
                 }
             }
         }
@@ -379,13 +406,14 @@ impl Plan<'_> {
     fn text(&self) -> String {
         let name = self.name();
         let trait_name = format!("{name}Source");
-        let component = &self.model.component;
+        let component = &self.plan.lines.component;
         let mut items = String::new();
         let mut ref_items = String::new();
         let mut builder_items = String::new();
-        for e in self.model.entries.iter().filter(|e| e.param.is_none()) {
+        for p in &self.plan.properties {
+            let e = p.entry;
             let acc = self.member(&e.id);
-            let ty = self.entry_type(e);
+            let ty = self.entry_type(p);
             items.push_str(&format!(
                 "    /// Property `{}`.\n    fn {acc}(&self) -> {ty};\n",
                 e.property
@@ -393,22 +421,24 @@ impl Plan<'_> {
             ref_items.push_str(&format!(
                 "    fn {acc}(&self) -> {ty} {{\n        (**self).{acc}()\n    }}\n"
             ));
-            let read = if self.model.reads_records(e) {
-                format!("{RT}::SceList::as_slice(&self.{acc}).iter()")
-            } else if self.model.reads_values(e) || e.repeated {
-                self.read_items(e, &acc)
-            } else {
-                self.read_scalar(e, &acc, !e.is_required())
+            let read = match p.shape {
+                LineShape::Records { .. } => {
+                    format!("{RT}::SceList::as_slice(&self.{acc}).iter()")
+                }
+                LineShape::Repeated { .. } | LineShape::One { values: true, .. } => {
+                    self.read_items(e, &acc)
+                }
+                LineShape::One { required, .. } => self.read_scalar(e, &acc, !required),
             };
             builder_items.push_str(&format!(
                 "    fn {acc}(&self) -> {ty} {{\n        {read}\n    }}\n"
             ));
-            if !self.model.reads_records(e) {
-                for p in self.model.parameters_of(e) {
-                    let (pacc, pty) = (self.member(&p.id), self.param_type(p));
+            if !matches!(p.shape, LineShape::Records { .. }) {
+                for param in &p.params {
+                    let (pacc, pty) = (self.member(&param.entry.id), self.param_type(param));
                     items.push_str(&format!(
                         "    /// Parameter `{}` of `{}`.\n    fn {pacc}(&self) -> {pty};\n",
-                        p.param.as_deref().unwrap_or_default(),
+                        param.entry.param.as_deref().unwrap_or_default(),
                         e.property
                     ));
                     ref_items.push_str(&format!(
@@ -416,7 +446,7 @@ impl Plan<'_> {
                     ));
                     builder_items.push_str(&format!(
                         "    fn {pacc}(&self) -> {pty} {{\n        {}\n    }}\n",
-                        self.read_scalar(p, &pacc, !p.is_required())
+                        self.read_scalar(param.entry, &pacc, !param.required)
                     ));
                 }
             }
@@ -425,13 +455,13 @@ impl Plan<'_> {
         body.push(format!(
             "let mut out = ContentLineWriter::begin(w, \"{component}\")?;"
         ));
-        for e in self.model.entries.iter().filter(|e| e.param.is_none()) {
-            self.write_entry(e, &mut body);
+        for p in &self.plan.properties {
+            self.write_entry(p, &mut body);
         }
         body.push("out.finish()?;".to_string());
         body.push("Ok(())".to_string());
         let body = super::indent(&body, 8);
-        let may_fail = !self.totality.is_total();
+        let may_fail = !self.plan.totality.is_total();
         // A component whose values a line can refuse is written into a sink
         // that only counts first, so a refusal leaves the caller's sink
         // untouched; one whose values no line refuses has nothing to find.
@@ -489,19 +519,11 @@ impl Plan<'_> {
 
 /// The source interface of a content-line codec, as the text its file holds.
 pub(in super::super) fn render(input: &Input<'_>) -> String {
-    let model = input
-        .m
-        .content_line
-        .as_ref()
-        .expect("a content-line codec carries its entries");
-    // A content-line codec imports no codec: its refusals are its own.
-    let totality = codec_totality::analyse(input.m, &mut codec_totality::Resolved(&[]));
-    let plan = Plan {
+    let printer = Printer {
         input,
-        model,
-        totality,
+        plan: ContentLinePlan::of(input.m),
     };
-    let text = plan.text();
-    plan.totality.assert_all_written(&input.m.name);
+    let text = printer.text();
+    printer.plan.totality.assert_all_written(&input.m.name);
     text
 }

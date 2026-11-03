@@ -45,8 +45,8 @@ PY
 # analysis names `LineTooMany` of.
 mutation_case "the Rust encode holds no count to sce:max-count" <<'PY'
 edit("sce-build/src/forge/generator/rust_source/content_line.rs",
-     r'''        if let Some(max_count) = e.max_count {''',
-     r'''        if let Some(max_count) = None::<u32> {''')
+     r'''        if let Some(max_count) = at_most {''',
+     r'''        if let Some(max_count) = at_most.filter(|_| false) {''')
 PY
 
 # A capacity the deployment gives a content-line container sizes nothing, and

@@ -183,8 +183,11 @@ old encode, the old encode and its templates are removed in the same landing.
    *The program landed 2026-11-03:* the writes in wire order (a positional layout's packed bytes, fixed fields and
    tails; a streamed layout's fields, each with when it is written and how a list is walked; the variant's arm) and
    the flags a parent may set. The regeneration changed no file. The plan of a positional codec is then whole: the
-   Rust printer decides nothing of it. The CBOR and content-line codecs keep their own plans
-   (`rust_source/cbor.rs`, `rust_source/content_line.rs`) until they move onto this one, which closes step 2.
+   Rust printer decides nothing of it.
+   *Step 2 closed 2026-11-03* with the other two encodings: `CodecPlan` is the plan of a codec by the encoding it
+   declares, positional, CBOR (each entry's presence and value kind, the key order it is written in, the signed
+   enum carrier its one refusal) or content-line (each property's line shape, its parameters, what a line holds,
+   and the refusals that precede a line). Each regeneration changed no file.
 3. The oracle's byte cases for every shape (§5), held first by Rust.
 4. C++, then Go, Kotlin, Python and C11, each by §6, with its runtime's counting sink, refinements and walk. C++ comes
    first because it is the engine's own language and its type system carries a refinement as a type, as Rust's

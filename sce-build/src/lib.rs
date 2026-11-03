@@ -2521,10 +2521,10 @@ pub fn encode_plan_file<R>(
     path: &Path,
     include_dirs: &[PathBuf],
     options: &ForgeCompileOptions,
-    read: impl FnOnce(&forge::encode_plan::EncodePlan<'_>) -> R,
+    read: impl FnOnce(&forge::encode_plan::CodecPlan<'_>) -> R,
 ) -> Result<Option<R>, forge::error::Located<forge::error::ForgeError>> {
     read_codec_file(path, include_dirs, options, |model, imports| {
-        read(&forge::encode_plan::EncodePlan::of(&model, imports))
+        read(&forge::encode_plan::CodecPlan::of(&model, imports))
     })
 }
 

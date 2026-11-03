@@ -26,10 +26,46 @@ use crate::forge::codec_roles::{
 use crate::forge::codec_totality::{self, RefusalKind, Totality};
 use crate::forge::generator::ImportContext;
 use crate::forge::model::{
-    BitSize, CborEntry, CodecField, CodecModel, FlagBindSource, FlagDef, FlagInput,
-    PresentIfPredicate, PresentIfScope, SceType, TlvTerminateStrategy,
+    BitSize, CborEntry, CodecEncoding, CodecField, CodecModel, ContentLineEntry, ContentLineModel,
+    FlagBindSource, FlagDef, FlagInput, PresentIfPredicate, PresentIfScope, SceType,
+    TlvTerminateStrategy,
 };
 use std::collections::BTreeMap;
+
+/// The encode plan of a codec, by the encoding it declares (docs/adr/0081 §1):
+/// each encoding derives and writes by rules of its own, and a printer prints
+/// the one the codec has.
+pub enum CodecPlan<'m> {
+    /// Fields at byte and bit positions, or streamed in turn. The largest plan,
+    /// held apart so that the others are not its size.
+    Positional(Box<EncodePlan<'m>>),
+    /// One CBOR map.
+    Cbor(CborPlan<'m>),
+    /// One component of content lines.
+    ContentLine(ContentLinePlan<'m>),
+}
+
+impl<'m> CodecPlan<'m> {
+    /// The plan of the codec `model`, given what its imports are.
+    pub fn of(model: &'m CodecModel, imports: &[ImportContext]) -> Self {
+        match model.encoding {
+            CodecEncoding::Positional => {
+                CodecPlan::Positional(Box::new(EncodePlan::of(model, imports)))
+            }
+            CodecEncoding::Cbor => CodecPlan::Cbor(CborPlan::of(model, imports)),
+            CodecEncoding::ContentLine => CodecPlan::ContentLine(ContentLinePlan::of(model)),
+        }
+    }
+
+    /// Where the encode can refuse a value.
+    pub fn totality(&self) -> &Totality {
+        match self {
+            CodecPlan::Positional(plan) => &plan.totality,
+            CodecPlan::Cbor(plan) => &plan.totality,
+            CodecPlan::ContentLine(plan) => &plan.totality,
+        }
+    }
+}
 
 /// The encode plan of one positional codec.
 pub struct EncodePlan<'m> {
@@ -1622,5 +1658,225 @@ impl<'m> CborPlan<'m> {
     /// How many entries every value holds.
     pub fn required(&self) -> usize {
         self.entries.iter().filter(|item| item.required).count()
+    }
+}
+
+/// The encode plan of a content-line codec (SCE_FORGE.md §4.6.4, docs/adr/0014,
+/// docs/adr/0081 §1).
+///
+/// A component of content lines derives nothing a value says: every property
+/// and parameter is presented. What the plan holds is the shape of each
+/// property's lines, what each line holds, and which refusals precede a line:
+/// a required property absent, more lines than the protocol states, a parameter
+/// with no value of its property to stand on. Folding at 75 octets, escapes and
+/// quoting are the runtime's line writer's.
+pub struct ContentLinePlan<'m> {
+    /// The codec the plan is of.
+    pub model: &'m CodecModel,
+    /// Its component and entries.
+    pub lines: &'m ContentLineModel,
+    /// Where the encode can refuse a value.
+    pub totality: Totality,
+    /// Each property, in declaration order: the order its lines are written in.
+    pub properties: Vec<Property<'m>>,
+}
+
+/// One property of a content-line component.
+pub struct Property<'m> {
+    /// The property's entry.
+    pub entry: &'m ContentLineEntry,
+    /// The shape of its lines.
+    pub shape: LineShape,
+    /// Its parameters, in declaration order, written after its name.
+    pub params: Vec<Param<'m>>,
+    /// What one of its lines holds.
+    pub value: LineValue,
+}
+
+/// The shape of a property's lines.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LineShape {
+    /// Repeated, each line a record of its parameters and its value or values.
+    Records {
+        /// Whether a value holds one line or more; one with none is refused
+        /// with [`RefusalKind::LineRequiredMissing`].
+        required: bool,
+        /// The most lines, where the protocol states it; more are refused with
+        /// [`RefusalKind::LineTooMany`].
+        at_most: Option<u32>,
+    },
+    /// Repeated, each line one value and no parameter.
+    Repeated {
+        /// As [`LineShape::Records::required`].
+        required: bool,
+        /// As [`LineShape::Records::at_most`].
+        at_most: Option<u32>,
+    },
+    /// One line, or none where it is not required. A parameter with no value of
+    /// its property to stand on is refused with
+    /// [`RefusalKind::LineRequiredMissing`].
+    One {
+        /// Whether every value holds it.
+        required: bool,
+        /// Whether its line holds a list of values, absent where the list is
+        /// empty.
+        values: bool,
+    },
+}
+
+/// A parameter of a property.
+pub struct Param<'m> {
+    /// The parameter's entry.
+    pub entry: &'m ContentLineEntry,
+    /// Whether every line holds it.
+    pub required: bool,
+    /// What it holds. The line writer can refuse every parameter's value, with
+    /// [`RefusalKind::LineBadValue`].
+    pub value: ParamValue,
+}
+
+/// What a parameter holds.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum ParamValue {
+    /// One of an enum's texts.
+    Enum {
+        /// The import alias of the enum.
+        alias: String,
+    },
+    /// Text, of `max_size` bytes at most where the protocol states it.
+    Text {
+        /// The most bytes.
+        max_size: Option<u32>,
+    },
+}
+
+/// What one line of a property holds.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum LineValue {
+    /// Values joined by `separator`, of `max_values` at most and `max_size`
+    /// bytes each at most where the protocol states them; escaped as TEXT where
+    /// `text`. Refused by the line writer with [`RefusalKind::LineBadValue`].
+    Values {
+        /// The separator.
+        separator: String,
+        /// Whether the values are TEXT.
+        text: bool,
+        /// The most bytes of one value.
+        max_size: Option<u32>,
+        /// The most values.
+        max_values: Option<u32>,
+    },
+    /// Text, of `max_size` bytes at most; escaped as TEXT where `text`. Refused
+    /// by the line writer with [`RefusalKind::LineBadValue`].
+    Text {
+        /// Whether it is TEXT.
+        text: bool,
+        /// The most bytes.
+        max_size: Option<u32>,
+    },
+    /// One of an enum's texts. Refused by the line writer with
+    /// [`RefusalKind::LineBadValue`].
+    Enum {
+        /// The import alias of the enum.
+        alias: String,
+    },
+    /// A boolean.
+    Bool,
+    /// An unsigned integer; `wide` where it is 64 bits.
+    Uint {
+        /// Whether it is 64 bits wide.
+        wide: bool,
+    },
+    /// A signed integer; `wide` where it is 64 bits.
+    Int {
+        /// Whether it is 64 bits wide.
+        wide: bool,
+    },
+}
+
+impl<'m> ContentLinePlan<'m> {
+    /// The plan of the content-line codec `model`.
+    ///
+    /// # Panics
+    ///
+    /// Where `model` carries no content-line entries.
+    pub fn of(model: &'m CodecModel) -> Self {
+        let lines = model
+            .content_line
+            .as_ref()
+            .expect("a content-line codec carries its entries");
+        let properties = lines
+            .entries
+            .iter()
+            .filter(|entry| entry.param.is_none())
+            .map(|entry| Property {
+                entry,
+                shape: if lines.reads_records(entry) {
+                    LineShape::Records {
+                        required: entry.is_required(),
+                        at_most: entry.max_count,
+                    }
+                } else if entry.repeated {
+                    LineShape::Repeated {
+                        required: entry.is_required(),
+                        at_most: entry.max_count,
+                    }
+                } else {
+                    LineShape::One {
+                        required: entry.is_required(),
+                        values: lines.reads_values(entry),
+                    }
+                },
+                params: lines
+                    .parameters_of(entry)
+                    .map(|param| Param {
+                        entry: param,
+                        required: param.is_required(),
+                        value: match param.present_type() {
+                            SceType::Enum(r) => ParamValue::Enum {
+                                alias: r.alias.clone(),
+                            },
+                            _ => ParamValue::Text {
+                                max_size: param.max_size,
+                            },
+                        },
+                    })
+                    .collect(),
+                value: line_value(entry),
+            })
+            .collect();
+        ContentLinePlan {
+            model,
+            lines,
+            // A content-line codec imports no codec: its refusals are its own.
+            totality: codec_totality::analyse(model, &mut codec_totality::Resolved(&[])),
+            properties,
+        }
+    }
+}
+
+/// What one line of the property `entry` holds.
+fn line_value(entry: &ContentLineEntry) -> LineValue {
+    if let Some(separator) = &entry.separator {
+        return LineValue::Values {
+            separator: separator.clone(),
+            text: entry.text,
+            max_size: entry.max_size,
+            max_values: entry.max_values,
+        };
+    }
+    match entry.present_type() {
+        SceType::String => LineValue::Text {
+            text: entry.text,
+            max_size: entry.max_size,
+        },
+        SceType::Enum(r) => LineValue::Enum {
+            alias: r.alias.clone(),
+        },
+        SceType::Bool => LineValue::Bool,
+        SceType::Uint64 => LineValue::Uint { wide: true },
+        SceType::Int64 => LineValue::Int { wide: true },
+        ty if ty.is_signed() => LineValue::Int { wide: false },
+        _ => LineValue::Uint { wide: false },
     }
 }

@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 
 use sce_build::forge::codec_roles::ElementId;
 use sce_build::forge::encode_plan::{
-    Absent, Automaton, Bound, Clause, Derive, EncodePlan, Guard, LawInput, Measured, Narrow,
-    Number, NumberInto, Offset, Presence, Value, Write,
+    Absent, Automaton, Bound, Carrier, CborValue, Clause, CodecPlan, Derive, EncodePlan, Guard,
+    LawInput, LineShape, Measured, Narrow, Number, NumberInto, Offset, Presence, Value, Write,
 };
 use sce_build::{encode_plan_file, ForgeCompileOptions};
 
@@ -24,11 +24,95 @@ fn resource(stem: &str) -> PathBuf {
         .join(format!("{stem}.scxml"))
 }
 
-/// What `read` answers of the plan of the codec document `stem`.
-fn with_plan<R>(stem: &str, read: impl FnOnce(&EncodePlan<'_>) -> R) -> R {
+/// What `read` answers of the plan of the codec document `stem`, whatever its
+/// encoding.
+fn with_codec_plan<R>(stem: &str, read: impl FnOnce(&CodecPlan<'_>) -> R) -> R {
     encode_plan_file(&resource(stem), &[], &ForgeCompileOptions::default(), read)
         .unwrap_or_else(|err| panic!("{stem}: {err:?}"))
         .unwrap_or_else(|| panic!("{stem} is not a codec"))
+}
+
+/// What `read` answers of the plan of the positional codec document `stem`.
+fn with_plan<R>(stem: &str, read: impl FnOnce(&EncodePlan<'_>) -> R) -> R {
+    with_codec_plan(stem, |plan| match plan {
+        CodecPlan::Positional(plan) => read(plan),
+        _ => panic!("{stem} is not a positional codec"),
+    })
+}
+
+/// Every codec document of the resources, by path.
+fn resource_documents() -> Vec<PathBuf> {
+    let resources = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&resources)
+        .expect("the resources directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "scxml"))
+        .collect();
+    paths.sort();
+    paths
+}
+
+/// A CBOR map's entries are written in ascending key order, and only an enum
+/// whose carrier is signed can be refused (SCE_FORGE.md §4.6.1).
+#[test]
+fn a_cbor_map_is_written_in_key_order() {
+    with_codec_plan("codec_cbor_map", |plan| {
+        let CodecPlan::Cbor(plan) = plan else {
+            panic!("the codec is a CBOR map");
+        };
+        let keys: Vec<u8> = plan
+            .by_key
+            .iter()
+            .map(|&index| plan.entries[index].entry.key)
+            .collect();
+        assert!(!keys.is_empty());
+        assert!(
+            keys.windows(2).all(|w| w[0] < w[1]),
+            "keys out of order: {keys:?}"
+        );
+        assert_eq!(
+            plan.totality.is_total(),
+            !plan.entries.iter().any(|item| matches!(
+                item.value,
+                CborValue::Enum {
+                    carrier: Carrier::Signed
+                }
+            ))
+        );
+    });
+}
+
+/// Every content-line property has one shape, of many lines exactly where it is
+/// repeated, and the parameters it writes are its own (SCE_FORGE.md §4.6.4).
+#[test]
+fn every_content_line_property_has_one_shape_and_its_parameters() {
+    let mut properties = 0;
+    for path in resource_documents() {
+        encode_plan_file(&path, &[], &ForgeCompileOptions::default(), |plan| {
+            let CodecPlan::ContentLine(plan) = plan else {
+                return;
+            };
+            for property in &plan.properties {
+                properties += 1;
+                assert!(property.entry.param.is_none());
+                let repeated = property.entry.repeated;
+                match property.shape {
+                    LineShape::Records { .. } | LineShape::Repeated { .. } => assert!(repeated),
+                    LineShape::One { .. } => assert!(!repeated),
+                }
+                for param in &property.params {
+                    assert_eq!(
+                        param.entry.property,
+                        property.entry.property,
+                        "{}: a parameter of another property",
+                        path.display()
+                    );
+                }
+            }
+        })
+        .unwrap_or_else(|err| panic!("{}: {err:?}", path.display()));
+    }
+    assert!(properties > 10, "only {properties} properties were read");
 }
 
 /// The ids of the elements the plan of `stem` presents alone, in order.
@@ -327,16 +411,12 @@ fn a_disjunction_is_two_clauses_and_its_group_leaves_nothing_to_check() {
 /// is a refusal.
 #[test]
 fn a_total_codec_plans_no_check() {
-    let resources = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(&resources)
-        .expect("the resources directory")
-        .map(|entry| entry.expect("an entry").path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "scxml"))
-        .collect();
-    paths.sort();
     let mut total = 0;
-    for path in paths {
+    for path in resource_documents() {
         encode_plan_file(&path, &[], &ForgeCompileOptions::default(), |plan| {
+            let CodecPlan::Positional(plan) = plan else {
+                return;
+            };
             if plan.totality.is_total() {
                 total += 1;
                 assert!(
@@ -394,16 +474,12 @@ fn a_gated_chain_is_written_where_present_through_its_law_and_its_end_flag() {
 
 #[test]
 fn every_element_is_one_field_once_and_in_declaration_order() {
-    let resources = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(&resources)
-        .expect("the resources directory")
-        .map(|entry| entry.expect("an entry").path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "scxml"))
-        .collect();
-    paths.sort();
     let mut codecs = 0;
-    for path in paths {
+    for path in resource_documents() {
         let checked = encode_plan_file(&path, &[], &ForgeCompileOptions::default(), |plan| {
+            let CodecPlan::Positional(plan) = plan else {
+                return false;
+            };
             let order: Vec<usize> = plan
                 .elements
                 .iter()
@@ -435,9 +511,10 @@ fn every_element_is_one_field_once_and_in_declaration_order() {
                     element.field.id
                 );
             }
+            true
         })
         .unwrap_or_else(|err| panic!("{}: {err:?}", path.display()));
-        codecs += usize::from(checked.is_some());
+        codecs += usize::from(checked == Some(true));
     }
-    assert!(codecs > 60, "only {codecs} codec documents were read");
+    assert!(codecs > 60, "only {codecs} positional codecs were read");
 }
