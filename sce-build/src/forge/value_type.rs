@@ -1044,11 +1044,172 @@ pub fn contains_itself(alias: &str, env: &dyn TypeEnv) -> Option<Vec<String>> {
     visit(alias, env, &mut Vec::new())
 }
 
+// ── The relation "fits" (docs/adr/0086, section 5.1) ────────────────────────
+
+/// What "fits" needs from outside a type: whether two aliases name one record
+/// type and one enum. A record type is its document, and two revisions of one
+/// schema are one record (SCE_FORGE.md section 4.12, docs/adr/0044); an enum is
+/// its document or a revision of it. A build answers from the documents its
+/// aliases resolve to, each alias read in the document that writes it.
+pub trait TypeIdentity {
+    /// Whether the record `from` names (in the type of the value) is the
+    /// record `to` names (in the type expected).
+    fn same_record(&self, from: &str, to: &str) -> bool;
+    /// Whether the enum `from` names is the enum `to` names.
+    fn same_enum(&self, from: &str, to: &str) -> bool;
+}
+
+/// Why a value of one type may not stand where another is expected: the
+/// first place, outermost first, where the two differ.
+///
+/// `path` leads from the outermost type to that place, one `/*` for each list
+/// element on the way (an optional is passed through, since a present value is
+/// the value of its element): `""` for the types themselves, `/*/*` for the
+/// elements of the elements. A caller puts the name of the field or variable in
+/// front of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Misfit {
+    pub path: String,
+    /// The part of the value's type at `path`, as the grammar spells it.
+    pub from: String,
+    /// The part of the expected type at `path`.
+    pub to: String,
+    /// Why it does not fit.
+    pub why: MisfitReason,
+}
+
+/// The reason a part of a type does not fit the part it stands for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MisfitReason {
+    /// The two are of different constructors, or of different numbers.
+    Constructor,
+    /// The value's text, byte string or list may be longer than the place
+    /// expected holds.
+    Bound,
+    /// The value may be absent and the place expected may not.
+    MayBeAbsent,
+    /// Two records, or two enums, of different documents.
+    Identity,
+}
+
+impl Misfit {
+    /// The sentence a refusal states, the field's or variable's name `name`
+    /// in front of the path.
+    pub fn sentence(&self, name: &str) -> String {
+        let place = format!("{name}{}", self.path);
+        match self.why {
+            MisfitReason::Constructor => format!(
+                "'{place}' is a {} where a {} is expected",
+                self.from, self.to
+            ),
+            MisfitReason::Bound => format!(
+                "'{place}' is a {}, which may hold more than the {} expected there",
+                self.from, self.to
+            ),
+            MisfitReason::MayBeAbsent => format!(
+                "'{place}' is a {}, which may be absent where a {} is expected",
+                self.from, self.to
+            ),
+            MisfitReason::Identity => format!(
+                "'{place}' is a {}, of another document than the {} expected there",
+                self.from, self.to
+            ),
+        }
+    }
+}
+
+/// Whether a value of type `from` may stand where `to` is expected
+/// (docs/adr/0086, section 5.1), or the first place where it may not.
+///
+/// - a number or `bool` fits only its own type, and an enum only its own
+///   enum ([`TypeIdentity::same_enum`]);
+/// - `string[a]` fits `string[b]`, and `bytes[a]` fits `bytes[b]`, when
+///   `a <= b`;
+/// - `list<S>[a]` fits `list<T>[b]` when `S` fits `T` and `a <= b`;
+/// - `optional<S>` fits `optional<T>` when `S` fits `T`, and `S` fits
+///   `optional<T>` when `S` fits `T`;
+/// - `record:R` fits `record:Q` when both are one record
+///   ([`TypeIdentity::same_record`]).
+///
+/// Every bound is the number the build holds, after its limit name and
+/// `--limit` ([`WrittenType::resolve_limits`]), so the relation is the one a
+/// build that moves a limit keeps. A value that fits is a value of the type
+/// expected, whatever it holds, so a copy of it checks nothing at run time.
+pub fn fits(from: &ValueType, to: &ValueType, identity: &dyn TypeIdentity) -> Result<(), Misfit> {
+    fits_at(from, to, identity, "")
+}
+
+fn fits_at(
+    from: &ValueType,
+    to: &ValueType,
+    identity: &dyn TypeIdentity,
+    path: &str,
+) -> Result<(), Misfit> {
+    let misfit = |why: MisfitReason| Misfit {
+        path: path.to_string(),
+        from: from.to_string(),
+        to: to.to_string(),
+        why,
+    };
+    match (from, to) {
+        (ValueType::Scalar(SceType::Enum(a)), ValueType::Scalar(SceType::Enum(b))) => {
+            if identity.same_enum(&a.alias, &b.alias) {
+                Ok(())
+            } else {
+                Err(misfit(MisfitReason::Identity))
+            }
+        }
+        (ValueType::Scalar(a), ValueType::Scalar(b)) => {
+            if a == b {
+                Ok(())
+            } else {
+                Err(misfit(MisfitReason::Constructor))
+            }
+        }
+        (ValueType::Text { max: a }, ValueType::Text { max: b })
+        | (ValueType::Bytes { max: a }, ValueType::Bytes { max: b }) => {
+            if a.max <= b.max {
+                Ok(())
+            } else {
+                Err(misfit(MisfitReason::Bound))
+            }
+        }
+        (ValueType::List { elem: s, max: a }, ValueType::List { elem: t, max: b }) => {
+            fits_at(s, t, identity, &format!("{path}/*"))?;
+            if a.max <= b.max {
+                Ok(())
+            } else {
+                Err(misfit(MisfitReason::Bound))
+            }
+        }
+        (ValueType::Optional { elem: s }, ValueType::Optional { elem: t }) => {
+            fits_at(s, t, identity, path)
+        }
+        (ValueType::Optional { .. }, _) => Err(misfit(MisfitReason::MayBeAbsent)),
+        (_, ValueType::Optional { elem: t }) => fits_at(from, t, identity, path),
+        (ValueType::Record { alias: r }, ValueType::Record { alias: q }) => {
+            if identity.same_record(r, q) {
+                Ok(())
+            } else {
+                Err(misfit(MisfitReason::Identity))
+            }
+        }
+        (
+            ValueType::Scalar(_)
+            | ValueType::Text { .. }
+            | ValueType::Bytes { .. }
+            | ValueType::List { .. }
+            | ValueType::Record { .. },
+            _,
+        ) => Err(misfit(MisfitReason::Constructor)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::forge::model::EnumRef;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn enum_ty(alias: &str) -> SceType {
         SceType::Enum(EnumRef {
@@ -1870,6 +2031,179 @@ mod tests {
         let huge = ty("list<list<list<string[4294967295]>[4294967295]>[4294967295]>[4294967295]");
         assert_eq!(json_max_len(&huge, &env), Err(SizeError::Overflow));
         assert_eq!(cbor_max_len(&huge, &env), Err(SizeError::Overflow));
+    }
+
+    // ── "fits", held to the values each type holds ────────────────────────
+
+    /// The documents behind the aliases: `R` and `R2` are two revisions of one
+    /// schema and `Q` another schema; `E` and `E2` one enum and `F` another.
+    struct Documents;
+
+    fn document_of(alias: &str) -> &str {
+        alias.trim_end_matches('2')
+    }
+
+    impl TypeIdentity for Documents {
+        fn same_record(&self, from: &str, to: &str) -> bool {
+            document_of(from) == document_of(to)
+        }
+        fn same_enum(&self, from: &str, to: &str) -> bool {
+            document_of(from) == document_of(to)
+        }
+    }
+
+    /// Every value of `t`, each spelled once, independent of the relation: a
+    /// number or `bool` is one value standing for every value of its type, a
+    /// record or an enum one value of its document, a text or a byte string one
+    /// value per length, an absent optional `null` beside the values of its
+    /// element (the wire spells a present one as its element), and a list every
+    /// sequence of values of its element up to its bound.
+    fn values_of(t: &ValueType) -> BTreeSet<String> {
+        match t {
+            ValueType::Scalar(SceType::Enum(r)) => {
+                [format!("enum:{}", document_of(&r.alias))].into()
+            }
+            ValueType::Scalar(s) => [s.as_attr()].into(),
+            ValueType::Record { alias } => [format!("record:{}", document_of(alias))].into(),
+            ValueType::Text { max } => (0..=max.max).map(|n| format!("s{n}")).collect(),
+            ValueType::Bytes { max } => (0..=max.max).map(|n| format!("b{n}")).collect(),
+            ValueType::Optional { elem } => {
+                let mut out = values_of(elem);
+                out.insert("null".into());
+                out
+            }
+            ValueType::List { elem, max } => {
+                let elems: Vec<String> = values_of(elem).into_iter().collect();
+                let mut sequences: Vec<Vec<String>> = vec![Vec::new()];
+                let mut out: BTreeSet<String> = ["[]".to_string()].into();
+                for _ in 0..max.max {
+                    sequences = sequences
+                        .iter()
+                        .flat_map(|seq| {
+                            elems.iter().map(move |e| {
+                                let mut longer = seq.clone();
+                                longer.push(e.clone());
+                                longer
+                            })
+                        })
+                        .collect();
+                    out.extend(sequences.iter().map(|seq| format!("[{}]", seq.join(","))));
+                }
+                out
+            }
+        }
+    }
+
+    /// Every type up to three constructors deep over leaves that tell each rule
+    /// apart: two bounds of each text and byte string and list, two revisions of
+    /// a record and an enum beside another of each, and numbers of two widths.
+    fn fit_universe() -> Vec<String> {
+        let leaves = [
+            "uint8",
+            "int64",
+            "bool",
+            "enum:E",
+            "enum:E2",
+            "enum:F",
+            "record:R",
+            "record:R2",
+            "record:Q",
+            "string[1]",
+            "string[2]",
+            "bytes[1]",
+            "bytes[2]",
+        ];
+        let mut all: Vec<String> = leaves.iter().map(|l| l.to_string()).collect();
+        let mut previous = all.clone();
+        for _ in 2..=3 {
+            let mut next = Vec::new();
+            for inner in &previous {
+                if !inner.starts_with("optional<") {
+                    next.push(format!("optional<{inner}>"));
+                }
+                next.push(format!("list<{inner}>[1]"));
+                next.push(format!("list<{inner}>[2]"));
+            }
+            all.extend(next.iter().cloned());
+            previous = next;
+        }
+        all
+    }
+
+    #[test]
+    fn a_type_fits_another_exactly_when_its_values_are_values_of_the_other() {
+        let universe: Vec<(String, ValueType)> = fit_universe()
+            .into_iter()
+            .map(|text| {
+                let t = ty(&text);
+                (text, t)
+            })
+            .collect();
+        let values: Vec<BTreeSet<String>> = universe.iter().map(|(_, t)| values_of(t)).collect();
+        let mut reasons = BTreeSet::new();
+        let (mut fitting, mut misfitting) = (0usize, 0usize);
+        for (i, (from_text, from)) in universe.iter().enumerate() {
+            for (j, (to_text, to)) in universe.iter().enumerate() {
+                let oracle = values[i].is_subset(&values[j]);
+                match fits(from, to, &Documents) {
+                    Ok(()) => {
+                        assert!(
+                            oracle,
+                            "{from_text} fits {to_text}, and a value of it is none of the other's"
+                        );
+                        fitting += 1;
+                    }
+                    Err(misfit) => {
+                        assert!(!oracle, "{from_text} does not fit {to_text} ({misfit:?}), and every value of it is one of the other's");
+                        reasons.insert(format!("{:?}", misfit.why));
+                        misfitting += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(universe.len(), 13 + 39 + 104);
+        assert!(fitting > universe.len(), "{fitting} pairs fit");
+        assert!(misfitting > fitting, "{misfitting} pairs do not fit");
+        assert_eq!(
+            reasons.into_iter().collect::<Vec<_>>(),
+            ["Bound", "Constructor", "Identity", "MayBeAbsent"]
+        );
+    }
+
+    #[test]
+    fn a_misfit_names_the_first_place_by_its_path() {
+        let refused = |from: &str, to: &str| fits(&ty(from), &ty(to), &Documents).unwrap_err();
+        let at = refused("list<list<string[9]>[4]>[3]", "list<list<string[8]>[4]>[3]");
+        assert_eq!(
+            (at.path.as_str(), at.from.as_str(), at.to.as_str(), at.why),
+            ("/*/*", "string[9]", "string[8]", MisfitReason::Bound)
+        );
+        assert_eq!(
+            at.sentence("items"),
+            "'items/*/*' is a string[9], which may hold more than the string[8] expected there"
+        );
+        // The elements are judged before the bound of the list that holds them.
+        let at = refused("list<optional<uint16>>[2]", "list<uint16>[1]");
+        assert_eq!(
+            (at.path.as_str(), at.why),
+            ("/*", MisfitReason::MayBeAbsent)
+        );
+        let at = refused("list<uint8>[3]", "list<uint8>[2]");
+        assert_eq!((at.path.as_str(), at.why), ("", MisfitReason::Bound));
+        // An optional is passed through: its present value is its element's.
+        let at = refused("optional<list<record:Q>[2]>", "optional<list<record:R>[2]>");
+        assert_eq!(
+            (at.path.as_str(), at.from.as_str(), at.why),
+            ("/*", "record:Q", MisfitReason::Identity)
+        );
+        assert_eq!(
+            fits(
+                &ty("list<record:R2>[2]"),
+                &ty("optional<list<record:R>[3]>"),
+                &Documents
+            ),
+            Ok(())
+        );
     }
 
     #[test]

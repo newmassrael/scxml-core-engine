@@ -1,0 +1,52 @@
+# Mutation cases for "a value of one type stands where another is expected only
+# when it fits it" (docs/adr/0086, section 5.1).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_value_fits_a_type_whose_bounds_hold_it.cases`.
+#
+# The judge holds the relation to the values each type holds, over every type up
+# to three constructors deep: a type fits another exactly when each of its values
+# is a value of the other. The mutants take one decision away each:
+#
+#   a text, byte string or list one past the bound expected is let through;
+#   a list of equal bounds is refused, as if the bound were a strict one;
+#   a list's elements are not judged;
+#   a value that may be absent is let through where one may not;
+#   two records of different documents are one record.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib forge::value_type
+mutation_targets sce-build/src/forge/value_type.rs
+mutation_oracles sce-build/src/forge/value_type.rs
+
+mutation_case "a text or byte string one past the bound expected is let through" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "        | (ValueType::Bytes { max: a }, ValueType::Bytes { max: b }) => {\n            if a.max <= b.max {",
+     "        | (ValueType::Bytes { max: a }, ValueType::Bytes { max: b }) => {\n            if a.max <= b.max + 1 {")
+PY
+
+mutation_case "a list of equal bounds is refused" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            fits_at(s, t, identity, &format!(\"{path}/*\"))?;\n            if a.max <= b.max {",
+     "            fits_at(s, t, identity, &format!(\"{path}/*\"))?;\n            if a.max < b.max {")
+PY
+
+mutation_case "a list's elements are not judged" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            fits_at(s, t, identity, &format!(\"{path}/*\"))?;\n",
+     "            let _ = (s, t);\n")
+PY
+
+mutation_case "a value that may be absent is let through where one may not" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "        (ValueType::Optional { .. }, _) => Err(misfit(MisfitReason::MayBeAbsent)),",
+     "        (ValueType::Optional { elem: s }, _) => fits_at(s, to, identity, path),")
+PY
+
+mutation_case "two records of different documents are one record" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            if identity.same_record(r, q) {",
+     "            if identity.same_record(r, q) || r != q {")
+PY
