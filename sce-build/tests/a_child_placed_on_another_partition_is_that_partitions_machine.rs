@@ -196,6 +196,8 @@ fn the_parents_plan_plans_the_run_of_the_partition_its_child_is_placed_on() {
     let in_dir = |name: String| dir.path().join(name).display().to_string();
     let child_document = in_dir(format!("{CHILD}.scxml"));
     let child_machine = in_dir(format!("{CHILD}_sm.h"));
+    // A C++ machine is a header and the inline definitions it includes.
+    let child_inline = in_dir(format!("{CHILD}_sm.inl"));
     let child_transport = in_dir(format!("{CHILD}_transport.h"));
 
     let own: Vec<&str> = lines
@@ -227,7 +229,7 @@ fn the_parents_plan_plans_the_run_of_the_partition_its_child_is_placed_on() {
         .collect();
     assert_eq!(
         planned,
-        BTreeSet::from([child_machine, child_transport]),
+        BTreeSet::from([child_machine, child_inline, child_transport]),
         "the run of the child's partition is planned to write other files:\n{stdout}"
     );
 
