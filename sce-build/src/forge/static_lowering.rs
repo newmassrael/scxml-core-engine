@@ -5694,7 +5694,7 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
             crate::forge::model::AlgorithmValueType::as_attr,
         );
         let bound = var
-            .capacity
+            .capacity()
             .map_or_else(|| "-".to_string(), |c| c.to_string());
         let scalar = shaped.as_ref().and_then(|t| t.scalar());
         let by_document = match scalar {
@@ -5805,13 +5805,14 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
 /// The shape type of `value_type` (docs/adr/0055, section 6): the type a
 /// present value of it is. An optional value's is the type inside it, and every
 /// other type's is the type itself, so a value widened from `T` to
-/// `optional<T>` is named in a shape as it was before.
+/// `optional<T>` is named in a shape as it was before. The bound is left out:
+/// a shape names it in a column of its own.
 fn shape_type(
     value_type: &crate::forge::model::AlgorithmValueType,
 ) -> crate::forge::model::AlgorithmValueType {
     match value_type.optional_elem() {
-        Some(present) => present.clone(),
-        None => value_type.clone(),
+        Some(present) => present.without_outer_bound(),
+        None => value_type.without_outer_bound(),
     }
 }
 
