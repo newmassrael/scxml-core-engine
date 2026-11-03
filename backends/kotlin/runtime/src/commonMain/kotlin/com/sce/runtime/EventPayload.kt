@@ -21,6 +21,16 @@ package com.sce.runtime
  * guard that does not fire. A native lowering that answered differently would
  * make the optimisation observable, which is the one thing it may not be.
  *
+ * A field may be of any type of the language (docs/adr/0086): a list of any
+ * type, an optional value, a record, nested to any depth. Each is read as one
+ * [Value] at the path that names it, and three combinators walk the
+ * constructors that hold other values, each calling the reader of its part:
+ * [Value.list], [Value.optional] and [Value.record]. A value outside its type is
+ * refused before anything of it is kept, and the refusal names the path
+ * through every depth as a JSON Pointer (RFC 6901): `'items/2/tags/0' is 9
+ * bytes, past the 8 its type declares`. A key a record's schema does not
+ * declare is stepped over.
+ *
  * The JSON is read through the runtime's one reader ([Json]); what the inject
  * seam writes goes through its [Json.quote].
  *
@@ -55,56 +65,60 @@ object EventPayload {
         return !(digits == "0" && text.startsWith("-"))
     }
 
-    /**
-     * The fields an event carries, each value still in the spelling it was
-     * written in, so a whole number stays exact until it is read at the width
-     * its schema declares.
-     */
-    class Fields internal constructor(internal val values: Map<String, Any?>) {
+    /** [segment] below [prefix], as a JSON Pointer's reference tokens are joined. */
+    private fun join(prefix: String, segment: String): String =
+        if (prefix.isEmpty()) segment else "$prefix/$segment"
 
-        private fun raw(name: String): Any? {
-            if (!values.containsKey(name)) {
-                throw Refusal("the event's data has no '$name'")
-            }
-            return values[name]
-        }
+    /**
+     * One value of an event's data, at the [path] through every depth that names
+     * it: a field's name, then each index and field name below it, joined by `/`.
+     */
+    class Value internal constructor(private val raw: Any?, val path: String) {
+
+        /** Whether the value is `null`, the one spelling of an absent value. */
+        val isNull: Boolean get() = raw == null
 
         /**
-         * A field's value as the number it was written as.
+         * A refusal of this value, saying [what] of it after its path:
+         * `'items/1/level' (x) is not a variant of Level`.
+         */
+        fun refuse(what: String): Refusal = Refusal("'$path' $what")
+
+        /** The refusal of `null` where the type is not optional, or [otherwise]. */
+        private fun wrongKind(otherwise: String): Refusal =
+            if (isNull) refuse("is null, and its type is not optional") else refuse(otherwise)
+
+        /**
+         * The value as the number it was written as.
          *
          * ⚠ A truth value is not a number here. JSON spells both, and a schema
          * that declared `uint32` and received `true` has been handed something
          * its own type says cannot occur.
          */
-        private fun number(name: String): String {
-            val value = raw(name)
-            if (value !is Json.Number) {
-                throw Refusal("'$name' is not a number ($value)")
+        private fun number(): String {
+            if (raw !is Json.Number) {
+                throw wrongKind("is not a number ($raw)")
             }
-            return value.text
+            return raw.text
         }
 
-        private fun whole(name: String): Long {
-            val text = number(name)
-            return text.toLongOrNull()
-                ?: throw Refusal("'$name' is not a whole number ($text)")
+        private fun whole(): Long {
+            val text = number()
+            return text.toLongOrNull() ?: throw refuse("is not a whole number ($text)")
         }
 
-        private fun <T> narrowed(name: String, value: Long, min: Long, max: Long, of: (Long) -> T): T {
+        private fun <T> narrowed(value: Long, min: Long, max: Long, of: (Long) -> T): T {
             if (value < min || value > max) {
-                throw Refusal("'$name' does not fit the width its schema declares ($value)")
+                throw refuse("does not fit the width its schema declares ($value)")
             }
             return of(value)
         }
 
-        fun int8(name: String): Byte =
-            narrowed(name, whole(name), Byte.MIN_VALUE.toLong(), Byte.MAX_VALUE.toLong()) { it.toByte() }
+        fun int8(): Byte = narrowed(whole(), Byte.MIN_VALUE.toLong(), Byte.MAX_VALUE.toLong()) { it.toByte() }
 
-        fun int16(name: String): Short =
-            narrowed(name, whole(name), Short.MIN_VALUE.toLong(), Short.MAX_VALUE.toLong()) { it.toShort() }
+        fun int16(): Short = narrowed(whole(), Short.MIN_VALUE.toLong(), Short.MAX_VALUE.toLong()) { it.toShort() }
 
-        fun int32(name: String): Int =
-            narrowed(name, whole(name), Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()) { it.toInt() }
+        fun int32(): Int = narrowed(whole(), Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()) { it.toInt() }
 
         /**
          * A 64-bit whole number's digits: written as a text of them, or as a JSON
@@ -114,110 +128,218 @@ object EventPayload {
          * number past that is refused here on every engine, so the same payload
          * gives the same field wherever it is read.
          */
-        private fun wide(name: String, signed: Boolean): String =
-            when (val value = raw(name)) {
+        private fun wide(signed: Boolean): String =
+            when (raw) {
                 is String ->
-                    if (isDecimal(value, signed)) value
-                    else throw Refusal("'$name' is not a whole number written as digits ($value)")
+                    if (isDecimal(raw, signed)) raw
+                    else throw refuse("is not a whole number written as digits ($raw)")
                 is Json.Number -> {
-                    val n = value.text.toLongOrNull()
-                        ?: throw Refusal("'$name' is not a whole number (${value.text})")
+                    val n = raw.text.toLongOrNull() ?: throw refuse("is not a whole number (${raw.text})")
                     if (n > EXACT_IN_A_DOUBLE || n < -EXACT_IN_A_DOUBLE) {
-                        throw Refusal(
-                            "'$name' is a number past 2^53 - 1, which is not exact everywhere " +
-                                "(${value.text}); a 64-bit integer that large is written as a " +
+                        throw refuse(
+                            "is a number past 2^53 - 1, which is not exact everywhere " +
+                                "(${raw.text}); a 64-bit integer that large is written as a " +
                                 "text of its digits",
                         )
                     }
-                    value.text
+                    raw.text
                 }
-                else -> throw Refusal("'$name' is not a number ($value)")
+                else -> throw wrongKind("is not a number ($raw)")
             }
 
-        fun int64(name: String): Long {
-            val text = wide(name, true)
-            return text.toLongOrNull()
-                ?: throw Refusal("'$name' does not fit the width its schema declares ($text)")
+        fun int64(): Long {
+            val text = wide(true)
+            return text.toLongOrNull() ?: throw refuse("does not fit the width its schema declares ($text)")
         }
 
-        fun uint8(name: String): UByte =
-            narrowed(name, whole(name), 0L, UByte.MAX_VALUE.toLong()) { it.toUByte() }
+        fun uint8(): UByte = narrowed(whole(), 0L, UByte.MAX_VALUE.toLong()) { it.toUByte() }
 
-        fun uint16(name: String): UShort =
-            narrowed(name, whole(name), 0L, UShort.MAX_VALUE.toLong()) { it.toUShort() }
+        fun uint16(): UShort = narrowed(whole(), 0L, UShort.MAX_VALUE.toLong()) { it.toUShort() }
 
-        fun uint32(name: String): UInt =
-            narrowed(name, whole(name), 0L, UInt.MAX_VALUE.toLong()) { it.toUInt() }
+        fun uint32(): UInt = narrowed(whole(), 0L, UInt.MAX_VALUE.toLong()) { it.toUInt() }
 
         /**
-         * An unsigned 64-bit field. Its top half has no signed spelling, so the
+         * An unsigned 64-bit value. Its top half has no signed spelling, so the
          * text is read as unsigned rather than through [whole].
          */
-        fun uint64(name: String): ULong {
-            val text = wide(name, false)
-            return text.toULongOrNull()
-                ?: throw Refusal("'$name' does not fit the width its schema declares ($text)")
+        fun uint64(): ULong {
+            val text = wide(false)
+            return text.toULongOrNull() ?: throw refuse("does not fit the width its schema declares ($text)")
         }
 
         /**
-         * A 32-bit fractional field: the binary32 nearest the number the payload
+         * A 32-bit fractional value: the binary32 nearest the number the payload
          * carries. A JSON number is a double wherever it is read, so the single is
          * the one nearest that double, rounded once, and a number past the largest
-         * single does not fit the field, as a whole number past its width does not.
-         * Parsing the text to a `Float` directly would round from the text instead,
-         * and give infinity for `1e39`.
+         * single does not fit, as a whole number past its width does not. Parsing
+         * the text to a `Float` directly would round from the text instead, and
+         * give infinity for `1e39`.
          */
-        fun float32(name: String): Float {
-            val text = number(name)
-            val wide = text.toDoubleOrNull() ?: throw Refusal("'$name' is not a number ($text)")
+        fun float32(): Float {
+            val text = number()
+            val wide = text.toDoubleOrNull() ?: throw refuse("is not a number ($text)")
             if (kotlin.math.abs(wide) > Float.MAX_VALUE.toDouble()) {
-                throw Refusal("'$name' does not fit the width its schema declares ($text)")
+                throw refuse("does not fit the width its schema declares ($text)")
             }
             return wide.toFloat()
         }
 
-        fun float64(name: String): Double {
-            val text = number(name)
-            return text.toDoubleOrNull() ?: throw Refusal("'$name' is not a number ($text)")
+        fun float64(): Double {
+            val text = number()
+            return text.toDoubleOrNull() ?: throw refuse("is not a number ($text)")
         }
 
-        fun boolean(name: String): Boolean {
-            val value = raw(name)
-            if (value !is Boolean) {
-                throw Refusal("'$name' is not a truth value ($value)")
+        fun boolean(): Boolean {
+            if (raw !is Boolean) {
+                throw wrongKind("is not a truth value ($raw)")
             }
-            return value
-        }
-
-        fun string(name: String): String {
-            val value = raw(name)
-            if (value !is String) {
-                throw Refusal("'$name' is not a text ($value)")
-            }
-            return value
+            return raw
         }
 
         /**
-         * A byte-string field.
-         *
-         * JSON has no byte string, so the wire carries the byte-exact Latin-1
-         * text the inject seam writes, and this reads it back the same way:
-         * every one of the 256 values is one character and back. Printable
-         * ASCII — what a bytes guard compares — is the same bytes either way.
+         * The text the value carries, held to no bound: what an enum's variant is
+         * named by, which its reader matches against the names its enum declares.
          */
-        fun bytes(name: String): ByteArray {
-            val text = string(name)
-            val out = ByteArray(text.length)
-            for (i in text.indices) {
-                val c = text[i].code
+        fun name(): String {
+            if (raw !is String) {
+                throw wrongKind("is not a text ($raw)")
+            }
+            return raw
+        }
+
+        /**
+         * A text of at most [bound] UTF-8 bytes (docs/adr/0086, section 4.4): one
+         * past the bound is refused, at whatever depth it stands, and never cut.
+         */
+        fun string(bound: Int): String {
+            val text = name()
+            val size = text.encodeToByteArray().size
+            if (size > bound) {
+                throw pastBytes(size, bound)
+            }
+            return text
+        }
+
+        /**
+         * A byte string of at most [bound] bytes.
+         *
+         * JSON has no byte string, so the wire carries the byte-exact Latin-1 text
+         * the inject seam writes, and this reads it back the same way: every one
+         * of the 256 values is one character and back. Printable ASCII — what a
+         * bytes guard compares — is the same bytes either way.
+         */
+        fun bytes(bound: Int): ByteArray {
+            if (raw !is String) {
+                throw wrongKind("is not a byte string ($raw)")
+            }
+            val out = ByteArray(raw.length)
+            for (i in raw.indices) {
+                val c = raw[i].code
                 if (c > 0xFF) {
-                    throw Refusal(
-                        "'$name' carries a character above U+00FF, which no single byte spells")
+                    throw refuse("carries a character above U+00FF, which no single byte spells")
                 }
                 out[i] = c.toByte()
             }
+            if (out.size > bound) {
+                throw pastBytes(out.size, bound)
+            }
             return out
         }
+
+        private fun pastBytes(held: Int, bound: Int): Refusal =
+            refuse("is $held bytes, past the $bound its type declares")
+
+        /**
+         * A value of `optional<T>` (docs/adr/0055): absent where the value is
+         * `null`, and otherwise what [read] reads of it, held to `T`.
+         */
+        fun <T : Any> optional(read: (Value) -> T): T? = if (isNull) null else read(this)
+
+        /**
+         * A value of `list<T>[bound]`: an array of at most [bound] elements, each
+         * read by [read] at the path of its index, in order.
+         *
+         * The bound is held before any element is read: an array longer than
+         * [bound] is refused whole, and no element of it is decoded (ADR 0077,
+         * section 2).
+         */
+        fun <T> list(bound: Int, read: (Value) -> T): List<T> {
+            if (raw !is List<*>) {
+                throw wrongKind("is not a list")
+            }
+            if (raw.size > bound) {
+                throw refuse("holds ${raw.size} elements, past the $bound its type declares")
+            }
+            return raw.mapIndexed { index, item -> read(Value(item, join(path, index.toString()))) }
+        }
+
+        /**
+         * A value of a record type: an object whose fields [read] reads through
+         * the [Fields] it is handed. [defaults], for a record whose schema a later
+         * revision added fields to, is the JSON object of their defaults, which
+         * the generator spells from that schema, and a field the value lacks is
+         * read out of it (docs/adr/0086, section 10.3).
+         */
+        fun <T> record(defaults: String? = null, read: (Fields) -> T): T {
+            if (raw !is Map<*, *>) {
+                throw wrongKind("is not a record")
+            }
+            @Suppress("UNCHECKED_CAST")
+            val members = raw as Map<String, Any?>
+            val fallback = if (defaults == null) emptyMap() else defaultsOf(defaults)
+            return read(Fields(fallback + members, path))
+        }
+    }
+
+    /**
+     * The fields an event carries, each value still in the spelling it was
+     * written in, so a whole number stays exact until it is read at the width
+     * its schema declares. The fields of a record value are read the same way,
+     * at the record's path.
+     */
+    class Fields internal constructor(internal val values: Map<String, Any?>, private val prefix: String = "") {
+
+        /**
+         * The value of the field [name], at its path: the delivered one, else
+         * the default a later revision of the schema gave it, else a refusal
+         * naming the path. A member the schema does not declare is never asked
+         * for, so it is stepped over.
+         */
+        fun field(name: String): Value {
+            val path = join(prefix, name)
+            if (!values.containsKey(name)) {
+                throw Refusal("the event's data has no '$path'")
+            }
+            return Value(values[name], path)
+        }
+
+        fun int8(name: String): Byte = field(name).int8()
+
+        fun int16(name: String): Short = field(name).int16()
+
+        fun int32(name: String): Int = field(name).int32()
+
+        fun int64(name: String): Long = field(name).int64()
+
+        fun uint8(name: String): UByte = field(name).uint8()
+
+        fun uint16(name: String): UShort = field(name).uint16()
+
+        fun uint32(name: String): UInt = field(name).uint32()
+
+        fun uint64(name: String): ULong = field(name).uint64()
+
+        fun float32(name: String): Float = field(name).float32()
+
+        fun float64(name: String): Double = field(name).float64()
+
+        fun boolean(name: String): Boolean = field(name).boolean()
+
+        /** A text field, as the text it carries; [Value.string] holds it to its bound. */
+        fun string(name: String): String = field(name).name()
+
+        /** A byte-string field, held to no bound; [Value.bytes] holds it to its own. */
+        fun bytes(name: String): ByteArray = field(name).bytes(Int.MAX_VALUE)
 
         /**
          * A field of `optional<T>` (docs/adr/0055, section 4): absent where the
@@ -229,7 +351,7 @@ object EventPayload {
          * the default (`null` when it declares none) in the key's place.
          */
         fun <T : Any> optional(name: String, read: (String) -> T): T? =
-            if (raw(name) == null) null else read(name)
+            if (field(name).isNull) null else read(name)
     }
 
     /**
@@ -272,8 +394,28 @@ object EventPayload {
      */
     fun decode(data: String, defaults: String): Fields {
         val delivered = if (data.isBlank()) emptyMap() else decode(data).values
-        val fallback = decode(defaults).values
-        return Fields(fallback + delivered)
+        return Fields(defaultsOf(defaults) + delivered)
+    }
+
+    /** The members of a schema's defaults, which the generator spells as one JSON object. */
+    private fun defaultsOf(defaults: String): Map<String, Any?> {
+        val parsed = try {
+            Json.parse(defaults.trim())
+        } catch (e: Json.Error) {
+            null
+        }
+        if (parsed !is Map<*, *>) {
+            throw Refusal("the schema's defaults are not a JSON object, which the generator never writes")
+        }
+        @Suppress("UNCHECKED_CAST")
+        return parsed as Map<String, Any?>
+    }
+
+    /** A value already spelled as JSON text, which [encode] writes as it is. */
+    class Raw(val json: String) {
+        override fun toString(): String = json
+        override fun equals(other: Any?): Boolean = other is Raw && other.json == json
+        override fun hashCode(): Int = json.hashCode()
     }
 
     /**
@@ -287,7 +429,25 @@ object EventPayload {
         return "{$parts}"
     }
 
-    /** A byte string as the Latin-1 text the wire carries (see [Fields.bytes]). */
+    /**
+     * The JSON spelling of one record (docs/adr/0086, section 3.1): each member
+     * is a field's id and its value, and the object writes them ascending by the
+     * id's UTF-8 bytes, whatever order they are given in (ARCHITECTURE.md, "JSON
+     * Object Key Order", at every depth; [Json.compareKeys]).
+     */
+    fun recordJson(members: Map<String, Any?>): Raw {
+        val sorted = members.entries.sortedWith { l, r -> Json.compareKeys(l.key, r.key) }
+        return Raw(sorted.joinToString(",", "{", "}") { (key, value) -> "${Json.quote(key)}:${literal(value)}" })
+    }
+
+    /** The JSON spelling of one list: an array of what [write] spells each element as, in order. */
+    fun <T> listJson(items: List<T>, write: (T) -> Raw): Raw =
+        Raw(items.joinToString(",", "[", "]") { write(it).json })
+
+    /** The JSON spelling [encode] gives one value: what a list's element of a scalar type is written as. */
+    fun valueJson(value: Any?): Raw = Raw(literal(value))
+
+    /** A byte string as the Latin-1 text the wire carries (see [Value.bytes]). */
     fun bytesAsText(bytes: ByteArray): String {
         val chars = CharArray(bytes.size) { (bytes[it].toInt() and 0xFF).toChar() }
         return chars.concatToString()
@@ -295,6 +455,7 @@ object EventPayload {
 
     private fun literal(value: Any?): String = when (value) {
         null -> "null"
+        is Raw -> value.json
         is Boolean -> value.toString()
         is UByte, is UShort, is UInt -> value.toString()
         is Byte, is Short, is Int -> value.toString()
@@ -307,5 +468,47 @@ object EventPayload {
         is Float -> value.toString()
         is ByteArray -> Json.quote(bytesAsText(value))
         else -> Json.quote(value.toString())
+    }
+}
+
+/** A value a host built is past a bound its type declares; thrown where the value is made. */
+class BoundExceeded(message: String) : IllegalArgumentException(message)
+
+/**
+ * The checks a generated record's `init` runs over a value a host builds
+ * (docs/adr/0086, section 5.4), one call per constructor of the field's type,
+ * so a value that exists is one of its type at every depth. Each names the
+ * path, as the payload reader does.
+ */
+object ValueBounds {
+
+    /** A text of at most [bound] UTF-8 bytes. */
+    fun text(path: String, value: String, bound: Int) {
+        val size = value.encodeToByteArray().size
+        if (size > bound) {
+            throw BoundExceeded("'$path' is $size bytes, past the $bound its type declares")
+        }
+    }
+
+    /** A byte string of at most [bound] bytes. */
+    fun bytes(path: String, value: ByteArray, bound: Int) {
+        if (value.size > bound) {
+            throw BoundExceeded("'$path' is ${value.size} bytes, past the $bound its type declares")
+        }
+    }
+
+    /** A list of at most [bound] elements, each held to its own type by [each] at the path of its index. */
+    fun <T> list(path: String, value: List<T>, bound: Int, each: (String, T) -> Unit) {
+        if (value.size > bound) {
+            throw BoundExceeded("'$path' holds ${value.size} elements, past the $bound its type declares")
+        }
+        value.forEachIndexed { index, item -> each("$path/$index", item) }
+    }
+
+    /** An optional value, held to its type by [present] where it is present. */
+    fun <T : Any> optional(path: String, value: T?, present: (String, T) -> Unit) {
+        if (value != null) {
+            present(path, value)
+        }
     }
 }
