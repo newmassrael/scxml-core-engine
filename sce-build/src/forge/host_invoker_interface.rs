@@ -1325,12 +1325,39 @@ return ::SCE::HostInvokeResponse{{{response}}};\n"
 invoker->cancel{pascal}(cancel.token);\n                    return std::nullopt;\n                }}\n"
             ));
             if invoke.result.is_some() {
+                // The direct completion is an owner-thread operation of the
+                // engine (ARCHITECTURE.md "Engine Threading"), and a host whose
+                // invocation finishes on a thread of its own is given the inbox
+                // route beside it, typed the same way. Both aggregates are
+                // initialized by position (docs/adr/0059, section 5), in the
+                // order `core/HostProcessor.h` and the engine declare them.
+                let ending = crate::forge::generator::cpp_positional_init(&[
+                    ("processorType", format!("\"{invoke_type}\"")),
+                    ("invokeId", format!("\"{id}\"")),
+                    ("token", "token".to_string()),
+                    ("done", "true".to_string()),
+                    ("data", "result.wire()".to_string()),
+                    ("origin", "\"\"".to_string()),
+                    ("originType", "\"\"".to_string()),
+                ]);
+                let posted = crate::forge::generator::cpp_positional_init(&[
+                    ("sessionId", "\"\"".to_string()),
+                    ("ending", format!("::SCE::HostInvokeEnding{{{ending}}}")),
+                ]);
                 members.push_str(&format!(
                     "    /// Complete `<invoke id=\"{id}\">`'s start `token` with its record —\n    \
 /// `completeHostInvoke` with the record's JSON, so a stale or unknown token\n    \
-/// is refused the same way (`false`).\n    \
+/// is refused the same way (`false`). An owner-thread operation; from another\n    \
+/// thread, `postComplete{pascal}`.\n    \
 bool complete{pascal}(uint64_t token, const {pascal}Result &result) {{\n        \
-return this->completeHostInvoke(\"{invoke_type}\", \"{id}\", token, result.wire());\n    }}\n\n"
+return this->completeHostInvoke(\"{invoke_type}\", \"{id}\", token, result.wire());\n    }}\n\n    \
+/// `complete{pascal}` from any thread: the completion is posted to this\n    \
+/// machine's `inbox()`, and its owner applies it with `completeHostInvoke` at\n    \
+/// its next macrostep boundary, where the token is checked. `true` when the\n    \
+/// inbox took it.\n    \
+bool postComplete{pascal}(uint64_t token, const {pascal}Result &result) const {{\n        \
+using Posted = typename ::SCE::Static::StaticExecutionEngine<PolicyType>::InboxHostInvokeEnding;\n        \
+return this->inbox().post(Posted{{{posted}}});\n    }}\n\n"
                 ));
             }
         }
