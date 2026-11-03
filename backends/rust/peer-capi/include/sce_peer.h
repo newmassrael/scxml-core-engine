@@ -289,7 +289,8 @@ int32_t sce_peer_run(ScePeer *peer, ScePeerLink *link, uint64_t within_ms, const
  * thread that calls the library, and from several at once, and calls nothing of the library. A later
  * call replaces the sink, and NULL or SCE_PEER_LOG_OFF removes it; once the call returns, the sink it
  * replaced is called no more. A record names counts, codes, nodes, durations and a list by a digest;
- * never a token, a key, a signature or anything a list holds. SCE_PEER_ERR_SINK_TAKEN when another
+ * never a token, a key, a signature or anything a list holds. A record of another crate the library
+ * links is given at SCE_PEER_LOG_WARN and SCE_PEER_LOG_ERROR only. SCE_PEER_ERR_SINK_TAKEN when another
  * sink was installed in the process first. */
 typedef void (*ScePeerLogFn)(int32_t level, const char *target, const char *message, void *user);
 int32_t sce_peer_set_log_sink(int32_t max_level, ScePeerLogFn sink, void *user);

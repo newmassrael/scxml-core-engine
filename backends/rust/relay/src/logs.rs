@@ -99,6 +99,27 @@ pub fn list_digest(list: &str) -> String {
     hex
 }
 
+/// The prefix of the target of every record this workspace writes: a module path of one of its
+/// crates (`sce_rust_relay`, `sce_rust_peer`, ...).
+const OWN_TARGET: &str = "sce_";
+
+/// Whether a sink that keeps records at `most` and the levels before it keeps the record `metadata`
+/// describes. A record of this workspace is kept at `most`, since its form ([`line`]) names nothing
+/// secret. A record of another crate the image links (the WebSocket, TLS and MLS libraries, the
+/// runtime) is kept only at `warn` and `error`, and only when `most` keeps those: their `debug` and
+/// `trace` are written for their own authors and are bound by no rule of this module, and they were
+/// measured to hold what this module never writes (a WebSocket frame's payload, the context of an MLS
+/// key derivation, which holds the list's name, and the paths of the machine that built the
+/// library). The program's sinks, `sce-relay`'s and the C ABI's, both ask this.
+pub fn admits(metadata: &log::Metadata<'_>, most: log::LevelFilter) -> bool {
+    let ceiling = if metadata.target().starts_with(OWN_TARGET) {
+        most
+    } else {
+        most.min(log::LevelFilter::Warn)
+    };
+    metadata.level() <= ceiling
+}
+
 /// Log the refusal `response` under `target`, the module that decided it: its code and its reason,
 /// at `error` for a relay that takes nothing more (`unavailable`) and at `info` otherwise. A refusal
 /// for the rate is logged where its limit refused it, with the limit's name and counts, and not here.
@@ -214,6 +235,53 @@ mod tests {
             taken[0].line,
             "event=rate_limited limit=burst retry_after_ms=20 reason=\"two words\""
         );
+    }
+
+    /// Every pair of a sink's level and a record's level, for a record of this workspace and one of
+    /// another crate, against the rule written apart: this workspace's records at the sink's level,
+    /// another crate's at `warn` at most.
+    #[test]
+    fn a_sink_keeps_this_workspaces_records_at_its_level_and_another_crates_at_warn_at_most() {
+        let sinks = [
+            log::LevelFilter::Off,
+            log::LevelFilter::Error,
+            log::LevelFilter::Warn,
+            log::LevelFilter::Info,
+            log::LevelFilter::Debug,
+            log::LevelFilter::Trace,
+        ];
+        let levels = [
+            log::Level::Error,
+            log::Level::Warn,
+            log::Level::Info,
+            log::Level::Debug,
+            log::Level::Trace,
+        ];
+        let targets = [
+            ("sce_rust_relay::driver", true),
+            ("sce_rust_peer", true),
+            ("tungstenite::protocol", false),
+            ("openmls::schedule", false),
+            ("rustls::client", false),
+            ("", false),
+        ];
+        for most in sinks {
+            for level in levels {
+                for (target, own) in targets {
+                    let metadata = log::Metadata::builder().level(level).target(target).build();
+                    let oracle = match most.to_level() {
+                        None => false,
+                        Some(most) if own => level <= most,
+                        Some(most) => level <= most && level <= log::Level::Warn,
+                    };
+                    assert_eq!(
+                        admits(&metadata, most),
+                        oracle,
+                        "sink {most}, record {level} of `{target}`"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

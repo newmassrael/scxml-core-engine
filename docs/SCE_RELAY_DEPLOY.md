@@ -102,7 +102,9 @@ that did not take a record, at `error`. A list is named by a digest of its name 
 by its name. How much is written is `SCE_RELAY_LOG` in the unit's environment
 (`Environment=SCE_RELAY_LOG=debug`): `info` unless it says otherwise; `debug` adds a line for every
 request answered as asked and every connection closed; `warning`, `error` and `off` write less. A word it
-does not read is said once (`event=log_level_unknown`) and `info` is written.
+does not read is said once (`event=log_level_unknown`) and `info` is written. The libraries the relay
+links (TLS, WebSocket, the runtime) are written at `warning` and `error` only, at every level: their
+`debug` and `trace` hold what the relay's own lines never write, a frame's payload among it.
 
 ## 3. The authority's key
 

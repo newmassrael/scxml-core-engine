@@ -597,6 +597,55 @@ fn the_sink_is_given_its_level_and_none_past_it_and_is_replaced_and_removed() {
     assert!(drained(records).is_empty());
 }
 
+/// A record of another crate the library links reaches the host only at `warn` and `error`, at
+/// every level of the sink: their `debug` and `trace` were measured on a device to hold a WebSocket
+/// frame's payload and an MLS key derivation's context (`sce_rust_relay::logs::admits`). A record
+/// of this workspace at the same levels is given as the sink's level says.
+#[test]
+fn a_sink_is_given_another_crates_records_at_warn_at_most_and_this_workspaces_at_its_level() {
+    let _turn = serial();
+    let records = records();
+    let sinks = [
+        SCE_PEER_LOG_ERROR,
+        SCE_PEER_LOG_WARN,
+        SCE_PEER_LOG_INFO,
+        SCE_PEER_LOG_DEBUG,
+        SCE_PEER_LOG_TRACE,
+    ];
+    let levels = [
+        (log::Level::Error, SCE_PEER_LOG_ERROR),
+        (log::Level::Warn, SCE_PEER_LOG_WARN),
+        (log::Level::Info, SCE_PEER_LOG_INFO),
+        (log::Level::Debug, SCE_PEER_LOG_DEBUG),
+        (log::Level::Trace, SCE_PEER_LOG_TRACE),
+    ];
+    for sink in sinks {
+        assert_eq!(install(sink, records), SCE_PEER_OK, "{}", last_error());
+        for (level, abi) in levels {
+            log::log!(target: "tungstenite::protocol", level, "frame payload");
+            log::log!(target: "sce_rust_relay::driver", level, "own record");
+            let given = drained(records);
+            let foreign = given
+                .iter()
+                .any(|(_, target, _)| target == "tungstenite::protocol");
+            let own = given
+                .iter()
+                .any(|(_, target, _)| target == "sce_rust_relay::driver");
+            assert_eq!(
+                foreign,
+                abi <= sink && abi <= SCE_PEER_LOG_WARN,
+                "sink {sink}, another crate's record at {level}: {given:?}"
+            );
+            assert_eq!(
+                own,
+                abi <= sink,
+                "sink {sink}, this workspace's record at {level}: {given:?}"
+            );
+        }
+    }
+    remove();
+}
+
 /// The context of a host's transport to a relay in this process.
 struct ToRelay {
     relay: Arc<Mutex<Relay<MemoryStore>>>,

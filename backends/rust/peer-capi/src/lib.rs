@@ -1947,12 +1947,15 @@ impl log::Log for Facade {
         SINK.read()
             .unwrap_or_else(PoisonError::into_inner)
             .as_ref()
-            .is_some_and(|host| metadata.level() <= host.most)
+            .is_some_and(|host| sce_rust_relay::logs::admits(metadata, host.most))
     }
 
     fn log(&self, record: &log::Record<'_>) {
         let held = SINK.read().unwrap_or_else(PoisonError::into_inner);
-        let Some(host) = held.as_ref().filter(|host| record.level() <= host.most) else {
+        let Some(host) = held
+            .as_ref()
+            .filter(|host| sce_rust_relay::logs::admits(record.metadata(), host.most))
+        else {
             return;
         };
         // The record's line escapes every control character, NUL among them; a target is a module's

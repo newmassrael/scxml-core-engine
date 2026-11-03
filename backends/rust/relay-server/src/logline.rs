@@ -197,7 +197,7 @@ struct Sink {
 
 impl log::Log for Sink {
     fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
-        metadata.level() <= self.level
+        sce_rust_relay::logs::admits(metadata, self.level)
     }
 
     fn log(&self, record: &log::Record<'_>) {

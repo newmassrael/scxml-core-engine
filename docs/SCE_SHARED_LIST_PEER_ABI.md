@@ -800,3 +800,10 @@ of these is refused (`SCE_PEER_ERR_BAD_ARGUMENT`); and `SCE_PEER_ERR_SINK_TAKEN`
 the facade was installed in the process first, which a host that links only this library never meets.
 An Android host forwards each record to `android.util.Log`, an iOS host to `os_log`, at the level
 given.
+
+A record of another crate the library links (the WebSocket, TLS and MLS libraries, the runtime) is
+given only at `SCE_PEER_LOG_WARN` and `SCE_PEER_LOG_ERROR`, whatever `max_level` keeps beyond them:
+their `debug` and `trace` are bound by none of the rules above, and on a device they were measured to
+hold a WebSocket frame's payload, the context of an MLS key derivation (which holds the list's name)
+and the paths of the machine that built the library. The records of this library's own modules
+(`sce_*`) are given at `max_level`.
