@@ -5413,9 +5413,10 @@ impl SCXMLParser {
                 // backend generates it beside its parent as it generates one written
                 // in `<content>`. Its imports resolve inside the library. It has no
                 // place in the parent's text (`inline_child_range` stays empty), so
-                // a lowering that rewrites an in-line child where it stands refuses
-                // it as an invoke by `src`, and a refusal raised against it stays in
-                // its own coordinates, under its library name.
+                // a lowering that rewrites an in-line child where it stands lowers it
+                // instead as a document of its own named by `src`, and a refusal
+                // raised against it stays in its own coordinates, under its library
+                // name.
                 let synth_name = synthesised_child_name(&model.name, &field_suffix);
                 let at = elem.document().text_pos_at(elem.range().start);
                 let text = standard_document_text(&src, source_name, Some(at.row), Some(at.col))?;
@@ -5430,12 +5431,7 @@ impl SCXMLParser {
                     None,
                 )
             } else if !src.is_empty() {
-                let stripped = src.replace("file:", "");
-                let child_name = Path::new(&stripped)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_default();
+                let child_name = ScxmlInvokeInfo::file_child_name(&src);
                 (src.clone(), child_name, None, None, None, None)
             } else {
                 (src.clone(), String::new(), None, None, None, None)
@@ -5473,6 +5469,13 @@ impl SCXMLParser {
                 inline_child_xml: inline_child_source_xml,
                 inline_child_range,
                 inline_child_positions,
+                // A child written in `<content>` is started from it, whatever
+                // `src` says; one named by `src` keeps where its name was written.
+                src_spelling: if has_inline_scxml {
+                    None
+                } else {
+                    AttributeSpelling::of(elem, None, "src")
+                },
                 remote_mesh_target: None,
                 remote_mesh_transport: None,
             };
@@ -5483,12 +5486,10 @@ impl SCXMLParser {
             // through `base_dir` on disk.
             if let Some(inline_model) = scxml_info.inline_child.as_deref() {
                 populate_child_metadata_from_model(inline_model, &mut scxml_info.common);
-            } else if let Some(scxml_dir) = base_dir {
-                if !scxml_info.common.child_name.is_empty() {
-                    let child_scxml_path =
-                        scxml_dir.join(format!("{}.scxml", scxml_info.common.child_name));
-                    parse_child_metadata(&child_scxml_path, &mut scxml_info.common);
-                }
+            } else if let (Some(scxml_dir), Some(file_name)) =
+                (base_dir, scxml_info.child_file_name())
+            {
+                parse_child_metadata(&scxml_dir.join(file_name), &mut scxml_info.common);
             }
 
             return Ok(Some(Invoke::Scxml(scxml_info)));

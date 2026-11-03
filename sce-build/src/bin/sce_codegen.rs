@@ -3392,10 +3392,13 @@ enum Commands {
     /// The document goes to stdout as raw bytes with no trailing newline, as
     /// `expand` does, so a caller can capture it exactly.
     ///
-    /// A hybrid `<invoke>` starts one of the documents it declares in
-    /// `sce:candidates`, which the Interpreter loads at run time from beside the
-    /// invoking one, so each is lowered too and the lowering is several
-    /// documents. With `--out-dir` they are written there, each under the name
+    /// An `<invoke>` that names its child by `src` (a file, or a statechart of
+    /// the standard library), and a hybrid one, which starts one of the
+    /// documents it declares in `sce:candidates`, start a document the
+    /// Interpreter loads at run time from beside the invoking one, so each is
+    /// lowered too and the lowering is several documents; a `src` that does not
+    /// say the name its child is written under is rewritten to it. With
+    /// `--out-dir` they are written there, each under the name
     /// the lowered document starts it by, and one JSON line names them:
     /// `{"v":1,"kind":"lower","documents":[{"path":...}]}`, the document asked
     /// for first. Without it such a document is refused, naming the option.
@@ -3406,8 +3409,8 @@ enum Commands {
         /// `<sce:use>` fragments — same semantics as `generate --include-dir`.
         #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
         include_dir: Vec<String>,
-        /// Write the lowered document and the documents its hybrid `<invoke>`s
-        /// may start into this directory, instead of printing the document.
+        /// Write the lowered document and the documents its `<invoke>`s may
+        /// start into this directory, instead of printing the document.
         #[arg(short = 'o', long = "out-dir", value_name = "DIR")]
         out_dir: Option<String>,
     },
@@ -13152,9 +13155,10 @@ fn cmd_lower(
         out_bytes(lowered.as_bytes());
         return;
     };
-    // A hybrid `<invoke>` starts a document of its own, which the Interpreter
-    // loads from beside the invoking one: the set is written together, each
-    // under the name the lowered document starts it by.
+    // An `<invoke>` that names its child by `src`, or a hybrid one, starts a
+    // document of its own, which the Interpreter loads from beside the invoking
+    // one: the set is written together, each under the name the lowered
+    // document starts it by.
     let documents = sce_build::forge::static_js::lower_file_set(scxml_path, extra_dirs)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML lowering error: "));
     let dir = Path::new(out_dir);

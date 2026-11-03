@@ -2451,6 +2451,17 @@ pub struct ScxmlInvokeInfo {
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub inline_child_positions: Option<AuthoredPositions>,
+    /// The `src` attribute as written and where, for a child named by it — a
+    /// file, or a statechart of the standard library (`sce:std/...`) — and
+    /// `None` for a child written in `<content>`. [`Self::src`] is the name the
+    /// child is started by, which the parser rewrites for a standard child
+    /// (`#<synth>`); this is what the author wrote, which a lowering that writes
+    /// the child beside its parent as a file of its own reads the child's name
+    /// from, and rewrites to the name that file is written under
+    /// (`crate::forge::static_js`).
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub src_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// SCE_MESH.md §9.6 remote `<invoke type="scxml">`. When `src` is of the
     /// form `#<name>` and `<name>` matches a distinct mesh machine declared
     /// in `deploy.yaml`, this carries that machine name (without the leading
@@ -2507,6 +2518,29 @@ impl ScxmlInvokeInfo {
     /// What this invoke hands its child ([`invoke_arguments`]).
     pub fn arguments(&self) -> Vec<Param> {
         invoke_arguments(&self.common.base, &self.namelist)
+    }
+
+    /// The machine name of the child an `<invoke src>` names as a file: the stem
+    /// of the path, a `file:` scheme dropped, and empty for a path with none. Its
+    /// document is `<name>.scxml` beside the invoking one
+    /// ([`Self::child_file_name`]), whatever directory the path names.
+    pub fn file_child_name(src: &str) -> String {
+        let stripped = src.replace("file:", "");
+        std::path::Path::new(&stripped)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(str::to_string)
+            .unwrap_or_default()
+    }
+
+    /// The file name of the child this invoke reads from disk: `<child_name>.scxml`
+    /// in the directory of the document that invokes it, the document the parse
+    /// types the invoke's arguments against and the generated backends start.
+    /// `None` for a child whose document the invoke carries (written in
+    /// `<content>`, or a standard statechart), and for one with no name.
+    pub fn child_file_name(&self) -> Option<String> {
+        (self.inline_child.is_none() && !self.common.child_name.is_empty())
+            .then(|| format!("{}.scxml", self.common.child_name))
     }
 
     /// This invoke, followed — when the document of its child is carried on it

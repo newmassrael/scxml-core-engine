@@ -165,6 +165,10 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         "static_invoke_optional",
         "static_invoke_hybrid",
         "static_invoke_hybrid_saved",
+        // ... and a child named by `src`, here the standard shared record list
+        // (`sce:std/shared/record_list.scxml`), lowered from the library and
+        // written beside its parent.
+        "record_list_parent",
     ] {
         assert!(
             lowered.iter().any(|lowered_name| lowered_name == name),
@@ -472,33 +476,240 @@ fn a_childs_optional_variable_is_handed_the_optional_value_and_its_bound() {
     );
 }
 
-/// An inline child is lowered where it stands in its parent's text; a child that
-/// is another file would need another file written for it, so it is refused by
-/// name.
-#[test]
-fn an_invoke_by_src_is_refused_by_name() {
-    let dir = tempfile::tempdir().expect("a temporary directory");
-    std::fs::write(
-        dir.path().join("child.scxml"),
-        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="a">
-  <state id="a"/>
-</scxml>"#,
-    )
-    .expect("the child is written");
-    let parent = dir.path().join("parent.scxml");
-    std::fs::write(
-        &parent,
+/// A `sce-static` statechart whose one state holds `invokes`, with a string
+/// `pick` a hybrid `<invoke>` among them may name its candidate by.
+fn parent_starting(invokes: &str) -> String {
+    format!(
         r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
-  <datamodel><data id="n" sce:type="uint32" expr="0"/></datamodel>
-  <state id="s"><invoke type="scxml" id="c" src="child.scxml"/></state>
-</scxml>"#,
+  <datamodel>
+    <data id="n" sce:type="uint32" expr="0"/>
+    <data id="pick" sce:type="string" sce:capacity="32" expr="'child.scxml'"/>
+  </datamodel>
+  <state id="s">{invokes}</state>
+</scxml>"#
     )
-    .expect("the parent is written");
+}
+
+/// A `sce-static` child that adds to a counter it holds, so its lowering calls
+/// the library: `SceStatic.U8.add(k, 1)`.
+fn counting_child() -> String {
+    r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="a">
+  <datamodel><data id="k" sce:type="uint8" expr="0"/></datamodel>
+  <state id="a"><transition event="go" target="a"><assign location="k" expr="k + 1"/></transition></state>
+</scxml>"#
+        .to_string()
+}
+
+/// The `src` of every `<invoke>` of `document`, in document order.
+fn invoke_srcs(document: &str) -> Vec<String> {
+    let parsed = roxmltree::Document::parse(document).expect("well-formed");
+    parsed
+        .descendants()
+        .filter(|n| n.is_element() && n.tag_name().name() == "invoke")
+        .filter_map(|n| n.attribute("src").map(str::to_string))
+        .collect()
+}
+
+/// The names of a lowered set, the document asked for first.
+fn names_of(set: &[LoweredDocument]) -> Vec<&str> {
+    set.iter().map(|d| d.file_name.as_str()).collect()
+}
+
+/// A child named by `src` has no place in its parent's text, and the Interpreter
+/// loads it from beside the invoking document: it is lowered as a document of its
+/// own and written beside the parent under the name the `src` says, which is left
+/// as the author wrote it. The single-document entry refuses the pair, naming the
+/// way to ask for the set.
+#[test]
+fn a_child_named_by_src_is_lowered_beside_its_parent() {
+    let (_dir, parent) = written(&[
+        (
+            "parent.scxml",
+            parent_starting(r#"<invoke type="scxml" id="c" src="child.scxml"/>"#),
+        ),
+        ("child.scxml", counting_child()),
+    ]);
+    let set = lower_file_set(parent.to_str().unwrap(), Vec::new()).expect("lowers");
+    assert_eq!(names_of(&set), ["parent.scxml", "child.scxml"]);
+    assert_eq!(
+        invoke_srcs(&set[0].text),
+        ["child.scxml"],
+        "a `src` that names the file the child is written as is the author's: {}",
+        set[0].text
+    );
+    assert!(
+        set[1].text.contains(r#"datamodel="ecmascript""#)
+            && set[1].text.contains("SceStatic.U8.add(k, 1)"),
+        "the child is lowered as a document of its own: {}",
+        set[1].text
+    );
+
     let refusal = lower_file(parent.to_str().unwrap(), Vec::new()).expect_err("a refusal");
     let text = format!("{refusal:?}");
     assert!(
-        text.contains("UnsupportedFeature") && text.contains("by `src`"),
-        "the refusal names the construct: {text}"
+        text.contains("UnsupportedFeature")
+            && text.contains("by `src`")
+            && text.contains("--out-dir"),
+        "the refusal names the child and the option: {text}"
+    );
+}
+
+/// A statechart of the standard library has no file: it is lowered from the text
+/// the generator embeds, written under its own stem, and the parent's `src`, a
+/// library name the Interpreter could not load, becomes that file's name. Nothing
+/// stands beside the parent for it, so a set held in memory needs no entry.
+#[test]
+fn a_standard_child_is_lowered_from_the_library_under_its_stem() {
+    let held = std::collections::BTreeMap::from([(
+        "keeper.scxml".to_string(),
+        parent_starting(
+            r#"<invoke type="scxml" id="list" src="sce:std/shared/record_list.scxml"/>"#,
+        ),
+    )]);
+    let set = lower_documents("keeper.scxml", &held).expect("lowers");
+    assert_eq!(names_of(&set), ["keeper.scxml", "record_list.scxml"]);
+    assert_eq!(
+        invoke_srcs(&set[0].text),
+        ["record_list.scxml"],
+        "the library name is rewritten to the file the child is written as: {}",
+        set[0].text
+    );
+    assert!(
+        set[1].text.contains(r#"datamodel="ecmascript""#),
+        "the standard child is lowered as a document of its own"
+    );
+}
+
+/// The set is every document a lowered one may start, at every depth: a child
+/// named by `src` brings the child it names by `src` in turn.
+#[test]
+fn a_child_named_by_src_brings_the_children_it_names_in_turn() {
+    let (_dir, parent) = written(&[
+        (
+            "parent.scxml",
+            parent_starting(r#"<invoke type="scxml" id="c" src="middle.scxml"/>"#),
+        ),
+        (
+            "middle.scxml",
+            parent_starting(r#"<invoke type="scxml" id="c" src="leaf.scxml"/>"#),
+        ),
+        ("leaf.scxml", counting_child()),
+    ]);
+    let set = lower_file_set(parent.to_str().unwrap(), Vec::new()).expect("lowers");
+    assert_eq!(
+        names_of(&set),
+        ["parent.scxml", "middle.scxml", "leaf.scxml"]
+    );
+    for document in &set {
+        assert!(
+            document.text.contains(r#"datamodel="ecmascript""#),
+            "{}: every document of the set is lowered",
+            document.file_name
+        );
+    }
+}
+
+/// One document reached by two `<invoke>`s by `src` — one spelled with a `file:`
+/// scheme — and as the candidate of a hybrid one is lowered once, and every
+/// `src` names the one file it is written as.
+#[test]
+fn a_child_reached_twice_is_lowered_once() {
+    let (_dir, parent) = written(&[
+        (
+            "parent.scxml",
+            parent_starting(
+                r#"<invoke type="scxml" id="c" src="child.scxml"/><invoke type="scxml" id="d" src="file:child.scxml"/><invoke type="scxml" id="h" srcexpr="pick" sce:candidates="child.scxml"/>"#,
+            ),
+        ),
+        ("child.scxml", counting_child()),
+    ]);
+    let set = lower_file_set(parent.to_str().unwrap(), Vec::new()).expect("lowers");
+    assert_eq!(names_of(&set), ["parent.scxml", "child.scxml"]);
+    assert_eq!(
+        invoke_srcs(&set[0].text),
+        ["child.scxml", "child.scxml"],
+        "the `file:` spelling is rewritten to the file's name: {}",
+        set[0].text
+    );
+}
+
+/// A child is written under its stem and started by that name, so two documents
+/// of one stem — a parent's child, and the child a candidate in another directory
+/// names by the same `src` — cannot stand in one directory: refused, naming the
+/// stem.
+#[test]
+fn two_documents_started_under_one_stem_are_refused_by_name() {
+    let (_dir, parent) = written(&[
+        (
+            "parent.scxml",
+            parent_starting(
+                r#"<invoke type="scxml" id="h" srcexpr="pick" sce:candidates="sub/middle.scxml"/><invoke type="scxml" id="c" src="child.scxml"/>"#,
+            ),
+        ),
+        ("child.scxml", counting_child()),
+        (
+            "sub/middle.scxml",
+            parent_starting(r#"<invoke type="scxml" id="c" src="child.scxml"/>"#),
+        ),
+        ("sub/child.scxml", counting_child()),
+    ]);
+    let refusal = lower_file_set(parent.to_str().unwrap(), Vec::new()).expect_err("a refusal");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("UnsupportedFeature") && text.contains("the one stem `child`"),
+        "the refusal names the stem: {text}"
+    );
+}
+
+/// A `src` that names a Mesh peer rather than a document has no document to
+/// lower beside its parent: refused by name.
+#[test]
+fn a_src_that_names_a_peer_is_refused_by_name() {
+    let (_dir, parent) = written(&[(
+        "parent.scxml",
+        parent_starting(r##"<invoke type="scxml" id="c" src="#peer"/>"##),
+    )]);
+    let refusal = lower_file_set(parent.to_str().unwrap(), Vec::new()).expect_err("a refusal");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("UnsupportedFeature")
+            && text.contains("`#peer`")
+            && text.contains("names no document"),
+        "the refusal names the `src`: {text}"
+    );
+}
+
+/// A `srcexpr` names the child by a value, which is a hybrid `<invoke>`: with no
+/// `sce:candidates` there is no finite set of documents to lower, and the
+/// document is refused where it is read, naming the attribute to declare.
+#[test]
+fn a_srcexpr_with_no_candidates_is_refused_by_name() {
+    let (_dir, parent) = written(&[(
+        "parent.scxml",
+        parent_starting(r#"<invoke type="scxml" id="c" srcexpr="pick"/>"#),
+    )]);
+    let refusal = lower_file_set(parent.to_str().unwrap(), Vec::new()).expect_err("a refusal");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("sce:candidates"),
+        "the refusal names the attribute: {text}"
+    );
+}
+
+/// A document lowered from memory alone has nothing beside it, so one whose
+/// `<invoke>` starts a document of its own is refused by name rather than lowered
+/// into a parent that starts a file nobody wrote.
+#[test]
+fn a_document_from_memory_that_starts_another_is_refused_by_name() {
+    let refusal = lower_source(
+        &parent_starting(r#"<invoke type="scxml" id="c" src="child.scxml"/>"#),
+        "alone",
+    )
+    .expect_err("a refusal");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("UnsupportedFeature") && text.contains("`child`"),
+        "the refusal names the document it starts: {text}"
     );
 }
 

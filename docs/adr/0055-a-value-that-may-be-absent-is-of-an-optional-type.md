@@ -1248,8 +1248,8 @@ documents, not observed from a backend.
     names the enum it imports. The Go and C drivers read `refused` as an optional record, as they read
     `pick` of `static_optional_record` (`optional.Of[R].Get()`, and the C presence reader over
     `sce_optional_record_record_list_parent_record_refused_t`); the Rust, Kotlin and Python drivers replay
-    the scenario through the saved state and need no change; the Interpreter does not lower the parent (a
-    child invoked by `src`). The pin of `stdlib/shared/record_list.scxml` in `standard_saved_shapes.json`
+    the scenario through the saved state and need no change; the Interpreter did not lower the parent then (a
+    child invoked by `src`; such a child is lowered beside its parent since, SCE_ACCEPTED_SUBSET.md §2.15). The pin of `stdlib/shared/record_list.scxml` in `standard_saved_shapes.json`
     is the digest the enum's change moves, and is written from the value `a_standard_statechart_that_saves_keeps_its_shape`
     reports.
 12. **Codec format 2** (implemented) (section 8): `sce:codec-format` in the grammar (`schemas/sce-forge-ext.xsd`)

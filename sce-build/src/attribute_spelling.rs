@@ -310,7 +310,7 @@ impl AttributeSpelling {
 
     /// This value as the reader decoded it, or `None` when it reaches a DTD
     /// entity, whose replacement text is not written here.
-    fn decoded(&self) -> Option<String> {
+    pub(crate) fn decoded(&self) -> Option<String> {
         let Decoded { units, complete } = self.units();
         complete.then(|| units.iter().map(|unit| unit.produced).collect())
     }

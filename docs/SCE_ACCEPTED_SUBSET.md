@@ -3950,9 +3950,11 @@ under the same synthesised name (`<parent>__sce_synth_invoke__<id>`), so every b
 generates it beside its parent as it generates an inline child, and its own imports
 resolve inside the library; the `source-hash` of the parent's tree covers it and every
 standard document it imports. The same statechart is generated on its own by that name
-(`sce-codegen generate sce:std/shared/record_list.scxml`). The Interpreter's lowering
-rewrites an inline child where it stands in its parent's text, and a standard child has
-no place there, so it is refused as an invoke by `src` (`generate/unsupported-feature`).
+(`sce-codegen generate sce:std/shared/record_list.scxml`). A standard child has no
+place in its parent's text for the Interpreter's lowering to rewrite it at, so the
+lowering reads it from the library as a document of its own and writes it beside the
+parent under its stem (`record_list.scxml`), rewriting the parent's `src` to that name
+(`sce-codegen lower --out-dir`, §2.15).
 `sce-build/tests/a_standard_document_is_imported_by_name.rs` holds this.
 
 A child written inline has no place of its own, so it is read from the directory of the
@@ -6362,6 +6364,22 @@ handed through that bound (`SceStatic.bounded`), so that a value past it fails a
 is left out as on the generated backends, with an `error.execution`. A child
 under another data model is left as it was written.
 
+A child named by `src` — a file, or a statechart of the standard library
+(`sce:std/...`) — has no place in its parent's text, and the Interpreter loads it
+at run time from beside the invoking document. So it is lowered as a document of
+its own, held to the rules an inline child is, and written beside the parent under
+its stem: a file is the one the parse read the child from and typed the
+`<param>`s against, `<stem>.scxml` in the parent's directory, which the generated
+backends start; a standard child is read from the library, its own imports
+resolving inside it. The parent's `src` is rewritten to that name where it says
+another (a path into another directory, a `file:` URI, a library name), so the
+lowered parent starts the lowered child. Such a parent's lowering is a set of
+documents, as a hybrid one's is (below), and the walk that builds the set is one:
+the children of a child named by `src` or of a candidate join it in turn, one
+document reached twice is lowered once, and two documents of one stem, however
+far apart in the set, are refused by name. A `src` that names a Mesh peer
+(`#<name>`) names no document and is refused by name.
+
 A hybrid `<invoke>` (§2.13) starts one of the documents its `sce:candidates`
 declares, which the Interpreter loads at run time from beside the invoking
 document, so its lowering is a set of documents and not one: the invoking
@@ -6385,8 +6403,8 @@ candidate bounds. Two candidates of one stem, however far apart in the set, are
 refused: the stem is the name each is written under.
 
 A construct with no lowering yet — a `bytes` literal, a top-level `<script>`, an
-`<invoke>` that is not an inline child or a hybrid one (by `src`, a mesh or a
-host-run one) or whose `namelist` hands a child a string it bounds, a `<donedata>`
+`<invoke>` that is not a child session (a mesh or a host-run one, or one whose
+`src` names a Mesh peer) or whose `namelist` hands a child a string it bounds, a `<donedata>`
 or a `<send>` whose `<content>` is an expression or holds an element — is
 refused with `generate/unsupported-feature` naming it, never passed through half
 lowered.
@@ -6405,7 +6423,9 @@ siblings hold them to; `static_invoke_hybrid`, whose child is a candidate
 document, has no scenario and is run by hand alone, from the directory
 `lower --out-dir` writes. The replay asks the lowering for that set of documents
 and not for one, so a machine whose hybrid `<invoke>` is lowered as three is
-replayed and is not taken for one that is not lowered yet. `static_child_host` and
+replayed and is not taken for one that is not lowered yet; so is `record_list_parent`,
+whose child is the standard shared record list named by `src`, lowered as two
+documents and replayed from its scenario. `static_child_host` and
 `static_child_host_hybrid`, whose parent answers a host for each child, have a
 scenario each, which states what each of those hosts was asked (`child_hosts`,
 below). The same file runs the table of document stems through the library's
@@ -6665,8 +6685,8 @@ The model the
 expected values come from was first held to every step `todo_peer` took in the world's
 to-do afternoon. The world test replays that afternoon on the standard part's Rust
 machine in its own process, the sends by their routes and an edit that wrote over what
-it saw as one unit, and writes no file of it. The Interpreter replays all but the
-parent, which it refuses as an invoke by `src`.
+it saw as one unit, and writes no file of it. The Interpreter replays them all, the
+parent with the list it names by `src` lowered beside it (§2.15).
 
 A copy need not be a Rust machine. `World::add_external` hosts one in another
 process behind the Mesh endpoint the world keeps for it, driven over a

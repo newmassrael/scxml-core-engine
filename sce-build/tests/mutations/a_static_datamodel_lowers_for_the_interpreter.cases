@@ -126,11 +126,37 @@ edit("sce-build/src/forge/static_lowering.rs",
      "    rewrites.note(&written, spelling.as_ref(), &written);\n")
 PY
 
-# An `<invoke>` by `src` is lowered as if its child were inline.
-mutation_case "an invoke by src is not refused" <<'PY'
+# A child named by `src` is not started: the parent is lowered alone, and starts a
+# file nobody wrote beside it.
+mutation_case "a child named by src is not lowered beside its parent" <<'PY'
 edit("sce-build/src/forge/static_js.rs",
-     "    if info.inline_child.is_none() || info.inline_child_range.is_none() {\n",
-     "    if false {\n")
+     "                        _ => into.extend(src_child(info).map(|child| Started {\n",
+     "                        _ => into.extend(src_child(info).filter(|_| false).map(|child| Started {\n")
+PY
+
+# A `src` that says another name than the file its child is written as is left as
+# the author wrote it: the lowered parent starts a library name or a `file:` path
+# the Interpreter cannot load from the set's directory.
+mutation_case "a src is not rewritten to the file its child is written as" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "            if child.written == file_name {\n",
+     "            if child.written == file_name || !file_name.is_empty() {\n")
+PY
+
+# A `src` that names a Mesh peer is taken for a file of that name, which the
+# lowering then fails to read instead of refusing the construct by name.
+mutation_case "a src naming a peer is taken for a file" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    if written.starts_with('#') {\n        return None;\n    }\n",
+     "")
+PY
+
+# A document lowered from memory alone that starts another is lowered into a parent
+# that starts a file nobody wrote.
+mutation_case "a document from memory that starts another is lowered alone" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    if let Some(Started { stem, .. }) = started.first() {\n",
+     "    if let Some(Started { stem, .. }) = started.first().filter(|_| false) {\n")
 PY
 
 # A `namelist` name that hands a child a string it bounds is no longer refused.
@@ -212,16 +238,16 @@ PY
 # second overwrites the first, and a value names either.
 mutation_case "two candidates of one stem are taken for one file" <<'PY'
 edit("sce-build/src/forge/static_js.rs",
-     "    a == b\n        || matches!(",
-     "    true\n        || matches!(")
+     "    a == b || crate::forge::stdlib::identity(a) == crate::forge::stdlib::identity(b)\n",
+     "    !b.as_os_str().is_empty() || crate::forge::stdlib::identity(a) == crate::forge::stdlib::identity(b)\n")
 PY
 
-# The candidates a candidate names are not lowered: only the first ring of the set
-# is written, and what the second starts is not there to load.
+# The documents a started document names are not lowered: only the first ring of
+# the set is written, and what the second starts is not there to load.
 mutation_case "the candidates of a candidate are not lowered" <<'PY'
 edit("sce-build/src/forge/static_js.rs",
-     "                    pending.push_back((beside, name));\n",
-     "                    let _ = (beside, name);\n")
+     "                    pending.push_back((next, name));\n",
+     "                    let _ = (next, name);\n")
 PY
 
 # One document is asked for and the set is handed back as its first: the

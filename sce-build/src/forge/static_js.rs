@@ -35,9 +35,9 @@
 //! An algorithm with a construct
 //! [`crate::forge::static_js_algorithm`] does not spell (a `<sce:foreach>` over
 //! a bounded-collection import), an `<invoke>` that is
-//! neither a child session written inline nor a hybrid one (one by `src`, a
-//! mesh or a host-run one) and the executable content the walk does not lower
-//! are refused with `generate/unsupported-feature` naming the
+//! not a child session — a mesh or a host-run one, and one whose `src` names a
+//! Mesh peer rather than a document — and the executable content the walk does
+//! not lower are refused with `generate/unsupported-feature` naming the
 //! construct, never passed through: an expression left as the author wrote it
 //! would be run by the script engine as ECMAScript, which is the
 //! mis-execution the refusal exists to prevent.
@@ -52,6 +52,17 @@
 //! fails as it does on the generated backends and is left out. A `namelist` name
 //! cannot carry one, and a child that bounds a string it hands is refused by
 //! name.
+//!
+//! A child named by `src` — a file, or a statechart of the standard library
+//! (`sce:std/...`) — has no place in its parent's text, and the Interpreter loads
+//! it at run time from beside the invoking document. So it is lowered as a
+//! document of its own and written beside the invoking one under its stem
+//! ([`lower_file_set`]), and the parent's `src` is rewritten to that name where
+//! it says another (`src_edits`). The file is the one the parse read the child
+//! from, `<child_name>.scxml` beside the parent — the document the `<param>`s
+//! were typed against and the generated backends start — and a library child is
+//! read from the library, its own imports resolving inside it. Its arguments are
+//! lowered as an inline child's are, held to the same rules.
 //!
 //! # Hybrid invokes
 //!
@@ -105,6 +116,7 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use crate::attribute_spelling::AttributeSpelling;
 use crate::forge::error::{ForgeError, GenerateError, Located};
 use crate::forge::expr::ExprTarget;
 use crate::forge::import_source::ImportSource;
@@ -118,7 +130,7 @@ use crate::forge::static_lowering::{
 use crate::forge::type_ctx::{StateArg, StaticCallee, StaticScope};
 use crate::forge::types::InferredType;
 use crate::model::{Action, Datamodel, SCXMLModel, Variable};
-use crate::model::{DoneDataContent, HybridInvokeInfo, Invoke};
+use crate::model::{DoneDataContent, HybridInvokeInfo, Invoke, ScxmlInvokeInfo};
 
 /// The global of the script engine the library is bound to, so every lowered
 /// expression reads `SceStatic.<member>`.
@@ -809,9 +821,10 @@ impl StaticTarget for JsTarget {
 }
 
 /// What of an `<invoke>` has no lowering for the Interpreter, described for a
-/// refusal: every kind but a child session written inline, since its own
-/// document is lowered where it stands ([`child_edits`]) and a `src` is a file
-/// the lowering would have to write another one for.
+/// refusal: every kind but a child session, written inline — its own document
+/// is lowered where it stands ([`child_edits`]) — or named by `src` — its
+/// document is lowered as one of its own and written beside the invoking one
+/// ([`lower_file_set`]) — and a hybrid one.
 ///
 /// An allowlist, as [`unsupported_action`] is.
 fn unsupported_invoke(invoke: &Invoke, state: &str) -> Option<String> {
@@ -823,8 +836,14 @@ fn unsupported_invoke(invoke: &Invoke, state: &str) -> Option<String> {
             return Some(format!("a host-run <invoke> in state `{state}`"));
         }
     };
-    if info.inline_child.is_none() || info.inline_child_range.is_none() {
-        return Some(format!("an <invoke> by `src` in state `{state}`"));
+    // A `src` that names no document — a Mesh peer (`#<name>`) — has nothing to
+    // be lowered and written beside the invoking document.
+    if info.inline_child_range.is_none() && src_child(info).is_none() {
+        return Some(format!(
+            "the <invoke> in state `{state}` whose `src` (`{}`) names no document to \
+             lower beside it",
+            info.src
+        ));
     }
     let declared = info.common.child_static_variables.as_deref().unwrap_or(&[]);
     bounded_namelist_name(&info.namelist, declared).map(|name| {
@@ -1163,7 +1182,100 @@ fn lower_parsed(
         .any(|text| text.contains(&library_call));
     edits.extend(document_edits(text, needs_library, &installed).map_err(refuse)?);
     edits.extend(child_edits(model, label, base_dir)?);
+    edits.extend(src_edits(model).map_err(refuse)?);
     apply(text, edits).map_err(refuse)
+}
+
+/// The edits that make each `<invoke>` of `model` that names its child by `src`
+/// name it by the file the child is written as in the set ([`lower_file_set`]):
+/// `<stem>.scxml`, beside the invoking document. A `src` that says that already
+/// is left as the author wrote it; any other — a path into another directory, a
+/// `file:` one, a library name (`sce:std/...`) — is rewritten, so the lowered
+/// parent starts the lowered child, and not the document the author named,
+/// which the Interpreter would run untyped or not find.
+///
+/// The stem is kept, so the host that answers for the child
+/// (`INativeActionHost::hostForChild`) is asked by the name it was asked by.
+fn src_edits(model: &SCXMLModel) -> Result<Vec<Edit>, GenerateError> {
+    let mut edits = Vec::new();
+    for state in model.states.values() {
+        for invoke in &state.invokes {
+            let Invoke::Scxml(info) = invoke else {
+                continue;
+            };
+            let Some(child) = src_child(info) else {
+                continue;
+            };
+            let file_name = child.file_name();
+            if child.written == file_name {
+                continue;
+            }
+            let Some(written) = child.spelling.value() else {
+                return Err(GenerateError::unsupported(format!(
+                    "the `src` of the <invoke> in state `{}` has no place in the document to be \
+                     rewritten at",
+                    state.id
+                )));
+            };
+            edits.push(Edit {
+                range: written.range(),
+                text: xml_attribute_value(&file_name),
+            });
+        }
+    }
+    Ok(edits)
+}
+
+/// The child an `<invoke>` names by `src`, as the set it is lowered in holds it
+/// ([`lower_file_set`]).
+struct SrcChild<'a> {
+    /// Where the `src` was written, which [`src_edits`] rewrites.
+    spelling: &'a AttributeSpelling,
+    /// The `src` as the author wrote it, decoded.
+    written: String,
+    /// Where the child is read from, against the directory of the document that
+    /// invokes it: a library name, read from the library, or the file the parse
+    /// read the child from ([`ScxmlInvokeInfo::child_file_name`]) — the document
+    /// the invoke's arguments were typed against and the generated backends start.
+    source: String,
+    /// The stem the child is written under, as `<stem>.scxml`: a file's
+    /// `child_name`, or the library document's own stem.
+    stem: String,
+}
+
+impl SrcChild<'_> {
+    /// The name the child is written under in the set, and that the lowered
+    /// `<invoke>` names it by.
+    fn file_name(&self) -> String {
+        format!("{}.scxml", self.stem)
+    }
+}
+
+/// The child `info` names by `src`, or `None` for one that stands in the text of
+/// the document that invokes it (written in `<content>`, lowered where it stands
+/// by [`child_edits`]) and for a `src` that names no document — a Mesh peer
+/// (`#<name>`), which [`unsupported_invoke`] refuses.
+fn src_child(info: &ScxmlInvokeInfo) -> Option<SrcChild<'_>> {
+    if info.inline_child_range.is_some() {
+        return None;
+    }
+    let spelling = info.src_spelling.as_ref()?;
+    let written = spelling.decoded()?.trim().to_string();
+    if written.starts_with('#') {
+        return None;
+    }
+    let (source, stem) = if crate::forge::stdlib::names_standard(Path::new(&written)) {
+        let stem = Path::new(&written).file_stem()?.to_str()?.to_string();
+        (written.clone(), stem)
+    } else {
+        (info.child_file_name()?, info.common.child_name.clone())
+    };
+    Some(SrcChild {
+        spelling,
+        written,
+        source,
+        stem,
+    })
 }
 
 /// The edits that put each inline child session back where it stands in its
@@ -1411,15 +1523,17 @@ pub fn lower_algorithm_document(
 /// and the imports beside it are resolved. The lowered document is the
 /// expanded one, and stands alone.
 ///
-/// A document whose hybrid `<invoke>` starts a document of its own is refused:
-/// the lowered candidates are other files, which [`lower_file_set`] returns.
+/// A document with an `<invoke>` that starts a document of its own — a child
+/// named by `src`, or a candidate of a hybrid one — is refused: the lowered
+/// children are other files, which [`lower_file_set`] returns.
 pub fn lower_file(path: &str, include_dirs: Vec<PathBuf>) -> Result<String, Located<ForgeError>> {
     let mut set = lower_file_set(path, include_dirs)?;
     if set.len() > 1 {
         return Err(Located::in_file(
             ForgeError::from(GenerateError::unsupported(format!(
-                "a hybrid <invoke> starts a document of its own, so the lowering is {} \
-                 documents that stand in one directory; ask for the set (`--out-dir`)",
+                "an <invoke> starts a document of its own (a child named by `src`, or a \
+                 candidate of a hybrid <invoke>), so the lowering is {} documents that stand \
+                 in one directory; ask for the set (`--out-dir`)",
                 set.len()
             ))),
             path,
@@ -1439,19 +1553,21 @@ pub struct LoweredDocument {
 }
 
 /// The document `path` names, lowered as [`lower_file`] lowers it, with every
-/// document a hybrid `<invoke>` of it may start (`sce:candidates`) — each
+/// document it may start that does not stand in its text (`Started`) — each
 /// lowered the same way, and so the ones those start. The first is the
-/// document asked for, under the name it has.
+/// document asked for, under the name it has; `path` may name a statechart of
+/// the standard library (`sce:std/...`), which is read from the library.
 ///
-/// A hybrid `<invoke>`'s `srcexpr` names the document to start by a value, so
-/// the Interpreter loads it at run time, from beside the invoking document. The
-/// lowered `srcexpr` answers `<stem>.scxml` for the candidate the value names
-/// ([`JsTarget::hybrid_src_site`]), and that is the name each candidate is
-/// written under, so the set is the documents the lowered one can start and the
-/// directory they stand in together is what a run needs.
+/// The Interpreter loads a child of its own document at run time, from beside
+/// the invoking one, so each is written under `<stem>.scxml` and the directory
+/// the set stands in together is what a run needs. A hybrid `<invoke>`'s lowered
+/// `srcexpr` answers that name for the candidate the value names
+/// ([`JsTarget::hybrid_src_site`]), and the `src` of a child named by it is
+/// rewritten to that name where it says another (`src_edits`). A document
+/// reached twice, by two invokes or two documents of the set, is lowered once.
 ///
-/// Refused by name: two candidates, however far apart in the set, with one stem
-/// — the name a lowered one is written under, and what the value is matched by.
+/// Refused by name: two documents, however far apart in the set, with one stem
+/// — the name a lowered one is written under, and what it is started by.
 pub fn lower_file_set(
     path: &str,
     include_dirs: Vec<PathBuf>,
@@ -1468,32 +1584,28 @@ pub fn lower_file_set(
     let mut documents = Vec::new();
     while let Some((source, file_name)) = pending.pop_front() {
         let label = source.to_string_lossy().into_owned();
-        let (text, candidates) = lower_one(&label, include_dirs.clone())?;
+        let (text, started) = lower_one(&label, include_dirs.clone())?;
         documents.push(LoweredDocument { file_name, text });
-        for candidate in candidates {
-            let name = format!("{}.scxml", candidate.stem);
-            let beside = source
-                .parent()
-                .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
-                .join(&candidate.path);
+        for Started { source: next, stem } in started {
+            let name = format!("{stem}.scxml");
             match claimed.get(&name) {
-                Some(held) if same_file(held, &beside) => {}
+                Some(held) if same_document(held, &next) => {}
                 Some(held) => {
                     return Err(Located::in_file(
                         ForgeError::from(GenerateError::unsupported(format!(
-                            "`{}` and `{}` have the one stem `{}`: a candidate is lowered \
-                             under its stem and a value names it by that, so the two cannot \
-                             stand in one directory",
+                            "`{}` and `{}` have the one stem `{stem}`: a document a lowered one \
+                             starts — a child named by `src`, or a candidate of a hybrid \
+                             <invoke> — is written under its stem and started by that name, \
+                             so the two cannot stand in one directory",
                             held.display(),
-                            beside.display(),
-                            candidate.stem
+                            next.display(),
                         ))),
                         &label,
                     ));
                 }
                 None => {
-                    claimed.insert(name.clone(), beside.clone());
-                    pending.push_back((beside, name));
+                    claimed.insert(name.clone(), next.clone());
+                    pending.push_back((next, name));
                 }
             }
         }
@@ -1501,13 +1613,22 @@ pub fn lower_file_set(
     Ok(documents)
 }
 
-/// The document `path` names, lowered, and the candidates the hybrid
-/// `<invoke>`s of it declare: the ones it was written with, as the model holds
-/// them.
+/// A document a lowered one may start that does not stand in its text: a child
+/// named by `src` ([`src_child`]), or a candidate of a hybrid `<invoke>`
+/// (`sce:candidates`).
+struct Started {
+    /// Where it is read from: a file, or a library name (`sce:std/...`).
+    source: PathBuf,
+    /// The stem it is written under, as `<stem>.scxml`.
+    stem: String,
+}
+
+/// The document `path` names, lowered, and every document it may start that
+/// does not stand in its text ([`started_documents`]).
 fn lower_one(
     path: &str,
     include_dirs: Vec<PathBuf>,
-) -> Result<(String, Vec<crate::model::InvokeCandidate>), Located<ForgeError>> {
+) -> Result<(String, Vec<Started>), Located<ForgeError>> {
     let mut parser = crate::parser::SCXMLParser::new().with_include_dirs(include_dirs);
     let model = parser.parse_file(path)?;
     let expanded = model
@@ -1523,25 +1644,39 @@ fn lower_one(
             )
         })?;
     let text = lower_parsed(&expanded, &model, path, Path::new(path).parent())?;
-    let mut candidates = Vec::new();
-    hybrid_candidates(&model, &mut candidates);
-    Ok((text, candidates))
+    let mut started = Vec::new();
+    let dir = Path::new(path).parent().unwrap_or_else(|| Path::new("."));
+    started_documents(&model, dir, &mut started);
+    Ok((text, started))
 }
 
-/// Every candidate a hybrid `<invoke>` of `model` declares, in a child session
-/// written inline in it too. A document under another data model is not
-/// lowered, so what its invokes start is not either.
-fn hybrid_candidates(model: &SCXMLModel, into: &mut Vec<crate::model::InvokeCandidate>) {
+/// Every document an `<invoke>` of `model` may start that does not stand in its
+/// text — a child named by `src` and each candidate of a hybrid `<invoke>` —
+/// in a child session written inline in it too, which is read from the same
+/// directory. `base_dir` is the directory of the document `model` was read
+/// from; a library name resolves inside the library, wherever that is
+/// (`crate::forge::stdlib::resolve`). A document under another data model is
+/// not lowered, so what its invokes start is not either.
+fn started_documents(model: &SCXMLModel, base_dir: &Path, into: &mut Vec<Started>) {
     if model.datamodel != Datamodel::SceStatic {
         return;
     }
     for state in model.states.values() {
         for invoke in &state.invokes {
             match invoke {
-                Invoke::Hybrid(info) => into.extend(info.candidates.iter().cloned()),
+                Invoke::Hybrid(info) => {
+                    into.extend(info.candidates.iter().map(|candidate| Started {
+                        source: base_dir.join(&candidate.path),
+                        stem: candidate.stem.clone(),
+                    }));
+                }
                 Invoke::Scxml(info) => {
-                    if let Some(child) = info.inline_child.as_deref() {
-                        hybrid_candidates(child, into);
+                    match (info.inline_child.as_deref(), &info.inline_child_range) {
+                        (Some(child), Some(_)) => started_documents(child, base_dir, into),
+                        _ => into.extend(src_child(info).map(|child| Started {
+                            source: crate::forge::stdlib::resolve(base_dir, &child.source),
+                            stem: child.stem,
+                        })),
                     }
                 }
                 _ => {}
@@ -1550,20 +1685,31 @@ fn hybrid_candidates(model: &SCXMLModel, into: &mut Vec<crate::model::InvokeCand
     }
 }
 
-/// Whether `a` and `b` name one file: the same path, or one the file system
-/// resolves to the same place.
-fn same_file(a: &Path, b: &Path) -> bool {
-    a == b
-        || matches!(
-            (std::fs::canonicalize(a), std::fs::canonicalize(b)),
-            (Ok(a), Ok(b)) if a == b
-        )
+/// Whether `a` and `b` name one document: the same path, one the file system
+/// resolves to the same place, or one statechart of the standard library
+/// however its name is spelled (`crate::forge::stdlib::identity`).
+fn same_document(a: &Path, b: &Path) -> bool {
+    a == b || crate::forge::stdlib::identity(a) == crate::forge::stdlib::identity(b)
 }
 
 /// `text`, a document read from memory, lowered for the Interpreter. Nothing
-/// beside it is resolved: no include, no import.
+/// beside it is resolved: no include, no import, and no document an `<invoke>`
+/// of it starts, so one that starts a document of its own is refused by name —
+/// [`lower_documents`] lowers it with the documents it starts.
 pub fn lower_source(text: &str, name: &str) -> Result<String, Located<ForgeError>> {
     let model = crate::parser::SCXMLParser::new().parse_string(text, name)?;
+    let mut started = Vec::new();
+    started_documents(&model, Path::new("."), &mut started);
+    if let Some(Started { stem, .. }) = started.first() {
+        return Err(Located::in_file(
+            ForgeError::from(GenerateError::unsupported(format!(
+                "an <invoke> starts the document `{stem}` of its own, which a document lowered \
+                 from memory alone has nothing beside it to lower from; lower the documents it \
+                 starts with it"
+            ))),
+            name,
+        ));
+    }
     lower_parsed(text, &model, name, None)
 }
 
@@ -1574,7 +1720,8 @@ const MEMORY_DIR: &str = "/sce-memory";
 /// The document `root` names, lowered as [`lower_file_set`] lowers a file, from
 /// `documents` held in memory: each is named by its path beside the others, and
 /// `root` is one of them. Everything the lowering reads beside the document — an
-/// imported algorithm, an include, a candidate of a hybrid `<invoke>` — is read
+/// imported algorithm, an include, a child named by `src`, a candidate of a
+/// hybrid `<invoke>` — is read
 /// from the set, so a caller with no file system (the codegen WASM) gets what a
 /// caller with one does. A name the set lacks is a file that is not there.
 ///

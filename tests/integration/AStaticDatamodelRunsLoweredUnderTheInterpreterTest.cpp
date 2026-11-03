@@ -129,7 +129,8 @@ Lowered lower(const std::filesystem::path &fixture) {
 }
 
 /// `sce-codegen lower <fixture> --out-dir <dir>`: the lowered document and the
-/// documents its hybrid `<invoke>`s may start, written into `dir`, and the paths
+/// documents its `<invoke>`s may start (a child named by `src`, a candidate of a
+/// hybrid one), written into `dir`, and the paths
 /// the one JSON line on stdout names, the document asked for first.
 struct LoweredSet {
     bool ok = false;
@@ -604,7 +605,7 @@ protected:
 
     /// Replay `scenario` against `document`, the file of the machine the scenario
     /// names once lowered: the first of the set `sce-codegen lower --out-dir` wrote,
-    /// which stands beside the candidates its hybrid `<invoke>`s may start.
+    /// which stands beside the documents its `<invoke>`s may start.
     void replay(const std::filesystem::path &document, const nlohmann::json &scenario) {
         const auto machine = std::make_shared<StateMachine>(*engine_);
         // The host a machine's `<sce:action>`s go to, which records them: what a
@@ -783,11 +784,11 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
             continue;
         }
 
-        // The lowering is asked for as a set, a directory: a machine with a hybrid
-        // `<invoke>` is refused as one document, since the candidates it may start
-        // stand beside it, and a refusal that told the two apart by its text would
-        // pass a scenario of one as not yet lowered. A machine with none is a set
-        // of one.
+        // The lowering is asked for as a set, a directory: a machine whose `<invoke>`
+        // starts a document of its own (by `src`, or a hybrid one's candidate) is
+        // refused as one document, since what it starts stands beside it, and a
+        // refusal that told the two apart by its text would pass a scenario of one
+        // as not yet lowered. A machine with none is a set of one.
         const auto dir =
             std::filesystem::temp_directory_path() / ("sce-scenario-" + std::to_string(::getpid()) + "-" + name);
         std::error_code ec;
@@ -855,16 +856,18 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // ... and the standard shared record list (sce:std/shared/record_list.scxml), a
     // scenario's machine named by its library name and lowered from the library: a
     // person's copy, the hub, and a list a host started, when it tells no parent
-    // anything. The statechart that invokes it by its library name is not among them:
-    // the lowering rewrites a child where its text stands in its parent, and a standard
-    // child has none there, so it is refused as an invoke by `src`.
+    // anything ...
     for (const char *copy : {"record_list_person", "record_list_hub", "record_list_alone", "record_list_offline",
                              "record_list_change", "record_list_retire"}) {
         EXPECT_NE(std::find(replayed.begin(), replayed.end(), copy), replayed.end())
             << copy << " was not replayed: the standard shared record list has no lowering for the Interpreter";
     }
-    EXPECT_NE(std::find(notYetLowered.begin(), notYetLowered.end(), "record_list_parent"), notYetLowered.end())
-        << "record_list_parent was lowered: its child has no text in it to lower, so the refusal by `src` is gone";
+    // ... and the statechart that invokes it by its library name: a child named by
+    // `src` is lowered as a document of its own and written beside its parent, whose
+    // `src` is rewritten to the name it is written under, so the Interpreter loads
+    // the lowered list from the directory the set stands in.
+    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "record_list_parent"), replayed.end())
+        << "record_list_parent was not replayed: a child named by `src` has no lowering for the Interpreter";
     // ... and the scenario of values that may be absent (docs/adr/0055), each `null` in a
     // variable, a record, a list, a payload, a send and the done data, so that a refusal
     // the scan above would let pass does not stand for its lowering.
