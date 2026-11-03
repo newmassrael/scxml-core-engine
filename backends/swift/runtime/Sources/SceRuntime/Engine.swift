@@ -193,6 +193,13 @@ public final class Engine<Policy: StatePolicy> {
     /// `hostInvokes` is and operated on by `HostSend.swift`.
     var hostSends = HostSendBook()
 
+    /// `_event.invokeid` of the event being processed (§scxml-5.10.1), empty when none is: while
+    /// the initial configuration is entered, or between two events. A `<send>` to a processor the
+    /// host serves carries it out (`HostSendRequest.invokeID`), as a W3C child's send to its parent
+    /// does (§scxml-6.4.1), so a Mesh router matches the reply a document sends to the request it
+    /// received by nothing else (SCE_MESH.md §10.7). Taken when the send executes.
+    public private(set) var currentEventInvokeID = ""
+
     /// How many ids this machine has generated for a `<send idlocation>`: the number
     /// the last one carried. Counted per machine and not per process, so a machine's
     /// ids do not depend on what else ran beside it. See `nextAutoSendID`.
@@ -1885,6 +1892,7 @@ public final class Engine<Policy: StatePolicy> {
     /// microstep it selects (§scxml-D-mainEventLoop).
     private func takeInternalEvent(_ eventWithMeta: EventWithMetadata<Event>) {
         // §scxml-5.10: Populate policy metadata from event
+        currentEventInvokeID = eventWithMeta.metadata.invokeID
         policy.populateEventMetadata(typedAtDequeue(eventWithMeta, fromExternalQueue: false))
         liftPayload(of: eventWithMeta.event, metadata: eventWithMeta.metadata)
         // §scxml-3.12.2: the processor raises error.* into this queue and the clause
@@ -1927,6 +1935,7 @@ public final class Engine<Policy: StatePolicy> {
             sceLog("Engine.takeInternalEvent: error event matched no transition; unhandled")
         }
         policy.clearEventMetadata()
+        currentEventInvokeID = ""
     }
 
     /// Takes exactly one event off the external queue, runs the preliminary
@@ -1995,6 +2004,7 @@ public final class Engine<Policy: StatePolicy> {
             policy.forwardToAutoforwardChildren(eventName: name, metadata: eventWithMeta.metadata, engine: self)
         }
         // §scxml-5.10: Populate policy metadata from event
+        currentEventInvokeID = eventWithMeta.metadata.invokeID
         policy.populateEventMetadata(typedAtDequeue(eventWithMeta, fromExternalQueue: true))
         liftPayload(of: eventWithMeta.event, metadata: eventWithMeta.metadata)
         // §scxml-3.1.2: "If no transition matches in any state, the event is
@@ -2009,6 +2019,7 @@ public final class Engine<Policy: StatePolicy> {
             lastDiscardedEvent = eventWithMeta.event
         }
         policy.clearEventMetadata()
+        currentEventInvokeID = ""
         return true
     }
 

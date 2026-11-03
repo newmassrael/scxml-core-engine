@@ -4225,6 +4225,10 @@ pub fn generate_go_with_templates(
 
 /// Generate Swift code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_swift(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
+    // SCE_MESH.md §19: a Mesh send is a host-served `sce:mesh` send on a backend whose router is
+    // the host's, as every backend but C++ carries it.
+    let model = crate::host_processor_analyzer::lower_mesh(model, Language::Swift);
+    let model = &*model;
     reject_static_datamodel_in_unsupported_lang(model, Language::Swift)?;
     reject_swift_unsupported_features(model)?;
     let mut env = new_env();
@@ -4238,6 +4242,8 @@ pub fn generate_swift_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
+    let model = crate::host_processor_analyzer::lower_mesh(model, Language::Swift);
+    let model = &*model;
     reject_static_datamodel_in_unsupported_lang(model, Language::Swift)?;
     reject_swift_unsupported_features(model)?;
     let mut env = new_env();
@@ -4511,6 +4517,15 @@ fn swift_lowers_action_type(action_type: &str, is_ecma: bool) -> bool {
 /// and the other axes that rule names are not lowered. Without the rule a body would be dropped,
 /// which is the answer the document did not ask for.
 fn swift_send_unlowered(send: &crate::model::Action, is_ecma: bool) -> Option<String> {
+    // A processor the host serves owns delivery, and only a `sce-static` document's send is
+    // handed to it. Anywhere else the send would also be taken for a local event: the document
+    // would see the act twice, or a Mesh send would reach no router.
+    if send.send_type_host_served {
+        return Some(format!(
+            "a <send type=\"{}\"> served by the host, which only a `sce-static` document sends",
+            send.send_type
+        ));
+    }
     let over_http = send.send_type.contains("BasicHTTPEventProcessor");
     let expression = [
         ("<send typeexpr>", &send.typeexpr, true),

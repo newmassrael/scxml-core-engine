@@ -39614,15 +39614,17 @@ fn render_algorithm(
                 }
             };
             let local = l.local_id(&name);
-            let parameter = match (lang, &return_list) {
-                (Language::Rust, Some(list)) => {
+            let parameter = match (lang == Language::C11, &return_list) {
+                (false, Some(list)) => {
                     format!("{local}: &mut {}", list.rust_destination(buffer.cap))
                 }
-                (Language::Rust, None) => format!("{local}: &mut SceBytes<{}>", buffer.cap),
-                (_, Some(_)) => {
+                (false, None) => format!("{local}: &mut SceBytes<{}>", buffer.cap),
+                (true, Some(_)) => {
                     format!("{} *{local}", c11_list_destination_type(&primary_symbol))
                 }
-                (_, None) => format!("{} *{local}", c11_bytes_destination_type(&primary_symbol)),
+                (true, None) => {
+                    format!("{} *{local}", c11_bytes_destination_type(&primary_symbol))
+                }
             };
             let parameter = if lang == Language::C11 && m.signature.may_fail {
                 format!("{parameter}, sce_forge_algorithm_failure_t *{C11_CALLER_FAILURE}")

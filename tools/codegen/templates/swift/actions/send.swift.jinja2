@@ -71,6 +71,11 @@
 {# A BasicHTTP send (W3C SCXML C.2): posted at once to the URL the document writes, with the
    `<param>`s as the form. Its other axes are refused by name before this template runs. #}
 {% set is_http = action.send_type and 'BasicHTTPEventProcessor' in action.send_type %}
+{# A send to a processor the host serves (W3C SCXML 6.2.5, and the Mesh router of SCE_MESH.md §19),
+   under `datamodel="sce-static"`: the whole send is the host's, handed the request the document
+   wrote. Its `<param>`s are both the event's data (the pairs, as a local delivery would carry
+   them) and the form the handler reads, evaluated once. #}
+{% set is_host = action.send_type_host_served %}
 {% set computed_event = event_value %}
 {% set event_name_swift = 'sendEventName' if computed_event else '"' ~ (action.event | default('', true) | escape_swift) ~ '"' %}
 {% set send_prologue = delay_value or event_value or computed_target or ecma_typeexpr or namelist_bad.name %}
@@ -303,19 +308,21 @@
                     // pair left out, and the message still goes; the error ends the block once
                     // it has. Read at the end of this element.
                     var paramFailed = false
-{% if is_http %}
+{% if is_http or is_host %}
                     // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
                     // text each value spells, so a second reading of the data model cannot
                     // disagree with the first.
                     var sendForm: [String: [String]] = [:]
-{% else %}
+{% endif %}
+{% if not is_http %}
                     var sendParts: [PayloadPair] = []
 {% endif %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
-{% if is_http %}
+{% if is_http or is_host %}
                     appendFormParam(&sendForm, "{{ param.name | escape_swift }}", .text("{{ param.static_value | escape_swift }}"))
-{% else %}
+{% endif %}
+{% if not is_http %}
                     sendParts.append(PayloadPair("{{ param.name | escape_swift }}", .text("{{ param.static_value | escape_swift }}")))
 {% endif %}
 {% elif param.native_value %}
@@ -329,9 +336,10 @@
                         let sceValue: WireValue = {{ param.native_value }}
 {% if param.native_fails %}
                         if !sceFailure.failed {
-{% if is_http %}
+{% if is_http or is_host %}
                             appendFormParam(&sendForm, "{{ param.name | escape_swift }}", sceValue)
-{% else %}
+{% endif %}
+{% if not is_http %}
                             sendParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
 {% endif %}
                         } else {
@@ -340,10 +348,13 @@
 {% endif %}
                             paramFailed = true
                         }
-{% elif is_http %}
-                        appendFormParam(&sendForm, "{{ param.name | escape_swift }}", sceValue)
 {% else %}
+{% if is_http or is_host %}
+                        appendFormParam(&sendForm, "{{ param.name | escape_swift }}", sceValue)
+{% endif %}
+{% if not is_http %}
                         sendParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
+{% endif %}
 {% endif %}
                     }
 {% elif ecmascript_datamodel and (param.expr or param.location) %}
@@ -425,7 +436,29 @@
 {% else %}
                     let sendEventData = ""
 {% endif %}
-{% if (computed_target or routed_target) and not is_http %}
+{% if is_host %}
+                    // W3C SCXML 6.2.5: "{{ action.send_type }}" is served by the host, which declared it to this
+                    // build. The send is dispatched and not refused, and the whole of it is the
+                    // host's: delivering the event locally as well would show the document the act
+                    // twice. Its target is passed through uninterpreted, a delay is a property of the
+                    // send and not of the processor, and the request is the one of this moment, its
+                    // `_event.invokeid` included (SCE_MESH.md §10.7).
+                    let sendRequest = HostSendRequest(
+                        processorType: "{{ action.send_type | escape_swift }}",
+                        eventName: {{ event_name_swift }},
+                        target: {{ 'sendTarget' if computed_target else '"' ~ (action.target | default('', true) | escape_swift) ~ '"' }},
+                        content: {{ 'contentValue.formText' if action.native_content_value else '"' ~ (action.content | default('', true) | escape_swift) ~ '"' }},
+                        params: {{ 'sendForm' if sends_params else '[:]' }},
+                        sendID: {{ send_id_swift }},
+                        eventData: sendEventData,
+                        invokeID: engine.currentEventInvokeID
+                    )
+{% if delay_swift %}
+                    engine.scheduleHostSend(delay: {{ delay_swift }}, request: sendRequest, origin: self.sessionID)
+{% else %}
+                    engine.performHostSend(sendRequest)
+{% endif %}
+{% elif (computed_target or routed_target) and not is_http %}
 {% if ecma_target %}
                     // SCE_MESH.md §mesh-19: a targetexpr names a Mesh peer only once it is evaluated, and
                     // a peer is not a local session. This runtime has no Mesh router to hand it to, so it

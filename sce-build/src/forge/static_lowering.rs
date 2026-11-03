@@ -11718,6 +11718,11 @@ impl SwiftTarget {
     /// a processor but the SCXML one and BasicHTTP, and a target but the machine's own
     /// queues and its parent.
     fn unlowered_send(send: &Action) -> Option<String> {
+        // A processor the host serves owns the whole send, and the machine hands it what the
+        // document wrote (§scxml-6.2.5).
+        if send.send_type_host_served {
+            return Self::unlowered_host_send(send);
+        }
         let scxml_processor = |name: &str| {
             name == crate::host_processor_analyzer::SCXML_EVENT_PROCESSOR_TYPE || name == "scxml"
         };
@@ -11750,6 +11755,25 @@ impl SwiftTarget {
 }
 
 impl SwiftTarget {
+    /// What of a `<send>` to a processor the host serves (§scxml-6.2.5, and the Mesh router of
+    /// SCE_MESH.md §19) this target has no lowering for yet.
+    ///
+    /// The send that is lowered hands the host's handler the request the document wrote: the event,
+    /// the target uninterpreted, the `<param>`s and namelist as the form, the event's data computed
+    /// once, at once or when a delay the document writes is over. A `<content>` is the request's
+    /// content as the text it spells: the document's own, or the value an expression computes from
+    /// the machine's fields when the send is made. A processor type an expression chooses is known
+    /// only when the send runs.
+    fn unlowered_host_send(send: &Action) -> Option<String> {
+        if !send.types.is_empty() {
+            return Some(format!(
+                "a <send> to the host whose processor type an expression computes (\"{}\")",
+                send.send_type
+            ));
+        }
+        None
+    }
+
     /// What of a BasicHTTP `<send>` (§scxml-C-2) this target has no lowering for yet.
     ///
     /// The send that is lowered posts to a URL with the `<param>`s it names as the form, at

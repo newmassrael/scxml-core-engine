@@ -1621,5 +1621,20 @@ name = "a_codec_declares_the_format_it_is_written_in"
 path = "tests/a_codec_declares_the_format_it_is_written_in.rs"
 required-features = ["cli"]
 
+# The Swift backend's send to a processor the host serves, and with it the Mesh send of
+# SCE_MESH.md §19: the text the generator writes and the line it refuses by name. It runs
+# `sce-codegen generate`, so it carries the `cli` gate.
+[[test]]
+name = "a_swift_machine_sends_to_the_host"
+path = "tests/a_swift_machine_sends_to_the_host.rs"
+required-features = ["cli"]
+
+# A child document written in line is named by the document and invoke that hold it. It runs
+# `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "an_inline_child_is_named_by_the_document_that_holds_it"
+path = "tests/an_inline_child_is_named_by_the_document_that_holds_it.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
