@@ -304,14 +304,14 @@ fn a_read_of_the_data_of_a_composed_schema_is_refused_by_name() {
     let guarded = reader(
         "",
         "",
-        r#"<transition event="batch.sent" cond="_event.data.note == 'a'" target="idle"/>"#,
+        r#"<transition event="batch.sent" cond="_event.data.note === 'a'" target="idle"/>"#,
     );
     // ... and in an action of the transition, however deep it is written.
     let nested = reader(
         "",
         "",
         r#"<transition event="batch.sent" target="idle">
-      <if cond="seen == 0">
+      <if cond="seen === 0">
         <assign location="seen" expr="len(_event.data.items)"/>
       </if>
     </transition>"#,
