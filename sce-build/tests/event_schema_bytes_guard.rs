@@ -28,6 +28,8 @@
 // generated TU under the strict freestanding MCU profile so the
 // bounded-buffer + memcmp lowering builds with no hosted-libc guarantee.
 
+mod common;
+
 use sce_build::toolchain;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -176,11 +178,12 @@ int main() {
     )
     .expect("write driver");
     let bin = dir.join("driver");
-    let inc = repo_root().join("sce/include");
-    let compile = Command::new(&gpp)
-        .arg("-std=c++17")
-        .arg("-I")
-        .arg(&inc)
+    let mut compile = Command::new(&gpp);
+    compile.arg("-std=c++17");
+    for inc in common::cpp_engine::engine_include_dirs() {
+        compile.arg("-I").arg(inc);
+    }
+    let compile = compile
         .arg("-I")
         .arg(&dir)
         .arg(&driver)

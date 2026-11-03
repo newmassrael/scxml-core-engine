@@ -21,6 +21,8 @@
 // backend's toolchain; local dev machines without one toolchain
 // should not be blocked.
 
+mod common;
+
 use sce_build::forge::codegen_matrix::emitting;
 use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
@@ -1990,11 +1992,12 @@ int main() {
     )
     .expect("write driver");
     let bin = out_dir.join("driver");
-    let inc = repo_root().join("sce/include");
-    let compile = Command::new(&gpp)
-        .arg("-std=c++17")
-        .arg("-I")
-        .arg(&inc)
+    let mut compile = Command::new(&gpp);
+    compile.arg("-std=c++17");
+    for inc in common::cpp_engine::engine_include_dirs() {
+        compile.arg("-I").arg(inc);
+    }
+    let compile = compile
         .arg("-I")
         .arg(&out_dir)
         .arg(&driver)

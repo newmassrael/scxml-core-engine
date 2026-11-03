@@ -28,6 +28,8 @@
 // See `memory/codegen_template_strategy.md` for the rationale against
 // an AST emitter migration — this harness is the chosen gate instead.
 
+mod common;
+
 use sce_build::forge::codegen_matrix::emitting;
 use sce_build::forge::model::ForgeKind;
 use sce_build::toolchain;
@@ -267,11 +269,8 @@ fn smoke_cpp() {
     };
     let scratch = reset_scratch("cpp");
 
-    let mut include_dirs: Vec<PathBuf> = vec![
-        repo_root().join("sce/include"),
-        repo_root().join("third_party/spdlog/include"),
-        repo_root().join("third_party/nlohmann_json/include"),
-    ];
+    let mut include_dirs: Vec<PathBuf> = common::cpp_engine::engine_include_dirs();
+    include_dirs.push(repo_root().join("third_party/spdlog/include"));
     let mut headers: Vec<String> = Vec::new();
     for fixture in FIXTURES {
         let out_dir = scratch.join(fixture);
@@ -352,11 +351,8 @@ fn smoke_cpp_namespace_prefix() {
     let scratch = reset_scratch("cpp_ns_prefix");
     let fx_path = fixtures_dir().join(format!("{FIXTURE}.scxml"));
 
-    let include_roots: Vec<PathBuf> = vec![
-        repo_root().join("sce/include"),
-        repo_root().join("third_party/spdlog/include"),
-        repo_root().join("third_party/nlohmann_json/include"),
-    ];
+    let mut include_roots: Vec<PathBuf> = common::cpp_engine::engine_include_dirs();
+    include_roots.push(repo_root().join("third_party/spdlog/include"));
 
     // Generate `FIXTURE` into a fresh sub-dir, optionally with the prefix
     // flag. Returns the out-dir so the caller can collect headers.

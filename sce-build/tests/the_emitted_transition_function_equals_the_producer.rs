@@ -919,12 +919,10 @@ fn the_cpp_function_compiles_alone_and_answers_as_the_producer() {
         .expect("write the unit");
         let mut together = Command::new(&gpp);
         together.args(["-std=c++20", "-fsyntax-only"]);
-        for include in [
-            repo_root().join("sce/include"),
-            repo_root().join("third_party/spdlog/include"),
-            repo_root().join("third_party/nlohmann_json/include"),
-            out,
-        ] {
+        for include in common::cpp_engine::engine_include_dirs()
+            .into_iter()
+            .chain([repo_root().join("third_party/spdlog/include"), out])
+        {
             together.arg("-I").arg(include);
         }
         together.arg(&both);

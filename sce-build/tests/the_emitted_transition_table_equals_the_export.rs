@@ -1101,12 +1101,10 @@ fn the_cpp_table_compiles_and_holds_the_export() {
 
     let mut cmd = Command::new(&gpp);
     cmd.args(["-std=c++20", "-fsyntax-only"]);
-    for inc in [
-        repo_root().join("sce/include"),
-        repo_root().join("third_party/spdlog/include"),
-        repo_root().join("third_party/nlohmann_json/include"),
-        out,
-    ] {
+    for inc in common::cpp_engine::engine_include_dirs()
+        .into_iter()
+        .chain([repo_root().join("third_party/spdlog/include"), out])
+    {
         cmd.arg("-I").arg(inc);
     }
     cmd.arg(&stub_path)

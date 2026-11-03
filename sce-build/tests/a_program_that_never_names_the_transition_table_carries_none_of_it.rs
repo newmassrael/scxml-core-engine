@@ -281,12 +281,13 @@ fn compile_cpp(gpp: &Path, work: &Path, out: &Path, name: &str, unit: &str) -> P
         "-fdata-sections",
         "-c",
     ]);
-    for include in [
-        repo_root().join("sce/include"),
-        repo_root().join("third_party/spdlog/include"),
-        repo_root().join("third_party/nlohmann_json/include"),
-        out.to_path_buf(),
-    ] {
+    for include in common::cpp_engine::engine_include_dirs()
+        .into_iter()
+        .chain([
+            repo_root().join("third_party/spdlog/include"),
+            out.to_path_buf(),
+        ])
+    {
         compile.arg("-I").arg(include);
     }
     compile.arg(&source).arg("-o").arg(&object);

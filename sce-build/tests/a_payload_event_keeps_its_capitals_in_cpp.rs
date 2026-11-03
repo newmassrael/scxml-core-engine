@@ -12,19 +12,14 @@
 // names were all lower case never showed it; one that wrote `mem.hF` for the
 // stored hour of a refuel did, and only when it was built into a product.
 
+mod common;
+
 use sce_build::toolchain;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
-}
-
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("sce-build has a parent")
-        .to_path_buf()
 }
 
 /// The payload of `mem.hF`: one number, `value`.
@@ -119,13 +114,12 @@ fn the_generated_header_with_a_capital_in_an_event_name_compiles() {
         "#include \"probe_sm.h\"\nint main() { return 0; }\n",
     )
     .expect("write driver");
-    let compile = Command::new(&gpp)
-        .arg("-std=c++17")
-        .arg("-fsyntax-only")
-        .arg("-I")
-        .arg(repo_root().join("sce/include"))
-        .arg("-I")
-        .arg(repo_root().join("backends/cpp/forge-runtime/include"))
+    let mut compile = Command::new(&gpp);
+    compile.arg("-std=c++17").arg("-fsyntax-only");
+    for inc in common::cpp_engine::engine_include_dirs() {
+        compile.arg("-I").arg(inc);
+    }
+    let compile = compile
         .arg("-I")
         .arg(&dir)
         .arg(&driver)
