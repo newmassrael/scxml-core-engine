@@ -204,7 +204,7 @@ pub fn expand(
         ));
     }
     let mut stack: Vec<PathBuf> = Vec::new();
-    if let Ok(abs) = std::fs::canonicalize(self_path) {
+    if let Ok(abs) = crate::confine::canonicalize(Path::new(self_path)) {
         stack.push(abs);
     } else {
         stack.push(self_file.clone());
@@ -319,8 +319,9 @@ fn expand_impl(
         // the active expansion stack would re-enter its own
         // expansion. Canonicalisation also de-duplicates
         // `./foo.xml`, `foo.xml`, and `../dir/foo.xml` forms so
-        // aliased includes of the same target are still caught.
-        let canon = std::fs::canonicalize(&resolved).unwrap_or(resolved.clone());
+        // aliased includes of the same target are still caught, of a
+        // document held in memory as of one on disk (`confine::canonicalize`).
+        let canon = crate::confine::canonicalize(&resolved).unwrap_or(resolved.clone());
         if stack.contains(&canon) {
             let chain = render_chain(stack, &canon);
             return Err((

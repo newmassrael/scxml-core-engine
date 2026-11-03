@@ -171,6 +171,70 @@ pub fn exists(path: &Path) -> bool {
     held(path).is_some() || (permits(path) && path.exists())
 }
 
+/// The one spelling of the document (or folder of documents) `path` names, which two spellings of
+/// it compare equal in: what `fs::canonicalize` answers once the file is on disk. A document held
+/// here ([`with_documents`], [`hold`]) that is on no disk, or a folder one is held in, is answered
+/// as a writing run would have it once it wrote the document: its nearest folder that is on disk
+/// as the file system resolves it, and the rest as written, `.` and `..` folded. So a run that
+/// holds its output in memory compares documents as the run that writes it does. A path that is
+/// neither on disk nor held gets the file system's error, as before.
+///
+/// Like `fs::canonicalize`, which the places that call it called before, it is not held to the
+/// folder a caller confined the generator to: it is a key (a cycle, a set of files already read,
+/// two spellings of one source), and a file is opened or looked for by the others.
+pub fn canonicalize(path: &Path) -> io::Result<PathBuf> {
+    match fs::canonicalize(path) {
+        Ok(real) => Ok(real),
+        Err(error) if !holds_at_or_under(path) => Err(error),
+        Err(_) => Ok(as_written(path)),
+    }
+}
+
+/// `path` made absolute against the working directory, the way the file system resolves a
+/// relative path, and folded lexically; as written when there is no working directory.
+fn absolute(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return lexical(path);
+    }
+    match std::env::current_dir() {
+        Ok(dir) => lexical(&dir.join(path)),
+        Err(_) => lexical(path),
+    }
+}
+
+/// Whether a document is held under `path` itself, or inside it as a folder.
+fn holds_at_or_under(path: &Path) -> bool {
+    if held(path).is_some() {
+        return true;
+    }
+    let wanted = absolute(path);
+    HELD.with(|held| {
+        held.borrow()
+            .keys()
+            .any(|key| absolute(key).starts_with(&wanted))
+    })
+}
+
+/// The path the file system would give back for `path` once the folders and the file it names
+/// that are on no disk were written: its nearest ancestor that is on disk, canonical, and the rest
+/// joined to it, `.` and `..` folded (a canonical folder has no link in it for `..` to climb out
+/// through, so folding it as written is what the file system does).
+fn as_written(path: &Path) -> PathBuf {
+    let whole = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|dir| dir.join(path))
+            .unwrap_or_else(|_| path.to_path_buf())
+    };
+    for folder in whole.ancestors().skip(1) {
+        if let (Ok(real), Ok(rest)) = (fs::canonicalize(folder), whole.strip_prefix(folder)) {
+            return lexical(&real.join(rest));
+        }
+    }
+    lexical(&whole)
+}
+
 /// What a file that may not be opened is answered with: the error the file system gives for one
 /// that is not there, in the same words. Error number 2 is that on Unix (`ENOENT`) and on Windows
 /// (`ERROR_FILE_NOT_FOUND`), and a place that prints the error it got (`{e}`) then says the same
@@ -414,6 +478,51 @@ mod tests {
             assert!(exists(Path::new("/held/outer.scxml")));
         });
         assert!(!exists(written));
+    }
+
+    #[test]
+    fn a_held_document_has_the_canonical_path_it_has_once_written() {
+        let folder = TempDir::new().unwrap();
+        let document = folder.path().join("child.scxml");
+        let another_spelling = folder.path().join(".").join("child.scxml");
+
+        let held = with_documents([(document.clone(), "child".to_string())], || {
+            assert!(!document.exists(), "the held document is on no disk");
+            (
+                canonicalize(&document).unwrap(),
+                canonicalize(&another_spelling).unwrap(),
+            )
+        });
+        fs::write(&document, "child").unwrap();
+        let written = fs::canonicalize(&document).unwrap();
+
+        assert_eq!(held.0, written);
+        assert_eq!(held.1, written);
+    }
+
+    #[test]
+    fn a_folder_a_document_is_held_in_is_where_a_writing_run_would_make_it() {
+        let folder = TempDir::new().unwrap();
+        let out = folder.path().join("out");
+        let document = out.join("child.scxml");
+        let real_folder = fs::canonicalize(folder.path()).unwrap();
+
+        with_documents([(document.clone(), "child".to_string())], || {
+            assert!(!out.exists(), "the folder is on no disk");
+            assert_eq!(canonicalize(&out).unwrap(), real_folder.join("out"));
+            assert_eq!(
+                canonicalize(&out.join("..").join("out").join("child.scxml")).unwrap(),
+                real_folder.join("out").join("child.scxml")
+            );
+            // A sibling that is neither held nor on disk is answered as before.
+            let absent = canonicalize(&out.join("absent.scxml")).unwrap_err();
+            assert_eq!(absent.kind(), io::ErrorKind::NotFound);
+        });
+        // Outside the scope the document is held in, it is not there at all.
+        assert_eq!(
+            canonicalize(&document).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
     }
 
     #[test]

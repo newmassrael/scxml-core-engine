@@ -892,11 +892,15 @@ fn current_source_root() -> Option<PathBuf> {
 
 /// Whether `path` resolves to somewhere beneath `root`.
 ///
-/// Canonicalising both sides matches what `header_source_path` does when
-/// it computes the relative spelling, so this predicate and that
-/// computation cannot disagree about containment.
+/// Canonicalising both sides through `sce_build::confine::canonicalize`
+/// matches what `header_source_path` does when it computes the relative
+/// spelling, so this predicate and that computation cannot disagree about
+/// containment.
 fn path_is_under(path: &Path, root: &Path) -> bool {
-    match (fs::canonicalize(path), fs::canonicalize(root)) {
+    match (
+        sce_build::confine::canonicalize(path),
+        sce_build::confine::canonicalize(root),
+    ) {
         (Ok(p), Ok(r)) => p.starts_with(&r),
         _ => false,
     }
@@ -8057,11 +8061,13 @@ fn generate_hybrid_child_scxmls(model: &SCXMLModel, output_dir: &Path) -> Vec<Pa
 
 /// A path in the form two spellings of the same file compare equal in.
 ///
-/// `canonicalize` when the file exists, the path as given otherwise —
-/// which is the right fallback, since a prerequisite that does not exist
-/// cannot be something this invocation just wrote.
+/// `canonicalize` when the file exists or the run holds it in memory
+/// (`sce_build::confine::canonicalize`, so a file a `--plan` run wrote
+/// compares as the one a writing run puts on disk), the path as given
+/// otherwise — which is the right fallback, since a prerequisite that does
+/// not exist cannot be something this invocation just wrote.
 fn depfile_identity(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    sce_build::confine::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Every family of file a depfile is written from.

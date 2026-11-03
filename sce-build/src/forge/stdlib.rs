@@ -88,13 +88,14 @@ pub fn lookup(path: &Path) -> Option<&'static str> {
 /// documents that import it by different `src` — `hlc_timestamp.scxml`
 /// from beside it, `sce:std/merge/hlc_timestamp.scxml` from anywhere —
 /// compare equal. A standard document is its folded `sce:std/...` path; a
-/// file is its canonical path, or its path as written when the file cannot
-/// be canonicalized (the import's own read reports that).
+/// file is its canonical path (`crate::confine::canonicalize`, so one held in
+/// memory is the path it has once written), or its path as written when the
+/// file cannot be canonicalized (the import's own read reports that).
 pub fn identity(path: &Path) -> String {
     if let Some(name) = folded_name(path) {
         return format!("{SCHEME}{name}");
     }
-    std::fs::canonicalize(path)
+    crate::confine::canonicalize(path)
         .unwrap_or_else(|_| path.to_path_buf())
         .display()
         .to_string()

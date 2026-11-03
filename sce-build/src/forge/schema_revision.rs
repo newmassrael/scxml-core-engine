@@ -545,7 +545,9 @@ pub fn document_key(base_dir: &Path, path: &Path) -> String {
     if identity.starts_with(crate::forge::stdlib::SCHEME) {
         return identity;
     }
-    let base = std::fs::canonicalize(base_dir).unwrap_or_else(|_| base_dir.to_path_buf());
+    // The folder as `identity` keys the document: a folder a document is held
+    // in, on no disk yet, is the one a writing run makes.
+    let base = crate::confine::canonicalize(base_dir).unwrap_or_else(|_| base_dir.to_path_buf());
     relative_key(&base, Path::new(&identity))
 }
 

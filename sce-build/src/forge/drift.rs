@@ -331,7 +331,9 @@ impl SourceSet {
         if crate::forge::stdlib::names_standard(path) {
             return crate::forge::stdlib::lookup(path).is_some() && self.entries.contains_key(path);
         }
-        match fs::canonicalize(path) {
+        // Keyed as every document identity is (`crate::confine::canonicalize`):
+        // a document a run holds in memory has the key its written file has.
+        match crate::confine::canonicalize(path) {
             Ok(real) => self.members.contains(&real),
             Err(_) => false,
         }

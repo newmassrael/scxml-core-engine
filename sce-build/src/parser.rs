@@ -5324,7 +5324,7 @@ impl SCXMLParser {
                         Some(found) => {
                             populate_candidate_metadata(Some(found.as_path()), candidate);
                             self.preprocessor_deps
-                                .push(found.canonicalize().unwrap_or(found));
+                                .push(crate::confine::canonicalize(&found).unwrap_or(found));
                         }
                         // Unreadable: answered as an unreadable static `src`.
                         None => populate_candidate_metadata(None, candidate),

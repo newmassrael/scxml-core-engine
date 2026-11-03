@@ -1168,9 +1168,11 @@ pub fn header_source_path(scxml_path: &str, source_root: Option<&Path>) -> Strin
     let Some(root) = source_root else {
         return verbatim();
     };
+    // Keyed as `confine` keys a document, so a document a run holds in memory
+    // (a child a `--plan` run planned) is spelled as the written one is.
     let (Ok(abs), Ok(abs_root)) = (
-        std::fs::canonicalize(scxml_path),
-        std::fs::canonicalize(root),
+        confine::canonicalize(Path::new(scxml_path)),
+        confine::canonicalize(root),
     ) else {
         return verbatim();
     };
@@ -9936,8 +9938,11 @@ fn validate_scxml_invoke_target_exclusivity(
         return Ok(());
     };
 
+    // Both sides of the comparison are keyed by `confine::canonicalize`, so a
+    // document the run holds in memory (its own, or the sibling's target)
+    // compares as the file a writing run puts on disk.
     let deploy_dir = deploy_path.parent().unwrap_or_else(|| Path::new("."));
-    let Ok(own_canonical) = deploy_dir.join(&own_source).canonicalize() else {
+    let Ok(own_canonical) = confine::canonicalize(&deploy_dir.join(&own_source)) else {
         return Ok(());
     };
 
@@ -9987,7 +9992,7 @@ fn validate_scxml_invoke_target_exclusivity(
                     continue;
                 }
                 let candidate = sibling_dir.join(src_raw);
-                let Ok(candidate_canonical) = candidate.canonicalize() else {
+                let Ok(candidate_canonical) = confine::canonicalize(&candidate) else {
                     continue;
                 };
                 if candidate_canonical == own_canonical {
@@ -12751,6 +12756,111 @@ topology:
         }
 
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// The exclusivity verdict of a run that holds the deployment's documents
+    /// in memory (a `--plan` run, which writes nothing) is the verdict of the
+    /// run that writes them to disk. The worker's own document and the one
+    /// that invokes it by its file are compared by `confine::canonicalize`,
+    /// which keys a held document as the file it is once written; keyed by
+    /// the file system alone, the held worker had no key and the check passed.
+    #[test]
+    fn a_plan_and_a_writing_run_reach_the_same_invoke_target_verdict() {
+        let deploy = r##"version: "1.0"
+topology:
+  ecu1:
+    platform: linux-x86_64
+    machines:
+      parent_local:
+        source: parent_local.scxml
+      parent_mesh:
+        source: parent_mesh.scxml
+      worker:
+        source: worker.scxml
+"##;
+        let documents = [
+            (
+                "parent_local.scxml",
+                r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent_local">
+  <state id="s1">
+    <invoke type="scxml" src="./worker.scxml" id="inv0"/>
+  </state>
+</scxml>"##,
+            ),
+            (
+                "parent_mesh.scxml",
+                r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent_mesh">
+  <state id="s1">
+    <invoke type="scxml" src="#worker" id="inv0"/>
+  </state>
+</scxml>"##,
+            ),
+            (
+                "worker.scxml",
+                r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="done" name="worker">
+  <final id="done"/>
+</scxml>"##,
+            ),
+        ];
+        let worker_text = documents[2].1;
+
+        /// The conflict a run reports, or `None` when it reports none.
+        type Verdict = Option<(String, Vec<String>, String, String)>;
+        let verdict = |folder: &Path| -> Verdict {
+            let mut worker = parser::SCXMLParser::new()
+                .parse_string(worker_text, "worker")
+                .expect("parse worker");
+            match inject_partition_context_for(&mut worker, &folder.join("deploy.yaml"), None) {
+                Ok(_) => None,
+                Err(mesh::error::MeshError::Deploy(boxed)) => match *boxed {
+                    mesh::error::DeployError::ScxmlInvokeTargetConflict {
+                        machine,
+                        inbound_peers,
+                        local_invoker,
+                        local_src,
+                    } => Some((machine, inbound_peers, local_invoker, local_src)),
+                    other => panic!("expected ScxmlInvokeTargetConflict, got {other:?}"),
+                },
+                Err(other) => panic!("expected ScxmlInvokeTargetConflict, got {other:?}"),
+            }
+        };
+
+        // The run that writes: every document on disk beside the deploy.
+        let written = tempfile::tempdir().expect("tempdir");
+        std::fs::write(written.path().join("deploy.yaml"), deploy).unwrap();
+        for (name, text) in &documents {
+            std::fs::write(written.path().join(name), text).unwrap();
+        }
+        let on_disk = verdict(written.path());
+
+        // The run that plans: only the deploy on disk, the documents held.
+        let planned = tempfile::tempdir().expect("tempdir");
+        std::fs::write(planned.path().join("deploy.yaml"), deploy).unwrap();
+        let held: Vec<(PathBuf, String)> = documents
+            .iter()
+            .map(|(name, text)| (planned.path().join(name), text.to_string()))
+            .collect();
+        assert!(!planned.path().join("worker.scxml").exists());
+        let in_memory = crate::confine::with_documents(held, || verdict(planned.path()));
+
+        assert_eq!(
+            on_disk,
+            Some((
+                "worker".to_string(),
+                vec!["parent_mesh".to_string()],
+                "parent_local".to_string(),
+                "./worker.scxml".to_string(),
+            )),
+            "the writing run does not refuse the worker invoked in both shapes",
+        );
+        assert_eq!(
+            in_memory, on_disk,
+            "a run that holds the documents judges the deployment otherwise than the run \
+             that writes them",
+        );
     }
 
     /// SCE_MESH.md §9.6 codegen-shape exclusivity — the absence path.

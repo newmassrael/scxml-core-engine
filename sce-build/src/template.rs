@@ -219,7 +219,7 @@ pub fn expand(
         stack: Vec::new(),
         deps: Vec::new(),
     };
-    if let Ok(abs) = std::fs::canonicalize(self_path) {
+    if let Ok(abs) = crate::confine::canonicalize(Path::new(self_path)) {
         acc.stack.push(abs);
     } else {
         acc.stack.push(self_file.clone());
@@ -328,8 +328,9 @@ fn expand_impl(
             })?;
 
         // Cycle detection via canonicalised path. Also deduplicates
-        // aliased forms (`./foo.xml`, `foo.xml`, `../dir/foo.xml`).
-        let canon = std::fs::canonicalize(&resolved).unwrap_or_else(|_| resolved.clone());
+        // aliased forms (`./foo.xml`, `foo.xml`, `../dir/foo.xml`), of a
+        // fragment held in memory as of one on disk (`confine::canonicalize`).
+        let canon = crate::confine::canonicalize(&resolved).unwrap_or_else(|_| resolved.clone());
         if acc.stack.contains(&canon) {
             let chain = render_chain(&acc.stack, &canon);
             return Err((

@@ -70,9 +70,10 @@ pub(crate) fn check_imports_acyclic(
     ) -> Result<(), Located<crate::forge::error::ForgeError>> {
         for imp in imports {
             let child_path = crate::forge::stdlib::resolve(base_dir, &imp.src);
-            let canonical = child_path
-                .canonicalize()
-                .unwrap_or_else(|_| child_path.clone());
+            // Keyed as `confine` keys a document, so an import held in
+            // memory compares as the file on disk does.
+            let canonical =
+                crate::confine::canonicalize(&child_path).unwrap_or_else(|_| child_path.clone());
 
             if on_stack.contains(&canonical) {
                 // Cycle detected. Render the cycle slice of `path`
