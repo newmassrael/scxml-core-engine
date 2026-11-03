@@ -1807,13 +1807,33 @@ mod tests {
             let declared = format!("{method}: function");
             assert!(text.contains(&declared), "no `{declared}` in the library");
         }
-        // An optional payload field's type is written `{optional: T}`
-        // ([`crate::forge::expr`]), which `field` reads as absent for a
-        // delivered `null` and as `T` otherwise.
+        // A composed type is written as the descriptor docs/adr/0086 section
+        // 4.3 names, an object whose one key is its constructor: `field` knows
+        // each, and reads the part of the type each names. The emitter writes
+        // an optional payload field's type `{optional: T}`
+        // (`payload_optional_read`), read as absent for a delivered `null` and
+        // as `T` at the same path otherwise.
         assert!(
-            text.contains("if (value === null) { return null; } type = type.optional;"),
+            text.contains("var keys = ['optional', 'list', 'record', 'string', 'bytes'];"),
+            "`field` knows no constructor of a type descriptor"
+        );
+        assert!(
+            text.contains("return value === null ? null : readValue(value, type.optional, path);"),
             "`field` reads no type written {{optional: T}}"
         );
+        for part in [
+            "type.list",
+            "type.max",
+            "type.record",
+            "type.defaults",
+            "type.string",
+            "type.bytes",
+        ] {
+            assert!(
+                text.contains(part),
+                "`field` reads no `{part}` of a type descriptor"
+            );
+        }
         // Every type a payload field is read at is one `field` knows: the
         // integer types by their range, the rest by name.
         for kind in ["float32", "float64", "bool", "string", "bytes"] {
