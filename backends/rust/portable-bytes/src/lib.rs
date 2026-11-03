@@ -718,8 +718,10 @@ mod tests {
         assert!(grown.push(8).is_ok());
         assert_eq!(grown.push(9), Err(CapacityExceeded));
         assert_eq!(grown, &[7u8, 8]);
-        assert!(BoundedList::<u8, 0>::default().is_empty());
-        assert_eq!(BoundedList::<u8, 0>::new().push(1), Err(CapacityExceeded));
+        let mut one = BoundedList::<u8, 1>::default();
+        assert!(one.is_empty());
+        assert!(one.push(1).is_ok());
+        assert_eq!(one.push(2), Err(CapacityExceeded));
     }
 
     // Under `alloc` a list is taken from a `Vec` without a copy and handed back
