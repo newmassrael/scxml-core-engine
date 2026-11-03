@@ -27,9 +27,9 @@ use crate::forge::codec_roles::{
 };
 use crate::forge::codec_totality::{self, child_alias, RefusalKind};
 use crate::forge::encode_plan::{
-    self, Absent, Against, ArmInput, Automaton, CheckSite, Clause, Derive, EncodePlan, EntryId,
-    Guard, HandedFrom, Law, ListWrite, Measured, Narrow, Number, NumberInto, Offset, ParentTag,
-    PresenceFlag, Value, Write,
+    self, Absent, Against, ArmInput, Automaton, CheckSite, Clause, Derive, Element, EncodePlan,
+    EntryId, Guard, HandedFrom, Law, ListWrite, Measured, Narrow, Number, NumberInto, Offset,
+    ParentTag, PresenceFlag, Value, Write,
 };
 use std::collections::BTreeSet;
 
@@ -132,28 +132,116 @@ pub(super) fn write_attribute(inline_encode: bool) -> &'static str {
     }
 }
 
-/// A value a byte case states as the codec's interface presents it
-/// (docs/adr/0081 §5), spelled as a literal of the codec's ready-made source,
-/// `{Codec}Parts`, which a conformance harness encodes; and the accessors of
-/// the elements it states, which the harness reads off a decode of the bytes
-/// to compare with it. A shape the literal does not spell yet is refused by
-/// name, and so is a source that states an element the value does not present
-/// or leaves out one it does.
-///
-/// `codec` is the label the codec was generated under, which names its types;
-/// it can differ from the stem of the file the plan was read from, as for a
-/// fixture whose document is a standard one (`sce:std/...`).
-pub(crate) fn parts_literal(
+/// Where a codec's Rust types are, as a conformance harness names them: the
+/// path of its module and the name its types are named after.
+#[derive(Clone, Debug)]
+pub(crate) struct CodecPath {
+    /// The module, as the harness reaches it (`fixtures::codec_x`).
+    pub module: String,
+    /// The name of its types (`CodecX`, of `CodecXParts` and `CodecXSource`).
+    pub type_name: String,
+}
+
+impl CodecPath {
+    fn parts(&self) -> String {
+        format!("{}::{}Parts", self.module, self.type_name)
+    }
+
+    fn source(&self) -> String {
+        format!("{}::{}Source", self.module, self.type_name)
+    }
+}
+
+/// What a byte case needs of the codecs a codec holds: each read as its holder
+/// was, with the names the harness gives it.
+pub(crate) trait HeldCodecs {
+    /// Answers `read` of the plan of the codec imported as `alias`, its path,
+    /// and the codecs it holds in turn.
+    fn read(
+        &mut self,
+        alias: &str,
+        read: &mut dyn FnMut(
+            &EncodePlan<'_>,
+            &CodecPath,
+            &mut dyn HeldCodecs,
+        ) -> Result<String, String>,
+    ) -> Result<String, String>;
+}
+
+/// A byte case of a Rust harness (docs/adr/0081 §5): the value a case states as
+/// the codec's interface presents it, spelled as a literal of the codec's
+/// ready-made source, `{Codec}Parts`, after the bindings of the bodies and
+/// entries it holds; and, for each element, an expression that holds when a
+/// decode of the bytes presents what the literal does.
+pub(crate) struct SourceCase {
+    /// `let` statements the literal reads, in order.
+    pub bindings: Vec<String>,
+    /// The `{Codec}Parts` value.
+    pub literal: String,
+    /// Each element by its id, with a `bool` expression over `decoded` and
+    /// `parts` that holds when the two present the same.
+    pub checks: Vec<(String, String)>,
+}
+
+/// The byte case of `source`, a value of the codec `plan` at `path`. A shape the
+/// literal does not spell yet is refused by name, and so is a source that
+/// states an element the value does not present or leaves out one it does.
+pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
-    codec: &str,
+    path: &CodecPath,
     source: &serde_json::Value,
-) -> Result<(String, Vec<String>), String> {
+    held: &mut dyn HeldCodecs,
+) -> Result<SourceCase, String> {
+    let mut bindings = Vec::new();
+    let literal = parts_literal(plan, path, source, held, &mut bindings)?;
+    let mut fresh = 0;
+    let checks = plan
+        .elements
+        .iter()
+        .map(|element| {
+            let holds = element_equal(element, path, "&decoded", "&parts", held, &mut fresh)?;
+            Ok((element.field.id.clone(), holds))
+        })
+        .collect::<Result<_, String>>()?;
+    Ok(SourceCase {
+        bindings,
+        literal,
+        checks,
+    })
+}
+
+/// Refuse what a literal does not spell yet.
+fn spelled(plan: &EncodePlan<'_>) -> Result<(), String> {
     if !plan.groups().is_empty() {
         return Err("a gate group is not spelled as a literal yet".to_string());
     }
     if !plan.arms.is_empty() {
         return Err("a variant is not spelled as a literal yet".to_string());
     }
+    if let Some(element) = plan
+        .elements
+        .iter()
+        .find(|e| matches!(&e.value, Value::List { law, .. } if !law.is_none()))
+    {
+        return Err(format!(
+            "the list `{}` is held to a law, which is not spelled as a literal yet",
+            element.field.id
+        ));
+    }
+    Ok(())
+}
+
+/// The `{Codec}Parts` literal of `source`, binding each body and list it holds
+/// first, in `bindings`: a temporary in a call's argument lives only to the end
+/// of its statement, so a list of entries is a named array.
+fn parts_literal(
+    plan: &EncodePlan<'_>,
+    path: &CodecPath,
+    source: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+    bindings: &mut Vec<String>,
+) -> Result<String, String> {
+    spelled(plan)?;
     let object = source
         .as_object()
         .ok_or_else(|| "a source is a JSON object".to_string())?;
@@ -166,7 +254,6 @@ pub(crate) fn parts_literal(
         ));
     }
     let mut members = Vec::new();
-    let mut accessors = Vec::new();
     for element in &plan.elements {
         let id = &element.field.id;
         let value = object
@@ -180,34 +267,75 @@ pub(crate) fn parts_literal(
             }
             "None".to_string()
         } else {
-            let one = literal_value(&element.value, value).map_err(|e| format!("`{id}`: {e}"))?;
+            let one = literal_value(&element.value, value, held, bindings)
+                .map_err(|e| format!("`{id}`: {e}"))?;
             if element.presence.optional() {
                 format!("Some({one})")
             } else {
                 one
             }
         };
-        let member = filters::to_snake_case(id.clone());
-        members.push(format!("{member}: {spelled}"));
-        accessors.push(member);
+        members.push(format!("{}: {spelled}", filters::to_snake_case(id.clone())));
     }
-    Ok((
-        format!(
-            "{}Parts {{ {} }}",
-            filters::to_pascal_case(codec.to_string()),
-            members.join(", ")
-        ),
-        accessors,
-    ))
+    Ok(format!("{} {{ {} }}", path.parts(), members.join(", ")))
 }
 
-/// One value of the abstract type `value`, as a Rust literal of the type the
+/// A name for the next binding of a byte case.
+fn bind(bindings: &mut Vec<String>, ty: Option<String>, value: String) -> String {
+    let name = format!("held_{}", bindings.len());
+    bindings.push(match ty {
+        Some(ty) => format!("let {name}: {ty} = {value};"),
+        None => format!("let {name} = {value};"),
+    });
+    name
+}
+
+/// One value of the abstract type `value`, as a Rust expression of the type the
 /// ready-made source holds it in.
-fn literal_value(value: &Value<'_>, json: &serde_json::Value) -> Result<String, String> {
-    let held = |inner: String| {
+fn literal_value(
+    value: &Value<'_>,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+    bindings: &mut Vec<String>,
+) -> Result<String, String> {
+    let bounded = |inner: String| {
         format!("{RUNTIME_CODEC}::Bounded::new({inner}).expect(\"the case is within its bound\")")
     };
     match value {
+        Value::Body { codec } => {
+            let body = held.read(codec, &mut |plan, path, held| {
+                parts_literal(plan, path, json, held, bindings)
+            })?;
+            Ok(format!("&{}", bind(bindings, None, body)))
+        }
+        Value::List { codec, .. } => {
+            let rows = json
+                .as_array()
+                .ok_or_else(|| "a list is a JSON array".to_string())?;
+            let mut entries = Vec::new();
+            let mut parts = String::new();
+            for (i, row) in rows.iter().enumerate() {
+                entries.push(
+                    held.read(codec, &mut |plan, path, held| {
+                        parts = path.parts();
+                        parts_literal(plan, path, row, held, bindings)
+                    })
+                    .map_err(|e| format!("entry {i}: {e}"))?,
+                );
+            }
+            if rows.is_empty() {
+                held.read(codec, &mut |_, path, _| {
+                    parts = path.parts();
+                    Ok(String::new())
+                })?;
+            }
+            let array = bind(
+                bindings,
+                Some(format!("[{parts}; {}]", entries.len())),
+                format!("[{}]", entries.join(", ")),
+            );
+            Ok(bounded(format!("&{array}[..]")))
+        }
         Value::Scalar(SceType::Bool) => json
             .as_bool()
             .map(|b| b.to_string())
@@ -238,17 +366,103 @@ fn literal_value(value: &Value<'_>, json: &serde_json::Value) -> Result<String, 
                         .ok_or_else(|| "a byte is a number in 0..=255".to_string())
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(held(format!("&[{}][..]", bytes.join(", "))))
+            Ok(bounded(format!("&[{}][..]", bytes.join(", "))))
         }
         Value::Text(_) => json
             .as_str()
-            .map(|s| held(format!("{s:?}")))
+            .map(|s| bounded(format!("{s:?}")))
             .ok_or_else(|| "text is a JSON string".to_string()),
-        _ => Err(
-            "an embedded body, a list, an enum or a float is not spelled as a literal yet"
-                .to_string(),
-        ),
+        Value::Scalar(_) => Err("an enum or a float is not spelled as a literal yet".to_string()),
     }
+}
+
+/// A `bool` expression that holds when the values `a` and `b` of the codec at
+/// `path`, references to two sources, present the same `element`: its value,
+/// or for a body each element of it and for a list each entry in order.
+fn element_equal(
+    element: &Element<'_>,
+    path: &CodecPath,
+    a: &str,
+    b: &str,
+    held: &mut dyn HeldCodecs,
+    fresh: &mut usize,
+) -> Result<String, String> {
+    let accessor = filters::to_snake_case(element.field.id.clone());
+    let read = |v: &str| format!("{}::{accessor}({v})", path.source());
+    let (left, right) = (read(a), read(b));
+    *fresh += 1;
+    let (x, y) = (format!("a{fresh}"), format!("b{fresh}"));
+    let same = match &element.value {
+        Value::Body { codec } => {
+            let (x, y) = (x.clone(), y.clone());
+            held.read(codec, &mut |plan, path, held| {
+                body_equal(plan, path, &x, &y, held, fresh)
+            })?
+        }
+        Value::List { codec, .. } => {
+            let (ea, eb) = (format!("{x}_entry"), format!("{y}_entry"));
+            let entry = {
+                let (ea, eb) = (format!("&{ea}"), format!("&{eb}"));
+                held.read(codec, &mut |plan, path, held| {
+                    body_equal(plan, path, &ea, &eb, held, fresh)
+                })?
+            };
+            // An entry of no element binds nothing it reads.
+            let (ea, eb) = if entry == "true" {
+                ("_".to_string(), "_".to_string())
+            } else {
+                (ea, eb)
+            };
+            format!(
+                "{{ let (mut {x}, mut {y}) = ({x}, {y}); loop {{ match ({x}.next(), {y}.next()) {{ \
+                 (Some({ea}), Some({eb})) => {{ let same = {entry}; if !same {{ break false; }} }}, \
+                 (None, None) => break true, _ => break false }} }} }}"
+            )
+        }
+        _ => return Ok(format!("{left} == {right}")),
+    };
+    // A body of no element binds nothing it reads.
+    let (x, y) = if same == "true" {
+        ("_".to_string(), "_".to_string())
+    } else {
+        (x, y)
+    };
+    Ok(if element.presence.optional() {
+        format!(
+            "match ({left}, {right}) {{ (Some({x}), Some({y})) => {same}, (None, None) => true, _ => false }}"
+        )
+    } else {
+        format!("{{ let ({x}, {y}) = ({left}, {right}); {same} }}")
+    })
+}
+
+/// A `bool` expression that holds when `a` and `b`, references to two values
+/// of the codec `plan` at `path`, present the same elements.
+fn body_equal(
+    plan: &EncodePlan<'_>,
+    path: &CodecPath,
+    a: &str,
+    b: &str,
+    held: &mut dyn HeldCodecs,
+    fresh: &mut usize,
+) -> Result<String, String> {
+    spelled(plan)?;
+    let checks = plan
+        .elements
+        .iter()
+        .map(|element| element_equal(element, path, a, b, held, fresh))
+        .collect::<Result<Vec<_>, _>>()?;
+    // Parenthesised only where they are joined: alone, a check is a block,
+    // a `match` or a comparison that needs none.
+    Ok(match checks.as_slice() {
+        [] => "true".to_string(),
+        [one] => one.clone(),
+        many => many
+            .iter()
+            .map(|c| format!("({c})"))
+            .collect::<Vec<_>>()
+            .join(" && "),
+    })
 }
 
 /// The source interface of a codec, as the text a codec file holds, or why the

@@ -3066,7 +3066,7 @@ pub fn codec_roles_file(
     options: &ForgeCompileOptions,
 ) -> Result<Option<forge::codec_roles::CodecRoles>, forge::error::Located<forge::error::ForgeError>>
 {
-    read_codec_file(path, include_dirs, options, |model, imports| {
+    read_codec_file(path, include_dirs, options, |model, imports, _| {
         forge::codec_roles::classify(&model, imports)
     })
 }
@@ -3083,7 +3083,7 @@ pub fn codec_totality_file(
     Option<(forge::model::CodecModel, forge::codec_totality::Totality)>,
     forge::error::Located<forge::error::ForgeError>,
 > {
-    read_codec_file(path, include_dirs, options, |model, imports| {
+    read_codec_file(path, include_dirs, options, |model, imports, _| {
         let totality =
             forge::codec_totality::analyse(&model, &mut forge::codec_totality::Resolved(imports));
         (model, totality)
@@ -3099,8 +3099,37 @@ pub fn encode_plan_file<R>(
     options: &ForgeCompileOptions,
     read: impl FnOnce(&forge::encode_plan::CodecPlan<'_>) -> R,
 ) -> Result<Option<R>, forge::error::Located<forge::error::ForgeError>> {
-    read_codec_file(path, include_dirs, options, |model, imports| {
-        read(&forge::encode_plan::CodecPlan::of(&model, imports))
+    encode_plan_file_with_imports(path, include_dirs, options, |plan, _| read(plan))
+}
+
+/// A codec a codec imports: the alias it is imported as, the file it is read
+/// from, and the names the Rust generator gives it, so a caller can read the
+/// codec it holds as it read the codec holding it.
+#[derive(Clone, Debug)]
+pub struct ImportedCodec {
+    /// The alias of `<sce:import as=..>`.
+    pub alias: String,
+    /// The document it is read from.
+    pub path: PathBuf,
+    /// The module of the Rust codec, a sibling of the module of its importer.
+    pub module: String,
+    /// The Rust name its types are named after (`{type_name}Parts`).
+    pub type_name: String,
+}
+
+/// [`encode_plan_file`], with the codecs the codec imports, which a reader of
+/// a codec that holds others needs to read them in turn.
+pub fn encode_plan_file_with_imports<R>(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+    read: impl FnOnce(&forge::encode_plan::CodecPlan<'_>, &[ImportedCodec]) -> R,
+) -> Result<Option<R>, forge::error::Located<forge::error::ForgeError>> {
+    read_codec_file(path, include_dirs, options, |model, imports, imported| {
+        read(
+            &forge::encode_plan::CodecPlan::of(&model, imports),
+            imported,
+        )
     })
 }
 
@@ -3112,7 +3141,11 @@ fn read_codec_file<R>(
     path: &Path,
     include_dirs: &[PathBuf],
     options: &ForgeCompileOptions,
-    read: impl FnOnce(forge::model::CodecModel, &[forge::generator::ImportContext]) -> R,
+    read: impl FnOnce(
+        forge::model::CodecModel,
+        &[forge::generator::ImportContext],
+        &[ImportedCodec],
+    ) -> R,
 ) -> Result<Option<R>, forge::error::Located<forge::error::ForgeError>> {
     use forge::error::Located;
 
@@ -3140,7 +3173,21 @@ fn read_codec_file<R>(
         label.diagnostic_label,
     )
     .map_err(|err| loaded.positions.authored(err))?;
-    Ok(Some(read(model, &import_ctx)))
+    let imported: Vec<ImportedCodec> = parsed
+        .imports
+        .iter()
+        .filter(|import| import.kind == forge::model::ForgeKind::Codec)
+        .filter_map(|import| {
+            let ctx = import_ctx.iter().find(|ctx| ctx.alias == import.alias)?;
+            Some(ImportedCodec {
+                alias: import.alias.clone(),
+                path: forge::stdlib::resolve(base_dir, &import.src),
+                module: ctx.namespace.clone(),
+                type_name: ctx.type_name.clone(),
+            })
+        })
+        .collect();
+    Ok(Some(read(model, &import_ctx, &imported)))
 }
 
 /// Compile a forge (non-statechart) SCXML from already-read content.

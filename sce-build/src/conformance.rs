@@ -3121,12 +3121,61 @@ fn fold_reject_vectors(
     Ok(true)
 }
 
+/// The module of the Rust harness that holds every fixture's module, as
+/// `forge/rust/conformance/harness.rs.jinja2` declares it: a byte case names
+/// the codecs it holds from there.
+const HARNESS_FIXTURES: &str = "fixtures";
+
+/// The codecs a codec imports, read as the codec was, for a byte case of a
+/// codec that holds others (docs/adr/0081 §5).
+struct HeldFrom<'a> {
+    imported: &'a [crate::ImportedCodec],
+    include: &'a [PathBuf],
+}
+
+impl crate::forge::generator::RustHeldCodecs for HeldFrom<'_> {
+    fn read(
+        &mut self,
+        alias: &str,
+        read: &mut dyn FnMut(
+            &crate::forge::encode_plan::EncodePlan<'_>,
+            &crate::forge::generator::RustCodecPath,
+            &mut dyn crate::forge::generator::RustHeldCodecs,
+        ) -> Result<String, String>,
+    ) -> Result<String, String> {
+        let from = self
+            .imported
+            .iter()
+            .find(|i| i.alias == alias)
+            .ok_or_else(|| format!("no codec is imported as `{alias}`"))?;
+        let include = self.include;
+        crate::encode_plan_file_with_imports(
+            &from.path,
+            include,
+            &crate::ForgeCompileOptions::default(),
+            |plan, imported| {
+                let crate::forge::encode_plan::CodecPlan::Positional(plan) = plan else {
+                    return Err(format!("`{alias}` is not a positional codec"));
+                };
+                let path = crate::forge::generator::RustCodecPath {
+                    module: format!("{HARNESS_FIXTURES}::{}", from.module),
+                    type_name: from.type_name.clone(),
+                };
+                read(plan, &path, &mut HeldFrom { imported, include })
+            },
+        )
+        .map_err(|e| format!("{}: {e:?}", from.path.display()))?
+        .ok_or_else(|| format!("{} is not a codec", from.path.display()))?
+    }
+}
+
 /// Fold a codec fixture's byte cases stated as its interface presents the value
 /// (docs/adr/0081 §5) into the value the fragment renders from, for a backend
 /// whose encode prints the codec's plan: each `source` becomes a literal of the
-/// backend's ready-made source, with the accessors to compare a decode of the
-/// bytes against. Only Rust prints the plan so far; the others are handed
-/// nothing, and run their `cases` as before.
+/// backend's ready-made source, after the bindings of the bodies and entries it
+/// holds, with an expression for each element that holds when a decode of the
+/// bytes presents what the literal does. Only Rust prints the plan so far; the
+/// others are handed nothing, and run their `cases` as before.
 ///
 /// Answers whether anything was folded, as [`fold_reject_vectors`] does.
 fn fold_source_cases(
@@ -3158,15 +3207,20 @@ fn fold_source_cases(
         return Ok(false);
     }
     let document = fixture.document_path(resource_dir);
-    let folded = crate::encode_plan_file(
+    let include = [resource_dir.to_path_buf()];
+    let folded = crate::encode_plan_file_with_imports(
         &document,
-        &[resource_dir.to_path_buf()],
+        &include,
         &crate::ForgeCompileOptions::default(),
-        |plan| -> Result<Vec<serde_json::Value>, String> {
+        |plan, imported| -> Result<Vec<serde_json::Value>, String> {
             let crate::forge::encode_plan::CodecPlan::Positional(plan) = plan else {
                 return Err(format!(
                     "{where_}: 'sources' are written for a positional codec"
                 ));
+            };
+            let path = crate::forge::generator::RustCodecPath {
+                module: format!("{HARNESS_FIXTURES}::{}", fixture.name),
+                type_name: crate::filters::to_pascal_case(fixture.name.clone()),
             };
             rows.iter()
                 .enumerate()
@@ -3189,12 +3243,24 @@ fn fold_source_cases(
                             "{at}: 'note' holds a character a literal does not keep"
                         ));
                     }
-                    let (literal, accessors) =
-                        crate::forge::generator::rust_parts_literal(plan, &fixture.name, source)
+                    let mut held = HeldFrom {
+                        imported,
+                        include: &include,
+                    };
+                    let case =
+                        crate::forge::generator::rust_source_case(plan, &path, source, &mut held)
                             .map_err(|e| format!("{at}: {e}"))?;
+                    let checks: Vec<serde_json::Value> = case
+                        .checks
+                        .into_iter()
+                        .map(|(element, holds)| {
+                            serde_json::json!({ "element": element, "holds": holds })
+                        })
+                        .collect();
                     Ok(serde_json::json!({
-                        "literal": literal,
-                        "accessors": accessors,
+                        "bindings": case.bindings,
+                        "literal": case.literal,
+                        "checks": checks,
                         "encoded": encoded,
                         "note": note,
                     }))
@@ -4104,6 +4170,14 @@ mod tests {
             // A VLE at its largest, and a codec of no element.
             "CodecVleZintU64Parts { value: 18446744073709551615 }",
             "CodecZenohDelParts {  }",
+            // The entries of a list, bound first, as the parts of the codec
+            // they are, with the path the harness reaches it by; and a body.
+            "let held_0: [fixtures::codec_repeat_elem::CodecRepeatElemParts; 2] = \
+             [fixtures::codec_repeat_elem::CodecRepeatElemParts { seq: 1 }, \
+             fixtures::codec_repeat_elem::CodecRepeatElemParts { seq: 43981 }];",
+            "fixtures::codec_repeat_basic::CodecRepeatBasicParts { frags: \
+             ::sce_forge_runtime::codec::Bounded::new(&held_0[..])",
+            "fixtures::codec_embed_basic::CodecEmbedBasicParts { tag: 2, locator: &held_0 }",
         ] {
             assert!(rust.contains(literal), "the Rust harness lacks `{literal}`");
         }

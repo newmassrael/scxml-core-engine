@@ -42,6 +42,14 @@ What the model reads so far, and refuses by name past it:
   `sce:length-arith` offset on the wire, within `sce:max-size`;
 * bytes or text to the end of the frame (`sce:bit-size="tail"`), within
   `sce:max-size`;
+* a codec it imports (`<sce:import>`), read from its own document: embedded
+  in place (`<sce:embed>`), its encoded length said by a field before it where
+  `sce:length-from` names one; or the entries of a list (`<sce:repeat>`),
+  counted by a field before it (`count=`) or read to the end of the scope
+  (`until-eof`), or of a chain (`<sce:tlv-chain>`) read to the end of the
+  scope, within `max-count` or `max-depth`. A body is stated as its codec's
+  value, a list as an array of them, and a count or a body's length is derived
+  as a byte length is;
 * a field gated on one flag of a carrier (`sce:present-if="c.f"` or `"!c.f"`),
   present exactly where the gate holds; one element to a flag, since two or
   more form a group (docs/adr/0065 §6 R4b), which is not read yet. A stated
@@ -69,19 +77,25 @@ SCXML = "{http://www.w3.org/2005/07/scxml}"
 WIDTH = {"uint8": 8, "uint16": 16, "uint32": 32, "uint64": 64}
 SEQUENCE = ("bytes", "string")
 
-#: The attributes of a field the model reads; any other is refused by name, so a
-#: rule the document states is never silently left out of a case.
+#: The attributes of each element of a datamodel the model reads; any other is
+#: refused by name, so a rule the document states is never silently left out of
+#: a case.
 READ_ATTRIBUTES = {
-    "id",
-    f"{SCE}type",
-    f"{SCE}byte",
-    f"{SCE}bit-size",
-    f"{SCE}bit-offset",
-    f"{SCE}endian",
-    f"{SCE}present-if",
-    f"{SCE}length-field",
-    f"{SCE}length-arith",
-    f"{SCE}max-size",
+    "field": {
+        "id",
+        f"{SCE}type",
+        f"{SCE}byte",
+        f"{SCE}bit-size",
+        f"{SCE}bit-offset",
+        f"{SCE}endian",
+        f"{SCE}present-if",
+        f"{SCE}length-field",
+        f"{SCE}length-arith",
+        f"{SCE}max-size",
+    },
+    "embed": {"id", "type", f"{SCE}byte", f"{SCE}present-if", f"{SCE}length-from"},
+    "repeat": {"id", "type", f"{SCE}byte", "count", "until-eof", "max-count"},
+    "tlv-chain": {"id", "type", f"{SCE}byte", "max-depth"},
 }
 
 #: The attributes of the document root the model reads.
@@ -90,6 +104,10 @@ READ_ROOT_ATTRIBUTES = {"name", f"{SCE}kind", f"{SCE}default-endian"}
 #: The children of the document root besides its datamodel that say nothing of
 #: the wire: why the document is a codec, and its own decoded examples.
 SILENT_CHILDREN = {f"{SCE}kind-basis", f"{SCE}test-vector"}
+
+#: How a measured element is measured: the bytes of a `length-ref` field, the
+#: entries of a list (`count=`), the encoded bytes of a body (`sce:length-from`).
+LENGTH, COUNT, BODY_LENGTH = "length", "count", "body length"
 
 
 class Unread(Exception):
@@ -115,8 +133,11 @@ class Gate:
 @dataclass
 class Field:
     id: str
+    #: The `sce:type` of a field, or the kind of element: `embed`, `repeat`,
+    #: `tlv-chain`.
     sce_type: str
-    #: `fixed`, `vle`, `length-ref` or `tail`.
+    #: `fixed`, `vle`, `length-ref` or `tail` for a field; `body`, `list` for
+    #: the codec it holds.
     size: str
     #: The bits of a fixed field, or the bits a VLE holds.
     bits: int
@@ -126,14 +147,26 @@ class Field:
     carrier: bool = False
     flags: list[Flag] = field(default_factory=list)
     gate: Gate | None = None
-    #: The sibling id or `carrier.flag` a `length-ref` field's length is in.
-    length_field: str | None = None
+    #: The element that measures it, `sce:length-field` (a sibling id or
+    #: `carrier.flag`), `count=` or `sce:length-from`; `None` where nothing
+    #: does, as for a `tail`, a list to the end of its scope or a body that
+    #: ends where its own fields do.
+    measured_by: str | None = None
     #: What the wire's length is short of the field's (`sce:length-arith`).
     arith: int = 0
-    max_size: int | None = None
+    #: The most bytes (`sce:max-size`) or entries (`max-count`, `max-depth`).
+    most: int | None = None
+    #: The codec of a body or of each entry of a list.
+    child: Codec | None = None
 
     def shares_a_byte(self) -> bool:
         return self.size == "fixed" and (self.bit_offset is not None or self.bits < 8)
+
+    def measure(self) -> str:
+        """How the element that measures this one measures it."""
+        if self.size == "list":
+            return COUNT
+        return BODY_LENGTH if self.size == "body" else LENGTH
 
 
 @dataclass
@@ -148,18 +181,18 @@ class Codec:
         return next(f for f in self.field(carrier).flags if f.name == name)
 
     def measured(self) -> dict[str, list[Field]]:
-        """Each `sce:length-field` named, and the fields whose length it says."""
+        """Each measuring element named, and the elements it measures."""
         out: dict[str, list[Field]] = {}
         for f in self.fields:
-            if f.length_field is not None:
-                out.setdefault(f.length_field, []).append(f)
+            if f.measured_by is not None:
+                out.setdefault(f.measured_by, []).append(f)
         return out
 
     def is_length(self, f: Field) -> bool:
         return f.id in self.measured()
 
     def stated(self, f: Field) -> bool:
-        """A length not gated itself whose every content is gated: the value
+        """A measure not gated itself whose every content is gated: the value
         states it where the content is absent (docs/adr/0058 §1)."""
         contents = self.measured().get(f.id, [])
         return f.gate is None and bool(contents) and all(c.gate is not None for c in contents)
@@ -201,29 +234,91 @@ class Codec:
         for (carrier, name) in self.gate_flags():
             if f"{carrier}.{name}" in self.measured():
                 raise Unread(f"{self.name}: {carrier}.{name} is derived by two kinds")
-        for name in self.measured():
+        for name, measured in self.measured().items():
             carrier, _, flag = name.partition(".")
             if flag:
                 self.flag(carrier, flag)
             elif self.field(name).sce_type not in WIDTH:
-                raise Unread(f"{self.name}: the length {name} is not an unsigned number")
+                raise Unread(f"{self.name}: the measure {name} is not an unsigned number")
+            if len({m.measure() for m in measured}) > 1:
+                raise Unread(f"{self.name}: {name} is measured by declarations of two kinds")
 
 
-def attribute_int(node, name: str) -> int | None:
-    value = node.get(f"{SCE}{name}")
+def attribute_int(node, name: str, namespace: str = SCE) -> int | None:
+    value = node.get(f"{namespace}{name}")
     return int(value, 0) if value is not None else None
 
 
 def read_codec(stem: str) -> Codec:
     """The codec `stem` of the resources, as its document declares it."""
-    root = ET.parse(RESOURCES / f"{stem}.scxml").getroot()
+    return read_document(RESOURCES / f"{stem}.scxml")
+
+
+def read_gate(stem: str, node) -> Gate | None:
+    present_if = node.get(f"{SCE}present-if")
+    if present_if is None:
+        return None
+    text = present_if.strip()
+    when_clear = text.startswith("!")
+    carrier, _, flag = text.lstrip("!").partition(".")
+    if not flag or "|" in text or "&" in text or "(" in text:
+        raise Unread(f"{stem}: gate {present_if!r} is not one flag of a carrier")
+    return Gate(carrier.strip(), flag.strip(), when_clear)
+
+
+def read_held(stem: str, node, kind: str, imports: dict[str, Codec]) -> Field:
+    """An embedded body, a `<sce:repeat>` or a `<sce:tlv-chain>`: a field
+    holding the codec imported as its `type`."""
+    id = node.get("id")
+    if len(node):
+        raise Unread(f"{stem}: `{id}` has children, which are not read yet")
+    child = imports.get(node.get("type"))
+    if child is None:
+        raise Unread(f"{stem}: `{id}` holds `{node.get('type')}`, which is not imported")
+    if kind == "embed":
+        size, measured_by, most = "body", node.get(f"{SCE}length-from"), None
+    elif kind == "repeat":
+        count, until_eof = node.get("count"), node.get("until-eof") == "true"
+        if (count is None) == (not until_eof):
+            raise Unread(f"{stem}: `{id}` is counted and read to the end, or neither")
+        size, measured_by, most = "list", count, attribute_int(node, "max-count", "")
+    else:
+        size, measured_by, most = "list", None, attribute_int(node, "max-depth", "")
+    return Field(
+        id=id,
+        sce_type=kind,
+        size=size,
+        bits=0,
+        byte=int(node.get(f"{SCE}byte")),
+        bit_offset=None,
+        endian="big",
+        gate=read_gate(stem, node),
+        measured_by=measured_by,
+        most=most,
+        child=child,
+    )
+
+
+def read_document(path: Path) -> Codec:
+    """The codec at `path`, as its document declares it, with each codec it
+    imports read in turn."""
+    stem = path.stem
+    root = ET.parse(path).getroot()
     default_endian = root.get(f"{SCE}default-endian", "big")
     if extra := sorted(set(root.attrib) - READ_ROOT_ATTRIBUTES):
         raise Unread(f"{stem}: the root declares {', '.join(extra)}, which is not read yet")
     if root.get(f"{SCE}kind") != "codec":
         raise Unread(f"{stem}: not a codec")
+    imports: dict[str, Codec] = {}
     for child in root:
-        if child.tag != f"{SCXML}datamodel" and child.tag not in SILENT_CHILDREN:
+        if child.tag == f"{SCE}import":
+            if child.get("kind") != "codec" or set(child.attrib) - {"src", "kind", "as"}:
+                raise Unread(f"{stem}: an import other than of a codec by its file")
+            src = child.get("src")
+            if src.startswith("sce:"):
+                raise Unread(f"{stem}: the standard document {src} is not read yet")
+            imports[child.get("as")] = read_document(path.parent / src)
+        elif child.tag != f"{SCXML}datamodel" and child.tag not in SILENT_CHILDREN:
             raise Unread(f"{stem}: <{child.tag}> is not read yet")
     datamodel = root.find(f"{SCXML}datamodel")
     if datamodel is None:
@@ -231,11 +326,16 @@ def read_codec(stem: str) -> Codec:
     fields = []
     for node in datamodel:
         tag = node.tag
-        if tag not in (f"{SCE}flags", f"{SCE}field", f"{SCXML}data"):
+        kind = tag.removeprefix(SCE).removeprefix(SCXML)
+        kind = "field" if kind in ("flags", "data") else kind
+        if kind not in READ_ATTRIBUTES:
             raise Unread(f"{stem}: <{tag}> is not read yet")
         id = node.get("id")
-        if extra := sorted(set(node.attrib) - READ_ATTRIBUTES):
+        if extra := sorted(set(node.attrib) - READ_ATTRIBUTES[kind]):
             raise Unread(f"{stem}: `{id}` declares {', '.join(extra)}, which is not read yet")
+        if kind != "field":
+            fields.append(read_held(stem, node, kind, imports))
+            continue
         sce_type = node.get(f"{SCE}type")
         size_text = node.get(f"{SCE}bit-size")
         if sce_type in SEQUENCE:
@@ -253,14 +353,6 @@ def read_codec(stem: str) -> Codec:
                 raise Unread(f"{stem}: bit-size {size_text!r} of `{id}` is not read yet")
         else:
             raise Unread(f"{stem}: type {sce_type!r} of `{id}` is not read yet")
-        gate = None
-        if (present_if := node.get(f"{SCE}present-if")) is not None:
-            text = present_if.strip()
-            when_clear = text.startswith("!")
-            carrier, _, flag = text.lstrip("!").partition(".")
-            if not flag or "|" in text or "&" in text or "(" in text:
-                raise Unread(f"{stem}: gate {present_if!r} is not one flag of a carrier")
-            gate = Gate(carrier.strip(), flag.strip(), when_clear)
         flags = []
         for f in node:
             if f.tag != f"{SCE}flag" or set(f.attrib) - {"name", "bit", "width"}:
@@ -280,10 +372,10 @@ def read_codec(stem: str) -> Codec:
                 endian=node.get(f"{SCE}endian", default_endian),
                 carrier=tag == f"{SCE}flags",
                 flags=flags,
-                gate=gate,
-                length_field=length_field,
+                gate=read_gate(stem, node),
+                measured_by=length_field,
                 arith=attribute_int(node, "length-arith") or 0,
-                max_size=attribute_int(node, "max-size"),
+                most=attribute_int(node, "max-size"),
             )
         )
     codec = Codec(root.get("name"), fields)
@@ -331,16 +423,40 @@ def content(f: Field, value) -> bytes:
     return bytes(value)
 
 
-def said_length(codec: Codec, name: str, contents: dict[str, bytes]) -> int | None:
-    """What the length `name` says on the wire, from the contents it measures
-    that are present; `None` where none is. Every present one must agree."""
+def holds_bytes(f: Field) -> bool:
+    """Whether `f` writes what it holds rather than a number: bytes, text, a
+    body or a list."""
+    return f.sce_type in SEQUENCE or f.child is not None
+
+
+def held(f: Field, value) -> bytes | list[bytes]:
+    """What a present element that holds bytes writes: the bytes of a sequence,
+    the frame of a body, the frame of each entry of a list, each within its
+    bound."""
+    if f.sce_type in SEQUENCE:
+        data = content(f, value)
+    elif f.size == "body":
+        if not isinstance(value, dict):
+            raise ValueError(f"`{f.id}` is a body, a JSON object")
+        return encode(f.child, value)
+    else:
+        if not isinstance(value, list):
+            raise ValueError(f"`{f.id}` is a list, a JSON array")
+        data = [encode(f.child, entry) for entry in value]
+    if f.most is not None and len(data) > f.most:
+        raise ValueError(f"`{f.id}` holds {len(data)}, past its bound of {f.most}")
+    return data
+
+
+def said_length(codec: Codec, name: str, contents: dict[str, bytes | list[bytes]]) -> int | None:
+    """What the measure `name` says on the wire, from the contents it measures
+    that are present: the bytes of a sequence or a body less the
+    `sce:length-arith` offset, or the entries of a list; `None` where none is
+    present. Every present one must agree."""
     lengths = set()
     for f in codec.measured()[name]:
         if f.id in contents:
-            n = len(contents[f.id])
-            if f.max_size is not None and n > f.max_size:
-                raise ValueError(f"{codec.name}: `{f.id}` holds {n} bytes, past {f.max_size}")
-            lengths.add(n - f.arith)
+            lengths.add(len(contents[f.id]) - f.arith)
     if len(lengths) > 1:
         raise ValueError(f"{codec.name}: the contents `{name}` measures disagree")
     if not lengths:
@@ -355,13 +471,15 @@ def encode(codec: Codec, source: dict) -> bytes:
     """The frame of `source`: the fields in declaration order, a field gated off
     left out, each derived element computed from what the value presents, and
     the fields that share a byte packed into it."""
+    if not isinstance(source, dict):
+        raise ValueError(f"{codec.name}: a source is a JSON object")
     presented = [f.id for f in codec.fields if codec.presented(f)]
     if sorted(source) != sorted(presented):
         raise ValueError(f"{codec.name}: a source states {presented}, not {sorted(source)}")
     contents = {
-        f.id: content(f, source[f.id])
+        f.id: held(f, source[f.id])
         for f in codec.fields
-        if f.sce_type in SEQUENCE and source[f.id] is not None
+        if holds_bytes(f) and source[f.id] is not None
     }
     carriers: dict[str, int] = {}
     for f in codec.fields:
@@ -402,11 +520,9 @@ def encode(codec: Codec, source: dict) -> bytes:
                 raise ValueError(f"{codec.name}: `{f.id}` is stated where it is derived")
             if value is None:
                 raise ValueError(f"{codec.name}: nothing says `{f.id}`")
-        elif f.sce_type in SEQUENCE:
+        elif holds_bytes(f):
             data = contents[f.id]
-            if f.max_size is not None and len(data) > f.max_size:
-                raise ValueError(f"{codec.name}: `{f.id}` holds more than {f.max_size} bytes")
-            out += data
+            out += b"".join(data) if f.size == "list" else data
             continue
         else:
             value = source[f.id]
@@ -432,49 +548,93 @@ def last_of_its_byte(codec: Codec, f: Field) -> bool:
 
 def decode(codec: Codec, frame: bytes) -> dict:
     """The `source` a frame says, the inverse of [`encode`]: a derived element
-    is not a member, a stated length is a member only where its content is
+    is not a member, a stated measure is a member only where its content is
     absent, and a carrier is presented as read."""
+    source, at = decode_at(codec, frame, 0, len(frame))
+    if at != len(frame):
+        raise ValueError(f"{codec.name}: {len(frame) - at} bytes left over")
+    return source
+
+
+def measure_on_wire(codec: Codec, name: str, raw: dict, carriers: dict[str, int]) -> int:
+    """What the measure `name` read so far says: a sibling, or a flag of a
+    carrier."""
+    carrier, _, flag = name.partition(".")
+    if flag:
+        bits = codec.flag(carrier, flag)
+        return (carriers[carrier] >> bits.bit) & ((1 << bits.width) - 1)
+    return raw[carrier]
+
+
+def decode_at(codec: Codec, frame: bytes, at: int, end: int) -> tuple[dict, int]:
+    """The `source` of `codec` read from `frame` at `at`, within a scope that
+    ends at `end`, where a `tail` and a list read to the end stop; and where
+    the read stopped."""
     raw: dict = {}
     carriers: dict[str, int] = {}
-    at = 0
+
+    def within(n: int, what: str) -> None:
+        if at + n > end:
+            raise ValueError(f"{codec.name}: the frame ends inside `{what}`")
+
     for f in codec.fields:
         if f.gate is not None and not gate_holds(codec, f.gate, carriers):
             raw[f.id] = None
             continue
         if f.sce_type in SEQUENCE:
-            if f.size == "tail":
-                n = len(frame) - at
+            if f.measured_by is None:
+                n = end - at
             else:
-                carrier, _, flag = f.length_field.partition(".")
-                if flag:
-                    bits = codec.flag(carrier, flag)
-                    said = (carriers[carrier] >> bits.bit) & ((1 << bits.width) - 1)
-                else:
-                    said = raw[carrier]
-                n = said + f.arith
-            if n < 0 or (f.max_size is not None and n > f.max_size):
+                n = measure_on_wire(codec, f.measured_by, raw, carriers) + f.arith
+            if n < 0 or (f.most is not None and n > f.most):
                 raise ValueError(f"{codec.name}: `{f.id}` of {n} bytes is past its bound")
-            if at + n > len(frame):
-                raise ValueError(f"{codec.name}: the frame ends inside `{f.id}`")
+            within(n, f.id)
             data = frame[at : at + n]
             at += n
             raw[f.id] = data.decode("utf-8") if f.sce_type == "string" else list(data)
             continue
+        if f.size == "body":
+            if f.measured_by is None:
+                raw[f.id], at = decode_at(f.child, frame, at, end)
+            else:
+                n = measure_on_wire(codec, f.measured_by, raw, carriers)
+                within(n, f.id)
+                raw[f.id], stop = decode_at(f.child, frame, at, at + n)
+                if stop != at + n:
+                    raise ValueError(f"{codec.name}: `{f.id}` ends before the bytes it is given")
+                at += n
+            continue
+        if f.size == "list":
+            entries = []
+            count = None
+            if f.measured_by is not None:
+                count = measure_on_wire(codec, f.measured_by, raw, carriers)
+            while (len(entries) < count) if count is not None else (at < end):
+                if f.most is not None and len(entries) == f.most:
+                    raise ValueError(f"{codec.name}: `{f.id}` holds more than {f.most} entries")
+                entry, stop = decode_at(f.child, frame, at, end)
+                if stop == at:
+                    raise ValueError(f"{codec.name}: an entry of `{f.id}` reads no byte")
+                entries.append(entry)
+                at = stop
+            raw[f.id] = entries
+            continue
         if f.size == "vle":
-            value, at = read_vle(frame, at)
+            within(1, f.id)
+            value, at = read_vle(frame[:end], at)
         elif f.shares_a_byte():
+            within(1, f.id)
             value = (frame[at] >> (f.bit_offset or 0)) & ((1 << f.bits) - 1)
             if last_of_its_byte(codec, f):
                 at += 1
         else:
             n = f.bits // 8
+            within(n, f.id)
             value = int.from_bytes(frame[at : at + n], "big" if f.endian == "big" else "little")
             at += n
         raw[f.id] = value
         if f.carrier:
             carriers[f.id] = value
-    if at != len(frame):
-        raise ValueError(f"{codec.name}: {len(frame) - at} bytes left over")
     source: dict = {}
     for f in codec.fields:
         if not codec.presented(f):
@@ -483,7 +643,7 @@ def decode(codec: Codec, frame: bytes) -> dict:
             source[f.id] = None
         else:
             source[f.id] = raw[f.id]
-    return source
+    return source, at
 
 
 @dataclass
@@ -813,6 +973,94 @@ FIXTURES = {
             ({"inner_header": 0x01, "id": 1, "suffix": []}, "an empty suffix is present"),
         ],
         "a gated tail whose flag is derived; the other flag is presented with the carrier.",
+    ),
+    "codec_embed_basic": Fixture(
+        [
+            ({"tag": 1, "locator": {"locator": ""}}, "a body of empty text: its length alone"),
+            ({"tag": 2, "locator": {"locator": "abc"}}, "the body's frame follows the tag"),
+        ],
+        "an embedded body is presented as the value of the codec it holds.",
+    ),
+    "codec_repeat_basic": Fixture(
+        [
+            ({"frags": []}, "no entry: the count is zero"),
+            ({"frags": [{"seq": 1}, {"seq": 0xABCD}]}, "the count is derived from the entries"),
+            ({"frags": [{"seq": i} for i in range(32)]}, "a list at its bound of 32"),
+        ],
+        "a list counted by a field before it: the count is derived from the entries.",
+    ),
+    "codec_until_eof_basic": Fixture(
+        [
+            ({"msgs": []}, "no entry: an empty frame"),
+            ({"msgs": [{"seq": 7}, {"seq": 8}, {"seq": 0xFFFF}]}, "entries to the end of the frame"),
+        ],
+        "a list read to the end of the frame.",
+    ),
+    "codec_declared_bounds": Fixture(
+        [
+            ({"key": [], "tag": [], "items": []}, "everything empty: the tag's length says one more"),
+            ({"key": list(range(8)), "tag": [9, 8, 7, 6], "items": [{"seq": 1}, {"seq": 2}]},
+             "every element at its bound"),
+        ],
+        "lengths and a count derived from what they measure; the tag's length is one more "
+        "than its bytes (sce:length-arith=\"-1\").",
+    ),
+    "codec_declared_bounds_to_end": Fixture(
+        [
+            ({"items": []}, "no entry"),
+            ({"items": [{"seq": 1}, {"seq": 2}]}, "a list read to the end, at its bound"),
+        ],
+        "a list read to the end of the frame, within its bound.",
+    ),
+    "codec_origin_envelope": Fixture(
+        [
+            ({"hdr": 0x00, "note": "", "required": {"data": []}, "optional": None, "items": []},
+             "no optional body and no item"),
+            ({"hdr": 0x01, "note": "hi", "required": {"data": [1]},
+              "optional": {"data": [2, 3]},
+              "items": [{"data": []}, {"data": [4]}, {"data": [5, 6]}]},
+             "has_opt derived from the optional body; the count from the items, at its bound"),
+            ({"hdr": 0xFE, "note": "x", "required": {"data": []}, "optional": None,
+              "items": [{"data": [7]}]},
+             "the bits the value presents are kept beside the derived one"),
+        ],
+        "bodies, a gated body and a counted list of bodies, each presented as its codec's value.",
+    ),
+    "codec_tlv_chain_basic": Fixture(
+        [
+            ({"header_flags": 0, "extensions": []}, "an empty chain: the header alone"),
+            ({"header_flags": 0x80, "extensions": [
+                {"entry_type": 1, "entry_body": [0xAA]},
+                {"entry_type": 2, "entry_body": []},
+            ]}, "two entries read to the end of the frame"),
+        ],
+        "a chain that ends where the frame does.",
+    ),
+    "codec_zenoh_decl_ext_keyexpr": Fixture(
+        [
+            ({"outer_header": 0x0F, "inner": {"inner_header": 0x00, "id": 5, "suffix": None}},
+             "the total length is derived from the inner body's frame"),
+            ({"outer_header": 0x9F,
+              "inner": {"inner_header": 0x03, "id": 0x80, "suffix": [0x61, 0x2F, 0x62]}},
+             "an inner body with its suffix: N derived inside it"),
+        ],
+        "a body whose encoded length a field before it says (sce:length-from).",
+    ),
+    "codec_zenoh_source_info_ext": Fixture(
+        [
+            ({"info": {"header": 0x00, "zid": [1], "eid": 0, "sn": 0}},
+             "the size is derived from the body's frame"),
+            ({"info": {"header": 0xF0, "zid": list(range(16)), "eid": 0x80, "sn": 1}},
+             "a body with a zid at its bound"),
+        ],
+        "a body whose encoded length a field before it says (sce:length-from).",
+    ),
+    "codec_zenoh_timestamp_ext": Fixture(
+        [
+            ({"ts": {"time": 0, "zid": []}}, "the size is derived from the body's frame"),
+            ({"ts": {"time": 0x4000, "zid": [1, 2, 3]}}, "a body of three VLE bytes and a zid"),
+        ],
+        "a body whose encoded length a field before it says (sce:length-from).",
     ),
     "codec_variant_session_close": Fixture(
         [({"reason": 3}, "one byte")],

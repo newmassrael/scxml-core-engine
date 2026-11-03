@@ -27,9 +27,11 @@ mod rust_source;
 mod rust_view;
 mod swift_codec;
 
-/// A byte case's source as a literal of a Rust codec's ready-made source, for
-/// the conformance harness (docs/adr/0081 §5). See [`rust_source::parts_literal`].
-pub(crate) use rust_source::parts_literal as rust_parts_literal;
+/// A byte case of the Rust conformance harness, its source a literal of the
+/// codec's ready-made source (docs/adr/0081 §5). See [`rust_source::source_case`].
+pub(crate) use rust_source::{
+    source_case as rust_source_case, CodecPath as RustCodecPath, HeldCodecs as RustHeldCodecs,
+};
 
 /// Whether a codec has a source interface (ADR 0058), given whether each codec
 /// it imports has one. See [`rust_source::supported_with`].

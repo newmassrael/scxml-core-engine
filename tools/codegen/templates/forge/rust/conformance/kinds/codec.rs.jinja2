@@ -160,11 +160,17 @@
    source, written by the generator from the codec's plan, and its bytes were
    computed by an independent model. The literal is encoded and compared with
    the bytes (law 4 of docs/adr/0058 §5), and the bytes are decoded and what the
-   decode presents compared with the literal, element by element (law 1).
-   Independent of `oracle_eligible`, which speaks of the builder's struct. #}
+   decode presents compared with the literal, element by element and, for a
+   body or a list, into each element of the codec it holds (law 1). The
+   bindings name the bodies and entries the literal holds, which a temporary
+   would not keep alive. Independent of `oracle_eligible`, which speaks of the
+   builder's struct. #}
 {% for s in f.sources %}
     {
-        let parts = fixtures::{{ f.name }}::{{ s.literal }};
+{% for b in s.bindings %}
+        {{ b }}
+{% endfor %}
+        let parts = {{ s.literal }};
         let mut encoded: Vec<u8> = Vec::new();
         fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}Wire::encode_source(
             &parts,
@@ -180,18 +186,17 @@
         );
         let mut cursor = ::sce_forge_runtime::codec::SceCursor::new(&encoded);
         {# A value of no element is compared by its decode being accepted alone. #}
-        let {% if not s.accessors %}_{% endif %}decoded = {{ f.name | to_pascal_case }}::decode(&mut cursor)
+        let {% if not s.checks %}_{% endif %}decoded = {{ f.name | to_pascal_case }}::decode(&mut cursor)
             .unwrap_or_else(|e| panic!("{{ f.name }} source {{ loop.index0 }}: decode refused with {e:?}"));
         assert_eq!(
             cursor.remaining(),
             0,
             "{{ f.name }} source {{ loop.index0 }}: the decode left bytes of the frame unread"
         );
-{% for a in s.accessors %}
+{% for c in s.checks %}
         assert!(
-            fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}Source::{{ a }}(&decoded)
-                == fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}Source::{{ a }}(&parts),
-            "{{ f.name }} source {{ loop.index0 }}: the decode presents another {{ a }}"
+            {{ c.holds }},
+            "{{ f.name }} source {{ loop.index0 }}: the decode presents another {{ c.element }}"
         );
 {% endfor %}
     }

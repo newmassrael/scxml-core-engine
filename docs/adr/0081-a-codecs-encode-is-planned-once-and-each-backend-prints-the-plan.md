@@ -192,6 +192,17 @@ imports nothing, takes no flag input and holds no group (45 codecs, 120 cases), 
 The harness also holds that the decode reads the frame to its end. The literal names its types by the label the
 harness generated the codec under.
 
+*Landed (step 3, third part, 2026-11-03).* The model reads the codecs a codec imports, each from its own document: an
+embedded body (its length said by a field before it where `sce:length-from` names one), a list counted by a field
+(`count=`) or read to the end of its scope (`until-eof`), and a chain that ends where its scope does. A count and a
+body's length are derived as a byte length is, and the decode reads within the scope its holder gives it. It writes the
+`sources` of ten more codecs (21 cases): a body is stated as its codec's value and a list as an array of them. The
+literal reads each held codec's plan from its document (`encode_plan_file_with_imports`), binds each body and array of
+entries before the value that refers to them, and the harness compares a decode with the literal element by element
+down into each body and entry, since a held codec is presented by an interface and not compared whole. A gated list, a
+list held to a law, a chain that ends on an entry's flag, a codec that takes a flag input, a variant and a group are
+refused by name until their parts land.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.
