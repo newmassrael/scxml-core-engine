@@ -198,6 +198,13 @@ pub struct SymbolEntry {
     /// unconditionally, so the field was declared on the wire and in
     /// the schema but never once emitted.
     pub event: Option<String>,
+    /// The invoke path of the machine the symbol belongs to, when its author
+    /// wrote that machine in-line in another document
+    /// ([`crate::model::SCXMLModel::inline_invoke_path`]): which document
+    /// inside [`Self::location`]'s file the state path is a path of. `None`
+    /// for a machine whose document is a file of its own, and for a forge
+    /// body.
+    pub invoke_path: Option<String>,
 }
 
 /// Result of a cross-IR collision scan. Holds the offending symbol
@@ -241,10 +248,13 @@ pub fn build_symbol_table(
     }
 
     // Every statechart entry so far carries a position the model recorded
-    // against its expanded text; the sourcemap names where it was written.
-    // The forge documents below carry their own documents' positions.
+    // against its expanded text; the sourcemap names where it was written,
+    // and for a machine written in-line in another document, which document
+    // inside that file its state paths are paths of. The forge documents
+    // below carry their own documents' positions.
     for entry in table.values_mut() {
         entry.location = model.artifact_location(&entry.location);
+        entry.invoke_path.clone_from(&model.inline_invoke_path);
     }
 
     // 3. Forge-side walk — every ForgeDocument lowers to a per-kind
@@ -283,6 +293,9 @@ fn push_entry(
         // Empty is not a name: an eventless transition must read as
         // "no event", not as an event spelled "".
         event: event.filter(|e| !e.is_empty()).map(str::to_string),
+        // Stamped by `build_symbol_table` on the statechart's entries, which
+        // are the machine's; a forge body is no machine's.
+        invoke_path: None,
     };
     if let Some(prior) = table.get(&mangled) {
         return Err(Box::new(Collision {

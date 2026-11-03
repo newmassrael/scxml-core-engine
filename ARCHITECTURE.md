@@ -457,7 +457,8 @@ the parser carries the child's document on its `<invoke>`, and the parent's mach
 child's machine (`<parent>__sce_synth_invoke__<id>`, SCE_MESH.md §9.6.6), so a route that writes
 the parent writes the child, at every depth, beside it. The child is prepared once, by
 `sce_build::carried_children` (analysed, given the host's declarations, bound to the run's
-digest), and emitted by `sce_build::emit_carried_children` (its artifacts, placed in the parent's
+digest, and named where its author wrote it: `<document>#<invoke path>` in its `// From:`, and the
+document's rows and `scxml_invoke_path` in the sourcemap, `sce_build::CarriedOrigin`), and emitted by `sce_build::emit_carried_children` (its artifacts, placed in the parent's
 package): `generate`, `check` (which renders and writes nothing), the library entry points and
 the document-set compile `orchestrate` calls all go through it, so a child is one machine
 whichever route wrote it. `generate-w3c` takes the same prepared child and renders it through its

@@ -1185,6 +1185,32 @@ pub fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &str, source_root
     model.scxml_source_path = header_source_path(scxml_path, source_root);
 }
 
+/// What joins the `<invoke>` ids of an in-line child's invoke path
+/// ([`model::SCXMLModel::inline_invoke_path`]): `outer/inner` is the child
+/// written in-line in the child that the invoke `outer` starts. An invoke id
+/// is an XML name, which holds no `/`.
+pub const INLINE_INVOKE_PATH_SEPARATOR: &str = "/";
+
+/// The provenance (`// From:`) of a machine whose author wrote its document
+/// in-line: the provenance of the document whose text holds it, then `#` and
+/// its invoke path, the ids of the `<invoke>`s that lead to it from that
+/// document, outermost first (`resources/233/test233.scxml#_invoke_0`). An id
+/// is the one the author wrote, or the one the parser generates for an
+/// `<invoke>` that names none (`_invoke_<n>`).
+///
+/// The one spelling of "the child written in-line in document D at invoke I".
+/// It names the file the author edits and the place in it, never a file a run
+/// writes: the sourcemap names the same child by the same invoke path
+/// (`scxml_invoke_path`) beside the rows of that file its symbols were
+/// written on. A document with no recorded provenance (one compiled from a
+/// string) gives the children it holds none either.
+pub fn inline_child_provenance(document: &str, invoke_path: &str) -> String {
+    if document.is_empty() {
+        return String::new();
+    }
+    format!("{document}#{invoke_path}")
+}
+
 /// SCE Protocol-Synthesis RFC §5.2 — resolve every `<sce:driver
 /// href="..."/>` reference on the SCXML root against the SCXML file's
 /// parent directory (the default driver root). Each successful
@@ -2135,9 +2161,15 @@ pub struct EmittedChild {
 /// - bound to the run's digest ([`RunDigest::bind`]), after its declaration was
 ///   judged with the document's: its transition table and function are
 ///   written beside its machine, named after its stem;
-/// - given the provenance of a file beside the document's own (`// From:`):
-///   the directory of the document's recorded provenance and the child's
-///   stem, so it is as reproducible as the document's is.
+/// - given the place its author wrote it ([`CarriedOrigin`]). A child written
+///   in-line is named by the document whose text holds it and its invoke path
+///   ([`inline_child_provenance`], `// From:`), and its positions lead into
+///   that document's text, through every enclosing child and expansion, so
+///   its markers and its sourcemap rows name the rows its author wrote. A
+///   standard statechart is named by its library name, and keeps its own
+///   positions. Never a file the run writes: a `.scxml` of the child that a
+///   run leaves in its output is a copy for a later step to read, and a copy
+///   is not where anybody edits the child.
 pub fn carried_children(
     document: &SCXMLModel,
     run: &CarriedChildRun<'_>,
@@ -2151,8 +2183,10 @@ pub fn carried_children(
             .to_string_lossy()
             .into_owned()
     };
+    let mut carried_invokes = Vec::new();
+    CarriedOrigin::of_document(document).trace(document, &mut carried_invokes);
     let mut children = Vec::new();
-    for invoke in document.inline_child_invokes() {
+    for (invoke, origin) in carried_invokes {
         let Some(carried) = invoke.inline_child.as_deref() else {
             continue;
         };
@@ -2183,19 +2217,16 @@ pub fn carried_children(
             continue;
         }
         // A refusal of the child's declaration is raised under the label the
-        // child was parsed under and moved to the row its author wrote in
-        // the document, as its judgement is
-        // (`inline_child_transition_function_findings`).
+        // child was parsed under and moved to the row its author wrote, as its
+        // judgement is (`inline_child_transition_function_findings`): through
+        // the text of every machine above it, so a child of a child is placed
+        // in the document as one of the document's own is.
         let parsed_as = invoke
             .inline_child_positions
             .as_ref()
             .map_or(label.as_str(), |positions| positions.document.as_str());
         run.digest.bind(&mut model, parsed_as).map_err(|refused| {
-            let refused = match invoke.inline_child_positions.as_ref() {
-                Some(positions) => positions.authored(refused),
-                None => refused,
-            };
-            match document.authored_positions.as_ref() {
+            match origin.positions.as_ref() {
                 Some(positions) => positions.authored(refused),
                 None => refused,
             }
@@ -2204,7 +2235,11 @@ pub fn carried_children(
         model
             .c11_section_attribute_class
             .clone_from(&document.c11_section_attribute_class);
-        model.scxml_source_path = beside(&document.scxml_source_path, stem);
+        // Named and placed where its author wrote it, after every refusal above
+        // was moved by the positions it was raised in.
+        model.scxml_source_path = origin.provenance();
+        model.inline_invoke_path = origin.invoke_path();
+        model.authored_positions = origin.positions;
         children.push(CarriedChild {
             stem: stem.to_string(),
             label,
@@ -2212,6 +2247,101 @@ pub fn carried_children(
         });
     }
     Ok(children)
+}
+
+/// Where a machine of a run was written, as [`carried_children`] traces it
+/// down the document that carries it: the document whose text holds it, the
+/// `<invoke>`s inside that document that lead to it, and the positions that
+/// take a row of the machine's own text to the row its author wrote.
+#[derive(Debug, Clone)]
+pub struct CarriedOrigin {
+    /// The provenance of the document whose text holds the machine: the
+    /// run's document's recorded one, or a standard statechart's library
+    /// name. Empty for a document with none.
+    document: String,
+    /// The ids of the `<invoke>`s from that document down to the machine,
+    /// outermost first; empty for a machine whose document is that document.
+    invoke_path: Vec<String>,
+    /// The machine's positions, each leading on through the text of the
+    /// machine that holds it; `None` for a document parsed with none.
+    positions: Option<model::AuthoredPositions>,
+}
+
+impl CarriedOrigin {
+    /// The origin of `document` itself: its recorded provenance and its own
+    /// positions.
+    pub fn of_document(document: &SCXMLModel) -> Self {
+        Self {
+            document: document.scxml_source_path.clone(),
+            invoke_path: Vec::new(),
+            positions: document.authored_positions.clone(),
+        }
+    }
+
+    /// The origin of the child `invoke` carries, started by the machine this
+    /// is the origin of. A child written in-line stands in that machine's
+    /// text, one invoke further down; a standard statechart is a document of
+    /// its own, read from the library under the name its parse carries.
+    pub fn of_child(&self, invoke: &model::ScxmlInvokeInfo) -> Option<Self> {
+        let child = invoke.inline_child.as_deref()?;
+        Some(match invoke.inline_child_positions.as_ref() {
+            Some(positions) => Self {
+                document: self.document.clone(),
+                invoke_path: self
+                    .invoke_path
+                    .iter()
+                    .cloned()
+                    .chain(std::iter::once(invoke.invoke_id.clone()))
+                    .collect(),
+                positions: Some(positions.clone().within(self.positions.clone())),
+            },
+            None => Self {
+                document: child
+                    .authored_positions
+                    .as_ref()
+                    .map(|positions| positions.document.clone())
+                    .unwrap_or_default(),
+                invoke_path: Vec::new(),
+                positions: child.authored_positions.clone(),
+            },
+        })
+    }
+
+    /// Every invoke of `machine` (whose origin this is) that carries its
+    /// child, at any depth, each with its child's origin, in the order
+    /// [`model::SCXMLModel::inline_child_invokes`] gives them: a child before
+    /// the children it starts.
+    pub fn trace<'m>(
+        &self,
+        machine: &'m SCXMLModel,
+        out: &mut Vec<(&'m model::ScxmlInvokeInfo, CarriedOrigin)>,
+    ) {
+        for invoke in machine.iter_scxml_invokes() {
+            let (Some(child), Some(origin)) =
+                (invoke.inline_child.as_deref(), self.of_child(invoke))
+            else {
+                continue;
+            };
+            out.push((invoke, origin.clone()));
+            origin.trace(child, out);
+        }
+    }
+
+    /// The invoke path, spelled as [`model::SCXMLModel::inline_invoke_path`]
+    /// holds it; `None` for a machine whose document is a file of its own.
+    pub fn invoke_path(&self) -> Option<String> {
+        (!self.invoke_path.is_empty()).then(|| self.invoke_path.join(INLINE_INVOKE_PATH_SEPARATOR))
+    }
+
+    /// The provenance the machine's generated files carry (`// From:`):
+    /// the document's, and for a child written in-line, its invoke path after
+    /// it ([`inline_child_provenance`]).
+    pub fn provenance(&self) -> String {
+        match self.invoke_path() {
+            Some(path) => inline_child_provenance(&self.document, &path),
+            None => self.document.clone(),
+        }
+    }
 }
 
 /// Every child `document` carries ([`carried_children`]), each emitted as a

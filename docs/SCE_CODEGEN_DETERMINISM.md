@@ -113,12 +113,26 @@ directory. Two shapes are available:
   still means something on a machine that never ran the generator.
 - An input *outside* the named root falls back to the path as given,
   rather than emitting a `../../..` chain that only resolves locally.
+- A machine written in-line, in an `<invoke>`'s `<content>`, is named by
+  the document that holds its text, spelled as above, then `#` and the ids
+  of the `<invoke>`s that lead to it, outermost first and joined by `/`:
+  `src/m.scxml#worker`, `src/m.scxml#worker/_invoke_0` for one written
+  inside that one (`_invoke_<n>` is the id an `<invoke>` that names none is
+  given). The sourcemap names the same child by `scxml_file` and
+  `scxml_invoke_path`. A standard statechart a document starts is named by
+  its library name (`sce:std/shared/record_list.scxml`). Neither is ever a
+  file the run writes: the `<stem>__sce_synth_invoke__<id>.scxml` a run
+  leaves in its output is a copy for a later step to read, not where the
+  child is edited.
 
 *Tests:* `from_line_does_not_vary_with_working_directory`,
 `from_line_is_the_path_as_given`,
 `source_root_makes_the_from_line_relative_to_it`,
 `source_root_falls_back_when_input_is_outside_it`
-(`sce-build/tests/codegen_invocation_determinism.rs`).
+(`sce-build/tests/codegen_invocation_determinism.rs`);
+`each_machine_names_the_document_and_the_invokes_that_lead_to_it`,
+`every_symbol_names_the_document_and_the_row_its_author_wrote`
+(`sce-build/tests/an_inline_child_is_named_by_the_document_that_holds_it.rs`).
 
 ---
 

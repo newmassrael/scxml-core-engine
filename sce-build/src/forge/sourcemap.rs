@@ -13,6 +13,7 @@
 //       "<mangled-symbol>": {
 //         "scxml_file":       "<author-path>",
 //         "scxml_state_path": "<canonical hierarchy path>",
+//         "scxml_invoke_path": "<invoke ids to an in-line child>", // optional
 //         "scxml_xpath":      "<XPath into the source SCXML>",
 //         "line_range":       [<start>, <end>],
 //         "kind":             "state|transition|on_entry|on_exit|...",
@@ -88,14 +89,26 @@ pub struct Sourcemap {
 /// JSON stays tight where the runtime metadata is absent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceSymbol {
-    /// Author-facing path to the SCXML file the symbol traces back to.
-    /// Always populated — the symbol was constructed from a
-    /// `SourceLocation::file` value at parser time.
+    /// Author-facing path to the SCXML file the symbol traces back to: the
+    /// file its author wrote it in, an in-line child's symbol included,
+    /// whose file is the document that holds the child's text. Always
+    /// populated — the symbol was constructed from a `SourceLocation::file`
+    /// value at parser time.
     pub scxml_file: String,
     /// Canonical state-hierarchy path (e.g. `s1/s1p1`). Empty for the
     /// per-machine `_machine` symbol and for forge-kind body symbols
     /// (the body sits at the document root, not a state).
     pub scxml_state_path: String,
+    /// For a symbol of a machine its author wrote in-line in another
+    /// document, the `<invoke>` ids that lead to that machine's document,
+    /// outermost first and joined by `/`: the document whose state hierarchy
+    /// [`Self::scxml_state_path`] and [`Self::scxml_xpath`] describe. The
+    /// generated files of that machine spell the same child
+    /// `<document>#<this path>` in their `// From:` line
+    /// ([`crate::inline_child_provenance`]). Absent for a symbol of a document
+    /// that is a file of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scxml_invoke_path: Option<String>,
     /// Best-effort XPath that round-trips to the originating XML node.
     /// Spec lines 3219-3243 require a string; this implementation
     /// synthesises an `//state[@id='<id>']`-style approximation from
@@ -140,6 +153,7 @@ pub fn build(symbols: &BTreeMap<String, SymbolEntry>, source_hash_hex: String) -
             SourceSymbol {
                 scxml_file: entry.location.file.clone(),
                 scxml_state_path: entry.state_path.clone(),
+                scxml_invoke_path: entry.invoke_path.clone(),
                 scxml_xpath: xpath,
                 line_range: [line, line],
                 kind: kind.to_string(),
@@ -645,6 +659,7 @@ pub(crate) fn synth_symbol(loc: &SourceLocation, state_path: &str, kind: &str) -
     SourceSymbol {
         scxml_file: loc.file.clone(),
         scxml_state_path: state_path.to_string(),
+        scxml_invoke_path: None,
         scxml_xpath: synth_xpath(state_path, "_state_body"),
         line_range: [loc.line.unwrap_or(0), loc.line.unwrap_or(0)],
         kind: kind.to_string(),

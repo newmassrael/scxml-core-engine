@@ -31,15 +31,20 @@
       "additionalProperties": false,
       "properties": {
         "scxml_file": {
-          "description": "Author-facing path to the SCXML file the symbol traces back to. A name carrying the `__sce_synth_invoke__` infix denotes a document SCE synthesises in memory from an <invoke> element's inline <content>: it is not on disk, and line_range is relative to that synthesised document, not to the parent file that contains the inline element. A consumer resolving this path must handle that case instead of assuming every name opens.",
+          "description": "Author-facing path to the SCXML file the symbol was written in, and line_range the rows of that file it was written on. A symbol of a machine its author wrote in-line, in an <invoke> element's <content>, names the file that holds that text and the rows there, as every other symbol does; scxml_invoke_path then says which document inside it the state path belongs to. Every name opens.",
           "type": "string"
         },
         "scxml_state_path": {
-          "description": "Canonical state-hierarchy path (e.g. s1/s1p1). Empty for the per-machine symbol and for forge-kind body symbols.",
+          "description": "Canonical state-hierarchy path (e.g. s1/s1p1) in the machine's own document. Empty for the per-machine symbol and for forge-kind body symbols.",
           "type": "string"
         },
+        "scxml_invoke_path": {
+          "description": "Present on a symbol of a machine its author wrote in-line in another document: the ids of the <invoke> elements that lead to that machine's document, outermost first, joined by '/'. An id is the one the author wrote, or the one the processor generates for an <invoke> that names none (_invoke_<n>). scxml_state_path and scxml_xpath are then paths in that document. The generated files of the machine spell the same child '<document>#<scxml_invoke_path>' in their From provenance line. Absent for a symbol of a document that is a file of its own.",
+          "type": "string",
+          "minLength": 1
+        },
         "scxml_xpath": {
-          "description": "Best-effort XPath approximation synthesised from the state path (e.g. //state[@id='s1']/transition[1]). Always non-empty; not guaranteed to round-trip against arbitrary source formatting.",
+          "description": "Best-effort XPath approximation synthesised from the state path (e.g. //state[@id='s1']/transition[1]), relative to the machine's own document (the one scxml_invoke_path leads to, when present). Always non-empty; not guaranteed to round-trip against arbitrary source formatting.",
           "type": "string"
         },
         "line_range": {

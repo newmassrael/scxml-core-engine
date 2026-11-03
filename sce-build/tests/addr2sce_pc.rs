@@ -113,6 +113,7 @@ fn write_sourcemap(dir: &Path, symbols: &[(&str, &str, u32)]) {
             sce_build::forge::sourcemap::SourceSymbol {
                 scxml_file: (*file).to_string(),
                 scxml_state_path: format!("root.{sym}"),
+                scxml_invoke_path: None,
                 scxml_xpath: format!("/scxml/state[@id='{sym}']"),
                 line_range: [*line, *line + 2],
                 kind: "state".to_string(),

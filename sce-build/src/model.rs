@@ -3308,6 +3308,14 @@ pub struct AuthoredPositions {
     pub expanded: String,
     /// Expanded byte range → authored origin.
     pub map: crate::position_map::PositionMap,
+    /// The positions of the document this one's text was cut from, when it
+    /// was: a child written in-line is parsed from its own text, whose map
+    /// leads into the text of the document that holds it, and that text may
+    /// itself be an expansion (an `<xi:include>`) or a child written in-line
+    /// in turn. A position this map leads into the enclosing document's text
+    /// is moved on through the enclosing map, so a resolution ends where the
+    /// author wrote the position, however deep the child stands.
+    pub enclosing: Option<Box<AuthoredPositions>>,
 }
 
 impl AuthoredPositions {
@@ -3321,7 +3329,18 @@ impl AuthoredPositions {
             document: document.into(),
             expanded: expanded.into(),
             map,
+            enclosing: None,
         }
+    }
+
+    /// These positions, read as a document cut from the text `enclosing`
+    /// describes: every resolution that leads into that text continues
+    /// through it ([`Self::enclosing`]). `None` keeps them as they are, the
+    /// positions of a document that stands in no other's text.
+    #[must_use]
+    pub fn within(mut self, enclosing: Option<AuthoredPositions>) -> Self {
+        self.enclosing = enclosing.map(Box::new);
+        self
     }
 
     /// Move a rejection raised against the expanded document back to where
@@ -3412,8 +3431,19 @@ impl AuthoredPositions {
     /// position. Returns `None` when the mapping is the identity, so
     /// callers keep whatever spelling they already had rather than
     /// swapping in an equivalent one.
+    ///
+    /// A position this map leads into the text of the document this one was
+    /// cut from ([`Self::enclosing`]) is moved on through that document's
+    /// positions, which keep it where they leave it when they are the
+    /// identity.
     pub fn resolve(&self, line: Option<u32>, col: Option<u32>) -> Option<(String, u32, u32)> {
-        resolve_authored(&self.expanded, &self.map, line, col)
+        let here = resolve_authored(&self.expanded, &self.map, line, col)?;
+        match self.enclosing.as_deref() {
+            Some(outer) if here.0 == outer.document => {
+                Some(outer.resolve(Some(here.1), Some(here.2)).unwrap_or(here))
+            }
+            _ => Some(here),
+        }
     }
 
     /// Where the author wrote `location`, a position recorded against
@@ -3477,8 +3507,21 @@ impl AuthoredPositions {
     /// the case the substitution rule (`{$name}` inside an attribute
     /// value) produces. A multi-row element would widen this to its
     /// first row, which under-reports rather than mis-reports.
+    ///
+    /// A row of a document cut from another's text ([`Self::enclosing`])
+    /// whose own map holds no call site is asked of the enclosing document,
+    /// at the row it stands on there: a child written in-line inside a
+    /// template's expansion was supplied by the `<sce:use>` that expanded it.
     pub fn call_site_on(&self, line: Option<u32>) -> Option<(String, u32, u32)> {
-        call_site_on_row(&self.expanded, &self.map, line)
+        if let Some(site) = call_site_on_row(&self.expanded, &self.map, line) {
+            return Some(site);
+        }
+        let outer = self.enclosing.as_deref()?;
+        let (file, row, _) = resolve_authored(&self.expanded, &self.map, line, None)?;
+        if file != outer.document {
+            return None;
+        }
+        outer.call_site_on(Some(row))
     }
 }
 
@@ -4389,6 +4432,21 @@ pub struct SCXMLModel {
     pub scxml_source_path: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub scxml_base_path: String,
+
+    /// Where this machine's document stands inside the document its
+    /// provenance names, when its author wrote it in-line there: the ids of
+    /// the `<invoke>`s that lead to it, outermost first, joined by `/`
+    /// (`crate::inline_child_provenance`). `None` for a document that is a
+    /// file, or a library document, of its own.
+    ///
+    /// Set by `crate::carried_children` beside [`Self::scxml_source_path`],
+    /// whose spelling it is the fragment of, and read by the sourcemap
+    /// (`scxml_invoke_path`): the header and the sourcemap name an in-line
+    /// child the same way because both read it from here. Outside the AST
+    /// contract: a parse never sets it.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub inline_invoke_path: Option<String>,
 
     /// The coordinate system this model's recorded positions live in.
     ///

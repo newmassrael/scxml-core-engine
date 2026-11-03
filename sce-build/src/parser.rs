@@ -10871,6 +10871,118 @@ mod tests {
         assert_eq!(moved.location.col, None, "no column is invented");
     }
 
+    /// A document cut from the text `expanded.scxml` names, as an in-line
+    /// child is cut from its parent's: `Q\nZZ`, whose row 1 is the start of
+    /// that text and whose row 2 stands at byte 6 of it (expanded row 2,
+    /// column 3), read in `enclosing` when one is given.
+    fn cut_positions(
+        enclosing: Option<crate::model::AuthoredPositions>,
+    ) -> crate::model::AuthoredPositions {
+        use crate::position_map::{Origin, PositionMap};
+        use std::path::PathBuf;
+
+        let mut map = PositionMap::default();
+        map.register_file(PathBuf::from("expanded.scxml"), "AAA\nBBBBBB\nCCC");
+        map.push_entry(
+            0,
+            2,
+            Origin::File {
+                path: PathBuf::from("expanded.scxml"),
+                source_offset: 0,
+            },
+        );
+        map.push_entry(
+            2,
+            4,
+            Origin::File {
+                path: PathBuf::from("expanded.scxml"),
+                source_offset: 6,
+            },
+        );
+        crate::model::AuthoredPositions::new("child.scxml", "Q\nZZ", map).within(enclosing)
+    }
+
+    /// A position of a cut document is moved on through the document it was
+    /// cut from, to where that document's author wrote it; with nothing to
+    /// move on through, it stays in the text it was cut from.
+    #[test]
+    fn a_cut_documents_position_resolves_through_the_text_it_was_cut_from() {
+        let alone = cut_positions(None);
+        assert_eq!(
+            alone.resolve(Some(2), Some(1)),
+            Some(("expanded.scxml".to_string(), 2, 3)),
+            "without an enclosing document the row stays in the text it was cut from"
+        );
+        let within = cut_positions(Some(spliced_positions("expanded.scxml")));
+        assert_eq!(
+            within.resolve(Some(2), Some(1)),
+            Some(("frag.xml".to_string(), 1, 3)),
+            "expanded row 2 is frag.xml row 1"
+        );
+        let moved = within.authored(synthetic_refusal("child.scxml", Some(2), Some(1)));
+        assert_eq!(moved.location.file, "frag.xml");
+        assert_eq!(moved.location.line, Some(1));
+        assert_eq!(moved.location.col, Some(3));
+    }
+
+    /// An enclosing document that is not the one the cut leads into is not
+    /// asked: its rows are another text's.
+    #[test]
+    fn a_cut_documents_position_is_not_moved_through_another_document() {
+        let within = cut_positions(Some(spliced_positions("other.scxml")));
+        assert_eq!(
+            within.resolve(Some(2), Some(1)),
+            Some(("expanded.scxml".to_string(), 2, 3))
+        );
+    }
+
+    /// A row of a cut document whose own map holds no call site is asked of
+    /// the document it was cut from, at the row it stands on there.
+    #[test]
+    fn a_cut_documents_call_site_is_the_enclosing_documents() {
+        use crate::position_map::{Origin, PositionMap};
+        use std::path::PathBuf;
+
+        let mut map = PositionMap::default();
+        map.register_file(PathBuf::from("outer.xml"), "AAA\nCCC");
+        map.push_entry(
+            0,
+            4,
+            Origin::File {
+                path: PathBuf::from("outer.xml"),
+                source_offset: 0,
+            },
+        );
+        map.push_entry(
+            4,
+            11,
+            Origin::CallSite {
+                path: PathBuf::from("uses.xml"),
+                row: 7,
+                col: 5,
+            },
+        );
+        map.push_entry(
+            11,
+            14,
+            Origin::File {
+                path: PathBuf::from("outer.xml"),
+                source_offset: 4,
+            },
+        );
+        let enclosing =
+            crate::model::AuthoredPositions::new("expanded.scxml", "AAA\nBBBBBB\nCCC", map);
+        assert_eq!(
+            cut_positions(Some(enclosing)).call_site_on(Some(2)),
+            Some(("uses.xml".to_string(), 7, 5))
+        );
+        assert_eq!(
+            cut_positions(None).call_site_on(Some(2)),
+            None,
+            "a cut document standing in no other has only its own call sites"
+        );
+    }
+
     /// Every site a record names is moved, not only its own location.
     #[test]
     fn authored_moves_each_related_site_in_the_document() {

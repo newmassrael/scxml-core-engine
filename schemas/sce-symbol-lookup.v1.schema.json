@@ -46,6 +46,11 @@
           "description": "Canonical state-hierarchy path. Empty for the per-machine symbol and for forge-kind body symbols.",
           "type": "string"
         },
+        "scxml_invoke_path": {
+          "description": "For a symbol of a machine its author wrote in-line in another document, the ids of the <invoke> elements that lead to it, outermost first, joined by '/'. Absent otherwise.",
+          "type": "string",
+          "minLength": 1
+        },
         "scxml_xpath": {
           "description": "Best-effort XPath approximation synthesised from the state path.",
           "type": "string"
