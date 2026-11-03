@@ -266,20 +266,27 @@ fn an_invoke_of_a_type_nobody_runs_is_deferred_and_raises_error_execution() {
 /// An invoke whose request is not lowered yet is named in a refusal and not written wrong.
 #[test]
 fn what_a_host_invoke_carries_that_is_not_lowered_is_refused_by_name() {
-    // The clock fixture, its first invoke given a `src`: a standard host type needs its
-    // result imported, so the document that names one is the fixture and not a stub.
-    let with_src = std::fs::read_to_string(fixtures().join("static_host_clock.scxml"))
-        .expect("the clock fixture")
-        .replacen(
-            r#"<invoke type="sce-host-clock-now" id="now""#,
-            r#"<invoke type="sce-host-clock-now" id="now" src="somewhere""#,
-            1,
-        );
-    assert!(
-        with_src.contains("src=\"somewhere\""),
-        "the fixture gained a src"
-    );
-    let construct = "an <invoke type=\"sce-host-clock-now\"> with a src";
+    // A Mesh request of a script data model whose peer a `srcexpr` computes: `sce-static`
+    // validation refuses an `idlocation` and a `namelist` on a host-run invoke before the Swift
+    // backend is asked, and a `srcexpr` is a string of the machine's fields only for a
+    // `sce-static` document, so what reaches the backend is the script data model's.
+    let with_src = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle"
+       datamodel="ecmascript" name="host_refused">
+  <datamodel><data id="x" expr="'#peer'"/></datamodel>
+  <state id="idle"><transition event="go" target="asking"/></state>
+  <state id="asking">
+    <invoke id="ask" type="sce:mesh-rpc" srcexpr="x">
+      <param name="_mesh_event" expr="'service.request'"/>
+    </invoke>
+    <transition event="done.invoke.ask" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"##
+    .to_string();
+    let construct =
+        "an <invoke type=\"sce:mesh-rpc\"> a host runs with a srcexpr a script engine computes";
     let (status, files, said) =
         generate("host_refused.scxml", &[("host_refused.scxml", &with_src)]);
     assert_eq!(
@@ -296,5 +303,69 @@ fn what_a_host_invoke_carries_that_is_not_lowered_is_refused_by_name() {
         files.iter().all(|(name, _)| !name.ends_with("_sm.swift")),
         "a refused document writes no machine: {:?}",
         files.iter().map(|f| &f.0).collect::<Vec<_>>()
+    );
+}
+
+/// The Mesh request fixture (`statechart_static_mesh_request`): a host-run invoke whose
+/// request is the untyped kind, which carries a `src` and `<param>`s.
+fn mesh_request_fixture() -> String {
+    std::fs::read_to_string(
+        repo_root()
+            .join("sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml"),
+    )
+    .expect("the Mesh request fixture")
+}
+
+/// A `src` the document writes is the request's, as written.
+#[test]
+fn a_src_the_document_writes_is_the_requests() {
+    let written = mesh_request_fixture().replacen(r#"srcexpr="peer""#, r##"src="#motor""##, 1);
+    assert!(
+        written.contains(r##"src="#motor""##),
+        "the fixture gained a src"
+    );
+    let (status, files, said) = generate(
+        "statechart_static_mesh_request.scxml",
+        &[("statechart_static_mesh_request.scxml", &written)],
+    );
+    assert_eq!(status, Some(0), "an invoke with a src is written: {said}");
+    let code = &files
+        .iter()
+        .find(|(name, _)| name == "statechart_static_mesh_request_sm.swift")
+        .expect("the machine is a file of the run")
+        .1;
+    holds_each(code, &["src: \"#motor\","]);
+    assert!(
+        !code.contains("hostSrc"),
+        "a src the document writes is not computed:\n{code}"
+    );
+}
+
+/// A Mesh request (SCE_MESH.md §9.5) is lowered by the build to a host-served invoke of
+/// `sce:mesh-rpc`; its peer is the string an expression computes from the machine's fields
+/// when the request starts, and its envelope is the `_mesh_*` params the router reads.
+#[test]
+fn a_mesh_request_names_its_peer_by_an_expression_read_when_it_starts() {
+    let request = mesh_request_fixture();
+    let (status, files, said) = generate(
+        "statechart_static_mesh_request.scxml",
+        &[("statechart_static_mesh_request.scxml", &request)],
+    );
+    assert_eq!(status, Some(0), "a Mesh request is written: {said}");
+    let code = &files
+        .iter()
+        .find(|(name, _)| name == "statechart_static_mesh_request_sm.swift")
+        .expect("the machine is a file of the run")
+        .1;
+    holds_each(
+        code,
+        &[
+            "let hostSrc: String",
+            "src: hostSrc,",
+            "processorType: \"sce:mesh-rpc\",",
+            "appendFormParam(&hostParams, \"_mesh_event\"",
+            "appendFormParam(&hostParams, \"_mesh_deadline_ms\"",
+            "engine.performHostInvoke(request)",
+        ],
     );
 }

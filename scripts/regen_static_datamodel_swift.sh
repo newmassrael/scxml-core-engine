@@ -50,6 +50,10 @@ if [ "${#CANDIDATES[@]}" -lt 1 ]; then
     echo "error: no sce-static statechart found under $INPUT_ROOT" >&2
     exit 1
 fi
+# The Mesh request (SCE_MESH.md §9.5) of the host-processor fixtures: the one machine whose
+# host-run invoke names its peer by a `srcexpr` and hands the router the `_mesh_*` envelope, so
+# the compile gate holds the lowering of a request's `src` to the Swift compiler.
+CANDIDATES+=("sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml")
 MACHINES=()
 SOURCES=()
 # What a machine that is not lowered yet is refused for, one line each, so a run reads

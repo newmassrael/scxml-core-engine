@@ -4299,7 +4299,9 @@ pub(crate) fn swift_invoke_unlowered(
         crate::model::Invoke::MeshRpc(_) => {
             return Some("a Mesh remote-procedure <invoke>".to_string())
         }
-        crate::model::Invoke::Unsupported(info) => return swift_host_invoke_unlowered(info),
+        crate::model::Invoke::Unsupported(info) => {
+            return swift_host_invoke_unlowered(info, statically_lowered)
+        }
     };
     if info.remote_mesh_target.is_some() {
         return Some("an <invoke> of a Mesh peer".to_string());
@@ -4346,9 +4348,13 @@ pub(crate) fn swift_invoke_unlowered(
 /// the host completes it with is a typed record. Its `<param>`s are the fields of the
 /// request record when it types one, and the text the host is handed otherwise; a
 /// `_sce_deadline_ms` among them is the engine's, which arms it and does not hand it on.
-/// What else the request carries is not lowered yet: a `src`, a `namelist`, a
-/// `<content>` and an `idlocation` each is named.
-fn swift_host_invoke_unlowered(info: &crate::model::UnsupportedInvokeInfo) -> Option<String> {
+/// Its `src` and `<content>` are the request's, as written or, for a `sce-static` document,
+/// as the string the expression computes when the invocation starts. What else the request
+/// carries is not lowered yet: a `namelist` and an `idlocation` each is named.
+fn swift_host_invoke_unlowered(
+    info: &crate::model::UnsupportedInvokeInfo,
+    statically_lowered: bool,
+) -> Option<String> {
     let type_name = &info.invoke_type;
     if !info.host_served {
         // §scxml-6.4.1: `type` names no processor this platform implements and no host
@@ -4363,12 +4369,18 @@ fn swift_host_invoke_unlowered(info: &crate::model::UnsupportedInvokeInfo) -> Op
             "an <invoke type=\"{type_name}\"> a host runs with a namelist"
         ));
     }
-    if !info.src.is_empty() || !info.srcexpr.is_empty() || !info.native_src.is_empty() {
-        return Some(format!("an <invoke type=\"{type_name}\"> with a src"));
-    }
-    if !info.content.is_empty() || !info.contentexpr.is_empty() || !info.native_content.is_empty() {
+    // A `src` and a `<content>` the document writes are the request's, as written. One an
+    // expression computes is a string of the machine's fields only for a `sce-static`
+    // document, whose static lowering writes it; a script data model's is known to a script
+    // engine, which the host-run start does not ask.
+    if !statically_lowered && !info.srcexpr.is_empty() {
         return Some(format!(
-            "an <invoke type=\"{type_name}\"> a host runs with a <content>"
+            "an <invoke type=\"{type_name}\"> a host runs with a srcexpr a script engine computes"
+        ));
+    }
+    if !statically_lowered && !info.contentexpr.is_empty() {
+        return Some(format!(
+            "an <invoke type=\"{type_name}\"> a host runs with a <content expr> a script engine computes"
         ));
     }
     if !info.base.idlocation.is_empty() {

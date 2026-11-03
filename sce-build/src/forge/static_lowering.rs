@@ -12497,6 +12497,12 @@ impl StaticTarget for SwiftTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         true
     }
+    // The host invoke hands the host the `src` and the `<content>` an expression
+    // computes as text, read when the invocation starts (`sceStartHostInvoke` of
+    // `invoke_methods.swift.jinja2`), which is also how a Mesh request names its peer.
+    fn lowers_host_src_expr(&self) -> bool {
+        true
+    }
     fn scalar_type(&self, ty: &SceType) -> String {
         crate::forge::generator::swift_type(ty).to_string()
     }

@@ -505,12 +505,47 @@
         }
 {% endif %}
 {% endif %}
+{% for attribute, value, fails in [('srcexpr', invoke_info.native_src, invoke_info.native_src_fails), ('content expr', invoke_info.native_content, invoke_info.native_content_fails)] %}
+{% if value %}
+{% set variable = 'hostSrc' if attribute == 'srcexpr' else 'hostContent' %}
+{# `datamodel="sce-static"`: the string is computed from the machine's own fields as the
+   invocation starts (`UnsupportedInvokeInfo::native_src`, `native_content`); no script engine
+   is asked. One that cannot be computed is an attribute that cannot be evaluated, which
+   raises error.execution and starts nothing (W3C SCXML 6.4.1). #}
+        let {{ variable }}: String
+        do {
+{% if fails %}
+            let sceFailure = Failure()
+            let sceValue: String = {{ value }}
+            if sceFailure.failed {
+{% if 'error.execution' in model.events %}
+                engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> {{ attribute }} failed to evaluate"))
+{% endif %}
+                return
+            }
+            {{ variable }} = sceValue
+{% else %}
+            {{ variable }} = {{ value }}
+{% endif %}
+        }
+{% endif %}
+{% endfor %}
         let request = HostInvokeRequest(
             processorType: "{{ invoke_info.invoke_type | escape_swift }}",
             invokeID: "{{ invoke_info.invoke_id | escape_swift }}",
+{% if invoke_info.native_src %}
+            src: hostSrc,
+{% elif invoke_info.src %}
+            src: "{{ invoke_info.src | escape_swift }}",
+{% endif %}
 {% if invoke_info.params %}
             params: hostParams,
             eventData: hostParts.isEmpty ? "" : payloadJSON(hostParts),
+{% endif %}
+{% if invoke_info.native_content %}
+            content: hostContent,
+{% elif invoke_info.content %}
+            content: "{{ invoke_info.content | escape_swift }}",
 {% endif %}
             sessionID: sessionID
         )
