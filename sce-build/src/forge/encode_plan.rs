@@ -26,8 +26,8 @@ use crate::forge::codec_roles::{
 use crate::forge::codec_totality::{self, RefusalKind, Totality};
 use crate::forge::generator::ImportContext;
 use crate::forge::model::{
-    BitSize, CodecField, CodecModel, FlagBindSource, FlagDef, FlagInput, PresentIfPredicate,
-    PresentIfScope, SceType, TlvTerminateStrategy,
+    BitSize, CborEntry, CodecField, CodecModel, FlagBindSource, FlagDef, FlagInput,
+    PresentIfPredicate, PresentIfScope, SceType, TlvTerminateStrategy,
 };
 use std::collections::BTreeMap;
 
@@ -1503,5 +1503,124 @@ pub fn list_law(roles: &CodecRoles, field: &str) -> Law {
                 },
             })
             .collect(),
+    }
+}
+
+/// The encode plan of a CBOR codec (SCE_FORGE.md §4.6.1, docs/adr/0081 §1).
+///
+/// A CBOR map derives nothing a value says: the number of entries in the map
+/// head is what the encoding counts. Every entry is presented, required or
+/// not, and the entries are written in ascending key order with the shortest
+/// heads (RFC 8949 §4.2.1).
+pub struct CborPlan<'m> {
+    /// The codec the plan is of.
+    pub model: &'m CodecModel,
+    /// Where the encode can refuse a value.
+    pub totality: Totality,
+    /// Each entry, in declaration order.
+    pub entries: Vec<CborItem<'m>>,
+    /// The entries' places among [`CborPlan::entries`] in the order the encode
+    /// writes them: ascending key.
+    pub by_key: Vec<usize>,
+}
+
+/// One entry of a CBOR map.
+pub struct CborItem<'m> {
+    /// The entry.
+    pub entry: &'m CborEntry,
+    /// Whether every value holds it; the map head counts the others only where
+    /// they are there.
+    pub required: bool,
+    /// What it holds.
+    pub value: CborValue,
+}
+
+/// What an entry of a CBOR map holds, as the encode writes it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CborValue {
+    /// A boolean.
+    Bool,
+    /// Text, within its bound (docs/adr/0077 §3).
+    Text,
+    /// A byte string, within its bound; `exact` where its length is fixed.
+    Bytes {
+        /// Whether the entry states one length.
+        exact: bool,
+    },
+    /// An enum, written as the unsigned integer its carrier holds.
+    Enum {
+        /// The enum's carrier.
+        carrier: Carrier,
+    },
+    /// An unsigned integer; `wide` where it is 64 bits, which a CBOR integer
+    /// holds as it is.
+    Uint {
+        /// Whether it is 64 bits wide.
+        wide: bool,
+    },
+}
+
+/// The carrier of an enum a CBOR entry holds.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Carrier {
+    /// Signed: a value below zero has no unsigned integer, and the encode
+    /// refuses it with [`RefusalKind::CborOutOfRange`] at the entry.
+    Signed,
+    /// Unsigned and 64 bits wide.
+    Wide,
+    /// Unsigned and narrower than 64 bits.
+    Narrow,
+}
+
+impl<'m> CborPlan<'m> {
+    /// The plan of the CBOR codec `model`, given what its imports are.
+    ///
+    /// # Panics
+    ///
+    /// Where an enum entry names an enum whose carrier the imports do not
+    /// resolve, which the import resolution refuses.
+    pub fn of(model: &'m CodecModel, imports: &[ImportContext]) -> Self {
+        let entries: Vec<CborItem<'m>> = model
+            .cbor_entries
+            .iter()
+            .map(|entry| CborItem {
+                entry,
+                required: entry.is_required(),
+                value: match entry.present_type() {
+                    SceType::Bool => CborValue::Bool,
+                    SceType::String => CborValue::Text,
+                    SceType::Bytes => CborValue::Bytes {
+                        exact: entry.length.is_some(),
+                    },
+                    SceType::Enum(r) => CborValue::Enum {
+                        carrier: match crate::forge::cbor_codec::enum_carrier(imports, &r.alias)
+                            .expect("the import resolved the enum's carrier")
+                        {
+                            SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64 => {
+                                Carrier::Signed
+                            }
+                            SceType::Uint64 => Carrier::Wide,
+                            _ => Carrier::Narrow,
+                        },
+                    },
+                    other => CborValue::Uint {
+                        wide: *other == SceType::Uint64,
+                    },
+                },
+            })
+            .collect();
+        let mut by_key: Vec<usize> = (0..entries.len()).collect();
+        by_key.sort_by_key(|&index| entries[index].entry.key);
+        CborPlan {
+            model,
+            totality: codec_totality::analyse(model, &mut codec_totality::Resolved(imports)),
+            entries,
+            by_key,
+        }
+    }
+
+    /// How many entries every value holds.
+    pub fn required(&self) -> usize {
+        self.entries.iter().filter(|item| item.required).count()
     }
 }
