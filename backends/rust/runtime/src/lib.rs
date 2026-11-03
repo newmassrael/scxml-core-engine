@@ -276,9 +276,9 @@ pub use sce_portable_bytes::SceBytes;
 /// The value of a `list<T>[N]` and of a `string[N]` that a host builds and
 /// hands to a typed send (docs/adr/0086, section 5.4): every constructor
 /// refuses past `N` on every profile, so a value that exists is one of its
-/// type. The machine itself keeps its lists in storage whose bound it holds;
-/// these are for a value nothing has judged yet, and a payload is read into
-/// them (`event_payload::PayloadValue::list`, where the build has a wire).
+/// type. A generated machine holds every list in a `BoundedList` too, a
+/// variable's, a record's and a payload's (section 7.4), and a payload is read
+/// into one (`event_payload::PayloadValue::list`, where the build has a wire).
 pub use sce_portable_bytes::{BoundedBytes, BoundedList, BoundedText};
 
 /// Convert a borrowed `&str` into an owned [`SceString`].

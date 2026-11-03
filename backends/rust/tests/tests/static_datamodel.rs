@@ -503,7 +503,7 @@ fn a_clear_empties_the_list_and_a_snapshot_keeps_what_it_saw() {
     assert!(engine.snapshot().data.picked.is_empty());
     assert_eq!(
         before.data.picked,
-        vec![9],
+        &[9u8],
         "the snapshot owns its copy, so the earlier one is unchanged"
     );
 }
@@ -1760,7 +1760,7 @@ fn a_value_that_may_be_absent_is_saved_as_null_or_as_its_present_value() {
     // The same run the Kotlin suite makes, which writes the format-1 text.
     let engine = optional_run();
     assert_eq!(engine.snapshot().data.due, None);
-    assert_eq!(engine.snapshot().data.items, optional_records().to_vec());
+    assert_eq!(engine.snapshot().data.items, &optional_records());
     assert_eq!(
         engine.save().expect("saves").to_json(),
         SHARED_OPTIONAL.trim()
@@ -1784,7 +1784,7 @@ fn a_saved_absent_value_is_restored_absent_and_a_present_one_present() {
         assert_eq!(data.echo_status, None);
         let [first, second] = optional_records();
         assert_eq!(data.item, second);
-        assert_eq!(data.items, vec![first, second]);
+        assert_eq!(data.items, &[first, second]);
         // The restored machine carries on: `due.clear` takes `other`, `status`
         // and the record's day to absent.
         restored.raise_external_by_name("due.clear", "");
@@ -1845,7 +1845,7 @@ fn a_state_saved_before_the_widening_restores_with_every_value_present() {
         title: Some("first".to_string()),
         status: Some(StaticOptionalStatusEnum::Open),
     };
-    assert_eq!(data.items, vec![item.clone()]);
+    assert_eq!(data.items, &[item.clone()]);
     assert_eq!(data.item, item);
 }
 
@@ -1912,7 +1912,7 @@ fn a_saved_optional_record_is_restored_absent_or_present_and_saved_as_it_was_rea
         assert_eq!(data.pick, Some(item(2, "bumped", 7)));
         assert_eq!(data.found, None);
         assert_eq!(data.draft, item(3, "gamma", 9));
-        assert_eq!(data.items, vec![item(1, "alpha", 2), item(2, "beta", 6)]);
+        assert_eq!(data.items, &[item(1, "alpha", 2), item(2, "beta", 6)]);
         // The restored machine carries on: `pick.clear` makes the record absent,
         // and `pick.draft` takes the record `draft` holds into it.
         restored.raise_external_by_name("pick.clear", "");

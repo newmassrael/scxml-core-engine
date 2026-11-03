@@ -872,3 +872,22 @@ Landing: the commit that adds this section.
   extension of a chain of depth 8 now belongs to `codec_chain_depth_plain` and `codec_chain_depth_gated`, which state
   a depth. A consumer's documents are its own; nothing here changes what they state.
 
+## A Rust machine holds a list's bound in its type (ADR 0086 §7.4)
+
+Landing: the commit that adds this section; the Rust trees are regenerated after it.
+
+- A generated Rust `sce-static` machine holds every `list<T>[N]` in `sce_portable_bytes::BoundedList<T, N>`, where it
+  held a `Vec<T>`: a list variable, the published `<Machine>Data` struct's member of one, a payload struct's list field
+  and a list inside a composed record. A crate that compiles a generated machine holding a list depends on
+  `sce-portable-bytes` (with its `alloc` feature where it has an allocator, as `sce-rust-runtime`'s `std` selects).
+- Reading is unchanged: a `BoundedList` derefs to `[T]`, so `.len()`, `.iter()`, indexing, `for x in &list` and a
+  reader that answers `&[T]` compile as before. A list compares with a slice or an array reference
+  (`assert_eq!(data.items, &[a, b])`), not with a `Vec` (`vec![a, b]`): write the comparison against `&[..]`.
+- A consumer that builds a value holding a list (a payload it injects with `raise_<event>`, a `Data` it compares) builds
+  it with `BoundedList::from_slice(&[..])?`, `BoundedList::try_from_iter(..)?` or `push`, each refusing past `N`, or
+  `BoundedList::widened(&list)` from a list of a smaller bound, which compiles only where the bound fits.
+- A machine built `--no-std` reads a composed payload too: its lists are held inline, so the `rust no_std` refusal
+  of a composed read and copy is gone.
+- A saved state is unchanged on the wire. `sce_rust_runtime::saved_state::bounded` reads a list into the
+  `BoundedList` its caller names and takes no capacity argument; its bound is the type's.
+

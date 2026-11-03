@@ -1595,22 +1595,40 @@ pub fn record_member<'v>(
     })
 }
 
-/// A saved list or byte string `value`, read back only if it holds no more
-/// than the `capacity` the machine bounds it by — a machine never holds more,
-/// and a restored one must not be the first to.
-pub fn bounded<T: SavedValue>(
+/// A saved list `value`, read back only if it holds no more than the `N`
+/// elements its type bounds it by (docs/adr/0086, section 7.4) — a machine
+/// never holds more, and a restored one must not be the first to. The count is
+/// judged before any element is read.
+pub fn bounded<T: SavedValue, const N: usize>(
     value: &Value,
     what: &str,
-    capacity: usize,
-) -> Result<Vec<T>, StateRefusal> {
-    let items = Vec::<T>::from_saved(value, what)?;
-    if items.len() > capacity {
+) -> Result<crate::BoundedList<T, N>, StateRefusal> {
+    let Value::Array(items) = value else {
+        return Err(not_a(value, what, "an array"));
+    };
+    if items.len() > N {
         return Err(StateRefusal::new(format!(
-            "'{what}' holds {} elements, past the {capacity} it is bounded by",
+            "'{what}' holds {} elements, past the {N} it is bounded by",
             items.len()
         )));
     }
-    Ok(items)
+    let mut list = crate::BoundedList::new();
+    for (i, item) in items.iter().enumerate() {
+        list.push(T::from_saved(item, &format!("{what}[{i}]"))?)
+            .map_err(|_| StateRefusal::new(format!("'{what}' is past the {N} it is bounded by")))?;
+    }
+    Ok(list)
+}
+
+/// A list a machine holds (docs/adr/0086, section 7.4), written as the array
+/// of its elements and read back held to its bound ([`bounded`]).
+impl<T: SavedValue, const N: usize> SavedValue for crate::BoundedList<T, N> {
+    fn to_saved(&self) -> Value {
+        Value::Array(self.iter().map(SavedValue::to_saved).collect())
+    }
+    fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
+        bounded(value, what)
+    }
 }
 
 /// A saved string `value`, read back only if it holds no more than the

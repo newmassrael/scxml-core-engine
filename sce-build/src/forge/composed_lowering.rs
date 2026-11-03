@@ -28,11 +28,12 @@
 //!
 //! | Backend | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
 //! |---|---|---|---|---|
-//! | Rust (machine) | `Vec<T>`, the bound kept by the machine | `SceString<N>` / `SceBytes<N>` | `Option<T>` | the machine's record |
+//! | Rust (machine) | `BoundedList<T, N>` | `SceString<N>` / `SceBytes<N>` | `Option<T>` | the machine's record |
 //!
-//! A text and a byte string carry their bound in their type, so a value is
-//! copied into a place of a larger bound by widening it at each depth where
-//! the two bounds differ, the fit proven before ([`copier`], section 5.1).
+//! A list, a text and a byte string carry their bound in their type (section
+//! 7.4), so a value is copied into a place of a larger bound by widening it at
+//! each depth where the two bounds differ, the fit proven before ([`copier`],
+//! section 5.1) and asserted again by the widening's own const parameters.
 
 use std::collections::BTreeMap;
 
@@ -248,6 +249,9 @@ pub trait ComposedSpelling {
     fn copy_whole(&self, held: &Held, plain: bool) -> String;
     /// A copy of the text `held` into a place of `max` bytes, at least its own.
     fn copy_text(&self, max: u32, held: &Held) -> String;
+    /// A copy of the byte string `held` into a place of `max` bytes, at least
+    /// its own.
+    fn copy_bytes(&self, max: u32, held: &Held) -> String;
     /// A copy of the value that may be absent `held`, `elem` the copy of its
     /// present value, a reference bound to [`Self::copy_binding`].
     fn copy_optional(&self, held: &Held, elem: &str) -> String;
@@ -310,6 +314,9 @@ pub fn copier(
     };
     match (from, to) {
         (ValueType::Text { .. }, ValueType::Text { max }) => Ok(spelling.copy_text(max.max, held)),
+        (ValueType::Bytes { .. }, ValueType::Bytes { max }) => {
+            Ok(spelling.copy_bytes(max.max, held))
+        }
         (ValueType::Optional { elem: from }, ValueType::Optional { elem: to }) => {
             Ok(spelling.copy_optional(held, &part(from, to, &element)?))
         }
@@ -564,9 +571,20 @@ pub struct RustComposed<'a> {
 /// The runtime module the Rust readers and writers are in.
 const RUST_PAYLOAD: &str = "::sce_rust_runtime::event_payload";
 
-/// The crate of the bounded storage a Rust machine holds a text and a byte
-/// string of a composed value in.
+/// The crate of the bounded storage a Rust machine holds a list, a text and a
+/// byte string in.
 const RUST_PORTABLE: &str = "::sce_portable_bytes";
+
+/// The type a Rust machine holds a list of at most `max` values held in `elem`
+/// in, every place alike (docs/adr/0086, section 7.4): a variable, a record's
+/// field and a payload's, so two places of one list type are one Rust type.
+pub(crate) fn rust_bounded_list(elem: &str, max: u32) -> String {
+    format!("{RUST_PORTABLE}::BoundedList<{elem}, {max}>")
+}
+
+/// The empty list a Rust machine starts a list variable at, its element and
+/// bound taken from the place ([`rust_bounded_list`]).
+pub(crate) const RUST_EMPTY_LIST: &str = "::sce_portable_bytes::BoundedList::new()";
 
 impl ComposedSpelling for RustComposed<'_> {
     fn scalar_type(&self, ty: &SceType) -> String {
@@ -582,8 +600,8 @@ impl ComposedSpelling for RustComposed<'_> {
     fn optional_type(&self, elem: &str) -> String {
         format!("Option<{elem}>")
     }
-    fn list_type(&self, elem: &str, _max: u32) -> String {
-        format!("Vec<{elem}>")
+    fn list_type(&self, elem: &str, max: u32) -> String {
+        rust_bounded_list(elem, max)
     }
     // The name a statechart's record variable of the same schema is held in
     // (`StaticTarget::record_type`), so a record a payload holds is the type a
@@ -663,8 +681,9 @@ impl ComposedSpelling for RustComposed<'_> {
     fn read_optional(&self, value: &str, elem: &str) -> String {
         format!("{value}.optional(|v| {elem})")
     }
+    // The runtime's reader answers the `BoundedList<T, N>` the machine holds.
     fn read_list(&self, value: &str, max: u32, elem: &str) -> String {
-        format!("{value}.list::<_, {max}>(|v| {elem}).map(|list| list.into_vec())")
+        format!("{value}.list::<_, {max}>(|v| {elem})")
     }
     fn read_record(
         &self,
@@ -751,12 +770,18 @@ impl ComposedSpelling for RustComposed<'_> {
             (false, _) => format!("{}.clone()", held.text),
         }
     }
-    // The fit was proven, so the text is within the bound of the place and
-    // `held` takes it whole.
+    // The fit was proven, and the widening asserts it again by its const
+    // parameters, so a copy the build did not prove does not compile.
     fn copy_text(&self, max: u32, held: &Held) -> String {
         format!(
-            "{RUST_PORTABLE}::SceString::<{max}>::held({}.as_str())",
-            held.text
+            "{RUST_PORTABLE}::SceString::<{max}>::widened({})",
+            held.borrowed()
+        )
+    }
+    fn copy_bytes(&self, max: u32, held: &Held) -> String {
+        format!(
+            "{RUST_PORTABLE}::SceBytes::<{max}>::widened({})",
+            held.borrowed()
         )
     }
     fn copy_optional(&self, held: &Held, elem: &str) -> String {
@@ -765,8 +790,13 @@ impl ComposedSpelling for RustComposed<'_> {
     fn copy_present(&self, value: &str) -> String {
         format!("Some({value})")
     }
+    // Each element copied into the place's element type, the list's own bound
+    // widened into the place's by type; the place's type names both.
     fn copy_list(&self, held: &Held, elem: &str) -> String {
-        format!("{}.iter().map(|v| {elem}).collect::<Vec<_>>()", held.text)
+        format!(
+            "{RUST_PORTABLE}::BoundedList::widened_map({}, |v| {elem})",
+            held.borrowed()
+        )
     }
 }
 
@@ -877,10 +907,23 @@ mod tests {
         assert_eq!(spelled("string[8]"), "::sce_portable_bytes::SceString<8>");
         assert_eq!(spelled("bytes[4]"), "::sce_portable_bytes::SceBytes<4>");
         assert_eq!(spelled("optional<int64>"), "Option<i64>");
-        assert_eq!(spelled("list<list<uint8>[2]>[2]"), "Vec<Vec<u8>>");
-        assert_eq!(spelled("list<enum:Level>[2]"), "Vec<MLevelEnum>");
-        assert_eq!(spelled("list<record:Item>[3]"), "Vec<MItemRecord>");
-        assert_eq!(spelled("optional<list<uint8>[2]>"), "Option<Vec<u8>>");
+        let list = "::sce_portable_bytes::BoundedList";
+        assert_eq!(
+            spelled("list<list<uint8>[2]>[3]"),
+            format!("{list}<{list}<u8, 2>, 3>")
+        );
+        assert_eq!(
+            spelled("list<enum:Level>[2]"),
+            format!("{list}<MLevelEnum, 2>")
+        );
+        assert_eq!(
+            spelled("list<record:Item>[3]"),
+            format!("{list}<MItemRecord, 3>")
+        );
+        assert_eq!(
+            spelled("optional<list<uint8>[2]>"),
+            format!("Option<{list}<u8, 2>>")
+        );
         assert!(machine_type(&ty("enum:Other"), None, &held, &enums, &RUST).is_err());
     }
 
@@ -913,7 +956,8 @@ mod tests {
                 ),
                 (
                     "tags".to_string(),
-                    "Vec<::sce_portable_bytes::SceString<8>>".to_string()
+                    "::sce_portable_bytes::BoundedList<::sce_portable_bytes::SceString<8>, 4>"
+                        .to_string()
                 ),
             ]
         );
@@ -923,7 +967,10 @@ mod tests {
             "{def}"
         );
         assert!(
-            def.contains("    pub tags: Vec<::sce_portable_bytes::SceString<8>>,\n}"),
+            def.contains(
+                "    pub tags: ::sce_portable_bytes::BoundedList<::sce_portable_bytes::SceString<8>, \
+                 4>,\n}"
+            ),
             "{def}"
         );
     }
@@ -947,8 +994,7 @@ mod tests {
         assert_eq!(read("optional<int64>"), "v.optional(|v| v.signed64())");
         assert_eq!(
             read("list<list<uint8>[2]>[3]"),
-            "v.list::<_, 3>(|v| v.list::<_, 2>(|v| v.unsigned::<u8>()).map(|list| \
-             list.into_vec())).map(|list| list.into_vec())"
+            "v.list::<_, 3>(|v| v.list::<_, 2>(|v| v.unsigned::<u8>()))"
         );
         assert_eq!(
             read("enum:Level"),
@@ -970,8 +1016,7 @@ mod tests {
         assert!(
             item.ends_with(
                 "tags: r.field(\"tags\").and_then(|v| v.list::<_, 4>(|v| v.text::<8>().map(|text| \
-                 ::sce_portable_bytes::SceString::<8>::held(text.as_str()))).map(|list| \
-                 list.into_vec()))? }))"
+                 ::sce_portable_bytes::SceString::<8>::held(text.as_str())))? }))"
             ),
             "{item}"
         );
@@ -992,8 +1037,13 @@ mod tests {
         };
         // One type in the machine: the value as it is.
         assert_eq!(
-            copy("list<uint8>[2]", "list<uint8>[4]", Held::place("x")),
+            copy("list<uint8>[4]", "list<uint8>[4]", Held::place("x")),
             Ok("x.clone()".to_string())
+        );
+        // A list of a smaller bound is widened by type, each element copied.
+        assert_eq!(
+            copy("list<uint8>[2]", "list<uint8>[4]", Held::place("x")),
+            Ok("::sce_portable_bytes::BoundedList::widened_map(&x, |v| *v)".to_string())
         );
         assert_eq!(
             copy(
@@ -1010,22 +1060,25 @@ mod tests {
         // A text of a smaller bound, at depth 1 and 2.
         assert_eq!(
             copy("string[4]", "string[8]", Held::place("x")),
-            Ok("::sce_portable_bytes::SceString::<8>::held(x.as_str())".to_string())
+            Ok("::sce_portable_bytes::SceString::<8>::widened(&x)".to_string())
         );
         assert_eq!(
             copy("list<string[4]>[2]", "list<string[8]>[3]", Held::place("x")),
-            Ok(
-                "x.iter().map(|v| ::sce_portable_bytes::SceString::<8>::held(v.as_str()))\
-                 .collect::<Vec<_>>()"
-                    .to_string()
-            )
+            Ok("::sce_portable_bytes::BoundedList::widened_map(&x, |v| \
+                 ::sce_portable_bytes::SceString::<8>::widened(v))"
+                .to_string())
         );
         assert_eq!(
             copy("string[4]", "optional<string[8]>", Held::place("x")),
-            Ok("Some(::sce_portable_bytes::SceString::<8>::held(x.as_str()))".to_string())
+            Ok("Some(::sce_portable_bytes::SceString::<8>::widened(&x))".to_string())
         );
-        // A byte string of another bound has no copy yet.
-        assert!(copy("bytes[2]", "bytes[4]", Held::place("x")).is_err());
+        // A byte string of a smaller bound is widened by type too.
+        assert_eq!(
+            copy("bytes[2]", "bytes[4]", Held::place("x")),
+            Ok("::sce_portable_bytes::SceBytes::<4>::widened(&x)".to_string())
+        );
+        // A pair of types the walk has no copy of is refused.
+        assert!(copy("record:Item", "list<record:Item>[3]", Held::place("x")).is_err());
     }
 
     #[test]

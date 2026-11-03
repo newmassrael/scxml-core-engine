@@ -2809,8 +2809,8 @@ impl StaticTarget for KotlinTarget {
 }
 
 /// Rust: a variable is a field of the machine's policy struct, a record a
-/// plain `Copy` struct updated in place, a list a `Vec` bounded by its
-/// declared capacity.
+/// plain `Copy` struct updated in place, a list a `BoundedList` whose bound is
+/// its type's (docs/adr/0086, section 7.4).
 pub struct RustTarget;
 
 impl RustTarget {
@@ -2833,6 +2833,17 @@ impl RustTarget {
     /// prologue reads it as the `uint32` index: `enumerate` counts in `usize`.
     fn loop_position(index: &str) -> String {
         format!("sce_position_of_{index}")
+    }
+
+    /// `value`, a list an imported algorithm or an adapter gave back, copied
+    /// into the `BoundedList` of the variable it is written to, whose type
+    /// names the bound (docs/adr/0086, section 7.4): past it the copy answers
+    /// `CapacityExceeded`, which the statement's `?` passes on as the capacity
+    /// failure every checked operation records. An algorithm's list may hold
+    /// more than the bound it declared on a backend whose lists grow, and the
+    /// machine holds the same list wherever it runs.
+    fn held_list(value: &str) -> String {
+        format!("::sce_portable_bytes::BoundedList::from_slice(({value}).as_slice())?")
     }
 }
 
@@ -2889,8 +2900,9 @@ impl StaticTarget for RustTarget {
     fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("call_{coded}")
     }
-    fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
-        format!("sce_forge_runtime::algorithm::within(({value}).as_slice(), {capacity})?.to_vec()")
+    // The adapter's list held as the variable holds it ([`RustTarget::held_list`]).
+    fn state_list_within(&self, _adapter: &str, value: &str, _capacity: u32) -> String {
+        Self::held_list(value)
     }
     // The line a forge kind importing the schema writes, which is where the
     // algorithm's own generation put the record type the adapter names.
@@ -3504,24 +3516,47 @@ impl StaticTarget for RustTarget {
             format!("{ty}::from_underlying"),
         )
     }
-    fn list_type(&self, elem: &SceType) -> String {
-        format!("Vec<{}>", crate::forge::generator::rust_type(elem))
+    fn list_type(&self, _elem: &SceType) -> String {
+        unreachable!("a Rust list's type names its bound, declared through `bounded_list`")
     }
-    // A host reads the elements, never the machine's own `Vec`, so it cannot
-    // grow the list past the bound the machine keeps.
+    // A host reads the elements, never the machine's own list, so it cannot
+    // change the list the machine holds.
     fn list_view(&self, elem: &SceType) -> Option<String> {
         Some(format!("[{}]", crate::forge::generator::rust_type(elem)))
     }
+    fn record_list_type(&self, _record: &str) -> String {
+        unreachable!("a Rust list's type names its bound, declared through `bounded_record_list`")
+    }
     // Plain data by the record rule, so the owned list of them is cloned
     // whole and lent as a slice, as a list of numbers is.
-    fn record_list_type(&self, record: &str) -> String {
-        format!("Vec<{record}>")
-    }
     fn record_list_view(&self, record: &str) -> Option<String> {
         Some(format!("[{record}]"))
     }
     fn list_empty(&self) -> String {
-        "Vec::new()".to_string()
+        crate::forge::composed_lowering::RUST_EMPTY_LIST.to_string()
+    }
+    // The bound is the type's (docs/adr/0086, section 7.4), spelled as a list a
+    // composed value holds is, so a list copied whole from one into a variable
+    // of the same bound is one type. Nothing to declare: the type is the
+    // portable crate's.
+    fn bounded_list(&self, elem: &SceType, capacity: Option<u32>) -> BoundedList {
+        let capacity = capacity.expect("a list variable declares its bound where it is read");
+        BoundedList {
+            ty: crate::forge::composed_lowering::rust_bounded_list(
+                &crate::forge::generator::rust_type(elem),
+                capacity,
+            ),
+            def: None,
+            empty: self.list_empty(),
+        }
+    }
+    fn bounded_record_list(&self, record: &str, capacity: Option<u32>) -> BoundedList {
+        let capacity = capacity.expect("a list variable declares its bound where it is read");
+        BoundedList {
+            ty: crate::forge::composed_lowering::rust_bounded_list(record, capacity),
+            def: None,
+            empty: self.list_empty(),
+        }
     }
     // Answers through `?`, like every checked helper: the statement runs in a
     // closure that returns the failure before it writes.
@@ -3540,10 +3575,10 @@ impl StaticTarget for RustTarget {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }
-    // An algorithm's list is a fixed-capacity owned list; the machine's own is a
-    // `Vec` of its elements, which a failure past the bound is returned from.
-    fn list_within(&self, value: &str, capacity: u32, _symbol: &str, _elem: &SceType) -> String {
-        format!("sce_forge_runtime::algorithm::within(({value}).as_slice(), {capacity})?.to_vec()")
+    // An algorithm's list is a fixed-capacity owned list; the machine's own is
+    // the `BoundedList` of its variable ([`RustTarget::held_list`]).
+    fn list_within(&self, value: &str, _capacity: u32, _symbol: &str, _elem: &SceType) -> String {
+        Self::held_list(value)
     }
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
         format!("{target}.{field} = {value};")
@@ -3576,7 +3611,9 @@ impl StaticTarget for RustTarget {
     // An expression that is `true` when the append failed: the list is full,
     // or the value could not be computed. The value is computed only where
     // there is room for it, and a checked helper answers through `?`, which
-    // needs the closure a value that can fail runs in.
+    // needs the closure a value that can fail runs in. The list's own `push`
+    // refuses past the bound its type holds (docs/adr/0086, section 7.4), so a
+    // refused push is the overflow too, not a value dropped unseen.
     fn append(
         &self,
         target: &str,
@@ -3588,8 +3625,7 @@ impl StaticTarget for RustTarget {
     ) -> String {
         if !value_can_fail {
             return Self::lines(&[
-                format!("if {target}.len() < {capacity} {{"),
-                format!("    {target}.push({value});"),
+                format!("if {target}.len() < {capacity} && {target}.push({value}).is_ok() {{"),
                 "    false".to_string(),
                 "} else {".to_string(),
                 format!("    {overflow}"),
@@ -3600,8 +3636,7 @@ impl StaticTarget for RustTarget {
         Self::lines(&[
             "match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {".to_string(),
             format!("    if {target}.len() < {capacity} {{"),
-            format!("        {target}.push({value});"),
-            "        Ok(false)".to_string(),
+            format!("        Ok({target}.push({value}).is_err())"),
             "    } else {".to_string(),
             "        Ok(true)".to_string(),
             "    }".to_string(),

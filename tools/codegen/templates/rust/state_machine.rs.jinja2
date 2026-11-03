@@ -412,7 +412,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Observe for Engine<{{ machine_n
 {%- elif field.bound is not none and field.saved_type == "bytes" -%}
 ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?
 {%- elif field.bound is not none -%}
-::sce_rust_runtime::saved_state::bounded(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.bound }})?
+::sce_rust_runtime::saved_state::bounded(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
 {%- else -%}
 ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
 {%- endif %}

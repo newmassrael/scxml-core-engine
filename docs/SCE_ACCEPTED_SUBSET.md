@@ -4752,7 +4752,7 @@ two compared, is `expression/unsupported-construct`; it is read through its
 fields, elements and length, and tested against `null` where it may be absent.
 
 The Rust backend reads a composed payload (docs/adr/0086, sections 4 and 6): its
-payload struct holds each field in the machine's own type (`Vec<T>`,
+payload struct holds each field in the machine's own type (`BoundedList<T, N>`,
 `SceString<N>`, `SceBytes<N>`, `Option<T>`, the machine's record, each record it
 names declared once), the lift reads each field by one runtime call per
 constructor and refuses the delivery whole, naming the path, at the first value
@@ -4945,7 +4945,7 @@ and not to the walk. A body element that fails — a checked operation that
 overflows, an append to a full list — ends the loop and the block that holds
 it (4.9), the same rule the elements outside a loop keep; the elements after
 the `</foreach>` do not run. The loop needs no script engine: Kotlin lowers it
-to a `for` over the typed `List`, Rust to a `for` over a copy of the `Vec`, and
+to a `for` over the typed `List`, Rust to a `for` over a copy of the `BoundedList`, and
 the Interpreter's ecmascript keeps the document's own `<foreach>` over the
 array the list is, with its body lowered as every other expression is.
 `scenarios/static_foreach.json` holds this on every engine that runs the
@@ -5053,7 +5053,7 @@ grows on the backends whose lists are heap-backed (SCE_FORGE.md §4.12). A list
 the machine would take that holds more than the variable's `sce:capacity` is that
 same capacity failure on every backend — the list is not held, and `error.execution`
 says so — so the machine's list is never longer than its declaration, whatever the
-algorithm did. The list is taken as a copy in the machine's own form (Rust a `Vec`,
+algorithm did. The list is taken as a copy in the machine's own form (Rust a `BoundedList`,
 Kotlin an immutable `List`, C a `{len, data[bound]}` the library's view reads), never
 the algorithm's own. `scenarios/static_list_assign.json` holds all of this on every
 engine that runs the model, the Interpreter included, which holds the same bound
@@ -5280,8 +5280,10 @@ transition's guard in `native_guard`, an `<if>`'s condition in
 payload is the typed guard's own shape, `matches!(&self.pending_payload,
 <Machine>Payload::<Event>(ev) if …)`, and content that reads it binds `ev`
 once or does not run, as Kotlin's does. A record is a plain `Copy` struct,
-`<Machine><Alias>Record`, updated in place; a list is a `Vec<T>` whose append
-lowers to `if picked.len() < N { picked.push(…); } else { <error.execution> }`.
+`<Machine><Alias>Record`, updated in place; a list is a `BoundedList<T, N>`
+(docs/adr/0086, section 7.4), whose own `push` refuses past `N`, and its append
+lowers to `if picked.len() < N && picked.push(…).is_ok() { … } else {
+<error.execution> }`.
 A failing integer operation is received in a closure that is a `Result`, so
 the statement returns out of it before it writes.
 

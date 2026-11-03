@@ -28,8 +28,28 @@ PY
 # A list is read past its bound: one element too many is kept.
 mutation_case "a list is read with no bound" <<'PY'
 edit("sce-build/src/forge/composed_lowering.rs",
-     r'''        format!("{value}.list::<_, {max}>(|v| {elem}).map(|list| list.into_vec())")''',
-     r'''        format!("{value}.list::<_, {}>(|v| {elem}).map(|list| list.into_vec())", max + 1)''')
+     r'''        format!("{value}.list::<_, {max}>(|v| {elem})")''',
+     r'''        format!("{value}.list::<_, {}>(|v| {elem})", max + 1)''')
+PY
+
+# A list is held in a type whose bound is not the list's own (docs/adr/0086,
+# section 7.4): the machine would hold one element past it.
+mutation_case "a list is held past its bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering.rs",
+     r'''    format!("{RUST_PORTABLE}::BoundedList<{elem}, {max}>")''',
+     r'''    format!("{RUST_PORTABLE}::BoundedList<{elem}, {}>", max + 1)''')
+PY
+
+# A byte string of a smaller bound is copied into a place of a larger one as
+# though the two were one type, which no widening checks.
+mutation_case "a byte string is copied with no widening" <<'PY'
+edit("sce-build/src/forge/composed_lowering.rs",
+     r'''        (ValueType::Bytes { .. }, ValueType::Bytes { max }) => {
+            Ok(spelling.copy_bytes(max.max, held))
+        }''',
+     r'''        (ValueType::Bytes { .. }, ValueType::Bytes { .. }) => {
+            Ok(spelling.copy_whole(held, false))
+        }''')
 PY
 
 # A text is read with no bound, so a text past it is kept (section 4.4).

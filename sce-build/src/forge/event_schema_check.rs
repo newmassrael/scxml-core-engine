@@ -266,27 +266,6 @@ impl ComposedLowering {
             copies: rust,
         }
     }
-
-    /// What the Rust backend lowers for a machine built without an allocator
-    /// (`--no-std`): no composed value, since the machine holds a list in
-    /// growable storage and reads a payload through a wire that profile does
-    /// not have.
-    pub const RUST_NO_STD: Self = Self {
-        name: "rust no_std",
-        reads: false,
-        copies: false,
-    };
-
-    /// What the backend `language` lowers for the profile a machine is built
-    /// for: [`Self::RUST_NO_STD`] for Rust without an allocator, and
-    /// [`Self::of`] otherwise.
-    pub fn of_profile(language: crate::generator::Language, no_std: bool) -> Self {
-        if no_std && language == crate::generator::Language::Rust {
-            Self::RUST_NO_STD
-        } else {
-            Self::of(language)
-        }
-    }
 }
 
 /// Refuse by name each composed value (docs/adr/0086) a statechart's
@@ -335,8 +314,10 @@ pub fn check_composed_uses(
 }
 
 /// [`check_composed_uses`] where a backend is generated: the same decision,
-/// keyed by the backend and the profile it is built for
-/// ([`ComposedLowering::of_profile`]), as the refusal its generator returns.
+/// keyed by the backend ([`ComposedLowering::of`]), as the refusal its
+/// generator returns. A Rust machine lowers the same on every profile: the
+/// types it holds a composed value in are inline where there is no allocator
+/// (docs/adr/0086, section 7.4).
 /// Asked before the backend reads anything of the model, so the backend that
 /// does not lower a composed value refuses it by name rather than meet it.
 pub fn composed_uses_unlowered(
@@ -2554,25 +2535,6 @@ mod tests {
             assert_eq!(lowering.copies, rust, "{language:?}");
             assert_eq!(lowering.name, language.canonical_name());
         }
-    }
-
-    /// A Rust machine built without an allocator lowers no composed value, and
-    /// says so by the name of its profile.
-    #[test]
-    fn a_machine_without_an_allocator_lowers_no_composed_value() {
-        let rust = crate::generator::Language::Rust;
-        let bare = ComposedLowering::of_profile(rust, true);
-        assert!(!bare.reads && !bare.copies, "{bare:?}");
-        assert_eq!(bare.name, "rust no_std");
-        assert_eq!(
-            ComposedLowering::of_profile(rust, false),
-            ComposedLowering::of(rust)
-        );
-        let kotlin = crate::generator::Language::Kotlin;
-        assert_eq!(
-            ComposedLowering::of_profile(kotlin, true),
-            ComposedLowering::of(kotlin)
-        );
     }
 
     fn field(id: &str, ty: SceType) -> EntryField {

@@ -3287,14 +3287,12 @@ fn render_rust(
     options: &StatechartCodegenOptions,
     bounds: &RustBounds,
 ) -> Result<String, GenerateError> {
-    // A machine built without an allocator holds no composed value (docs/adr/0086):
-    // the one decision of what is lowered refuses it by name for that profile.
+    // What the Rust backend does not lower of a composed value is refused by
+    // name (docs/adr/0086, section 7.3), on every profile alike: the types it
+    // holds one in are inline where there is no allocator (section 7.4).
     crate::forge::event_schema_check::composed_uses_unlowered(
         model,
-        crate::forge::event_schema_check::ComposedLowering::of_profile(
-            Language::Rust,
-            options.no_std,
-        ),
+        crate::forge::event_schema_check::ComposedLowering::of(Language::Rust),
     )?;
     let machine_name = filters::to_pascal_case(model.name.clone());
 

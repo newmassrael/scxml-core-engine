@@ -117,6 +117,16 @@ fn holds(code: &str, lines: &[&str]) {
     }
 }
 
+/// The members of the struct `code` declares under `header`, up to the brace
+/// that closes it.
+fn struct_body<'c>(code: &'c str, header: &str) -> &'c str {
+    let start = code
+        .find(header)
+        .unwrap_or_else(|| panic!("expected `{header}` in:\n{code}"));
+    let body = &code[start + header.len()..];
+    &body[..body.find("\n}").expect("the struct closes")]
+}
+
 /// Pinned by `RustComposed::record_type`, `RustComposed::list_type`,
 /// `RustComposed::optional_type`, `RustComposed::text_type` and
 /// `RustComposed::bytes_type` (`sce-build/src/forge/composed_lowering.rs`), and
@@ -129,21 +139,31 @@ fn the_payload_is_held_in_the_machine_types_each_record_declared_once() {
         &code,
         &[
             "pub struct BatchReaderBatchSentPayload {",
-            "    pub items: Vec<BatchReaderItemRecord>,",
-            "    pub grid: Vec<Vec<u8>>,",
-            "    pub levels: Vec<BatchReaderSignalLevelEnum>,",
-            "    pub maybe: Vec<Option<u16>>,",
-            "    pub spare: Option<Vec<u8>>,",
+            "    pub items: ::sce_portable_bytes::BoundedList<BatchReaderItemRecord, 3>,",
+            "    pub grid: ::sce_portable_bytes::BoundedList<::sce_portable_bytes::BoundedList<u8, 2>, 2>,",
+            "    pub levels: ::sce_portable_bytes::BoundedList<BatchReaderSignalLevelEnum, 2>,",
+            "    pub maybe: ::sce_portable_bytes::BoundedList<Option<u16>, 2>,",
+            "    pub spare: Option<::sce_portable_bytes::BoundedList<u8, 2>>,",
             "    pub note: ::sce_portable_bytes::SceString<4>,",
-            "    pub late: Vec<u8>,",
+            "    pub late: ::sce_portable_bytes::BoundedList<u8, 2>,",
             "pub struct BatchReaderItemRecord {",
             "    pub label: ::sce_portable_bytes::SceString<8>,",
             "    pub level: BatchReaderSignalLevelEnum,",
             "    pub due: Option<i64>,",
             "    pub blob: ::sce_portable_bytes::SceBytes<4>,",
-            "    pub tags: Vec<::sce_portable_bytes::SceString<8>>,",
+            "    pub tags: ::sce_portable_bytes::BoundedList<::sce_portable_bytes::SceString<8>, 4>,",
         ],
     );
+    for header in [
+        "pub struct BatchReaderBatchSentPayload {",
+        "pub struct BatchReaderItemRecord {",
+    ] {
+        let body = struct_body(&code, header);
+        assert!(
+            !body.contains("Vec<"),
+            "every list the machine holds names its bound in its type:\n{body}"
+        );
+    }
     assert_eq!(
         code.matches("pub struct BatchReaderItemRecord {").count(),
         1,
@@ -164,11 +184,11 @@ fn the_lift_reads_each_field_by_its_type_at_every_depth() {
         &[
             r#"PayloadFields::decode_with_defaults(data, "{\"late\":[]}")?"#,
             r#"items: fields.field("items").and_then(|v| v.list::<_, 3>(|v| v.record(None, |r| Ok(BatchReaderItemRecord { id: r.field("id").and_then(|v| v.unsigned::<u32>())?, "#,
-            r#"tags: r.field("tags").and_then(|v| v.list::<_, 4>(|v| v.text::<8>().map(|text| ::sce_portable_bytes::SceString::<8>::held(text.as_str()))).map(|list| list.into_vec()))? }))).map(|list| list.into_vec()))?,"#,
+            r#"tags: r.field("tags").and_then(|v| v.list::<_, 4>(|v| v.text::<8>().map(|text| ::sce_portable_bytes::SceString::<8>::held(text.as_str()))))? }))))?,"#,
             r#"blob: r.field("blob").and_then(|v| v.bytes::<4>())?, "#,
-            r#"grid: fields.field("grid").and_then(|v| v.list::<_, 2>(|v| v.list::<_, 2>(|v| v.unsigned::<u8>()).map(|list| list.into_vec())).map(|list| list.into_vec()))?,"#,
-            r#"maybe: fields.field("maybe").and_then(|v| v.list::<_, 2>(|v| v.optional(|v| v.unsigned::<u16>())).map(|list| list.into_vec()))?,"#,
-            r#"spare: fields.field("spare").and_then(|v| v.optional(|v| v.list::<_, 2>(|v| v.unsigned::<u8>()).map(|list| list.into_vec())))?,"#,
+            r#"grid: fields.field("grid").and_then(|v| v.list::<_, 2>(|v| v.list::<_, 2>(|v| v.unsigned::<u8>())))?,"#,
+            r#"maybe: fields.field("maybe").and_then(|v| v.list::<_, 2>(|v| v.optional(|v| v.unsigned::<u16>())))?,"#,
+            r#"spare: fields.field("spare").and_then(|v| v.optional(|v| v.list::<_, 2>(|v| v.unsigned::<u8>())))?,"#,
             r#"note: fields.field("note").and_then(|v| v.text::<4>().map(|text| ::sce_portable_bytes::SceString::<4>::held(text.as_str())))?,"#,
         ],
     );
@@ -251,25 +271,73 @@ fn rust_takes_the_read_and_another_backend_refuses_it_by_name() {
     );
 }
 
-/// Pinned by `ComposedLowering::of_profile` and its call in `render_rust`
-/// (`sce-build/src/generator.rs`): a machine built without an allocator holds
-/// no composed value, and the one decision refuses the read by that profile's
-/// name rather than generate storage the profile does not have.
+/// Pinned by the call of `composed_uses_unlowered` in `render_rust`
+/// (`sce-build/src/generator.rs`), which asks `ComposedLowering::of` on every
+/// profile, and by `RustComposed::list_type` (docs/adr/0086, section 7.4): a
+/// machine built without an allocator reads a composed payload as one built
+/// with one does, every list held inline in a `BoundedList` whose bound is its
+/// type's, and with no lift of the JSON wire that profile does not have.
 #[test]
-fn a_machine_without_an_allocator_refuses_the_read_by_name() {
+fn a_machine_without_an_allocator_reads_the_payload_in_bounded_types() {
     let (ok, out) = run(
         &["check", "-l", "rust", "--no-std"],
         "batch_reader.scxml",
         READER,
     );
-    assert!(!ok, "no_std holds no composed value:\n{out}");
-    assert!(out.contains("generate/unsupported-feature"), "{out}");
-    assert!(
-        out.contains(
-            "a statechart's read of `_event.data` has no rust no_std lowering of its list"
-        ),
-        "{out}"
+    assert!(ok, "no_std reads a composed payload:\n{out}");
+    let code = generated_no_std(READER);
+    holds(
+        &code,
+        &[
+            "    pub items: ::sce_portable_bytes::BoundedList<BatchReaderItemRecord, 3>,",
+            "    pub tags: ::sce_portable_bytes::BoundedList<::sce_portable_bytes::SceString<8>, 4>,",
+            "sce_forge_runtime::algorithm::at_ref(&ev.items, i)?.tags",
+        ],
     );
+    for header in [
+        "pub struct BatchReaderBatchSentPayload {",
+        "pub struct BatchReaderItemRecord {",
+    ] {
+        let body = struct_body(&code, header);
+        assert!(
+            !body.contains("Vec<"),
+            "no list needs an allocator:\n{body}"
+        );
+    }
+    assert!(
+        !code.contains("PayloadFields::decode"),
+        "no_std has no JSON wire to lift a payload from:\n{code}"
+    );
+}
+
+/// The Rust machine `sce-codegen generate -l rust --no-std` writes of
+/// `document`, written beside the batch schemas as `batch_reader.scxml`.
+fn generated_no_std(document: &str) -> String {
+    let dir = tempdir().expect("tempdir");
+    for sibling in SIBLINGS {
+        std::fs::copy(fixtures().join(sibling), dir.path().join(sibling)).expect("copy a sibling");
+    }
+    let path = dir.path().join("batch_reader.scxml");
+    std::fs::write(&path, document).expect("write the document");
+    let out = Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("generate")
+        .arg(&path)
+        .arg("-l")
+        .arg("rust")
+        .arg("--no-std")
+        .arg("-o")
+        .arg(dir.path())
+        .output()
+        .expect("invoke sce-codegen");
+    assert!(
+        out.status.success(),
+        "sce-codegen generate --no-std failed:\n{}{}",
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&out.stdout)
+    );
+    std::fs::read_to_string(dir.path().join("batch_reader_sm.rs")).expect("the machine's Rust")
 }
 
 /// Pinned by `whole_list_copy` (`sce-build/src/forge/static_lowering.rs`) and
@@ -299,7 +367,16 @@ fn a_list_is_taken_whole_into_a_variable_whose_type_it_fits() {
         .find(|(name, _)| name == "static_composed_payload_sm.rs")
         .map(|(_, code)| code)
         .expect("the machine's Rust is generated");
-    holds(&code, &["self.late = ev.late.clone();"]);
+    // The variable holds a list of a larger bound than the payload's, so the
+    // copy widens it by type, which rustc checks again (docs/adr/0086,
+    // section 7.4).
+    holds(
+        &code,
+        &[
+            "late: ::sce_portable_bytes::BoundedList<u8, 4>,",
+            "self.late = ::sce_portable_bytes::BoundedList::widened_map(&ev.late, |v| *v);",
+        ],
+    );
     // Another backend refuses the fixture by its own name.
     let text =
         std::fs::read_to_string(fixtures().join("static_composed_payload.scxml")).expect("fixture");
