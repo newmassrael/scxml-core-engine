@@ -3551,13 +3551,19 @@ fn parse_machine_source(
         });
     }
 
+    // Through the one place every document is opened (`crate::confine`): a
+    // machine of the deployment can be a document the run itself writes (the
+    // in-line child a deploy places on a partition of its own), which a run
+    // that holds its output in memory reads from there, as a run that writes
+    // reads the disk.
     let source_path = deploy_dir.join(source);
-    let content =
-        std::fs::read_to_string(&source_path).map_err(|e| TopologyError::ReceiverSourceRead {
+    let content = crate::confine::read_to_string(&source_path).map_err(|e| {
+        TopologyError::ReceiverSourceRead {
             machine: machine.to_string(),
             path: source_path.display().to_string(),
             source: e,
-        })?;
+        }
+    })?;
 
     let mut parser = crate::parser::SCXMLParser::new();
     parser
@@ -4312,6 +4318,33 @@ topology:
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].0, "motor");
         assert!(!loaded[0].1.states.is_empty());
+    }
+
+    #[test]
+    fn a_receiver_the_run_holds_is_read_from_where_it_is_held() {
+        // The run wrote the receiver's document into memory (a `--plan` run)
+        // and not to the deploy's folder, where nothing is.
+        let dir = TempDir::new("held");
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake: { source: brake.scxml, bindings: { "#motor": { transport: local } } }
+      motor: { source: motor.scxml }
+"##,
+        )
+        .unwrap();
+        let held = [(dir.join("motor.scxml"), MOTOR_SCXML.to_string())];
+
+        let resolved = resolved_motor_target();
+        let loaded = crate::confine::with_documents(held, || {
+            load_receiver_models(&resolved, &deploy, &dir, "brake")
+        })
+        .expect("the held receiver is read");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].0, "motor");
+        assert!(loaded[0].1.states.contains_key("stopped"));
     }
 
     // ── ReceiverNotDeclared ──────────────────────────────────

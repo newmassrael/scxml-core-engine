@@ -9957,8 +9957,10 @@ fn validate_scxml_invoke_target_exclusivity(
             let Some(peer_source) = peer_cfg.source_path() else {
                 continue;
             };
+            // Read as `collect_scxml_remote_peers` reads a sibling, through
+            // `confine`: one the run itself wrote is read where it holds it.
             let peer_scxml_path = deploy_dir.join(peer_source);
-            let content = match std::fs::read_to_string(&peer_scxml_path) {
+            let content = match confine::read_to_string(&peer_scxml_path) {
                 Ok(c) => c,
                 Err(_) => continue,
             };
@@ -10114,8 +10116,13 @@ fn collect_scxml_remote_peers(
             let Some(peer_source) = peer_cfg.source_path() else {
                 continue;
             };
+            // Through the one place every document is opened (`confine`): a
+            // sibling can be a document the run itself writes (an in-line
+            // child a deploy places on a partition of its own), which a run
+            // that holds its output in memory reads from there, as a run
+            // that writes reads the disk.
             let peer_scxml_path = deploy_dir.join(peer_source);
-            let content = match std::fs::read_to_string(&peer_scxml_path) {
+            let content = match confine::read_to_string(&peer_scxml_path) {
                 Ok(c) => c,
                 Err(_) => continue, // unreadable — fail-silent (see header)
             };
@@ -13220,6 +13227,52 @@ partitions:
         );
 
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// A sibling of the deployment that the run holds in memory (a `--plan`
+    /// run writes there what a writing run writes to disk) is scanned where
+    /// it is held: its `<invoke src="#worker">` makes it an inbound peer of
+    /// the worker, with no file of it on any disk.
+    #[test]
+    fn a_sibling_the_run_holds_is_scanned_for_inbound_peers() {
+        let deploy = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      caller:
+        source: caller.scxml
+      worker:
+        source: worker.scxml
+"##;
+        let caller_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="caller">
+  <state id="s1">
+    <invoke type="scxml" id="w" src="#worker"/>
+  </state>
+</scxml>"##;
+        let worker_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="done" name="worker">
+  <final id="done"/>
+</scxml>"##;
+        let folder = Path::new("/held_by_the_run/deployment");
+        let deploy_path = folder.join("deploy.yaml");
+        assert!(!folder.exists(), "the test's folder is on no disk");
+
+        let cfg = mesh::deploy::parse_deploy_str(deploy).expect("deploy must parse");
+        let mut worker = parser::SCXMLParser::new()
+            .parse_string(worker_scxml, "worker")
+            .expect("parse worker");
+        let held = [(folder.join("caller.scxml"), caller_scxml.to_string())];
+        crate::confine::with_documents(held, || {
+            collect_scxml_remote_peers(&mut worker, &cfg, "worker", &deploy_path)
+        });
+
+        assert_eq!(
+            worker.scxml_remote_inbound_peers,
+            vec![model::ScxmlRemotePeerBinding::new("caller")],
+            "the held sibling that invokes the worker is not its inbound peer",
+        );
+        assert!(worker.is_remote_invoke_target);
     }
 
     /// A machine another machine invokes remotely gets a

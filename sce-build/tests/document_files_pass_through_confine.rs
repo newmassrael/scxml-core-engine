@@ -128,15 +128,6 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         Why::Installation,
         &[("walk", 2), ("hash_file", 1)],
     ),
-    // The other machines of a deployment, from `deploy.yaml`.
-    (
-        "src/lib.rs",
-        Why::Operator,
-        &[
-            ("validate_scxml_invoke_target_exclusivity", 1),
-            ("collect_scxml_remote_peers", 1),
-        ],
-    ),
     (
         "src/lib.rs",
         Why::Installation,
@@ -270,12 +261,6 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         &[("generate_cpp_mesh", 2), ("generate_host_mesh", 2)],
     ),
     ("src/mesh/deploy.rs", Why::Operator, &[("parse_deploy", 1)]),
-    // The `source:` of a machine in the operator's `deploy.yaml`.
-    (
-        "src/mesh/topology.rs",
-        Why::Operator,
-        &[("parse_machine_source", 1)],
-    ),
     ("src/mesh/vsomeip_config.rs", Why::Operator, &[("load", 1)]),
 ];
 
