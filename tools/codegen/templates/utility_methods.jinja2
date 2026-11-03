@@ -171,10 +171,7 @@
         return "{{ _table.source_hash }}";
     }
 
-    [[nodiscard]] static constexpr std::size_t transitionCount() noexcept {
-        return {{ _table.transitions | length }};
-    }
-
+    // Every transition of the machine; `transitions.size()` is how many.
 {% if _table.transitions %}
     static constexpr std::array<TransitionRecord, {{ _table.transitions | length }}> transitions = {{ '{{' }}
 {% for t in _table.transitions %}

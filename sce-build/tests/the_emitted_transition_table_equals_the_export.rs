@@ -795,7 +795,6 @@ fn the_cpp_table_compiles_and_holds_the_export() {
     let names = names_of("cpp");
     let mut stub = format!(
         "#include \"{STEM}_sm.h\"\nusing P = SCE::Generated::{STEM}::{STEM}Policy;\n\
-         static_assert(P::transitionCount() == {n}u);\n\
          static_assert(P::transitions.size() == {n}u);\n",
         n = expected.len()
     );
