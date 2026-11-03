@@ -1157,7 +1157,11 @@ fn lower_parsed(
     // A composed value no lowering holds yet is refused by name, by the one
     // place that decides it, before this lowering reads the model, as every
     // other backend's is (docs/adr/0086, section 7.3).
-    crate::forge::event_schema_check::check_composed_uses(model, label, "ecmascript")?;
+    crate::forge::event_schema_check::check_composed_uses(
+        model,
+        label,
+        crate::forge::event_schema_check::ComposedLowering::ECMASCRIPT,
+    )?;
     if let Some(variable) = StaticScope::of(model)
         .into_iter()
         .flat_map(|scope| scope.variables)

@@ -1734,7 +1734,12 @@ fn reject_static_datamodel_in_unsupported_lang(
         .copied()
         .collect();
     reject_static_datamodel_outside(model, language, &accepted)?;
-    reject_static_invoke_idlocation_outside(model, language, STATIC_INVOKE_IDLOCATION_BACKENDS)
+    reject_static_invoke_idlocation_outside(model, language, STATIC_INVOKE_IDLOCATION_BACKENDS)?;
+    // A composed value (docs/adr/0086) this backend does not lower is refused
+    // by name before anything of the model is read, by the one decision keyed
+    // by the lowering; the gate every route asked first let through only what
+    // some backend lowers.
+    crate::forge::event_schema_check::composed_uses_unlowered(model, language)
 }
 
 /// The backends that write the id a start of a child session is started under

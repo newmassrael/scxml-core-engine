@@ -64,7 +64,6 @@ use crate::forge::model::{
     EntryField, EntrySchema, EntryType, EnumModel, EventSchemaModel, ForgeKind, SceType,
 };
 use crate::forge::types::{InferredType, TypeCtx};
-use crate::forge::value_type::ValueType;
 use crate::model::{Action, Param, SCXMLModel, Transition};
 
 /// The W3C SCXML reserved system-variable path a typed guard reads its
@@ -213,27 +212,76 @@ pub fn check_records_carry_payload(
     Ok(())
 }
 
+/// What one lowering of a `sce-static` statechart lowers of a composed value
+/// (docs/adr/0086, section 7.3): the name a refusal of what it does not lower
+/// gives it, and the positions it lowers. The one key [`check_composed_uses`]
+/// decides by, so what a backend lowers is said once, here, for every route
+/// that asks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ComposedLowering {
+    /// The lowering, as its refusal names it: a backend's canonical name,
+    /// `ecmascript` for the Interpreter's, `backend` for the gate every backend
+    /// passes.
+    pub name: &'static str,
+    /// Whether it lowers a statechart's reads of the payload of an event whose
+    /// schema holds a composition, at any depth (section 6.1): `len`, an index,
+    /// a field of a record element, a `<foreach>` over a list the payload or an
+    /// item of an enclosing loop holds, and the lift that reads the payload
+    /// (section 4).
+    pub reads: bool,
+}
+
+impl ComposedLowering {
+    /// The Interpreter's ecmascript lowering, which lowers no composed value yet.
+    pub const ECMASCRIPT: Self = Self {
+        name: "ecmascript",
+        reads: false,
+    };
+
+    /// What some generated backend lowers: the gate every route asks before a
+    /// backend is chosen ([`crate::analyzer::can_generate_static`]) refuses only
+    /// what none lowers, and each backend asks its own ([`Self::of`]) where it is
+    /// generated. Each position is the union of [`Self::of`] over every backend.
+    pub const ANY_BACKEND: Self = Self {
+        name: "backend",
+        reads: false,
+    };
+
+    /// What the backend `language` lowers: no backend lowers a composed value
+    /// yet.
+    pub fn of(language: crate::generator::Language) -> Self {
+        Self {
+            name: language.canonical_name(),
+            reads: false,
+        }
+    }
+}
+
 /// Refuse by name each composed value (docs/adr/0086) a statechart's
-/// expressions are typed over and no backend lowers yet (section 7.3): a
-/// variable whose type is a composition no slot's lowering holds
+/// expressions are typed over and `lowering` does not lower yet (section 7.3):
+/// a variable whose type is a composition no slot's lowering holds
 /// ([`crate::forge::value_type::WrittenType::slot_view`]), a variable whose
 /// type names, at any depth, a record of a schema whose field is a list, a
 /// record or an optional over either, a read of `_event.data` on a transition
-/// taken on such a schema's event, a `<send>` or `<raise>` of that event, and
-/// a list taken whole into a list variable from a place.
+/// taken on such a schema's event (unless `lowering` reads one,
+/// [`ComposedLowering::reads`]), a `<send>` or `<raise>` of that event, and a
+/// list taken whole into a list variable from a place.
 ///
-/// Each refusal names the construct and `lowering`, the lowering that asks and
-/// has none of it, as every backend's refusal of what it does not lower yet
-/// names the backend: `ecmascript` where the Interpreter's lowering asks, and
-/// `backend` where the gate every generated backend passes asks.
+/// Each refusal names the construct and the lowering that asks and has none of
+/// it, as every backend's refusal of what it does not lower yet names the
+/// backend: `ecmascript` where the Interpreter's lowering asks, `backend` where
+/// the gate every generated backend passes asks, and a backend's own name where
+/// that backend is generated ([`composed_uses_unlowered`]).
 ///
-/// The one place that decides what is lowered: it runs in the gate every route
-/// asks before it generates or judges a machine
-/// ([`crate::analyzer::can_generate_static`]), after the document's
+/// The one place that decides what is lowered, keyed by the lowering: it runs
+/// in the gate every route asks before it generates or judges a machine
+/// ([`crate::analyzer::can_generate_static`], with
+/// [`ComposedLowering::ANY_BACKEND`]), where each backend is generated, and
+/// where the Interpreter's lowering reads the model, after the document's
 /// expressions were judged at any depth where it was parsed
 /// ([`crate::forge::static_datamodel::check`]), so no lowering meets a
-/// composed value, and each backend's step that lowers one narrows this. Every
-/// lowering takes the entry views ([`SCXMLModel::entry_event_schemas`],
+/// composed value it does not lower. A lowering that does not read a composed
+/// payload takes the entry views ([`SCXMLModel::entry_event_schemas`],
 /// [`SCXMLModel::entry_records`]), which leave such a schema out, and none of
 /// them meets the schema's event as an event that carries no schema. A
 /// host-run invocation's request and result are refused where the invoke is
@@ -241,23 +289,52 @@ pub fn check_records_carry_payload(
 pub fn check_composed_uses(
     scxml: &SCXMLModel,
     diag_label: &str,
-    lowering: &str,
+    lowering: ComposedLowering,
 ) -> Result<(), Located<ForgeError>> {
-    // Each refusal names the construct and the lowering that has none of it,
-    // as every backend's refusal of what it does not lower yet does.
-    let not_lowered = |detail: String, at: Option<(u32, Option<u32>)>| -> Located<ForgeError> {
-        Located::new(
+    match first_unlowered_composed_use(scxml, lowering) {
+        None => Ok(()),
+        Some((detail, at)) => Err(Located::new(
             crate::forge::error::GenerateError::unsupported(detail).into(),
             diag_label,
-            at.map(|(row, _)| row),
-            at.and_then(|(_, col)| col),
-        )
-    };
+            at.as_ref().and_then(|at| at.line),
+            at.and_then(|at| at.col),
+        )),
+    }
+}
+
+/// [`check_composed_uses`] where a backend is generated: the same decision,
+/// keyed by the backend, as the refusal its generator returns. Asked before
+/// the backend reads anything of the model, so the backend that does not
+/// lower a composed value refuses it by name rather than meet it.
+pub fn composed_uses_unlowered(
+    scxml: &SCXMLModel,
+    language: crate::generator::Language,
+) -> Result<(), crate::forge::error::GenerateError> {
+    match first_unlowered_composed_use(scxml, ComposedLowering::of(language)) {
+        None => Ok(()),
+        Some((detail, at)) => Err(crate::forge::error::GenerateError::unsupported_at(
+            detail, at,
+        )),
+    }
+}
+
+/// The first use of a composed value in `scxml` that `lowering` does not
+/// lower, as the sentence that refuses it and where it is written.
+fn first_unlowered_composed_use(
+    scxml: &SCXMLModel,
+    lowering: ComposedLowering,
+) -> Option<(String, Option<SourceLocation>)> {
+    let ComposedLowering {
+        name: lowering,
+        reads: lowers_reads,
+    } = lowering;
+    // Each refusal names the construct and the lowering that has none of it,
+    // as every backend's refusal of what it does not lower yet does.
+    let not_lowered = |detail: String, at: Option<SourceLocation>| Some((detail, at));
     let refused = |schema: &EventSchemaModel,
                    composed: crate::forge::model::ComposedField,
                    position: &str,
-                   at: Option<(u32, Option<u32>)>|
-     -> Located<ForgeError> {
+                   at: Option<SourceLocation>| {
         not_lowered(
             format!(
                 "{}: the field `{}` holds `{}`, a type of the language, and {position} has no \
@@ -270,6 +347,12 @@ pub fn check_composed_uses(
             at,
         )
     };
+    // Where a variable's type is written, in the document's own file.
+    let file = scxml
+        .source_location
+        .as_ref()
+        .map(|at| at.file.clone())
+        .unwrap_or_default();
     let variables = scxml.variables.iter().chain(
         scxml
             .states
@@ -284,9 +367,13 @@ pub fn check_composed_uses(
         let at = var
             .value_type_spelling
             .as_ref()
-            .map(|spelling| (spelling.row(), Some(spelling.col())));
+            .map(|spelling| SourceLocation {
+                file: file.clone(),
+                line: Some(spelling.row()),
+                col: Some(spelling.col()),
+            });
         if let Err(composition) = ty.slot_view() {
-            return Err(not_lowered(
+            return not_lowered(
                 format!(
                     "<data id=\"{}\">: `{}` in a statechart's variable is a type of the \
                      language, and has no {lowering} lowering of its {} yet (docs/adr/0086, \
@@ -294,14 +381,14 @@ pub fn check_composed_uses(
                     var.id, composition.place, composition.constructor
                 ),
                 at,
-            ));
+            );
         }
         for alias in ty.record_aliases() {
             let Some(schema) = scxml.imported_records.get(alias) else {
                 continue;
             };
             if let Err(composed) = schema.entry_schema() {
-                return Err(refused(schema, composed, "a statechart's variable", at));
+                return refused(schema, composed, "a statechart's variable", at);
             }
         }
         if ty.list_elem().is_some() {
@@ -315,13 +402,16 @@ pub fn check_composed_uses(
             .err()
             .map(|composed| (schema, composed))
     };
+    // A place that names no row is no place to point at.
     let at_location = |location: &Option<SourceLocation>| {
-        location
-            .as_ref()
-            .and_then(|l| l.line.map(|line| (line, l.col)))
+        location.clone().filter(|location| location.line.is_some())
     };
     let mut states: Vec<_> = scxml.states.values().collect();
     states.sort_by_key(|s| s.document_order);
+    // A lowering that reads a composed payload takes every read of one.
+    if lowers_reads {
+        states.clear();
+    }
     for state in states {
         for trans in &state.transitions {
             let Some((schema, composed)) = composed_schema(trans.event.as_str()) else {
@@ -332,12 +422,12 @@ pub fn check_composed_uses(
                 action.walk(&mut |a| reads |= action_reads_event_data(a));
             }
             if reads {
-                return Err(refused(
+                return refused(
                     schema,
                     composed,
                     "a statechart's read of `_event.data`",
                     at_location(&trans.source_location),
-                ));
+                );
             }
         }
     }
@@ -375,15 +465,15 @@ pub fn check_composed_uses(
         });
     }
     if let Some((schema, composed, action)) = sent {
-        return Err(refused(
+        return refused(
             schema,
             composed,
             &format!("a statechart's <{}> of its event", action.action_type),
             at_location(&action.source_location),
-        ));
+        );
     }
     if let Some(action) = copied {
-        return Err(not_lowered(
+        return not_lowered(
             format!(
                 "<assign location=\"{}\" expr=\"{}\">: a list taken whole from `{}` is a value \
                  of the language, and has no {lowering} lowering of a whole copy of a list \
@@ -393,9 +483,9 @@ pub fn check_composed_uses(
                 action.expr.trim()
             ),
             at_location(&action.source_location),
-        ));
+        );
     }
-    Ok(())
+    None
 }
 
 /// Whether `expr` is a place a value is held at, a name and the fields,
@@ -577,17 +667,12 @@ pub fn name_schema_enums(model: &mut SCXMLModel) {
         };
         for field in &mut schema.fields {
             // An optional enum field holds a value of the same document when
-            // present (docs/adr/0055), so it is named alike. An enum inside a
-            // list or a record is held by no field the document reads one
-            // entry at a time ([`check_composed_uses`]), and keeps the name the
-            // schema writes.
-            let reference = match &mut field.sce_type {
-                ValueType::Scalar(SceType::Enum(reference)) => reference,
-                ValueType::Optional { elem } => match &mut **elem {
-                    ValueType::Scalar(SceType::Enum(reference)) => reference,
-                    _ => continue,
-                },
-                _ => continue,
+            // present (docs/adr/0055), and a list of one holds values of it at
+            // any depth (docs/adr/0086), so each is named alike: a field's type
+            // has one leaf. An enum a record of the field holds is that record
+            // schema's, named where the statechart imports the record.
+            let Some(reference) = field.sce_type.enum_leaf_mut() else {
+                continue;
             };
             let Some(held) = held_by_field.get(&field.id) else {
                 continue;
@@ -2391,6 +2476,20 @@ mod tests {
     use super::*;
     use crate::forge::error::ExprError;
     use crate::forge::model::{Direction, EnumModel, EnumRef, EnumVariant, SceType};
+
+    /// The gate every route asks before a backend is chosen lets a position
+    /// through exactly when some backend lowers it: a gate that lowered less
+    /// would refuse what a backend lowers, and one that lowered more would hand
+    /// a backend what none lowers.
+    #[test]
+    fn the_gate_lowers_what_some_backend_lowers() {
+        let some_backend_reads = crate::generator::Language::ALL
+            .iter()
+            .any(|language| ComposedLowering::of(*language).reads);
+        assert_eq!(ComposedLowering::ANY_BACKEND.reads, some_backend_reads);
+        assert_eq!(ComposedLowering::ANY_BACKEND.name, "backend");
+        assert!(!ComposedLowering::ECMASCRIPT.reads);
+    }
 
     fn field(id: &str, ty: SceType) -> EntryField {
         EntryField {

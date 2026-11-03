@@ -675,6 +675,27 @@ impl ValueType {
         found
     }
 
+    /// The enum a value of the type holds at its one leaf, seen through every
+    /// `optional<…>` and `list<…>` around it; `None` for a type whose leaf is
+    /// no enum, or that names a record (whose enums are its own schema's). A
+    /// type has one leaf: a record is named, never written out.
+    pub fn enum_leaf(&self) -> Option<&crate::forge::model::EnumRef> {
+        match self {
+            Self::Scalar(SceType::Enum(reference)) => Some(reference),
+            Self::Optional { elem } | Self::List { elem, .. } => elem.enum_leaf(),
+            Self::Scalar(_) | Self::Text { .. } | Self::Bytes { .. } | Self::Record { .. } => None,
+        }
+    }
+
+    /// [`Self::enum_leaf`], to be renamed in place.
+    pub fn enum_leaf_mut(&mut self) -> Option<&mut crate::forge::model::EnumRef> {
+        match self {
+            Self::Scalar(SceType::Enum(reference)) => Some(reference),
+            Self::Optional { elem } | Self::List { elem, .. } => elem.enum_leaf_mut(),
+            Self::Scalar(_) | Self::Text { .. } | Self::Bytes { .. } | Self::Record { .. } => None,
+        }
+    }
+
     /// The bound of the outermost text, byte string or list of the type, seen
     /// through every `optional<…>`, and that part of the type; `None` for a
     /// type with no length (a number, `bool`, an enum, a record, or an
