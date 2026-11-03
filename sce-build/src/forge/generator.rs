@@ -25156,6 +25156,9 @@ fn render_broadcast_log_swift(
         producers => inputs.producers,
         declared_progress => inputs.declared_progress,
         runtime_dep => "SceForgeRuntime",
+        // What the element's codec asks its caller for, which an entry stores beside the bytes,
+        // in the 64-bit words of the runtime's slots.
+        context => broadcast_log_context_value(&inputs.element, 64),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(

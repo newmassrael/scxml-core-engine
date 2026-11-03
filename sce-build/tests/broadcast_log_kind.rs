@@ -1525,6 +1525,18 @@ fn the_languages_that_store_the_context_are_the_languages_that_have_a_log_templa
             "{language:?} has a broadcast-log template that does not store the context"
         );
     }
+    // A language that writes the log in part is in the other list, and stores the context of
+    // the elements it writes: it is neither a whole template nor without one.
+    for language in sce_build::forge::codegen_matrix::BROADCAST_LOG_IN_PART_CONTEXT_BACKENDS {
+        assert!(
+            sce_build::forge::codegen_matrix::ships_in_part(ForgeKind::BroadcastLog, *language),
+            "{language:?} is listed as storing a log's context in part but does not write the log in part"
+        );
+        assert!(
+            !BROADCAST_LOG_BACKENDS.contains(language),
+            "{language:?} is listed in both the whole and the in-part context lists"
+        );
+    }
 }
 
 #[test]
@@ -6356,10 +6368,9 @@ fn swift_refuses_an_element_its_codec_does_not_lower_by_naming_the_codec_and_the
     let cbor = cbor_codec_with(
         r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
     );
-    let cases: [(&str, String, &str); 2] = [
-        ("a flag input", flag_input_codec(), "a flag input"),
-        ("a CBOR map", cbor, "cbor"),
-    ];
+    // A flag input is not among them any more: the log stores it with the entry
+    // (`swift_stores_the_flag_inputs_an_element_asks_its_caller_for`).
+    let cases: [(&str, String, &str); 1] = [("a CBOR map", cbor, "cbor")];
     for (what, codec, construct) in cases {
         let located = compile_documents(
             Language::Swift,
@@ -6431,12 +6442,15 @@ fn context_document(name: &str) -> String {
 }
 
 #[test]
-fn swift_refuses_a_variant_element_by_naming_the_variant() {
+fn swift_stores_the_tag_of_a_variant_element_beside_its_bytes() {
+    // A variant whose wire form carries no tag is told its arm by its caller, so the log
+    // stores the tag in the entry's context word and reads it off the element on `publish`
+    // (`element.tag`): an entry is the length word, one context word, then the bytes.
     let log = context_document("broadcast_log_conformance_chosen");
     let choice = context_document("broadcast_log_conformance_choice");
     let small = context_document("broadcast_log_conformance_choice_small");
     let large = context_document("broadcast_log_conformance_choice_large");
-    let located = compile_documents(
+    let outputs = compile_documents(
         Language::Swift,
         &[
             ("broadcast_log_conformance_chosen.scxml", &log),
@@ -6445,16 +6459,58 @@ fn swift_refuses_a_variant_element_by_naming_the_variant() {
             ("broadcast_log_conformance_choice_large.scxml", &large),
         ],
     )
-    .err()
-    .unwrap_or_else(|| panic!("swift writes no variant, so it refuses the log over one"));
-    let detail = unsupported_detail(located);
-    for needle in [
-        "broadcast-log 'broadcast_log_conformance_chosen'",
-        "the element 'broadcast_log_conformance_choice' cannot be stored by the Swift template",
-        "its decode takes the variant's tag from the caller, and the swift log template does not yet store it with the entry",
-    ] {
-        assert!(detail.contains(needle), "`{needle}` in {detail}");
-    }
+    .expect("swift stores a log over a variant whose tag its caller supplies");
+    let code = generated_file(outputs, "BroadcastLogConformanceChosen.swift");
+    assert_holds(
+        &code,
+        &[
+            "public static let contextWords: Int = 1",
+            "public static let words: Int = 1 + contextWords + (maxEncodedBytes + 7) / 8",
+            "entry[1 + 0] = UInt64(element.tag)",
+            "let tag = UInt8(truncatingIfNeeded: entry[1 + 0])",
+            "BroadcastLogConformanceChoice.decode(&cursor, tag: tag)",
+            "entry[2 + index / 8] |= UInt64(byte) << UInt64(8 * (index % 8))",
+            "bytes[index] = UInt8(truncatingIfNeeded: entry[2 + index / 8]",
+            "case item(seq: UInt64, element: BroadcastLogConformanceChoice)",
+        ],
+    );
+    assert!(
+        !code.contains("public struct Flags"),
+        "an element with no flag input has no flags to store:\n{code}"
+    );
+}
+
+#[test]
+fn swift_stores_the_flag_inputs_an_element_asks_its_caller_for() {
+    // The codec `event_record` takes the flag input `S` from its caller. The log stores it as
+    // one bit of a context word, takes it on `publish`, encodes under it, and gives it back with
+    // the item so that every reader decodes the entry under what it was published under.
+    let xml = event_ring();
+    let codec = flag_input_codec();
+    let outputs = compile_documents(
+        Language::Swift,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    )
+    .expect("swift stores a log over an element whose codec takes a flag input");
+    let code = generated_file(outputs, "EventRing.swift");
+    assert_holds(
+        &code,
+        &[
+            "public struct Flags: Equatable, Sendable {",
+            "public var S: Bool",
+            "public static let contextWords: Int = 1",
+            "_ element: EventRecord, flags: Flags\n    ) -> Publish {",
+            "try element.encode(into: &sink, S: flagInput(flags.S))",
+            "entry[1 + 0] |= UInt64(1) << UInt64(0)",
+            "S: ((entry[1 + 0] >> UInt64(0)) & 1) == 1",
+            "EventRecord.decode(&cursor, S: flagInput(flags.S))",
+            "case item(seq: UInt64, element: EventRecord, flags: Flags)",
+        ],
+    );
+    assert!(
+        !code.contains("element.tag"),
+        "an element with no caller's tag stores none:\n{code}"
+    );
 }
 
 #[test]
@@ -6515,22 +6571,25 @@ fn a_render_given_a_swift_refusal_in_the_facts_refuses_before_it_writes() {
         ),
         "{detail}"
     );
-    // What a caller must give is refused by name too when the facts say nothing of the
-    // codec: the Swift log template stores no context.
+    // What a caller must give is not a refusal: the Swift log template stores it with the
+    // entry, so facts that say a codec asks for a flag input and say nothing against its unit
+    // are a log that is written, with the flag in a context word.
     let flags = BroadcastLogElementFacts {
         caller_flag_inputs: vec!["S".to_string()],
         ..BroadcastLogElementFacts::default()
     };
-    let located = compile_single_as(
+    let code = compile_single_as(
         Language::Swift,
         "EventRing.swift",
         &xml,
         &resolution_options(None, 4, flags),
     )
-    .err()
-    .unwrap_or_else(|| panic!("the Swift log stores no flag input"));
-    let detail = unsupported_detail(located);
-    assert!(detail.contains("the flag input(s) S"), "{detail}");
+    .unwrap_or_else(|e| panic!("the Swift log stores a flag input: {:?}", e.error));
+    assert!(
+        code.contains("public struct Flags: Equatable, Sendable {")
+            && code.contains("public static let contextWords: Int = 1"),
+        "{code}"
+    );
 }
 
 #[test]

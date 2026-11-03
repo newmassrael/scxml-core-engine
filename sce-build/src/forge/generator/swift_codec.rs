@@ -231,6 +231,13 @@ fn variant_unlowered(
     element: &dyn Fn(&str) -> Option<String>,
 ) -> Option<String> {
     let what = |text: &str| Some(format!("a `<sce:variant>` {text}"));
+    // The tag its caller supplies is the `tag` of the decode, and the value answers it as `tag`: a
+    // field of that name would be the name of both.
+    if v.tag_field.is_none() && m.fields.iter().any(|f| f.id == CALLER_TAG) {
+        return what(&format!(
+            "whose tag its caller supplies, in a codec with a field named `{CALLER_TAG}`"
+        ));
+    }
     if v.arms.iter().any(|arm| arm.feature.is_some()) {
         return what("with an arm built only under a feature");
     }
@@ -262,6 +269,9 @@ fn variant_unlowered(
 
 /// The name of the field a variant's arm is held in.
 const VARIANT_FIELD: &str = "body";
+
+/// The name of the tag a caller gives a decode, and of the property that answers it for a value.
+const CALLER_TAG: &str = "tag";
 
 /// What of the list `f` (a `<sce:repeat>`) of `m` the Swift codec does not lower yet; `None` for one
 /// it does.
@@ -748,7 +758,11 @@ fn variant_context(
             "name": enum_name,
             "cases": arms
                 .iter()
-                .map(|(_, case, ty)| serde_json::json!({ "case": case, "type": ty }))
+                .map(|(arm, case, ty)| serde_json::json!({
+                    "case": case,
+                    "type": ty,
+                    "tag": format!("0x{:X}", arm.value),
+                }))
                 .collect::<Vec<_>>(),
             "default": default.as_ref().map(|ty| serde_json::json!({
                 "type": ty,

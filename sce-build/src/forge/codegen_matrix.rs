@@ -363,10 +363,21 @@ pub const BROADCAST_LOG_CONTEXT_BACKENDS: &[Language] = &[
     Language::Cpp,
 ];
 
+/// The backends that write the broadcast log in part ([`ships_in_part`]) and store the
+/// context of the elements they write, as [`BROADCAST_LOG_CONTEXT_BACKENDS`] does for the
+/// backends that write every log. They are listed apart because the two lists answer
+/// different questions: that one is a subset of the backends whose template has landed whole
+/// ([`BROADCAST_LOG_BACKENDS`]), and this one is a subset of the backends that write only the
+/// elements their codec emitter lowers, which refuse the others by name first
+/// ([`crate::BroadcastLogElementFacts::refusal_for`]). A language joins it in the change that
+/// gives its template the context words and the typed `publish` and `read` that carry them.
+pub const BROADCAST_LOG_IN_PART_CONTEXT_BACKENDS: &[Language] = &[Language::Swift];
+
 /// Whether the broadcast-log template of `lang` stores the context of an element
-/// ([`BROADCAST_LOG_CONTEXT_BACKENDS`]).
+/// ([`BROADCAST_LOG_CONTEXT_BACKENDS`], [`BROADCAST_LOG_IN_PART_CONTEXT_BACKENDS`]).
 pub const fn broadcast_log_stores_context(lang: Language) -> bool {
     lists(BROADCAST_LOG_CONTEXT_BACKENDS, lang)
+        || lists(BROADCAST_LOG_IN_PART_CONTEXT_BACKENDS, lang)
 }
 
 /// Whether `lang` is in `list`, as a `const fn` can ask it. Compared by

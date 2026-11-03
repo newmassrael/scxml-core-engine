@@ -99,6 +99,22 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% endif %}
 {% endfor %}
 {% endfor %}
+{% if caller_tag and variant_enum %}
+
+    /// The tag of the arm this value holds: the one a decode is given to read it back, which a
+    /// holder that stores the bytes (a broadcast log) stores beside them. A frame carries none, so
+    /// the arm that is held is what says it.
+    public var tag: UInt8 {
+        switch body {
+{% for c in variant_enum.cases %}
+        case .{{ c.case }}: return {{ c.tag }}
+{% endfor %}
+{% if variant_enum.default %}
+        case .default(let held, _): return held
+{% endif %}
+        }
+    }
+{% endif %}
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
     /// frame yet holds, as a validator that composes this codec does until it is given one.

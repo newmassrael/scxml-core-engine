@@ -4504,7 +4504,9 @@ impl BroadcastLogElementFacts {
     /// [`generator::Language`] is decided here and does not inherit another's
     /// answer, and the change that gives a language its template states, in its
     /// arm, which it is and why. Swift's is decided by its codec emitter: it refuses
-    /// the element when that emitter does not write the codec ([`Self::swift_unlowered`]).
+    /// the element when that emitter does not write the codec ([`Self::swift_unlowered`]),
+    /// and stores the context of one it writes
+    /// ([`forge::codegen_matrix::BROADCAST_LOG_IN_PART_CONTEXT_BACKENDS`]).
     pub fn refusal_for(&self, language: generator::Language) -> Option<String> {
         use generator::Language;
         // The Swift log is written over the unit the Swift codec emitter writes, so a codec
@@ -8110,17 +8112,12 @@ fn broadcast_log_element_facts(
             }),
         cbor_entry_unbounded: codec.encoding == forge::model::CodecEncoding::Cbor
             && forge::cbor_codec::has_unbounded_text_or_bytes(codec),
-        // A log reads its element with the typed `decode(&cursor)`, which hands a codec that asks its
-        // caller for a flag input none, so the unit it would write would not call the codec's own.
+        // A log hands the codec what it asks its caller for, which it stores beside the bytes: a
+        // flag input and a variant tag are not a reason to refuse the element, so what is left is
+        // a codec the Swift emitter does not write.
         swift_unlowered: forge::static_imports::swift_codec_through_imports(
             codec, imports, base_dir,
         )
-        .or_else(|| {
-            codec
-                .flag_inputs
-                .first()
-                .map(|input| format!("a flag input `{}` its caller supplies", input.name))
-        })
         .map(|construct| forge::generator::swift_codec_refusal(codec, &construct)),
     }
 }
