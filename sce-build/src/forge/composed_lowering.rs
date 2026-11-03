@@ -573,7 +573,13 @@ const RUST_PAYLOAD: &str = "::sce_rust_runtime::event_payload";
 
 /// The crate of the bounded storage a Rust machine holds a list, a text and a
 /// byte string in.
-const RUST_PORTABLE: &str = "::sce_portable_bytes";
+///
+/// Named through the runtime every machine already depends on
+/// (`sce_rust_runtime::portable`, the crate re-exported whole), so a crate that
+/// holds a machine needs no dependency of its own on `sce-portable-bytes`. A
+/// schema unit names the same types as `::sce_portable_bytes`, a crate a forge
+/// unit depends on directly; the two paths are one type.
+pub(crate) const RUST_PORTABLE: &str = "::sce_rust_runtime::portable";
 
 /// The type a Rust machine holds a list of at most `max` values held in `elem`
 /// in, every place alike (docs/adr/0086, section 7.4): a variable, a record's
@@ -596,7 +602,7 @@ pub(crate) fn rust_bytes_type(max: u32) -> String {
 
 /// The empty list a Rust machine starts a list variable at, its element and
 /// bound taken from the place ([`rust_bounded_list`]).
-pub(crate) const RUST_EMPTY_LIST: &str = "::sce_portable_bytes::BoundedList::new()";
+pub(crate) const RUST_EMPTY_LIST: &str = "::sce_rust_runtime::portable::BoundedList::new()";
 
 impl ComposedSpelling for RustComposed<'_> {
     fn scalar_type(&self, ty: &SceType) -> String {
@@ -916,10 +922,16 @@ mod tests {
         let spelled =
             |text: &str| machine_type(&ty(text), None, &held, &enums, &RUST).expect("a type");
         assert_eq!(spelled("uint16"), "u16");
-        assert_eq!(spelled("string[8]"), "::sce_portable_bytes::SceString<8>");
-        assert_eq!(spelled("bytes[4]"), "::sce_portable_bytes::SceBytes<4>");
+        assert_eq!(
+            spelled("string[8]"),
+            "::sce_rust_runtime::portable::SceString<8>"
+        );
+        assert_eq!(
+            spelled("bytes[4]"),
+            "::sce_rust_runtime::portable::SceBytes<4>"
+        );
         assert_eq!(spelled("optional<int64>"), "Option<i64>");
-        let list = "::sce_portable_bytes::BoundedList";
+        let list = "::sce_rust_runtime::portable::BoundedList";
         assert_eq!(
             spelled("list<list<uint8>[2]>[3]"),
             format!("{list}<{list}<u8, 2>, 3>")
@@ -964,11 +976,11 @@ mod tests {
                 ("due".to_string(), "Option<i64>".to_string()),
                 (
                     "blob".to_string(),
-                    "::sce_portable_bytes::SceBytes<4>".to_string()
+                    "::sce_rust_runtime::portable::SceBytes<4>".to_string()
                 ),
                 (
                     "tags".to_string(),
-                    "::sce_portable_bytes::BoundedList<::sce_portable_bytes::SceString<8>, 4>"
+                    "::sce_rust_runtime::portable::BoundedList<::sce_rust_runtime::portable::SceString<8>, 4>"
                         .to_string()
                 ),
             ]
@@ -980,7 +992,7 @@ mod tests {
         );
         assert!(
             def.contains(
-                "    pub tags: ::sce_portable_bytes::BoundedList<::sce_portable_bytes::SceString<8>, \
+                "    pub tags: ::sce_rust_runtime::portable::BoundedList<::sce_rust_runtime::portable::SceString<8>, \
                  4>,\n}"
             ),
             "{def}"
@@ -1051,7 +1063,7 @@ mod tests {
         // A list of a smaller bound is widened by type, each element copied.
         assert_eq!(
             copy("list<uint8>[2]", "list<uint8>[4]", Held::place("x")),
-            Ok("::sce_portable_bytes::BoundedList::widened_map(&x, |v| *v)".to_string())
+            Ok("::sce_rust_runtime::portable::BoundedList::widened_map(&x, |v| *v)".to_string())
         );
         assert_eq!(
             copy(
@@ -1068,22 +1080,24 @@ mod tests {
         // A text of a smaller bound, at depth 1 and 2.
         assert_eq!(
             copy("string[4]", "string[8]", Held::place("x")),
-            Ok("::sce_portable_bytes::SceString::<8>::widened(&x)".to_string())
+            Ok("::sce_rust_runtime::portable::SceString::<8>::widened(&x)".to_string())
         );
         assert_eq!(
             copy("list<string[4]>[2]", "list<string[8]>[3]", Held::place("x")),
-            Ok("::sce_portable_bytes::BoundedList::widened_map(&x, |v| \
-                 ::sce_portable_bytes::SceString::<8>::widened(v))"
-                .to_string())
+            Ok(
+                "::sce_rust_runtime::portable::BoundedList::widened_map(&x, |v| \
+                 ::sce_rust_runtime::portable::SceString::<8>::widened(v))"
+                    .to_string()
+            )
         );
         assert_eq!(
             copy("string[4]", "optional<string[8]>", Held::place("x")),
-            Ok("Some(::sce_portable_bytes::SceString::<8>::widened(&x))".to_string())
+            Ok("Some(::sce_rust_runtime::portable::SceString::<8>::widened(&x))".to_string())
         );
         // A byte string of a smaller bound is widened by type too.
         assert_eq!(
             copy("bytes[2]", "bytes[4]", Held::place("x")),
-            Ok("::sce_portable_bytes::SceBytes::<4>::widened(&x)".to_string())
+            Ok("::sce_rust_runtime::portable::SceBytes::<4>::widened(&x)".to_string())
         );
         // A pair of types the walk has no copy of is refused.
         assert!(copy("record:Item", "list<record:Item>[3]", Held::place("x")).is_err());

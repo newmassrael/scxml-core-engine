@@ -13,7 +13,7 @@
 # byte, and expects the refusal to name the variable. The mutants take one decision away
 # each:
 #
-#   an assignment to a byte string is not held to its bound;
+#   an assignment to a byte string past its bound is not refused;
 #   a byte string is saved as an array of numbers and not as its Latin-1 text;
 #   a saved byte string is read back by the generic list reader, which reads no text;
 #   a saved byte string past the bound is read back (the bound is not enforced);
@@ -38,10 +38,14 @@ mutation_targets backends/rust/tests/src/integration/static_datamodel/static_byt
 mutation_regen scripts/regen_static_datamodel_rust.sh
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs backends/rust/tests/tests/static_datamodel.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes.json
 
-mutation_case "an assignment to a byte string is not held to its bound" <<'PY'
+# The variable's `SceBytes<N>` holds the bound in its type (docs/adr/0086,
+# section 7.4), so a write that skipped the check would not compile: what is left
+# to fail at run time is the refusal, which raises error.execution and leaves the
+# variable as it was. The mutant swallows it, taking the empty value instead.
+mutation_case "an assignment to a byte string past its bound is not refused" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "            } else if let Some(capacity) = rewrites.bytes.get(location) {",
-     "            } else if let Some(capacity) = rewrites.bytes.get(location).filter(|_| false) {")
+     "            \"{}::SceBytes::<{capacity}>::from_slice(&{value})?\",",
+     "            \"{}::SceBytes::<{capacity}>::from_slice(&{value}).unwrap_or_default()\",")
 PY
 
 mutation_case "a byte string is saved as an array of numbers" <<'PY'
@@ -59,7 +63,7 @@ PY
 mutation_case "a saved byte string past the bound is read back" <<'PY'
 edit("backends/rust/runtime/src/saved_state.rs",
      "    crate::SceBytes::<N>::from_slice(&bytes).map_err(|_| {",
-     "    Ok::<crate::SceBytes<N>, StateRefusal>(crate::SceBytes::<N>::held(&bytes)).map_err(|_| {")
+     "    crate::SceBytes::<N>::from_slice(&bytes).or_else(|_| Ok(crate::SceBytes::<N>::new())).map_err(|_: sce_portable_bytes::CapacityExceeded| {")
 PY
 
 mutation_case "a character past U+00FF is cut to a byte" <<'PY'

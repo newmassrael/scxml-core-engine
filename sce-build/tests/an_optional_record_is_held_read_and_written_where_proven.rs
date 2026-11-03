@@ -851,7 +851,7 @@ fn rust_spells_the_optional_record_scenario_machine() {
         // The write of a field in place, a text held to its bound.
         "sce_forge_runtime::optional::proven_mut(&mut self.pick).count = ",
         "sce_forge_runtime::optional::proven_mut(&mut self.pick).title = \
-         ::sce_portable_bytes::SceString::<16>::from_text(&\"bumped\".to_string())?;",
+         ::sce_rust_runtime::portable::SceString::<16>::from_text(&\"bumped\")?;",
         // The call of the algorithm that answers an optional record.
         "self.found = call_FirstAtLeast__v(&self.items, 5);",
         "fn call_FirstAtLeast__v(p0: &[StaticOptionalRecordItemRecord], p1: i32) -> \
@@ -1086,10 +1086,11 @@ fn rust_crosses_an_adapter_with_an_optional_text_and_an_optional_enum_field() {
     for needle in [
         "fn call_FirstTitle__v(p0: &[",
         "-> Option<String> {",
-        "r.title.as_deref().map(|sce_present| \
-         ::sce_portable_bytes::SceString::<16>::held(sce_present))",
+        // The machine's record and the algorithm's hold the text in one type,
+        // so the algorithm takes a copy of it as it is (docs/adr/0086, 7.4).
+        "title: r.title.clone()",
         "status: match r.status { Some(sce_present) => Some(match sce_present {",
-        "Some(::sce_portable_bytes::SceString::<16>::from_text(&sce_present)?)",
+        "Some(::sce_rust_runtime::portable::SceString::<16>::from_text(&sce_present)?)",
     ] {
         assert!(
             written.contains(needle),

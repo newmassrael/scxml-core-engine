@@ -1543,20 +1543,6 @@ pub fn record_field<T: SavedValue>(
     )
 }
 
-/// The string field `name` of a saved record `value`, read back only if it holds
-/// no more than the `N` UTF-8 bytes its type bounds it by ([`bounded_string`]) —
-/// a record never holds more, and a restored one must not be the first to.
-pub fn record_bounded_string<const N: usize>(
-    value: &Value,
-    record: &str,
-    name: &str,
-) -> Result<sce_portable_bytes::SceString<N>, StateRefusal> {
-    bounded_string(
-        record_member(value, record, name)?,
-        &format!("{record}.{name}"),
-    )
-}
-
 /// The byte-string field `name` of a saved record `value`, read back only if it is
 /// Latin-1 text of no more than the `N` bytes its type bounds it by
 /// ([`bounded_bytes`]) — a record never holds more, and a restored one must not be
@@ -3945,7 +3931,7 @@ mod tests {
         fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
             Ok(Self {
                 id: record_field(value, what, "id")?,
-                title: record_bounded_string(value, what, "title")?,
+                title: record_field(value, what, "title")?,
             })
         }
     }

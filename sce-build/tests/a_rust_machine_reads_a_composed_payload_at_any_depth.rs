@@ -139,19 +139,19 @@ fn the_payload_is_held_in_the_machine_types_each_record_declared_once() {
         &code,
         &[
             "pub struct BatchReaderBatchSentPayload {",
-            "    pub items: ::sce_portable_bytes::BoundedList<BatchReaderItemRecord, 3>,",
-            "    pub grid: ::sce_portable_bytes::BoundedList<::sce_portable_bytes::BoundedList<u8, 2>, 2>,",
-            "    pub levels: ::sce_portable_bytes::BoundedList<BatchReaderSignalLevelEnum, 2>,",
-            "    pub maybe: ::sce_portable_bytes::BoundedList<Option<u16>, 2>,",
-            "    pub spare: Option<::sce_portable_bytes::BoundedList<u8, 2>>,",
-            "    pub note: ::sce_portable_bytes::SceString<4>,",
-            "    pub late: ::sce_portable_bytes::BoundedList<u8, 2>,",
+            "    pub items: ::sce_rust_runtime::portable::BoundedList<BatchReaderItemRecord, 3>,",
+            "    pub grid: ::sce_rust_runtime::portable::BoundedList<::sce_rust_runtime::portable::BoundedList<u8, 2>, 2>,",
+            "    pub levels: ::sce_rust_runtime::portable::BoundedList<BatchReaderSignalLevelEnum, 2>,",
+            "    pub maybe: ::sce_rust_runtime::portable::BoundedList<Option<u16>, 2>,",
+            "    pub spare: Option<::sce_rust_runtime::portable::BoundedList<u8, 2>>,",
+            "    pub note: ::sce_rust_runtime::portable::SceString<4>,",
+            "    pub late: ::sce_rust_runtime::portable::BoundedList<u8, 2>,",
             "pub struct BatchReaderItemRecord {",
-            "    pub label: ::sce_portable_bytes::SceString<8>,",
+            "    pub label: ::sce_rust_runtime::portable::SceString<8>,",
             "    pub level: BatchReaderSignalLevelEnum,",
             "    pub due: Option<i64>,",
-            "    pub blob: ::sce_portable_bytes::SceBytes<4>,",
-            "    pub tags: ::sce_portable_bytes::BoundedList<::sce_portable_bytes::SceString<8>, 4>,",
+            "    pub blob: ::sce_rust_runtime::portable::SceBytes<4>,",
+            "    pub tags: ::sce_rust_runtime::portable::BoundedList<::sce_rust_runtime::portable::SceString<8>, 4>,",
         ],
     );
     for header in [
@@ -289,8 +289,8 @@ fn a_machine_without_an_allocator_reads_the_payload_in_bounded_types() {
     holds(
         &code,
         &[
-            "    pub items: ::sce_portable_bytes::BoundedList<BatchReaderItemRecord, 3>,",
-            "    pub tags: ::sce_portable_bytes::BoundedList<::sce_portable_bytes::SceString<8>, 4>,",
+            "    pub items: ::sce_rust_runtime::portable::BoundedList<BatchReaderItemRecord, 3>,",
+            "    pub tags: ::sce_rust_runtime::portable::BoundedList<::sce_rust_runtime::portable::SceString<8>, 4>,",
             "sce_forge_runtime::algorithm::at_ref(&ev.items, i)?.tags",
         ],
     );
@@ -373,8 +373,8 @@ fn a_list_is_taken_whole_into_a_variable_whose_type_it_fits() {
     holds(
         &code,
         &[
-            "late: ::sce_portable_bytes::BoundedList<u8, 4>,",
-            "self.late = ::sce_portable_bytes::BoundedList::widened_map(&ev.late, |v| *v);",
+            "late: ::sce_rust_runtime::portable::BoundedList<u8, 4>,",
+            "self.late = ::sce_rust_runtime::portable::BoundedList::widened_map(&ev.late, |v| *v);",
         ],
     );
     // Another backend refuses the fixture by its own name.

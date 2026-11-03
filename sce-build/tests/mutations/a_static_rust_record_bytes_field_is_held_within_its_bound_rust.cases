@@ -12,7 +12,11 @@
 # to name the field and a value that fits to be written back as it was read. The
 # mutants take one decision away each:
 #
-#   a record's bytes field is not among the byte strings an `<assign>` is held to;
+#   a byte string written past a record field's bound is taken as the empty one, and
+#     neither leaves the record as it was nor raises error.execution (the field is a
+#     `SceBytes<8>`, whose bound is its type's, docs/adr/0086 section 7.4: a write
+#     that skipped the check would not compile, so the refusal is what is left to
+#     take away);
 #   a saved record's bytes are read back unbounded;
 #   a saved record's bytes are written as an array of numbers and not as their text;
 #   a saved record's bytes past the bound are read back (the bound is not enforced).
@@ -28,10 +32,10 @@ mutation_targets backends/rust/tests/src/integration/static_datamodel/static_rec
 mutation_regen scripts/regen_static_datamodel_rust.sh
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs backends/rust/tests/tests/static_datamodel.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_record_bytes.json
 
-mutation_case "a record's bytes field is not held to its bound by an assignment" <<'PY'
+mutation_case "a byte string past a record field's bound is not refused" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "        .chain(record_field_bounds(variables, &records, |ty| {\n            matches!(ty, SceType::Bytes)\n        }))",
-     "        .chain(record_field_bounds(variables, &records, |_| false))")
+     "            \"{}::SceBytes::<{capacity}>::from_slice(&{value})?\",",
+     "            \"{}::SceBytes::<{capacity}>::from_slice(&{value}).unwrap_or_default()\",")
 PY
 
 mutation_case "a saved record's bytes are read back unbounded" <<'PY'

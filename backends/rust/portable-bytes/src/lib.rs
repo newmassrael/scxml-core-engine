@@ -261,10 +261,10 @@ pub struct InlineStr<const N: usize>(heapless::String<N>);
 /// or a byte string, elements of a list) fits a place of `TO`: naming
 /// `Fits::<FROM, TO>::OK` makes a copy that could overflow a build error where
 /// it is written, which is what lets [`SceString::widened`],
-/// [`BoundedList::widened`] and [`sce_text!`] be total functions. A generated
-/// machine copies a value into a place of a larger bound only through one of
-/// them, so a copy its build did not prove to fit does not compile
-/// (docs/adr/0086, section 7.4).
+/// [`BoundedList::widened`], [`sce_text!`] and [`sce_bytes!`] be total
+/// functions. A generated machine copies a value into a place of a larger bound
+/// only through one of them, so a copy its build did not prove to fit does not
+/// compile (docs/adr/0086, section 7.4). Nothing is ever cut to fit.
 #[doc(hidden)]
 pub struct Fits<const FROM: usize, const TO: usize>;
 
@@ -274,19 +274,6 @@ impl<const FROM: usize, const TO: usize> Fits<FROM, TO> {
         FROM <= TO,
         "a value is copied into a place whose bound is smaller than the one it was held in"
     );
-}
-
-/// The longest prefix of `s` that is at most `n` bytes and ends on a character
-/// boundary — what a text past its bound is cut to by [`SceString::held`].
-fn prefix_within(s: &str, n: usize) -> &str {
-    if s.len() <= n {
-        return s;
-    }
-    let mut end = n;
-    while !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    &s[..end]
 }
 
 #[cfg(feature = "alloc")]
@@ -501,15 +488,15 @@ impl<T: Clone, const N: usize> BoundedList<T, N> {
         Self::try_from_iter(items.iter().cloned())
     }
 
-    /// The elements of `items`, which the caller has already held to `N`: a
-    /// byte-string literal the build judged against the place's bound. Total,
-    /// as [`SceString::held`] is: past `N` the elements after the bound are
-    /// left out rather than reported. Use [`Self::from_slice`] for elements
-    /// nothing has judged.
-    pub fn held(items: &[T]) -> Self {
+    /// The elements of the array `items`, whose length `L` is part of its type
+    /// and is judged against `N` at build time ([`Fits`]): a list of `L > N`
+    /// does not compile, and one that fits is built whole, with no `Result`.
+    /// What [`sce_bytes!`] builds a byte-string literal with.
+    pub fn proven<const L: usize>(items: &[T; L]) -> Self {
+        let () = Fits::<L, N>::OK;
         let mut list = Self::new();
-        for item in items.iter().take(N) {
-            // At most `N` elements are taken, so no push is refused.
+        for item in items {
+            // `L <= N` elements, so no push is refused.
             if list.push(item.clone()).is_err() {
                 break;
             }
@@ -704,32 +691,48 @@ impl<const N: usize> SceString<N> {
         self.0.as_str()
     }
 
-    /// The text of `s`, which the caller has already held to `N` bytes.
-    ///
-    /// Total: a text past `N` is cut at the last character boundary that fits
-    /// rather than reported, because the callers are the ones that proved the
-    /// fit — a generated body whose every write was judged against this bound,
-    /// and a literal [`sce_text!`] judged at build time. Use
-    /// [`Self::from_text`] for text nothing has judged.
-    pub fn held(s: &str) -> Self {
-        let mut text = Self::new();
-        // The prefix is at most `N` bytes, so the append cannot refuse it.
-        match text.try_push_str(prefix_within(s, N)) {
-            Ok(()) | Err(CapacityExceeded) => text,
-        }
-    }
-
     /// The text of a text of at most `M` bytes, in one of `N`. The fit is a
-    /// build error where it does not hold ([`Fits`]), so nothing is cut.
+    /// build error where it does not hold ([`Fits`]), so the copy is whole and
+    /// never refused.
     pub fn widened<const M: usize>(from: &SceString<M>) -> Self {
         let () = Fits::<M, N>::OK;
-        Self::held(from.as_str())
+        Self::proven_text(from.as_str())
+    }
+
+    /// The text of the literal `text`, whose length `L` [`sce_text!`] reads at
+    /// build time and judges against `N` ([`Fits`]): a literal past the bound
+    /// does not compile. The one way a literal is built with no `Result`; the
+    /// macro is its caller, which hands it `text` and `L = text.len()`.
+    #[doc(hidden)]
+    pub fn proven<const L: usize>(text: &str) -> Self {
+        let () = Fits::<L, N>::OK;
+        Self::proven_text(text)
+    }
+
+    /// `text`, whose length a caller proved at build time is at most `N`
+    /// bytes, so the append is never refused.
+    fn proven_text(text: &str) -> Self {
+        let mut held = Self::new();
+        match held.try_push_str(text) {
+            Ok(()) | Err(CapacityExceeded) => held,
+        }
     }
 }
 
 impl<const N: usize> Default for SceString<N> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// A text parsed from its own spelling, refused past `N` bytes as
+/// [`SceString::from_text`] refuses it: what a host-run request's text field is
+/// read back as, through the one `parse` every field of the request takes.
+impl<const N: usize> core::str::FromStr for SceString<N> {
+    type Err = CapacityExceeded;
+
+    fn from_str(text: &str) -> Result<Self, CapacityExceeded> {
+        Self::from_text(text)
     }
 }
 
@@ -743,7 +746,19 @@ str_view_parity!(SceString);
 macro_rules! sce_text {
     ($n:expr, $lit:literal) => {{
         const _: () = $crate::Fits::<{ $lit.len() }, { $n }>::OK;
-        $crate::SceString::<{ $n }>::held($lit)
+        $crate::SceString::<{ $n }>::proven::<{ $lit.len() }>($lit)
+    }};
+}
+
+/// A byte string ([`SceBytes`]) written as a byte-string literal, in a buffer
+/// of `$n` bytes: the literal's length is part of its type (`&[u8; L]`) and is
+/// judged against `$n` at build time, so a literal that does not fit is a
+/// compile error where it is written and the value needs no `Result`.
+#[macro_export]
+macro_rules! sce_bytes {
+    ($n:expr, $lit:literal) => {{
+        const _: () = $crate::Fits::<{ $lit.len() }, { $n }>::OK;
+        $crate::SceBytes::<{ $n }>::proven($lit)
     }};
 }
 
@@ -850,14 +865,15 @@ mod tests {
         assert_eq!(SceBytes::<2>::from_slice(&[1, 2, 3]), Err(CapacityExceeded));
     }
 
-    // `held` is total: a text past the bound is cut on a character boundary,
-    // never in the middle of one.
+    // A literal is built whole by the macro of its type, its length judged at
+    // build time, a text's in UTF-8 bytes and a byte string's in bytes; one at
+    // the bound fits exactly.
     #[test]
-    fn held_cuts_at_a_character_boundary() {
-        assert_eq!(SceString::<4>::held("ab").as_str(), "ab");
-        // `é` is two bytes, so three bytes of room keep `aé` and drop the rest.
-        assert_eq!(SceString::<3>::held("aéb").as_str(), "aé");
-        assert_eq!(SceString::<2>::held("aé").as_str(), "a");
+    fn a_literal_is_built_whole_at_its_bound() {
+        assert_eq!(sce_text!(4, "ab"), "ab");
+        assert_eq!(sce_text!(3, "aé"), "aé");
+        assert_eq!(sce_bytes!(2, b"ab"), &[b'a', b'b']);
+        assert_eq!(sce_bytes!(8, b""), &[] as &[u8]);
     }
 
     // A text widens into a buffer at least as large, by type; the literal macro
@@ -925,6 +941,9 @@ mod tests {
         assert_eq!(text.as_str(), "ab");
         assert_eq!(SceString::<3>::CAPACITY, 3);
         assert!(SceString::<1>::default().is_empty());
+        // Parsed as it is copied: refused past the bound, whole within it.
+        assert_eq!("ab".parse::<SceString<2>>().as_deref(), Ok("ab"));
+        assert_eq!("abc".parse::<SceString<2>>(), Err(CapacityExceeded));
     }
 
     // A nested type is the composition, and each level holds its own bound: an
@@ -1027,7 +1046,7 @@ mod tests {
         let small = SceBytes::<2>::from_slice(&[1, 2]).expect("fits");
         let wide = SceBytes::<4>::from_slice(&[1, 2]).expect("fits");
         assert!(small == wide);
-        assert_eq!(SceBytes::<2>::held(&[7, 8, 9]), &[7u8, 8]);
+        assert!(sce_bytes!(4, b"\x01\x02") == small);
         use core::fmt::Write;
         let mut out = heapless::String::<32>::new();
         assert!(write!(out, "{short:?} {small:?}").is_ok());

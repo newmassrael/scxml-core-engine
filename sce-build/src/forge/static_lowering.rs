@@ -1632,6 +1632,33 @@ pub trait StaticTarget {
     /// `capacity` bytes: the bound a `bytes` variable keeps on every backend
     /// (docs/adr/0005, decision 2).
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String;
+    /// Whether a text or a byte string written to a bounded place is copied by
+    /// the place's own checked constructor, which takes it borrowed
+    /// (docs/adr/0086, section 7.4), so the value handed to
+    /// [`Self::bounded_string`] and [`Self::bounded_bytes`] is lowered borrowed
+    /// ([`crate::forge::expr::transpile_into_copied`]) and never made owned
+    /// only to be borrowed again. `false` for a target whose place owns what
+    /// it is handed.
+    fn copies_bounded_text(&self) -> bool {
+        false
+    }
+    /// The value a text or byte-string place of `bound` bytes starts at, for a
+    /// target whose type holds the bound: `written`, the document's literal
+    /// (the judge admits no other initial value of either), built by a
+    /// construction the target's compiler checks against the bound, so a
+    /// literal that does not fit is a build error and one that fits needs no
+    /// `Result` and is never cut. `None` for a target that builds the place
+    /// from the lowered value ([`Self::string_storage`],
+    /// [`Self::record_string_literal`]); `Some(Err)` says why `written` has no
+    /// such construction.
+    fn checked_literal(
+        &self,
+        _elem: &SceType,
+        _bound: u32,
+        _written: &str,
+    ) -> Option<Result<String, String>> {
+        None
+    }
     /// How a string variable bounded by `capacity` UTF-8 bytes is held, starting
     /// at the literal `init` — for a target whose own string type holds no such
     /// bound, as a C buffer does not. `None` for a target whose strings own
@@ -1733,10 +1760,22 @@ pub trait StaticTarget {
     fn assign_fresh_send_id(&self, target: &str, is_string: bool) -> String {
         let id = self.fresh_send_id();
         if is_string {
-            self.assign_string(target, &id)
+            self.assign_generated_id(target, &id)
         } else {
             self.assign(target, &id)
         }
+    }
+    /// The write of `id`, an id the machine generated for a `<send>` or an
+    /// `<invoke>` (an owned string expression, [`Self::fresh_send_id`],
+    /// [`Self::generated_invoke_id`]), into the string variable `target` its
+    /// `idlocation` names. The string assignment by default
+    /// ([`Self::assign_string`]), which the judge's bound for the variable lets
+    /// stand without a check. A target whose type holds the variable's bound
+    /// answers an expression that is `true` when the variable refused the id —
+    /// held to the bound as every text written to it is (docs/adr/0086,
+    /// section 7.4) — and its template raises error.execution for it.
+    fn assign_generated_id(&self, target: &str, id: &str) -> String {
+        self.assign_string(target, id)
     }
     /// Replace field `field` of the record at `target` with `value`.
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String;
@@ -2843,7 +2882,10 @@ impl RustTarget {
     /// more than the bound it declared on a backend whose lists grow, and the
     /// machine holds the same list wherever it runs.
     fn held_list(value: &str) -> String {
-        format!("::sce_portable_bytes::BoundedList::from_slice(({value}).as_slice())?")
+        format!(
+            "{}::BoundedList::from_slice(({value}).as_slice())?",
+            crate::forge::composed_lowering::RUST_PORTABLE
+        )
     }
 }
 
@@ -3002,24 +3044,13 @@ impl StaticTarget for RustTarget {
                     };
                     let read = format!("{from}.{held}");
                     spec.record_field_crossing(self, f, &read, Crossing::ToAlgorithm, |read| {
-                        match (&f.sce_type, f.max_size) {
-                            // The machine holds the text within the schema's bound,
-                            // which is the bound the algorithm's record holds it in:
-                            // the copy is the one a text already held to it takes.
-                            (EntryType::Scalar(SceType::String), Some(bound)) => {
-                                format!("::sce_portable_bytes::SceString::<{bound}>::held(&{read})")
-                            }
-                            // ... and a text that may be absent is copied where it is
-                            // present, and stays absent (docs/adr/0055, step 9).
-                            (
-                                EntryType::Optional {
-                                    elem: SceType::String,
-                                },
-                                Some(bound),
-                            ) => format!(
-                                "{read}.as_deref().map(|sce_present| \
-                                 ::sce_portable_bytes::SceString::<{bound}>::held(sce_present))"
-                            ),
+                        // The machine, its payload and the algorithm's record hold
+                        // the text of one field in one type, the field's
+                        // `SceString<N>` (docs/adr/0086, section 7.4), so the
+                        // algorithm takes a copy of it as it is, absent where it
+                        // is absent.
+                        match f.sce_type.present_type() {
+                            SceType::String => format!("{read}.clone()"),
                             _ => read.to_string(),
                         }
                     })
@@ -3441,10 +3472,10 @@ impl StaticTarget for RustTarget {
     }
     // The start site holds the id it generates in the `String` local
     // `generated_invoke_id` (`defer_scxml_invoke_fn`), which it goes on to
-    // start the child under, so the variable takes a copy, in its own
-    // `SceString<N>` ([`Self::string_storage`]).
+    // start the child under, so the variable takes a copy, held to its bound
+    // ([`StaticTarget::assign_generated_id`]).
     fn generated_invoke_id(&self) -> Option<&'static str> {
-        Some("::sce_portable_bytes::SceString::held(&generated_invoke_id)")
+        Some("generated_invoke_id")
     }
     // A closed set of unit variants, so `Copy` and `Eq` by the policy every
     // repr-tagged enum takes. Its saved form is written beside the machine's
@@ -3568,23 +3599,58 @@ impl StaticTarget for RustTarget {
     // failure (`CapacityExceeded`, converted into the algorithm's capacity
     // failure) before it writes.
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
-        format!("::sce_portable_bytes::SceString::<{capacity}>::from_text(&{value})?")
+        format!(
+            "{}::SceString::<{capacity}>::from_text(&{value})?",
+            crate::forge::composed_lowering::RUST_PORTABLE
+        )
     }
     // ... and a byte string into the place's own `SceBytes<N>`: a variable's, a
     // record's field (in a record that is `Clone` and not `Copy`,
     // [`owns_a_buffer`]), or one a payload carried, under that place's bound.
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
-        format!("::sce_portable_bytes::SceBytes::<{capacity}>::from_slice(&{value})?")
+        format!(
+            "{}::SceBytes::<{capacity}>::from_slice(&{value})?",
+            crate::forge::composed_lowering::RUST_PORTABLE
+        )
+    }
+    // Each constructor copies the value it is lent, so the value is lowered
+    // borrowed ([`crate::forge::expr::transpile_into_copied`]).
+    fn copies_bounded_text(&self) -> bool {
+        true
+    }
+    // A literal whose length rustc judges against the bound where it is
+    // written (`sce_text!`, `sce_bytes!`), so a literal past it does not compile
+    // and one within it is built whole, with no `Result` and no cut.
+    fn checked_literal(
+        &self,
+        elem: &SceType,
+        bound: u32,
+        written: &str,
+    ) -> Option<Result<String, String>> {
+        let bytes = matches!(elem, SceType::Bytes);
+        let portable = crate::forge::composed_lowering::RUST_PORTABLE;
+        let macro_name = if bytes { "sce_bytes" } else { "sce_text" };
+        Some(
+            crate::forge::expr::rust_literal(written, bytes)
+                .map(|literal| format!("{portable}::{macro_name}!({bound}, {literal})"))
+                .ok_or_else(|| {
+                    format!(
+                        "`{}` is no literal, and a text or a byte string starts at one",
+                        written.trim()
+                    )
+                }),
+        )
     }
     // A text variable is held in the one text type, its bound in the type
     // (docs/adr/0086, section 7.4), and lent to a host as the `&str` it
-    // derefs to. The initial value is a literal the judge held to the bound.
-    // Nothing to declare: the type is the portable crate's.
+    // derefs to. It starts at its literal built by [`Self::checked_literal`],
+    // which stands in place of `init`. Nothing to declare: the type is the
+    // portable crate's.
     fn string_storage(&self, capacity: u32, init: &str) -> Option<StringStorage> {
         Some(StringStorage {
             ty: crate::forge::composed_lowering::rust_text_type(capacity),
             def: String::new(),
-            init: self.record_string_literal(capacity, init),
+            init: init.to_string(),
             view: "str".to_string(),
         })
     }
@@ -3593,16 +3659,9 @@ impl StaticTarget for RustTarget {
         Some(StringStorage {
             ty: crate::forge::composed_lowering::rust_bytes_type(capacity),
             def: String::new(),
-            init: self.record_bytes_literal(capacity, init),
+            init: init.to_string(),
             view: "[u8]".to_string(),
         })
-    }
-    // A literal the judge held to the bound, so the copy cannot cut it.
-    fn record_string_literal(&self, bound: u32, literal: &str) -> String {
-        format!("::sce_portable_bytes::SceString::<{bound}>::held(&{literal})")
-    }
-    fn record_bytes_literal(&self, bound: u32, value: &str) -> String {
-        format!("::sce_portable_bytes::SceBytes::<{bound}>::held(&{value})")
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
@@ -3615,26 +3674,36 @@ impl StaticTarget for RustTarget {
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
         format!("{target}.{field} = {value};")
     }
-    // The count is the engine's the action is handed, and the id a `SceString`,
-    // which a `String` takes by `to_string` whatever the runtime's string type
-    // is.
+    // The count is the engine's the action is handed, and the id the engine's
+    // own text, which the variable's `SceString<N>` copies through its checked
+    // constructor ([`StaticTarget::assign_generated_id`]): lent as it is, never
+    // made a `String` only to be borrowed.
     fn fresh_send_id(&self) -> String {
-        "engine.next_auto_send_id().to_string()".to_string()
+        "engine.next_auto_send_id()".to_string()
     }
-    // A string variable holds the id in its own `SceString<N>`
-    // ([`Self::string_storage`]); an id longer than the variable's bound is
-    // held to it as `SceString::held` holds a text, cut at a character
-    // boundary.
+    // An expression that says whether the variable refused the id
+    // ([`StaticTarget::assign_generated_id`]): a variable that is no string
+    // takes it as any value, and refuses nothing.
     fn assign_fresh_send_id(&self, target: &str, is_string: bool) -> String {
         let id = self.fresh_send_id();
         if is_string {
-            self.assign_string(
-                target,
-                &format!("::sce_portable_bytes::SceString::held(&{id})"),
-            )
+            self.assign_generated_id(target, &id)
         } else {
-            self.assign(target, &id)
+            format!("{{ {} false }}", self.assign(target, &id))
         }
+    }
+    // The id copied into the variable's own `SceString<N>`
+    // ([`Self::string_storage`]) through its checked constructor: an id past
+    // the bound is refused whole, never cut, since an id cut short names
+    // nothing a `<cancel>` could reach, and the expression answers `true` so
+    // the template raises error.execution.
+    fn assign_generated_id(&self, target: &str, id: &str) -> String {
+        format!(
+            "match {}::SceString::from_text(&{id}) {{ Ok(sce_id) => {{ {} false }} \
+             Err(_) => true }}",
+            crate::forge::composed_lowering::RUST_PORTABLE,
+            self.assign(target, "sce_id")
+        )
     }
     // Debug formatting, as the script-engine arm of the same template logs a
     // value: a record has no `Display`, and one spelling serves every type. An
@@ -4278,6 +4347,29 @@ fn present_value(
         .ok_or_else(|| optional_not_lowered(what, target.name()))
 }
 
+/// The value a text or byte-string place of `bound` bytes starts at, `written`
+/// being the document's literal and `lowered` the place's value built from its
+/// lowering: the target's checked construction of the literal where it has one
+/// ([`StaticTarget::checked_literal`]), `lowered` otherwise, and the refusal of
+/// `what` by name where the target has none for `written`.
+fn starting_text(
+    target: &dyn StaticTarget,
+    elem: &SceType,
+    bound: u32,
+    written: &str,
+    lowered: String,
+    what: &str,
+) -> Result<String, GenerateError> {
+    match target.checked_literal(elem, bound, written) {
+        None => Ok(lowered),
+        Some(Ok(literal)) => Ok(literal),
+        Some(Err(why)) => Err(GenerateError::unsupported(format!(
+            "{what}: {why} ({} holds its bound in its type)",
+            target.name()
+        ))),
+    }
+}
+
 /// The whole value `written` gives the optional place `place` where the machine
 /// is built — a variable's `<data expr>`, a record field's `<sce:set>`
 /// (docs/adr/0055) — on `target`: the absent value for `null`, and otherwise the
@@ -4299,7 +4391,15 @@ fn optional_initial(
         return absent_value(target, &place.present, what);
     }
     let value = initial(written, InferredType::from_sce_type(&place.elem))?;
-    present_value(target, &place.present, &literal(&value), what)
+    // A text held to a bound starts at its literal, built as the target builds
+    // a literal it judges against the bound.
+    let start = match (&place.elem, place.bound) {
+        (elem @ (SceType::String | SceType::Bytes), Some(bound)) => {
+            starting_text(target, elem, bound, written, literal(&value), what)?
+        }
+        _ => literal(&value),
+    };
+    present_value(target, &place.present, &start, what)
 }
 
 /// Rewrite `model` — a clone the Kotlin backend renders — so every
@@ -4689,10 +4789,28 @@ pub fn lower(
                             &initial,
                             &literal,
                         )?,
-                        None => literal(&initial(
-                            &init.expr,
-                            InferredType::of_field(&field.sce_type),
-                        )?),
+                        None => {
+                            let lowered = literal(&initial(
+                                &init.expr,
+                                InferredType::of_field(&field.sce_type),
+                            )?);
+                            match (field.sce_type.present_type(), field.max_size) {
+                                (elem @ (SceType::String | SceType::Bytes), Some(bound)) => {
+                                    starting_text(
+                                        target,
+                                        elem,
+                                        bound,
+                                        &init.expr,
+                                        lowered,
+                                        &format!(
+                                            "<sce:set name=\"{}\"> of <data id=\"{}\">",
+                                            field.id, var.id
+                                        ),
+                                    )?
+                                }
+                                _ => lowered,
+                            }
+                        }
                     };
                     values.push((target.record_field(&field.id), value));
                 }
@@ -4963,13 +5081,26 @@ pub fn lower(
             if let Some(storage) = &storage {
                 declarations.string_storage(storage);
             }
+            // A text held in a buffer of its bound starts at its literal, built as
+            // the target builds a literal it judges against the bound.
+            let init = match (&storage, var.capacity()) {
+                (Some(storage), Some(capacity)) => starting_text(
+                    target,
+                    ty,
+                    capacity,
+                    &var.expr,
+                    storage.init.clone(),
+                    &format!("<data id=\"{}\">", var.id),
+                )?,
+                _ => init,
+            };
             fields.push(StaticField {
                 id: var.id.clone(),
                 name,
                 ty: storage
                     .as_ref()
                     .map_or_else(|| target.scalar_type(ty), |s| s.ty.clone()),
-                init: storage.as_ref().map_or(init, |s| s.init.clone()),
+                init,
                 published,
                 view: storage
                     .as_ref()
@@ -6802,6 +6933,36 @@ impl Rewrites<'_> {
         let target = self.target.expr_target();
         self.with_state_calls(text, renames, |text, renames| {
             transpile_into_owned(text, target, ctx, renames, slot)
+        })
+    }
+
+    /// The value written to a bounded text or byte-string place, `slot` its
+    /// type or the optional one of it: borrowed for a target whose place copies
+    /// it through its own checked constructor
+    /// ([`StaticTarget::copies_bounded_text`],
+    /// [`crate::forge::expr::transpile_into_copied`]), owned for every other
+    /// target and every other type ([`Self::owned`]).
+    fn bounded_value(
+        &self,
+        text: &str,
+        ctx: &crate::forge::types::TypeCtx<'_>,
+        renames: &HashMap<&str, &str>,
+        slot: InferredType,
+    ) -> Result<Receiving, Refusal> {
+        let text_slot = matches!(
+            slot.unwrap_optional(),
+            InferredType::Str | InferredType::Bytes
+        );
+        if !(text_slot && self.target.copies_bounded_text()) {
+            return self.owned(text, ctx, renames, slot);
+        }
+        let target = self.target.expr_target();
+        self.with_state_calls(text, renames, |text, renames| {
+            if slot.is_optional() {
+                transpile_into_receiving(text, target, ctx, renames, slot)
+            } else {
+                crate::forge::expr::transpile_into_copied(text, target, ctx, renames, slot)
+            }
         })
     }
 
@@ -13661,6 +13822,15 @@ fn lower_action(
             GenerateError::unsupported(format!("`{text}` has no {lang} lowering: {}", r.error))
         })
     };
+    // ... and a text or a byte string written to a bounded place, as the place
+    // takes it ([`Rewrites::bounded_value`]): every other type as above.
+    let lower_bounded = |text: &str, slot: InferredType| {
+        rewrites
+            .bounded_value(text, ctx, renames, slot)
+            .map_err(|r| {
+                GenerateError::unsupported(format!("`{text}` has no {lang} lowering: {}", r.error))
+            })
+    };
     let failed = |construct: String| execution_failure(rewrites, &construct);
     // `write(value)`, received where it stands when `value` can fail — and
     // then an expression that says whether it did, which the dispatcher acts
@@ -13756,7 +13926,7 @@ fn lower_action(
             };
             let mut value = match rewrites.records.get(location) {
                 Some((alias, schema)) if action.expr.trim() == "_event.data" => {
-                    payload_record_value(rewrites.machine, alias, schema, target, &lower)?
+                    payload_record_value(rewrites.machine, alias, schema, target, &lower_bounded)?
                 }
                 // The element of a list of records at an index, whole: a target
                 // that reads one whole copies it as it copies a named record; any
@@ -13787,6 +13957,13 @@ fn lower_action(
                         text: target.record_copy(&value.text, schema),
                         can_fail: value.can_fail,
                     }
+                }
+                // A text or a byte string is held to its place's bound below,
+                // so it is lowered as a bounded place takes it.
+                _ if rewrites.strings.contains_key(location)
+                    || rewrites.bytes.contains_key(location) =>
+                {
+                    lower_bounded(&action.expr, slot)?
                 }
                 _ => lower(&action.expr, slot)?,
             };
@@ -14037,7 +14214,7 @@ fn lower_action(
                              event-schema this build read"
                         ))
                     })?;
-                    payload_record_value(rewrites.machine, alias, schema, target, &lower)?
+                    payload_record_value(rewrites.machine, alias, schema, target, &lower_bounded)?
                 }
                 crate::forge::model::AlgorithmValueType::Record { alias } => {
                     reads_payload = false;
@@ -14666,10 +14843,14 @@ fn optional_whole_value(
 ) -> Result<Receiving, GenerateError> {
     let target = rewrites.target;
     let lang = target.name();
+    // A present text is held to the place's bound, so it is lowered as a
+    // bounded place takes it ([`Rewrites::bounded_value`]).
     let lower = |text: &str, slot: InferredType| {
-        rewrites.owned(text, ctx, renames, slot).map_err(|r| {
-            GenerateError::unsupported(format!("`{text}` has no {lang} lowering: {}", r.error))
-        })
+        rewrites
+            .bounded_value(text, ctx, renames, slot)
+            .map_err(|r| {
+                GenerateError::unsupported(format!("`{text}` has no {lang} lowering: {}", r.error))
+            })
     };
     let optional = InferredType::Optional(crate::forge::types::OptionalElem::of(&place.elem));
     // A present text, held to the bound of the place it is written to, as the
@@ -14818,9 +14999,14 @@ fn lower_optional_record_assign(
     let location = action.location.trim().to_string();
     let construct = format!("<assign location='{location}'>");
     let lower = |text: &str, slot: InferredType| {
-        rewrites.owned(text, ctx, renames, slot).map_err(|r| {
-            GenerateError::unsupported(format!("`{text}` has no {lang} lowering: {}", r.error))
-        })
+        // A text field of a payload taken whole is held to the record's bound,
+        // so it is lowered as a bounded place takes it; every other type is
+        // owned ([`Rewrites::bounded_value`]).
+        rewrites
+            .bounded_value(text, ctx, renames, slot)
+            .map_err(|r| {
+                GenerateError::unsupported(format!("`{text}` has no {lang} lowering: {}", r.error))
+            })
     };
     // A record lifted into the present value of the optional record.
     let lifted = |record: Receiving| -> Result<Receiving, GenerateError> {
@@ -15197,7 +15383,7 @@ fn lower_invoke_idlocation(
         .get(location.as_str())
         .copied()
         .unwrap_or(location.as_str());
-    common.native_idlocation = target.assign_string(name, id);
+    common.native_idlocation = target.assign_generated_id(name, id);
     Ok(())
 }
 
@@ -15354,8 +15540,10 @@ fn lower_child_argument(
             "the child declares no variable it can be handed to".into(),
         ));
     };
+    // A text is held to the child's bound below, so it is lowered as a bounded
+    // place takes it ([`Rewrites::bounded_value`]).
     let value = rewrites
-        .owned(&written, ctx, renames, slot)
+        .bounded_value(&written, ctx, renames, slot)
         .map_err(|r| refused(r.error.to_string()))?;
     // A string handed to the child's variable is held to the bound the child
     // declared for it, whatever the value came from, as an `<assign>` to it
@@ -16309,7 +16497,7 @@ mod tests {
         assert_eq!(field("other").init, "Some(7)");
         assert_eq!(
             field("title").ty,
-            "Option<::sce_portable_bytes::SceString<4>>"
+            "Option<::sce_rust_runtime::portable::SceString<4>>"
         );
         assert_eq!(field("title").saved_kind, "optional");
         assert!(
@@ -16333,7 +16521,7 @@ mod tests {
         assert_eq!(write[0].native_code, "self.due = None;");
         assert!(
             write[1].native_code.contains(
-                "self.title = Some(::sce_portable_bytes::SceString::<4>::from_text(&\"abc\".to_string())?);"
+                "self.title = Some(::sce_rust_runtime::portable::SceString::<4>::from_text(&\"abc\")?);"
             ),
             "{}",
             write[1].native_code
@@ -17275,15 +17463,36 @@ mod tests {
         )
     }
 
+    // Pinned by `RustTarget::checked_literal`, `RustTarget::bounded_string`
+    // and `emit_rust_copied` (docs/adr/0086, section 7.4).
     #[test]
-    fn a_string_written_into_a_rust_variable_is_made_owned() {
+    fn a_string_written_into_a_rust_variable_is_copied_into_its_bounded_type() {
         let (inits, statements) = lowered_strings(Language::Rust);
-        // A literal is borrowed, and so is a read of another variable.
-        assert!(inits[0].ends_with(".to_string()"), "{inits:?}");
-        assert!(inits[1].ends_with(".to_string()"), "{inits:?}");
+        // A variable starts at its literal, built whole by the macro that
+        // judges the literal's length against the bound at build time.
+        assert_eq!(
+            inits,
+            [
+                "::sce_rust_runtime::portable::sce_text!(16, \"idle\")",
+                "::sce_rust_runtime::portable::sce_text!(16, \"x\")",
+            ],
+        );
+        // A literal and a read of another variable are lent to the checked
+        // constructor of the place, which copies them: never made owned first.
         assert_eq!(statements.len(), 2, "{statements:?}");
+        assert!(
+            statements[0]
+                .contains("::sce_rust_runtime::portable::SceString::<16>::from_text(&\"busy\")?"),
+            "{statements:?}"
+        );
+        assert!(
+            statements[1].contains(
+                "::sce_rust_runtime::portable::SceString::<16>::from_text(&&self.label[..])?"
+            ),
+            "{statements:?}"
+        );
         for statement in &statements {
-            assert!(statement.contains(".to_string()"), "{statements:?}");
+            assert!(!statement.contains(".to_string()"), "{statements:?}");
         }
     }
 

@@ -376,6 +376,11 @@ enum Position {
     /// field itself, which moving out of would take it from the machine. So
     /// here nothing is trusted to be owned already.
     Owned,
+    /// Copied into a place by the place's own constructor, which takes the
+    /// value borrowed: a Rust machine's bounded text and byte string
+    /// ([`transpile_into_copied`]). Told from [`Self::Owned`] so the value is
+    /// not made owned only for the constructor to borrow it again.
+    Copied,
 }
 
 fn transpile_at(
@@ -451,6 +456,32 @@ pub fn transpile_into_owned(
     })
 }
 
+/// [`transpile_into_owned`] for a text or a byte string written to a place
+/// that copies it through its own checked constructor ([`Position::Copied`]):
+/// a Rust machine's `SceString<N>` and `SceBytes<N>` (docs/adr/0086, section
+/// 7.4). A literal lands in a byte-string slot as it does in an owned one, and
+/// the value is borrowed whole, since the constructor makes the copy.
+pub fn transpile_into_copied(
+    expr: &str,
+    target: ExprTarget,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    expected: InferredType,
+) -> Result<Receiving, Refusal> {
+    lower_at(
+        expr,
+        target,
+        ctx,
+        renames,
+        Expected::Slot(expected),
+        Position::Copied,
+    )
+    .map(|lowered| Receiving {
+        text: lowered.text,
+        can_fail: lowered.can_fail,
+    })
+}
+
 /// What [`lower_at`] produced: the code, and whether it can fail.
 struct Lowered {
     text: String,
@@ -493,7 +524,7 @@ fn lower_at(
     resolve_then_rename(&mut ast, ctx, renames, target, &[], expr)?;
     judge_value(&ast, slot, expr)?;
     land_reals_in_slot(&mut ast, expected);
-    if position == Position::Owned && expected == InferredType::Bytes {
+    if matches!(position, Position::Owned | Position::Copied) && expected == InferredType::Bytes {
         land_strings_in_bytes_slot(&mut ast, expr)?;
     }
     if matches!(target, ExprTarget::Js) && !ctx.exact_integers {
@@ -531,6 +562,12 @@ fn lower_at(
         ExprTarget::Kotlin => emit_kotlin(&ast, expected)?,
         ExprTarget::Rust if position == Position::Returned && expected == InferredType::Str => {
             emit_rust_returned_str(&ast)?
+        }
+        ExprTarget::Rust
+            if position == Position::Copied
+                && matches!(expected, InferredType::Str | InferredType::Bytes) =>
+        {
+            emit_rust_copied(&ast, expected)?
         }
         ExprTarget::Rust if position == Position::Owned && expected == InferredType::Str => {
             emit_rust_owned_str(&ast)?
@@ -8824,6 +8861,48 @@ fn emit_rust_owned_bytes(expr: &TypedExpr) -> Result<String, Refusal> {
         _ => {
             let borrowed = emit_rust(expr, InferredType::Bytes)?;
             Ok(format!("{}.to_vec()", wrap_postfix(expr, borrowed)))
+        }
+    }
+}
+
+/// The Rust literal `written` is, when it is one string literal: the text
+/// literal as the Rust emitter spells it, or for a place of bytes
+/// (`bytes`) the byte-string literal of the printable ASCII it spells, as a
+/// literal lands in a byte-string slot ([`string_literal_as_bytes`]). `None`
+/// for any other expression, and for a text no byte-string literal spells.
+pub(crate) fn rust_literal(written: &str, bytes: bool) -> Option<String> {
+    let mut ast = parse_to_ast(written.trim()).ok()?;
+    if !matches!(ast.kind, ExprKind::StringLit { .. }) {
+        return None;
+    }
+    if bytes && !string_literal_as_bytes(&mut ast) {
+        return None;
+    }
+    rust_emit_value(&ast).ok()
+}
+
+/// A text or a byte string for a place that copies it through its own
+/// checked constructor ([`Position::Copied`]): borrowed whole, as the `&str`
+/// or `&[u8]` the constructor takes, and the arms of a conditional one by one,
+/// since both arms of a Rust `if` must be one type. A text literal is a `&str`
+/// already; every other value is sliced whole, a variable read included, so a
+/// field of the machine is lent and never moved out of it.
+fn emit_rust_copied(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> {
+    match &expr.kind {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => Ok(format!(
+            "if {} {{ {} }} else {{ {} }}",
+            emit_rust(condition, InferredType::Bool)?,
+            emit_rust_copied(consequent, expected)?,
+            emit_rust_copied(alternate, expected)?,
+        )),
+        ExprKind::StringLit { .. } if expected == InferredType::Str => emit_rust(expr, expected),
+        _ => {
+            let held = emit_rust(expr, expected)?;
+            Ok(format!("&{}[..]", wrap_postfix(expr, held)))
         }
     }
 }

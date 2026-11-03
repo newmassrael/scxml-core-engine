@@ -30,8 +30,9 @@ name = "sce_nostd_composed_probe"
 path = "src/static_composed_payload_sm.rs"
 
 [dependencies]
+# The bounded types are named through the runtime (`sce_rust_runtime::portable`),
+# so the machine needs no dependency of its own on `sce-portable-bytes`.
 sce-rust-runtime = { path = "../../runtime", default-features = false }
 sce-forge-runtime = { path = "../../forge-runtime", default-features = false }
-sce-portable-bytes = { path = "../../portable-bytes", default-features = false }
 
 [workspace]

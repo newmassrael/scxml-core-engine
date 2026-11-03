@@ -397,22 +397,16 @@ impl{{ policy_generics_decl }} {{ machine_name }}Observe for Engine<{{ machine_n
 {% set history_type = (machine_name ~ "History") if model.history_states else "::sce_rust_runtime::NoHistory" %}
 {# The value a saved state holds for the variable `field`, read as the field's
    own type — one spelling for the judge of a saved state and for the restore
-   that writes what it read. An optional value held to a bound is read absent
-   from `null` and otherwise as its present value is (docs/adr/0055); one held to
-   none is read by `Option`'s own `SavedValue`. #}
+   that writes what it read. A text and a list hold their bound in their type
+   (docs/adr/0086, section 7.4), so their own `SavedValue` holds a restored one
+   to it; a byte string is saved as its Latin-1 text, which its own reader
+   reads back. An optional value is read absent from `null` and otherwise as
+   its present value is (docs/adr/0055). #}
 {% macro saved_read(field) -%}
-{% if field.saved_kind == "optional" and field.bound is not none and field.saved_type == "string" -%}
-::sce_rust_runtime::saved_state::optional(saved.variable("{{ field.id }}")?, |present| ::sce_rust_runtime::saved_state::bounded_string(present, "{{ field.id }}"))?
-{%- elif field.saved_kind == "optional" and field.bound is not none and field.saved_type == "bytes" -%}
+{% if field.saved_kind == "optional" and field.bound is not none and field.saved_type == "bytes" -%}
 ::sce_rust_runtime::saved_state::optional(saved.variable("{{ field.id }}")?, |present| ::sce_rust_runtime::saved_state::bounded_bytes(present, "{{ field.id }}"))?
-{%- elif field.saved_kind == "optional" -%}
-::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
-{%- elif field.bound is not none and field.saved_type == "string" -%}
-::sce_rust_runtime::saved_state::bounded_string(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
 {%- elif field.bound is not none and field.saved_type == "bytes" -%}
 ::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
-{%- elif field.bound is not none -%}
-::sce_rust_runtime::saved_state::bounded(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
 {%- else -%}
 ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
 {%- endif %}
@@ -477,12 +471,8 @@ impl ::sce_rust_runtime::saved_state::SavedValue for {{ record.ty }} {
 {% for field in record.fields %}
 {% if field.optional and field.bound is not none and field.saved_type == "bytes" %}
             {{ field.name }}: ::sce_rust_runtime::saved_state::optional(::sce_rust_runtime::saved_state::record_member(value, what, "{{ field.id }}")?, |present| ::sce_rust_runtime::saved_state::bounded_bytes(present, &format!("{what}.{{ field.id }}")))?,
-{% elif field.optional and field.bound is not none %}
-            {{ field.name }}: ::sce_rust_runtime::saved_state::optional(::sce_rust_runtime::saved_state::record_member(value, what, "{{ field.id }}")?, |present| ::sce_rust_runtime::saved_state::bounded_string(present, &format!("{what}.{{ field.id }}")))?,
 {% elif field.bound is not none and field.saved_type == "bytes" %}
             {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_bytes(value, what, "{{ field.id }}")?,
-{% elif field.bound is not none %}
-            {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_string(value, what, "{{ field.id }}")?,
 {% else %}
             {{ field.name }}: ::sce_rust_runtime::saved_state::record_field(value, what, "{{ field.id }}")?,
 {% endif %}

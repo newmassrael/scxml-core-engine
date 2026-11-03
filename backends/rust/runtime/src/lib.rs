@@ -286,6 +286,16 @@ pub use sce_portable_bytes::SceBytes;
 /// because this crate's own `SceString` is the engine's event text.
 pub use sce_portable_bytes::BoundedList;
 
+/// The bounded value types whole (docs/adr/0086, section 7.4), as the path a
+/// generated machine names them by: `portable::SceString<N>`,
+/// `portable::SceBytes<N>`, `portable::BoundedList<T, N>` and the
+/// `portable::sce_text!` and `portable::sce_bytes!` literals. A crate that
+/// holds a generated machine depends on this runtime alone, and the types are
+/// the very ones a schema unit names through `sce_portable_bytes`, so a value
+/// crosses between the two with no conversion. A module rather than a name of
+/// this crate's root, whose own `SceString` is the engine's event text.
+pub use sce_portable_bytes as portable;
+
 /// Convert a borrowed `&str` into an owned [`SceString`].
 ///
 /// Under std this is `s.to_string()`. Under no_std this is

@@ -11,10 +11,18 @@
 {% macro store_invoke_idlocation(invoke_info, model, machine_name) %}
 {% if invoke_info.native_idlocation %}
                     // docs/adr/0045: under `datamodel="sce-static"` the id is
-                    // written to the string variable `idlocation` names, whose
-                    // bound the build held to one the id fits.
-                    {{ invoke_info.native_idlocation | rust_in_predicate }}
-                    let id_stored = true;
+                    // written to the string variable `idlocation` names, held to
+                    // that variable's bound as any text written to it is
+                    // (docs/adr/0086, section 7.4): an id it cannot hold is
+                    // refused whole, raises error.execution and the invocation
+                    // does not start, as a location that cannot take it does.
+                    // `native_idlocation` answers whether the variable refused it.
+                    let id_stored = !({{ invoke_info.native_idlocation | rust_in_predicate }});
+                    if !id_stored {
+{% if 'error.execution' in model.events %}
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke idlocation='{{ invoke_info.idlocation | escape_rust }}'> could not take the invoke id"));
+{% endif %}
+                    }
 {% elif invoke_info.idlocation %}
                     self.ensure_script_engine();
                     let id_stored = {
@@ -63,7 +71,7 @@ super::{{ stem }}_sm::{{ stem | to_machine_name }}Persist
    invoke's `field_suffix`. #}
 {% macro defer_scxml_invoke_fn(invoke_info, state_id, model, machine_name) %}
     // W3C SCXML 6.4: Defer the start of invoke '{{ invoke_info.invoke_id }}' of state '{{ state_id }}' to macrostep end
-    fn defer_invoke_{{ invoke_info.field_suffix }}(&mut self, {{ 'engine' if (invoke_info.idlocation and not invoke_info.native_idlocation and 'error.execution' in model.events) else '_engine' }}: &mut sce_rust_runtime::Engine<Self>) {
+    fn defer_invoke_{{ invoke_info.field_suffix }}(&mut self, {{ 'engine' if (invoke_info.idlocation and 'error.execution' in model.events) else '_engine' }}: &mut sce_rust_runtime::Engine<Self>) {
         {
             // docs/adr/0045: the id is the state's, the number of this start and
             // the `<invoke>`'s, so it comes from the tree alone and is the same

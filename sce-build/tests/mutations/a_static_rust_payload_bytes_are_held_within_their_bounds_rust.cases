@@ -12,9 +12,14 @@
 # which is no byte, to be refused with nothing written. The mutants take one decision
 # away each:
 #
-#   an assignment to a bytes variable is not held to its bound, whatever it is read from;
-#   a record taken whole from a payload is not held to the bound of its bytes field;
+#   a byte string past the bound of the place it is written to is taken as the empty
+#     one, and neither leaves the place as it was nor raises error.execution, whether
+#     the place is a variable, a record's field or a field of a record taken whole;
 #   a character past U+00FF is read as the byte its low eight bits make.
+#
+# Every place is a `SceBytes<N>`, whose bound is its type's (docs/adr/0086, section
+# 7.4): a write that skipped the check, to a variable or to a record taken whole, would
+# not compile, so those two cases are one, the refusal, which all three places take.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -26,16 +31,10 @@ mutation_targets backends/rust/tests/src/integration/static_datamodel/static_pay
 mutation_regen scripts/regen_static_datamodel_rust.sh
 mutation_oracles backends/rust/tests/tests/static_scenarios.rs backends/rust/tests/tests/static_datamodel.rs sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
 
-mutation_case "an assignment to a bytes variable is not held to its bound" <<'PY'
+mutation_case "a byte string past its place's bound is not refused" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "            } else if let Some(capacity) = rewrites.bytes.get(location) {",
-     "            } else if let Some(capacity) = rewrites.bytes.get(location).filter(|_| false) {")
-PY
-
-mutation_case "a record taken whole from a payload is not held to its bytes field's bound" <<'PY'
-edit("sce-build/src/forge/static_lowering.rs",
-     "            (EntryType::Scalar(SceType::Bytes), Some(bound)) => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);",
-     "            (EntryType::Scalar(SceType::Bytes), Some(bound)) if false => {\n                bounded = true;\n                let held = target.bounded_bytes(&read.text, bound);")
+     "            \"{}::SceBytes::<{capacity}>::from_slice(&{value})?\",",
+     "            \"{}::SceBytes::<{capacity}>::from_slice(&{value}).unwrap_or_default()\",")
 PY
 
 mutation_case "a character past U+00FF is read as the byte its low eight bits make" <<'PY'

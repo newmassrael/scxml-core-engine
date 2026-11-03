@@ -235,10 +235,11 @@ mod tests {
     fn a_present_value_is_mapped_and_an_absent_one_stays_absent() {
         assert_eq!(
             expression(&mapped("ev.title.as_deref().map(str::to_string)", &|v| {
-                format!("::sce_portable_bytes::SceString::<16>::from_text(&{v})?")
+                format!("::sce_rust_runtime::portable::SceString::<16>::from_text(&{v})?")
             })),
             "match ev.title.as_deref().map(str::to_string) { Some(sce_present) => \
-             Some(::sce_portable_bytes::SceString::<16>::from_text(&sce_present)?), None => None }"
+             Some(::sce_rust_runtime::portable::SceString::<16>::from_text(&sce_present)?), None \
+             => None }"
         );
     }
 

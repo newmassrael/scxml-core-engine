@@ -34,8 +34,8 @@ mutation_oracles sce-build/src/forge/expr.rs
 
 mutation_case "a literal that lands in a bytes slot stays a string" <<'PY'
 edit("sce-build/src/forge/expr.rs",
-     "    if position == Position::Owned && expected == InferredType::Bytes {\n        land_strings_in_bytes_slot(&mut ast, expr)?;",
-     "    if false && position == Position::Owned && expected == InferredType::Bytes {\n        land_strings_in_bytes_slot(&mut ast, expr)?;")
+     "    if matches!(position, Position::Owned | Position::Copied) && expected == InferredType::Bytes {\n        land_strings_in_bytes_slot(&mut ast, expr)?;",
+     "    if false && matches!(position, Position::Owned | Position::Copied) && expected == InferredType::Bytes {\n        land_strings_in_bytes_slot(&mut ast, expr)?;")
 PY
 
 mutation_case "a string that is no literal is let into a bytes slot" <<'PY'
