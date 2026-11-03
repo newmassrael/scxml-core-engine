@@ -73,8 +73,8 @@ PY
 
 mutation_case "A host does not see two different operations at one number" <<'PY'
 edit("backends/rust/trust/src/chain.rs",
-     "            .is_some_and(|others| others.iter().any(|other| other.id != held.id))\n        {\n            note(seq, Why::Forked);",
-     "            .is_some_and(|others| others.iter().any(|other| other.id != held.id) && false)\n        {\n            note(seq, Why::Forked);")
+     "            if other.id != held.id {\n                note(seq, Why::Forked",
+     "            if false {\n                note(seq, Why::Forked")
 PY
 
 mutation_case "A host does not see an operation that names another one before it than it holds" <<'PY'
@@ -85,7 +85,7 @@ PY
 
 mutation_case "A host does not see an operation that the one after it does not name" <<'PY'
 edit("backends/rust/trust/src/chain.rs",
-     "                if after.iter().any(|other| other.prev != held.id) {",
+     "                if other.prev != held.id {",
      "                if false {")
 PY
 
@@ -97,8 +97,8 @@ PY
 
 mutation_case "A host does not see a write whose stamp goes back along its device's chain, from after" <<'PY'
 edit("backends/rust/trust/src/chain.rs",
-     "            if seq < end\n                && self.ops.range(seq + 1..=end)",
-     "            if false\n                && self.ops.range(seq + 1..=end)")
+     "            if seq < end {\n                let earlier",
+     "            if false {\n                let earlier")
 PY
 
 mutation_case "A host does not see two writes sealed under one stamp" <<'PY'
@@ -115,10 +115,22 @@ edit("backends/rust/trust/src/trust.rs",
      "            let _ = &mut state;")
 PY
 
+mutation_case "A host does not say which operations it held one it takes in conflicts with" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "                let other = chain.find(*seq, id)?;",
+     "                let other = chain.find(*seq, id).filter(|_| false)?;")
+PY
+
+mutation_case "A host says an operation froze its device where the chain was frozen already" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        before: inserted.before,",
+     "        before: None,")
+PY
+
 mutation_case "A host finds a conflict of a device and does not freeze its chain" <<'PY'
 edit("backends/rust/trust/src/chain.rs",
-     "            self.frozen = Some(self.frozen.map_or(at, |from| from.min(at)));",
-     "            let _ = at;")
+     "            self.frozen = Some(self.frozen.map_or(found.at, |from| from.min(found.at)));",
+     "            let _ = found;")
 PY
 
 # Re-aimed 2026-10-18 at `hold`. A write that freezes a chain lower used to

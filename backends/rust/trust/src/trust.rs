@@ -1280,9 +1280,36 @@ fn evict_past_the_cutoff(state: &mut State) {
     }
 }
 
+/// What putting an operation among its device's did ([`hold`]): whether the host did not hold it
+/// before, whether the machine is told it now, and how it conflicts with what was held, when it does.
+struct Placed {
+    new: bool,
+    applied: bool,
+    conflict: Option<Conflict>,
+}
+
+/// The conflict `inserted` says an operation of a chain made, with the operations it conflicts
+/// with as they travel.
+fn conflict_of(chain: &Chain, inserted: &chain::Inserted) -> Option<Conflict> {
+    let found = inserted.conflict.as_ref()?;
+    Some(Conflict {
+        at: found.at,
+        before: inserted.before,
+        after: inserted.after.unwrap_or(found.at),
+        with: found
+            .with
+            .iter()
+            .filter_map(|(seq, id)| {
+                let other = chain.find(*seq, id)?;
+                Some((other.event.to_string(), other.wire.to_json()?))
+            })
+            .collect(),
+    })
+}
+
 /// Put an operation among its device's: the one place that decides what the machine is told of a
-/// device. Returns whether the host did not hold it before, and whether the machine is told it now.
-fn hold(state: &mut State, node: u64, held: Held) -> (bool, bool) {
+/// device.
+fn hold(state: &mut State, node: u64, held: Held) -> Placed {
     let (seq, id) = (held.seq(), held.id);
     let cutoffs = state.log.cutoffs(node);
     let chain = state.ops.entry(node).or_default();
@@ -1299,8 +1326,13 @@ fn hold(state: &mut State, node: u64, held: Held) -> (bool, bool) {
     let inserted = chain.insert(held, &cutoffs);
     if !inserted.added {
         let told = chain.at(seq).is_some_and(|one| one.id == id);
-        return (false, told);
+        return Placed {
+            new: false,
+            applied: told,
+            conflict: None,
+        };
     }
+    let conflict = conflict_of(chain, &inserted);
     let left: Vec<u64> = told_above
         .into_iter()
         .filter(|(at, held_id)| !chain.at(*at).is_some_and(|one| one.id == *held_id))
@@ -1332,7 +1364,11 @@ fn hold(state: &mut State, node: u64, held: Held) -> (bool, bool) {
             table.entry(key).or_insert(wire);
         }
     }
-    (true, told)
+    Placed {
+        new: true,
+        applied: told,
+        conflict,
+    }
 }
 
 fn heads_of(state: &State) -> Vec<Head> {
@@ -1570,7 +1606,8 @@ impl Admission for Trust {
 /// An operation that was taken in: whose it is and the number it has, whether the host held it
 /// already (a relay or a mirror hands on what it was given before), whether the machine is told it
 /// (`applied`: it is not when it is held as proof that the device signed conflicting operations, from
-/// the first of them on), and the event as the machine is told it.
+/// the first of them on), the event as the machine is told it, and, for an operation the host did
+/// not hold that conflicts with what it held of its device, how (`conflict`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Taken {
     pub node: u64,
@@ -1578,6 +1615,34 @@ pub struct Taken {
     pub new: bool,
     pub applied: bool,
     pub told: String,
+    pub conflict: Option<Conflict>,
+}
+
+/// How an operation taken in conflicts with the operations the host held of its device: two at one
+/// number, one that does not follow the one before it or that the next does not follow, a write
+/// whose time goes back along the chain or whose stamp another write has. It is held as proof,
+/// as every host that holds both holds it, and the device's chain is frozen from the lowest
+/// position of any conflict among what is held.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Conflict {
+    /// The lowest number at which it conflicts with an operation held.
+    pub at: u64,
+    /// Where the device's chain was frozen before it was taken in (`None`: it was not), and where
+    /// it is frozen from now. They differ when this operation is what froze it there.
+    pub before: Option<u64>,
+    pub after: u64,
+    /// The operations held that it conflicts with, each as the event and the data it travels with,
+    /// in the order of their numbers: what a host given this one alone takes in to find the
+    /// conflict itself.
+    pub with: Vec<(String, String)>,
+}
+
+impl Conflict {
+    /// Whether taking the operation in froze its device's chain where it was not frozen, or lower
+    /// than it was.
+    pub fn froze(&self) -> bool {
+        self.before != Some(self.after)
+    }
 }
 
 /// Why an operation was not taken in.
@@ -1603,13 +1668,14 @@ fn take(state: &mut State, event: &'static str, data: &str) -> Result<Taken, Tak
         Ok(verified) => {
             let (node, seq) = (verified.author, verified.link.seq);
             let told = verified.visible.to_string();
-            let (new, applied) = hold_verified(state, event, verified, signature);
+            let placed = hold_verified(state, event, verified, signature);
             Ok(Taken {
                 node,
                 seq,
-                new,
-                applied,
+                new: placed.new,
+                applied: placed.applied,
                 told,
+                conflict: placed.conflict,
             })
         }
         Err(Refusal::NotReached(reason)) => Err(TakeError::NotReached(reason)),
@@ -1618,14 +1684,14 @@ fn take(state: &mut State, event: &'static str, data: &str) -> Result<Taken, Tak
     }
 }
 
-/// Hold an operation that was verified, whoever made it: whether it was new to the host and whether
-/// the machine is told it.
+/// Hold an operation that was verified, whoever made it: whether it was new to the host, whether
+/// the machine is told it, and how it conflicts with what was held.
 fn hold_verified(
     state: &mut State,
     event: &'static str,
     verified: Verified,
     signature: [u8; 64],
-) -> (bool, bool) {
+) -> Placed {
     let wire = Wire {
         data: verified.travelling.to_string(),
         link: verified.link,

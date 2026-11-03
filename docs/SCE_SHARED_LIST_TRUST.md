@@ -210,6 +210,14 @@ nothing back to wait for a predecessor):
   later one is sealed under an epoch that entry has begun, or it is refused;
 - an operation that names an entry the host has not reached is refused until it has.
 
+What taking an operation in did is `Taken` (`Trust::take_operation`): whose it is, its number,
+whether the host held it already, whether the machine is told it, and, for one it did not hold that
+conflicts with what it held of its device, `Taken::conflict` (ADR 0083 section 4): the lowest number
+of its conflicts, where the device's chain was frozen before and is frozen now (they differ when
+this operation froze it), and the operations held that it conflicts with, as they travel. A relay
+answers an operation by it (`docs/SCE_SHARED_LIST_RELAY.md` section 3), and a host given those
+operations finds the conflict itself.
+
 - **A write** (`record_list.write`) is an operation of the node that stamped it. A hub relays it as
   the operation the member made (`Wire`), with its number and its signature; it cannot make one.
 - **A note that a write was written over** (`record_list.supersede`) is an operation of whoever wrote

@@ -108,13 +108,25 @@ pub(crate) fn segment(seq: u64, cutoffs: &[u64]) -> (u64, u64) {
 }
 
 /// What one operation did to a chain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Inserted {
     /// It was not held: it is held now, as a part of the chain or as proof.
     pub added: bool,
     /// Where the chain was frozen before and where it is now.
     pub before: Option<u64>,
     pub after: Option<u64>,
+    /// How it conflicts with what was held, when it was added and conflicts: it is held as proof.
+    pub conflict: Option<Conflicts>,
+}
+
+/// How an operation conflicts with the operations a chain holds: the lowest position of its
+/// conflicts and how, and every operation held that it conflicts with, by number and id, in order.
+/// The position is where the chain is frozen from once it is held, unless it was frozen lower.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Conflicts {
+    pub at: u64,
+    pub why: Why,
+    pub with: Vec<(u64, Id)>,
 }
 
 /// Every operation a host holds of one device.
@@ -192,7 +204,7 @@ impl Chain {
     /// device), the proof included: what a device asks before it signs a write under a stamp.
     pub fn stamped(&self, wid: &[u8]) -> Option<&Held> {
         let (seq, id) = self.stamps.get(wid)?.iter().min_by_key(|(seq, _)| *seq)?;
-        self.ops.get(seq)?.iter().find(|held| held.id == *id)
+        self.find(*seq, id)
     }
 
     /// The last operation told to the machine.
@@ -223,17 +235,19 @@ impl Chain {
                 added: false,
                 before,
                 after: before,
+                conflict: None,
             };
         }
-        let found = self.conflict_with(&held, cutoffs).map(|(at, _)| at);
+        let conflict = self.conflict_with(&held, cutoffs);
         self.put(held, cutoffs);
-        if let Some(at) = found {
-            self.frozen = Some(self.frozen.map_or(at, |from| from.min(at)));
+        if let Some(found) = &conflict {
+            self.frozen = Some(self.frozen.map_or(found.at, |from| from.min(found.at)));
         }
         Inserted {
             added: true,
             before,
             after: self.frozen,
+            conflict,
         }
     }
 
@@ -244,6 +258,12 @@ impl Chain {
             return None;
         }
         self.conflict_with(held, cutoffs)
+            .map(|found| (found.at, found.why))
+    }
+
+    /// The operation held at `seq` whose id is `id`, the proof included.
+    pub fn find(&self, seq: u64, id: &Id) -> Option<&Held> {
+        self.ops.get(&seq)?.iter().find(|held| held.id == *id)
     }
 
     /// Forget the operations `gone` says, and judge the rest again: the position of the first conflict
@@ -291,40 +311,44 @@ impl Chain {
         self.ops.entry(seq).or_default().push(held);
     }
 
-    /// The lowest position at which `held` conflicts with an operation held, and how. Every conflict is
-    /// a pair of operations whose position is the lower number of the two, so what this finds for an
-    /// operation as it is taken in, over the operations in the order they come, is the lowest position
-    /// of the whole set whatever the order.
-    fn conflict_with(&self, held: &Held, cutoffs: &[u64]) -> Option<(u64, Why)> {
+    /// The lowest position at which `held` conflicts with an operation held, and how, and the
+    /// operations held it conflicts with. Every conflict is a pair of operations whose position is
+    /// the lower number of the two, so what this finds for an operation as it is taken in, over the
+    /// operations in the order they come, is the lowest position of the whole set whatever the
+    /// order. Of the writes before it whose time is later, the lowest-numbered is named, and of those
+    /// after it whose time is earlier, the first: one of each shows the time going back.
+    fn conflict_with(&self, held: &Held, cutoffs: &[u64]) -> Option<Conflicts> {
         let seq = held.seq();
         let (start, end) = segment(seq, cutoffs);
         let mut found: Option<(u64, Why)> = None;
-        let mut note = |at: u64, why: Why| {
+        let mut with: Vec<(u64, Id)> = Vec::new();
+        let mut note = |at: u64, why: Why, other: (u64, Id)| {
             if found.is_none_or(|(lowest, _)| at < lowest) {
                 found = Some((at, why));
             }
+            with.push(other);
         };
         // Two operations at one number.
-        if self
-            .ops
-            .get(&seq)
-            .is_some_and(|others| others.iter().any(|other| other.id != held.id))
-        {
-            note(seq, Why::Forked);
+        for other in self.ops.get(&seq).into_iter().flatten() {
+            if other.id != held.id {
+                note(seq, Why::Forked, (seq, other.id));
+            }
         }
         // It names an operation before it, and the one held at the number before is another.
         if seq > start {
             if let Some(before) = self.ops.get(&(seq - 1)) {
                 if !before.iter().any(|other| other.id == held.prev) {
-                    note(seq - 1, Why::Forked);
+                    for other in before {
+                        note(seq - 1, Why::Forked, (seq - 1, other.id));
+                    }
                 }
             }
         }
         // The one held at the next number names another before it.
         if seq < end {
-            if let Some(after) = self.ops.get(&(seq + 1)) {
-                if after.iter().any(|other| other.prev != held.id) {
-                    note(seq, Why::Forked);
+            for other in self.ops.get(&(seq + 1)).into_iter().flatten() {
+                if other.prev != held.id {
+                    note(seq, Why::Forked, (seq + 1, other.id));
                 }
             }
         }
@@ -335,33 +359,40 @@ impl Chain {
             // operation that comes at the end of a chain whose times do not go back is not compared
             // with every one before it.
             if self.highest.get(&start).is_some_and(|top| time < *top) {
-                if let Some((at, _)) = self.ops.range(start..seq).find(|(_, others)| {
+                let later = self.ops.range(start..seq).find_map(|(at, others)| {
                     others
                         .iter()
-                        .any(|other| other.stamp.is_some_and(|earlier| earlier > time))
-                }) {
-                    note(*at, Why::GoesBack);
+                        .find(|other| other.stamp.is_some_and(|earlier| earlier > time))
+                        .map(|other| (*at, other.id))
+                });
+                if let Some(other) = later {
+                    note(other.0, Why::GoesBack, other);
                 }
             }
             // After it: nothing is held there when it comes at the end.
-            if seq < end
-                && self.ops.range(seq + 1..=end).any(|(_, others)| {
+            if seq < end {
+                let earlier = self.ops.range(seq + 1..=end).find_map(|(at, others)| {
                     others
                         .iter()
-                        .any(|other| other.stamp.is_some_and(|later| later < time))
-                })
-            {
-                note(seq, Why::GoesBack);
+                        .find(|other| other.stamp.is_some_and(|later| later < time))
+                        .map(|other| (*at, other.id))
+                });
+                if let Some(other) = earlier {
+                    note(seq, Why::GoesBack, other);
+                }
             }
         }
         // Two writes sealed under one stamp.
         if let Some(wid) = &held.wid {
             for (other_seq, other_id) in self.stamps.get(wid).into_iter().flatten() {
                 if *other_id != held.id {
-                    note(seq.min(*other_seq), Why::Repeats);
+                    note(seq.min(*other_seq), Why::Repeats, (*other_seq, *other_id));
                 }
             }
         }
-        found
+        let (at, why) = found?;
+        with.sort_unstable();
+        with.dedup();
+        Some(Conflicts { at, why, with })
     }
 }

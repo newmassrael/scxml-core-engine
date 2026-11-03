@@ -78,8 +78,24 @@ fn operation(
     prev: [u8; 32],
     id: u64,
 ) -> (String, [u8; 32]) {
-    let mut value = json!({"id": id.to_string(), "field": "3", "value": "1", "text": "",
-        "wallTime": (1000 + seq as i64).to_string(), "counter": "0", "nodeId": node.to_string()});
+    stamped(host, signer, node, seq, prev, id, 1000 + seq as i64, "1")
+}
+
+/// [`operation`], with the write's time and value given: what makes a time that goes back along a
+/// chain, or two contents under one stamp.
+#[allow(clippy::too_many_arguments)]
+fn stamped(
+    host: &Trust,
+    signer: &Identity,
+    node: u64,
+    seq: u64,
+    prev: [u8; 32],
+    id: u64,
+    wall: i64,
+    content: &str,
+) -> (String, [u8; 32]) {
+    let mut value = json!({"id": id.to_string(), "field": "3", "value": content, "text": "",
+        "wallTime": wall.to_string(), "counter": "0", "nodeId": node.to_string()});
     let signing = message::signing(LIST, "record_list.write", &value)
         .unwrap()
         .unwrap();
@@ -336,4 +352,138 @@ fn an_amendment_is_not_shown_by_the_device_taken_off_or_by_a_checkpoint_made_aft
         "made under the removal entry"
     );
     assert_eq!(amend(vec![carols]), Ok(true));
+}
+
+/// What an operation taken in says of how it conflicts with what the host held of its device
+/// (`Taken::conflict`), for each way two operations conflict: the position, where the chain was
+/// frozen before and is now, whether it is the one that froze it, and the operations held it
+/// conflicts with, as they travel. One held already, one that follows the chain, and one past a gap
+/// conflict with nothing. A relay answers by it (ADR 0083 section 4).
+#[test]
+fn an_operation_that_conflicts_says_where_with_what_and_whether_it_froze_its_device() {
+    const WRITE: &str = "record_list.write";
+    let parsed = |data: &str| serde_json::from_str::<Value>(data).unwrap();
+    let with = |taken: &sce_rust_trust::Taken| -> Vec<Value> {
+        let conflict = taken.conflict.as_ref().expect("it conflicts");
+        assert!(conflict.with.iter().all(|(event, _)| event == WRITE));
+        conflict.with.iter().map(|(_, data)| parsed(data)).collect()
+    };
+
+    let host = host();
+    grant(&host, 1, 2, 1);
+    let (one, one_id) = operation(&host, &key(1), 1, 1, NO_OPERATION, 1);
+    let (two, two_id) = operation(&host, &key(1), 1, 2, one_id, 2);
+    // Past a gap: it names an operation at 3 the host is never given.
+    let (four, _) = operation(&host, &key(1), 1, 4, [5; 32], 4);
+    for data in [&one, &two, &four] {
+        let taken = host.take_operation(WRITE, data).unwrap();
+        assert!(taken.new && taken.applied, "{taken:?}");
+        assert_eq!(taken.conflict, None);
+    }
+    let again = host.take_operation(WRITE, &two).unwrap();
+    assert!(!again.new);
+    assert_eq!(
+        again.conflict, None,
+        "one held already conflicts with nothing"
+    );
+
+    // Another second, at the number of the true one: it froze the device at 2.
+    let (other_two, _) = operation(&host, &key(1), 1, 2, one_id, 9);
+    let taken = host.take_operation(WRITE, &other_two).unwrap();
+    assert!(taken.new && !taken.applied);
+    let conflict = taken.conflict.clone().unwrap();
+    assert_eq!(
+        (
+            conflict.at,
+            conflict.before,
+            conflict.after,
+            conflict.froze()
+        ),
+        (2, None, 2, true)
+    );
+    assert_eq!(with(&taken), vec![parsed(&two)]);
+    assert_eq!(host.equivocating(), vec![(1, 2)]);
+
+    // A third second: it conflicts with both held there, and the chain was frozen there already.
+    let (third_two, _) = operation(&host, &key(1), 1, 2, one_id, 10);
+    let taken = host.take_operation(WRITE, &third_two).unwrap();
+    let conflict = taken.conflict.clone().unwrap();
+    assert_eq!(
+        (
+            conflict.at,
+            conflict.before,
+            conflict.after,
+            conflict.froze()
+        ),
+        (2, Some(2), 2, false)
+    );
+    let mut found = with(&taken);
+    found.sort_by_key(Value::to_string);
+    let mut expected = vec![parsed(&two), parsed(&other_two)];
+    expected.sort_by_key(Value::to_string);
+    assert_eq!(found, expected);
+
+    // A third that follows the true second, and that the fourth held does not name: it conflicts
+    // at 3 with the fourth, above where the chain is frozen.
+    let (three, _) = operation(&host, &key(1), 1, 3, two_id, 3);
+    let taken = host.take_operation(WRITE, &three).unwrap();
+    let conflict = taken.conflict.clone().unwrap();
+    assert_eq!(
+        (
+            conflict.at,
+            conflict.before,
+            conflict.after,
+            conflict.froze()
+        ),
+        (3, Some(2), 2, false)
+    );
+    assert_eq!(with(&taken), vec![parsed(&four)]);
+
+    // One that names another before it than the host holds there: it conflicts with the one held.
+    let host_b = host();
+    grant(&host_b, 1, 2, 1);
+    let (first, _) = operation(&host_b, &key(1), 1, 1, NO_OPERATION, 1);
+    host_b.take_operation(WRITE, &first).unwrap();
+    let (wrong_prev, _) = operation(&host_b, &key(1), 1, 2, [7; 32], 2);
+    let taken = host_b.take_operation(WRITE, &wrong_prev).unwrap();
+    let conflict = taken.conflict.clone().unwrap();
+    assert_eq!((conflict.at, conflict.before, conflict.after), (1, None, 1));
+    assert_eq!(with(&taken), vec![parsed(&first)]);
+
+    // A write whose time goes back along the chain, given after the later one and given before it.
+    for later_first in [true, false] {
+        let host_c = host();
+        grant(&host_c, 1, 2, 1);
+        let (late, late_id) = stamped(&host_c, &key(1), 1, 1, NO_OPERATION, 1, 2000, "1");
+        let (back, _) = stamped(&host_c, &key(1), 1, 2, late_id, 2, 1500, "1");
+        let (held, given) = if later_first {
+            (&late, &back)
+        } else {
+            (&back, &late)
+        };
+        assert_eq!(host_c.take_operation(WRITE, held).unwrap().conflict, None);
+        let taken = host_c.take_operation(WRITE, given).unwrap();
+        let conflict = taken.conflict.clone().unwrap();
+        assert_eq!(
+            (conflict.at, conflict.after),
+            (1, 1),
+            "later first: {later_first}"
+        );
+        assert_eq!(
+            with(&taken),
+            vec![parsed(held)],
+            "later first: {later_first}"
+        );
+    }
+
+    // Two contents under one stamp: the second conflicts with the first, at the lower number.
+    let host_d = host();
+    grant(&host_d, 1, 2, 1);
+    let (once, once_id) = stamped(&host_d, &key(1), 1, 1, NO_OPERATION, 1, 1001, "1");
+    let (twice, _) = stamped(&host_d, &key(1), 1, 2, once_id, 1, 1001, "2");
+    host_d.take_operation(WRITE, &once).unwrap();
+    let taken = host_d.take_operation(WRITE, &twice).unwrap();
+    let conflict = taken.conflict.clone().unwrap();
+    assert_eq!((conflict.at, conflict.after), (1, 1));
+    assert_eq!(with(&taken), vec![parsed(&once)]);
 }
