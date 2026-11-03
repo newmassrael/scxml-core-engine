@@ -434,7 +434,10 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
      bounds and widens as every list does; `BoundedBytes<N>` goes), and every constructor and append of both refuses
      past `N` on every profile. A codec's frame keeps its own storage profiles (`HeapStr`/`InlineStr`,
      `HeapBytes`/`InlineBytes`), whose heap form's advisory `N` is the reading of a protocol SCE does not own that
-     section 1.4 keeps for codecs.
+     section 1.4 keeps for codecs. Nothing is cut to fit a bound: a literal is built by `sce_text!` or
+     `sce_bytes!`, which a literal past the bound does not compile; any other value by a constructor that refuses
+     it, or by a widening from a smaller bound. A generated machine names the three types through the runtime it
+     already depends on (`sce_rust_runtime::portable`), so a crate that holds a machine needs no other dependency.
 
    The bound refusal stays where the language puts it: an assignment or an `<sce:append>` that would pass a place's
    bound is refused at that statement and raises `error.execution` (section 5, docs/SCE_ACCEPTED_SUBSET.md

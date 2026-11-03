@@ -4353,7 +4353,17 @@ fn rust_entry_payload(
             SceType::Float32 => format!("fields.float32(\"{}\")?", f.id),
             SceType::Float64 => format!("fields.float64(\"{}\")?", f.id),
             SceType::Bool => format!("fields.truth(\"{}\")?", f.id),
-            SceType::String => format!("fields.text(\"{}\")?", f.id),
+            // A text is held to its bound where it is read (docs/adr/0086,
+            // section 4.4), into the field's own `SceString<N>`.
+            SceType::String => match f.max_size {
+                Some(bound) => format!("fields.text::<{bound}>(\"{}\")?", f.id),
+                // A text with no bound is refused where its schema is read
+                // (docs/adr/0086, section 1.4); the engine's own text holds it.
+                None => format!(
+                    "::sce_rust_runtime::sce_string_from_str(fields.field(\"{}\")?.name()?)",
+                    f.id
+                ),
+            },
             SceType::Bytes => format!("fields.bytes(\"{}\")?", f.id),
             SceType::Enum(r) => rust_enum_lift(static_enums, &r.alias, &f.id),
         };
@@ -4465,15 +4475,14 @@ fn rust_composed_payload(
 /// The Rust type one field of a typed record is generated as — an event
 /// schema's payload, or a host-run invocation's request or result.
 ///
-/// Owned field types resolve through the runtime's profile-resolving aliases
-/// so one emission compiles on both runtime profiles (the runtime owns the
-/// std-vs-heapless choice — single source of truth, like `StateChain`):
-///   - `bytes`  -> `SceBytes<CAP>` (`Vec<u8>` under std, allocator-free
-///     capacity-bounded `heapless::Vec<u8, CAP>` under no_std). CAP is
-///     the field's `sce:max-size` (default `BYTES_DEFAULT_MAX`).
-///   - `string` -> `SceString` (`String` under std, `heapless::String`
-///     under no_std) — never a bare `String`, which a no-alloc no_std
-///     target cannot resolve.
+/// Owned field types are the bounded types the runtime re-exports
+/// (`sce_rust_runtime::portable`, docs/adr/0086, section 7.4), so one emission
+/// compiles on both runtime profiles and the field is the machine's own type:
+///   - `bytes[N]`  -> `SceBytes<N>`, `N` the field's bound (default
+///     `BYTES_DEFAULT_MAX`);
+///   - `string[N]` -> `SceString<N>`;
+///   each refusing past `N` on every profile, on the heap where an allocator
+///   is and inline where none is.
 ///
 /// Both deref to `[u8]` / `str`, so `&ev.<field>` coerces to the
 /// `&[u8]` / `&str` an `Actions` trait method takes. Every other
@@ -4497,13 +4506,16 @@ fn rust_record_field_type(l: &LangCtx, f: &EntryField) -> String {
 /// ([`rust_record_field_type`]): the field's own type, or the type an optional
 /// field holds when it is present.
 fn rust_record_present_type(l: &LangCtx, f: &EntryField) -> String {
-    match f.sce_type.present_type() {
-        SceType::Bytes => {
-            let cap = crate::forge::limits::resolve_bytes_max(f.max_size);
-            format!("::sce_rust_runtime::SceBytes<{cap}>")
-        }
-        SceType::String => "::sce_rust_runtime::SceString".to_string(),
-        other => l.type_name(other).into_owned(),
+    // A text and a byte string are the one type a Rust machine holds each in,
+    // the field's bound in it (docs/adr/0086, section 7.4), so a payload's
+    // field and a host-run record's are the machine's own type.
+    match (f.sce_type.present_type(), f.max_size) {
+        (SceType::Bytes, _) => crate::forge::composed_lowering::rust_bytes_type(
+            crate::forge::limits::resolve_bytes_max(f.max_size),
+        ),
+        (SceType::String, Some(bound)) => crate::forge::composed_lowering::rust_text_type(bound),
+        (SceType::String, None) => "::sce_rust_runtime::SceString".to_string(),
+        (other, _) => l.type_name(other).into_owned(),
     }
 }
 
@@ -4547,7 +4559,7 @@ fn rust_enum_lift(
         })
         .collect();
     format!(
-        "match fields.text(\"{field}\")?.as_str() {{ {arms}other => return \
+        "match fields.field(\"{field}\")?.name()? {{ {arms}other => return \
          Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(format!(\
          \"{field} ({{other}}) is not a variant of {alias}\"))) }}"
     )

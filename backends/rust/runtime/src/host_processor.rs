@@ -827,6 +827,10 @@ pub enum RequestFieldType {
     Bool,
     /// `string`.
     String,
+    /// `string[N]`, of at most this many UTF-8 bytes: held at the start site,
+    /// so the host's record, whose field is `portable::SceString<N>`, is never
+    /// handed a text it cannot hold (docs/adr/0086, section 7.4).
+    Text(usize),
     /// `bytes`, of at most this many bytes (`sce:max-size`).
     Bytes(usize),
 }
@@ -923,6 +927,14 @@ pub fn request_field_wire(
             ))),
         },
         RequestFieldType::String => match value {
+            ScriptValue::String(s) => Ok(s.clone()),
+            _ => Err(PayloadRefusal::new(format!("'{name}' is not a text"))),
+        },
+        RequestFieldType::Text(cap) => match value {
+            ScriptValue::String(s) if s.len() > cap => Err(PayloadRefusal::new(format!(
+                "'{name}' is {} bytes, past the {cap} its schema declares",
+                s.len()
+            ))),
             ScriptValue::String(s) => Ok(s.clone()),
             _ => Err(PayloadRefusal::new(format!("'{name}' is not a text"))),
         },
