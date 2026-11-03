@@ -7618,7 +7618,23 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         // `--input-root` is the caller naming where the source set lives,
         // and a candidate is declared relative to the document the author
         // wrote, not to wherever the build moved it.
-        copy_static_invoke_children(&model, Path::new(scxml_path), &drift_input_root, out_path);
+        //
+        // A staged child is read for the children it names in turn, where its
+        // author wrote it, so it is given no input root; its include
+        // directories are the run's.
+        let parse_staged_child = |child: &Path| {
+            SCXMLParser::new()
+                .with_include_dirs(document_include_dirs.clone())
+                .parse_file(&child.to_string_lossy())
+                .ok()
+        };
+        copy_static_invoke_children(
+            &model,
+            Path::new(scxml_path),
+            &drift_input_root,
+            out_path,
+            &parse_staged_child,
+        );
         // §scxml-6.4 (test216/530): the hybrid stub is output, so it goes where
         // output goes — for every backend.
         //
@@ -7834,74 +7850,163 @@ fn peer_documents(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
 /// candidate is staged as one the document starts is, from the same
 /// directory, which is where the carried child's references were written from
 /// ([`SCXMLModel::with_carried_descendants`]).
+///
+/// A staged document's own children are staged with it, at every depth
+/// ([`child_documents_to_stage`]): the generation of the staged copy reads it
+/// from the output directory, where none of the documents it names is beside
+/// it unless this run put it there.
 fn copy_static_invoke_children(
     model: &SCXMLModel,
     scxml_path: &Path,
     input_root: &Path,
     output_dir: &Path,
+    parse: &dyn Fn(&Path) -> Option<SCXMLModel>,
 ) {
-    let source_dir = scxml_path.parent().unwrap_or(Path::new("."));
-    let machines = model.with_carried_descendants();
+    for child in child_documents_to_stage(model, scxml_path, input_root, parse) {
+        let dest = output_dir.join(format!("{}.scxml", child.name));
+        if let Err(e) = stage_child_document(&child.from, &dest) {
+            eprintln!(
+                "Warning: Cannot copy {} {} to output: {e}",
+                child.reference.what(),
+                child.from.display()
+            );
+        }
+    }
+}
 
+/// How an `<invoke>` names a child document a run stages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ChildReference {
+    /// By `src` (§scxml-6.4).
+    Src,
+    /// As one of a hybrid invoke's `sce:candidates`
+    /// (SCE_ACCEPTED_SUBSET.md §2.13).
+    Candidate,
+}
+
+impl ChildReference {
+    fn what(self) -> &'static str {
+        match self {
+            Self::Src => "static invoke child",
+            Self::Candidate => "invoke candidate",
+        }
+    }
+}
+
+/// A child document a run stages into its output directory: where it was
+/// read from, the name of its machine (the name the machine starting it gives
+/// it), and how it was named.
+struct StagedChild {
+    from: PathBuf,
+    name: String,
+    reference: ChildReference,
+}
+
+/// The child documents the machines of one document name, each as written
+/// from that document and with the name of its machine: every candidate of
+/// every hybrid invoke, then every `src` child, in document order.
+fn child_references(machines: &[&SCXMLModel]) -> Vec<(PathBuf, String, ChildReference)> {
     // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: a hybrid invoke that
     // declared `sce:candidates` has one child per candidate, and they are
     // ordinary documents beside the parent — the same shape a static `src`
     // child has, which is why they are staged by the same pass rather than
     // by a second one that would drift from it.
-    for invoke in machines
+    let candidates = machines
         .iter()
         .flat_map(|machine| machine.iter_hybrid_invokes())
-    {
-        for candidate in &invoke.candidates {
-            let child_scxml = format!("{}.scxml", candidate.stem);
-            let dest = output_dir.join(&child_scxml);
-            // Beside the document as the author sees it first, then beside
-            // the one the build may have staged. Both, because a plain
-            // `generate` has only the second and a staged build has only
-            // the first.
-            let src = [
-                input_root.join(&candidate.path),
-                source_dir.join(&candidate.path),
-            ]
-            .into_iter()
-            .find(|p| sce_build::confine::exists(p));
-            match src {
-                Some(src) => {
-                    if let Err(e) = stage_child_document(&src, &dest) {
-                        eprintln!(
-                            "Warning: Cannot copy invoke candidate {} to output: {e}",
-                            candidate.path
-                        );
-                    }
-                }
-                None => eprintln!(
-                    "Warning: invoke candidate {} is not beside the document or its input root",
-                    candidate.path
-                ),
-            }
-        }
-    }
-
-    for invoke in machines
+        .flat_map(|invoke| invoke.candidates.iter())
+        .map(|candidate| {
+            (
+                PathBuf::from(&candidate.path),
+                candidate.stem.clone(),
+                ChildReference::Candidate,
+            )
+        });
+    let src_children = machines
         .iter()
         .flat_map(|machine| machine.iter_scxml_invokes())
-    {
-        if invoke.child_name.is_empty() || invoke.inline_child.is_some() {
-            continue;
-        }
-        let child_scxml = format!("{}.scxml", invoke.child_name);
-        let src = source_dir.join(&child_scxml);
-        let dest = output_dir.join(&child_scxml);
+        .filter_map(|invoke| {
+            invoke
+                .child_document_path()
+                .map(|written| (written, invoke.child_name.clone(), ChildReference::Src))
+        });
+    candidates.chain(src_children).collect()
+}
 
-        if sce_build::confine::exists(&src) {
-            if let Err(e) = stage_child_document(&src, &dest) {
-                eprintln!(
-                    "Warning: Cannot copy static invoke child {} to output: {e}",
-                    child_scxml
-                );
+/// §scxml-6.4: every child document a run of `model`, read from `document`,
+/// stages into its output directory, in the order it stages them: the ones
+/// its machines name ([`SCXMLModel::with_carried_descendants`]), then the ones
+/// each of those names in turn, at every depth, each once.
+///
+/// Each is found where the parse found it
+/// ([`sce_build::parser::locate_child_document`]), from the document that
+/// names it: a child of the run's document in the input root first, where
+/// its author wrote it when the run reads a staged copy, then beside the
+/// document; a child of a staged child beside that child as it was found,
+/// which is where its author wrote it, and is read (`parse`) for the
+/// documents it names.
+///
+/// Its children are staged here, by the run that stages it, because the
+/// generation of a staged child reads the copy in the output directory, and
+/// a document its author wrote beside the child (or under a directory its
+/// `src` names) is not beside the copy: the child's generation, the parse of
+/// its machine and the plan of it (`--plan-children`) found none, so the
+/// machine the child's machine names had no generation. A candidate the run
+/// finds nowhere is said; a `src` child found nowhere is the one an
+/// unreadable `src` is (the parse gave it an engine and no names).
+fn child_documents_to_stage(
+    model: &SCXMLModel,
+    document: &Path,
+    input_root: &Path,
+    parse: &dyn Fn(&Path) -> Option<SCXMLModel>,
+) -> Vec<StagedChild> {
+    let mut staged: Vec<StagedChild> = Vec::new();
+    let mut named: BTreeSet<String> = BTreeSet::new();
+    let mut stage = |references: Vec<(PathBuf, String, ChildReference)>,
+                     roots: &[PathBuf],
+                     dir: &Path,
+                     staged: &mut Vec<StagedChild>| {
+        for (written, name, reference) in references {
+            match sce_build::parser::locate_child_document(roots, Some(dir), &written) {
+                Some(from) => {
+                    if named.insert(name.clone()) {
+                        staged.push(StagedChild {
+                            from,
+                            name,
+                            reference,
+                        });
+                    }
+                }
+                None if reference == ChildReference::Candidate => eprintln!(
+                    "Warning: invoke candidate {} is not beside the document or its input root",
+                    written.display()
+                ),
+                None => {}
             }
         }
+    };
+    let document_dir = document.parent().unwrap_or(Path::new("."));
+    stage(
+        child_references(&model.with_carried_descendants()),
+        &[input_root.to_path_buf()],
+        document_dir,
+        &mut staged,
+    );
+    let mut next = 0;
+    while let Some(from) = staged.get(next).map(|child| child.from.clone()) {
+        next += 1;
+        let Some(child) = parse(&from) else {
+            continue;
+        };
+        let child_dir = from.parent().unwrap_or(Path::new("."));
+        stage(
+            child_references(&child.with_carried_descendants()),
+            &[],
+            child_dir,
+            &mut staged,
+        );
     }
+    staged
 }
 
 /// Copy a child document to `dest`, next to the output that invokes it.

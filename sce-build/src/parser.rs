@@ -5319,21 +5319,15 @@ impl SCXMLParser {
             // `--write-deps` build regenerates on.
             if base_dir.is_some() || !self.candidate_roots.is_empty() {
                 for candidate in &mut candidates {
-                    let search: Vec<PathBuf> = self
-                        .candidate_roots
-                        .iter()
-                        .map(PathBuf::as_path)
-                        .chain(base_dir)
-                        .map(|dir| dir.join(&candidate.path))
-                        .collect();
-                    match search.iter().find(|p| crate::confine::exists(p)) {
+                    let written = Path::new(&candidate.path);
+                    match locate_child_document(&self.candidate_roots, base_dir, written) {
                         Some(found) => {
-                            populate_candidate_metadata(found, candidate);
+                            populate_candidate_metadata(Some(found.as_path()), candidate);
                             self.preprocessor_deps
-                                .push(found.canonicalize().unwrap_or_else(|_| found.clone()));
+                                .push(found.canonicalize().unwrap_or(found));
                         }
                         // Unreadable: answered as an unreadable static `src`.
-                        None => populate_candidate_metadata(&search[0], candidate),
+                        None => populate_candidate_metadata(None, candidate),
                     }
                 }
             }
@@ -5542,14 +5536,16 @@ impl SCXMLParser {
 
             // Populate child-side metadata (script-engine flag, datamodel
             // variable list). For inline children the model is already
-            // parsed in-memory; external (`src=`) children still resolve
-            // through `base_dir` on disk.
+            // parsed in-memory; external (`src=`) children are read from
+            // disk, found as a candidate is ([`locate_child_document`]).
             if let Some(inline_model) = scxml_info.inline_child.as_deref() {
                 populate_child_metadata_from_model(inline_model, &mut scxml_info.common);
-            } else if let (Some(scxml_dir), Some(file_name)) =
-                (base_dir, scxml_info.child_file_name())
-            {
-                parse_child_metadata(&scxml_dir.join(file_name), &mut scxml_info.common);
+            } else if let (true, Some(written)) = (
+                base_dir.is_some() || !self.candidate_roots.is_empty(),
+                scxml_info.child_document_path(),
+            ) {
+                let found = locate_child_document(&self.candidate_roots, base_dir, &written);
+                parse_child_metadata(found.as_deref(), &mut scxml_info.common);
             }
 
             return Ok(Some(Invoke::Scxml(scxml_info)));
@@ -8476,12 +8472,41 @@ fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut Inv
     common.child_saves = crate::forge::static_lowering::a_tree_can_hold(child_model);
 }
 
-fn parse_child_metadata(child_path: &Path, common: &mut InvokeSessionCommon) {
-    if !crate::confine::exists(child_path) {
+/// §scxml-6.4: the document a child an `<invoke>` names, by `src`
+/// ([`crate::model::ScxmlInvokeInfo::child_document_path`]) or as a hybrid
+/// invoke's candidate, read from where `written` names it: in each of `roots`
+/// and then in `base_dir`, the directory of the document that names it, the
+/// first that holds it. `None` when none does.
+///
+/// `roots` are the input roots of a run that reads a copy of its document
+/// staged away from where its author wrote it (a build stages it into its
+/// output directory), whose children are not beside the copy; a document read
+/// where its author wrote it has none, and its children are read from beside
+/// it, at every depth. The parse of a document reads its children's metadata
+/// here and the run that generates it stages them from here
+/// (`sce-codegen generate`), so each finds the document the other does.
+pub fn locate_child_document(
+    roots: &[PathBuf],
+    base_dir: Option<&Path>,
+    written: &Path,
+) -> Option<PathBuf> {
+    roots
+        .iter()
+        .map(PathBuf::as_path)
+        .chain(base_dir)
+        .map(|dir| dir.join(written))
+        .find(|path| crate::confine::exists(path))
+}
+
+/// The metadata of the child whose document is `child_path`; a child with no
+/// document (`None`) or one that is not there is given an engine and declares
+/// nothing.
+fn parse_child_metadata(child_path: Option<&Path>, common: &mut InvokeSessionCommon) {
+    let Some(child_path) = child_path.filter(|path| crate::confine::exists(path)) else {
         common.child_needs_script_engine = true;
         common.child_datamodel_vars = Some(Vec::new());
         return;
-    }
+    };
     match SCXMLParser::new().parse_file(&child_path.to_string_lossy()) {
         Ok(child_model) => populate_child_metadata_from_model(&child_model, common),
         Err(_) => {
@@ -8495,11 +8520,11 @@ fn parse_child_metadata(child_path: &Path, common: &mut InvokeSessionCommon) {
 /// is described by the same derivation a static child is — one owner for
 /// "does this document need an engine" and "which names may it be given".
 ///
-/// A candidate the build cannot read is answered the way
-/// [`parse_child_metadata`] answers an unreadable `src`: it is given an
-/// engine and declares nothing, so nothing is seeded into it.
+/// A candidate the build cannot read (`None`, or a file that is not there) is
+/// answered the way [`parse_child_metadata`] answers an unreadable `src`: it
+/// is given an engine and declares nothing, so nothing is seeded into it.
 fn populate_candidate_metadata(
-    candidate_path: &Path,
+    candidate_path: Option<&Path>,
     candidate: &mut crate::model::InvokeCandidate,
 ) {
     let mut common = InvokeSessionCommon::default();
@@ -8578,7 +8603,7 @@ mod tests {
         .unwrap();
         let read = |root: Root, path: &Path| {
             let mut common = InvokeSessionCommon::default();
-            within_for_test(root, || parse_child_metadata(path, &mut common));
+            within_for_test(root, || parse_child_metadata(Some(path), &mut common));
             (
                 common.child_needs_script_engine,
                 common.child_datamodel_vars,

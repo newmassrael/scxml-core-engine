@@ -2545,6 +2545,20 @@ impl ScxmlInvokeInfo {
             .then(|| format!("{}.scxml", self.common.child_name))
     }
 
+    /// The child's document as `src` names it from the document that holds
+    /// this invoke (§scxml-6.4): the directory `src` names, past a `file:`
+    /// scheme, holding [`Self::child_file_name`]. Relative to that document's
+    /// directory, where [`crate::parser::locate_child_document`] looks for it.
+    /// `None` where [`Self::child_file_name`] is.
+    pub fn child_document_path(&self) -> Option<std::path::PathBuf> {
+        let file_name = self.child_file_name()?;
+        let written = self.src.replace("file:", "");
+        let directory = std::path::Path::new(&written)
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new(""));
+        Some(directory.join(file_name))
+    }
+
     /// Whether a run that generates the document holding this invoke writes
     /// the machine of the child it carries ([`Self::inline_child`]). Not when
     /// a deploy placed the child on another partition

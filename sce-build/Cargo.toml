@@ -1571,6 +1571,15 @@ name = "a_child_placed_on_another_partition_is_that_partitions_machine"
 path = "tests/a_child_placed_on_another_partition_is_that_partitions_machine.rs"
 required-features = ["cli"]
 
+# A child a document starts by `src` is found from the document that names it,
+# at every depth, and staged with the children it starts by `src`, so the plan
+# of a parent plans the generation of a `src` child's own `src` child. It
+# spawns `sce-codegen generate`, so it carries the `cli` gate.
+[[test]]
+name = "a_src_child_is_found_from_the_document_that_names_it"
+path = "tests/a_src_child_is_found_from_the_document_that_names_it.rs"
+required-features = ["cli"]
+
 # `orchestrate --go-module-prefix` reaches every statechart of the set and every
 # child one carries. It spawns `sce-codegen orchestrate` and `check`, so it
 # carries the `cli` gate.
