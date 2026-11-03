@@ -6451,7 +6451,7 @@ fn swift_refuses_a_variant_element_by_naming_the_variant() {
     for needle in [
         "broadcast-log 'broadcast_log_conformance_chosen'",
         "the element 'broadcast_log_conformance_choice' cannot be stored by the Swift template",
-        "codec 'broadcast_log_conformance_choice': a `<sce:variant>` has no Swift lowering yet",
+        "codec 'broadcast_log_conformance_choice': a `<sce:variant>` whose tag its caller supplies has no Swift lowering yet",
     ] {
         assert!(detail.contains(needle), "`{needle}` in {detail}");
     }
