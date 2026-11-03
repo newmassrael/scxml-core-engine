@@ -4395,65 +4395,76 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # Closes §16.9 F exit criterion #4: "Inline <content> synthesized
     # child executes on a different partition." Unlike the §9.6.2
     # author-declared pair above (parent + worker both in source), here
-    # the child is parser-emitted as a side-effect of parent codegen
-    # (`sce-build/src/parser.rs:1607-1620`). The parser writes the synth
-    # SCXML into the parent's `base_dir`; to keep tests/mesh/ source-tree
-    # clean, we stage the parent + deploy.yaml into the build output
-    # dir first so the synth materialises inside the build tree. Three
-    # stages (staging → parent codegen → synth codegen) replace the
-    # two author-declared `add_custom_command`s used by the wired
-    # fixture — the synth `.scxml` is an intermediate output, not an
-    # author input.
+    # the child's document is written by the parent's generation, into its
+    # output directory. To keep tests/mesh/ source-tree clean, the parent
+    # + deploy.yaml are staged into the build output dir first, so the
+    # child's document lands inside the build tree. Three stages (staging →
+    # parent generation → the child's partition's generation): the child's
+    # `.scxml` is an intermediate output, not an author input.
+    #
+    # Each file has one producer. The deploy places the child on its own
+    # partition, so its machine is that partition's: the parent's
+    # generation writes the child's document and not its machine
+    # (`ScxmlInvokeInfo::carries_a_child_written_with_its_parent`), and
+    # stage 3 alone writes the child's machine and transport, shaped as a
+    # peer. The parent's generation wrote the child's header as well, shaped
+    # for a parent in its own process, and stage 3 then overwrote the file
+    # its rule declared.
     set(MESH_SYNTH_OVERRIDE_OUTPUT_DIR
         "${CMAKE_CURRENT_BINARY_DIR}/mesh_synth_invoke_override_generated")
 
-    # Stage 1: copy author inputs into the build dir.
-    add_custom_command(
-        OUTPUT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
-               "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${MESH_TEST_DIR}/parent_synth_inline.scxml"
-                "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${MESH_TEST_DIR}/deploy_synth_inline.yaml"
-                "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
-        DEPENDS "${MESH_TEST_DIR}/parent_synth_inline.scxml"
-                "${MESH_TEST_DIR}/deploy_synth_inline.yaml"
-        COMMENT "Mesh §9.6.6: Staging parent + deploy fixture for synth-invoke override"
-        VERBATIM
-    )
+    # Stage 1: stage the author inputs into the build dir when the tree is
+    # configured, because the parent's generation is planned from the staged
+    # document. `configure_file` makes an edit to either reconfigure the
+    # tree, which is when the plan is asked again.
+    file(MAKE_DIRECTORY "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}")
+    configure_file("${MESH_TEST_DIR}/parent_synth_inline.scxml"
+        "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml" COPYONLY)
+    configure_file("${MESH_TEST_DIR}/deploy_synth_inline.yaml"
+        "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml" COPYONLY)
 
-    # Stage 2: parent codegen. Parser side-effect materialises the synth
-    # SCXML next to the staged parent. The synth path is declared as an
-    # OUTPUT so the Stage 3 command can depend on it through CMake's
-    # normal file-dependency graph.
+    # Stage 2: the parent's generation. What it writes (its machine and
+    # transport, the child's document) is declared from the generator's
+    # answer (`sce_codegen_plan`, cmake/SCECodegenPlan.cmake), not listed
+    # here; stage 3 depends on the child's document through it.
+    sce_codegen_plan(_MESH_SYNTH_OVERRIDE_PARENT
+        STEM parent_synth_inline
+        DOCUMENT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
+        OUTPUT_DIR "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}"
+        LANGUAGE cpp
+        ARGS --deploy "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml")
     add_custom_command(
-        OUTPUT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline_sm.h"
-               "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline_transport.h"
-               "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv.scxml"
+        OUTPUT ${_MESH_SYNTH_OVERRIDE_PARENT_OUTPUTS}
         COMMAND "${SCE_CODEGEN}" generate
                 "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
                 -l cpp -o "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}"
                 --deploy "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
-                --write-deps "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline_sm.h.d"
+                --write-deps "${_MESH_SYNTH_OVERRIDE_PARENT_DEPFILE}"
         DEPENDS "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
                 "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
                 "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline_sm.h.d"
-        COMMENT "Mesh §9.6.6: Generating parent_synth_inline_{sm,transport}.h (synth .scxml side-effect)"
+        DEPFILE "${_MESH_SYNTH_OVERRIDE_PARENT_DEPFILE}"
+        ${_MESH_SYNTH_OVERRIDE_PARENT_BYPRODUCTS_ARG}
+        COMMENT "Mesh §9.6.6: Generating parent_synth_inline and the document of its child"
         VERBATIM
     )
 
-    # Stage 3: synth codegen with --deploy. Running against the
-    # parser-emitted sibling engages `classify_remote_scxml_invokes` and
-    # `collect_scxml_remote_peers` on the synth model; the §9.6.6
-    # rule-3 infix inversion inside the latter adds the parent as an
-    # inbound peer, flipping `is_remote_invoke_target=true`. Codegen
-    # then picks the non-templated WorkerSessionHost shape. This is NOT
-    # the `--as-child` path used by `w3c_static_generated`: that path
+    # Stage 3: the child's partition's generation, with --deploy, from the
+    # document stage 2 wrote. Running against it engages
+    # `classify_remote_scxml_invokes` and `collect_scxml_remote_peers` on the
+    # child's model; the §9.6.6 rule-3 infix inversion inside the latter adds
+    # the parent as an inbound peer, flipping `is_remote_invoke_target=true`.
+    # Codegen then picks the non-templated WorkerSessionHost shape. This is
+    # NOT the `--as-child` path used by `w3c_static_generated`: that path
     # assumes a local-child shape, which would skip the mesh transport
-    # emission this test exercises.
+    # emission this test exercises. It owns the child's machine and
+    # transport, which no other rule writes. Its declaration is kept here:
+    # the document it reads is on no disk when the tree is configured, and
+    # `--plan-children` plans the `--as-child` generation of a child document
+    # in its parent's process, not the `--deploy` generation of a peer. It
+    # waits for the parent's machine as well as the child's document, as a
+    # planned child generation waits for the generation that writes its
+    # document.
     add_custom_command(
         OUTPUT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_sm.h"
                "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_transport.h"
@@ -4463,6 +4474,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
                 --deploy "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
                 --write-deps "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_sm.h.d"
         DEPENDS "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv.scxml"
+                ${_MESH_SYNTH_OVERRIDE_PARENT_OUTPUTS}
                 "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
                 "${SCE_CODEGEN}"
         DEPFILE "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_sm.h.d"

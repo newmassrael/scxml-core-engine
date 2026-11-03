@@ -2252,6 +2252,12 @@ pub struct EmittedChild {
 /// `generate -l go` without a module prefix while `check -l go` accepted the
 /// document).
 ///
+/// A child a deploy placed on another partition is not one of them
+/// ([`model::ScxmlInvokeInfo::carries_a_child_written_with_its_parent`]): its
+/// machine is generated with the deploy by the run of that partition, from
+/// the document this run writes, so each of its files has that one producer.
+/// It is still asked the gate, which judges what the document carries.
+///
 /// Each child is:
 /// - started by its parent, so it templates on the parent's type on every
 ///   backend but C11, whose child templates detect communication with the
@@ -2283,7 +2289,7 @@ pub fn carried_children(
 ) -> Result<Vec<CarriedChild>, CompileError> {
     analyzer::can_generate_carried_children(document)?;
     let mut children = Vec::new();
-    for (invoke, origin) in document.carried_origins() {
+    for (invoke, origin) in document.written_carried_origins() {
         let Some(carried) = invoke.inline_child.as_deref() else {
             continue;
         };

@@ -2544,6 +2544,19 @@ impl ScxmlInvokeInfo {
         (self.inline_child.is_none() && !self.common.child_name.is_empty())
             .then(|| format!("{}.scxml", self.common.child_name))
     }
+
+    /// Whether a run that generates the document holding this invoke writes
+    /// the machine of the child it carries ([`Self::inline_child`]). Not when
+    /// a deploy placed the child on another partition
+    /// ([`Self::remote_mesh_target`], SCE_MESH.md §9.6.6 rule 3): its machine
+    /// is that partition's, generated with the deploy by the run of that
+    /// partition from the document this run writes, and the machine starting
+    /// it reaches it through the transport and names no file of it. A machine
+    /// written by both runs is a file with two producers, of which the first
+    /// is the wrong one: a child shaped for a parent in its own process.
+    pub fn carries_a_child_written_with_its_parent(&self) -> bool {
+        self.inline_child.is_some() && self.remote_mesh_target.is_none()
+    }
 }
 
 impl HybridInvokeInfo {
@@ -5305,6 +5318,19 @@ impl SCXMLModel {
             origin.of_child(invoke)
         })
     }
+    /// [`Self::carried_origins`] of the children whose machines a run that
+    /// generates this document writes: every one but a child a deploy placed
+    /// on another partition, and the children below it
+    /// ([`ScxmlInvokeInfo::carries_a_child_written_with_its_parent`]).
+    pub fn written_carried_origins(&self) -> Vec<(&ScxmlInvokeInfo, CarriedOrigin)> {
+        self.carried_invokes_with(&CarriedOrigin::of_document(self), |origin, invoke| {
+            if invoke.carries_a_child_written_with_its_parent() {
+                origin.of_child(invoke)
+            } else {
+                None
+            }
+        })
+    }
     /// The walk [`Self::inline_child_invokes`] and [`Self::carried_origins`]
     /// take, carrying a value down it: each invoke is given what `descend`
     /// makes of the value the machine holding it was given (`from` for this
@@ -5346,16 +5372,23 @@ impl SCXMLModel {
         }
     }
     /// This document's model, followed by the model of each child
-    /// [`Self::inline_child_invokes`] gives, in that order: every machine a run
-    /// that generates this document writes. A child each of them starts by a
+    /// [`Self::inline_child_invokes`] gives whose machine a run that generates
+    /// this document writes
+    /// ([`ScxmlInvokeInfo::carries_a_child_written_with_its_parent`]), in that
+    /// order: every machine that run writes. A child each of them starts by a
     /// document it does not carry (`src`, a hybrid invoke's candidate or stub)
     /// is a child that run has to name and stage, whichever of them starts it.
     pub fn with_carried_descendants(&self) -> Vec<&SCXMLModel> {
+        let written = self.carried_invokes_with(&(), |_, invoke| {
+            invoke
+                .carries_a_child_written_with_its_parent()
+                .then_some(())
+        });
         std::iter::once(self)
             .chain(
-                self.inline_child_invokes()
+                written
                     .into_iter()
-                    .filter_map(|invoke| invoke.inline_child.as_deref()),
+                    .filter_map(|(invoke, _)| invoke.inline_child.as_deref()),
             )
             .collect()
     }

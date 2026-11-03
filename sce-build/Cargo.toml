@@ -1555,6 +1555,14 @@ name = "a_carried_child_the_generator_refuses_refuses_its_parent"
 path = "tests/a_carried_child_the_generator_refuses_refuses_its_parent.rs"
 required-features = ["cli"]
 
+# A child written in-line that a deploy places on another partition is written
+# by the run of that partition, not by its parent's. It spawns `sce-codegen
+# generate`, so it carries the `cli` gate.
+[[test]]
+name = "a_child_placed_on_another_partition_is_that_partitions_machine"
+path = "tests/a_child_placed_on_another_partition_is_that_partitions_machine.rs"
+required-features = ["cli"]
+
 # `orchestrate --go-module-prefix` reaches every statechart of the set and every
 # child one carries. It spawns `sce-codegen orchestrate` and `check`, so it
 # carries the `cli` gate.
