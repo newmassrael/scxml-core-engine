@@ -24,13 +24,16 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test an_algorithm_rule_is_refused_at_the_attribute_that_breaks_it
-mutation_targets sce-build/src/forge/generator.rs sce-build/src/forge/expr.rs
+mutation_targets sce-build/src/forge/generator.rs sce-build/src/forge/expr.rs sce-build/src/forge/value_type.rs
 mutation_oracles sce-build/tests/an_algorithm_rule_is_refused_at_the_attribute_that_breaks_it.rs
 
+# A schema's text that states no bound is no type of the language (docs/adr/0086,
+# section 1.4): refused where the schema is read, at the type, before any record of
+# it is named.
 mutation_case "a string field the schema does not bound is let through" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     "        .find(|f| matches!(f.ty.present_type(), SceType::String) && f.max_size.is_none())",
-     "        .find(|f| matches!(f.ty.present_type(), SceType::String) && f.max_size.is_none() && false)")
+edit("sce-build/src/forge/value_type.rs",
+     "            Self::Text { max } => ValueType::Text {\n                max: required(max)?,\n            },\n",
+     "            Self::Text { max } => ValueType::Text {\n                max: max.unwrap_or(Bound::of(1)),\n            },\n")
 PY
 
 mutation_case "a byte string field is let through" <<'PY'

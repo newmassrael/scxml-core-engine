@@ -6882,10 +6882,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                     }
                     report.needs_script_engine = Some(false);
                     report.needs_event_scheduler = Some(false);
-                    report.formatter = cpp_formatter.used();
                     // A run that succeeds reports what it read and the
                     // rewrite; fatal only under `--lint`, as `check` does.
                     report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
+                    report.formatter = cpp_formatter.used();
                     return report;
                 }
                 Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
@@ -7802,10 +7802,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         error_format.emit_and_exit(&err, "");
     }
 
-    report.formatter = cpp_formatter.used();
     // A run that succeeds reports what it read and the rewrite; fatal only
     // under `--lint`, as `check` does.
     report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
+    report.formatter = cpp_formatter.used();
     report
 }
 

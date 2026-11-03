@@ -24,13 +24,16 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
-mutation_targets sce-build/src/forge/static_datamodel.rs
+mutation_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/value_type.rs
 mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
 
+# A schema's text that states no bound is no type of the language (docs/adr/0086,
+# section 1.4): refused where the schema is read, at the type, so the record that
+# names the schema never holds one.
 mutation_case "a string field with no bound is let through" <<'PY'
-edit("sce-build/src/forge/static_datamodel.rs",
-     "matches!(f.sce_type.present_type(), SceType::String | SceType::Bytes)\n                && f.max_size.is_none()",
-     "matches!(f.sce_type.present_type(), SceType::String | SceType::Bytes)\n                && f.max_size.is_none() && false")
+edit("sce-build/src/forge/value_type.rs",
+     "            Self::Text { max } => ValueType::Text {\n                max: required(max)?,\n            },\n",
+     "            Self::Text { max } => ValueType::Text {\n                max: max.unwrap_or(Bound::of(1)),\n            },\n")
 PY
 
 mutation_case "a list of records is not asked for the bound" <<'PY'

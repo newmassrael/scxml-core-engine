@@ -18,9 +18,10 @@
 #   a number is handed to an enum parameter;
 #   an open enum crosses;
 #   the Interpreter's algorithm has no value form for an enum;
-#   an algorithm's parameter, return or local is read in the grammar of a scalar,
-#   which names no enum (judged also by `the_grammar_accepts_what_the_parser_accepts`,
-#   which parses the committed algorithm documents with the XSD first).
+#   the one type grammar an algorithm's parameter, return and local are read in
+#   (docs/adr/0086) takes no enum the document imports (judged also by
+#   `the_grammar_accepts_what_the_parser_accepts`, which parses the committed
+#   algorithm documents with the XSD first).
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -61,8 +62,8 @@ edit("sce-build/src/forge/static_js_algorithm.rs",
      "    !matches!(ty, SceType::Bytes | SceType::Enum(_))\n")
 PY
 
-mutation_case "an algorithm's slot is read in the grammar of a scalar" <<'PY'
+mutation_case "an algorithm's slot is read in a grammar that names no enum" <<'PY'
 edit("sce-build/src/forge/parser.rs",
-     "            TypeGrammar::ScalarOrEnumRef,\n            element,\n            attr,\n            text,\n        )\n        .map(AlgorithmValueType::Scalar);\n",
-     "            TypeGrammar::Scalar,\n            element,\n            attr,\n            text,\n        )\n        .map(AlgorithmValueType::Scalar);\n")
+     "        .any(|alias| !enums.iter().any(|e| e.as_str() == alias));\n",
+     "        .any(|alias| !alias.is_empty());\n")
 PY

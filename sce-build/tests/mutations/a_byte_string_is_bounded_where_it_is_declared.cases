@@ -16,7 +16,8 @@
 # decision away each:
 #
 #   a bytes variable that declares no capacity is let through;
-#   a record's bytes field that has no max-size is let through;
+#   a record's bytes field that has no bound is let through (its schema is
+#   refused at the type, docs/adr/0086 section 1.4);
 #   a literal past printable ASCII is let through.
 #
 # Three cases that defended the refusal by name of a language that did not yet hold a
@@ -28,19 +29,22 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
-mutation_targets sce-build/src/parser.rs sce-build/src/forge/static_datamodel.rs
+mutation_targets sce-build/src/parser.rs sce-build/src/forge/static_datamodel.rs sce-build/src/forge/value_type.rs
 mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
 
 mutation_case "a bytes variable that declares no capacity is let through" <<'PY'
 edit("sce-build/src/parser.rs",
-     "                Some(\"bytes\") => Some((\"bytes\", \"bytes\")),",
-     "                Some(\"bytes\") => None,")
+     "                    Some((\"bytes\", \"bytes\", \"bytes[N]\"))\n",
+     "                    None\n")
 PY
 
-mutation_case "a record's bytes field that has no max-size is let through" <<'PY'
-edit("sce-build/src/forge/static_datamodel.rs",
-     "            matches!(f.sce_type.present_type(), SceType::String | SceType::Bytes)\n                && f.max_size.is_none()",
-     "            matches!(f.sce_type.present_type(), SceType::String)\n                && f.max_size.is_none()")
+# A record's byte string is a field of its schema, and a schema's byte string that
+# states no bound is no type of the language (docs/adr/0086, section 1.4): refused
+# where the schema is read, at the type, so the record never holds one.
+mutation_case "a record's bytes field that has no bound is let through" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            Self::Bytes { max } => ValueType::Bytes {\n                max: required(max)?,\n            },\n",
+     "            Self::Bytes { max } => ValueType::Bytes {\n                max: max.unwrap_or(Bound::of(1)),\n            },\n")
 PY
 
 mutation_case "a literal past printable ASCII is let through" <<'PY'
