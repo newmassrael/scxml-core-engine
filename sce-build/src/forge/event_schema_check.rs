@@ -354,14 +354,20 @@ fn action_reads_event_data(action: &Action) -> bool {
         &action.sendidexpr,
     ]
     .into_iter()
-    .chain(action.elseif_branches.iter().map(|branch| &branch.cond))
+    .map(String::as_str)
+    .chain(
+        action
+            .nested_blocks()
+            .into_iter()
+            .filter_map(|block| block.cond),
+    )
     .chain(
         action
             .params
             .iter()
-            .flat_map(|param| [&param.expr, &param.location]),
+            .flat_map(|param| [param.expr.as_str(), param.location.as_str()]),
     )
-    .any(|text| references_event_data_lexically(text))
+    .any(references_event_data_lexically)
 }
 
 pub fn resolve_imported_event_schemas(
