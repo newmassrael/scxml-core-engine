@@ -523,7 +523,10 @@ fn logged_alike(ty: InferredType, enum_value: bool) -> bool {
         | InferredType::Float { .. }
         | InferredType::UntypedInt
         | InferredType::UntypedFloat => true,
-        InferredType::Optional(elem) => !matches!(elem, OptionalElem::Bytes | OptionalElem::Record),
+        InferredType::Optional(elem) => !matches!(
+            elem,
+            OptionalElem::Bytes | OptionalElem::Record | OptionalElem::List(_)
+        ),
         InferredType::Unknown => enum_value,
         InferredType::Bytes
         | InferredType::BytesBuffer
@@ -1800,7 +1803,11 @@ impl<'a> Judge<'a> {
                 if held_list.and_then(AlgorithmValueType::record_alias)
                     == Some(returned.as_str()) =>
             {
-                InferredType::List(crate::forge::types::ListElem::Record)
+                InferredType::List(crate::forge::types::ListElem::of_value(
+                    &crate::forge::value_type::ValueType::Record {
+                        alias: returned.clone(),
+                    },
+                ))
             }
             Some(slot) => {
                 return Err(place(format!(

@@ -29,6 +29,7 @@
 
 use crate::forge::model::{EntryType, SceType};
 use crate::forge::quantity::{NumericBaseType, Quantity, Rational, UnitTag};
+use crate::forge::value_type::ValueType;
 use std::collections::HashMap;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -210,55 +211,82 @@ fn record_registry() -> &'static std::sync::Mutex<Vec<RecordEntry>> {
     REG.get_or_init(|| std::sync::Mutex::new(Vec::new()))
 }
 
-/// The element of a [`InferredType::List`]: a fixed-width number, a `bool`
-/// — what a list admits (`AlgorithmValueType::list_elem_admitted`) — or a
-/// record, kept `Copy` so the list type is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ListElem {
-    Number(NumericBaseType),
-    Bool,
-    /// A record. Which record is not carried: the lattice has no record
-    /// type, and a record element is read only through a name — a foreach
-    /// item or a record local — that the record rule types by its fields
-    /// (SCE_FORGE.md §4.12).
-    Record,
-}
+/// The element of a [`InferredType::List`]: a type of the one value type
+/// (docs/adr/0086, section 1), any of them, its bounds inside it. Interned as
+/// [`RecordId`] is, so the lattice stays `Copy` and a list of lists, of texts or
+/// of optional values is the same lattice type as a list of numbers, with no
+/// second set of what a list may hold.
+///
+/// A record element names its record by the alias of the scope the list was
+/// typed in; it is read through a name or through the place it stands at
+/// ([`crate::forge::value_path`]), each field typed by the record's schema.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ListElem(u32);
 
 impl ListElem {
-    /// The element a list of `ty` holds; `None` for a type no list admits.
+    /// The element whose type is `elem`.
+    pub fn of_value(elem: &ValueType) -> Self {
+        let mut guard = list_elem_registry()
+            .lock()
+            .expect("list element registry poisoned");
+        if let Some(idx) = guard.iter().position(|held| *held == elem) {
+            return ListElem(idx as u32);
+        }
+        let idx = guard.len();
+        assert!(
+            idx < u32::MAX as usize,
+            "list element registry exhausted its u32 index space"
+        );
+        guard.push(Box::leak(Box::new(elem.clone())));
+        ListElem(idx as u32)
+    }
+
+    /// The type of one element.
+    pub fn value(self) -> &'static ValueType {
+        list_elem_registry()
+            .lock()
+            .expect("list element registry poisoned")
+            .get(self.0 as usize)
+            .copied()
+            .expect("ListElem constructed only by of_value()")
+    }
+
+    /// The element of a list of the scalar `ty` that the lowerings of a slot
+    /// hold: a fixed-width number or `bool`
+    /// ([`crate::forge::value_type::WrittenType::list_elem_admitted`]); `None`
+    /// for any other scalar.
     pub fn of(ty: &SceType) -> Option<Self> {
-        match InferredType::from_sce_type(ty) {
-            InferredType::Int { signed, bits } => {
-                Some(Self::Number(NumericBaseType::Int { signed, bits }))
-            }
-            InferredType::Float { bits } => Some(Self::Number(NumericBaseType::Float { bits })),
-            InferredType::Bool => Some(Self::Bool),
-            _ => None,
-        }
+        crate::forge::value_type::WrittenType::list_elem_admitted(ty)
+            .then(|| Self::of_value(&ValueType::Scalar(ty.clone())))
     }
 
-    /// The element a list of `elem` holds; `None` for a scalar no list
-    /// admits.
+    /// The element a list of the written element `elem` holds, every bound
+    /// inside an element being stated; `None` for one that leaves a bound
+    /// out, which is no type of the language.
     pub fn of_list(elem: &crate::forge::model::AlgorithmValueType) -> Option<Self> {
-        match (elem.scalar(), elem.record_alias()) {
-            (Some(ty), _) => Self::of(ty),
-            (None, Some(_)) => Some(Self::Record),
-            (None, None) => None,
-        }
+        elem.clone()
+            .bounded()
+            .ok()
+            .map(|elem| Self::of_value(&elem))
     }
 
-    /// The type one element has as an operand. A record element is
-    /// `Unknown`: it has no operand type, and is read through a name.
-    pub fn element_type(self) -> InferredType {
-        match self {
-            Self::Number(NumericBaseType::Int { signed, bits }) => {
-                InferredType::Int { signed, bits }
-            }
-            Self::Number(NumericBaseType::Float { bits }) => InferredType::Float { bits },
-            Self::Bool => InferredType::Bool,
-            Self::Record => InferredType::Unknown,
-        }
+    /// Whether the element is a record.
+    pub fn is_record(self) -> bool {
+        matches!(self.value(), ValueType::Record { .. })
     }
+
+    /// The type one element has as an operand ([`InferredType::of_value`]). A
+    /// record element is `Unknown`: it has no operand type, and is read through
+    /// its fields.
+    pub fn element_type(self) -> InferredType {
+        InferredType::of_value(self.value())
+    }
+}
+
+fn list_elem_registry() -> &'static std::sync::Mutex<Vec<&'static ValueType>> {
+    static REG: std::sync::OnceLock<std::sync::Mutex<Vec<&'static ValueType>>> =
+        std::sync::OnceLock::new();
+    REG.get_or_init(|| std::sync::Mutex::new(Vec::new()))
 }
 
 /// The element of an [`InferredType::Optional`] (docs/adr/0055): what a
@@ -274,9 +302,12 @@ pub enum OptionalElem {
     /// type for an enum ([`InferredType::from_sce_type`]), and
     /// [`crate::forge::static_enum`] answers which one a path holds.
     Enum,
-    /// A record of an event schema. Which record is not carried, as a list's
-    /// record element carries none ([`ListElem::Record`]).
+    /// A record of an event schema. Which record is not carried: the place
+    /// that holds one names it.
     Record,
+    /// A list of the element it holds (docs/adr/0086, section 1): an optional
+    /// value may hold a list, as a list may hold optional values.
+    List(ListElem),
 }
 
 impl OptionalElem {
@@ -303,7 +334,7 @@ impl OptionalElem {
 
     /// The scalar a present value is, the inverse of [`Self::of`] — or `None`
     /// for an enum and a record, whose type the lattice does not carry (the
-    /// place that holds one names it).
+    /// place that holds one names it), and for a list, which is no scalar.
     pub fn scalar(self) -> Option<SceType> {
         Some(match self {
             Self::Number(NumericBaseType::Int { signed, bits }) => match (signed, bits) {
@@ -321,18 +352,35 @@ impl OptionalElem {
             Self::Bool => SceType::Bool,
             Self::Str => SceType::String,
             Self::Bytes => SceType::Bytes,
-            Self::Enum | Self::Record => return None,
+            Self::Enum | Self::Record | Self::List(_) => return None,
         })
     }
 
     /// The element of the `optional<elem>` a variable declares: a scalar, a
-    /// text, a byte string or a record, the elements a slot's optional holds
-    /// ([`crate::forge::value_type::WrittenType::slot_view`], which refuses
-    /// any other before a lowering reads the slot).
+    /// text, a byte string, a record or a list. A list whose element leaves a
+    /// bound out is no type of the language, and is held as the record no
+    /// expression reads.
     pub fn of_value(elem: &crate::forge::model::AlgorithmValueType) -> Self {
-        match elem.scalar() {
-            Some(ty) => Self::of(ty),
-            None => Self::Record,
+        match (elem.scalar(), elem.list_elem()) {
+            (Some(ty), _) => Self::of(ty),
+            (None, Some(list)) => ListElem::of_list(list).map_or(Self::Record, Self::List),
+            (None, None) => Self::Record,
+        }
+    }
+
+    /// The element of `optional<elem>`, for an element of the one value type
+    /// (docs/adr/0086): what [`InferredType::of_value`] projects an optional
+    /// value to. An optional value is never itself optional (the grammar
+    /// refuses `optional<optional<T>>`), so an element that is one is read as
+    /// the element it holds.
+    pub fn of_element(elem: &ValueType) -> Self {
+        match elem {
+            ValueType::Scalar(ty) => Self::of(ty),
+            ValueType::Text { .. } => Self::Str,
+            ValueType::Bytes { .. } => Self::Bytes,
+            ValueType::Record { .. } => Self::Record,
+            ValueType::List { elem, .. } => Self::List(ListElem::of_value(elem)),
+            ValueType::Optional { elem } => Self::of_element(elem),
         }
     }
 
@@ -349,6 +397,7 @@ impl OptionalElem {
             Self::Str => InferredType::Str,
             Self::Bytes => InferredType::Bytes,
             Self::Enum | Self::Record => InferredType::Unknown,
+            Self::List(elem) => InferredType::List(elem),
         }
     }
 
@@ -483,9 +532,8 @@ impl InferredType {
             Self::Optional(elem) => format!("optional<{}>", elem.describe()),
             Self::Unknown => "unknown".into(),
             Self::Quantity { .. } => "quantity".into(),
-            Self::List(elem) | Self::ListBuffer(elem) => {
-                format!("list<{}>", elem.element_type().describe())
-            }
+            // The element as its type is written (docs/adr/0086, section 1).
+            Self::List(elem) | Self::ListBuffer(elem) => format!("list<{}>", elem.value()),
             Self::BytesBuffer => "bytes".into(),
             // By the schema document itself: two records of one `name` in
             // different places are different types, and the diagnostic
@@ -769,6 +817,26 @@ impl InferredType {
         match ty {
             EntryType::Scalar(t) => Self::from_sce_type(t),
             EntryType::Optional { elem } => Self::Optional(OptionalElem::of(elem)),
+        }
+    }
+
+    /// The type a value of the one value type (docs/adr/0086) is read as by an
+    /// expression: a scalar as [`Self::from_sce_type`] maps it, a text and a
+    /// byte string as `string` and `bytes`, an optional value as the optional
+    /// value of its element, and a list as the list of its element, whatever
+    /// the element is. A record is `Unknown`, as a statechart's record is where
+    /// it is named: it has no operand type, and is read through its fields.
+    ///
+    /// For every type an event schema's field could hold one entry of, the
+    /// same type [`Self::of_field`] reads that entry as.
+    pub fn of_value(ty: &ValueType) -> Self {
+        match ty {
+            ValueType::Scalar(t) => Self::from_sce_type(t),
+            ValueType::Text { .. } => Self::Str,
+            ValueType::Bytes { .. } => Self::Bytes,
+            ValueType::Optional { elem } => Self::Optional(OptionalElem::of_element(elem)),
+            ValueType::Record { .. } => Self::Unknown,
+            ValueType::List { elem, .. } => Self::List(ListElem::of_value(elem)),
         }
     }
 }

@@ -36972,7 +36972,7 @@ fn lower_algorithm_stmt(
                 let mut item_is_borrowed = false;
                 let item_name: Option<String> = match source_ty {
                     InferredType::Bytes => Some(l.type_name(&SceType::Uint8).into_owned()),
-                    InferredType::List(crate::forge::types::ListElem::Record) => {
+                    InferredType::List(elem) if elem.is_record() => {
                         let alias = records.get(item.as_str()).ok_or_else(|| {
                             GenerateError::InvalidConfig(format!(
                                 "foreach item '{item}' over the list of records '{source}' was \

@@ -1057,7 +1057,11 @@ fn value_func_sig(callee: &StaticCallee) -> Option<FuncSig> {
             InferredType::Optional(crate::forge::types::OptionalElem::Record)
         }
         StaticSlot::ScalarList(t) => InferredType::List(crate::forge::types::ListElem::of(t)?),
-        StaticSlot::RecordList(_) => InferredType::List(crate::forge::types::ListElem::Record),
+        StaticSlot::RecordList(alias) => InferredType::List(
+            crate::forge::types::ListElem::of_value(&crate::forge::value_type::ValueType::Record {
+                alias: alias.clone(),
+            }),
+        ),
     };
     Some(FuncSig {
         may_fail: callee.may_fail,

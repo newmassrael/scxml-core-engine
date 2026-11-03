@@ -987,7 +987,7 @@ fn reject_unnamed_record_elements(
         }
     }
     if let ExprKind::Index { object, .. } = &expr.kind {
-        if object.ty == InferredType::List(crate::forge::types::ListElem::Record) {
+        if matches!(object.ty, InferredType::List(elem) if elem.is_record()) {
             return Err(ExprError::UnsupportedConstruct {
                 construct: "an element of a list of records read by index (a record element \
                             is read through a <sce:foreach> item)"
@@ -4782,7 +4782,7 @@ fn indexed_list_name(expr: &TypedExpr) -> Option<&str> {
             op: CheckedOp::Index,
             left: object,
             ..
-        } if object.ty == InferredType::List(crate::forge::types::ListElem::Record) => {
+        } if matches!(object.ty, InferredType::List(elem) if elem.is_record()) => {
             match &object.kind {
                 ExprKind::Ident(name) => Some(name.as_str()),
                 _ => None,
@@ -6961,7 +6961,7 @@ fn cpp_optional_type(elem: OptionalElem, present: &str) -> String {
         OptionalElem::Bool => "bool".to_string(),
         OptionalElem::Str => "std::string".to_string(),
         OptionalElem::Bytes => "std::vector<uint8_t>".to_string(),
-        OptionalElem::Enum | OptionalElem::Record => {
+        OptionalElem::Enum | OptionalElem::Record | OptionalElem::List(_) => {
             format!("std::decay_t<decltype({present})>")
         }
     };
@@ -7449,10 +7449,8 @@ fn cpp_unary(op: UnaryOp) -> &'static str {
 /// so the reader is chosen by the element, not by an overload on the
 /// buffer.
 fn kotlin_buffer_reader(elem: crate::forge::types::ListElem) -> Result<&'static str, ExprError> {
-    use crate::forge::quantity::NumericBaseType;
-    use crate::forge::types::ListElem;
-    Ok(match elem {
-        ListElem::Number(NumericBaseType::Int { signed, bits }) => match (signed, bits) {
+    Ok(match elem.element_type() {
+        InferredType::Int { signed, bits } => match (signed, bits) {
             (true, 8) => "getByte",
             (true, 16) => "getShort",
             (true, 32) => "getInt",
@@ -7462,13 +7460,15 @@ fn kotlin_buffer_reader(elem: crate::forge::types::ListElem) -> Result<&'static 
             (false, 32) => "getUInt",
             (false, _) => "getULong",
         },
-        ListElem::Number(NumericBaseType::Float { bits: 32 }) => "getFloat",
-        ListElem::Number(NumericBaseType::Float { .. }) => "getDouble",
-        ListElem::Bool => "getBoolean",
-        // Never registered as a value (AlgorithmTypes::collect).
-        ListElem::Record => {
+        InferredType::Float { bits: 32 } => "getFloat",
+        InferredType::Float { .. } => "getDouble",
+        InferredType::Bool => "getBoolean",
+        // A buffer holds a fixed-width number or `bool` in its 64-bit slot; a
+        // record element is never registered as a value
+        // (AlgorithmTypes::collect), and no other element is held by one.
+        _ => {
             return Err(ExprError::UnsupportedConstruct {
-                construct: "an index into a list of records".to_string(),
+                construct: format!("an index into a list of {}", elem.value()),
                 observed: None,
             })
         }
@@ -14995,12 +14995,10 @@ mod tests {
         let mut ctx = js_ctx();
         ctx.insert_var(
             "history",
-            InferredType::List(crate::forge::types::ListElem::Number(
-                crate::forge::quantity::NumericBaseType::Int {
-                    signed: false,
-                    bits: 8,
-                },
-            )),
+            InferredType::List(
+                crate::forge::types::ListElem::of(&crate::forge::model::SceType::Uint8)
+                    .expect("a list holds a uint8"),
+            ),
         );
         let text = transpile_typed(
             "len(history)",
