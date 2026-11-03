@@ -21,6 +21,10 @@
 # reason in a narrower alphabet: an option can default to false, so a
 # block appended past its `endif()` configures cleanly and fails at build
 # time, and a directory can acquire a CMakeLists.txt anywhere.
+# `the_conformance_cmake_route_declares_what_the_generator_plans` reads every
+# tracked CMake file too, for that last reason: a plan of a generation that no
+# request asks ahead is sent to the generator alone when the tree is
+# configured, and the file that writes one next can be anywhere.
 #
 # `mutation_corpus_fits_its_lane` and `mutation_round_survives_the_next_push`
 # are here for the 2026-08-04 reason in its purest form: both judge
@@ -206,6 +210,7 @@ cargo test -p sce-build --features cli,ffi \
     --test build_jobs_has_one_owner \
     --test codegen_binary_resolution \
     --test cmake_option_guard_scope \
+    --test the_conformance_cmake_route_declares_what_the_generator_plans \
     --test configuration_rules_cite_their_clause \
     --test gate_registry_contract \
     --test committed_sourcemap_drift \

@@ -119,6 +119,13 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // tools/git-hooks/gate_registry.py).
     "ci_supersession_policy",
     "cmake_option_guard_scope",
+    // Asks `git ls-files` for every tracked CMake file and refuses a plan of
+    // a generation that no request of the same file asks ahead, which the
+    // configure would send to the generator alone. The file that asks one
+    // next can be a `CMakeLists.txt` in a directory that has none today, so
+    // a `paths:` filter over the files that ask plans now names the answers
+    // it already has and cannot start on the arrival.
+    "the_conformance_cmake_route_declares_what_the_generator_plans",
     // Asks `git ls-files` for every tracked file and reads each one that
     // decodes, looking for a configuration RULE stated on a line that
     // cites a clause which does not state it. A SEVENTH backend writing

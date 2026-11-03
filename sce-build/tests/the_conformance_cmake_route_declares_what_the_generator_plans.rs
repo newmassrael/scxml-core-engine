@@ -68,6 +68,19 @@
 //! `configure_plans_are_kept_and_asked_together`, and that a kept answer is
 //! reused only while its inputs are unchanged by
 //! `a_configure_asks_each_plan_once_per_input_state`, which runs `cmake`.
+//!
+//! A plan asked when it is declared, with no request ahead of it, is sent to
+//! the generator alone: one process the configure waits for by itself. A
+//! fresh configure of the test tree with the Mesh fixtures sent 15 so, every
+//! one a `sce_codegen_generation` written with no request beside it. That
+//! call now asks its plan ahead itself and declares at the end of its
+//! directory, after the batch, and no CMake file of the tree may ask a plan
+//! no request of the same file asks ahead ([`plans_sent_alone`]). Which file
+//! a plan is asked from is not a list kept here: the scan reads every CMake
+//! file git tracks, so this suite is one of the tree-wide gates
+//! (`UNFILTERABLE_GATES` in `workflow_trigger_coverage`).
+
+mod common;
 
 /// The route under test. Compiled in, so an edit to it starts the suite that
 /// judges it (`include-str-coverage` in tools/git-hooks/gate_registry.py).
@@ -1323,6 +1336,172 @@ fn every_plan_a_route_declares_is_asked_ahead() {
             found.join("\n  ")
         );
     }
+}
+
+/// The floor of tracked CMake files the tree-wide scan reads (`git ls-files`
+/// named 51 outside the vendored trees on 2026-11-04), so a pathspec that
+/// stopped matching reads as a broken scan and not as a clean tree.
+const MIN_CMAKE_FILES: usize = 30;
+
+/// The files the tree-wide scan has to have read: the module and the two
+/// routes, which ask plans, and the two test trees, which declare
+/// generations through the module.
+const FILES_THAT_ASK_A_PLAN: &[&str] = &[
+    PLAN_MODULE_PATH,
+    "cmake/SCEStaticW3CTest.cmake",
+    "cmake/SCEStaticIntegrationFixture.cmake",
+    "tests/CMakeLists.txt",
+    "backends/c/tests/CMakeLists.txt",
+];
+
+/// Every CMake file git tracks, with its text, the vendored trees left out:
+/// a plan can be asked from a directory that has no CMake file today, so the
+/// files are found where git says they are rather than named.
+fn tracked_cmake_files() -> Vec<(String, String)> {
+    let root = common::repository::root();
+    let files: Vec<(String, String)> =
+        common::repository::paths_git_tracks(&["*CMakeLists.txt", "*.cmake"])
+            .into_iter()
+            .filter(|path| !path.starts_with("third_party/") && !path.starts_with("vendor/"))
+            .map(|path| {
+                let text = std::fs::read_to_string(root.join(&path))
+                    .unwrap_or_else(|e| panic!("read {path}: {e}"));
+                (path, text)
+            })
+            .collect();
+    assert!(
+        files.len() >= MIN_CMAKE_FILES,
+        "only {} tracked CMake file(s) reached the scan (floor {MIN_CMAKE_FILES}); the \
+         pathspec is broken, not the tree",
+        files.len()
+    );
+    files
+}
+
+/// Every way the CMake files given (each a path and its text) send a plan to
+/// the generator alone, one process for one plan when it is declared:
+///
+/// * a root plan (`sce_codegen_plan`, not FROM another) whose options no
+///   `sce_codegen_plan_request` of the same file spells word for word
+///   ([`unrequested_plans`]): the module's own, which plans each generation
+///   `sce_codegen_generation` asked ahead, is held by this as much as a
+///   route's;
+/// * a generation declared by a call of the module's declaration outside the
+///   module, where no `sce_codegen_generation` asked its plan ahead; inside
+///   the module, by a call outside the deferred declaration that sends the
+///   batch first ([`order_violations`]).
+fn plans_sent_alone(files: &[(String, String)]) -> Vec<String> {
+    let mut found = Vec::new();
+    for (path, text) in files {
+        found.extend(
+            unrequested_plans(text)
+                .into_iter()
+                .map(|why| format!("{path}: {why}")),
+        );
+        let code = cmake_code(text);
+        let declarations = invocations(&code, "_sce_codegen_generation_declare");
+        let deferred = if path == PLAN_MODULE_PATH {
+            invocations(
+                function_body(&code, "_sce_codegen_generations_declare"),
+                "_sce_codegen_generation_declare",
+            )
+            .len()
+        } else {
+            0
+        };
+        if declarations.len() > deferred {
+            let lines: Vec<usize> = declarations.iter().map(|call| call.line).collect();
+            found.push(format!(
+                "{path}: `_sce_codegen_generation_declare` is called outside the deferred \
+                 declaration that sends the batch first (calls at lines {lines:?}, {deferred} \
+                 of them in `_sce_codegen_generations_declare`), so the plan it declares \
+                 from is asked alone; call `sce_codegen_generation`"
+            ));
+        }
+    }
+    found
+}
+
+/// No CMake file of the tree sends a plan to the generator alone: every plan
+/// it declares was asked ahead and answered in a batch before any was
+/// declared. A configure says how many it sent alone
+/// (`a_configure_asks_each_plan_once_per_input_state` reads the line); this
+/// is what keeps the tree's count at none, read from every tracked CMake file
+/// rather than from the ones that ask a plan today.
+#[test]
+fn no_cmake_file_of_the_tree_sends_a_plan_alone() {
+    let files = tracked_cmake_files();
+    for asking in FILES_THAT_ASK_A_PLAN {
+        assert!(
+            files.iter().any(|(path, _)| path == asking),
+            "{asking} did not reach the scan, which reads the plans it asks"
+        );
+    }
+    let found = plans_sent_alone(&files);
+    assert!(
+        found.is_empty(),
+        "a CMake file of the tree sends a plan to the generator alone, one process for one \
+         plan:\n  {}\n\nDeclare the generation with `sce_codegen_generation` \
+         (cmake/SCECodegenPlan.cmake), which asks its plan ahead and declares it after the \
+         batch, or queue the plan with `sce_codegen_plan_request` and send the batch with \
+         `sce_codegen_plan_prefetch` before the plan is asked.",
+        found.join("\n  ")
+    );
+}
+
+/// A plan no request asks ahead is refused in whichever file of the tree it
+/// is written, and a plan a request of the same file asks word for word
+/// passes; so is a generation declared outside the module's deferred
+/// declaration, and the module itself when it plans what it did not ask.
+#[test]
+fn a_plan_sent_alone_is_refused_wherever_it_is() {
+    let file = |path: &str, text: &str| vec![(path.to_string(), text.to_string())];
+    let asked = format!(
+        "sce_codegen_plan_request(STEM \"${{M}}\" DOCUMENT \"${{D}}\" OUTPUT_DIR \"${{O}}\" \
+         LANGUAGE cpp)\nsce_codegen_plan_prefetch()\n{PLANNED_GENERATION}"
+    );
+    assert_eq!(
+        plans_sent_alone(&file("examples/probe/CMakeLists.txt", &asked)),
+        Vec::<String>::new()
+    );
+    let alone = plans_sent_alone(&file("examples/probe/CMakeLists.txt", PLANNED_GENERATION));
+    assert!(
+        alone
+            .iter()
+            .any(|v| v.starts_with("examples/probe/CMakeLists.txt: ")
+                && v.contains("is asked ahead by no request")),
+        "a plan no request asks ahead, in a file no route is, was accepted: {alone:?}"
+    );
+    let declared = plans_sent_alone(&file(
+        "tests/probe/CMakeLists.txt",
+        "_sce_codegen_generation_declare(_P 1)\n",
+    ));
+    assert!(
+        declared
+            .iter()
+            .any(|v| v.contains("called outside the deferred declaration")),
+        "a generation declared outside the module was accepted: {declared:?}"
+    );
+    assert_eq!(
+        plans_sent_alone(&file(PLAN_MODULE_PATH, PLAN_MODULE)),
+        Vec::<String>::new(),
+        "the module as it stands sends a plan alone"
+    );
+    let unasked = PLAN_MODULE.replace(
+        "sce_codegen_plan_request(${_PLAN_OPTIONS})",
+        "set(_ASKED ${_PLAN_OPTIONS})",
+    );
+    assert_ne!(
+        unasked, PLAN_MODULE,
+        "the module no longer asks ahead as this case expects"
+    );
+    let found = plans_sent_alone(&file(PLAN_MODULE_PATH, &unasked));
+    assert!(
+        found
+            .iter()
+            .any(|v| v.contains("is asked ahead by no request")),
+        "a module that plans a generation it did not ask ahead was accepted: {found:?}"
+    );
 }
 
 /// The C11 conformance suite's build, which registers its fixtures through

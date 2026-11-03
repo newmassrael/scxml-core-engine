@@ -355,7 +355,9 @@ plan once per state of its inputs, and many at once, without changing an answer:
   step, so no caller reads a plan's answer while the tree is configured. When the module is
   first included, every answer the last configure asked that is no longer current is asked
   again in one batch (every plan after the generator is rebuilt). A plan asked otherwise and
-  not kept is sent alone.
+  not kept is sent alone; the tree asks none so, and
+  `the_conformance_cmake_route_declares_what_the_generator_plans` refuses one in any tracked
+  CMake file.
 - **Settled at the end.** The answers no plan asked for are removed, the asked list is kept
   for the next configure, and one status line reports how many plans were asked, how many
   were answered from the cache, how many the generator was sent and in how many batches, and

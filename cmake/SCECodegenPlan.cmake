@@ -96,6 +96,10 @@
 #     was sent in one batch, and the call hands its caller generator
 #     expressions for the files a target compiles;
 #   - a plan asked otherwise and not kept is sent alone, when it is asked.
+#     The tree asks none so, and is held to it: a plan in any CMake file of
+#     the tree that no request of the same file asks ahead, word for word,
+#     is refused by
+#     `the_conformance_cmake_route_declares_what_the_generator_plans`.
 # At the end of the configure, the answers no plan asked for are removed,
 # the list of the asked ones is kept for the next configure, and one line
 # says how many plans were asked, how many were kept, how many the generator
