@@ -1034,8 +1034,10 @@ mod tests_cross {
             Ty::I16 => Held::I(i16::MIN.into()),
             Ty::I32 => Held::I(i32::MIN.into()),
             Ty::I64 => Held::I(i64::MIN),
-            Ty::F32 => Held::F(f64::from(-f32::MIN_POSITIVE)),
-            Ty::F64 => Held::F(-f64::MIN_POSITIVE),
+            // Seventeen digits after `0.00000`: the longest spelling of a
+            // number, which only the decimal band from 1e-6 to 1e-5 reaches.
+            Ty::F32 => Held::F(f64::from(-f32::from_bits(0x35a5_b36d))),
+            Ty::F64 => Held::F(-f64::from_bits(0x3eb4_b66d_c01e_c6fb)),
             Ty::Bool => Held::B(false),
             Ty::Enum => Held::S("medium".into()),
             Ty::Text => Held::S(controls(T)),
@@ -1110,7 +1112,7 @@ mod tests_cross {
             Ty::I8 => 4,
             Ty::I16 => 6,
             Ty::I32 => 11,
-            Ty::F32 | Ty::F64 => 24,
+            Ty::F32 | Ty::F64 => 25,
             Ty::Bool => 5,
             Ty::Enum => 2 + "medium".len(),
             Ty::Text | Ty::Bytes => 2 + 6 * T,
@@ -1347,12 +1349,8 @@ mod tests_cross {
                 let ty = nest(&kind, depth);
                 let max = maximal(&ty);
                 let text = write(&ty, &max);
-                // A single crosses as the double it widens to, whose shortest
-                // spelling has a two-digit exponent: the calculus's 24 bounds it
-                // and is not reached.
-                let exact = !matches!(kind, Ty::F32);
                 let size = largest(&ty);
-                if (exact && text.len() != size) || text.len() > size {
+                if text.len() != size {
                     failures.push(format!(
                         "{kind:?} at depth {depth}: {} bytes, the calculus says {size}: {text}",
                         text.len()

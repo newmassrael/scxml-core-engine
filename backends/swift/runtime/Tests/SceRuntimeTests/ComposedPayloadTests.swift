@@ -115,8 +115,10 @@ private func maximal(_ ty: Ty) -> Held {
         case .i16: return .i(Int64(Int16.min))
         case .i32: return .i(Int64(Int32.min))
         case .i64: return .i(Int64.min)
-        case .f32: return .f(Double(-Float.leastNormalMagnitude))
-        case .f64: return .f(-Double.leastNormalMagnitude)
+        // Seventeen digits after `0.00000`: the longest spelling of a number, which only the
+        // decimal band from 1e-6 to 1e-5 reaches.
+        case .f32: return .f(Double(-Float(bitPattern: 0x35a5_b36d)))
+        case .f64: return .f(-Double(bitPattern: 0x3eb4_b66d_c01e_c6fb))
         case .bool: return .b(false)
         case .enumeration: return .s("medium")
         case .text: return .s(controls)
@@ -192,7 +194,7 @@ private func largest(_ ty: Ty) -> Int {
         case .i8: return 4
         case .i16: return 6
         case .i32: return 11
-        case .f32, .f64: return 24
+        case .f32, .f64: return 25
         case .bool: return 5
         case .enumeration: return 2 + "medium".utf8.count
         case .text, .bytes: return text
@@ -364,9 +366,7 @@ private enum Want {
             let text = write(ty, full)
             let size = largest(ty)
             let written = text.utf8.count
-            // A single crosses as the double it widens to, whose shortest spelling has
-            // a two-digit exponent: the calculus's 24 bounds it and is not reached.
-            if (kind != .f32 && written != size) || written > size {
+            if written != size {
                 failures.append("\(kind) at depth \(depth): \(written) bytes, the calculus says \(size): \(text)")
             }
             if (try? lift(ty, data(text))) != full {

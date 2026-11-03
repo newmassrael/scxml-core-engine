@@ -866,8 +866,12 @@ fn scalar_size(t: &SceType, measure: Measure, env: &dyn TypeEnv) -> Result<u64, 
         (SceType::Int32, Measure::Json) => 11,
         // A 64-bit integer crosses as the quoted text of its digits.
         (SceType::Uint64 | SceType::Int64, Measure::Json) => 22,
-        // A single crosses as the double it widens to.
-        (SceType::Float32 | SceType::Float64, Measure::Json) => 24,
+        // A single crosses as the double it widens to, and a double is spelled
+        // as ECMAScript's Number::toString spells it (ARCHITECTURE.md, "JSON
+        // Number Text"): seventeen digits after `-0.00000`, which only the
+        // decimal band from 1e-6 to 1e-5 reaches, are its longest spelling; a
+        // spelling with an exponent is at most 24.
+        (SceType::Float32 | SceType::Float64, Measure::Json) => 25,
         (SceType::Bool, Measure::Json) => 5,
         (SceType::Uint8 | SceType::Int8, Measure::Cbor) => 2,
         (SceType::Uint16 | SceType::Int16, Measure::Cbor) => 3,
@@ -1562,8 +1566,8 @@ mod tests {
         assert_eq!(both("int32"), (11, 5));
         assert_eq!(both("uint64"), (22, 9));
         assert_eq!(both("int64"), (22, 9));
-        assert_eq!(both("float32"), (24, 5));
-        assert_eq!(both("float64"), (24, 9));
+        assert_eq!(both("float32"), (25, 5));
+        assert_eq!(both("float64"), (25, 9));
         assert_eq!(both("bool"), (5, 1));
         // "medium" is the longest name; the enum is a uint8 on CBOR.
         assert_eq!(both("enum:SignalLevel"), (8, 2));
@@ -1608,7 +1612,8 @@ mod tests {
                 SceType::Int32 => "-2147483648".into(),
                 SceType::Uint64 => "\"18446744073709551615\"".into(),
                 SceType::Int64 => "\"-9223372036854775808\"".into(),
-                SceType::Float32 | SceType::Float64 => "-2.2250738585072014e-308".into(),
+                SceType::Float32 => small_band_text(f64::from(-f32::from_bits(0x35a5_b36d))),
+                SceType::Float64 => small_band_text(-f64::from_bits(0x3eb4_b66d_c01e_c6fb)),
                 SceType::Bool => "false".into(),
                 SceType::Enum(r) => {
                     let names = &env.enums[&r.alias].0;
@@ -1640,6 +1645,44 @@ mod tests {
                 format!("{{{}}}", members.join(","))
             }
         }
+    }
+
+    /// A negative double between -1e-5 and -1e-6 as ECMAScript's
+    /// Number::toString spells it: `-0.00000` and then its shortest digits.
+    fn small_band_text(x: f64) -> String {
+        let scientific = format!("{:e}", -x);
+        let (mantissa, exponent) = scientific.split_once('e').unwrap();
+        assert_eq!(exponent, "-6", "{x} is in the band from 1e-6 to 1e-5");
+        let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
+        assert_eq!(digits.len(), 17, "{x} needs seventeen digits");
+        format!("-0.00000{digits}")
+    }
+
+    #[test]
+    fn a_number_is_spelled_at_most_as_long_as_its_size() {
+        // The longest spelling of each of ECMAScript's four notations, for a
+        // negative value of at most seventeen digits (ARCHITECTURE.md, "JSON
+        // Number Text"): a whole value below 1e21, a fraction above 1, a
+        // fraction in the band from 1e-6 to 1, and `d.ddde-nnn`.
+        let digits = 17;
+        let whole = 1 + 21;
+        let above_one = 1 + digits + 1;
+        let small_band = 1 + "0.00000".len() + digits;
+        let exponent_double = 1 + 1 + 1 + (digits - 1) + 2 + 3;
+        let exponent_single = 1 + 1 + 1 + (digits - 1) + 2 + 2;
+        let env = table();
+        for (text, exponent) in [("float64", exponent_double), ("float32", exponent_single)] {
+            let longest = [whole, above_one, small_band, exponent]
+                .into_iter()
+                .max()
+                .unwrap();
+            assert_eq!(
+                json_max_len(&ty(text), &env).unwrap(),
+                longest as u64,
+                "{text}"
+            );
+        }
+        assert_eq!(small_band, 25);
     }
 
     fn cbor_head(major: u8, n: u64) -> Vec<u8> {

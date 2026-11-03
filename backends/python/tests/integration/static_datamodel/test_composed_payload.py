@@ -75,9 +75,10 @@ _KINDS = {
     "int16": (Whole(-(1 << 15), (1 << 15) - 1), -(1 << 15), ("1.5", "", "is not a whole number"), 6),
     "int32": (Whole(-(1 << 31), (1 << 31) - 1), -(1 << 31), ("1.5", "", "is not a whole number"), 11),
     "int64": (WideOf(-(1 << 63), (1 << 63) - 1), -(1 << 63), ("9007199254740992", "", "past 2^53 - 1"), 22),
-    # The smallest normal single, which crosses as the double it widens to.
-    "float32": (Single, -1.1754943508222875e-38, ("1e39", "", "does not fit the width"), 24),
-    "float64": (float, -2.2250738585072014e-308, ("true", "", "is not a number"), 24),
+    # Seventeen digits after `0.00000`: the longest spelling of a number, which only the
+    # decimal band from 1e-6 to 1e-5 reaches. The single crosses as the double it widens to.
+    "float32": (Single, -1.2345677760094986e-06, ("1e39", "", "does not fit the width"), 25),
+    "float64": (float, -1.2345678901234567e-06, ("true", "", "is not a number"), 25),
     "bool": (bool, False, ("0", "", "is not a truth value"), 5),
     "enum": (_Level, _Level.MEDIUM, ('"lowest"', "", "is not a variant of"), 2 + len("medium")),
     "string[3]": (Text(TEXT_BOUND), CONTROLS, ('"abcd"', "", "is 4 bytes, past the 3 its type declares"),
@@ -259,13 +260,7 @@ def test_a_maximal_value_is_written_at_exactly_its_largest_size(kind: str, depth
     full = _maximal(kind, depth)
     text = _write(declared, full)
     size = _largest(kind, depth)
-    size_of_text = len(text.encode("utf-8"))
-    if kind == "float32":
-        # A single crosses as the double it widens to, whose shortest spelling has a
-        # two-digit exponent: the calculus's 24 bounds it and is not reached.
-        assert size_of_text <= size, text
-    else:
-        assert size_of_text == size, text
+    assert len(text.encode("utf-8")) == size, text
     assert _lift(declared, _data(text)) == full
 
 

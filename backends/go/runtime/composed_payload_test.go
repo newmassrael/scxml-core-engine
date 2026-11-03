@@ -214,10 +214,12 @@ func maximal(t crossType) any {
 		return int64(math.MinInt32)
 	case kI64:
 		return int64(math.MinInt64)
+	// Seventeen digits after `0.00000`: the longest spelling of a number,
+	// which only the decimal band from 1e-6 to 1e-5 reaches.
 	case kF32:
-		return float64(math.Float32frombits(0x80800000))
+		return float64(math.Float32frombits(0xb5a5b36d))
 	case kF64:
-		return -math.Float64frombits(0x0010000000000000)
+		return -math.Float64frombits(0x3eb4b66dc01ec6fb)
 	case kBool:
 		return false
 	case kEnum:
@@ -307,7 +309,7 @@ func largest(t crossType) int {
 	case kI32:
 		return 11
 	case kF32, kF64:
-		return 24
+		return 25
 	case kBool:
 		return 5
 	case kEnum:
@@ -513,10 +515,7 @@ func TestAMaximalValueIsWrittenAtExactlyItsLargestSize(t *testing.T) {
 			max := maximal(ty)
 			text := writeCross(ty, max)
 			size := largest(ty)
-			// A single crosses as the double it widens to, whose shortest
-			// spelling has a two-digit exponent: the calculus's 24 bounds it and
-			// is not reached.
-			if (kind != kF32 && len(text) != size) || len(text) > size {
+			if len(text) != size {
 				t.Errorf("%s at depth %d: %d bytes, the calculus says %d: %s",
 					crossKindNames[kind], depth, len(text), size, text)
 			}

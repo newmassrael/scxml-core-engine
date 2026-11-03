@@ -264,13 +264,15 @@ Held maximal(const Ty &ty) {
         return signedHeld(std::numeric_limits<int32_t>::min());
     case Kind::I64:
         return signedHeld(std::numeric_limits<int64_t>::min());
+    // Seventeen digits after `0.00000`: the longest spelling of a number, which only the decimal band from 1e-6 to
+    // 1e-5 reaches. The single crosses as the double it widens to.
     case Kind::F32:
         h.tag = Held::Tag::F;
-        h.f = static_cast<double>(-std::numeric_limits<float>::min());
+        h.f = static_cast<double>(-1.2345677760094986e-06f);
         return h;
     case Kind::F64:
         h.tag = Held::Tag::F;
-        h.f = -std::numeric_limits<double>::min();
+        h.f = -1.2345678901234567e-06;
         return h;
     case Kind::Bool:
         h.tag = Held::Tag::B;
@@ -364,7 +366,7 @@ size_t largest(const Ty &ty) {
         return 11;
     case Kind::F32:
     case Kind::F64:
-        return 24;
+        return 25;
     case Kind::Bool:
         return 5;
     case Kind::Enum:
@@ -578,13 +580,7 @@ TEST(EventPayloadComposed, AMaximalValueIsWrittenAtExactlyItsLargestSize) {
             const Held full = maximal(ty);
             const std::string text = write(ty, full);
             const size_t size = largest(ty);
-            // A single crosses as the double it widens to, whose shortest spelling has a two-digit exponent: the
-            // calculus's 24 bounds it and is not reached.
-            if (kind == Kind::F32) {
-                EXPECT_LE(text.size(), size) << kindName(kind) << " at depth " << depth << ": " << text;
-            } else {
-                EXPECT_EQ(text.size(), size) << kindName(kind) << " at depth " << depth << ": " << text;
-            }
+            EXPECT_EQ(text.size(), size) << kindName(kind) << " at depth " << depth << ": " << text;
             Held back;
             EXPECT_EQ(lift(ty, data(text), back), "") << kindName(kind) << " at depth " << depth;
             EXPECT_TRUE(back == full) << kindName(kind) << " at depth " << depth << ": " << text;

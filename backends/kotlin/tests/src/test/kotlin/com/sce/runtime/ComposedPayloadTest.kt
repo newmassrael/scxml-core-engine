@@ -94,8 +94,10 @@ class ComposedPayloadTest {
             Kind.I16 -> Short.MIN_VALUE.toLong()
             Kind.I32 -> Int.MIN_VALUE.toLong()
             Kind.I64 -> Long.MIN_VALUE
-            Kind.F32 -> Float.fromBits(0x80800000L.toInt()).toDouble()
-            Kind.F64 -> -Double.fromBits(0x0010000000000000L)
+            // Seventeen digits after `0.00000`: the longest spelling of a number, which only the
+            // decimal band from 1e-6 to 1e-5 reaches.
+            Kind.F32 -> Float.fromBits(0xb5a5b36dL.toInt()).toDouble()
+            Kind.F64 -> -Double.fromBits(0x3eb4b66dc01ec6fbL)
             Kind.BOOL -> false
             Kind.ENUM -> "medium"
             Kind.TEXT -> CONTROLS
@@ -164,7 +166,7 @@ class ComposedPayloadTest {
             Kind.I8 -> 4
             Kind.I16 -> 6
             Kind.I32 -> 11
-            Kind.F32, Kind.F64 -> 24
+            Kind.F32, Kind.F64 -> 25
             Kind.BOOL -> 5
             Kind.ENUM -> 2 + "medium".length
             Kind.TEXT, Kind.BYTES -> text
@@ -310,9 +312,7 @@ class ComposedPayloadTest {
                 val full = maximal(ty)
                 val text = write(ty, full).json
                 val size = largest(ty)
-                // A single crosses as the double it widens to, whose shortest spelling has a two-digit
-                // exponent: the calculus's 24 bounds it and is not reached.
-                if ((kind != Kind.F32 && text.length != size) || text.length > size) {
+                if (text.length != size) {
                     failures.add("${kind.label} at depth $depth: ${text.length} bytes, the calculus says $size: $text")
                 }
                 val back = runCatching { lift(ty, data(text)) }

@@ -15,7 +15,6 @@
 #include <sce/forge/bounded_list.h>
 #include <sce/forge/wire.h>
 
-#include <float.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -76,8 +75,12 @@ static const kind_info_t KINDS[K_COUNT] = {
     {"int32", "-2147483648", "-2147483648", "1.5", "", SCE_PAYLOAD_REFUSE_NOT_WHOLE, 11},
     {"int64", "\"-9223372036854775808\"", "-9223372036854775808", "9007199254740992", "", SCE_PAYLOAD_REFUSE_PAST_2_53,
      22},
-    {"float32", "-1.1754943508222875e-38", "-1.1754943508222875e-38", "1e39", "", SCE_PAYLOAD_REFUSE_NOT_IN_WIDTH, 24},
-    {"float64", "-2.2250738585072014e-308", "-2.2250738585072014e-308", "true", "", SCE_PAYLOAD_REFUSE_NOT_NUMBER, 24},
+    /* Seventeen digits after `0.00000`: the longest spelling of a number, which only the decimal band from 1e-6 to
+     * 1e-5 reaches. The single crosses as the double it widens to. */
+    {"float32", "-0.0000012345677760094986", "-0.0000012345677760094986", "1e39", "", SCE_PAYLOAD_REFUSE_NOT_IN_WIDTH,
+     25},
+    {"float64", "-0.0000012345678901234567", "-0.0000012345678901234567", "true", "", SCE_PAYLOAD_REFUSE_NOT_NUMBER,
+     25},
     {"bool", "false", "false", "0", "", SCE_PAYLOAD_REFUSE_NOT_TRUTH, 5},
     {"enum", "\"medium\"", "medium", "\"lowest\"", "", ENUM_SENTENCE, 8},
     {"string[3]", CONTROLS_JSON, CONTROLS_HELD, "\"abcd\"", "", SCE_PAYLOAD_REFUSE_PAST_BOUND, 2 + 6 * TEXT_BOUND},
@@ -533,10 +536,10 @@ static void write_leaf(sce_forge_wire_t *w, kind_t kind) {
         sce_forge_wire_element(w, sce_forge_wire_wide_int(INT64_MIN));
         break;
     case K_F32:
-        sce_forge_wire_element(w, sce_forge_wire_real((double)-FLT_MIN));
+        sce_forge_wire_element(w, sce_forge_wire_real((double)-1.2345677760094986e-06f));
         break;
     case K_F64:
-        sce_forge_wire_element(w, sce_forge_wire_real(-DBL_MIN));
+        sce_forge_wire_element(w, sce_forge_wire_real(-1.2345678901234567e-06));
         break;
     case K_BOOL:
         sce_forge_wire_element(w, sce_forge_wire_bool(false));
@@ -612,11 +615,9 @@ static void check_maximal_sizes(void) {
                 fprintf(stderr, "FAIL: %s at depth %d: written `%s`, built `%s`\n", KINDS[kind].name, depth, buf, want);
                 failures++;
             }
-            /* The value is the text between `{"v":` and the closing `}`. A single
-             * crosses as the double it widens to, whose shortest spelling has a
-             * two-digit exponent: the calculus's 24 bounds it and is not reached. */
+            /* The value is the text between `{"v":` and the closing `}`. */
             const size_t written = strlen(buf) - 6u;
-            if ((kind != K_F32 && written != size) || written > size) {
+            if (written != size) {
                 fprintf(stderr, "FAIL: %s at depth %d: %zu bytes, the calculus says %zu\n", KINDS[kind].name, depth,
                         written, size);
                 failures++;
