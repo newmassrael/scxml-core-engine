@@ -1464,6 +1464,20 @@ pub struct TypeCtx<'a> {
     /// optional `x` only where `x` is one of them. Empty wherever no walker of
     /// a body has proven one, so a read there is refused.
     pub proven: crate::forge::narrowing::Facts,
+    /// Each name that holds a value of the one value type (docs/adr/0086,
+    /// section 6.2) — a `sce-static` statechart's variable, the payload of the
+    /// event a transition is on (`_event.data`), the item of a `<foreach>` — with
+    /// that value's place. Every path read from one, a field, an element or the
+    /// present value of an optional one at any depth, is typed by walking its
+    /// type ([`TypeCtx::value_of`]), and by nothing else.
+    ///
+    /// ⚠ Empty everywhere but a `sce-static` statechart, and emptiness is what
+    /// keeps every other context's member and index reads exactly what they
+    /// were: a path no name here starts is typed by `vars` alone.
+    pub values: HashMap<&'a str, crate::forge::value_path::Place>,
+    /// The scope the records of [`TypeCtx::values`] are read in, the
+    /// statechart's own ([`crate::forge::value_path::statechart_scope`]).
+    pub value_scope: Option<&'a crate::forge::value_type::TypeScope>,
 }
 
 /// How the arguments of one call, and the value it answers, cross between a
@@ -1527,7 +1541,22 @@ impl<'a> TypeCtx<'a> {
             limits: HashMap::new(),
             crossings: HashMap::new(),
             proven: crate::forge::narrowing::Facts::none(),
+            values: HashMap::new(),
+            value_scope: None,
         }
+    }
+
+    /// Declare `name` a name that holds the value `place` holds. See
+    /// [`TypeCtx::values`].
+    pub fn insert_value(&mut self, name: &'a str, place: crate::forge::value_path::Place) {
+        self.values.insert(name, place);
+    }
+
+    /// The place `path` (a name of [`TypeCtx::values`] and the steps after it,
+    /// `_event.data.items[].tags`) holds, walked through its type; `None` for a
+    /// path no such name starts or whose steps its type does not have.
+    pub fn value_of(&self, path: &str) -> Option<crate::forge::value_path::Place> {
+        crate::forge::value_path::resolve(self.value_scope, |name| self.values.get(name), path)
     }
 
     /// This context with `facts` the subjects proven present where an
@@ -1616,29 +1645,37 @@ impl<'a> TypeCtx<'a> {
     /// Look up an identifier's type. Returns `Unknown` if absent so that
     /// inference can still proceed on expressions mixing known and unknown
     /// identifiers.
+    ///
+    /// A path a name of [`TypeCtx::values`] starts is typed by walking that
+    /// name's value ([`TypeCtx::value_of`]), at any depth.
     pub fn lookup_var(&self, name: &str) -> InferredType {
-        self.vars
-            .get(name)
-            .copied()
-            .unwrap_or(InferredType::Unknown)
+        if let Some(ty) = self.vars.get(name) {
+            return *ty;
+        }
+        self.value_of(name).map_or(InferredType::Unknown, |place| {
+            InferredType::of_value(&place.ty)
+        })
     }
 
     /// Whether `name` already means something here — a variable, a record, a
-    /// function or an imported enum — so a name a statement is about to bring
-    /// into scope (a loop's variable) would hide it.
+    /// function, an imported enum or a place a value holds — so a name a
+    /// statement is about to bring into scope (a loop's variable) would hide
+    /// it.
     pub fn declares(&self, name: &str) -> bool {
         self.vars.contains_key(name)
             || self.funcs.contains_key(name)
             || self.enums.contains_key(name)
+            || self.value_of(name).is_some()
     }
 
-    /// Whether this scope types the fields of the element a list of records is
-    /// indexed at, `<list>[].<field>` — a static statechart registers them, an
-    /// algorithm does not. Where it does not, `xs[i].f` is no way to read a record
-    /// and is refused at `xs[i]`, the element that has no name.
+    /// Whether this scope types the fields of the element the list at the path
+    /// `list` is indexed at, `<list>[].<field>` — a static statechart does, by
+    /// walking the list's type ([`TypeCtx::values`]); an algorithm does not.
+    /// Where it does not, `xs[i].f` is no way to read a record and is refused
+    /// at `xs[i]`, the element that has no name.
     pub fn reads_elements_of(&self, list: &str) -> bool {
-        let prefix = format!("{list}{}", crate::forge::type_ctx::INDEXED_ELEMENT);
-        self.vars.keys().any(|path| path.starts_with(&prefix))
+        self.value_of(&format!("{list}{}", crate::forge::value_path::ELEMENT))
+            .is_some()
     }
 
     /// Look up a function signature. Returns `None` if absent.

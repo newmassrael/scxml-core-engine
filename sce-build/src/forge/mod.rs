@@ -87,6 +87,7 @@ pub mod typed_invoke;
 pub mod types;
 pub mod unpseudo;
 pub mod validate;
+pub mod value_path;
 pub mod value_type;
 pub mod variant_default_overlay;
 pub mod xsd_validator;

@@ -185,6 +185,14 @@ fn scoped_record_at(
     }
 }
 
+/// Each enum and event schema `imports` (written relative to `base_dir`)
+/// names, by alias, each record with the scope of its own document at every
+/// depth: the scope a document's types are read in (docs/adr/0086, sections 2
+/// and 6.2). Silent as [`parse_quietly`] is, for the same reason.
+pub fn type_scope(imports: &[ForgeImport], base_dir: &Path) -> TypeScope {
+    type_scope_at(imports, base_dir, &mut Vec::new())
+}
+
 /// Each enum and event schema `imports` names (written relative to
 /// `base_dir`), read as a size reads it. Silent as [`parse_quietly`] is: an
 /// import that cannot be read is left out, and a type that names it has no

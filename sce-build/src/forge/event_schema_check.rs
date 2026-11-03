@@ -614,9 +614,10 @@ pub fn lower_typed_guard(
 
 /// Each field of `schema` under the access path an expression reads it by,
 /// `_event.data.<field>`, with its declared type — owned, because a
-/// [`TypeCtx`] borrows its keys. The one registration of a typed payload,
-/// shared by [`lower_typed_guard`] and the static data model's scope
-/// ([`crate::forge::type_ctx::StaticScope`]).
+/// [`TypeCtx`] borrows its keys: what [`lower_typed_guard`] types a guard of a
+/// statechart under another data model by. A `sce-static` statechart's payload
+/// is typed by walking its record's type instead, at any depth
+/// ([`crate::forge::type_ctx::StaticScope::paths`]).
 pub(crate) fn event_payload_paths(schema: &EntrySchema) -> Vec<(String, InferredType)> {
     schema
         .fields

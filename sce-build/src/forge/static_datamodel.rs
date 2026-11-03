@@ -290,7 +290,7 @@ pub fn check(
             // The payload is the triggering event's, so each transition
             // judges against its own.
             let schema = event_schemas.get(&transition.event);
-            let paths = scope.paths(schema);
+            let paths = scope.paths(schema.map(|schema| schema.name.as_str()));
             let ctx = judge.ctx(&paths);
             // An enum field of the payload is a value of the enum the schema
             // names, as a record's field is, and the payload taken whole is a
@@ -1142,7 +1142,7 @@ impl<'a> Judge<'a> {
         )
     }
 
-    fn ctx<'c>(&self, payload: &'c [(String, InferredType)]) -> TypeCtx<'c>
+    fn ctx<'c>(&self, payload: &'c [(String, crate::forge::value_path::Place)]) -> TypeCtx<'c>
     where
         'a: 'c,
     {

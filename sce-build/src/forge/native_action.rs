@@ -734,7 +734,7 @@ fn static_signature(
         PayloadScope::Transition { schema, proven, .. } => (*schema, proven.clone()),
         PayloadScope::Eventless => (None, crate::forge::narrowing::Facts::none()),
     };
-    let paths = static_scope.paths(payload);
+    let paths = static_scope.paths(payload.map(|schema| schema.name.as_str()));
     let ctx = static_scope.ctx(&paths, &[]).proving(proven);
     let mut sig = Vec::with_capacity(action.params.len());
     for arg in &action.params {

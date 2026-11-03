@@ -3388,6 +3388,11 @@ impl SCXMLParser {
                 &model,
                 &schemas_by_stem,
             );
+            // Each record with the scope its own document names types in, so a
+            // place inside a record a field holds is typed at any depth
+            // (docs/adr/0086, section 6.2).
+            model.imported_type_scope =
+                crate::forge::import_source::type_scope(&model.forge_imports, dir);
             // A schema whose field is a list, a record or an optional over
             // either is held whole; each use of it that reads its fields one
             // entry at a time is refused by name here, before any reader of the

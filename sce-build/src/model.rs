@@ -4044,6 +4044,15 @@ pub struct SCXMLModel {
     /// [`Self::entry_records`].
     #[serde(skip)]
     pub imported_records: std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    /// Each record and enum the document's imports name, by alias, every
+    /// record with the scope its own document names types in, at every depth:
+    /// what a place of a composed value is typed through
+    /// ([`crate::forge::value_path::statechart_scope`], docs/adr/0086 section
+    /// 6.2), since a record's fields name records by the aliases of the
+    /// document that declares it. Read where the document is parsed; empty
+    /// without sibling files and not serialized.
+    #[serde(skip)]
+    pub imported_type_scope: crate::forge::value_type::TypeScope,
     /// The enums a `sce-static` document imports, keyed by import alias — what
     /// an `enum:<alias>` variable names and an `<alias>.<variant>` expression
     /// refers to (SCE Accepted Subset §2.15). Resolved where the document is

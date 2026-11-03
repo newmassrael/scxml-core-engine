@@ -792,82 +792,94 @@ fn text_field_bound(field: &EntryField) -> Option<usize> {
     }
 }
 
-/// What a `<foreach>` over a list variable binds in its body (§scxml-4.6):
-/// `item`, each element — typed as the list's element, or, for a list of
-/// records, a closed record whose fields are the schema's — and `index`, its
-/// position, a `uint32` as `len` is. One definition for the pass that judges
-/// the body and the pass that lowers it, so neither sees a scope the other
-/// does not.
+/// What a `<foreach>` over a list binds in its body (§scxml-4.6): `item`, each
+/// element — a value of the list's element type, whose fields, elements and
+/// present value are read by walking that type at any depth
+/// ([`crate::forge::value_path`]), a record a closed one of its schema's fields
+/// — and `index`, its position, a `uint32` as `len` is. One definition for the
+/// pass that judges the body and the pass that lowers it, so neither sees a
+/// scope the other does not.
 pub struct LoopVariables {
     item: String,
-    /// The item's type for a scalar element; `None` for a record.
-    item_ty: Option<InferredType>,
+    /// The value the item holds, an element of the list the loop walks; `None`
+    /// for an element whose type leaves a bound out, which no list holds.
+    place: Option<crate::forge::value_path::Place>,
     index: Option<String>,
-    /// The typed `<item>.<field>` paths of a record item.
-    paths: Vec<(String, InferredType)>,
-    /// The bound of each string field of a record item, under the same paths.
+    /// The bound of each string field of a record item, under `<item>.<field>`.
     string_bounds: Vec<(String, usize)>,
+    /// Each field of a record item that is a text and is never absent.
+    text_fields: Vec<String>,
 }
 
 impl LoopVariables {
-    /// The variables a loop over a list of `elem` binds. A record's fields are
-    /// read from `schemas`, the document's imports by alias.
+    /// The variables a loop over a list variable of `elem` binds. A record's
+    /// fields are read from `schemas`, the document's imports by alias.
     pub fn new(
         item: &str,
         index: Option<&str>,
         elem: &AlgorithmValueType,
         schemas: &std::collections::BTreeMap<String, EntrySchema>,
     ) -> Self {
-        // A slot's list holds a fixed-width number, `bool` or a record
-        // ([`crate::forge::value_type::WrittenType::slot_view`]).
-        let record = elem.record_alias();
-        let (item_ty, paths) = match (elem.scalar(), record) {
-            (Some(ty), _) => (Some(InferredType::from_sce_type(ty)), Vec::new()),
-            (None, None) => (None, Vec::new()),
-            (None, Some(alias)) => (
-                None,
-                schemas
-                    .get(alias)
-                    .into_iter()
-                    .flat_map(|schema| &schema.fields)
-                    .map(|field| {
-                        (
-                            format!("{item}.{}", field.id),
-                            InferredType::of_field(&field.sce_type),
-                        )
-                    })
-                    .collect(),
-            ),
-        };
-        let string_bounds = match record {
-            None => Vec::new(),
-            Some(alias) => schemas
-                .get(alias)
-                .into_iter()
-                .flat_map(|schema| &schema.fields)
-                .filter_map(|field| {
-                    text_field_bound(field).map(|bound| (format!("{item}.{}", field.id), bound))
-                })
-                .collect(),
-        };
+        let place = elem
+            .clone()
+            .bounded()
+            .ok()
+            .map(crate::forge::value_path::Place::of);
+        let record = elem.record_alias().and_then(|alias| schemas.get(alias));
+        Self::of_place(item, index, place, record)
+    }
+
+    /// The variables a loop binds whose item holds `place`, an element of the
+    /// list it walks wherever that list is held: a variable, the payload, an
+    /// enclosing loop's item. `record` is the schema of a record item, as the
+    /// statechart reads it one entry per field, where it reads one so.
+    pub fn of_place(
+        item: &str,
+        index: Option<&str>,
+        place: Option<crate::forge::value_path::Place>,
+        record: Option<&EntrySchema>,
+    ) -> Self {
+        let fields = record.into_iter().flat_map(|schema| &schema.fields);
+        let string_bounds = fields
+            .clone()
+            .filter_map(|field| {
+                text_field_bound(field).map(|bound| (format!("{item}.{}", field.id), bound))
+            })
+            .collect();
+        // A field that may be absent is read as the optional value it is, not
+        // as the text of the buffer (docs/adr/0055).
+        let text_fields = fields
+            .filter(|field| {
+                matches!(field.sce_type, EntryType::Scalar(SceType::String))
+                    && text_field_bound(field).is_some()
+            })
+            .map(|field| field.id.clone())
+            .collect();
         Self {
             item: item.to_string(),
-            item_ty,
+            place,
             index: index.map(str::to_string),
-            paths,
             string_bounds,
+            text_fields,
         }
     }
 
     /// `ctx` with the loop's variables added: the scope of its body.
     pub fn bind<'s, 'c: 's>(&'s self, ctx: &TypeCtx<'c>) -> TypeCtx<'s> {
         let mut inner: TypeCtx<'s> = ctx.clone();
-        match self.item_ty {
-            Some(ty) => inner.insert_var(self.item.as_str(), ty),
-            None => inner.insert_record(self.item.as_str(), RecordShape::Closed),
+        match &self.place {
+            // Its fields are read through its type, and are the whole of what
+            // it may be asked for.
+            Some(place)
+                if matches!(place.ty, crate::forge::value_type::ValueType::Record { .. }) =>
+            {
+                inner.insert_record(self.item.as_str(), RecordShape::Closed)
+            }
+            Some(place) => inner.insert_var(self.item.as_str(), InferredType::of_value(&place.ty)),
+            None => inner.insert_var(self.item.as_str(), InferredType::Unknown),
         }
-        for (path, ty) in &self.paths {
-            inner.insert_var(path.as_str(), *ty);
+        if let Some(place) = &self.place {
+            inner.insert_value(self.item.as_str(), place.clone());
         }
         for (path, bound) in &self.string_bounds {
             inner.insert_string_capacity(path.as_str(), *bound);
@@ -885,16 +897,7 @@ impl LoopVariables {
     /// `sce:max-size` its schema declares: what a target that reads such a field
     /// through the buffer that holds it names (`<item>.<field>`).
     pub fn string_fields(&self) -> impl Iterator<Item = &str> {
-        self.string_bounds
-            .iter()
-            // A field that may be absent is read as the optional value it is, not
-            // as the text of the buffer (docs/adr/0055).
-            .filter(|(path, _)| {
-                self.paths
-                    .iter()
-                    .any(|(held, ty)| held == path && *ty == InferredType::Str)
-            })
-            .filter_map(|(path, _)| path.split_once('.').map(|(_, field)| field))
+        self.text_fields.iter().map(String::as_str)
     }
 }
 
@@ -909,7 +912,16 @@ impl LoopVariables {
 pub struct StaticScope {
     /// Every variable, the document's and each state's.
     pub variables: Vec<crate::model::Variable>,
-    /// Each record variable's `<id>.<field>` ([`static_record_paths`]).
+    /// The scope every place of the statechart is typed in
+    /// ([`crate::forge::value_path::statechart_scope`]).
+    pub type_scope: crate::forge::value_type::TypeScope,
+    /// What `_event.data` is on a transition taken on the event of each
+    /// imported schema, by the schema's name
+    /// ([`crate::forge::value_path::payload_place`]).
+    payload_places: Vec<(String, crate::forge::value_path::Place)>,
+    /// Each record variable's `<id>.<field>` ([`static_record_paths`]): the
+    /// names the lowerings spell a field of a record by. A path is typed by
+    /// walking the record's type ([`TypeCtx::values`]), not by this.
     record_paths: Vec<(String, InferredType)>,
     /// The bound of each string field of those ([`static_record_string_bounds`]).
     record_string_bounds: Vec<(String, usize)>,
@@ -1151,8 +1163,18 @@ impl StaticScope {
                     })
             })
             .collect();
+        let payload_places = model
+            .imported_event_schemas
+            .values()
+            .filter_map(|schema| {
+                crate::forge::value_path::payload_place(model, &schema.name)
+                    .map(|place| (schema.name.clone(), place))
+            })
+            .collect();
         Some(Self {
             variables,
+            type_scope: crate::forge::value_path::statechart_scope(model),
+            payload_places,
             record_paths,
             record_string_bounds,
             optional_record_values,
@@ -1502,17 +1524,23 @@ impl StaticScope {
         })
     }
 
-    /// The dotted paths an expression may read: every record variable's
-    /// fields, and `payload`'s `_event.data.<field>` when the expression sits
-    /// on a transition whose event carries one.
-    pub fn paths(&self, payload: Option<&EntrySchema>) -> Vec<(String, InferredType)> {
-        let mut paths = self.record_paths.clone();
-        if let Some(schema) = payload {
-            paths.extend(crate::forge::event_schema_check::event_payload_paths(
-                schema,
-            ));
-        }
-        paths
+    /// The names an expression may read a value through beside the
+    /// statechart's variables: `_event.data`, a record of the schema named
+    /// `payload`, when the expression sits on a transition whose event carries
+    /// one. Every field, element and present value of it, at any depth, is
+    /// typed by walking that record's type ([`TypeCtx::values`]), as a
+    /// variable's is.
+    pub fn paths(&self, payload: Option<&str>) -> Vec<(String, crate::forge::value_path::Place)> {
+        payload
+            .and_then(|schema| self.payload_places.iter().find(|(name, _)| name == schema))
+            .map(|(_, place)| {
+                (
+                    crate::forge::event_schema_check::EVENT_DATA_PATH.to_string(),
+                    place.clone(),
+                )
+            })
+            .into_iter()
+            .collect()
     }
 
     /// The first list variable `expr` reads as a value — anywhere but as
@@ -1572,10 +1600,10 @@ impl StaticScope {
     /// The [`TypeCtx`] over this scope with `paths` ([`Self::paths`]) in it.
     pub fn ctx<'a>(
         &'a self,
-        paths: &'a [(String, InferredType)],
+        paths: &'a [(String, crate::forge::value_path::Place)],
         enums: &'a [StaticEnum],
     ) -> TypeCtx<'a> {
-        let mut ctx = static_statechart(self.variables.iter(), paths, enums);
+        let mut ctx = static_statechart(self.variables.iter(), paths, enums, &self.type_scope);
         for (path, bound) in &self.record_string_bounds {
             ctx.insert_string_capacity(path.as_str(), *bound);
         }
@@ -1728,14 +1756,15 @@ fn enum_crossing_function<'e>(
 
 /// TypeCtx for a statechart's expression under `datamodel="sce-static"`
 /// (docs/SCE_ACCEPTED_SUBSET.md §2.15): every declared variable at its
-/// `sce:type` — a `record:<alias>` one as a closed record — the typed dotted
-/// `paths` in scope, the imported enums, and `In(<state id>)`.
+/// `sce:type` — a `record:<alias>` one as a closed record — the names `paths`
+/// holds values under, the imported enums, and `In(<state id>)`.
 ///
-/// `paths` are every member an expression may read through a dot, owned by
-/// the caller because a [`TypeCtx`] borrows its keys: the triggering
-/// event's `_event.data.<field>` when its event carries a schema
-/// ([`crate::forge::event_schema_check::event_payload_paths`]) and each
-/// record variable's `<id>.<field>` ([`static_record_paths`]).
+/// Every variable and every name of `paths` (the triggering event's
+/// `_event.data` when its event carries a schema, [`StaticScope::paths`]) holds
+/// a value of the one value type, and every member, element and present value
+/// read through one is typed by walking that type in `scope`, at any depth
+/// ([`TypeCtx::values`], docs/adr/0086 section 6.2). `paths` is owned by the
+/// caller because a [`TypeCtx`] borrows its keys.
 ///
 /// The scope is closed, as every forge kind's is: the model is defined so
 /// that a document needs no script engine, so there is no host behind a
@@ -1744,10 +1773,12 @@ fn enum_crossing_function<'e>(
 /// triggering event's, not this document's to judge.
 fn static_statechart<'a>(
     variables: impl IntoIterator<Item = &'a crate::model::Variable>,
-    paths: &'a [(String, InferredType)],
+    paths: &'a [(String, crate::forge::value_path::Place)],
     enums: &'a [StaticEnum],
+    scope: &'a crate::forge::value_type::TypeScope,
 ) -> TypeCtx<'a> {
     let mut ctx = TypeCtx::new();
+    ctx.value_scope = Some(scope);
     // A statechart reads the text of a join where it computes it — a delay, an
     // event name, an id, a request's source — so a buffer sized for that one
     // evaluation is all it needs.
@@ -1760,17 +1791,21 @@ fn static_statechart<'a>(
             ctx.insert_var(var.id.as_str(), InferredType::Unknown);
             continue;
         };
+        if let Some(place) = crate::forge::value_path::variable_place(var) {
+            ctx.insert_value(var.id.as_str(), place);
+        }
         if value_type.record_alias().is_some() {
-            // Its fields are `paths`, and they are the whole of what it may
-            // be asked for — the rule an algorithm's record local keeps.
+            // Its fields are read through its type, and they are the whole of
+            // what it may be asked for — the rule an algorithm's record local
+            // keeps.
             ctx.insert_record(var.id.as_str(), RecordShape::Closed);
             continue;
         }
         if let Some(elem) = value_type.list_elem() {
             // Typed as a list so `len(…)` measures it and `xs[i]` reads one
-            // element, as a number of the element's own type; the static data
+            // element, as a value of the element's own type; the static data
             // model's judge refuses it anywhere it would be read as a value.
-            // A list of records has no operand element — `xs[i]` is refused
+            // A record element has no operand type — `xs[i]` alone is refused
             // ([`crate::forge::expr`]'s unnamed-record-element rule).
             if let Some(list_elem) = crate::forge::types::ListElem::of_list(elem) {
                 ctx.insert_var(var.id.as_str(), InferredType::List(list_elem));
@@ -1794,8 +1829,8 @@ fn static_statechart<'a>(
             ctx.insert_string_capacity(var.id.as_str(), capacity as usize);
         }
     }
-    for (path, ty) in paths {
-        ctx.insert_var(path.as_str(), *ty);
+    for (path, place) in paths {
+        ctx.insert_value(path.as_str(), place.clone());
     }
     for e in enums {
         ctx.insert_enum(

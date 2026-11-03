@@ -860,19 +860,24 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     Ok(())
 }
 
-/// Refuse a field of the element a list of records is indexed at that is not a
-/// number, a `bool`, a string, a byte string or an enum the schema declares: the
-/// scope registers `<list>[].<field>` for exactly those — an enum untyped, as the
-/// lattice names no type for one — so any other field, one the schema does not
-/// have, is absent from it and would reach every backend as an operand of no
-/// type.
+/// Refuse a field of the element a list of records is indexed at that the
+/// element's schema does not declare: the place `<list>[].<field>` is typed by
+/// walking the list's type ([`TypeCtx::value_of`]), at any depth, so a field the
+/// schema does not have is no place, and would reach every backend as an
+/// operand of no type.
 fn reject_unreadable_element_fields(
     expr: &TypedExpr,
     ctx: &TypeCtx<'_>,
     source: &str,
 ) -> Result<(), Refusal> {
     if let ExprKind::Member { object, property } = &expr.kind {
-        if let Some(list) = indexed_list_name(object) {
+        let indexed = match &object.kind {
+            ExprKind::Index { object: list, .. } if matches!(list.ty, InferredType::List(elem) if elem.is_record()) => {
+                place_path(list)
+            }
+            _ => None,
+        };
+        if let Some(list) = indexed {
             let path = format!(
                 "{list}{}{property}",
                 crate::forge::type_ctx::INDEXED_ELEMENT
@@ -880,9 +885,8 @@ fn reject_unreadable_element_fields(
             if expr.ty == InferredType::Unknown && !ctx.declares(&path) {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!(
-                        "`{list}[…].{property}`, which is no number, bool, string, byte string \
-                         or enum field of the element (a field the schema does not declare is \
-                         read nowhere)"
+                        "`{list}[…].{property}`, a field the element's schema does not declare \
+                         (a field the schema does not declare is read nowhere)"
                     ),
                     observed: expr
                         .span
@@ -979,7 +983,7 @@ fn reject_unnamed_record_elements(
             index,
         } = &object.kind
         {
-            if indexed_list_name(object).is_some_and(|name| ctx.reads_elements_of(name)) {
+            if place_path(list).is_some_and(|path| ctx.reads_elements_of(&path)) {
                 return [list.as_ref(), index.as_ref()]
                     .into_iter()
                     .try_for_each(|child| reject_unnamed_record_elements(child, ctx, source));
@@ -4792,6 +4796,26 @@ fn indexed_list_name(expr: &TypedExpr) -> Option<&str> {
     }
 }
 
+/// The place `node` reads, as [`crate::forge::value_path`] writes one: a name,
+/// each member read after it as `.<member>`, and each index read as
+/// [`crate::forge::value_path::ELEMENT`] — `_event.data.items[].tags` for
+/// `_event.data.items[i].tags`, whatever `i` is. `None` for any other node (a
+/// call, a literal, an operation): it reads no place.
+pub(crate) fn place_path(node: &TypedExpr) -> Option<String> {
+    match &node.kind {
+        ExprKind::Ident(name) => Some(name.clone()),
+        ExprKind::Member { object, property } => {
+            Some(format!("{}.{property}", place_path(object)?))
+        }
+        ExprKind::Index { object, .. } => Some(format!(
+            "{}{}",
+            place_path(object)?,
+            crate::forge::value_path::ELEMENT
+        )),
+        _ => None,
+    }
+}
+
 fn flatten_member_path(expr: &TypedExpr) -> Option<String> {
     match &expr.kind {
         ExprKind::Ident(name) => Some(name.clone()),
@@ -5204,15 +5228,12 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             if let (InferredType::Optional(elem), OPTIONAL_VALUE) = (object.ty, property.as_str()) {
                 elem.present()
             } else {
-                match (flatten_member_path(object), indexed_list_name(object)) {
-                    (Some(base), _) => ctx.lookup_var(&format!("{base}.{property}")),
-                    // A field of the element a list of records is indexed at: its
-                    // type is the schema's, whatever the index is.
-                    (None, Some(list)) => ctx.lookup_var(&format!(
-                        "{list}{}{property}",
-                        crate::forge::type_ctx::INDEXED_ELEMENT
-                    )),
-                    (None, None) => InferredType::Unknown,
+                // A field of the element a list is indexed at is the field of
+                // `<list>[]`, whatever the index is, and a place a value holds is
+                // typed by walking its type at any depth ([`TypeCtx::value_of`]).
+                match place_path(object) {
+                    Some(base) => ctx.lookup_var(&format!("{base}.{property}")),
+                    None => InferredType::Unknown,
                 }
             }
         }
@@ -5230,15 +5251,18 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                     // element type so per-language emitters (Kotlin's
                     // narrow-unsigned widening, in particular) can wrap
                     // the index result with the right cast.
-                    if let ExprKind::Ident(name) = &object.kind {
-                        if let Some(elem) = ctx.lookup_array_elem(name.as_str()) {
-                            elem
-                        } else {
-                            InferredType::Unknown
-                        }
-                    } else {
-                        InferredType::Unknown
-                    }
+                    let table = match &object.kind {
+                        ExprKind::Ident(name) => ctx.lookup_array_elem(name.as_str()),
+                        _ => None,
+                    };
+                    // An element of a list a value holds, at any depth, is the
+                    // place `<list>[]` ([`TypeCtx::value_of`]).
+                    let list = place_path(object);
+                    table.unwrap_or_else(|| {
+                        list.map_or(InferredType::Unknown, |list| {
+                            ctx.lookup_var(&format!("{list}{}", crate::forge::value_path::ELEMENT))
+                        })
+                    })
                 }
             }
         }
@@ -6025,6 +6049,37 @@ fn reject_undeclared_member(
     let Some(base) = flatten_member_path(object) else {
         return Ok(());
     };
+    // A place a value holds is asked through its type (docs/adr/0086, section
+    // 6.2): a record has the fields its schema declares, an optional value its
+    // `value`, and any other value no member.
+    if let Some(place) = ctx.value_of(&base) {
+        return match &place.ty {
+            crate::forge::value_type::ValueType::Optional { .. } if member == OPTIONAL_VALUE => {
+                Ok(())
+            }
+            crate::forge::value_type::ValueType::Record { .. } => {
+                match crate::forge::value_path::record_fields(ctx.value_scope, &place) {
+                    Some(fields) if fields.iter().any(|field| field == member) => Ok(()),
+                    Some(mut declared) => {
+                        declared.sort_unstable();
+                        Err(ExprError::UnknownMember {
+                            record: base,
+                            member: member.to_string(),
+                            declared,
+                        })
+                    }
+                    // A record whose schema the build did not read: nothing
+                    // here knows its fields.
+                    None => Ok(()),
+                }
+            }
+            other => Err(ExprError::MemberOfNonRecord {
+                name: base,
+                member: member.to_string(),
+                ty: InferredType::of_value(other).declared_spelling(),
+            }),
+        };
+    }
     let Some(&base_ty) = ctx.vars.get(base.as_str()) else {
         return Ok(());
     };

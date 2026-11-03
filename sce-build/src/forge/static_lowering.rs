@@ -3779,7 +3779,7 @@ fn lowering_ctx<'a>(
     scope: &'a StaticScope,
     target: &dyn StaticTarget,
     machine: &str,
-    paths: &'a [(String, InferredType)],
+    paths: &'a [(String, crate::forge::value_path::Place)],
     enums: &'a [StaticEnum],
 ) -> crate::forge::types::TypeCtx<'a> {
     let mut ctx = scope.ctx(paths, enums);
@@ -4965,7 +4965,7 @@ pub fn lower(
         for transition in &mut state.transitions {
             let schema = schemas.get(&transition.event);
             rewrites.open_payload(schema);
-            let paths = scope.paths(schema);
+            let paths = scope.paths(schema.map(|schema| schema.name.as_str()));
             let ctx = lowering_ctx(&scope, target, machine, &paths, &enums);
             let accessor = target.payload_accessor(&transition.event);
             let payload_reads = payload_enum_reads(target, schema, &accessor, &held_enums);
@@ -12991,7 +12991,7 @@ pub(crate) fn lower_static_argument(
     proven: &Facts,
 ) -> Option<StaticArgument> {
     let target = target_for(lang)?;
-    let paths = scope.paths(event.map(|(_, schema)| schema));
+    let paths = scope.paths(event.map(|(_, schema)| schema.name.as_str()));
     let ctx = scope.ctx(&paths, &[]).proving(proven.clone());
     let names = names(scope, target);
     let accessor = event.map(|(event, _)| target.payload_accessor(event));
