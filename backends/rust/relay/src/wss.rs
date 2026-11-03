@@ -15,8 +15,11 @@
 //! the exchange was cancelled, or the network changed while it waited. A response that comes late on
 //! a connection given up is never read as the answer to a later request; the next exchange dials
 //! again with the same token. When the network's signal was raised since the connection was made,
-//! the next exchange dials again before it asks. A refusal of the token at the upgrade (401) is
-//! [`TransportError::Unauthorized`].
+//! the next exchange dials again before it asks, and so it does when the relay closed the
+//! connection while the link held it unused (a relay closes one that asks nothing for longer than
+//! its bound): what came on the connection since the last exchange is read before a request is
+//! sent on it, so a request is never sent on a connection already closed, and never twice. A
+//! refusal of the token at the upgrade (401) is [`TransportError::Unauthorized`].
 //!
 //! A link made with the empty token presents none, and dials the anonymous connection a device logs
 //! in on (ADR 0080); the token its login earned is given to it with [`Transport::set_token`], and
@@ -31,7 +34,7 @@ use std::io;
 use std::sync::Arc;
 use std::time::Instant;
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{FutureExt, SinkExt, StreamExt};
 use sce_rust_relay_transport::{Notice, Notices, Signal, Transport, TransportError};
 use tokio::net::TcpStream;
 use tokio::sync::Notify;
@@ -186,6 +189,24 @@ async fn carry(
     }
 }
 
+/// Whether `socket` can no longer carry a request: what came on it since the last exchange, which
+/// nothing read while the link was idle, is read without waiting. A ping or a pong is no answer and
+/// is passed over; anything else (the relay's close, the end of the stream, an error, or a text no
+/// request asked for) means the connection is gone.
+async fn closed_while_idle(socket: &mut Socket) -> bool {
+    // One turn of the runtime first, so that its driver takes in what the kernel holds for the
+    // socket: no task polled it while the link was idle, and a read before the turn would find
+    // its readiness unknown and wait.
+    tokio::task::yield_now().await;
+    loop {
+        match socket.next().now_or_never() {
+            None => return false,
+            Some(Some(Ok(Message::Ping(_) | Message::Pong(_)))) => continue,
+            Some(_) => return true,
+        }
+    }
+}
+
 /// Send `request` on `socket` and read the text that answers it.
 async fn ask(socket: &mut Socket, request: &str) -> Result<String, Broke> {
     socket
@@ -212,6 +233,20 @@ impl Transport for WssLink {
     ) -> Result<String, TransportError> {
         if self.socket.is_some() && self.network.raised() != self.dialled_at {
             self.give_up("the network changed");
+        }
+        // A connection the relay closed while the link held it is given up before a request is
+        // sent on it, and the exchange dials again; nothing was sent, so nothing is sent twice.
+        let closed = {
+            let Self {
+                runtime, socket, ..
+            } = &mut *self;
+            match socket.as_mut() {
+                Some(open) => runtime.block_on(closed_while_idle(open)),
+                None => false,
+            }
+        };
+        if closed {
+            self.give_up("the relay closed the connection while it was idle");
         }
         // One wake for the two signals, made for this exchange alone, so that a raise of an earlier
         // exchange's is never taken for one of this.

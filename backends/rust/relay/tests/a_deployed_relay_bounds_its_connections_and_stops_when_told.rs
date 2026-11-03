@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 
 use sce_rust_relay::serve::{Bounds, Counts, Server, WssLink};
 use sce_rust_relay::{
-    Authority, Hub, Limits, MemoryStore, Relay, Request, Response, Session, Signal, TokenError,
-    Transport, TransportError,
+    Authority, Hub, Limits, MemoryStore, Notice, Relay, Request, Response, Session, Signal,
+    TokenError, Transport, TransportError,
 };
 use tokio::net::TcpListener;
 
@@ -196,6 +196,44 @@ fn an_open_connection_that_asks_nothing_for_longer_than_its_bound_is_closed() {
     assert!(
         asked.elapsed() >= Duration::from_secs(1),
         "not before its bound"
+    );
+}
+
+/// The link held the connection the relay closed for its idleness: the next exchange reads that
+/// the relay closed it, dials again and is answered, and the relay is asked each request once. A
+/// device whose last round was longer ago than the relay's bound used to fail its next round as
+/// the link's failure, and only the round after it was answered.
+#[test]
+fn a_link_whose_connection_the_relay_closed_for_its_idleness_dials_again_and_is_answered() {
+    let running = start(
+        Bounds {
+            idle: Duration::from_millis(300),
+            ..Bounds::default()
+        },
+        Duration::ZERO,
+    );
+    let _keep = &running.runtime;
+
+    let mut link = WssLink::new(&running.base, &running.token).unwrap();
+    link.exchange(&entries(), None, &Signal::new()).unwrap();
+    assert_eq!(link.take_notices(), vec![Notice::Connected]);
+    once(&running.server, "the idle one was closed", |counts| {
+        counts.open == 0
+    });
+
+    let answered = link.exchange(&entries(), None, &Signal::new());
+    assert!(answered.is_ok(), "{answered:?}");
+    assert_eq!(
+        link.take_notices(),
+        vec![
+            Notice::Lost("the relay closed the connection while it was idle".to_string()),
+            Notice::Connected
+        ]
+    );
+    assert_eq!(
+        running.hub.began.load(Ordering::SeqCst),
+        2,
+        "each request reached the relay once"
     );
 }
 

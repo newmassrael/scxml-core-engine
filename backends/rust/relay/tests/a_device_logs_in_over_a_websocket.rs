@@ -209,12 +209,17 @@ fn a_connection_with_no_token_makes_so_many_requests_and_is_closed() {
     for _ in 0..2 {
         assert!(link.exchange(&heads, None, &none).is_ok());
     }
-    assert!(
-        matches!(
-            link.exchange(&heads, None, &none),
-            Err(TransportError::Link(_))
-        ),
-        "the relay closed it"
+    assert_eq!(link.take_notices(), vec![Notice::Connected]);
+    // The relay closed the connection after its second request: the link reads that before it
+    // sends the third, which it carries on a connection it dials again rather than on the closed one.
+    assert!(link.exchange(&heads, None, &none).is_ok());
+    assert_eq!(
+        link.take_notices(),
+        vec![
+            Notice::Lost("the relay closed the connection while it was idle".to_string()),
+            Notice::Connected
+        ],
+        "the relay closed it after two requests, and the link dialled again"
     );
 }
 
