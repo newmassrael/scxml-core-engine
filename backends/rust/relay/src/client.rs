@@ -751,17 +751,24 @@ enum PushStage {
     Heads,
     /// The relay's heads came (`heads`): what they name of this host's own person's chain past what
     /// the host holds is read back first (`RoundMachine::read_own`). `after` is the number the
-    /// last reading began at, so that a reading that brought nothing is not made again.
+    /// last reading began at, so that a reading that brought nothing is not made again; `walk` is
+    /// how far a device that awaits its own chain has read it back past where it and the relay
+    /// agree.
     Own {
         heads: Vec<Head>,
         after: Option<u64>,
+        walk: Walk,
     },
-    /// The operations of `node`, this host's person, numbered `from` to `to` were asked for.
+    /// The operations of `node`, this host's person, numbered `from` to `to` were asked for: as a
+    /// step of the walk when `walking`, and as what the heads name past what the host holds when
+    /// not.
     OwnAsked {
         heads: Vec<Head>,
         node: u64,
         from: u64,
         to: u64,
+        walking: bool,
+        walk: Walk,
     },
     Devices(Devices),
     Evidence {
@@ -772,6 +779,39 @@ enum PushStage {
         items: Vec<String>,
         next: usize,
     },
+}
+
+/// How far a device that awaits its own chain ([`Trust::await_own_chain`]) has read it back from
+/// the relay past where it and the relay agree ([`Trust::own_chain_walk`]).
+///
+/// The relay's heads name of a device's chain only the operations it holds from 1 without a gap and
+/// below the first conflict among them. A device restored from a store older than what it signed
+/// cannot tell from them alone that the relay holds more of its chain: a second operation of its at
+/// a number, which freezes its chain at the relay and stops the head there, with everything it
+/// signed after; or its operations past a gap. Read back from the heads alone, such a device would
+/// take the relay's head for the end of its chain and sign again, at numbers it used, what it signed
+/// and lost: one more operation at the relay for each, at every restore. So it reads its chain from
+/// where the two agree to where the relay holds nothing more, once, before it signs anything new.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Walk {
+    /// Not begun: the first reading starts where the relay's heads and the host agree.
+    Begin,
+    /// The last reading brought operations the host did not hold, up to the number before this:
+    /// the next reading starts here.
+    From(u64),
+    /// A reading brought nothing the host did not hold: the device holds of its chain what the relay
+    /// does.
+    Done,
+}
+
+/// The number of the operation `data` travels as, when it carries one.
+fn seq_in(data: &str) -> Option<u64> {
+    serde_json::from_str::<Value>(data)
+        .ok()?
+        .get(message::SEQ_FIELD)?
+        .as_str()?
+        .parse()
+        .ok()
 }
 
 /// The operations of each device the host holds past what the relay holds of it.
@@ -1135,13 +1175,15 @@ impl RoundMachine {
                     then,
                 })
             }
-            PushStage::Own { heads, after } => self.read_own(heads, after, then),
+            PushStage::Own { heads, after, walk } => self.read_own(heads, after, walk, then),
             // `OwnAsked` is left by its answer, so it is not met here; were it, it asks again.
             PushStage::OwnAsked {
                 heads,
                 node,
                 from,
                 to,
+                walking,
+                walk,
             } => {
                 self.ask(Request::Operations { node, from, to });
                 Phase::Push(Push {
@@ -1150,6 +1192,8 @@ impl RoundMachine {
                         node,
                         from,
                         to,
+                        walking,
+                        walk,
                     },
                     then,
                 })
@@ -1258,10 +1302,37 @@ impl RoundMachine {
     /// took in would not be told again. Once the host holds the chain as far as the relay does, a
     /// wait for it ends ([`Trust::confirm_own_chain`]); a reading that brought nothing new is not
     /// made again, and the device goes on waiting. Then the operations the relay lacks are given.
-    fn read_own(&mut self, heads: Vec<Head>, after: Option<u64>, then: AfterPush) -> Phase {
+    ///
+    /// A device that waits for its own chain does not read it back by the heads alone: it walks it
+    /// ([`Walk`]), from where it and the relay agree, a reading at a time, to where the relay holds
+    /// nothing it does not, and only then does the wait end and what waited get signed. A chain the
+    /// relay holds past a conflict or a gap is so read back as well, and a device that signed two
+    /// histories finds it before it signs a third, and signs nothing more.
+    fn read_own(
+        &mut self,
+        heads: Vec<Head>,
+        after: Option<u64>,
+        walk: Walk,
+        then: AfterPush,
+    ) -> Phase {
         let reading = matches!(self.mode, Mode::Round { .. });
-        match self.trust.own_chain_behind(&heads) {
-            Some((node, from, to)) if reading && after.is_none_or(|last| from > last) => {
+        let next = if !reading {
+            None
+        } else if self.trust.awaits_own_chain() {
+            let from = match walk {
+                Walk::Begin => self.trust.own_chain_walk(&heads),
+                Walk::From(from) => self.trust.person().map(|(node, _)| (node, from)),
+                Walk::Done => None,
+            };
+            from.map(|(node, from)| (node, from, u64::MAX, true))
+        } else {
+            self.trust
+                .own_chain_behind(&heads)
+                .filter(|(_, from, _)| after.is_none_or(|last| *from > last))
+                .map(|(node, from, to)| (node, from, to, false))
+        };
+        match next {
+            Some((node, from, to, walking)) => {
                 self.ask(Request::Operations { node, from, to });
                 Phase::Push(Push {
                     stage: PushStage::OwnAsked {
@@ -1269,15 +1340,18 @@ impl RoundMachine {
                         node,
                         from,
                         to,
+                        walking,
+                        walk,
                     },
                     then,
                 })
             }
-            _ => {
-                self.trust.confirm_own_chain(&heads);
+            None => {
                 // A send that waited for the device's own chain is signed at the number after the
-                // last of it, before the heads the relay is given from are read.
+                // last of it, before the heads the relay is given from are read. A publication reads
+                // nothing of the chain back, so it does not end the wait.
                 if reading {
+                    self.trust.confirm_own_chain(&heads);
                     self.sign_waiting();
                 }
                 let theirs = heads.iter().map(|head| (head.node, head.seq)).collect();
@@ -1328,7 +1402,11 @@ impl RoundMachine {
                         self.state.since = since;
                     }
                     Phase::Push(Push {
-                        stage: PushStage::Own { heads, after: None },
+                        stage: PushStage::Own {
+                            heads,
+                            after: None,
+                            walk: Walk::Begin,
+                        },
                         then,
                     })
                 }
@@ -1352,27 +1430,51 @@ impl RoundMachine {
             // the trust's holds it no more than the trust did. A resync's reading of the feed, from
             // the start, tells the machine every operation, these included, so a resync tells none
             // of them here.
-            PushStage::OwnAsked { heads, from, .. } => match response {
+            //
+            // A step of the walk goes on from the number after the highest it read, while it brings
+            // an operation the host did not hold; one that brings none ends the walk.
+            PushStage::OwnAsked {
+                heads,
+                from,
+                walking,
+                walk,
+                ..
+            } => match response {
                 Response::Operations { operations } => {
                     let resync = matches!(self.mode, Mode::Round { redeliver: true });
                     let mut read = Round::default();
+                    let mut brought = false;
+                    let mut highest: Option<u64> = None;
                     for (event, data) in operations {
-                        take(
+                        highest = highest.max(seq_in(&data));
+                        let taken = take(
                             &self.trust,
                             &mut self.state.parked,
                             &Record::Operation { event, data },
                             false,
                             &mut read,
                         );
+                        brought |= matches!(taken, Taken::New);
                     }
                     if !resync {
                         self.round.events.append(&mut read.events);
                     }
                     self.round.refused.append(&mut read.refused);
+                    let walk = if !walking {
+                        walk
+                    } else {
+                        match highest {
+                            Some(top) if brought && top >= from => {
+                                top.checked_add(1).map_or(Walk::Done, Walk::From)
+                            }
+                            _ => Walk::Done,
+                        }
+                    };
                     Phase::Push(Push {
                         stage: PushStage::Own {
                             heads,
                             after: Some(from),
+                            walk,
                         },
                         then,
                     })
@@ -1384,6 +1486,7 @@ impl RoundMachine {
                         stage: PushStage::Own {
                             heads,
                             after: Some(from),
+                            walk: if walking { Walk::Done } else { walk },
                         },
                         then,
                     })
@@ -1391,8 +1494,8 @@ impl RoundMachine {
                 other => self.fail(CourierError::Unexpected(format!("{other:?}"))),
             },
             // Nothing is asked in it, so no answer is given to it.
-            PushStage::Own { heads, after } => Phase::Push(Push {
-                stage: PushStage::Own { heads, after },
+            PushStage::Own { heads, after, walk } => Phase::Push(Push {
+                stage: PushStage::Own { heads, after, walk },
                 then,
             }),
             PushStage::Devices(devices) => {
@@ -1536,7 +1639,7 @@ impl RoundMachine {
                 &mut self.round,
             );
             match taken {
-                Taken::Done => {
+                Taken::Done | Taken::New => {
                     batch.index += 1;
                     batch.retried = false;
                 }
@@ -1795,7 +1898,11 @@ pub fn floor_event(trust: &Trust, before: i64, digest: u32) -> Option<(String, S
 }
 
 enum Taken {
+    /// Taken in, refused, parked or handed over: the reading goes on.
     Done,
+    /// An operation the host did not hold before, taken in: the reading goes on.
+    New,
+    /// It names what the host does not hold yet (an entry of the log, a checkpoint's entry).
     Behind,
 }
 
@@ -1832,7 +1939,11 @@ fn take(
                 if (taken.new || redeliver) && taken.applied {
                     round.events.push((event.clone(), taken.told));
                 }
-                Taken::Done
+                if taken.new {
+                    Taken::New
+                } else {
+                    Taken::Done
+                }
             }
             Err(TakeError::NotReached(_)) => Taken::Behind,
             Err(TakeError::NoKey(_)) => {

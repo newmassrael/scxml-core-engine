@@ -325,7 +325,16 @@ the trust wait (`Trust::await_own_chain`): a send that would make a new operatio
 reason (below), one the device holds is still `Kept::Held`, and the next round reads the device's own
 operations back (step 2 above) and tells them to the machine; the wait ends once the trust holds the
 chain as far as the relay's heads say (`Trust::confirm_own_chain`), and the device signs at the number
-after its last. The rule is the core's, so that no host forgets it, and it uses only `heads` and
+after its last. A waiting device does not read back by the heads alone: a relay's head of a device
+stops below the first conflict among its operations and at a gap, and the relay may hold what the
+device signed past either. So the round reads the device's operations from where the heads and the
+trust agree (`Trust::own_chain_walk`: past the lower of the relay's head and the trust's highest, or
+at the head when the relay names there an operation the trust does not hold), one `operations`
+request at a time to `u64::MAX`, the relay cutting each at its range, until one brings nothing the
+trust did not hold; a device that signed two histories finds the conflict and signs nothing more,
+where it would otherwise sign again what it lost, one more operation at the relay at each restore.
+It costs a restored device one `operations` request more than the heads alone, once. The rule is the
+core's, so that no host forgets it, and it uses only `heads` and
 `operations`, which the relay served already. A host that drives a `Courier` and restores its `Trust`
 itself calls `await_own_chain` after `restore_from_text`. A host that rebuilds its machine after a
 restore gives the core the machine's sends again when it likes, then makes a resync. What the rule

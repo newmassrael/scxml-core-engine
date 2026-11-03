@@ -629,6 +629,19 @@ impl Trust {
         own_chain_behind(&self.state(), published)
     }
 
+    /// Where a device that waits for its own chain ([`Self::await_own_chain`]) reads it back from:
+    /// its node, and the number after the last at which `published` (the heads a relay holds) and
+    /// this host agree. That is the number after the lower of the relay's head of the device and the
+    /// highest number of the device's chain this host holds, or the relay's head itself when the
+    /// relay names there an operation of the device this host does not hold. The relay may hold
+    /// more of the chain from there than its heads say: a head stops below the first conflict
+    /// among a device's operations and at the first gap, and what the device signed past either is
+    /// what a device restored from an older store would otherwise sign again. `None` when the host
+    /// has no person.
+    pub fn own_chain_walk(&self, published: &[Head]) -> Option<(u64, u64)> {
+        own_chain_walk(&self.state(), published)
+    }
+
     /// The chain this host holds of its person reaches `published`, the heads a relay holds: the
     /// wait [`Self::await_own_chain`] began ends, and the device signs again from the number after
     /// the last it holds. `false`, and the wait goes on, while the relay holds more of the chain
@@ -1126,6 +1139,28 @@ fn own_chain_behind(state: &State, published: &[Head]) -> Option<(u64, u64, u64)
         .and_then(|chain| chain.all().next_back())
         .map_or(0, Held::seq);
     (theirs > ours).then_some((node, ours + 1, theirs))
+}
+
+/// What [`Trust::own_chain_walk`] says, on the state the caller holds locked.
+fn own_chain_walk(state: &State, published: &[Head]) -> Option<(u64, u64)> {
+    let node = state.own.as_ref()?.0;
+    let chain = state.ops.get(&node);
+    let ours = chain
+        .and_then(|chain| chain.all().next_back())
+        .map_or(0, Held::seq);
+    let named = published.iter().find(|head| head.node == node);
+    let theirs = named.map_or(0, |head| head.seq);
+    // The relay names, at a number this host holds of the chain, an operation it does not hold
+    // there: the device signed another there, and the relay holds it.
+    let differs = named
+        .filter(|head| {
+            head.seq <= ours && !chain.is_some_and(|chain| chain.has(head.seq, &head.id))
+        })
+        .map(|head| head.seq);
+    Some((
+        node,
+        differs.unwrap_or_else(|| theirs.min(ours).saturating_add(1)),
+    ))
 }
 
 /// What the machine is told of `node`: the number and id of each operation, in order.

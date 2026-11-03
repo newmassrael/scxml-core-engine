@@ -391,9 +391,12 @@ string of version 4 as one of its inputs: it pins the construction, which did no
 **A restored device signs nothing new until its own chain is read back.** The core cannot tell the
 last state from an older one, so a restored core keeps a send that would make a new operation
 (`SCE_PEER_KEPT_WAITING`, section 4), and still gives what it holds as held, until a round has read the
-device's own operations back from the relay (`docs/SCE_SHARED_LIST_RELAY.md` section 6); that round
-signs what waited at the numbers after the device's last, and a send that waited and that the chain
-read back holds already is the operation it holds, signed once. A host that rebuilds its machine from
+device's own operations back from the relay (`docs/SCE_SHARED_LIST_RELAY.md` section 6), from where
+the relay's heads and the core agree to where the relay holds nothing more, past a conflict or a gap
+its heads stop at; that round signs what waited at the numbers after the device's last, and a send
+that waited and that the chain read back holds already is the operation it holds, signed once (in
+neither `taken` nor `dropped`). A device whose chain the relay holds past a conflict finds it there,
+and signs nothing more. A host that rebuilds its machine from
 its own log after a restore gives the core the machine's sends when it likes, and makes a resync.
 Whether it still waits is in what it stands at (`awaits_own_chain`, section 8).
 

@@ -1427,9 +1427,13 @@ impl Peer {
     /// ([`Trust::await_own_chain`], [`Self::awaits_own_chain`]): [`Self::outbound`] keeps a send
     /// that would make a new operation, with that reason ([`Kept::Waiting`]), and still gives what
     /// the device holds as [`Kept::Held`]. The next round reads the relay's heads, asks for the
-    /// device's own operations the relay holds past what the core does (`Operations`, the device's
-    /// node), takes them in and tells them to the machine, and the wait ends once the core holds the
-    /// chain as far as the relay does ([`Trust::confirm_own_chain`]); the device then signs what
+    /// device's own operations the relay holds from where the two agree (`Operations`, the device's
+    /// node, [`Trust::own_chain_walk`]), a reading at a time until one brings nothing the core did
+    /// not hold, takes them in and tells them to the machine, and the wait ends once the core holds
+    /// the chain as far as the relay does ([`Trust::confirm_own_chain`]). The heads alone are not
+    /// enough: a relay's head of a device stops below the first conflict among its operations and
+    /// at a gap, and a device that read back only as far as the head would sign again what it
+    /// signed past it, one more operation at the relay at each restore. The device then signs what
     /// waited at the numbers after its last, gives it the relay in the same round, and signs what
     /// comes after as it comes. A send that waited and that the chain read back holds already is
     /// the operation it holds, signed once. The rule is the core's and not its host's, so that no

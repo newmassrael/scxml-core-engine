@@ -304,8 +304,60 @@ fn a_host_with_no_person_waits_for_nothing() {
     let hub = host_in(&list(0), None, 0);
     hub.await_own_chain();
     assert_eq!(hub.own_chain_behind(&[]), None);
+    assert_eq!(hub.own_chain_walk(&[]), None);
     assert!(hub.confirm_own_chain(&[]));
     assert!(!hub.awaits_own_chain());
+}
+
+/// Where a restored device reads its own chain back from is the number after the last at which the
+/// relay's heads and its host agree: past the host's highest when the relay names more, past the
+/// relay's head when the relay names less (its head stops below a conflict or a gap, and it may
+/// hold more), at the relay's head when the relay names there an operation the host does not hold,
+/// and from the first when the relay names nothing of the device.
+#[test]
+fn a_restored_device_reads_its_chain_back_from_where_it_and_the_relay_agree() {
+    let entries = list(0);
+    let alice = host_in(&entries, Some(ALICE), 0);
+    for n in 1..=4 {
+        sealed(&alice, WRITE, &write(n, 1000 + n as i64, 1, ""));
+    }
+    let older = alice.to_text();
+    let restored = host_in(&entries, Some(ALICE), 0);
+    restored.restore_from_text(&older);
+    let at = |seq: u64| -> Vec<Head> {
+        let id = alice.heads()[0].id;
+        let id = if seq == 4 {
+            id
+        } else {
+            // The id of the operation at `seq`, as the relay names it in a head stopped there.
+            let restarted = host_in(&entries, Some(ALICE), 0);
+            for (event, data) in alice.operations(ALICE, 1, seq) {
+                restarted.take_operation(&event, &data).unwrap();
+            }
+            restarted.heads()[0].id
+        };
+        vec![Head {
+            node: ALICE,
+            seq,
+            id,
+        }]
+    };
+
+    // The relay names as much as the host holds, or more: from the number after the host's last.
+    assert_eq!(restored.own_chain_walk(&at(4)), Some((ALICE, 5)));
+    let shorter = host_in(&entries, Some(ALICE), 0);
+    for (event, data) in alice.operations(ALICE, 1, 2) {
+        shorter.take_operation(&event, &data).unwrap();
+    }
+    assert_eq!(shorter.own_chain_walk(&at(4)), Some((ALICE, 3)));
+    // The relay's head stops below what the host holds: from the number after the head.
+    assert_eq!(restored.own_chain_walk(&at(2)), Some((ALICE, 3)));
+    // The relay names, at a number the host holds, an operation it does not hold there.
+    let mut other = at(2);
+    other[0].id = [7; 32];
+    assert_eq!(restored.own_chain_walk(&other), Some((ALICE, 2)));
+    // The relay names nothing of the device.
+    assert_eq!(restored.own_chain_walk(&[]), Some((ALICE, 1)));
 }
 
 /// A host whose sends a courier carries keeps what its person may not sign yet. Alice's machine
