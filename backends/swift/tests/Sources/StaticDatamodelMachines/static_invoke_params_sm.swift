@@ -437,7 +437,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "control", document: "")
+        engine.startChildMesh(of: session, invokeID: "control", document: documentStem("#static_invoke_params__sce_synth_invoke__control"))
         session.initialize()
         sceInvokeChildControl = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -502,7 +502,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "watcher", document: "")
+        engine.startChildMesh(of: session, invokeID: "watcher", document: documentStem("#static_invoke_params__sce_synth_invoke__watcher"))
         session.initialize()
         sceInvokeChildWatcher = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -570,7 +570,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "worker", document: "")
+        engine.startChildMesh(of: session, invokeID: "worker", document: documentStem("#static_invoke_params__sce_synth_invoke__worker"))
         session.initialize()
         sceInvokeChildWorker = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

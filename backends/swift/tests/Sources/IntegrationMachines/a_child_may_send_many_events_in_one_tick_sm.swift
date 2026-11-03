@@ -652,7 +652,7 @@ public final class AChildMaySendManyEventsInOneTickPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "chatty", document: "")
+        engine.startChildMesh(of: session, invokeID: "chatty", document: documentStem("#a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty"))
         session.initialize()
         sceInvokeChildChatty = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

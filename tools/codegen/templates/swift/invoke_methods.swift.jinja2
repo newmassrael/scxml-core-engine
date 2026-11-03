@@ -286,7 +286,7 @@
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "{{ invoke_info.invoke_id | escape_swift }}", document: "{{ invoke_info.child_document | default('', true) | escape_swift }}")
+        engine.startChildMesh(of: session, invokeID: "{{ invoke_info.invoke_id | escape_swift }}", document: documentStem("{{ invoke_info.src | default('', true) | escape_swift }}"))
         session.initialize()
         sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }} = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

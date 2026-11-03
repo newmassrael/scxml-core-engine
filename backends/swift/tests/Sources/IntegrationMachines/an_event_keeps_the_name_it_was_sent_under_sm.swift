@@ -678,7 +678,7 @@ public final class AnEventKeepsTheNameItWasSentUnderPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "listener", document: "")
+        engine.startChildMesh(of: session, invokeID: "listener", document: documentStem("#an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener"))
         session.initialize()
         sceInvokeChildListener = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

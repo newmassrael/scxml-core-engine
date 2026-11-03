@@ -402,7 +402,7 @@ public final class AutoforwardDequeuePointPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_probe", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_probe", document: documentStem("#autoforward_dequeue_point__sce_synth_invoke__inv_probe"))
         session.initialize()
         sceInvokeChildInvProbe = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

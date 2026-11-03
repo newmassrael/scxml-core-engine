@@ -731,7 +731,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "kid", document: "")
+        engine.startChildMesh(of: session, invokeID: "kid", document: documentStem("#a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid"))
         session.initialize()
         sceInvokeChildKid = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

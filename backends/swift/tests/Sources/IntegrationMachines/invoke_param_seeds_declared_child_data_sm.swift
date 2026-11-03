@@ -863,7 +863,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_infinite", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_infinite", document: documentStem("#invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite"))
         session.initialize()
         sceInvokeChildInvInfinite = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -930,7 +930,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_namelist", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_namelist", document: documentStem("#invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist"))
         session.initialize()
         sceInvokeChildInvNamelist = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -997,7 +997,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_shadow", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_shadow", document: documentStem("#invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow"))
         session.initialize()
         sceInvokeChildInvShadow = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -1064,7 +1064,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_sole", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_sole", document: documentStem("#invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole"))
         session.initialize()
         sceInvokeChildInvSole = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -1128,7 +1128,7 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_unmatched", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_unmatched", document: documentStem("#invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched"))
         session.initialize()
         sceInvokeChildInvUnmatched = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

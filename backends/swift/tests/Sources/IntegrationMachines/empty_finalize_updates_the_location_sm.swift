@@ -799,7 +799,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_absent", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_absent", document: documentStem("#empty_finalize_updates_the_location__sce_synth_invoke__inv_absent"))
         session.initialize()
         sceInvokeChildInvAbsent = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -866,7 +866,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_empty", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_empty", document: documentStem("#empty_finalize_updates_the_location__sce_synth_invoke__inv_empty"))
         session.initialize()
         sceInvokeChildInvEmpty = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -933,7 +933,7 @@ public final class EmptyFinalizeUpdatesTheLocationPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_unmatched", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_unmatched", document: documentStem("#empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched"))
         session.initialize()
         sceInvokeChildInvUnmatched = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

@@ -469,7 +469,7 @@ public final class StaticChildHostPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "worker", document: "")
+        engine.startChildMesh(of: session, invokeID: "worker", document: documentStem("#static_child_host__sce_synth_invoke__worker"))
         session.initialize()
         sceInvokeChildWorker = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

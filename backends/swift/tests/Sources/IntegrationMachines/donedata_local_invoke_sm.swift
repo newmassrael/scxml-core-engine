@@ -687,7 +687,7 @@ public final class DonedataLocalInvokePolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_content", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_content", document: documentStem("#donedata_local_invoke__sce_synth_invoke__inv_content"))
         session.initialize()
         sceInvokeChildInvContent = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -747,7 +747,7 @@ public final class DonedataLocalInvokePolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_param", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_param", document: documentStem("#donedata_local_invoke__sce_synth_invoke__inv_param"))
         session.initialize()
         sceInvokeChildInvParam = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

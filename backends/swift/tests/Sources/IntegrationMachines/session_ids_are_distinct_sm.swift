@@ -697,7 +697,7 @@ public final class SessionIdsAreDistinctPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_a", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_a", document: documentStem("#session_ids_are_distinct__sce_synth_invoke__inv_a"))
         session.initialize()
         sceInvokeChildInvA = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -757,7 +757,7 @@ public final class SessionIdsAreDistinctPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_b", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_b", document: documentStem("#session_ids_are_distinct__sce_synth_invoke__inv_b"))
         session.initialize()
         sceInvokeChildInvB = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

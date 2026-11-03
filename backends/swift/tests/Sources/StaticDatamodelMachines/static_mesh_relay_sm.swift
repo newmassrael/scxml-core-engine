@@ -343,7 +343,7 @@ public final class StaticMeshRelayPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inner", document: "")
+        engine.startChildMesh(of: session, invokeID: "inner", document: documentStem("#static_mesh_relay__sce_synth_invoke__inner"))
         session.initialize()
         sceInvokeChildInner = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

@@ -512,7 +512,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "given", document: "")
+        engine.startChildMesh(of: session, invokeID: "given", document: documentStem("#static_invoke_optional__sce_synth_invoke__given"))
         session.initialize()
         sceInvokeChildGiven = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -586,7 +586,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "lifted", document: "")
+        engine.startChildMesh(of: session, invokeID: "lifted", document: documentStem("#static_invoke_optional__sce_synth_invoke__lifted"))
         session.initialize()
         sceInvokeChildLifted = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -654,7 +654,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "absent", document: "")
+        engine.startChildMesh(of: session, invokeID: "absent", document: documentStem("#static_invoke_optional__sce_synth_invoke__absent"))
         session.initialize()
         sceInvokeChildAbsent = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -719,7 +719,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "replaced", document: "")
+        engine.startChildMesh(of: session, invokeID: "replaced", document: documentStem("#static_invoke_optional__sce_synth_invoke__replaced"))
         session.initialize()
         sceInvokeChildReplaced = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -790,7 +790,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "over", document: "")
+        engine.startChildMesh(of: session, invokeID: "over", document: documentStem("#static_invoke_optional__sce_synth_invoke__over"))
         session.initialize()
         sceInvokeChildOver = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -861,7 +861,7 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "fits", document: "")
+        engine.startChildMesh(of: session, invokeID: "fits", document: documentStem("#static_invoke_optional__sce_synth_invoke__fits"))
         session.initialize()
         sceInvokeChildFits = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

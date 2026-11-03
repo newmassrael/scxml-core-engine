@@ -437,7 +437,7 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "fits", document: "")
+        engine.startChildMesh(of: session, invokeID: "fits", document: documentStem("#static_invoke_string__sce_synth_invoke__fits"))
         session.initialize()
         sceInvokeChildFits = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -508,7 +508,7 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "over", document: "")
+        engine.startChildMesh(of: session, invokeID: "over", document: documentStem("#static_invoke_string__sce_synth_invoke__over"))
         session.initialize()
         sceInvokeChildOver = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -579,7 +579,7 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "wide", document: "")
+        engine.startChildMesh(of: session, invokeID: "wide", document: documentStem("#static_invoke_string__sce_synth_invoke__wide"))
         session.initialize()
         sceInvokeChildWide = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

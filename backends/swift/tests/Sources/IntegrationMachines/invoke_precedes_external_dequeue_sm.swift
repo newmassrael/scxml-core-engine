@@ -397,7 +397,7 @@ public final class InvokePrecedesExternalDequeuePolicy: InvocablePolicy {
         // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
-        engine.startChildMesh(of: session, invokeID: "inv_watch", document: "")
+        engine.startChildMesh(of: session, invokeID: "inv_watch", document: documentStem("#invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch"))
         session.initialize()
         sceInvokeChildInvWatch = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
