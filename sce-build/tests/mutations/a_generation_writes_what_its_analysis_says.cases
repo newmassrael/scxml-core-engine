@@ -33,10 +33,10 @@ PY
 
 mutation_case "an entry is not held to the flag its chain hands it" <<'PY'
 edit("sce-build/src/forge/generator/rust_source.rs",
-     r'''        for check in &self.encode.roles.input_checks {
-            self.input_check(&check.binder, &check.against, derived, lines);
+     r'''        for check in &self.encode.input_checks {
+            self.input_check(check, derived, lines);
         }''',
-     r'''        for check in self.encode.roles.input_checks.iter().take(0) {
-            self.input_check(&check.binder, &check.against, derived, lines);
+     r'''        for check in self.encode.input_checks.iter().take(0) {
+            self.input_check(check, derived, lines);
         }''')
 PY

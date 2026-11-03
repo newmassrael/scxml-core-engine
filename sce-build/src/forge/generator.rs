@@ -12507,7 +12507,7 @@ fn resolve_chain_entry_identifier(
 
 /// Chain id to the bits of an entry's value that are its identifier, for the
 /// chains that leave flags out of it. See [`chain_identifier_masks`].
-type ChainIdentifierMasks = std::collections::BTreeMap<String, u64>;
+pub(crate) type ChainIdentifierMasks = std::collections::BTreeMap<String, u64>;
 
 /// For each chain of `parent` that leaves flags out of its entries'
 /// identifier, the bits of an entry's value that are the identifier. A chain
@@ -12516,7 +12516,10 @@ type ChainIdentifierMasks = std::collections::BTreeMap<String, u64>;
 /// Read after `validate_cross_codec_chain_entry_id`, which has refused every
 /// chain this cannot resolve, so a chain that leaves flags out and is missing
 /// here is a defect in the generator and not in the document.
-fn chain_identifier_masks(parent: &CodecModel, imports: &[ImportContext]) -> ChainIdentifierMasks {
+pub(crate) fn chain_identifier_masks(
+    parent: &CodecModel,
+    imports: &[ImportContext],
+) -> ChainIdentifierMasks {
     let mut masks = ChainIdentifierMasks::new();
     for chain in parent.fields.iter().filter(|f| f.is_tlv_chain()) {
         let BitSize::TlvChain {

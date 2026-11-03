@@ -175,6 +175,11 @@ old encode, the old encode and its templates are removed in the same landing.
    variant's tag, a parent tag (each embedded body's arms and their masked tags), a presence flag, a disjunction's arm
    flag and a chain's continuation are kinds of their own. No printer reads a derivation off the roles. The
    regeneration changed no file.
+   *The checks and inputs landed 2026-11-03:* the inputs the encode is handed and those the value says, what each
+   held codec is handed for each input it takes, each input check (the held codec, where it is held, and what it is
+   held to), each gate check, the clauses of a gate (a flag, an input, or a chain's membership with the group that
+   holds it), and how each chain identifies its entries. The regeneration changed no file. A total codec plans no
+   check, over every codec of the resources.
 3. The oracle's byte cases for every shape (§5), held first by Rust.
 4. C++, then Go, Kotlin, Python and C11, each by §6, with its runtime's counting sink, refinements and walk. C++ comes
    first because it is the engine's own language and its type system carries a refinement as a type, as Rust's

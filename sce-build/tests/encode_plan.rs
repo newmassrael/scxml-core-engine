@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 
 use sce_build::forge::codec_roles::ElementId;
 use sce_build::forge::encode_plan::{
-    Absent, Automaton, Bound, Derive, EncodePlan, LawInput, Measured, Narrow, Number, NumberInto,
-    Offset, Presence, Value,
+    Absent, Automaton, Bound, Clause, Derive, EncodePlan, LawInput, Measured, Narrow, Number,
+    NumberInto, Offset, Presence, Value,
 };
 use sce_build::{encode_plan_file, ForgeCompileOptions};
 
@@ -278,6 +278,77 @@ fn a_flag_some_arms_say_is_the_held_arms_and_the_tag_is_derived_from_the_arm() {
             .iter()
             .any(|d| d.element == tag && matches!(d.by, Derive::VariantTag)));
     });
+}
+
+/// An input the parent forwards to a list whose entries say it is said by the
+/// value (docs/adr/0065 §6 R8a): the encode is handed nothing, and the entries'
+/// codec is handed nothing for it.
+#[test]
+fn an_input_a_list_says_is_said_and_handed_to_no_one() {
+    with_plan("codec_chain_flag_forward", |plan| {
+        assert!(plan.given.is_empty());
+        let said: Vec<&str> = plan.said.iter().map(|s| s.input.name.as_str()).collect();
+        assert_eq!(said, ["wide"]);
+        assert!(plan.handed["codec_chain_flag_entry"].is_empty());
+    });
+}
+
+/// A gate of two flags is two clauses, joined as its author joined them, and
+/// the group it decides holds the field, so nothing is checked
+/// (docs/adr/0065 §6 R4c).
+#[test]
+fn a_disjunction_is_two_clauses_and_its_group_leaves_nothing_to_check() {
+    with_plan("codec_present_if_disjunction", |plan| {
+        let gate = field(plan, "seq")
+            .present_if
+            .as_ref()
+            .expect("`seq` is gated");
+        let bits: Vec<(u32, bool)> = plan
+            .clauses(gate)
+            .iter()
+            .map(|clause| match clause {
+                Clause::Flag {
+                    carrier,
+                    bit,
+                    negate,
+                } => {
+                    assert_eq!(carrier.id, "flags");
+                    (*bit, *negate)
+                }
+                _ => panic!("each clause reads a flag of `flags`"),
+            })
+            .collect();
+        assert_eq!(bits, [(0, false), (1, false)]);
+        assert!(plan.gate_checks.is_empty());
+    });
+}
+
+/// A codec whose encode cannot refuse plans no check (docs/adr/0065): a check
+/// is a refusal.
+#[test]
+fn a_total_codec_plans_no_check() {
+    let resources = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&resources)
+        .expect("the resources directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "scxml"))
+        .collect();
+    paths.sort();
+    let mut total = 0;
+    for path in paths {
+        encode_plan_file(&path, &[], &ForgeCompileOptions::default(), |plan| {
+            if plan.totality.is_total() {
+                total += 1;
+                assert!(
+                    plan.input_checks.is_empty() && plan.gate_checks.is_empty(),
+                    "{}: a total codec plans a check",
+                    path.display()
+                );
+            }
+        })
+        .unwrap_or_else(|err| panic!("{}: {err:?}", path.display()));
+    }
+    assert!(total > 60, "only {total} total codecs were read");
 }
 
 #[test]

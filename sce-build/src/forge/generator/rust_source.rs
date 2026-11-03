@@ -22,13 +22,13 @@
 
 use super::*;
 use crate::forge::codec_roles::{
-    BindSite, Binder, CodecRoles, ElementId, GateGroup, GateVar, GroupArm, InputCheck, InputSource,
+    BindSite, CodecRoles, ElementId, GateGroup, GateVar, GroupArm, InputCheck, InputSource,
     InputValue, Role,
 };
 use crate::forge::codec_totality::{self, child_alias, RefusalKind};
 use crate::forge::encode_plan::{
-    self, Absent, ArmInput, Automaton, Derive, EncodePlan, Law, Measured, Narrow, Number,
-    NumberInto, Offset, ParentTag, PresenceFlag, Value,
+    self, Absent, Against, ArmInput, Automaton, CheckSite, Clause, Derive, EncodePlan, EntryId,
+    HandedFrom, Law, Measured, Narrow, Number, NumberInto, Offset, ParentTag, PresenceFlag, Value,
 };
 use std::collections::BTreeSet;
 
@@ -963,10 +963,7 @@ impl<'a> Plan<'a> {
     /// The flag-inputs the encode is handed: those the value does not say
     /// (docs/adr/0065 §6 R4a).
     fn given_inputs(&self) -> impl Iterator<Item = &FlagInput> {
-        self.m()
-            .flag_inputs
-            .iter()
-            .filter(|input| !self.encode.roles.says_input(&input.name))
+        self.encode.given.iter().copied()
     }
 
     /// `, n: u8` for each flag-input the encode takes from its parent: a bit of
@@ -1273,10 +1270,8 @@ impl<'a> Plan<'a> {
     /// from it, and holds a value it hands the input from elsewhere to it.
     fn input_functions(&self) -> String {
         let mut out = String::new();
-        for input in &self.m().flag_inputs {
-            if !self.encode.roles.says_input(&input.name) {
-                continue;
-            }
+        for said in &self.encode.said {
+            let input = said.input;
             let by = match &self.encode.roles.inputs[&input.name] {
                 InputSource::Gate {
                     field,
@@ -1331,89 +1326,44 @@ impl<'a> Plan<'a> {
         out
     }
 
-    /// Whether the wire reads the flag-input `name` by name: a field gated on it
-    /// that the value does not present is written where the gate holds, and a
-    /// held codec handed the input is held to it.
-    fn gates_read_input(&self, name: &str) -> bool {
-        let gated = self.m().fields.iter().any(|f| {
-            !self.presented(f)
-                && f.present_if.as_ref().is_some_and(|gate| {
-                    let mut clause = Some(gate);
-                    while let Some(p) = clause {
-                        if p.scope == PresentIfScope::Input && p.flag_name == name {
-                            return true;
-                        }
-                        clause = p.or_with.as_deref();
-                    }
-                    false
-                })
-        });
-        gated
-            || self
-                .encode
-                .roles
-                .input_checks
-                .iter()
-                .any(|c| matches!(&c.against, InputValue::Input { name: n } if n == name))
-    }
-
     /// Hold the input a held codec says to the value the parent hands it from
     /// elsewhere ([`codec_roles::InputCheck`]), in the prologue, so a refusal
     /// leaves the sink untouched.
     fn input_check(
         &self,
-        binder: &Binder,
-        against: &InputValue,
+        check: &encode_plan::InputCheck<'_>,
         derived: &Derived,
         lines: &mut Vec<String>,
     ) {
-        let child = self
-            .child_of(&binder.alias)
-            .expect("`check` found the codec a bind names");
+        let child = self.child_of_plan(&check.codec);
         // Whether `entry` says the input otherwise than `value`. A value that says
         // nothing of it disagrees with nothing (docs/adr/0065 §6 R4e).
-        let partly = self.child_says_input_partly(&binder.alias, &binder.input);
         let says_otherwise = |entry: &str, value: &str| {
             let read = format!(
                 "{}::input_{}({entry})",
                 child.type_name,
-                filters::to_snake_case(binder.input.clone())
+                filters::to_snake_case(check.input.clone())
             );
-            if partly {
+            if check.partly {
                 format!("{read}.is_some_and(|_s| _s != {value})")
             } else {
                 format!("{read} != {value}")
             }
         };
-        let element = binder.site.element(&binder.alias);
-        let refuse = self.refuse(RefusalKind::PresentIfMismatch, element);
-        let field_of = |id: &str| {
-            self.m()
-                .fields
-                .iter()
-                .find(|f| f.id == id)
-                .expect("a bind site is a field of the codec")
-        };
-        let handed = match against {
-            InputValue::Carrier { carrier, flag } => {
-                let carrier = field_of(carrier);
-                let def = carrier
-                    .flags
-                    .iter()
-                    .find(|d| &d.name == flag)
-                    .expect("the parser found the flag a bind names");
+        let refuse = self.refuse(RefusalKind::PresentIfMismatch, &check.at);
+        let handed = match &check.against {
+            Against::Carrier { carrier, bit } => {
                 format!(
                     "({} & 0x{:X}) != 0",
                     self.read(carrier, derived),
-                    1u64 << def.bit
+                    1u64 << bit
                 )
             }
-            InputValue::Input { name } => format!("{} != 0", filters::to_snake_case(name.clone())),
-            InputValue::PreviousEntry { id } => {
-                let BindSite::List { field } = &binder.site else {
+            Against::Input { name } => format!("{} != 0", filters::to_snake_case(name.clone())),
+            Against::PreviousEntry { id } => {
+                let CheckSite::List { list: chain } = &check.site else {
                     unreachable!("a chain supplies an input from the entry before");
                 };
-                let chain = field_of(field);
                 let walk = [
                     format!("    if {} {{", says_otherwise("&_e", "_prev")),
                     format!("        return Err({refuse});"),
@@ -1438,9 +1388,8 @@ impl<'a> Plan<'a> {
                 return;
             }
         };
-        let differs = match &binder.site {
-            BindSite::List { field } => {
-                let list = field_of(field);
+        let differs = match &check.site {
+            CheckSite::List { list } => {
                 let read = self.read_src(list);
                 let differs = says_otherwise("&_e", "_h");
                 if list.present_if.is_some() {
@@ -1449,8 +1398,7 @@ impl<'a> Plan<'a> {
                     format!("{read}.any(|_e| {differs})")
                 }
             }
-            BindSite::Embed { field } => {
-                let body = field_of(field);
+            CheckSite::Embed { body } => {
                 let read = self.read_src(body);
                 if body.present_if.is_some() {
                     format!("{read}.is_some_and(|_b| {})", says_otherwise("_b", "_h"))
@@ -1458,12 +1406,12 @@ impl<'a> Plan<'a> {
                     says_otherwise(&read, "_h")
                 }
             }
-            BindSite::Arm => {
-                let mut arms: Vec<String> = self
-                    .arms()
+            CheckSite::Arm { arms: held } => {
+                let all = self.arms();
+                let mut arms: Vec<String> = held
                     .iter()
-                    .filter(|arm| arm.alias == binder.alias)
-                    .map(|arm| {
+                    .map(|&index| {
+                        let arm = &all[index];
                         format!(
                             "{}{} => {},",
                             arm.cfg_prefix(),
@@ -1515,45 +1463,33 @@ impl<'a> Plan<'a> {
         derived: &Derived,
         supplied: &dyn Fn(&str) -> Option<String>,
     ) -> String {
-        let Some(import) = self.input.imports.iter().find(|i| i.alias == alias) else {
+        let Some(handed) = self.encode.handed.get(alias) else {
             return String::new();
         };
         let mut out = String::new();
-        for input in &import.codec_flag_inputs {
-            // An input the codec says is not handed to it.
-            if self.child_says_input(alias, &input.name) {
-                continue;
-            }
-            if let Some(arg) = supplied(&input.name) {
+        for handed in handed {
+            if let Some(arg) = supplied(&handed.input) {
                 out.push_str(&format!(", {arg}"));
                 continue;
             }
-            let Some(bind) = import.flag_binds.iter().find(|b| b.input == input.name) else {
-                continue;
-            };
-            match &bind.source {
-                FlagBindSource::Carrier { carrier, flag } => {
-                    let Some(field) = self
-                        .m()
-                        .fields
-                        .iter()
-                        .find(|f| f.is_flags_carrier() && &f.id == carrier)
-                    else {
-                        continue;
-                    };
-                    let Some(def) = field.flags.iter().find(|d| &d.name == flag) else {
-                        continue;
-                    };
-                    let mask = (1u64 << def.width.max(1)) - 1;
-                    let read = self.read(field, derived);
-                    let bits = format!("{} & 0x{mask:X}", shr(&read, def.bit));
-                    if field.fixed_bits().is_some_and(|b| b <= 8) {
+            match &handed.from {
+                // Nothing the parent binds: a caller supplies it, or no one does.
+                None => continue,
+                Some(HandedFrom::Carrier {
+                    carrier,
+                    bit,
+                    width,
+                }) => {
+                    let mask = (1u64 << width) - 1;
+                    let read = self.read(carrier, derived);
+                    let bits = format!("{} & 0x{mask:X}", shr(&read, *bit));
+                    if carrier.fixed_bits().is_some_and(|b| b <= 8) {
                         out.push_str(&format!(", {bits}"));
                     } else {
                         out.push_str(&format!(", ({bits}) as u8"));
                     }
                 }
-                FlagBindSource::Input { name } => {
+                Some(HandedFrom::Input { name }) => {
                     out.push_str(&format!(", {}", filters::to_snake_case(name.clone())));
                 }
             }
@@ -1567,39 +1503,40 @@ impl<'a> Plan<'a> {
     /// codec is passed: each clause reads a bit, and the clauses are joined
     /// as the author joined them.
     fn gate_test(&self, gate: &PresentIfPredicate, derived: &Derived) -> String {
-        let mut clauses: Vec<String> = Vec::new();
-        let mut clause = Some(gate);
-        while let Some(p) = clause {
-            if p.scope == PresentIfScope::Chain {
-                // The chain holds an entry of the identifier, as the entries
-                // the source lists say.
-                let has = self.chain_has(p);
-                clauses.push(if p.negate { format!("!{has}") } else { has });
-                clause = p.or_with.as_deref();
-                continue;
-            }
-            let (read, mask) = match p.scope {
-                PresentIfScope::Input => (filters::to_snake_case(p.flag_name.clone()), 1u64),
-                _ => {
-                    let carrier = self
-                        .m()
-                        .fields
-                        .iter()
-                        .find(|f| f.id == p.field_id)
-                        .expect("the parser found the carrier a gate reads");
-                    let def = carrier
-                        .flags
-                        .iter()
-                        .find(|d| d.name == p.flag_name)
-                        .expect("the parser found the flag a gate reads");
-                    (self.read(carrier, derived), 1u64 << def.bit)
+        let bit = |read: String, mask: u64, negate: bool| {
+            let op = if negate { "==" } else { "!=" };
+            format!("({read} & 0x{mask:X}) {op} 0")
+        };
+        self.encode
+            .clauses(gate)
+            .iter()
+            .map(|clause| match clause {
+                // The chain holds an entry of the identifier, as the entries the
+                // source lists say.
+                Clause::Member {
+                    chain,
+                    id,
+                    negate,
+                    held,
+                } => {
+                    let has = self.chain_has(chain, *id, *held);
+                    if *negate {
+                        format!("!{has}")
+                    } else {
+                        has
+                    }
                 }
-            };
-            let op = if p.negate { "==" } else { "!=" };
-            clauses.push(format!("({read} & 0x{mask:X}) {op} 0"));
-            clause = p.or_with.as_deref();
-        }
-        clauses.join(" || ")
+                Clause::Input { name, negate } => {
+                    bit(filters::to_snake_case(name.clone()), 1, *negate)
+                }
+                Clause::Flag {
+                    carrier,
+                    bit: at,
+                    negate,
+                } => bit(self.read(carrier, derived), 1u64 << at, *negate),
+            })
+            .collect::<Vec<_>>()
+            .join(" || ")
     }
 
     /// The identifier of the entry `entry` (an expression that is a reference
@@ -1607,77 +1544,48 @@ impl<'a> Plan<'a> {
     /// field the chain's `entry-id` names, read through the entry codec's trait,
     /// less the flags it leaves out.
     fn entry_identifier(&self, chain: &CodecField, entry: &str) -> String {
-        let BitSize::TlvChain {
-            entry_id: Some(identifier),
-            ..
-        } = &chain.bit_size
-        else {
-            panic!("a chain-membership clause names a chain that declares entry-id");
+        let identifier = self
+            .encode
+            .entry_ids
+            .get(&chain.id)
+            .expect("a chain-membership clause names a chain that declares entry-id");
+        let entry_trait = self
+            .child(chain)
+            .expect("a chain imports its entry codec")
+            .trait_path;
+        let whole = |field: &str| {
+            format!(
+                "u64::from({entry_trait}::{}({entry}))",
+                self.l().codec_field_id(field)
+            )
         };
-        let import = self
-            .input
-            .imports
-            .iter()
-            .find(|i| Some(i.alias.as_str()) == child_alias(chain))
-            .expect("a chain imports its entry codec");
-        let entry_trait = format!("super::{}::{}Source", import.namespace, import.type_name);
-        match &identifier.carrier {
-            Some(carrier_id) => {
-                let carrier = import
-                    .codec_fields
-                    .iter()
-                    .find(|f| &f.id == carrier_id)
-                    .expect("the parser found the carrier the identifier names");
-                let def = carrier
-                    .flags
-                    .iter()
-                    .find(|d| d.name == identifier.name)
-                    .expect("the parser found the flag the identifier names");
-                let mask = (1u64 << def.width) - 1;
-                let whole = format!(
-                    "u64::from({entry_trait}::{}({entry}))",
-                    self.l().codec_field_id(&carrier.id)
-                );
-                format!("({} & 0x{mask:X})", shr(&whole, def.bit))
+        match identifier {
+            EntryId::Flag { carrier, bit, mask } => {
+                format!("({} & 0x{mask:X})", shr(&whole(carrier), *bit))
             }
-            None => {
-                let whole = format!(
-                    "u64::from({entry_trait}::{}({entry}))",
-                    self.l().codec_field_id(&identifier.name)
-                );
-                match chain_identifier_masks(self.m(), self.input.imports).get(&chain.id) {
-                    Some(mask) => format!("({whole} & 0x{mask:X})"),
-                    None => whole,
-                }
-            }
+            EntryId::Whole {
+                field,
+                mask: Some(mask),
+            } => format!("({} & 0x{mask:X})", whole(field)),
+            EntryId::Whole { field, mask: None } => whole(field),
         }
     }
 
-    /// "The chain holds an entry whose identifier is the clause's".
-    fn chain_has(&self, clause: &PresentIfPredicate) -> String {
-        let chain = self
-            .m()
-            .fields
-            .iter()
-            .find(|f| f.id == clause.field_id)
-            .expect("the parser found the chain a gate reads");
-        let value = clause.entry_id.expect("a chain clause names an identifier");
+    /// "The chain `chain` holds an entry of the kind `value`", where `held` is
+    /// the group that holds its memberships and the member the kind is.
+    fn chain_has(
+        &self,
+        chain: &CodecField,
+        value: u64,
+        held: Option<(usize, Option<usize>)>,
+    ) -> String {
         // A chain whose memberships a group holds: the gate on one of the
         // group's kinds is the arm the value holds, and any other kind is
         // looked for in its walk (docs/adr/0065 §6 R6). A bare entry's chain is
         // walked as slots, whose named entry has the group's key; one with
         // content is walked as the chain it is, its entries read as any chain's.
-        let membership = self
-            .encode
-            .roles
-            .group_of(&chain.id)
-            .filter(|group| holds_chain(group, chain));
-        if let Some((group, index)) = membership.and_then(|group| {
-            group
-                .members()
-                .find(|(_, key)| *key == value)
-                .map(|(index, _)| (group, index))
-        }) {
+        let membership = held.map(|(group, _)| &self.encode.groups()[group]);
+        if let (Some(group), Some((_, Some(index)))) = (membership, held) {
             let held = format!("src.{}()", self.group_accessor(group));
             return self.gate_value(group, index, &held);
         }
@@ -1704,13 +1612,10 @@ impl<'a> Plan<'a> {
     /// the field is present exactly when the gate says, or the value is not one
     /// frame can carry. Made in the prologue, so nothing is written first.
     fn gate_checks(&self, derived: &Derived, lines: &mut Vec<String>) {
-        for check in &self.encode.roles.input_checks {
-            self.input_check(&check.binder, &check.against, derived, lines);
+        for check in &self.encode.input_checks {
+            self.input_check(check, derived, lines);
         }
-        for check in self.encode.roles.source_checks() {
-            let Some(field) = self.m().fields.iter().find(|f| f.id == check.field) else {
-                continue;
-            };
+        for field in &self.encode.gate_checks {
             let Some(gate) = &field.present_if else {
                 continue;
             };
@@ -3493,14 +3398,12 @@ impl<'a> Plan<'a> {
         // An input the value says is read off it, under the name a gate reads
         // it by; a codec that does not test it has nothing to read
         // (docs/adr/0065 §6 R4a).
-        for input in &self.m().flag_inputs {
-            if self.encode.roles.says_input(&input.name) && self.gates_read_input(&input.name) {
-                lines.push(format!(
-                    "let {}: u8 = u8::from({});",
-                    Self::input_name(input),
-                    self.said_input(&input.name, "src")
-                ));
-            }
+        for said in self.encode.said.iter().filter(|said| said.read) {
+            lines.push(format!(
+                "let {}: u8 = u8::from({});",
+                Self::input_name(said.input),
+                self.said_input(&said.input.name, "src")
+            ));
         }
         let derived = self.derivations(&mut lines);
         self.gate_checks(&derived, &mut lines);

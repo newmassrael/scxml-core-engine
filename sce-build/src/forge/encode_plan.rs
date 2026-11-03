@@ -25,7 +25,11 @@ use crate::forge::codec_roles::{
 };
 use crate::forge::codec_totality::{self, RefusalKind, Totality};
 use crate::forge::generator::ImportContext;
-use crate::forge::model::{CodecField, CodecModel, SceType};
+use crate::forge::model::{
+    BitSize, CodecField, CodecModel, FlagBindSource, FlagInput, PresentIfPredicate, PresentIfScope,
+    SceType,
+};
+use std::collections::BTreeMap;
 
 /// The encode plan of one positional codec.
 pub struct EncodePlan<'m> {
@@ -45,6 +49,182 @@ pub struct EncodePlan<'m> {
     /// Each derived element and how the encode computes it, in the order of
     /// the roles, each derivation of an element apart.
     pub derivations: Vec<Derived<'m>>,
+    /// The flag inputs the encode is handed: those the value does not say
+    /// (docs/adr/0065 §6 R4a), in declaration order.
+    pub given: Vec<&'m FlagInput>,
+    /// The flag inputs the value says, in declaration order.
+    pub said: Vec<Said<'m>>,
+    /// For each codec the value holds, by its import alias, what the codec is
+    /// handed for each flag input it takes and does not say itself, in the
+    /// order it declares them.
+    pub handed: BTreeMap<String, Vec<Handed<'m>>>,
+    /// Each input a held codec says that the parent also hands it from
+    /// elsewhere, which the encode holds the codec to before it writes
+    /// (docs/adr/0065 §6 R4a), in the order of the roles.
+    pub input_checks: Vec<InputCheck<'m>>,
+    /// Each gated field whose presence the encode cannot derive from its gate,
+    /// which the encode holds to the gate before it writes, in the order of
+    /// the roles.
+    pub gate_checks: Vec<&'m CodecField>,
+    /// How each chain that declares `entry-id` identifies its entries, by the
+    /// chain's id.
+    pub entry_ids: BTreeMap<String, EntryId>,
+}
+
+/// An input a held codec says, held to what the parent hands it from
+/// elsewhere: a value whose codec says otherwise has no frame, and the encode
+/// refuses it with [`RefusalKind::PresentIfMismatch`] at [`InputCheck::at`].
+pub struct InputCheck<'m> {
+    /// The import alias of the held codec.
+    pub codec: String,
+    /// Its input.
+    pub input: String,
+    /// Whether the codec says the input in some of its values only, and a
+    /// value that says nothing of it disagrees with nothing (§6 R4e).
+    pub partly: bool,
+    /// The element the refusal names: the field, or the alias of an arm's
+    /// codec.
+    pub at: String,
+    /// Where the parent holds the codec.
+    pub site: CheckSite<'m>,
+    /// What the parent hands it.
+    pub against: Against<'m>,
+}
+
+/// Where a parent holds a codec whose input it checks.
+pub enum CheckSite<'m> {
+    /// Every entry of the list `list`.
+    List {
+        /// The list.
+        list: &'m CodecField,
+    },
+    /// The embedded body `body`.
+    Embed {
+        /// The body.
+        body: &'m CodecField,
+    },
+    /// The arms of the variant whose codec it is, by their places among
+    /// [`EncodePlan::arms`].
+    Arm {
+        /// The arms.
+        arms: Vec<usize>,
+    },
+}
+
+/// What a parent hands a held codec for an input it checks.
+pub enum Against<'m> {
+    /// The bit `bit` of the carrier `carrier`, as the encode writes it.
+    Carrier {
+        /// The carrier.
+        carrier: &'m CodecField,
+        /// The bit.
+        bit: u32,
+    },
+    /// The parent's own flag input `name`.
+    Input {
+        /// The input.
+        name: String,
+    },
+    /// Whether the entry before, in the chain [`CheckSite::List`] names, is of
+    /// the kind `id` (false for the first entry).
+    PreviousEntry {
+        /// The kind.
+        id: u64,
+    },
+}
+
+/// How a chain identifies an entry, read off the entry's source as a `u64`.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum EntryId {
+    /// The bits `mask` at `bit` of the entry's carrier `carrier`.
+    Flag {
+        /// The entry codec's carrier.
+        carrier: String,
+        /// The lowest bit.
+        bit: u32,
+        /// The bits, below the lowest.
+        mask: u64,
+    },
+    /// The entry's field `field`, less the flags `mask` leaves out
+    /// (`entry-id-except`).
+    Whole {
+        /// The entry codec's field.
+        field: String,
+        /// The bits kept, where some are left out.
+        mask: Option<u64>,
+    },
+}
+
+/// One clause of a gate, the clauses of a gate joined by "or".
+pub enum Clause<'m> {
+    /// The bit `bit` of the carrier `carrier` is set (clear where `negate`).
+    Flag {
+        /// The carrier.
+        carrier: &'m CodecField,
+        /// The bit.
+        bit: u32,
+        /// Whether the clause holds where the bit is clear.
+        negate: bool,
+    },
+    /// The flag input `name` is set (clear where `negate`).
+    Input {
+        /// The input.
+        name: String,
+        /// Whether the clause holds where the input is clear.
+        negate: bool,
+    },
+    /// The chain `chain` holds an entry of the kind `id` (none where `negate`).
+    Member {
+        /// The chain.
+        chain: &'m CodecField,
+        /// The kind.
+        id: u64,
+        /// Whether the clause holds where the chain holds none.
+        negate: bool,
+        /// Where a group holds the chain's memberships (docs/adr/0065 §6 R6),
+        /// the group, by its place among [`EncodePlan::groups`], and the member
+        /// of it this kind is, where it is one: the clause is then what the arm
+        /// the value holds says.
+        held: Option<(usize, Option<usize>)>,
+    },
+}
+
+/// A flag input the value says (docs/adr/0065 §6 R4a).
+pub struct Said<'m> {
+    /// The input.
+    pub input: &'m FlagInput,
+    /// Whether a gate or a check of the codec reads it, so that the encode
+    /// computes it before them.
+    pub read: bool,
+}
+
+/// What a held codec is handed for one of its flag inputs.
+pub struct Handed<'m> {
+    /// The input of the held codec.
+    pub input: String,
+    /// What the parent hands it, or `None` where the parent binds nothing to it
+    /// and a caller that writes the codec supplies it itself (a chain hands each
+    /// entry what the entry before it was).
+    pub from: Option<HandedFrom<'m>>,
+}
+
+/// What a parent hands a held codec for a flag input.
+pub enum HandedFrom<'m> {
+    /// The bits `width` wide at `bit` of the carrier `carrier`, as the encode
+    /// writes it.
+    Carrier {
+        /// The carrier.
+        carrier: &'m CodecField,
+        /// The lowest bit.
+        bit: u32,
+        /// How many bits.
+        width: u32,
+    },
+    /// The parent's own flag input `name`, passed on.
+    Input {
+        /// The parent's input.
+        name: String,
+    },
 }
 
 /// A derived element and one derivation of it.
@@ -428,6 +608,28 @@ impl<'m> EncodePlan<'m> {
             .collect();
         let arms = arms(model);
         let derivations = derivations(model, &roles, &totality, &arms, imports);
+        let given = model
+            .flag_inputs
+            .iter()
+            .filter(|input| !roles.says_input(&input.name))
+            .collect();
+        let said = model
+            .flag_inputs
+            .iter()
+            .filter(|input| roles.says_input(&input.name))
+            .map(|input| Said {
+                input,
+                read: input_read(model, &roles, &input.name),
+            })
+            .collect();
+        let handed = handed(model, imports);
+        let input_checks = input_checks(model, &roles, &arms, imports);
+        let gate_checks = roles
+            .source_checks()
+            .filter_map(|check| model.fields.iter().find(|f| f.id == check.field))
+            .filter(|field| field.present_if.is_some())
+            .collect();
+        let entry_ids = entry_ids(model, imports);
         EncodePlan {
             model,
             roles,
@@ -435,6 +637,12 @@ impl<'m> EncodePlan<'m> {
             elements,
             arms,
             derivations,
+            given,
+            said,
+            handed,
+            input_checks,
+            gate_checks,
+            entry_ids,
         }
     }
 
@@ -458,6 +666,67 @@ impl<'m> EncodePlan<'m> {
     /// Whether a value presents `field` by an accessor of its own.
     pub fn presents_alone(&self, field: &CodecField) -> bool {
         presented_alone(self.model, &self.roles, field)
+    }
+
+    /// The clauses of the gate `gate`, a gate of this codec, in the order its
+    /// author joined them.
+    ///
+    /// # Panics
+    ///
+    /// Where a clause names a carrier, a flag or a chain the codec does not
+    /// hold, which the parser refuses.
+    pub fn clauses(&self, gate: &PresentIfPredicate) -> Vec<Clause<'m>> {
+        let field = |id: &str| self.model.fields.iter().find(|f| f.id == id);
+        let mut out = Vec::new();
+        let mut clause = Some(gate);
+        while let Some(p) = clause {
+            out.push(match p.scope {
+                PresentIfScope::Chain => {
+                    let chain =
+                        field(&p.field_id).expect("the parser found the chain a gate reads");
+                    let id = p.entry_id.expect("a chain clause names an identifier");
+                    let held = self
+                        .roles
+                        .groups
+                        .iter()
+                        .position(|g| g.contains(&chain.id))
+                        .filter(|&g| self.roles.groups[g].chain() == Some(chain.id.as_str()))
+                        .map(|g| {
+                            let member = self.roles.groups[g]
+                                .members()
+                                .find(|(_, key)| *key == id)
+                                .map(|(index, _)| index);
+                            (g, member)
+                        });
+                    Clause::Member {
+                        chain,
+                        id,
+                        negate: p.negate,
+                        held,
+                    }
+                }
+                PresentIfScope::Input => Clause::Input {
+                    name: p.flag_name.clone(),
+                    negate: p.negate,
+                },
+                _ => {
+                    let carrier =
+                        field(&p.field_id).expect("the parser found the carrier a gate reads");
+                    let def = carrier
+                        .flags
+                        .iter()
+                        .find(|d| d.name == p.flag_name)
+                        .expect("the parser found the flag a gate reads");
+                    Clause::Flag {
+                        carrier,
+                        bit: def.bit,
+                        negate: p.negate,
+                    }
+                }
+            });
+            clause = p.or_with.as_deref();
+        }
+        out
     }
 }
 
@@ -759,6 +1028,174 @@ fn arm_flag<'m>(
         })
         .expect("the flag is one of the group's gates");
     Derive::ArmFlag { group, gate }
+}
+
+/// Whether a gate of a field the value does not present whole, or a check of
+/// an input a held codec says, reads the flag input `name`.
+fn input_read(model: &CodecModel, roles: &CodecRoles, name: &str) -> bool {
+    let gated = model.fields.iter().any(|f| {
+        !codec_totality::presented(roles, f)
+            && f.present_if.as_ref().is_some_and(|gate| {
+                let mut clause = Some(gate);
+                while let Some(p) = clause {
+                    if p.scope == PresentIfScope::Input && p.flag_name == name {
+                        return true;
+                    }
+                    clause = p.or_with.as_deref();
+                }
+                false
+            })
+    });
+    gated
+        || roles
+            .input_checks
+            .iter()
+            .any(|c| matches!(&c.against, InputValue::Input { name: n } if n == name))
+}
+
+/// What each codec `model` imports is handed for each flag input it takes and
+/// does not say itself.
+fn handed<'m>(
+    model: &'m CodecModel,
+    imports: &[ImportContext],
+) -> BTreeMap<String, Vec<Handed<'m>>> {
+    imports
+        .iter()
+        .map(|import| {
+            let handed = import
+                .codec_flag_inputs
+                .iter()
+                // An input the codec says is not handed to it.
+                .filter(|input| !import.codec_says_inputs.iter().any(|s| s == &input.name))
+                .map(|input| Handed {
+                    input: input.name.clone(),
+                    from: import
+                        .flag_binds
+                        .iter()
+                        .find(|b| b.input == input.name)
+                        .and_then(|bind| match &bind.source {
+                            FlagBindSource::Carrier { carrier, flag } => {
+                                let carrier = model
+                                    .fields
+                                    .iter()
+                                    .find(|f| f.is_flags_carrier() && &f.id == carrier)?;
+                                let def = carrier.flags.iter().find(|d| &d.name == flag)?;
+                                Some(HandedFrom::Carrier {
+                                    carrier,
+                                    bit: def.bit,
+                                    width: def.width.max(1),
+                                })
+                            }
+                            FlagBindSource::Input { name } => {
+                                Some(HandedFrom::Input { name: name.clone() })
+                            }
+                        }),
+                })
+                .collect();
+            (import.alias.clone(), handed)
+        })
+        .collect()
+}
+
+/// Each input a held codec says that the parent also hands it from elsewhere
+/// ([`codec_roles::InputCheck`]).
+fn input_checks<'m>(
+    model: &'m CodecModel,
+    roles: &CodecRoles,
+    arms: &[Arm<'m>],
+    imports: &[ImportContext],
+) -> Vec<InputCheck<'m>> {
+    let field = |id: &str| {
+        model
+            .fields
+            .iter()
+            .find(|f| f.id == id)
+            .expect("a bind site is a field of the codec")
+    };
+    roles
+        .input_checks
+        .iter()
+        .map(|check| {
+            let binder = &check.binder;
+            let site = match &binder.site {
+                BindSite::List { field: id } => CheckSite::List { list: field(id) },
+                BindSite::Embed { field: id } => CheckSite::Embed { body: field(id) },
+                BindSite::Arm => CheckSite::Arm {
+                    arms: arms
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, arm)| arm.codec == binder.alias)
+                        .map(|(index, _)| index)
+                        .collect(),
+                },
+            };
+            let against = match &check.against {
+                InputValue::Carrier { carrier, flag } => {
+                    let carrier = field(carrier);
+                    let def = carrier
+                        .flags
+                        .iter()
+                        .find(|d| &d.name == flag)
+                        .expect("the parser found the flag a bind names");
+                    Against::Carrier {
+                        carrier,
+                        bit: def.bit,
+                    }
+                }
+                InputValue::Input { name } => Against::Input { name: name.clone() },
+                InputValue::PreviousEntry { id } => Against::PreviousEntry { id: *id },
+            };
+            InputCheck {
+                codec: binder.alias.clone(),
+                input: binder.input.clone(),
+                partly: imports.iter().any(|i| {
+                    i.alias == binder.alias
+                        && i.codec_partly_says_inputs
+                            .iter()
+                            .any(|s| s == &binder.input)
+                }),
+                at: binder.site.element(&binder.alias).to_string(),
+                site,
+                against,
+            }
+        })
+        .collect()
+}
+
+/// How each chain of `model` that declares `entry-id` identifies its entries.
+fn entry_ids(model: &CodecModel, imports: &[ImportContext]) -> BTreeMap<String, EntryId> {
+    let masks = crate::forge::generator::chain_identifier_masks(model, imports);
+    model
+        .fields
+        .iter()
+        .filter_map(|chain| {
+            let BitSize::TlvChain {
+                entry_id: Some(identifier),
+                ..
+            } = &chain.bit_size
+            else {
+                return None;
+            };
+            let alias = codec_totality::child_alias(chain)?;
+            let import = imports.iter().find(|i| i.alias == alias)?;
+            let id = match &identifier.carrier {
+                Some(carrier_id) => {
+                    let carrier = import.codec_fields.iter().find(|f| &f.id == carrier_id)?;
+                    let def = carrier.flags.iter().find(|d| d.name == identifier.name)?;
+                    EntryId::Flag {
+                        carrier: carrier.id.clone(),
+                        bit: def.bit,
+                        mask: (1u64 << def.width) - 1,
+                    }
+                }
+                None => EntryId::Whole {
+                    field: identifier.name.clone(),
+                    mask: masks.get(&chain.id).copied(),
+                },
+            };
+            Some((chain.id.clone(), id))
+        })
+        .collect()
 }
 
 /// The arms of the variant of `model`: those it names, in order, then the
