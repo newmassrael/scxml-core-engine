@@ -573,7 +573,10 @@ enum Purpose {
     /// A round the host began.
     Round,
     /// The second read from the start that the group's device owed after `first`, which ended.
-    Follow { first: Round, steps: Vec<GroupStep> },
+    Follow {
+        first: Box<Round>,
+        steps: Vec<GroupStep>,
+    },
     /// A publication.
     Publish,
     /// The first publication the relay is owed, given after a round that came to `outcome`.
@@ -603,7 +606,7 @@ impl Running {
 /// handed over.
 fn hold_ended(purpose: &Purpose, state: &mut CourierState) {
     match purpose {
-        Purpose::Follow { first, .. } => state.hold(first.clone()),
+        Purpose::Follow { first, .. } => state.hold((**first).clone()),
         Purpose::Deliver { outcome } => outcome.hold_in(state),
         Purpose::Round | Purpose::Publish => {}
     }
@@ -1621,7 +1624,7 @@ impl Peer {
                     self.running = Some(Box::new(Running {
                         machine,
                         purpose: Purpose::Follow {
-                            first: round,
+                            first: Box::new(round),
                             steps,
                         },
                     }));
@@ -1641,7 +1644,7 @@ impl Peer {
                     steps.extend(member.take_round(&again));
                 }
                 Outcome {
-                    round: first,
+                    round: *first,
                     reread: Some(again),
                     steps,
                     owed: 0,
@@ -1654,7 +1657,7 @@ impl Peer {
             (Purpose::Follow { first, steps }, Err(error)) => {
                 note_failure(&self.list, "reread", &error);
                 Outcome {
-                    round: first,
+                    round: *first,
                     reread: None,
                     steps,
                     owed: 0,
