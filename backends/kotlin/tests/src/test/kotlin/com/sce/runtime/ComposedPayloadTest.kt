@@ -201,8 +201,9 @@ class ComposedPayloadTest {
         return parts.joinToString(",", "[", "]")
     }
 
+    /** [held] with its last leaf replaced by [leaf]; a record, the model's list of `(id, value)` pairs, is a leaf. */
     private fun setLastLeaf(held: Any?, leaf: Any?): Any? {
-        if (held !is List<*>) {
+        if (held !is List<*> || held.firstOrNull() is Pair<*, *>) {
             return leaf
         }
         return held.dropLast(1) + listOf(setLastLeaf(held.last(), leaf))
