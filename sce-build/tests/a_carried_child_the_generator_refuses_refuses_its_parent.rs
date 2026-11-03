@@ -558,9 +558,16 @@ fn generate_w3c_skips_a_fixture_whose_file_child_it_cannot_generate() {
     for lang in backends() {
         let work = scratch(&format!("w3c_file_child_{lang}"));
         let (generated, _) = suite_with_a_file_child(&work.join("generated"), GENERATED_CHILD);
-        let control = codegen(&generated.args(lang, &work.join("generated_out")));
+        let generated_out = work.join("generated_out");
+        let control = codegen(&generated.args(lang, &generated_out));
+        // A backend whose suite takes the child's machine from this route
+        // writes it here; C++ takes it from the fixture's CMake build, and is
+        // not asked about it.
         if !control.status.success()
             || generated_total(&String::from_utf8_lossy(&control.stdout)) != 1
+            || !files_under(&generated_out)
+                .iter()
+                .any(|file| file.to_string_lossy().contains("test900sub1"))
         {
             continue;
         }
