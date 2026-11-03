@@ -128,8 +128,8 @@ PY
 
 mutation_case "A reader may submit, check, and publish what only a writer may" <<'PY'
 edit("backends/rust/relay/src/relay.rs",
-     "            | Request::PublishWelcome { .. } => WRITER,",
-     "            | Request::PublishWelcome { .. } => READER,")
+     "            | Request::PublishKeyGrant { .. } => WRITER,",
+     "            | Request::PublishKeyGrant { .. } => READER,")
 PY
 
 mutation_case "A device that is no member reads the feed, the ranges and the heads" <<'PY'

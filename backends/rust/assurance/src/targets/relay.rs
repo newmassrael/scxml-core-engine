@@ -51,6 +51,11 @@ fn some_requests() -> Vec<Request> {
             node: 3,
             data: "CCCC".to_string(),
         },
+        Request::PublishKeyGrant {
+            epoch: 1,
+            node: 3,
+            data: "DDDD".to_string(),
+        },
         Request::Feed {
             cursor: 0,
             limit: 50,
@@ -138,8 +143,13 @@ pub fn responses() -> Target {
                     node: 3,
                     data: "w".to_string(),
                 },
+                Record::KeyGrant {
+                    epoch: 1,
+                    node: 3,
+                    data: "g".to_string(),
+                },
             ],
-            next: 5,
+            next: 6,
             more: false,
         },
         Response::Operations {

@@ -519,6 +519,13 @@ pub enum Publication {
         node: u64,
         welcome: Vec<u8>,
     },
+    /// The key of `epoch` given to the device of `node`: the text `Trust::grant_key` wrote, which
+    /// that device's courier takes in when a round reads it ([`Record::KeyGrant`]).
+    KeyGrant {
+        epoch: u32,
+        node: u64,
+        grant: String,
+    },
     /// What this host's person says their copy held of everything up to `before` (the digest the
     /// machine computed).
     Checkpoint { before: i64, digest: u32 },
@@ -544,6 +551,11 @@ impl Publication {
                 epoch: *epoch,
                 node: *node,
                 data: encoding::encode(welcome),
+            },
+            Publication::KeyGrant { epoch, node, grant } => Request::PublishKeyGrant {
+                epoch: *epoch,
+                node: *node,
+                data: encoding::encode(grant.as_bytes()),
             },
             Publication::Checkpoint { before, digest } => {
                 let checkpoint = trust.checkpoint(*before, *digest).map_err(|error| {
@@ -587,6 +599,8 @@ impl Publication {
                 welcome,
             } => json!({"k": "welcome", "p": epoch, "n": node.to_string(),
                         "d": encoding::encode(welcome)}),
+            Publication::KeyGrant { epoch, node, grant } => json!({"k": "key_grant", "p": epoch,
+                        "n": node.to_string(), "d": encoding::encode(grant.as_bytes())}),
             Publication::Checkpoint { before, digest } => {
                 json!({"k": "cp", "b": before.to_string(), "g": digest})
             }
@@ -607,6 +621,11 @@ impl Publication {
                 epoch: epoch()?,
                 node: value.get("n")?.as_str()?.parse().ok()?,
                 welcome: bytes()?,
+            }),
+            "key_grant" => Some(Publication::KeyGrant {
+                epoch: epoch()?,
+                node: value.get("n")?.as_str()?.parse().ok()?,
+                grant: String::from_utf8(bytes()?).ok()?,
             }),
             "cp" => Some(Publication::Checkpoint {
                 before: value.get("b")?.as_str()?.parse().ok()?,
@@ -1820,6 +1839,39 @@ fn take(
             round.messages.push(record.clone());
             Taken::Done
         }
+        Record::KeyGrant { node, data, .. } => {
+            take_key_grant(trust, parked, *node, data, round);
+            Taken::Done
+        }
+    }
+}
+
+/// Take in the key of an epoch a member gave the device of `node`, when it is this host's
+/// person's: what was sealed under the epoch before the device was admitted opens with it, so the
+/// operations held back for want of it are tried again at once. A key given to another device is
+/// not this host's to open; one given to its own that does not open, or that is not from a member
+/// or an administrator the log names, is a refusal ([`Trust::receive_grant`]).
+fn take_key_grant(
+    trust: &Trust,
+    parked: &mut Vec<(String, String)>,
+    node: u64,
+    data: &str,
+    round: &mut Round,
+) {
+    if trust.person().map(|(own, _)| own) != Some(node) {
+        return;
+    }
+    let Some(grant) = encoding::decode(data).and_then(|bytes| String::from_utf8(bytes).ok()) else {
+        round
+            .refused
+            .push("a key the relay holds for this device is not a text".to_string());
+        return;
+    };
+    match trust.receive_grant(&grant) {
+        Ok(_) => retry_parked(trust, parked, round),
+        Err(error) => round
+            .refused
+            .push(format!("a key the relay holds for this device: {error:?}")),
     }
 }
 
@@ -1902,7 +1954,7 @@ impl Sealer for Keep {
 mod tests {
     use serde_json::json;
 
-    use super::{CourierState, Publication};
+    use super::{encoding, CourierState, Publication};
 
     /// A list whose history began again at a relay is read from its start, and the proof of a
     /// conflict given it again; what the machine was told and what waits to be handed over is kept.
@@ -1943,6 +1995,11 @@ mod tests {
                 node: u64::MAX,
                 welcome: vec![7],
             },
+            Publication::KeyGrant {
+                epoch: 3,
+                node: u64::MAX,
+                grant: "{\"epoch\":3}".to_string(),
+            },
             Publication::Checkpoint {
                 before: i64::MIN,
                 digest: u32::MAX,
@@ -1959,6 +2016,7 @@ mod tests {
             json!({"k": "commit", "p": 4}),
             json!({"k": "commit", "p": 4, "d": "not the URL alphabet!"}),
             json!({"k": "welcome", "p": 4, "n": 9, "d": "AA"}),
+            json!({"k": "key_grant", "p": 4, "n": "9", "d": encoding::encode(&[0xff, 0xfe])}),
             json!({"k": "cp", "b": "1", "g": u64::MAX}),
             json!({"k": "nothing", "d": "AA"}),
         ] {

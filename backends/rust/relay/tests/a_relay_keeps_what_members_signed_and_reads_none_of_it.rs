@@ -1332,6 +1332,51 @@ fn a_relay_keeps_the_mls_messages_of_a_list_within_its_bounds_and_the_logs_word(
         welcome(&mut relay, 1),
         Response::Accepted { new: true, .. }
     ));
+
+    // The key of an epoch given to a device is for an epoch the log began, given by a device that
+    // writes, within the bound, and kept once.
+    let key_grant = |relay: &mut Relay<MemoryStore>, from: u64, epoch: u32, bytes: &[u8]| {
+        ask(
+            relay,
+            from,
+            Request::PublishKeyGrant {
+                epoch,
+                node: 3,
+                data: encoding::encode(bytes),
+            },
+            0,
+        )
+    };
+    let given = [5u8; 12];
+    assert_eq!(
+        refused(&key_grant(&mut relay, 1, 2, &given)),
+        &Code::Behind,
+        "the log has not begun epoch 2"
+    );
+    assert_eq!(
+        refused(&key_grant(&mut relay, 1, 0, &given)),
+        &Code::Behind,
+        "no epoch 0 is begun"
+    );
+    assert_eq!(
+        refused(&key_grant(&mut relay, 3, 1, &given)),
+        &Code::Forbidden,
+        "a reader gives no key"
+    );
+    assert_eq!(
+        refused(&key_grant(&mut relay, 1, 1, &[5u8; 17])),
+        &Code::TooLarge
+    );
+    let before = relay.records(LIST);
+    assert!(matches!(
+        key_grant(&mut relay, 1, 1, &given),
+        Response::Accepted { new: true, .. }
+    ));
+    assert!(matches!(
+        key_grant(&mut relay, 1, 1, &given),
+        Response::Accepted { new: false, .. }
+    ));
+    assert_eq!(relay.records(LIST), before + 1, "kept once");
 }
 
 /// The genesis of a list named `list`, by the administrator.

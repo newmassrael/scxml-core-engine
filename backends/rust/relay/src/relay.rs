@@ -76,6 +76,7 @@ struct ListState {
     /// of their bytes, so that one is kept once.
     commits: BTreeSet<u32>,
     welcomes: BTreeSet<(u32, u64, [u8; 32])>,
+    key_grants: BTreeSet<(u32, u64, [u8; 32])>,
     key_packages: BTreeMap<u64, BTreeSet<[u8; 32]>>,
     /// The nodes a key package was kept for under an invitation, each with when its invitation
     /// expires: the record of the invitation's use (ADR 0080 section 4).
@@ -96,6 +97,7 @@ impl ListState {
             records: Vec::new(),
             commits: BTreeSet::new(),
             welcomes: BTreeSet::new(),
+            key_grants: BTreeSet::new(),
             key_packages: BTreeMap::new(),
             joins: BTreeMap::new(),
             openly: None,
@@ -136,6 +138,11 @@ impl ListState {
             Record::Welcome { epoch, node, data } => {
                 if let Some(hash) = digest_of(data) {
                     self.welcomes.insert((*epoch, *node, hash));
+                }
+            }
+            Record::KeyGrant { epoch, node, data } => {
+                if let Some(hash) = digest_of(data) {
+                    self.key_grants.insert((*epoch, *node, hash));
                 }
             }
             Record::KeyPackage { node, data, join } => {
@@ -643,7 +650,8 @@ impl<S: Store> Relay<S> {
             Request::Submit { .. }
             | Request::Checkpoint { .. }
             | Request::PublishCommit { .. }
-            | Request::PublishWelcome { .. } => WRITER,
+            | Request::PublishWelcome { .. }
+            | Request::PublishKeyGrant { .. } => WRITER,
             Request::Challenge { .. }
             | Request::Login(_)
             | Request::Join(_)
@@ -684,6 +692,9 @@ impl<S: Store> Relay<S> {
             Request::PublishWelcome { epoch, node, data } => {
                 self.publish_group(&session.list, Record::Welcome { epoch, node, data })
             }
+            Request::PublishKeyGrant { epoch, node, data } => {
+                self.publish_group(&session.list, Record::KeyGrant { epoch, node, data })
+            }
             Request::Feed { cursor, limit } => self.feed(&session.list, cursor, limit),
             Request::Operations { node, from, to } => {
                 self.operations(&session.list, node, from, to)
@@ -703,8 +714,9 @@ impl<S: Store> Relay<S> {
     }
 
     /// Keep an MLS message of the list's group: a key package, the commit the log names for an
-    /// epoch, a Welcome. The relay reads none of them; it keeps each once, the commit only when its
-    /// hash is the one the log names, and bounds how many a device leaves.
+    /// epoch, a Welcome; or the key of an epoch given to a device. The relay reads none of them; it
+    /// keeps each once, the commit only when its hash is the one the log names, and bounds how many
+    /// a device leaves.
     fn publish_group(&mut self, list: &str, record: Record) -> Response {
         if let Err(full) = self.room(list) {
             return full;
@@ -916,9 +928,10 @@ impl<S: Store> Relay<S> {
 fn verify(state: &ListState, record: &Record, limits: &Limits) -> Result<bool, (Code, String)> {
     let trust = &state.trust;
     match record {
-        Record::KeyPackage { .. } | Record::Commit { .. } | Record::Welcome { .. } => {
-            check_group_record(state, record, limits)
-        }
+        Record::KeyPackage { .. }
+        | Record::Commit { .. }
+        | Record::Welcome { .. }
+        | Record::KeyGrant { .. } => check_group_record(state, record, limits),
         Record::Entry(text) => {
             let entry = Entry::from_json(text)
                 .ok_or((Code::Invalid, "it is not an entry of a log".to_string()))?;
@@ -944,10 +957,11 @@ fn verify(state: &ListState, record: &Record, limits: &Limits) -> Result<bool, (
     }
 }
 
-/// Whether an MLS message of a list holds against what the list has: `Ok(true)` when it is new and
-/// holds, `Ok(false)` when the relay holds it already. Nothing is read of it, only its hash taken: a
-/// commit must be the one the log names for its epoch, a Welcome must be for an epoch the log began,
-/// and a device leaves a bounded number of key packages.
+/// Whether an MLS message of a list, or the key of an epoch given to a device, holds against what
+/// the list has: `Ok(true)` when it is new and holds, `Ok(false)` when the relay holds it already.
+/// Nothing is read of it, only its hash taken: a commit must be the one the log names for its
+/// epoch, a Welcome and a key given must be for an epoch the log began, and a device leaves a
+/// bounded number of key packages.
 fn check_group_record(
     state: &ListState,
     record: &Record,
@@ -1027,6 +1041,18 @@ fn check_group_record(
                 ));
             }
             Ok(!state.welcomes.contains(&(*epoch, *node, hash)))
+        }
+        // A key of an epoch of the group's or of one an administrator drew: either begins with an
+        // entry of the log, and only the log's latest epoch tells which it has begun.
+        Record::KeyGrant { epoch, node, data } => {
+            let hash: [u8; 32] = Sha256::digest(bytes_of(data)?).into();
+            if *epoch == 0 || *epoch > state.trust.epoch() {
+                return Err((
+                    Code::Behind,
+                    format!("the log the relay holds has not begun epoch {epoch}"),
+                ));
+            }
+            Ok(!state.key_grants.contains(&(*epoch, *node, hash)))
         }
         _ => Err((Code::Invalid, "it is not an MLS message".to_string())),
     }

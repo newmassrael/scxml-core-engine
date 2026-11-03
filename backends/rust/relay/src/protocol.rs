@@ -43,6 +43,11 @@ pub enum Record {
     /// The Welcome for the device of `node` added by the commit of `epoch`. It is sealed to that
     /// device's key package, and the relay does not read it.
     Welcome { epoch: u32, node: u64, data: String },
+    /// The key of `epoch`, given to the device of `node` by a member who holds it (the text
+    /// `sce_rust_trust::Trust::grant_key` writes, its bytes in the URL alphabet): what a device
+    /// admitted after the epoch opens what was sealed under it with. It is sealed to that device's
+    /// key, and the relay does not read it.
+    KeyGrant { epoch: u32, node: u64, data: String },
 }
 
 impl Record {
@@ -61,6 +66,9 @@ impl Record {
             Record::Commit { epoch, data } => json!({"k": "commit", "p": epoch, "d": data}),
             Record::Welcome { epoch, node, data } => {
                 json!({"k": "welcome", "p": epoch, "n": node.to_string(), "d": data})
+            }
+            Record::KeyGrant { epoch, node, data } => {
+                json!({"k": "key_grant", "p": epoch, "n": node.to_string(), "d": data})
             }
         }
     }
@@ -93,6 +101,11 @@ impl Record {
                 node: node()?,
                 data: text("d")?,
             }),
+            "key_grant" => Some(Record::KeyGrant {
+                epoch: epoch()?,
+                node: node()?,
+                data: text("d")?,
+            }),
             _ => None,
         }
     }
@@ -117,6 +130,9 @@ pub enum Request {
     PublishCommit { epoch: u32, data: String },
     /// The Welcome for the device of `node` that the commit of `epoch` added.
     PublishWelcome { epoch: u32, node: u64, data: String },
+    /// The key of `epoch` given to the device of `node` ([`Record::KeyGrant`]): taken for an epoch
+    /// the log has begun.
+    PublishKeyGrant { epoch: u32, node: u64, data: String },
     /// Everything the relay holds after the first `cursor` records, in the order it arrived, at
     /// most `limit` of them.
     Feed { cursor: u64, limit: u32 },
@@ -279,6 +295,7 @@ impl Request {
                 | Request::PublishKeyPackage { .. }
                 | Request::PublishCommit { .. }
                 | Request::PublishWelcome { .. }
+                | Request::PublishKeyGrant { .. }
         )
     }
 
@@ -298,6 +315,12 @@ impl Request {
             }
             Request::PublishWelcome { epoch, node, data } => json!({
                 "op": "welcome",
+                "epoch": epoch,
+                "node": node.to_string(),
+                "data": data,
+            }),
+            Request::PublishKeyGrant { epoch, node, data } => json!({
+                "op": "key_grant",
                 "epoch": epoch,
                 "node": node.to_string(),
                 "data": data,
@@ -383,6 +406,11 @@ impl Request {
                 data: text_of("data")?,
             }),
             Some("welcome") => Ok(Request::PublishWelcome {
+                epoch: epoch()?,
+                node: number("node")?,
+                data: text_of("data")?,
+            }),
+            Some("key_grant") => Ok(Request::PublishKeyGrant {
                 epoch: epoch()?,
                 node: number("node")?,
                 data: text_of("data")?,
@@ -773,6 +801,11 @@ mod tests {
                 node: 9,
                 data: "CCCC".to_string(),
             },
+            Request::PublishKeyGrant {
+                epoch: 3,
+                node: u64::MAX,
+                data: "DDDD".to_string(),
+            },
             Request::Feed {
                 cursor: u64::MAX,
                 limit: 50,
@@ -983,6 +1016,11 @@ mod tests {
                         epoch: 2,
                         node: 3,
                         data: "w".to_string(),
+                    },
+                    Record::KeyGrant {
+                        epoch: 1,
+                        node: 3,
+                        data: "g".to_string(),
                     },
                 ],
                 next: 3,
