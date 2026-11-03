@@ -150,10 +150,11 @@ endfunction()
 #                which files.
 #
 # A child document's generation is the one the plan holds for it: `generate
-# <child> --as-child`, with the fixture's language, output directory and input
-# root. `--as-child` changes no C11 file (a C11 child detects what it sends its
-# parent from its document), so both languages run the generation the plan
-# planned.
+# <child>` with the arguments the plan states for it (`<P>_ARGS`, `--as-child`
+# for every child a fixture starts), and the fixture's language, output
+# directory and input root. `--as-child` changes no C11 file (a C11 child
+# detects what it sends its parent from its document), so both languages run
+# the generation the plan planned.
 #
 # Sets in the caller's scope:
 #   _W3C_FIXTURE_HEADERS  every header any of the fixture's generations writes
@@ -256,7 +257,7 @@ function(_sce_generate_w3c_fixture TEST_NUM OUTPUT_DIR LANGUAGE)
         add_custom_command(
             OUTPUT ${_CHILD_PLAN_OUTPUTS}
             COMMAND "${SCE_CODEGEN}" generate "${_CHILD_PLAN_DOCUMENT}"
-                    --as-child
+                    ${_CHILD_PLAN_ARGS}
                     -l ${LANGUAGE} -o "${OUTPUT_DIR}"
                     --input-root "${RESOURCE_DIR}"
                     --write-deps "${_CHILD_PLAN_DEPFILE}"

@@ -146,6 +146,16 @@ pub fn with_documents<T>(
     body()
 }
 
+/// Hold `text` under `path` until the innermost [`with_documents`] this thread is in ends (until
+/// the thread ends, outside one): a document a run produced in memory instead of writing it,
+/// which the same run reads back where a run that writes reads the disk. It is the run's own
+/// output, made from what the run was let read, so holding it widens nothing either.
+pub fn hold(path: &Path, text: String) {
+    HELD.with(|held| {
+        held.borrow_mut().insert(lexical(path), text);
+    });
+}
+
 /// Whether a file a document names may be opened here.
 pub fn permits(path: &Path) -> bool {
     #[cfg(test)]
@@ -387,6 +397,23 @@ mod tests {
             assert!(!exists(Path::new("/held/inner.scxml")));
         });
         assert!(!exists(Path::new("/held/outer.scxml")));
+    }
+
+    #[test]
+    fn a_document_a_run_holds_is_read_back_until_its_scope_ends() {
+        let outer = || [(PathBuf::from("/held/outer.scxml"), "outer".to_string())];
+        let written = Path::new("/held/./written.scxml");
+
+        with_documents(outer(), || {
+            hold(written, "written".to_string());
+            assert_eq!(
+                read_to_string(Path::new("/held/written.scxml")).unwrap(),
+                "written"
+            );
+            // Held beside what the scope was given, not in place of it.
+            assert!(exists(Path::new("/held/outer.scxml")));
+        });
+        assert!(!exists(written));
     }
 
     #[test]

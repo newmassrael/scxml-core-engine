@@ -307,21 +307,51 @@ fn stub_writing_fixture(dir: &Path) -> PathBuf {
 /// paths, and per child document the paths its generation writes.
 type ChildPlans = std::collections::BTreeMap<String, BTreeSet<String>>;
 
+/// Per child document, the arguments the plan states its generation is run
+/// with (`<child document>\t\t<argument>...`).
+type ChildArguments = std::collections::BTreeMap<String, Vec<String>>;
+
 fn split_children(out: &Output) -> (Vec<String>, ChildPlans) {
+    let (own, children, _) = split_generations(out);
+    (own, children)
+}
+
+/// [`split_children`], with the arguments of each generation. A file line
+/// of a generation whose arguments were not stated first is a failure: the
+/// arguments are what a build runs the generation with.
+fn split_generations(out: &Output) -> (Vec<String>, ChildPlans, ChildArguments) {
     let mut own = Vec::new();
     let mut children = ChildPlans::new();
+    let mut arguments = ChildArguments::new();
     for line in stdout_lines(out) {
         match line.split_once('\t') {
-            Some((document, file)) => {
-                children
-                    .entry(document.to_string())
-                    .or_default()
-                    .insert(file.to_string());
-            }
+            Some((document, rest)) => match rest.strip_prefix('\t') {
+                Some(stated) => {
+                    let previous = arguments.insert(
+                        document.to_string(),
+                        stated.split('\t').map(str::to_string).collect(),
+                    );
+                    assert!(
+                        previous.is_none(),
+                        "the arguments of {document}'s generation are stated twice"
+                    );
+                    children.entry(document.to_string()).or_default();
+                }
+                None => {
+                    assert!(
+                        arguments.contains_key(document),
+                        "a file of {document}'s generation is named before its arguments"
+                    );
+                    children
+                        .entry(document.to_string())
+                        .or_default()
+                        .insert(rest.to_string());
+                }
+            },
             None => own.push(line),
         }
     }
-    (own, children)
+    (own, children, arguments)
 }
 
 /// The run's own lines are the plan's without the flag, in the same order: a
@@ -385,7 +415,7 @@ fn a_childs_planned_generation_names_exactly_what_it_writes() {
             language,
         );
         assert!(plan.status.success(), "{language}: {}", stderr(&plan));
-        let (own, children) = split_children(&plan);
+        let (own, children, arguments) = split_generations(&plan);
 
         let parent = generate(&[], &fixture, &written_into, language);
         assert!(parent.status.success(), "{language}: {}", stderr(&parent));
@@ -393,6 +423,12 @@ fn a_childs_planned_generation_names_exactly_what_it_writes() {
             assert!(
                 own.contains(document),
                 "{language}: {document} is planned as a child and the run does not write it"
+            );
+            // A stub is started in its parent's process.
+            assert_eq!(
+                arguments[document],
+                ["--as-child"],
+                "{language}: the plan states other arguments for the generation of {document}"
             );
             let name = Path::new(document)
                 .file_name()
@@ -402,7 +438,7 @@ fn a_childs_planned_generation_names_exactly_what_it_writes() {
             let child = Command::new(codegen())
                 .arg("generate")
                 .arg(written_into.join(&name))
-                .arg("--as-child")
+                .args(&arguments[document])
                 .args(["-l", language, "-o"])
                 .arg(&written_into)
                 .arg("--input-root")

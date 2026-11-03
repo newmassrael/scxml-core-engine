@@ -55,6 +55,13 @@ const W3C_ROUTE: &str = include_str!("../../cmake/SCEStaticW3CTest.cmake");
 const INTEGRATION_ROUTE: &str = include_str!("../../cmake/SCEStaticIntegrationFixture.cmake");
 /// The one module that asks the generator for a plan.
 const PLAN_MODULE: &str = include_str!("../../cmake/SCECodegenPlan.cmake");
+/// The test tree's build, where the Mesh rule-3 override declares the
+/// generation of a parent and of the partition its in-line child is placed on.
+const TEST_TREE: &str = include_str!("../../tests/CMakeLists.txt");
+
+/// What every line of the Mesh rule-3 override's block names: its output
+/// directory, and the prefixes of the plans it asks.
+const MESH_OVERRIDE: &str = "MESH_SYNTH_OVERRIDE";
 
 /// Fragments of the names the generator gives the files it writes. A route
 /// that spells one is naming a generated file itself.
@@ -332,13 +339,7 @@ fn generation_violations(command: &Invocation, prefixes: &[String]) -> Vec<Strin
 
     let mut found = Vec::new();
     let output = keyword_values(args, "OUTPUT").unwrap_or_default();
-    let prefix = match output {
-        [only] => only
-            .strip_prefix("${")
-            .and_then(|rest| rest.strip_suffix("_OUTPUTS}"))
-            .filter(|prefix| prefixes.iter().any(|asked| asked == prefix)),
-        _ => None,
-    };
+    let prefix = output_plan(command).filter(|prefix| prefixes.iter().any(|asked| asked == prefix));
     let Some(prefix) = prefix else {
         return vec![format!(
             "{at} declares OUTPUT {output:?}, which is not the `<PREFIX>_OUTPUTS` of a \
@@ -453,12 +454,58 @@ const CHILD_NAME_LISTS: &[&str] = &["_CHILDREN}", "_SYNTH}"];
 /// plan its parent's answer holds. Empty is the route this file holds.
 fn child_generation_violations(text: &str) -> Vec<String> {
     let code = cmake_code(text);
-    let mut found = Vec::new();
     let plans = invocations(&code, "sce_codegen_plan");
+    let commands = invocations(&code, "add_custom_command");
+    let mut found = child_rules(&plans, &commands);
+    for (index, line) in code.lines().enumerate() {
+        found.extend(child_name_lists_read(index, line));
+    }
+    found
+}
+
+/// The child document names a plan sets, read on `line` (the `index`th of
+/// the code) to name a child document by hand.
+fn child_name_lists_read(index: usize, line: &str) -> Vec<String> {
+    CHILD_NAME_LISTS
+        .iter()
+        .filter(|list| line.contains(**list))
+        .map(|list| {
+            format!(
+                "line {}: `{list}` reads the names of the child documents a plan names, to \
+                 name a child document by hand: {}",
+                index + 1,
+                line.trim()
+            )
+        })
+        .collect()
+}
+
+/// The prefix of the plan a command declares its OUTPUT from, when it
+/// declares it as one plan's `<PREFIX>_OUTPUTS`.
+fn output_plan(command: &Invocation) -> Option<&str> {
+    match keyword_values(&command.args, "OUTPUT")? {
+        [only] => only
+            .strip_prefix("${")
+            .and_then(|rest| rest.strip_suffix("_OUTPUTS}")),
+        _ => None,
+    }
+}
+
+/// The arguments a child's generation is run with that the plan states for
+/// it, which a command spelling them itself would state a second time.
+const PLANNED_CHILD_ARGUMENTS: &[&str] = &["--as-child", "--deploy"];
+
+/// Every way the plans and the commands of one route depart from declaring
+/// each child generation from the plan its parent's answer holds, and from
+/// running it with the arguments that plan states (`<P>_ARGS`).
+fn child_rules(plans: &[Invocation], commands: &[Invocation]) -> Vec<String> {
+    let mut found = Vec::new();
     let mut read_from_a_plan = 0;
-    for plan in &plans {
+    let mut from_prefixes: Vec<&str> = Vec::new();
+    for plan in plans {
         if plan.args.iter().any(|arg| arg == "FROM") {
             read_from_a_plan += 1;
+            from_prefixes.extend(plan.args.first().map(String::as_str));
         } else if !plan.args.iter().any(|arg| arg == "CHILD_GENERATIONS") {
             found.push(format!(
                 "line {}: a plan that does not ask for the generations of the child documents \
@@ -475,14 +522,26 @@ fn child_generation_violations(text: &str) -> Vec<String> {
                 .to_string(),
         );
     }
-    for (index, line) in code.lines().enumerate() {
-        for list in CHILD_NAME_LISTS {
-            if line.contains(list) {
+    for command in commands {
+        let Some(prefix) = output_plan(command).filter(|prefix| from_prefixes.contains(prefix))
+        else {
+            continue;
+        };
+        let arguments = planned(prefix, "_ARGS");
+        if !command.args.contains(&arguments) {
+            found.push(format!(
+                "the command declared at line {} runs a child's generation without the \
+                 arguments its plan states for it ({arguments}), so it runs a generation \
+                 other than the one that was planned",
+                command.line
+            ));
+        }
+        for spelled in PLANNED_CHILD_ARGUMENTS {
+            if command.args.iter().any(|arg| arg == spelled) {
                 found.push(format!(
-                    "line {}: `{list}` reads the names of the child documents a plan names, to \
-                     name a child document by hand: {}",
-                    index + 1,
-                    line.trim()
+                    "the command declared at line {} spells `{spelled}` itself; which \
+                     generation a child has is its plan's to state ({arguments})",
+                    command.line
                 ));
             }
         }
@@ -636,6 +695,156 @@ fn the_integration_route_declares_each_child_generation_from_the_parents_plan() 
     );
 }
 
+/// Every way the Mesh rule-3 override in the test tree's build (every
+/// invocation and line naming [`MESH_OVERRIDE`]) departs from declaring the
+/// generation of the parent and of the partition its in-line child is placed
+/// on as the plan of the parent's document answers them. Empty is the block
+/// this file holds.
+///
+/// The rest of the test tree's build is not held here: it declares the
+/// generations of documents an author wrote, by hand, and is not a route that
+/// generates what a document's generation writes for a generation of its own.
+fn mesh_override_violations(text: &str) -> Vec<String> {
+    let code = cmake_code(text);
+    let mut found = Vec::new();
+    let prefixes: Vec<String> = invocations(&code, "sce_codegen_plan")
+        .iter()
+        .filter_map(|plan| plan.args.first().cloned())
+        .collect();
+    let names_the_block = |invocation: &Invocation| {
+        invocation
+            .args
+            .iter()
+            .any(|arg| arg.contains(MESH_OVERRIDE))
+    };
+    let plans: Vec<Invocation> = invocations(&code, "sce_codegen_plan")
+        .into_iter()
+        .filter(|plan| names_the_block(plan))
+        .collect();
+    let commands: Vec<Invocation> = invocations(&code, "add_custom_command")
+        .into_iter()
+        .filter(|command| names_the_block(command))
+        .collect();
+    if plans.is_empty() || commands.is_empty() {
+        found.push(format!(
+            "no plan or no command names {MESH_OVERRIDE}: the scan read nothing, or the \
+             block was renamed"
+        ));
+    }
+    for command in &commands {
+        found.extend(generation_violations(command, &prefixes));
+    }
+    found.extend(child_rules(&plans, &commands));
+    for (index, line) in code.lines().enumerate() {
+        if !line.contains(MESH_OVERRIDE) {
+            continue;
+        }
+        for fragment in GENERATED_NAME_FRAGMENTS {
+            if line.contains(fragment) {
+                found.push(format!(
+                    "line {}: `{fragment}` names a generated file by hand: {}",
+                    index + 1,
+                    line.trim()
+                ));
+            }
+        }
+        found.extend(child_name_lists_read(index, line));
+    }
+    found
+}
+
+/// The Mesh rule-3 override declares both of its generations, the parent's
+/// and the one of the partition the deploy places its in-line child on, from
+/// the plan of the parent's document, and spells no file of either. The
+/// second was declared by hand while the generator could not plan a
+/// generation with the deploy, since the document it reads is on no disk when
+/// the tree is configured.
+#[test]
+fn the_mesh_override_declares_both_generations_from_the_parents_plan() {
+    let found = mesh_override_violations(TEST_TREE);
+    assert!(
+        found.is_empty(),
+        "tests/CMakeLists.txt declares a generation of the Mesh rule-3 override that is \
+         not the plan's:\n  {}\n\nAsk the parent's plan with CHILD_GENERATIONS and declare \
+         the generation of the child's partition from `sce_codegen_plan(<P> FROM <plan> \
+         CHILD <name>)`, run with `<P>_ARGS`.",
+        found.join("\n  ")
+    );
+}
+
+/// The block's former stage 3, a generation of the child's partition with
+/// its outputs, depfile and deploy spelled by hand, is refused.
+#[test]
+fn a_hand_declared_partition_generation_is_refused() {
+    let hand = r#"
+sce_codegen_plan(_MESH_SYNTH_OVERRIDE_PARENT STEM p DOCUMENT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/p.scxml" OUTPUT_DIR "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}" LANGUAGE cpp ARGS --deploy "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/d.yaml")
+add_custom_command(
+    OUTPUT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/p__sce_synth_invoke__r_sm.h"
+    COMMAND "${SCE_CODEGEN}" generate "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/p__sce_synth_invoke__r.scxml"
+            --deploy "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/d.yaml"
+            --write-deps "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/p__sce_synth_invoke__r_sm.h.d"
+    DEPENDS "${SCE_CODEGEN}"
+    DEPFILE "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/p__sce_synth_invoke__r_sm.h.d"
+    VERBATIM
+)
+"#;
+    let found = mesh_override_violations(hand);
+    assert!(
+        found.iter().any(|v| v.contains("declares OUTPUT")),
+        "an OUTPUT no plan set was accepted: {found:?}"
+    );
+    assert!(
+        found.iter().any(|v| v.contains("`__sce_synth_invoke__`")),
+        "the child's machine spelled by hand was not seen: {found:?}"
+    );
+    assert!(
+        found.iter().any(|v| v.contains("CHILD_GENERATIONS")),
+        "a parent's plan that does not ask for its children's generations was accepted: \
+         {found:?}"
+    );
+    assert!(
+        found.iter().any(|v| v.contains("FROM its parent's answer")),
+        "a block with no generation read FROM the parent's plan was accepted: {found:?}"
+    );
+}
+
+/// A command of the test tree's build that declares its OUTPUT from a plan
+/// declares everything else from it as well: its depfile, its byproducts, a
+/// generation's run. Holds every block converted to the plan, the Mesh
+/// rule-3 override's and any after it, to the rules the two routes are held
+/// to.
+#[test]
+fn every_planned_command_of_the_test_tree_is_declared_entirely_from_its_plan() {
+    let code = cmake_code(TEST_TREE);
+    let prefixes: Vec<String> = invocations(&code, "sce_codegen_plan")
+        .iter()
+        .filter_map(|plan| plan.args.first().cloned())
+        .collect();
+    let commands = invocations(&code, "add_custom_command");
+    let planned_commands: Vec<&Invocation> = commands
+        .iter()
+        .filter(|command| {
+            keyword_values(&command.args, "OUTPUT")
+                .is_some_and(|output| output.iter().any(|arg| arg.ends_with("_OUTPUTS}")))
+        })
+        .collect();
+    assert!(
+        planned_commands.len() >= 2,
+        "the test tree's build declares {} command(s) from a plan; the Mesh rule-3 override \
+         alone declares two",
+        planned_commands.len()
+    );
+    let found: Vec<String> = planned_commands
+        .into_iter()
+        .flat_map(|command| generation_violations(command, &prefixes))
+        .collect();
+    assert!(
+        found.is_empty(),
+        "tests/CMakeLists.txt declares part of a planned command by hand:\n  {}",
+        found.join("\n  ")
+    );
+}
+
 /// A child's generation declared from the plan its parent's answer holds is
 /// the shape the integration route uses, and passes.
 #[test]
@@ -645,8 +854,8 @@ fn a_child_generation_declared_from_its_parents_plan_passes() {
          sce_codegen_plan(_CHILD_PLAN FROM _PLAN CHILD \"${{C}}\")\n\
          add_custom_command(\n\
              OUTPUT ${{_CHILD_PLAN_OUTPUTS}}\n\
-             COMMAND \"${{SCE_CODEGEN}}\" generate \"${{_CHILD_PLAN_DOCUMENT}}\" --as-child \
-         --write-deps \"${{_CHILD_PLAN_DEPFILE}}\"\n\
+             COMMAND \"${{SCE_CODEGEN}}\" generate \"${{_CHILD_PLAN_DOCUMENT}}\" \
+         ${{_CHILD_PLAN_ARGS}} --write-deps \"${{_CHILD_PLAN_DEPFILE}}\"\n\
              DEPENDS ${{_CHILD_PLAN_DEPENDS}} \"${{SCE_CODEGEN}}\"\n\
              DEPFILE \"${{_CHILD_PLAN_DEPFILE}}\"\n\
              ${{_CHILD_PLAN_BYPRODUCTS_ARG}}\n\
@@ -654,6 +863,52 @@ fn a_child_generation_declared_from_its_parents_plan_passes() {
          )\nendforeach()\n"
     );
     assert_eq!(violations(&child), Vec::<String>::new());
+}
+
+/// A child's generation run with the arguments its plan states, and with
+/// none of its own, is the shape both routes and the mesh rule-3 override
+/// use; given `--as-child` by hand and not the plan's arguments, it is
+/// refused: which generation a child has (in its parent's process, or on a
+/// partition of its own with the deploy) is the plan's to say.
+#[test]
+fn a_child_generation_is_run_with_the_arguments_its_plan_states() {
+    let declared = |arguments: &str| {
+        format!(
+            "sce_codegen_plan(_PLAN STEM \"${{M}}\" DOCUMENT \"${{D}}\" OUTPUT_DIR \"${{O}}\" \
+             LANGUAGE cpp CHILD_GENERATIONS)\n\
+             foreach(C ${{_PLAN_GENERATIONS}})\n\
+             sce_codegen_plan(_CHILD_PLAN FROM _PLAN CHILD \"${{C}}\")\n\
+             add_custom_command(\n\
+                 OUTPUT ${{_CHILD_PLAN_OUTPUTS}}\n\
+                 COMMAND \"${{SCE_CODEGEN}}\" generate \"${{_CHILD_PLAN_DOCUMENT}}\" {arguments} \
+             --write-deps \"${{_CHILD_PLAN_DEPFILE}}\"\n\
+                 DEPENDS ${{_CHILD_PLAN_DEPENDS}} \"${{SCE_CODEGEN}}\"\n\
+                 DEPFILE \"${{_CHILD_PLAN_DEPFILE}}\"\n\
+                 ${{_CHILD_PLAN_BYPRODUCTS_ARG}}\n\
+                 VERBATIM\n\
+             )\nendforeach()\n"
+        )
+    };
+    assert_eq!(
+        child_generation_violations(&declared("${_CHILD_PLAN_ARGS}")),
+        Vec::<String>::new()
+    );
+    let by_hand = child_generation_violations(&declared("--as-child"));
+    assert!(
+        by_hand
+            .iter()
+            .any(|v| v.contains("${_CHILD_PLAN_ARGS}") && v.contains("without the arguments")),
+        "a child generation without its plan's arguments was accepted: {by_hand:?}"
+    );
+    assert!(
+        by_hand.iter().any(|v| v.contains("spells `--as-child`")),
+        "a child generation spelling its own arguments was accepted: {by_hand:?}"
+    );
+    let both = child_generation_violations(&declared("${_CHILD_PLAN_ARGS} --deploy \"${Y}\""));
+    assert!(
+        both.iter().any(|v| v.contains("spells `--deploy`")),
+        "a child generation adding a deploy of its own was accepted: {both:?}"
+    );
 }
 
 /// A child's machine spelled from its name, which is what the integration

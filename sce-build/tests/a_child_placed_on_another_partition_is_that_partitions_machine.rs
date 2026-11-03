@@ -25,8 +25,14 @@
 //! * with the deploy, the parent's run writes the child's document and its
 //!   own machine, and no machine of the child;
 //! * the run of the child's document with the deploy writes the child's
-//!   machine.
+//!   machine;
+//! * the plan of the parent with the deploy (`--plan --plan-children`), asked
+//!   where nothing has been generated, plans that run as well, with the
+//!   deploy, and the run adds exactly the files it planned. A build declares
+//!   the generation of the child's partition from that answer and names no
+//!   file of it (the Mesh rule-3 override in tests/CMakeLists.txt).
 
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
 
@@ -144,5 +150,95 @@ fn a_child_on_another_partition_is_written_by_that_partitions_run() {
     assert!(
         child_machine.is_file(),
         "the run of the child's partition did not write the child's machine"
+    );
+}
+
+/// The paths of the files directly in `dir`.
+fn files_in(dir: &Path) -> BTreeSet<String> {
+    std::fs::read_dir(dir)
+        .expect("read the directory")
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter(|path| path.is_file())
+        .map(|path| path.display().to_string())
+        .collect()
+}
+
+#[test]
+fn the_parents_plan_plans_the_run_of_the_partition_its_child_is_placed_on() {
+    let (dir, parent) = staged();
+    let deploy = dir.path().join("deploy.yaml");
+    let deploy = deploy.to_str().expect("a UTF-8 path");
+    let staged_files = files_in(dir.path());
+
+    // Asked where only the parent and the deploy are: the deploy reads the
+    // child's document from where the parent's run writes it, which a plan
+    // holds in memory rather than on disk.
+    let plan = Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
+        .args(["--plan", "--plan-children", "generate"])
+        .arg(&parent)
+        .args(["-l", "cpp", "--no-format", "-o"])
+        .arg(dir.path())
+        .args(["--deploy", deploy])
+        .output()
+        .expect("spawn sce-codegen");
+    assert!(
+        plan.status.success(),
+        "the plan of the parent with the deploy failed:\n{}",
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    assert_eq!(
+        files_in(dir.path()),
+        staged_files,
+        "the plan wrote into the directory"
+    );
+    let stdout = String::from_utf8_lossy(&plan.stdout).into_owned();
+    let lines: Vec<&str> = stdout.lines().collect();
+    let in_dir = |name: String| dir.path().join(name).display().to_string();
+    let child_document = in_dir(format!("{CHILD}.scxml"));
+    let child_machine = in_dir(format!("{CHILD}_sm.h"));
+    let child_transport = in_dir(format!("{CHILD}_transport.h"));
+
+    let own: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|line| !line.contains('\t'))
+        .collect();
+    assert!(
+        own.contains(&child_document.as_str()),
+        "the parent's run does not write the child's document:\n{stdout}"
+    );
+    assert!(
+        !own.contains(&child_machine.as_str()),
+        "the parent's run writes the machine of the child on another partition:\n{stdout}"
+    );
+    let arguments = format!("{child_document}\t\t--deploy\t{deploy}");
+    assert_eq!(
+        lines.iter().filter(|line| **line == arguments).count(),
+        1,
+        "the plan does not plan the run of the child's partition once, with the deploy:\n\
+         {stdout}"
+    );
+    let file_prefix = format!("{child_document}\t");
+    let planned: BTreeSet<String> = lines
+        .iter()
+        .filter_map(|line| line.strip_prefix(file_prefix.as_str()))
+        .filter(|rest| !rest.starts_with('\t'))
+        .map(str::to_string)
+        .collect();
+    assert_eq!(
+        planned,
+        BTreeSet::from([child_machine, child_transport]),
+        "the run of the child's partition is planned to write other files:\n{stdout}"
+    );
+
+    // The parent's run, then the run the plan planned, with the arguments it
+    // stated: the second adds exactly what was planned for it.
+    generate(&parent, &["--deploy", deploy]);
+    let before = files_in(dir.path());
+    generate(Path::new(&child_document), &["--deploy", deploy]);
+    let added: BTreeSet<String> = files_in(dir.path()).difference(&before).cloned().collect();
+    assert_eq!(
+        added, planned,
+        "the run of the child's partition added other files than its plan named"
     );
 }

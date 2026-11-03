@@ -4410,6 +4410,13 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # peer. The parent's generation wrote the child's header as well, shaped
     # for a parent in its own process, and stage 3 then overwrote the file
     # its rule declared.
+    #
+    # No file of either generation is named here. Both are the generator's
+    # answer, asked of the parent's document when the tree is configured
+    # (`sce_codegen_plan` with CHILD_GENERATIONS): the parent's run, and the
+    # run of the child's partition, which the generator plans from the
+    # document the parent's run would write, with the arguments it states
+    # for it (`--deploy`).
     set(MESH_SYNTH_OVERRIDE_OUTPUT_DIR
         "${CMAKE_CURRENT_BINARY_DIR}/mesh_synth_invoke_override_generated")
 
@@ -4432,13 +4439,14 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         DOCUMENT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
         OUTPUT_DIR "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}"
         LANGUAGE cpp
+        CHILD_GENERATIONS
         ARGS --deploy "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml")
     add_custom_command(
         OUTPUT ${_MESH_SYNTH_OVERRIDE_PARENT_OUTPUTS}
         COMMAND "${SCE_CODEGEN}" generate
                 "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
+                ${_MESH_SYNTH_OVERRIDE_PARENT_ARGS}
                 -l cpp -o "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}"
-                --deploy "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
                 --write-deps "${_MESH_SYNTH_OVERRIDE_PARENT_DEPFILE}"
         DEPENDS "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline.scxml"
                 "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
@@ -4448,6 +4456,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         COMMENT "Mesh §9.6.6: Generating parent_synth_inline and the document of its child"
         VERBATIM
     )
+    set(_MESH_SYNTH_OVERRIDE_HEADERS ${_MESH_SYNTH_OVERRIDE_PARENT_HEADERS})
 
     # Stage 3: the child's partition's generation, with --deploy, from the
     # document stage 2 wrote. Running against it engages
@@ -4458,36 +4467,36 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # NOT the `--as-child` path used by `w3c_static_generated`: that path
     # assumes a local-child shape, which would skip the mesh transport
     # emission this test exercises. It owns the child's machine and
-    # transport, which no other rule writes. Its declaration is kept here:
-    # the document it reads is on no disk when the tree is configured, and
-    # `--plan-children` plans the `--as-child` generation of a child document
-    # in its parent's process, not the `--deploy` generation of a peer. It
-    # waits for the parent's machine as well as the child's document, as a
-    # planned child generation waits for the generation that writes its
-    # document.
-    add_custom_command(
-        OUTPUT "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_sm.h"
-               "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_transport.h"
-        COMMAND "${SCE_CODEGEN}" generate
-                "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv.scxml"
-                -l cpp -o "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}"
-                --deploy "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
-                --write-deps "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_sm.h.d"
-        DEPENDS "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv.scxml"
-                ${_MESH_SYNTH_OVERRIDE_PARENT_OUTPUTS}
-                "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/deploy_synth_inline.yaml"
-                "${SCE_CODEGEN}"
-        DEPFILE "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_sm.h.d"
-        COMMENT "Mesh §9.6.6: Generating synth sm+transport (rule-3 cross-partition override)"
-        VERBATIM
-    )
+    # transport, which no other rule writes. It is the generation the
+    # parent's plan holds for the child (`--plan-children` plans the run of
+    # each partition the deploy places an in-line child on, from the
+    # document the parent's run would write), declared from it with the
+    # arguments it states, and it waits for the parent's machine as well as
+    # the child's document, as every planned child generation waits for the
+    # generation that writes its document. The deploy it reads is one the
+    # parent's generation depends on, and that generation rewrites the
+    # document this one reads.
+    foreach(_CHILD ${_MESH_SYNTH_OVERRIDE_PARENT_GENERATIONS})
+        sce_codegen_plan(_MESH_SYNTH_OVERRIDE_CHILD
+            FROM _MESH_SYNTH_OVERRIDE_PARENT CHILD "${_CHILD}")
+        add_custom_command(
+            OUTPUT ${_MESH_SYNTH_OVERRIDE_CHILD_OUTPUTS}
+            COMMAND "${SCE_CODEGEN}" generate "${_MESH_SYNTH_OVERRIDE_CHILD_DOCUMENT}"
+                    ${_MESH_SYNTH_OVERRIDE_CHILD_ARGS}
+                    -l cpp -o "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}"
+                    --write-deps "${_MESH_SYNTH_OVERRIDE_CHILD_DEPFILE}"
+            DEPENDS ${_MESH_SYNTH_OVERRIDE_CHILD_DEPENDS} "${SCE_CODEGEN}"
+            DEPFILE "${_MESH_SYNTH_OVERRIDE_CHILD_DEPFILE}"
+            ${_MESH_SYNTH_OVERRIDE_CHILD_BYPRODUCTS_ARG}
+            COMMENT "Mesh §9.6.6: Generating ${_CHILD} on its own partition (rule 3)"
+            VERBATIM
+        )
+        list(APPEND _MESH_SYNTH_OVERRIDE_HEADERS ${_MESH_SYNTH_OVERRIDE_CHILD_HEADERS})
+    endforeach()
 
     add_executable(mesh_synth_invoke_override_e2e_test
         mesh/test_mesh_synth_invoke_override_e2e.cpp
-        "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline_sm.h"
-        "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline_transport.h"
-        "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_sm.h"
-        "${MESH_SYNTH_OVERRIDE_OUTPUT_DIR}/parent_synth_inline__sce_synth_invoke__remote_inv_transport.h"
+        ${_MESH_SYNTH_OVERRIDE_HEADERS}
     )
 
     target_include_directories(mesh_synth_invoke_override_e2e_test

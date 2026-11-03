@@ -195,7 +195,7 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
         add_custom_command(
             OUTPUT ${_CHILD_PLAN_OUTPUTS}
             COMMAND "${SCE_CODEGEN}" generate "${_CHILD_PLAN_DOCUMENT}"
-                    --as-child
+                    ${_CHILD_PLAN_ARGS}
                     -l cpp -o "${OUTPUT_DIR}"
                     --input-root "${FIXTURE_ROOT}"
                     --write-deps "${_CHILD_PLAN_DEPFILE}"
@@ -396,7 +396,7 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
             add_custom_command(
                 OUTPUT ${_CHILD_PLAN_OUTPUTS}
                 COMMAND "${SCE_CODEGEN}" generate "${_CHILD_PLAN_DOCUMENT}"
-                        --as-child
+                        ${_CHILD_PLAN_ARGS}
                         -l c11 -o "${OUTPUT_DIR}"
                         ${_INPUT_ROOT_ARGS}
                         --write-deps "${_CHILD_PLAN_DEPFILE}"

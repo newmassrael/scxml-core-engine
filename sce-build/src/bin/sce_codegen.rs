@@ -161,10 +161,18 @@ struct PendingTree {
     order: Vec<PathBuf>,
     content: BTreeMap<PathBuf, Option<Vec<u8>>>,
     /// In a `--plan-children` run, the generation of each child document the
-    /// run wrote, in the order they were planned: the document, and every
-    /// file its generation would produce that no generation before it does
-    /// ([`plan_child_generations`]).
-    generations: Vec<(PathBuf, Vec<PathBuf>)>,
+    /// run wrote, in the order they were planned ([`plan_child_generations`]).
+    generations: Vec<PlannedGeneration>,
+}
+
+/// One generation a `--plan-children` run planned beside the run's own: the
+/// child document it reads, the arguments it is run with beside the ones
+/// every generation of the build is given ([`ChildGeneration::arguments`]),
+/// and every file it would produce that no generation before it does.
+struct PlannedGeneration {
+    document: PathBuf,
+    arguments: Vec<String>,
+    files: Vec<PathBuf>,
 }
 
 impl PendingTree {
@@ -238,6 +246,21 @@ fn try_emit_generated(path: &Path, content: &[u8], policy: WritePolicy) -> std::
     match output_mode() {
         OutputMode::AssertUnchanged | OutputMode::Plan => {
             pending_tree().set(tree_key(path), Some(content.to_vec()));
+            // A document the run writes is one it may read back as a document
+            // (a deploy reads the in-line child it places on a partition of its
+            // own from where this run wrote it), and a run that holds its
+            // output in memory reads it from there, as a run that writes reads
+            // the disk. Without it the plan of a parent with such a deploy
+            // asked the disk for the child's document, which is on no disk
+            // before the parent's generation has run.
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "scxml")
+            {
+                if let Ok(text) = std::str::from_utf8(content) {
+                    sce_build::confine::hold(path, text.to_string());
+                }
+            }
         }
         OutputMode::Write => {
             let unchanged = fs::read(path).is_ok_and(|on_disk| on_disk == content);
@@ -346,8 +369,11 @@ fn ensure_output_dir(dir: &Path) -> std::io::Result<()> {
 /// is not in the answer — it is not among the files the run produces — and
 /// nothing is judged against the disk, so the run cannot fail for what is or is
 /// not there. A `--plan-children` run then prints the generation of each child
-/// document the run wrote, one line per file it would produce, as
-/// `<child document>\t<file>`; a line with no tab is always the run's own.
+/// document the run wrote: first its arguments, as `<child document>\t\t<argument>`
+/// with each further argument after another tab, then one line per file it
+/// would produce, as `<child document>\t<file>`. A file is never named by an
+/// empty path, so the empty field tells the two apart, and a line with no tab
+/// is always the run's own.
 fn finish_generated_output() {
     match output_mode() {
         OutputMode::Write => return,
@@ -356,9 +382,14 @@ fn finish_generated_output() {
             for path in tree.produced() {
                 out_line(&path.display().to_string());
             }
-            for (document, files) in &tree.generations {
-                for file in files {
-                    out_line(&format!("{}\t{}", document.display(), file.display()));
+            for generation in &tree.generations {
+                let document = generation.document.display();
+                out_line(&format!(
+                    "{document}\t\t{}",
+                    generation.arguments.join("\t")
+                ));
+                for file in &generation.files {
+                    out_line(&format!("{document}\t{}", file.display()));
                 }
             }
             return;
@@ -1248,6 +1279,11 @@ struct GenerateReport {
     /// `--plan-children` ([`plan_child_generations`]), which plans each one's
     /// generation; nothing else reads it.
     child_documents: Vec<PathBuf>,
+    /// The documents of the in-line children this run writes that its deploy
+    /// placed on a partition of their own ([`peer_documents`]), each a
+    /// machine of the deploy that the run of that partition generates. Read
+    /// by `--plan-children` beside [`Self::child_documents`].
+    peer_documents: Vec<PathBuf>,
     /// The documents of a `--with-imports` run that were rejected, each
     /// named — see `Manifest::rejected_documents`. Empty on a run of one
     /// document, which says it in [`Self::rejected`].
@@ -1661,13 +1697,16 @@ struct Cli {
 
     /// With `--plan`: also plan the generation of every child document the
     /// run writes into its output directory for a build to generate by a
-    /// command of its own (a hybrid `<invoke>`'s stub, a candidate or `src`
-    /// child staged there), and of every child document those write in
-    /// turn, each as `generate <child> --as-child` with the run's language,
-    /// output directory, input root and include directories, the child read
-    /// from the run's own answer and never from disk. After the run's own
-    /// lines, each file such a generation would produce, and no generation
-    /// before it does, is printed as `<child document>\t<file>`.
+    /// command of its own, and of every child document those write in turn,
+    /// with the run's language, output directory, input root and include
+    /// directories, the child read from the run's own answer and never from
+    /// disk: a hybrid `<invoke>`'s stub, a candidate or `src` child staged
+    /// there (`--as-child`), and an in-line child the run's deploy placed on
+    /// a partition of its own (`--deploy <the run's deploy>`, SCE_MESH.md
+    /// §9.6.6 rule 3). After the run's own lines, each such generation is
+    /// printed as `<child document>\t\t<argument>`, each further argument
+    /// after another tab, followed by each file it would produce, and no
+    /// generation before it does, as `<child document>\t<file>`.
     ///
     /// A stub is written by the run itself, so before this a build could not
     /// declare what its generation writes until the run had run; the answer
@@ -6178,20 +6217,83 @@ fn run_generate(args: GenerateArgs, error_format: ErrorFormat) {
     emit_generate_manifest(&report);
 }
 
+/// How a build generates a child document a run writes, which
+/// `--plan-children` plans ([`plan_child_generations`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ChildGeneration {
+    /// A child its parent starts in its own process (a `src` child, a
+    /// candidate, a hybrid `<invoke>`'s stub): `--as-child`, without the
+    /// deploy, which describes the run's own document.
+    InItsParentsProcess,
+    /// An in-line child the run's deploy placed on a partition of its own
+    /// (SCE_MESH.md §9.6.6 rule 3): a machine of the deploy, generated with
+    /// it as the run of that partition generates it, `--deploy <the run's
+    /// deploy>`.
+    OnItsOwnPartition,
+}
+
+impl ChildGeneration {
+    /// What the generation is run with beside what every generation of the
+    /// build is given (the language, the output directory, the input root,
+    /// the include directories, the prefixes, the formatting and the
+    /// depfile): the arguments a `--plan-children` answer states for it, so a
+    /// build runs the generation the plan planned without knowing which kind
+    /// it is.
+    fn arguments(self, run: &GenerateArgs) -> Vec<String> {
+        match self {
+            Self::InItsParentsProcess => vec!["--as-child".to_string()],
+            Self::OnItsOwnPartition => run
+                .deploy
+                .iter()
+                .flat_map(|deploy| ["--deploy".to_string(), deploy.clone()])
+                .collect(),
+        }
+    }
+
+    /// The generation of `document`: `run`'s arguments less what describes
+    /// the run's own document (its depfile, its variant, its host's
+    /// declarations, its partition, its AST and profile), with this kind's
+    /// ([`Self::arguments`]) and the run's input root, so the source set is
+    /// one that is on disk.
+    fn of(self, document: &Path, run: &GenerateArgs, input_root: &str) -> GenerateArgs {
+        let mut child = run.clone();
+        child.scxml = vec![document.to_string_lossy().into_owned()];
+        child.as_child = self == Self::InItsParentsProcess;
+        if self == Self::InItsParentsProcess {
+            child.deploy = None;
+        }
+        child.parent_stem = None;
+        child.write_deps = None;
+        child.transport_only = false;
+        child.target_machine = None;
+        child.partition = None;
+        child.features = None;
+        child.host_processor.clear();
+        child.host_invoker.clear();
+        child.input_root = Some(input_root.to_string());
+        child.emit_ast = None;
+        child.profile = None;
+        child.with_imports = false;
+        child
+    }
+}
+
 /// `--plan-children`: after a `--plan` run of `args`, plan the generation of
-/// each child document the run wrote ([`GenerateReport::child_documents`]),
-/// and of each child document those write in turn, and keep each one's files
-/// beside the run's ([`PendingTree::generations`]), for
-/// [`finish_generated_output`] to print after them.
+/// each child document the run wrote and of each child document those write
+/// in turn, and keep each one's arguments and files beside the run's
+/// ([`PendingTree::generations`]), for [`finish_generated_output`] to print
+/// after them.
 ///
-/// A child's generation is the one a build runs for it: `generate <child>
-/// --as-child`, with the run's language, output directory, include
-/// directories and prefixes, the run's input root (so the source set is one
-/// that is on disk), and none of what describes the run's own document
-/// (its deploy, its variant, its host's declarations, its depfile). The child
-/// is read from what the generations before it produced, held in memory
-/// (`sce_build::confine::with_documents`): a stub exists nowhere else until
-/// the run has run, which is the whole reason a build cannot plan it alone.
+/// A child's generation is the one a build runs for it ([`ChildGeneration`]):
+/// `generate <child> --as-child` for a child its parent starts in its own
+/// process ([`GenerateReport::child_documents`]), `generate <child> --deploy
+/// <the run's deploy>` for an in-line child the deploy placed on a partition
+/// of its own ([`GenerateReport::peer_documents`]), each with the run's
+/// language, output directory, include directories and prefixes, and the
+/// run's input root. The child is read from what the generations before it
+/// produced, held in memory (`sce_build::confine::with_documents`): a stub, or
+/// the document of an in-line child, exists nowhere else until the run has
+/// run, which is the whole reason a build cannot plan it alone.
 ///
 /// Each generation's own tree is kept apart from the run's, so the run's
 /// answer is exactly the files the run writes, as without the flag, and a
@@ -6207,6 +6309,19 @@ fn plan_child_generations(args: &GenerateArgs, report: &GenerateReport, error_fo
             .to_string_lossy()
             .into_owned()
     });
+    // The generations a run's report asks for: the children in its process
+    // first, then the ones on partitions of their own.
+    fn asked_by(report: &GenerateReport) -> Vec<(PathBuf, ChildGeneration)> {
+        let in_process = report
+            .child_documents
+            .iter()
+            .map(|path| (tree_key(path), ChildGeneration::InItsParentsProcess));
+        let on_partitions = report
+            .peer_documents
+            .iter()
+            .map(|path| (tree_key(path), ChildGeneration::OnItsOwnPartition));
+        in_process.chain(on_partitions).collect()
+    }
     // Every document a generation produced so far, for the next to read.
     fn hold(tree: &PendingTree, held: &mut BTreeMap<PathBuf, String>) {
         let documents = tree
@@ -6226,32 +6341,14 @@ fn plan_child_generations(args: &GenerateArgs, report: &GenerateReport, error_fo
     let mut held: BTreeMap<PathBuf, String> = BTreeMap::new();
     hold(&run, &mut held);
     let mut owned: BTreeSet<PathBuf> = run.produced().cloned().collect();
-    let mut pending: std::collections::VecDeque<PathBuf> = report
-        .child_documents
-        .iter()
-        .map(|path| tree_key(path.as_path()))
-        .collect();
+    let mut pending: std::collections::VecDeque<(PathBuf, ChildGeneration)> =
+        asked_by(report).into();
     let mut planned: BTreeSet<PathBuf> = BTreeSet::new();
-    while let Some(child) = pending.pop_front() {
+    while let Some((child, kind)) = pending.pop_front() {
         if !held.contains_key(&child) || !planned.insert(child.clone()) {
             continue;
         }
-        let mut child_args = args.clone();
-        child_args.scxml = vec![child.to_string_lossy().into_owned()];
-        child_args.as_child = true;
-        child_args.parent_stem = None;
-        child_args.write_deps = None;
-        child_args.deploy = None;
-        child_args.transport_only = false;
-        child_args.target_machine = None;
-        child_args.partition = None;
-        child_args.features = None;
-        child_args.host_processor.clear();
-        child_args.host_invoker.clear();
-        child_args.input_root = Some(input_root.clone());
-        child_args.emit_ast = None;
-        child_args.profile = None;
-        child_args.with_imports = false;
+        let child_args = kind.of(&child, args, &input_root);
         let mut child_report = sce_build::confine::with_documents(held.clone(), || {
             cmd_generate(child_args, error_format)
         });
@@ -6263,13 +6360,12 @@ fn plan_child_generations(args: &GenerateArgs, report: &GenerateReport, error_fo
             .filter(|path| owned.insert((*path).clone()))
             .cloned()
             .collect();
-        run.generations.push((child, files));
-        pending.extend(
-            child_report
-                .child_documents
-                .iter()
-                .map(|path| tree_key(path.as_path())),
-        );
+        run.generations.push(PlannedGeneration {
+            document: child,
+            arguments: kind.arguments(args),
+            files,
+        });
+        pending.extend(asked_by(&child_report));
     }
     *pending_tree() = run;
 }
@@ -7268,6 +7364,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         Ok(facts) => report.deploy_facts = facts,
         Err(e) => error_format.emit_and_exit(&e.source, e.stage.error_prefix()),
     }
+    // Which in-line children the deploy placed on a partition of their own is
+    // known once it has been applied: their documents were written above, and
+    // their machines are the generations of those partitions.
+    report.peer_documents = peer_documents(&model, out_path);
 
     // ADR 0057 §9: a document that carries feature conditions, generated
     // with no selection by a backend that keeps the variability, is
@@ -7692,6 +7792,23 @@ fn child_documents(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
         .into_iter()
         .filter(|name| !carried.contains(name))
         .map(|name| output_dir.join(format!("{name}.scxml")))
+        .collect()
+}
+
+/// The documents of the in-line children a run of `model` writes into
+/// `output_dir` and writes no machine of: the ones its deploy placed on a
+/// partition of their own (SCE_MESH.md §9.6.6 rule 3,
+/// [`sce_build::model::ScxmlInvokeInfo::carries_a_child_written_with_its_parent`]).
+/// Each is a machine of the deploy, generated with it by the run of its
+/// partition from the document this run wrote ([`plan_child_generations`]).
+fn peer_documents(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
+    model
+        .inline_child_invokes()
+        .into_iter()
+        .filter(|invoke| {
+            !invoke.carries_a_child_written_with_its_parent() && !invoke.child_name.is_empty()
+        })
+        .map(|invoke| output_dir.join(format!("{}.scxml", invoke.child_name)))
         .collect()
 }
 

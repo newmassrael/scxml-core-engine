@@ -98,10 +98,15 @@ endfunction()
 #   CHILD_GENERATIONS
 #               Also plan the generation of every child document the run
 #               writes, and of every child document those write in turn
-#               (`sce-codegen --plan-children`): `generate <child> --as-child`
-#               with the run's language, output directory and input root. Each
-#               is declared by `sce_codegen_plan(<P> FROM <PREFIX> CHILD
-#               <name>)`; a file two generations would write is the first's.
+#               (`sce-codegen --plan-children`), with the run's language,
+#               output directory and input root and the arguments the plan
+#               states for it: `--as-child` for a child its parent starts in
+#               its own process, `--deploy <the run's deploy>` for an in-line
+#               child the run's deploy placed on a partition of its own
+#               (SCE_MESH.md §9.6.6 rule 3). Each is declared by
+#               `sce_codegen_plan(<P> FROM <PREFIX> CHILD <name>)`, its command
+#               given `<P>_ARGS`; a file two generations would write is the
+#               first's.
 #   CLAIM       A global property naming every file a plan of this property
 #               has declared. A file already in it is left out of this plan's
 #               byproducts, and a plan whose machine is already in it is one
@@ -123,8 +128,17 @@ endfunction()
 #     <PREFIX>_DOCUMENT       the child document, which the generation reads
 #     <PREFIX>_DEPENDS        that document and the machine of the generation
 #                             that writes it, which the command depends on
+#                             (the deploy a generation on a partition of its
+#                             own reads is one the generation that writes the
+#                             document depends on, which rewrites it)
 #
 #   Sets, in the caller's scope:
+#     <PREFIX>_ARGS           the arguments the run is given beside its
+#                             document, language, output directory, input root,
+#                             formatting and depfile: ARGS, or for a plan FROM
+#                             another, the ones the generator states for the
+#                             child's generation, so a command runs the
+#                             generation that was planned
 #     <PREFIX>_FILES          the names (not paths) of the files the run
 #                             writes, in the order it first wrote them
 #     <PREFIX>_SYNTH          the document name of each synthesized child
@@ -202,6 +216,7 @@ function(sce_codegen_plan PREFIX)
         set(_LANGUAGE "${${_SCP_FROM}_LANGUAGE}")
         set(_CLAIM "${${_SCP_FROM}_CLAIM}")
         set(_DOCUMENT "${${_FROM}_DOCUMENT}")
+        set(_ARGS "${${_FROM}_ARGS}")
         set(_DEPENDS "${_DOCUMENT}")
         if(NOT "${${_FROM}_WRITER}" STREQUAL "")
             list(APPEND _DEPENDS "${${_FROM}_WRITER}")
@@ -232,6 +247,7 @@ function(sce_codegen_plan PREFIX)
         set(_OUTPUT_DIR "${_SCP_OUTPUT_DIR}")
         set(_LANGUAGE "${_SCP_LANGUAGE}")
         set(_CLAIM "${_SCP_CLAIM}")
+        set(_ARGS "${_SCP_ARGS}")
         # The language is judged before the generator is asked.
         _sce_codegen_plan_machine(_MACHINE _DEPFILE_NAME "${_STEM}" "${_LANGUAGE}")
 
@@ -304,9 +320,12 @@ function(sce_codegen_plan PREFIX)
             list(APPEND _FILES "${_NAME}")
         endforeach()
 
-        # Each child document's generation: its files, and which generation
-        # writes the document it reads (the run, or a generation planned before
-        # it), whose machine its command waits for.
+        # Each child document's generation: the arguments it is run with, its
+        # files, and which generation writes the document it reads (the run, or
+        # a generation planned before it), whose machine its command waits for.
+        # A generation's first line states its arguments, `<child document>`,
+        # an empty field, and each argument after a tab of its own; each line
+        # after it is one file, `<child document>\t<file>`.
         foreach(_LINE ${_GENERATION_LINES})
             string(FIND "${_LINE}" "\t" _TAB)
             string(SUBSTRING "${_LINE}" 0 ${_TAB} _CHILD_DOCUMENT)
@@ -314,6 +333,27 @@ function(sce_codegen_plan PREFIX)
             string(SUBSTRING "${_LINE}" ${_AFTER} -1 _PATH)
             get_filename_component(_CHILD_NAME "${_CHILD_DOCUMENT}" NAME)
             string(REGEX REPLACE "\\.scxml$" "" _CHILD "${_CHILD_NAME}")
+            string(FIND "${_PATH}" "\t" _SECOND_TAB)
+            if(_SECOND_TAB EQUAL 0)
+                if("${_CHILD}" IN_LIST _GENERATIONS)
+                    message(FATAL_ERROR
+                        "sce-codegen --plan-children for ${_SCP_DOCUMENT} (${_LANGUAGE}) "
+                        "states the arguments of the generation of ${_CHILD_NAME} twice")
+                endif()
+                list(APPEND _GENERATIONS "${_CHILD}")
+                set(_GENERATION_${_CHILD}_DOCUMENT "${_CHILD_DOCUMENT}")
+                set(_GENERATION_${_CHILD}_FILES "")
+                string(SUBSTRING "${_PATH}" 1 -1 _ARGUMENTS)
+                string(REPLACE "\t" ";" _GENERATION_${_CHILD}_ARGS "${_ARGUMENTS}")
+                continue()
+            endif()
+            if(NOT "${_CHILD}" IN_LIST _GENERATIONS)
+                message(FATAL_ERROR
+                    "sce-codegen --plan-children for ${_SCP_DOCUMENT} (${_LANGUAGE}) names "
+                    "${_PATH} for ${_CHILD_NAME} before the arguments of its generation. "
+                    "A sce-codegen older than the arguments line answers so: rebuild it "
+                    "from this tree.")
+            endif()
             get_filename_component(_NAME "${_PATH}" NAME)
             file(RELATIVE_PATH _RELATIVE "${_OUTPUT_DIR}" "${_PATH}")
             if("${_RELATIVE}" MATCHES "/")
@@ -321,11 +361,6 @@ function(sce_codegen_plan PREFIX)
                     "sce-codegen --plan-children for ${_SCP_DOCUMENT} (${_LANGUAGE}) names "
                     "${_PATH} for ${_CHILD_NAME}, which is not directly in ${_OUTPUT_DIR}: "
                     "sce_codegen_plan declares the outputs of a flat output directory")
-            endif()
-            if(NOT "${_CHILD}" IN_LIST _GENERATIONS)
-                list(APPEND _GENERATIONS "${_CHILD}")
-                set(_GENERATION_${_CHILD}_DOCUMENT "${_CHILD_DOCUMENT}")
-                set(_GENERATION_${_CHILD}_FILES "")
             endif()
             if(NOT "${_NAME}" STREQUAL "sce_sourcemap.json")
                 list(APPEND _GENERATION_${_CHILD}_FILES "${_NAME}")
@@ -367,6 +402,12 @@ function(sce_codegen_plan PREFIX)
         # the run's machine names, so a plan asked for the children's
         # generations holds one for each: a child without one is a header no
         # rule writes.
+        #
+        # The document of an in-line child is written with its machine, by the
+        # run, unless the run's deploy placed the child on a partition of its
+        # own (SCE_MESH.md §9.6.6 rule 3): then the machine is the generation
+        # of that partition (and of a child below it, a file of that
+        # generation), and the plan holds that generation too.
         if(_SCP_CHILD_GENERATIONS)
             foreach(_CHILD ${_CHILDREN})
                 if(NOT "${_CHILD}" IN_LIST _GENERATIONS)
@@ -374,6 +415,21 @@ function(sce_codegen_plan PREFIX)
                         "sce-codegen --plan-children for ${_SCP_DOCUMENT} (${_LANGUAGE}) "
                         "names the child document ${_CHILD}.scxml and plans no generation "
                         "of it, so the machine the run's machine names has no rule")
+                endif()
+            endforeach()
+            set(_PLANNED_FILES ${_FILES})
+            foreach(_CHILD ${_GENERATIONS})
+                list(APPEND _PLANNED_FILES ${_GENERATION_${_CHILD}_FILES})
+            endforeach()
+            foreach(_CHILD ${_SYNTH})
+                _sce_codegen_plan_machine(_SYNTH_MACHINE _UNUSED_DEPFILE
+                    "${_CHILD}" "${_LANGUAGE}")
+                list(GET _SYNTH_MACHINE 0 _SYNTH_HEADER)
+                if(NOT "${_SYNTH_HEADER}" IN_LIST _PLANNED_FILES)
+                    message(FATAL_ERROR
+                        "sce-codegen --plan-children for ${_SCP_DOCUMENT} (${_LANGUAGE}) "
+                        "writes the document of the in-line child ${_CHILD}.scxml and "
+                        "neither writes its machine nor plans the generation that does")
                 endif()
             endforeach()
         endif()
@@ -456,6 +512,7 @@ function(sce_codegen_plan PREFIX)
     set(${PREFIX}_DECLARED_ELSEWHERE "${_DECLARED_ELSEWHERE}" PARENT_SCOPE)
     set(${PREFIX}_DOCUMENT "${_DOCUMENT}" PARENT_SCOPE)
     set(${PREFIX}_DEPENDS "${_DEPENDS}" PARENT_SCOPE)
+    set(${PREFIX}_ARGS "${_ARGS}" PARENT_SCOPE)
     # What a plan FROM this one reads: where and how it was asked, and each
     # generation it holds.
     set(${PREFIX}_OUTPUT_DIR "${_OUTPUT_DIR}" PARENT_SCOPE)
@@ -465,6 +522,7 @@ function(sce_codegen_plan PREFIX)
         set(${PREFIX}_GENERATION_${_CHILD}_DOCUMENT "${_GENERATION_${_CHILD}_DOCUMENT}"
             PARENT_SCOPE)
         set(${PREFIX}_GENERATION_${_CHILD}_FILES "${_GENERATION_${_CHILD}_FILES}" PARENT_SCOPE)
+        set(${PREFIX}_GENERATION_${_CHILD}_ARGS "${_GENERATION_${_CHILD}_ARGS}" PARENT_SCOPE)
         set(${PREFIX}_GENERATION_${_CHILD}_WRITER "${_GENERATION_${_CHILD}_WRITER}" PARENT_SCOPE)
     endforeach()
 endfunction()

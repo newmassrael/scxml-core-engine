@@ -776,6 +776,10 @@ GATES: dict[str, dict] = {
             "cmake/SCECodegenPlan.cmake",
             "cmake/SCEStaticW3CTest.cmake",
             "cmake/SCEStaticIntegrationFixture.cmake",
+            # The test tree's build, whose Mesh rule-3 override and every
+            # command it declares from a plan the same suite compiles in and
+            # holds to declaring what the generator plans.
+            "tests/CMakeLists.txt",
             # The standard library, whose statecharts that save are held to
             # their pinned shapes (`a_standard_statechart_that_saves_keeps_its_shape`,
             # docs/adr/0045): an edit of one alone has to start the suite.
