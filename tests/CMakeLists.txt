@@ -4531,11 +4531,12 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # ── SCE_MESH §16.7 row 5 sub-atomic C peer-down emit ──────────
     # Parent has a §9.6 `<invoke type="scxml">` and an
     # `<transition event="error.communication" target="lost"/>`. The
-    # test driver calls `failScxmlRemoteInvokesForPeer` directly on
-    # the parent Policy — the same entry point the TransportRouter
-    # peer-down handlers (Zenoh liveliness DELETE, SOMEIP machine
-    # availability) reach in production. Verifies the policy method
-    # contract: erase activeInvokes_ entry, raise
+    # test driver posts `InboxPeerLost` to the parent's inbox from a
+    # thread of its own, as the TransportRouter peer-down handlers
+    # (Zenoh liveliness DELETE, SOMEIP machine availability) do in
+    # production, and the owner applies it with the Policy's
+    # `failScxmlRemoteInvokesForPeer`. Verifies that contract: erase
+    # the activeInvokes_ entry, raise
     # `error.communication{INVOKE_CHILD_LOST,...}` on the external
     # queue, idempotent on repeat call.
     set(MESH_SESSION_F_PEER_DROP_OUTPUT_DIR

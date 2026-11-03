@@ -438,8 +438,45 @@ public:
         ::SCE::HostInvokeEnding ending;
     };
 
+    // SCE_MESH.md §9.6: what the transport of a child session running on another
+    // device delivers for this machine, its parent, on the transport's own thread.
+    // Each is applied with the policy's member of the same name, which a machine
+    // with no such child does not have; there the input is applied as nothing,
+    // as the envelope it stands for would have been dropped.
+
+    /// Wire-15: the child that `invokeId` started runs as `childSessionId`.
+    /// Applied with the policy's `onInvokeStarted`.
+    struct InboxChildSessionStarted {
+        std::string invokeId;
+        std::string childSessionId;
+    };
+
+    /// Wire-16: `event` comes from the child session `childSessionId`. Applied
+    /// with `raiseExternal` when the policy's `hasActiveChildSession` still
+    /// answers for that session, and dropped otherwise: the parent has left the
+    /// invoking state, and an event of a cancelled child is ignored.
+    struct InboxChildSessionEvent {
+        std::string childSessionId;
+        EventWithMetadata event;
+    };
+
+    /// Wire-18: the child `invokeId` started reached its final state with
+    /// `doneData`. Applied with the policy's `onInvokeDone`.
+    struct InboxChildSessionDone {
+        std::string invokeId;
+        std::string doneData;
+    };
+
+    /// The peer named `peer` is gone. Applied with the policy's
+    /// `failScxmlRemoteInvokesForPeer`.
+    struct InboxPeerLost {
+        std::string peer;
+    };
+
     /// One input of this engine's inbox.
-    using InboxInput = std::variant<InboxExternalEvent, InboxExternalEventByName, InboxHostInvokeEnding>;
+    using InboxInput =
+        std::variant<InboxExternalEvent, InboxExternalEventByName, InboxHostInvokeEnding, InboxChildSessionStarted,
+                     InboxChildSessionEvent, InboxChildSessionDone, InboxPeerLost>;
 
     /// The handle another thread posts to this engine through (`inbox()`).
     using Inbox = ::SCE::Core::EngineInbox<InboxInput>;
@@ -1205,6 +1242,29 @@ private:
                 (void)failHostInvoke(ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin,
                                      ending.originType);
             }
+            return;
+        }
+        applyChildSessionInput(input);
+    }
+
+    /// Apply a posted input of a child session on another device (SCE_MESH.md
+    /// §9.6) with the policy's member of the same name. A machine that runs no
+    /// such child has nothing to apply it to.
+    void applyChildSessionInput(InboxInput &input) {
+        if constexpr (SCE::Core::HasRemoteChildSessionsTrait<StatePolicy, StaticExecutionEngine>::value) {
+            if (const auto *started = std::get_if<InboxChildSessionStarted>(&input)) {
+                policy_.onInvokeStarted(started->invokeId, started->childSessionId);
+            } else if (const auto *child = std::get_if<InboxChildSessionEvent>(&input)) {
+                if (policy_.hasActiveChildSession(child->childSessionId)) {
+                    raiseExternal(child->event);
+                }
+            } else if (const auto *done = std::get_if<InboxChildSessionDone>(&input)) {
+                policy_.onInvokeDone(done->invokeId, done->doneData, *this);
+            } else if (const auto *lost = std::get_if<InboxPeerLost>(&input)) {
+                policy_.failScxmlRemoteInvokesForPeer(lost->peer, *this);
+            }
+        } else {
+            (void)input;
         }
     }
 

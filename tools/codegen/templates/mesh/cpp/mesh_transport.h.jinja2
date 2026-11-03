@@ -3623,14 +3623,16 @@ struct TransportRouter {
                         // `activeInvokes_` is the source of truth, and
                         // a session that never invoked this peer must
                         // not see a spurious INVOKE_CHILD_LOST). Per-
-                        // session call into the Policy method below
-                        // erases matching entries under the activeInvokes_
-                        // mutex and injects INVOKE_CHILD_LOST into THAT
-                        // session's external queue via raiseExternal;
+                        // session post below hands the peer to THAT
+                        // session's inbox (this is the availability
+                        // handler's thread, which owns no session), and
+                        // the session's owner erases the matching
+                        // entries and raises INVOKE_CHILD_LOST through
+                        // the Policy's `failScxmlRemoteInvokesForPeer`;
                         // sessions with no matching entry see a no-op.
                         for (std::size_t i = 0; i < N_SESSIONS; ++i) {
-                            sessions_[i]->getPolicy().failScxmlRemoteInvokesForPeer(
-                                "{{ peer.machine }}", *sessions_[i]);
+                            (void)sessions_[i]->inbox().post(
+                                typename SenderEngine::InboxPeerLost{"{{ peer.machine }}"});
                         }
 {% endif %}
                     });
@@ -4190,10 +4192,12 @@ struct TransportRouter {
                         // partition-keyed and never reaches this gate
                         // because §9.6 addresses by machine; the empty-
                         // peer guard mirrors the §9.5 path so a
-                        // partition DELETE silently falls through.
+                        // partition DELETE silently falls through. Posted
+                        // to each session's inbox: this is the zenoh
+                        // runtime's thread, which owns no session.
                         for (std::size_t i = 0; i < N_SESSIONS; ++i) {
-                            sessions_[i]->getPolicy().failScxmlRemoteInvokesForPeer(
-                                peer_for_mesh_rpc, *sessions_[i]);
+                            (void)sessions_[i]->inbox().post(
+                                typename SenderEngine::InboxPeerLost{peer_for_mesh_rpc});
                         }
                     }
 {% endif %}
@@ -4262,10 +4266,12 @@ struct TransportRouter {
                     // fast-path (non-partitioned Zenoh branch):
                     // machine-keyed identical to the §9.5 path above.
                     // Every DELETE here is machine-identity, so no
-                    // empty-peer guard is required.
+                    // empty-peer guard is required. Posted to each
+                    // session's inbox: this is the zenoh runtime's
+                    // thread, which owns no session.
                     for (std::size_t i = 0; i < N_SESSIONS; ++i) {
-                        sessions_[i]->getPolicy().failScxmlRemoteInvokesForPeer(
-                            peer_for_mesh_rpc, *sessions_[i]);
+                        (void)sessions_[i]->inbox().post(
+                            typename SenderEngine::InboxPeerLost{peer_for_mesh_rpc});
                     }
 {% endif %}
 {% endif %}

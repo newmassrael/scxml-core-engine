@@ -413,9 +413,9 @@
 
                         // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
                         // Child may send events during initialize() that need autoforward
-                        // SCE_MESH.md §16.7 row 5 sub-atomic C — activeInvokes_
-                        // is shared with peer-down callback threads; engine-
-                        // thread writes also hold activeInvokesMutex_.
+                        // SCE_MESH.md §16.7 row 5 sub-atomic C — activeInvokes_ is
+                        // the owner's alone: a peer-down signal reaches it through
+                        // the inbox (docs/adr/0083).
                         {# §scxml-6.5: the finalize body crosses as AUTHOR text here, and
                            that is this channel's contract rather than an omission — the
                            C++ engine runs `EcmaScriptToLuaTransformer` itself, which is
@@ -1090,13 +1090,8 @@
         {% if state.invokes | scxml %}
         {% for invoke_info in state.invokes | scxml %}
         {
-            // Snapshot the session id under the mutex and release it before
-            // reaching into the child's queue — the same discipline
-            // `forwardToAutoforwardChildren` follows, and for the same
-            // reason: the peer-down handler also touches activeInvokes_.
             bool __sce_addressed = false;
             {
-                std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
                 auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
                 __sce_addressed = (it != activeInvokes_.end() && it->second.sessionId == childSessionId);
             }
@@ -1127,7 +1122,6 @@
         {
             bool __sce_addressed = false;
             {
-                std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
                 auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
                 __sce_addressed = (it != activeInvokes_.end() && it->second.sessionId == childSessionId);
             }
@@ -1164,16 +1158,8 @@
         {% for invoke_info in state.invokes | scxml %}
         // Check if child {{ invoke_info.invoke_id }} has autoforward enabled
         {
-            // SCE_MESH.md §16.7 row 5 sub-atomic C — snapshot autoforward
-            // under activeInvokesMutex_ and release before delegating to
-            // the child's `raiseExternal`. Holding our mutex across the
-            // child's queue lock would risk nested-mutex ordering vs the
-            // peer-down handler that also touches activeInvokes_. The
-            // child pointer (`child_<suffix>_`) is a Policy member with
-            // engine-thread-only lifetime, independent of activeInvokes_.
             bool __sce_autoforward_active = false;
             {
-                std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
                 auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
                 __sce_autoforward_active =
                     (it != activeInvokes_.end() && it->second.autoforward);
@@ -1202,14 +1188,8 @@
         // ready to receive wire-17 either way because it was instantiated
         // at wire-14 dispatch.
         {
-            // SCE_MESH.md §16.7 row 5 sub-atomic C — snapshot autoforward
-            // under activeInvokesMutex_ and release before reaching into
-            // the engine's mesh-send path. Same mutex-discipline rationale
-            // as the local-scxml branch above; the peer-down callback may
-            // be removing this entry concurrently with this read.
             bool __sce_autoforward_active = false;
             {
-                std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
                 auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
                 __sce_autoforward_active =
                     (it != activeInvokes_.end() && it->second.autoforward);
@@ -1245,16 +1225,11 @@
         }
 
         // Find which invoke sent this event by matching child session ID.
-        // SCE_MESH.md §16.7 row 5 sub-atomic C — snapshot matched invokeId
-        // + finalize script under activeInvokesMutex_, release, then run
-        // FinalizeHelper without the mutex held. FinalizeHelper enters
-        // the script engine on the engine thread and may recurse into
-        // raiseExternal; holding our mutex across that span would block
-        // peer-down callbacks (and could trip nested-mutex ordering).
+        // Copied out before FinalizeHelper runs: the finalize script may
+        // reach executable content that changes the table.
         std::string __sce_matched_invoke_id;
         std::string __sce_matched_finalize_script;
         {
-            std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
             for (const auto& [invokeId, childSession] : activeInvokes_) {
                 if (childSession.sessionId == eventWithMeta.origin && !childSession.finalizeScript.empty()) {
                     __sce_matched_invoke_id = invokeId;
@@ -1294,19 +1269,29 @@
 {% endif %}
 
 {% if model.invokes | scxml_remote %}
+    // ── SCE_MESH.md §9.6: what a remote child session's transport delivers ──
+    //
+    // Every member below is an owner-thread operation (ARCHITECTURE.md
+    // "Engine Threading", docs/adr/0083). Wire-15 and wire-18 arrive on a
+    // transport's thread, and a peer-down signal on its availability or
+    // liveliness thread; none of those owns this session, so the machine's
+    // `onInvokeStarted` / `onInvokeDone` hooks and the router's peer-down
+    // handlers post what they received to the machine's inbox, and its owner
+    // applies it here, at a macrostep boundary. `activeInvokes_` is therefore
+    // touched by the owner alone, and needs no lock.
+
     // SCE_MESH.md §9.6.4 step 4 — does a still-active `<invoke>` own this
-    // child session? `MeshDispatch::dispatchEnvelope` asks before enqueueing
-    // a wire-16 ChildEvent, so an event from a session the parent has
-    // already left never reaches transition selection. The entry is stamped
-    // by `onInvokeStarted` (wire-15) and erased by the invoking state's
-    // onexit — the same `sessionId == origin` key `executeFinalizeForChildEvent`
-    // matches on, so finalize and admission cannot disagree about which
-    // invoke an event belongs to.
-    bool hasActiveChildSession(const std::string& childSessionId) {
+    // child session? Asked by the owner when it applies a posted wire-16
+    // ChildEvent, before the event joins the external queue, so an event from
+    // a session the parent has already left never reaches transition
+    // selection. The entry is stamped by `onInvokeStarted` (wire-15) and erased
+    // by the invoking state's onexit — the same `sessionId == origin` key
+    // `executeFinalizeForChildEvent` matches on, so finalize and admission
+    // cannot disagree about which invoke an event belongs to.
+    bool hasActiveChildSession(const std::string& childSessionId) const {
         if (childSessionId.empty()) {
             return false;
         }
-        std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
         for (const auto& [invokeId, childSession] : activeInvokes_) {
             (void)invokeId;
             if (childSession.sessionId == childSessionId) {
@@ -1319,65 +1304,40 @@
 
     // SCE_MESH.md §9.6.2 wire-15 consumer — parent stashes the child's
     // session URI (§9.6.3 L1463 `_event.origin` source). Matched by
-    // env.subject against the compile-time invoke_id emitted at wire-14
-    // dispatch. Idempotent: a redundant wire-15 is silently replaced;
-    // matching against an unregistered invoke_id (e.g. a stale envelope
-    // arriving after onexit) is a no-op.
-    void onInvokeStarted(const ::SCE::Mesh::MeshEnvelope& env) {
-        if (!env.subject || !env.child_session_id) {
-            AOT_DEBUG("AOT onInvokeStarted: envelope missing subject/child_session_id — drop");
-            return;
-        }
-        // SCE_MESH.md §16.7 row 5 sub-atomic C — this hook runs on the
-        // transport callback thread (Zenoh queryable / SOMEIP receive /
-        // shm pump / custom_tcp Server receive), distinct from the
-        // engine thread that drives every other activeInvokes_ access.
-        // Hold activeInvokesMutex_ across the find + sessionId stamp so
-        // a concurrent peer-down handler cannot erase the entry mid-
-        // write, and so engine-thread autoforward/finalize readers
-        // observe either the pre-wire-15 ChildSession (sessionId="")
-        // or the fully-stamped row, never a torn write.
-        std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
-        auto it = activeInvokes_.find(*env.subject);
+    // the envelope's subject against the compile-time invoke_id emitted at
+    // wire-14 dispatch. Idempotent: a redundant wire-15 is silently
+    // replaced; matching against an unregistered invoke_id (e.g. a stale
+    // envelope arriving after onexit) is a no-op.
+    void onInvokeStarted(const std::string& invokeId, const std::string& childSessionId) {
+        auto it = activeInvokes_.find(invokeId);
         if (it == activeInvokes_.end()) {
-            AOT_DEBUG("AOT onInvokeStarted: no active invoke matching subject='{}' — drop", *env.subject);
+            AOT_DEBUG("AOT onInvokeStarted: no active invoke matching subject='{}' — drop", invokeId);
             return;
         }
-        it->second.sessionId = *env.child_session_id;
-        AOT_DEBUG("AOT onInvokeStarted: bound invoke='{}' to child sessionId='{}'",
-                  *env.subject, *env.child_session_id);
+        it->second.sessionId = childSessionId;
+        AOT_DEBUG("AOT onInvokeStarted: bound invoke='{}' to child sessionId='{}'", invokeId, childSessionId);
     }
 
     // SCE_MESH.md §9.6.2 wire-18 consumer — child reached <final>. Raise
     // the W3C `done.invoke.<id>` event and set the pending flag so the
     // paired onexit cancel suppresses a redundant wire-19. The envelope's
-    // `data` bytes carry the child's `<donedata>` payload (W3C SCXML 5.5,
-    // JSON-encoded by `DoneDataHelper` on the worker); we thread it onto
-    // `_event.data` so `done.invoke.<id>` parity with the local-invoke
-    // path is byte-for-byte. `typedData` is left unset — the parent's
-    // `setPolicyMetadata` hydrates it via `jsonStringToScriptValue`.
+    // `data` bytes, handed over as `donedata`, carry the child's
+    // `<donedata>` payload (W3C SCXML 5.5, JSON-encoded by `DoneDataHelper`
+    // on the worker); we thread it onto `_event.data` so `done.invoke.<id>`
+    // parity with the local-invoke path is byte-for-byte. `typedData` is
+    // left unset — the parent's `setPolicyMetadata` hydrates it via
+    // `jsonStringToScriptValue`.
     template <typename Engine>
-    void onInvokeDone(const ::SCE::Mesh::MeshEnvelope& env, Engine& engine) {
-        if (!env.subject) {
-            AOT_DEBUG("AOT onInvokeDone: envelope missing subject — drop");
-            return;
-        }
-        const std::string& subject = *env.subject;
+    void onInvokeDone(const std::string& subject, const std::string& donedata, Engine& engine) {
         {% for invoke_info in model.invokes | scxml_remote %}
         if (subject == "{{ invoke_info.invoke_id }}") {
             pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
-            std::string donedata(env.data.begin(), env.data.end());
-            // Posted, not raised: wire-18 arrives on a transport thread as often
-            // as on the parent's owner, and the inbox is the one part of the
-            // engine any thread may use (docs/adr/0083). The owner raises it at
-            // its next macrostep boundary.
-            (void)engine.inbox().post(typename Engine::InboxExternalEvent{
-                ::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
-                    typename Engine::Event, typename Engine::EventWithMetadata>(
-                    {% if invoke_info.use_specific_event %}Engine::Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Engine::Event::Done_invoke{% endif %},
-                    "{{ invoke_info.invoke_id }}",
-                    donedata
-                )});
+            engine.raiseExternal(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
+                typename Engine::Event, typename Engine::EventWithMetadata>(
+                {% if invoke_info.use_specific_event %}Engine::Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Engine::Event::Done_invoke{% endif %},
+                "{{ invoke_info.invoke_id }}",
+                donedata
+            ));
             // W3C SCXML 6.5 + SCE_MESH.md §9.6.3: do NOT erase activeInvokes_
             // here. The entry must survive so any ChildEvent (wire-16) that
             // reached the external queue earlier in the same drain as this
@@ -1397,18 +1357,14 @@
     }
 
     // SCE_MESH.md §16.7 row 5 sub-atomic C — §9.6 scxml-invoke peer-down
-    // emit. Called from `TransportRouter` peer-down handlers (Zenoh
-    // liveliness DELETE on a row-8 machine key; SOMEIP machine-level
-    // `register_availability_handler` on `is_available=false`) once per
-    // dropped peer, per session. For every statically-declared §9.6
-    // invoke whose `remote_mesh_target == peer`, atomically erase the
-    // matching `activeInvokes_` entry under `activeInvokesMutex_` and
-    // snapshot its `invoke_id` for the post-lock raise loop. Each
-    // snapshotted id then raises a single
+    // emit. Applied by the owner for an `InboxPeerLost` the `TransportRouter`
+    // peer-down handlers post (Zenoh liveliness DELETE on a row-8 machine
+    // key; SOMEIP machine-level `register_availability_handler` on
+    // `is_available=false`) once per dropped peer, per session. For every
+    // statically-declared §9.6 invoke whose `remote_mesh_target == peer`,
+    // erase the matching `activeInvokes_` entry and raise a single
     // `error.communication{INVOKE_CHILD_LOST, invoke_id, target: peer}`
-    // event into THIS session's inbox, which its owner applies to the
-    // external queue at its next macrostep boundary — the inbox is what
-    // makes the callback-thread origin safe (W3C SCXML 5.10 unhandled events
+    // event into THIS session's external queue (W3C SCXML 5.10 unhandled events
     // silently drop, so sessions whose state has already passed the
     // invoking state see a benign no-op). `pendingDoneInvoke_*_` flags
     // are intentionally untouched: INVOKE_CHILD_LOST is the spec-named
@@ -1432,18 +1388,15 @@
     template <typename Engine>
     void failScxmlRemoteInvokesForPeer(const std::string& peer, Engine& engine) {
         std::vector<std::string> erased_invoke_ids;
-        {
-            std::lock_guard<std::mutex> lock(activeInvokesMutex_);
-            {% for invoke_info in model.invokes | scxml_remote %}
-            if (peer == "{{ invoke_info.remote_mesh_target }}") {
-                if (auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
-                    it != activeInvokes_.end()) {
-                    activeInvokes_.erase(it);
-                    erased_invoke_ids.emplace_back("{{ invoke_info.invoke_id }}");
-                }
+        {% for invoke_info in model.invokes | scxml_remote %}
+        if (peer == "{{ invoke_info.remote_mesh_target }}") {
+            if (auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
+                it != activeInvokes_.end()) {
+                activeInvokes_.erase(it);
+                erased_invoke_ids.emplace_back("{{ invoke_info.invoke_id }}");
             }
-            {% endfor %}
         }
+        {% endfor %}
         if (erased_invoke_ids.empty()) {
             return;
         }
@@ -1463,9 +1416,7 @@
             typename Engine::EventWithMetadata meta;
             meta.event = *event_opt;
             meta.data = std::string(json_bytes.begin(), json_bytes.end());
-            // Posted, not raised: the peer-down handler that calls this runs on
-            // the transport's thread (docs/adr/0083).
-            (void)engine.inbox().post(typename Engine::InboxExternalEvent{std::move(meta)});
+            engine.raiseExternal(std::move(meta));
             AOT_DEBUG("AOT failScxmlRemoteInvokesForPeer: raised "
                       "error.communication INVOKE_CHILD_LOST for invoke='{}' target='{}'",
                       iid, peer);

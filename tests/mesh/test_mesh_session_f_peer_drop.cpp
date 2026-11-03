@@ -4,16 +4,16 @@
 // SCE Mesh §16.7 row 5 sub-atomic C verification: §9.6 scxml-invoke
 // peer-down emit. The parent state machine carries a single
 // `<invoke type="scxml" src="#worker_session_f_peer_drop" id="remote_inv"/>`
-// in state `invoking`. After the engine reaches `invoking`, the test
-// driver calls
-//   `parent.getPolicy().failScxmlRemoteInvokesForPeer("worker_session_f_peer_drop", parent)`
-// directly — the same Policy entry point that the TransportRouter
-// invokes from Zenoh liveliness DELETE and SOMEIP machine-level
-// availability handlers in production.
+// in state `invoking`. After the engine reaches `invoking`, a thread that
+// does not own the parent posts `InboxPeerLost{"worker_session_f_peer_drop"}`
+// to its inbox — what the TransportRouter's Zenoh liveliness DELETE and
+// SOMEIP machine-level availability handlers do in production, on their
+// own threads (docs/adr/0083) — and the parent's owner applies it with
+// the Policy's `failScxmlRemoteInvokesForPeer` at its next macrostep
+// boundary.
 //
 // Contract under test (matches `tools/codegen/templates/invoke_methods.jinja2`):
-//   1. The matching `activeInvokes_` entry is erased atomically under
-//      `activeInvokesMutex_`.
+//   1. The matching `activeInvokes_` entry is erased, on the owner.
 //   2. Exactly one `error.communication` event is raised into the
 //      parent's external queue carrying
 //      `{"reason":"INVOKE_CHILD_LOST","invoke_id":"remote_inv",
@@ -77,10 +77,18 @@ int main() {
         return 1;
     }
 
-    // SCE Mesh §16.7 row 5 sub-atomic C peer-down emit. This is the
-    // direct call the TransportRouter peer-down handlers issue per
-    // session (`sessions_[i]->getPolicy().failScxmlRemoteInvokesForPeer(...)`).
-    parent.getPolicy().failScxmlRemoteInvokesForPeer("worker_session_f_peer_drop", parent);
+    // SCE Mesh §16.7 row 5 sub-atomic C peer-down emit, posted as the
+    // TransportRouter peer-down handlers post it per session, from a
+    // thread of their own.
+    bool lost_posted = false;
+    std::thread handler([&parent, &lost_posted] {
+        lost_posted = parent.inbox().post(ParentEngine::InboxPeerLost{"worker_session_f_peer_drop"});
+    });
+    handler.join();
+    if (!lost_posted) {
+        std::fprintf(stderr, "FAIL: the parent's inbox refused the peer-down signal\n");
+        return 1;
+    }
 
     // Drive the parent's macrostep to consume the error.communication
     // event we just enqueued. One step should suffice; loop a few
@@ -108,8 +116,9 @@ int main() {
         return 1;
     }
 
-    // Second call must be a silent no-op: activeInvokes_ no longer has
-    // an entry for `worker_session_f_peer_drop`, so the post-lock
+    // Second call, made directly on the owner (the body the posted
+    // signal was applied with), must be a silent no-op: activeInvokes_ no
+    // longer has an entry for `worker_session_f_peer_drop`, so the
     // raise loop sees zero entries and exits without raising. The
     // parent's `lost` state is a `<final>`, so no transition selection
     // happens regardless — but we still verify that step() does not

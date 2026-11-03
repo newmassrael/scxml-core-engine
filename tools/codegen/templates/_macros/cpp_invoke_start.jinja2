@@ -59,11 +59,10 @@
     autoforward and an event addressed to the child's published location read. `finalize`
     is the finalize script as the string literal's text. The record is written before the
     child initializes, so an event it sends as it starts can already be autoforwarded.
-    SCE_MESH.md §16.7 row 5 sub-atomic C: the table is shared with peer-down callback
-    threads, so the write holds the mutex. #}
+    The table is the owner's alone: a peer-down signal reaches it through the inbox
+    (docs/adr/0083). #}
 {% macro child_session_record(inv, finalize, indent) %}
 {{ indent }}{
-{{ indent }}    std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
 {{ indent }}    activeInvokes_["{{ inv.invoke_id }}"] = ChildSession{
 {{ indent }}        childSessionId,  // W3C SCXML 6.5: the child's session id, for finalize origin matching
 {{ indent }}        "{{ inv.invoke_id }}",

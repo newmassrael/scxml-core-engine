@@ -158,23 +158,15 @@ bool tryDeliverInvokeStarted(const MeshEnvelope & /*env*/, Engine & /*engine*/, 
 /// wire-15/18 hooks. An engine that cannot answer it holds no invoke table
 /// and therefore cannot be the parent of any child session, so a wire-16
 /// envelope reaching it is misrouted and drops fail-closed — the same shape
-/// the wire-15/18 hooks use when absent.
+/// the wire-15/18 hooks use when absent. Probed, never called here: the
+/// question reads the engine's invoke table, which is its owner's, so the
+/// owner asks it when it applies the posted event (docs/adr/0083).
 template <typename Engine, typename = void> struct HasActiveChildSessionHook : std::false_type {};
 
 template <typename Engine>
 struct HasActiveChildSessionHook<
     Engine, std::void_t<decltype(std::declval<Engine &>().hasActiveChildSession(std::declval<const std::string &>()))>>
     : std::true_type {};
-
-template <typename Engine>
-bool childSessionIsActive(const std::string &child_session_id, Engine &engine, std::true_type /*has_hook*/) {
-    return engine.hasActiveChildSession(child_session_id);
-}
-
-template <typename Engine>
-bool childSessionIsActive(const std::string & /*child_session_id*/, Engine & /*engine*/, std::false_type /*has_hook*/) {
-    return false;
-}
 
 /// SFINAE probe: does `Engine` expose
 /// `onInvokeDone(const MeshEnvelope&)`? Symmetric to `HasInvokeStartedHook`.
@@ -356,49 +348,54 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
     // This wiring keeps the parent's existing local-invoke finalize/autoforward
     // code paths (`childSession.sessionId == meta.origin` match) unchanged.
     case PatternKind::ChildEvent: {
-        // SCE_MESH.md §mesh-9.6.4 steps 1-2 and its closing rule. This is the
-        // arrival point ("ChildEvent arrives at parent's transport layer"),
-        // and enqueueing here is what puts the event on the parent's external
-        // queue for the next macrostep. Step 4 — identifying the `<invoke>`
-        // the event belongs to — is resolved before the enqueue rather than
-        // after it: once the parent has left the invoking state the section
-        // requires the event to be "discarded silently (finalize not
-        // executed, transition not considered)", and an event already sitting
-        // in the queue would still be offered to transition selection.
-        // Gating on arrival, not on selection, is also what keeps a wire-16
-        // that landed *before* the exit eligible — `activeInvokes_` survives
-        // until the invoking state's onexit precisely so those still match.
-        if (!env.child_session_id ||
-            !detail::childSessionIsActive(*env.child_session_id, engine, detail::HasActiveChildSessionHook<Engine>{})) {
-            return false;
-        }
-        auto ev = ::SCE::Core::resolveArrivingEventName(
-            env.type, [](const std::string &exact) { return Policy::getEventFromName(exact.c_str()); });
-        if (!ev) {
-            return false;
-        }
-        typename Engine::EventWithMetadata meta;
-        meta.event = *ev;
-        detail::recordArrivalName<Policy>(meta, *ev, env.type);
-        meta.data = std::string(env.data.begin(), env.data.end());
-        meta.type = "external";
-        meta.originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
-        // §mesh-9.6.3 L1463-1466 overrides the generic §mesh-10.7 origin row
-        // for this arm: the parent matches `<finalize>` and autoforward by
-        // comparing `activeInvokes_[id].sessionId == _event.origin`, and that
-        // sessionId is the §mesh-9.6.1 child session id wire-15 delivered.
-        // Rewriting this to `mesh://<source>` for table uniformity would stop
-        // every remote finalize from matching, so the divergence is intended.
-        if (env.child_session_id) {
+        // SCE_MESH.md §mesh-9.6.4 steps 1-2 and its closing rule. Step 4 —
+        // identifying the `<invoke>` the event belongs to — is resolved before
+        // the event joins the parent's external queue rather than after it:
+        // once the parent has left the invoking state the section requires
+        // the event to be "discarded silently (finalize not executed,
+        // transition not considered)", and an event already sitting in the
+        // queue would still be offered to transition selection.
+        //
+        // The event arrives where the parent's owner takes it: at its
+        // macrostep boundary (docs/adr/0083), since no input is observed in
+        // the middle of a macrostep. So the envelope is posted with the
+        // child's session id, and the owner asks `hasActiveChildSession` when
+        // it applies it — the parent's invoke table is its owner's alone, and
+        // this runs on transport threads. An event that arrived before the
+        // macrostep in which the parent exits the invoking state is applied
+        // before that exit, while `activeInvokes_` still holds the entry.
+        if constexpr (detail::HasActiveChildSessionHook<Engine>::value) {
+            if (!env.child_session_id) {
+                return false;
+            }
+            auto ev = ::SCE::Core::resolveArrivingEventName(
+                env.type, [](const std::string &exact) { return Policy::getEventFromName(exact.c_str()); });
+            if (!ev) {
+                return false;
+            }
+            typename Engine::EventWithMetadata meta;
+            meta.event = *ev;
+            detail::recordArrivalName<Policy>(meta, *ev, env.type);
+            meta.data = std::string(env.data.begin(), env.data.end());
+            meta.type = "external";
+            meta.originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
+            // §mesh-9.6.3 L1463-1466 overrides the generic §mesh-10.7 origin row
+            // for this arm: the parent matches `<finalize>` and autoforward by
+            // comparing `activeInvokes_[id].sessionId == _event.origin`, and that
+            // sessionId is the §mesh-9.6.1 child session id wire-15 delivered.
+            // Rewriting this to `mesh://<source>` for table uniformity would stop
+            // every remote finalize from matching, so the divergence is intended.
             meta.origin = *env.child_session_id;
+            if (env.subject) {
+                meta.sendId = *env.subject;
+            }
+            if (env.invoke_id) {
+                meta.invokeId = SCE::uuid::to_string(*env.invoke_id);
+            }
+            return engine.inbox().post(typename Engine::InboxChildSessionEvent{*env.child_session_id, std::move(meta)});
+        } else {
+            return false;
         }
-        if (env.subject) {
-            meta.sendId = *env.subject;
-        }
-        if (env.invoke_id) {
-            meta.invokeId = SCE::uuid::to_string(*env.invoke_id);
-        }
-        return detail::postExternal(engine, std::move(meta));
     }
     // SCE_MESH.md §mesh-9.6.2 wire 20 (InvokeError): parent receives a child-
     // instantiation or transport-unavailable failure and translates it into

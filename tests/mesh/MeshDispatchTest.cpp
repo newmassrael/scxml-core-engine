@@ -110,6 +110,15 @@ struct RecordingEngine {
         EventWithMetadata event;
     };
 
+    // A wire-16 ChildEvent is posted with its child's session id, and the owner
+    // admits it only while an invoke still owns that session (§mesh-9.6.4 step 4,
+    // asked where the owner applies the post). The double applies it the same
+    // way, at once.
+    struct InboxChildSessionEvent {
+        std::string childSessionId;
+        EventWithMetadata event;
+    };
+
     bool refusing = false;
 
     struct Inbox {
@@ -120,6 +129,16 @@ struct RecordingEngine {
                 return false;
             }
             engine->raiseExternal(std::move(posted.event));
+            return true;
+        }
+
+        bool post(InboxChildSessionEvent posted) const {
+            if (engine->refusing) {
+                return false;
+            }
+            if (engine->hasActiveChildSession(posted.childSessionId)) {
+                engine->raiseExternal(std::move(posted.event));
+            }
             return true;
         }
     };
@@ -362,13 +381,30 @@ TEST(MeshDispatchTest, ChildEventFromRetiredInvokeIsDiscarded) {
     // one the child emitted before its wire-19 cancel landed — must not reach
     // the parent's queue, where it would otherwise be offered to transition
     // selection in whatever state the parent moved on to.
+    //
+    // The envelope is handed to the parent's inbox, which takes it; the owner
+    // asks whether the invoke is still active when it applies it (docs/adr/0083),
+    // so the discard happens there, and the event never reaches the queue.
     RecordingEngine engine;
     engine.activeChildSessions.push_back("dev_a:parent:other_inv");
 
-    EXPECT_FALSE((
-        dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(makeChildEvent("dev_a:parent:remote_inv"), engine)));
+    EXPECT_TRUE(
+        (dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(makeChildEvent("dev_a:parent:remote_inv"), engine)))
+        << "the parent's inbox refused the envelope; admission is the owner's to judge";
     EXPECT_TRUE(engine.events.empty()) << "a ChildEvent whose invoke is no longer active was enqueued on the "
                                           "parent — §9.6.4's late-event discard is not enforced";
+}
+
+// A ChildEvent without the child's session id names no session the parent could
+// admit it for, so it is not even posted.
+TEST(MeshDispatchTest, ChildEventWithoutASessionIdIsNotDelivered) {
+    RecordingEngine engine;
+    engine.activeChildSessions.push_back("dev_a:parent:remote_inv");
+    auto env = makeChildEvent("dev_a:parent:remote_inv");
+    env.child_session_id.reset();
+
+    EXPECT_FALSE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+    EXPECT_TRUE(engine.events.empty());
 }
 
 TEST(MeshDispatchTest, InboundEnvelopeCarriesMeshOriginFromSource) {

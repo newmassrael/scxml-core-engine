@@ -148,8 +148,14 @@ int run_test() {
     // test_mesh_zenoh_rpc_engine_driven.cpp — Session I precedent).
     // The on_reply closure admits inbound envelopes from a zenoh
     // runtime thread; step() dequeues and runs the transition.
+    //
+    // The driver thread owns the engine (ARCHITECTURE.md "Engine
+    // Threading"), so it is also the one that reads where the run ended,
+    // after each macrostep, and publishes the answer in `reachedOk`; this
+    // thread reads that, never the engine, while the driver runs.
     struct EnginePump {
         std::atomic<bool> running{true};
+        std::atomic<bool> reachedOk{false};
         std::thread t;
 
         ~EnginePump() {
@@ -163,6 +169,9 @@ int run_test() {
     pump.t = std::thread([&client, &pump] {
         while (pump.running.load(std::memory_order_acquire)) {
             client.step();
+            if (client.terminalState() == Client::State::Ok) {
+                pump.reachedOk.store(true, std::memory_order_release);
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     });
@@ -181,25 +190,25 @@ int run_test() {
     // test timeout. The pool dispatch path's on_reply runs on a zenoh
     // runtime thread; admitInbound → dispatchToSender →
     // invoke_correlation_.handleReply raises done.invoke which the
-    // driver thread consumes on the next step() tick. Polling (rather
-    // than a condvar) keeps the engine API untouched — the generated
-    // `pool_zenoh_clientPolicy` exposes no state-transition signal.
+    // driver thread consumes on the next step() tick, and the driver
+    // publishes the end it reached (`reachedOk`).
     using std::chrono::steady_clock;
     const auto deadline = steady_clock::now() + kDefaultTimeout;
     while (steady_clock::now() < deadline) {
-        if (client.terminalState() == Client::State::Ok) {
+        if (pump.reachedOk.load(std::memory_order_acquire)) {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    MESH_TEST_REQUIRE(client.terminalState() == Client::State::Ok, "pool_zenoh_client did not reach State::Ok — "
-                                                                   "regression in the §14.4 runtime KeyExpr "
-                                                                   "substitution, pool dispatch, or "
-                                                                   "admitZenohInbound → handleReply chain");
-
+    // The driver stops before the verdict, so nothing reads the engine while
+    // it runs.
     pump.running.store(false, std::memory_order_release);
     pump.t.join();
+    MESH_TEST_REQUIRE(pump.reachedOk.load(std::memory_order_acquire), "pool_zenoh_client did not reach State::Ok — "
+                                                                      "regression in the §14.4 runtime KeyExpr "
+                                                                      "substitution, pool dispatch, or "
+                                                                      "admitZenohInbound → handleReply chain");
     client_router.shutdown();
     std::printf("SCE Mesh §14.4 Zenoh pool runtime verification: PASS\n");
     return 0;
