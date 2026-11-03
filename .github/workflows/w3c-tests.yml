@@ -149,6 +149,19 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cmake-${{ github.repository }}-
 
+    # The answers of the generator's configure-time plans
+    # (cmake/SCECodegenPlan.cmake). After a checkout every restored answer is
+    # older than the documents and is asked again; what the restore brings is
+    # the list of the plans the last run asked, which the configure asks in one
+    # parallel batch at its start instead of one by one.
+    - name: Cache the generator's configure-time plans
+      uses: actions/cache@v5
+      with:
+        path: build/sce-codegen-plans
+        key: ${{ runner.os }}-sce-codegen-plans-w3c-cpp-${{ hashFiles('sce-build/src/**', 'tools/codegen/templates/**', 'cmake/**', '**/CMakeLists.txt', 'resources/**', 'integration_resources/**', 'tests/mesh/**') }}
+        restore-keys: |
+          ${{ runner.os }}-sce-codegen-plans-w3c-cpp-
+
     - name: Setup ccache
       uses: actions/cache@v5
       with:

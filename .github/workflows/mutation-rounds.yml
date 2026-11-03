@@ -783,6 +783,20 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cmake-mutation-rounds-relwithdebinfo-
 
+    # The answers of the generator's configure-time plans
+    # (cmake/SCECodegenPlan.cmake). After a checkout every restored answer is
+    # older than the documents and is asked again; what the restore brings is
+    # the list of the plans the last run asked, which the configure asks in one
+    # parallel batch at its start instead of one by one.
+    - name: Cache the generator's configure-time plans
+      if: matrix.runner == 'ctest'
+      uses: actions/cache@v5
+      with:
+        path: build/sce-codegen-plans
+        key: ${{ runner.os }}-sce-codegen-plans-mutation-rounds-${{ hashFiles('sce-build/src/**', 'tools/codegen/templates/**', 'cmake/**', '**/CMakeLists.txt', 'resources/**', 'integration_resources/**', 'tests/mesh/**') }}
+        restore-keys: |
+          ${{ runner.os }}-sce-codegen-plans-mutation-rounds-
+
     # A ctest round selects from a configured tree; without one the gate
     # refuses (exit 3) rather than reporting green over what it cannot run.
     # This is the step that makes sure it never has to.
