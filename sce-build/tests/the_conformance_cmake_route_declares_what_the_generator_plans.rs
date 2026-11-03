@@ -359,7 +359,7 @@ fn generation_violations(command: &Invocation, prefixes: &[String]) -> Vec<Strin
              {byproducts}"
         ));
     }
-    if !args.iter().any(|arg| *arg == byproducts) {
+    if !args.contains(&byproducts) {
         found.push(format!(
             "{at} does not declare {byproducts}, so the files its generation writes beside \
              the machine are declared by nothing"
