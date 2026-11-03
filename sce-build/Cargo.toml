@@ -1528,6 +1528,16 @@ name = "the_emitted_transition_table_equals_the_export"
 path = "tests/the_emitted_transition_table_equals_the_export.rs"
 required-features = ["cli"]
 
+# The transition table costs a program that never names it nothing: this links a
+# C program, compiles a C++ unit and builds a Rust crate that drive the machine of
+# a document declaring the table, and finds none of the table in what they make,
+# beside a control that names it and does. It spawns `sce-codegen`, so it carries
+# the `cli` gate.
+[[test]]
+name = "a_program_that_never_names_the_transition_table_carries_none_of_it"
+path = "tests/a_program_that_never_names_the_transition_table_carries_none_of_it.rs"
+required-features = ["cli"]
+
 # A document declaring `sce:transition-function="emit"` is generated with a
 # runtime-free transition function beside its machine; this compiles the Rust
 # file alone and holds it to the producer, and runs the generated machine on the
