@@ -460,12 +460,26 @@ fn refusal_record(dir: &Path, args: &[&str]) -> serde_json::Value {
     serde_json::from_str(lines[0]).unwrap_or_else(|e| panic!("{args:?}: {e}\n{stderr}"))
 }
 
-/// A transform whose output declares a type no scalar has, on authored line
-/// 5, after an `<xi:include>` that lands four lines of fragment ahead of it.
-/// Refused while the document is read, so every route that reads a forge
-/// document raises it.
+/// A transform whose output declares a direction the schema does not
+/// enumerate, on authored line 5, after an `<xi:include>` that lands four
+/// lines of fragment ahead of it. The XSD refuses it while the document is
+/// read, so every route that reads a forge document raises it.
 const DOC_WITH_A_SCHEMA_ERROR_AFTER_AN_INCLUDE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" xmlns:xi="http://www.w3.org/2001/XInclude" sce:kind="transform" name="probe_schema">
+  <datamodel>
+    <xi:include href="celsius.fragment.xml"/>
+    <data id="result" sce:type="float64" sce:direction="sideways" expr="celsius + 1"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// The same transform, its output declaring a type no scalar has. The XSD
+/// admits any word of the type alphabet in `sce:type` (docs/adr/0086,
+/// section 1), so the word is refused by the type reader once the XSD has
+/// passed the document: still while the document is read, so every route
+/// raises it.
+const DOC_WITH_A_TYPE_ERROR_AFTER_AN_INCLUDE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" xmlns:xi="http://www.w3.org/2001/XInclude" sce:kind="transform" name="probe_type">
   <datamodel>
     <xi:include href="celsius.fragment.xml"/>
     <data id="result" sce:type="float65" sce:direction="out" expr="celsius + 1"/>
@@ -473,14 +487,16 @@ const DOC_WITH_A_SCHEMA_ERROR_AFTER_AN_INCLUDE: &str = r#"<?xml version="1.0" en
 </scxml>
 "#;
 
-/// The line [`DOC_WITH_A_SCHEMA_ERROR_AFTER_AN_INCLUDE`] spells `float65` on.
+/// The line [`DOC_WITH_A_SCHEMA_ERROR_AFTER_AN_INCLUDE`] and
+/// [`DOC_WITH_A_TYPE_ERROR_AFTER_AN_INCLUDE`] write their refused attribute
+/// on.
 ///
 /// The refused element's start tag is kept on this one line, so the test
 /// measures the expansion mapping and nothing else. Where a violation sits
 /// inside a start tag spread over several lines — libxml2 names the line
 /// the tag ends on, and the validator moves it to the attribute — is
 /// `xsd_validator`'s to hold (`an_attribute_violation_is_placed_at_the_attribute`).
-const AUTHORED_SCHEMA_ERROR_LINE: u64 = 5;
+const AUTHORED_REFUSAL_LINE: u64 = 5;
 
 /// Write the fragment and `docs` into a fresh directory.
 fn include_fixture(docs: &[(&str, &str)]) -> tempfile::TempDir {
@@ -498,10 +514,18 @@ fn include_fixture(docs: &[(&str, &str)]) -> tempfile::TempDir {
 /// mapped its coordinates back; every forge route threw the map away, so a
 /// refusal after an `<xi:include>` pointed as many lines past the defect as
 /// the fragment was long — at a row that may not exist in the file it names.
-#[test]
-fn a_refusal_after_an_include_names_the_authored_row_on_every_forge_route() {
-    let doc = "probe_schema.scxml";
-    let dir = include_fixture(&[(doc, DOC_WITH_A_SCHEMA_ERROR_AFTER_AN_INCLUDE)]);
+///
+/// `body`, written as `doc` beside the fragment it includes, is refused by
+/// every forge route with one record of `code`, in `doc`, on
+/// [`AUTHORED_REFUSAL_LINE`]. Returns the refusal of the library facade,
+/// which the orchestrator and build scripts share, for the caller to read
+/// the shape its refusal has.
+fn every_forge_route_names_the_authored_row(
+    doc: &str,
+    body: &str,
+    code: &str,
+) -> sce_build::forge::error::Located<sce_build::forge::error::ForgeError> {
+    let dir = include_fixture(&[(doc, body)]);
     let out = tempfile::tempdir().expect("tempdir");
     let out_dir = out.path().to_str().expect("utf8 path");
 
@@ -523,27 +547,33 @@ fn a_refusal_after_an_include_names_the_authored_row_on_every_forge_route() {
     ];
     for args in routes {
         let record = refusal_record(dir.path(), args);
-        assert_eq!(
-            record["code"], "xml/schema-validation",
-            "{args:?}: {record}"
-        );
+        assert_eq!(record["code"], code, "{args:?}: {record}");
         assert_eq!(record["location"]["file"], doc, "{args:?}: {record}");
         assert_eq!(
-            record["location"]["line"], AUTHORED_SCHEMA_ERROR_LINE,
+            record["location"]["line"], AUTHORED_REFUSAL_LINE,
             "{args:?}: the refusal must name the authored row: {record}"
         );
     }
 
-    // The library facade, which the orchestrator and build scripts share.
-    let err = match sce_build::compile_forge_file(
+    match sce_build::compile_forge_file(
         &dir.path().join(doc),
         Language::Rust,
         &[],
         &ForgeCompileOptions::default(),
     ) {
-        Ok(_) => panic!("the document declares an unknown type and must be refused"),
+        Ok(_) => panic!("{doc} declares what its reader refuses, and must be refused"),
         Err(e) => e,
-    };
+    }
+}
+
+/// A refusal of the schema, raised before the document is parsed.
+#[test]
+fn a_schema_refusal_after_an_include_names_the_authored_row_on_every_forge_route() {
+    let err = every_forge_route_names_the_authored_row(
+        "probe_schema.scxml",
+        DOC_WITH_A_SCHEMA_ERROR_AFTER_AN_INCLUDE,
+        "xml/schema-validation",
+    );
     // A schema refusal is a multi-record container — one record per
     // violation, each with its own row — so each row is asserted.
     let rows: Vec<Option<u32>> = match &err.error {
@@ -556,8 +586,35 @@ fn a_refusal_after_an_include_names_the_authored_row_on_every_forge_route() {
         !rows.is_empty()
             && rows
                 .iter()
-                .all(|r| *r == Some(AUTHORED_SCHEMA_ERROR_LINE as u32)),
+                .all(|r| *r == Some(AUTHORED_REFUSAL_LINE as u32)),
         "compile_forge_file must name the authored row on every schema record: {rows:?}"
+    );
+}
+
+/// A refusal of the type reader, raised while the document is parsed: one
+/// record, placed at the element that writes the type.
+#[test]
+fn a_type_refusal_after_an_include_names_the_authored_row_on_every_forge_route() {
+    let err = every_forge_route_names_the_authored_row(
+        "probe_type.scxml",
+        DOC_WITH_A_TYPE_ERROR_AFTER_AN_INCLUDE,
+        "validation/invalid-attribute",
+    );
+    match &err.error {
+        sce_build::forge::error::ForgeError::Validation(refusal) => assert!(
+            matches!(
+                &**refusal,
+                sce_build::forge::error::ValidationError::InvalidAttribute { value, .. }
+                    if value == "float65"
+            ),
+            "expected the refusal of `float65`, got {refusal:?}"
+        ),
+        other => panic!("expected the type reader's refusal, got {other:?}"),
+    }
+    assert_eq!(
+        err.location.line,
+        Some(AUTHORED_REFUSAL_LINE as u32),
+        "compile_forge_file must name the authored row: {err}"
     );
 }
 

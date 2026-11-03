@@ -196,12 +196,10 @@ fn a_declared_type_under_ecmascript_is_the_authoring_io_declaration() {
 
 #[test]
 fn a_misspelled_type_is_refused_on_its_line() {
-    // Two layers refuse this, and which one answers depends on whether the
-    // build loads the XSD: the schema types `sce:type` as
-    // `sceTypeOrEnumRef` (`xml/schema-validation`), and without it the
-    // parser's `read_type_attr` refuses the same value
-    // (`validation/invalid-attribute`). The case pins the outcome both
-    // share — refused, on the attribute's line, naming what was written.
+    // The XSD admits any word of the type alphabet in `sce:type`
+    // (docs/adr/0086, section 1), so whether or not the build loads the XSD
+    // the one type grammar's reader answers: refused, on the attribute's
+    // line, naming what was written, with the types it could have named.
     let (ok, out) = run(
         &["check"],
         &doc(
@@ -212,10 +210,7 @@ fn a_misspelled_type_is_refused_on_its_line() {
     assert!(!ok, "uint33 is no type:\n{out}");
     let record = out
         .lines()
-        .find(|l| {
-            l.contains("\"code\":\"xml/schema-validation\"")
-                || l.contains("\"code\":\"validation/invalid-attribute\"")
-        })
+        .find(|l| l.contains("\"code\":\"validation/invalid-attribute\""))
         .unwrap_or_else(|| panic!("expected a type refusal, got:\n{out}"));
     assert!(
         record.contains("\"line\":5") && record.contains("uint33"),

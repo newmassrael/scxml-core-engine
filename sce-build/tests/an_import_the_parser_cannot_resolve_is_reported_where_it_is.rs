@@ -118,13 +118,19 @@ fn a_sibling_that_is_not_there_is_reported_on_the_import_line() {
 #[test]
 fn a_sibling_that_does_not_parse_is_reported_in_the_sibling() {
     // A typo in a field's type: the author's expression is right, and the file to
-    // open is the schema.
+    // open is the schema. The XSD admits any word of the type alphabet in
+    // `sce:type` (docs/adr/0086, section 1), so the word that names no type is
+    // the type reader's to refuse, with the types it could have named.
     let schema = read(SCHEMA_DAY).replace(
         "id=\"month\" sce:type=\"uint8\"",
         "id=\"month\" sce:type=\"uint9\"",
     );
     let diagnostic = first_diagnostic(Some(&schema));
-    assert_eq!(diagnostic["code"], "xml/schema-validation", "{diagnostic}");
+    assert_eq!(
+        diagnostic["code"], "validation/invalid-attribute",
+        "{diagnostic}"
+    );
+    assert_eq!(diagnostic["actual"], "uint9", "{diagnostic}");
     assert!(
         diagnostic["location"]["file"]
             .as_str()
