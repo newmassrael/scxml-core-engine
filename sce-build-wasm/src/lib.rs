@@ -118,9 +118,15 @@ pub fn get_machine_name(scxml_content: &str) -> Result<String, JsValue> {
 /// The namespace the extension elements and attributes are written in.
 const SCE_NAMESPACE: &str = "http://sce.dev/ext";
 
+/// The namespace the SCXML elements are written in (`<invoke>` among them).
+const SCXML_NAMESPACE: &str = "http://www.w3.org/2005/07/scxml";
+
 /// The documents `scxml_content` names beside itself, by the path it writes: what
-/// an `<sce:import src>` imports and what `sce:candidates` lists. The built-in
-/// standard library (`sce:std/...`) is not beside anything and is left out.
+/// an `<sce:import src>` imports and what `sce:candidates` lists, and the child an
+/// `<invoke src>` names as a file, by the name the lowering reads it as
+/// (`<stem>.scxml`, `ScxmlInvokeInfo::file_child_name`). The built-in standard
+/// library (`sce:std/...`) is not beside anything and is left out, as is a `src`
+/// that names a Mesh peer (`#<name>`), which is no document.
 ///
 /// Read from the elements and attributes by namespace and not by the prefix an
 /// author chose, and on any document of the kind, a statechart or an algorithm,
@@ -135,6 +141,16 @@ fn documents_named_by_content(scxml_content: &str) -> Result<Vec<String>, String
         if tag.namespace() == Some(SCE_NAMESPACE) && tag.name() == "import" {
             if let Some(src) = node.attribute("src") {
                 named.push(src.to_string());
+            }
+        }
+        if tag.namespace() == Some(SCXML_NAMESPACE) && tag.name() == "invoke" {
+            let file = node
+                .attribute("src")
+                .filter(|src| !src.starts_with('#') && !src.starts_with("sce:std/"))
+                .map(sce_build::model::ScxmlInvokeInfo::file_child_name)
+                .filter(|name| !name.is_empty());
+            if let Some(name) = file {
+                named.push(format!("{name}.scxml"));
             }
         }
         if let Some(list) = node.attribute((SCE_NAMESPACE, "candidates")) {
@@ -157,7 +173,8 @@ pub fn documents_named_by(scxml_content: &str) -> Result<String, JsValue> {
 /// What the Interpreter runs for `scxml_content`: the document itself or, for
 /// a `datamodel="sce-static"` one, the ECMAScript document that means the
 /// same ([`sce_build::forge::static_js::lower_documents`]), with every
-/// document its hybrid `<invoke>`s may start. The first is the document asked
+/// document its `<invoke>`s may start: a child named by `src` and a candidate of a
+/// hybrid one. The first is the document asked
 /// for, under `<scxml_name>.scxml`; the rest stand beside it under the names the
 /// lowered document starts them by.
 ///
@@ -170,7 +187,8 @@ pub fn documents_named_by(scxml_content: &str) -> Result<String, JsValue> {
 /// returned as it is.
 ///
 /// `siblings` are the documents that stand beside it, by the name it reaches
-/// them under: an imported algorithm or schema, an include, a candidate. The
+/// them under: an imported algorithm or schema, an include, a child named by
+/// `src`, a candidate. The
 /// built-in standard library (`sce:std/...`) needs none. A name that is not here
 /// is a file that is not there.
 ///
@@ -294,6 +312,21 @@ mod tests {
     }
 
     #[test]
+    fn a_child_named_by_src_is_brought_beside_the_document() {
+        let parent = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
+  <datamodel><data id="n" sce:type="uint8" expr="0"/></datamodel>
+  <state id="s"><invoke type="scxml" id="c" src="a.scxml"/></state>
+</scxml>"#;
+        let siblings = BTreeMap::from([("a.scxml".to_string(), CANDIDATE.to_string())]);
+        let set = lowered_with_siblings(parent, "parent", &siblings).expect("lowers");
+        let names: Vec<_> = set.iter().map(|d| d.file_name.as_str()).collect();
+        assert_eq!(names, ["parent.scxml", "a.scxml"]);
+        assert!(set
+            .iter()
+            .all(|d| d.text.contains(r#"datamodel="ecmascript""#)));
+    }
+
+    #[test]
     fn a_candidate_that_is_not_among_the_siblings_is_a_file_that_is_not_there() {
         let refusal = lowered_with_siblings(HYBRID, "parent", &BTreeMap::new())
             .expect_err("a.scxml is not here");
@@ -311,6 +344,20 @@ mod tests {
         assert_eq!(
             super::documents_named_by_content(document).unwrap(),
             ["schema_day.scxml", "sub/algo.scxml", "a.scxml", "b.scxml"]
+        );
+        // A child named by `src` is named as the file the lowering reads it from,
+        // `<stem>.scxml` beside the document; a library child and a Mesh peer are
+        // not beside anything.
+        let invoking = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="sce-static" initial="s">
+  <state id="s">
+    <invoke type="scxml" id="c" src="sub/child.scxml"/>
+    <invoke type="scxml" id="l" src="sce:std/shared/record_list.scxml"/>
+    <invoke type="scxml" id="p" src="#peer"/>
+  </state>
+</scxml>"##;
+        assert_eq!(
+            super::documents_named_by_content(invoking).unwrap(),
+            ["child.scxml"]
         );
         // A document that names nothing beside itself asks for nothing.
         assert!(super::documents_named_by_content(COUNTER)
