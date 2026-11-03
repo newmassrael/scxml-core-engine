@@ -8,8 +8,8 @@
 //            → MeshEnvelope.data = {"force":["42"]} (JSON bytes)
 //            → encodeEnvelope (CBOR) → sendRaw → arena
 //            → control ring entry
-//   child:   drain → raiseExternal(event, data) → external queue
-//            → step() → _event.data populated
+//   child:   drain → inbox post (event, data) → step() applies it to the
+//            external queue → _event.data populated
 //            → transition cond="_event.data.force == 42" matches
 //            → motor_payload reaches 'verified' state
 //

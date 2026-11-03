@@ -168,10 +168,14 @@ int run_test() {
     });
 
     // Drive the mesh-rpc: idle → calling_gamer onentry fires the
-    // pool invoke. The invoke's dispatch runs on step() (the raise
-    // is enqueued externally here), the pool branch builds the
-    // substituted KeyExpr, and session.get lands on the harness.
-    client.raiseExternal(Client::Event::Query_gamer);
+    // pool invoke. The invoke's dispatch runs on step(), the pool
+    // branch builds the substituted KeyExpr, and session.get lands on
+    // the harness. The driver thread owns the engine, so this thread
+    // posts the event to its inbox (ARCHITECTURE.md "Engine
+    // Threading"); the driver applies it at its next macrostep boundary.
+    MESH_TEST_REQUIRE(
+        client.inbox().post(Client::InboxExternalEvent{Client::EventWithMetadata(Client::Event::Query_gamer)}),
+        "the client's inbox refused the event that starts the invoke");
 
     // Wait for the engine to reach State::Ok within the shared mesh
     // test timeout. The pool dispatch path's on_reply runs on a zenoh

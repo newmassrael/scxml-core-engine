@@ -53,9 +53,10 @@ int runReceiver() {
         motor.initialize();
 
         for (int drain = 0; drain < DRAIN_RETRIES; ++drain) {
-            // drain() enqueues events via raiseExternal but does NOT step
+            // drain() posts events to the engine's inbox but does NOT step
             // the engine (W3C SCXML 3.12 — transport layer does not drive
-            // macrostep timing). The application owns step() scheduling.
+            // macrostep timing). The application owns step() scheduling, and
+            // the step applies the posts at its macrostep boundary.
             std::size_t drained = channel.drain<SCE::Generated::motor::motorPolicy>(motor);
             if (drained > 0) {
                 motor.step();  // process the external queue we just filled

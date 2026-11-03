@@ -101,6 +101,33 @@ struct RecordingEngine {
                           std::move(meta.originType), std::move(meta.sendId)});
     }
 
+    // docs/adr/0083: `dispatchEnvelope` runs on transport threads, so it hands an
+    // event to the engine's inbox rather than raising it, and the owner raises it
+    // later with `raiseExternal`. The double's inbox does both at once, so what
+    // `events` records is what the owner would raise; `refusing` is an inbox that
+    // takes nothing (closed, or full).
+    struct InboxExternalEvent {
+        EventWithMetadata event;
+    };
+
+    bool refusing = false;
+
+    struct Inbox {
+        RecordingEngine *engine;
+
+        bool post(InboxExternalEvent posted) const {
+            if (engine->refusing) {
+                return false;
+            }
+            engine->raiseExternal(std::move(posted.event));
+            return true;
+        }
+    };
+
+    Inbox inbox() {
+        return Inbox{this};
+    }
+
     // SCE_MESH.md §mesh-9.6.2 wire 18. A real parent's generated hook raises
     // `done.invoke.<id>`, which is what eventually drives the invoking
     // state's onexit and releases `activeInvokes_`. The double records the
@@ -164,6 +191,19 @@ TEST(MeshDispatchTest, RpcRequestUnknownEventNameIsDropped) {
     auto env = makeRequest("service.request.unknown");
 
     EXPECT_FALSE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+    EXPECT_TRUE(engine.events.empty());
+}
+
+// docs/adr/0083: an inbound event reaches the engine through its inbox, and an
+// inbox that refuses it (the run ended, or it is full) leaves the envelope
+// undelivered, which the caller is told rather than left to assume.
+TEST(MeshDispatchTest, AnEventTheInboxRefusesIsReportedUndelivered) {
+    RecordingEngine engine;
+    engine.refusing = true;
+    auto env = makeRequest("service.request.compute_force");
+
+    EXPECT_FALSE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)))
+        << "an event the inbox refused was reported delivered";
     EXPECT_TRUE(engine.events.empty());
 }
 

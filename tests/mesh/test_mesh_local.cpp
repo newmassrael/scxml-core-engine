@@ -137,6 +137,21 @@ struct MockEngine {
 
     void raiseExternal(const EventWithMetadata &) {}
 
+    // docs/adr/0083: MeshDispatch posts an inbound event to the engine's inbox.
+    struct InboxExternalEvent {
+        EventWithMetadata event;
+    };
+
+    struct Inbox {
+        bool post(InboxExternalEvent) const {
+            return true;
+        }
+    };
+
+    Inbox inbox() {
+        return Inbox{};
+    }
+
     // TransportRouter's ctor installs the outbound dispatch hook on
     // every hosted session via this method; the mock just stores the
     // callback (ignored by this compile test).

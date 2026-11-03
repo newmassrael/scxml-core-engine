@@ -32,7 +32,7 @@
 // and autoforward routing.
 //
 // SCE_MESH.md §mesh-9.6.2 wire 16 (`ChildEvent`): parent-side receiver. Same
-// `raiseExternal` path as FireForget but additionally sets
+// inbox post as FireForget but additionally sets
 // `_event.origin = child_session_id`, `_event.invokeid = invoke_id`, and
 // `_event.origintype` to the W3C SCXML processor URI (§mesh-9.6.3 L1463-1466).
 // The parent engine's `<finalize>` matching (invoke_methods.jinja2)
@@ -221,15 +221,28 @@ void recordArrivalName(Meta &meta, const Event &event, const std::string &type) 
     }
 }
 
+/// Hand @p meta to @p engine as an external event through the engine's inbox
+/// (docs/adr/0083, ARCHITECTURE.md "Engine Threading"); whether the inbox took
+/// it. This helper runs on transport threads (a vsomeip application thread, a
+/// zenoh runtime thread, a TCP read thread) as well as on the engine's owner,
+/// and the inbox is the one part of an engine any thread may use. The owner
+/// applies the event with `raiseExternal` at its next macrostep boundary, before
+/// it consults its external queue, so it is the same event a direct raise would
+/// have queued.
+template <typename Engine> bool postExternal(Engine &engine, typename Engine::EventWithMetadata meta) {
+    return engine.inbox().post(typename Engine::InboxExternalEvent{std::move(meta)});
+}
+
 }  // namespace detail
 
 /// Dispatch a MeshEnvelope to a state machine engine based on pattern kind.
 ///
 /// Inbound patterns (FireForget, RpcRequest, RpcReply, EventNotify,
-/// FieldNotify): resolve event name via Policy::getEventFromName and enqueue
-/// via engine.raiseExternal(). Outbound-only patterns return false (echo-back
-/// guard). Returns false for an unresolved event name to signal the caller
-/// the envelope could not be delivered.
+/// FieldNotify): resolve event name via Policy::getEventFromName and post the
+/// event to the engine's inbox (`detail::postExternal`). Outbound-only patterns
+/// return false (echo-back guard). Returns false for an unresolved event name,
+/// and for an event the inbox refused, to signal the caller the envelope could
+/// not be delivered.
 ///
 /// SCE_MESH.md §mesh-16.5 `ParallelRegionDone` (wire 21): bypasses `raiseExternal`
 /// and routes to `engine.onParallelRegionDone(env)` when present. Machines
@@ -328,8 +341,7 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
         if (env.invoke_id) {
             meta.invokeId = SCE::uuid::to_string(*env.invoke_id);
         }
-        engine.raiseExternal(std::move(meta));
-        return true;
+        return detail::postExternal(engine, std::move(meta));
     }
     // SCE_MESH.md §mesh-9.6.2 wire 16 (ChildEvent): parent receives an event
     // emitted by a remote child session via `<send target="#_parent">` or
@@ -386,8 +398,7 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
         if (env.invoke_id) {
             meta.invokeId = SCE::uuid::to_string(*env.invoke_id);
         }
-        engine.raiseExternal(std::move(meta));
-        return true;
+        return detail::postExternal(engine, std::move(meta));
     }
     // SCE_MESH.md §mesh-9.6.2 wire 20 (InvokeError): parent receives a child-
     // instantiation or transport-unavailable failure and translates it into
@@ -409,8 +420,7 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
         if (env.invoke_id) {
             meta.invokeId = SCE::uuid::to_string(*env.invoke_id);
         }
-        engine.raiseExternal(std::move(meta));
-        return true;
+        return detail::postExternal(engine, std::move(meta));
     }
     // Outbound-only patterns: these are sent by the engine, not received.
     // If they arrive here it means a misconfigured transport is echoing

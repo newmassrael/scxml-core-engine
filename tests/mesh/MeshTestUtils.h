@@ -120,6 +120,27 @@ struct TestSenderEngine {
         received_.push({meta.event, meta.data});
     }
 
+    // docs/adr/0083: what a transport thread delivers reaches the engine through
+    // its inbox (`MeshDispatch::dispatchEnvelope`). The double records a post as
+    // the owner's raise of it would be recorded; `received_` is safe from any
+    // thread, as an inbox is.
+    struct InboxExternalEvent {
+        EventWithMetadata event;
+    };
+
+    struct Inbox {
+        TestSenderEngine *engine;
+
+        bool post(InboxExternalEvent posted) const {
+            engine->raiseExternal(posted.event);
+            return true;
+        }
+    };
+
+    Inbox inbox() {
+        return Inbox{this};
+    }
+
     using MeshSendCb = std::function<bool(const std::string &, const std::string &, const std::string &,
                                           const std::string &, const std::string &)>;
     MeshSendCb mesh_send_cb_;

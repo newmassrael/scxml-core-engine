@@ -1367,12 +1367,17 @@
         if (subject == "{{ invoke_info.invoke_id }}") {
             pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
             std::string donedata(env.data.begin(), env.data.end());
-            engine.raiseExternal(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
-                typename Engine::Event, typename Engine::EventWithMetadata>(
-                {% if invoke_info.use_specific_event %}Engine::Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Engine::Event::Done_invoke{% endif %},
-                "{{ invoke_info.invoke_id }}",
-                donedata
-            ));
+            // Posted, not raised: wire-18 arrives on a transport thread as often
+            // as on the parent's owner, and the inbox is the one part of the
+            // engine any thread may use (docs/adr/0083). The owner raises it at
+            // its next macrostep boundary.
+            (void)engine.inbox().post(typename Engine::InboxExternalEvent{
+                ::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
+                    typename Engine::Event, typename Engine::EventWithMetadata>(
+                    {% if invoke_info.use_specific_event %}Engine::Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Engine::Event::Done_invoke{% endif %},
+                    "{{ invoke_info.invoke_id }}",
+                    donedata
+                )});
             // W3C SCXML 6.5 + SCE_MESH.md §9.6.3: do NOT erase activeInvokes_
             // here. The entry must survive so any ChildEvent (wire-16) that
             // reached the external queue earlier in the same drain as this
@@ -1401,9 +1406,9 @@
     // snapshot its `invoke_id` for the post-lock raise loop. Each
     // snapshotted id then raises a single
     // `error.communication{INVOKE_CHILD_LOST, invoke_id, target: peer}`
-    // event into THIS session's external queue via `engine.raiseExternal`
-    // — `EventQueueManager::raise` is mutex-protected so the
-    // callback-thread origin is safe (W3C SCXML 5.10 unhandled events
+    // event into THIS session's inbox, which its owner applies to the
+    // external queue at its next macrostep boundary — the inbox is what
+    // makes the callback-thread origin safe (W3C SCXML 5.10 unhandled events
     // silently drop, so sessions whose state has already passed the
     // invoking state see a benign no-op). `pendingDoneInvoke_*_` flags
     // are intentionally untouched: INVOKE_CHILD_LOST is the spec-named
@@ -1458,7 +1463,9 @@
             typename Engine::EventWithMetadata meta;
             meta.event = *event_opt;
             meta.data = std::string(json_bytes.begin(), json_bytes.end());
-            engine.raiseExternal(std::move(meta));
+            // Posted, not raised: the peer-down handler that calls this runs on
+            // the transport's thread (docs/adr/0083).
+            (void)engine.inbox().post(typename Engine::InboxExternalEvent{std::move(meta)});
             AOT_DEBUG("AOT failScxmlRemoteInvokesForPeer: raised "
                       "error.communication INVOKE_CHILD_LOST for invoke='{}' target='{}'",
                       iid, peer);
