@@ -3420,6 +3420,28 @@ enum Commands {
         /// The codec document to rewrite.
         scxml: String,
     },
+    /// Print a document with every bound it writes as an attribute moved into
+    /// the type of its declaration (docs/adr/0086, section 1.3).
+    ///
+    /// `sce:max-size` and `sce:max-count` on an event schema's field,
+    /// `sce:capacity` on a `sce-static` statechart's variable, and an
+    /// algorithm's `capacity=` on a local and `returns-max-size=` on its return
+    /// are synonyms of the bracket on the outermost type they bound, reported by
+    /// `check` and `generate` as `validation/bound-attribute-superseded`; this is
+    /// their rewrite: each type is written with that bound in its bracket
+    /// (`[N]`, or `[name=N]` where a `sce:limit` named it), and the attribute and
+    /// its `sce:limit` are removed. Every other byte is the author's, so a
+    /// document that writes no such bound is printed as it is, and one rewritten
+    /// generates the bytes it did.
+    ///
+    /// A declaration that writes its bound both in its type and as an attribute
+    /// is refused, as `check` refuses it, and so is a document that holds a
+    /// directive the preprocessor expands: run `expand` and rewrite what it
+    /// prints. The document goes to stdout as raw bytes, as `expand` does.
+    BoundSpelling {
+        /// The document to rewrite.
+        scxml: String,
+    },
     /// Write the file of a Rust deployment (docs/adr/0077 §7): a storage
     /// profile that holds each field of each codec of a set at the capacity a
     /// deploy input's `codecs:` block gives it, or at its bound.
@@ -4272,6 +4294,7 @@ fn main() {
             cmd_codec_roles(&scxml, &include_dir, error_format)
         }
         Commands::CodecFormat { scxml } => cmd_codec_format(&scxml, error_format),
+        Commands::BoundSpelling { scxml } => cmd_bound_spelling(&scxml, error_format),
         Commands::Deployment {
             scxml,
             deploy,
@@ -4394,6 +4417,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::Project { .. }
         | Commands::CodecRoles { .. }
         | Commands::CodecFormat { .. }
+        | Commands::BoundSpelling { .. }
         | Commands::Lower { .. }
         | Commands::LowerAlgorithm { .. }
         | Commands::Verify { .. }
@@ -5855,6 +5879,8 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 }
                 Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
             };
+            // Read, and reported: fatal only under `--lint`.
+            report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
 
             // `--strict-unresolved` reaches the forge pipeline too. It did
             // not until 2026-09-18: a forge document carrying
@@ -6026,6 +6052,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             // the lints for the same reason they are: `generate` runs it
             // at the matching point in its own pass.
             report_refused_expressions(&model, scxml_path, lint, error_format);
+            report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
 
             // SCE Protocol-Synthesis RFC §synth-5-O — not a lint: an IR
             // node reaching codegen without a source coordinate emits a
@@ -6711,6 +6738,8 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 }
                 Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
             };
+            // Read, and reported: fatal only under `--lint`, as `check` does.
+            report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
 
             // `--strict-unresolved` on the GENERATE route. The check also
             // sits in `cmd_check`'s forge arm; both are needed and neither
@@ -7223,6 +7252,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     // Always reported, fatal only under `--lint` — see the `check` call
     // site for why the flag is the one that decides.
     report_refused_expressions(&model, scxml_path, lint, error_format);
+    report_superseded_bounds(&scxml_content, scxml_path, lint, error_format);
 
     // SCE Protocol-Synthesis RFC §synth-5-O — see the `check` call site.
     // Runs before `resolve_source_path` so a `None` cannot leak into the
@@ -13534,6 +13564,51 @@ fn cmd_codec_format(scxml_path: &str, error_format: ErrorFormat) {
                 "codec-format rewrites a CBOR or content-line codec, and {scxml_path} is not one"
             ),
         }),
+    }
+}
+
+// ── Subcommand: bound-spelling ─────────────────────────────────
+//
+// A document with every bound it writes as an attribute moved into the type of
+// its declaration (docs/adr/0086, section 1.3): the rewrite
+// `validation/bound-attribute-superseded` names, applied to the text so that
+// the author replaces the document with what is printed. Reads the document as
+// written, without imports or preprocessing, since the rewrite is of its own
+// text.
+
+fn cmd_bound_spelling(scxml_path: &str, error_format: ErrorFormat) {
+    let content = read_named_document(scxml_path).unwrap_or_else(|e| {
+        cli_exit(CliError::ReadInput {
+            path: scxml_path.to_string(),
+            source: e,
+        })
+    });
+    let rewritten = sce_build::forge::bound_spelling::rewritten_document(&content, scxml_path)
+        .unwrap_or_else(|err| error_format.emit_forge_and_exit(&err));
+    out_bytes(rewritten.as_bytes());
+}
+
+/// Report every bound `content` writes as an attribute
+/// (`validation/bound-attribute-superseded`, docs/adr/0086 section 1.3), and let
+/// `--lint` decide whether they end the run.
+///
+/// The attribute is read as the bracket it is a synonym of, so a document that
+/// writes one is built; the record tells its author the rewrite, which
+/// `sce-codegen bound-spelling` prints. `--lint` is the flag that separates the
+/// author who has no reason to carry one, as for a refused expression
+/// ([`report_refused_expressions`]). Called by `check` and `generate` at the
+/// same point of each pipeline, once the document has parsed, so a document
+/// the parser refuses reports its refusal first.
+fn report_superseded_bounds(content: &str, document: &str, lint: bool, error_format: ErrorFormat) {
+    let superseded = sce_build::forge::bound_spelling::superseded(content, document);
+    if superseded.is_empty() {
+        return;
+    }
+    for record in &superseded {
+        error_format.report(record, "");
+    }
+    if lint {
+        std::process::exit(superseded[0].error.exit_code());
     }
 }
 
