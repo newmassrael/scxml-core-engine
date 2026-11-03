@@ -764,9 +764,18 @@ GATES: dict[str, dict] = {
             # generates and states the table of.
             "integration_resources/flat_lifecycle/**",
             "integration_resources/nested_lifecycle/**",
-            # The conformance documents the same test holds to declaring no
-            # transition function, which the W3C CMake route relies on.
+            # The conformance documents, which suites here read by path
+            # (`w3c_name_system_variable`, `codegen_depfile_content`,
+            # `cli_lint_parity`, `a_regeneration_removes_what_it_no_longer_writes`)
+            # and parse as a corpus.
             "resources/**",
+            # The two CMake routes that generate at build time and the one module
+            # they ask the generator's plan through, which
+            # `the_conformance_cmake_route_declares_what_the_generator_plans`
+            # compiles in and holds to declaring what the generator plans.
+            "cmake/SCECodegenPlan.cmake",
+            "cmake/SCEStaticW3CTest.cmake",
+            "cmake/SCEStaticIntegrationFixture.cmake",
             # The standard library, whose statecharts that save are held to
             # their pinned shapes (`a_standard_statechart_that_saves_keeps_its_shape`,
             # docs/adr/0045): an edit of one alone has to start the suite.

@@ -130,10 +130,16 @@ on:
       # `sce-build/**`, and an edit to one changes what that test asserts.
       - 'integration_resources/flat_lifecycle/**'
       - 'integration_resources/nested_lifecycle/**'
-      # The conformance documents the same test holds to declaring no
-      # transition function, which the hand-kept outputs of the W3C CMake
-      # route rely on.
+      # The conformance documents, which suites here read by path and parse
+      # as a corpus: an edit to one changes what they assert.
       - 'resources/**'
+      # The two CMake routes that generate at build time and the module they
+      # ask the generator's plan through, which
+      # `the_conformance_cmake_route_declares_what_the_generator_plans`
+      # compiles in and holds to declaring what the generator plans.
+      - 'cmake/SCECodegenPlan.cmake'
+      - 'cmake/SCEStaticW3CTest.cmake'
+      - 'cmake/SCEStaticIntegrationFixture.cmake'
       # The standard library: its statecharts that save are held to their
       # pinned shapes (docs/adr/0045), so an edit of one alone starts the suite.
       - 'stdlib/**'
@@ -227,10 +233,16 @@ on:
       # `sce-build/**`, and an edit to one changes what that test asserts.
       - 'integration_resources/flat_lifecycle/**'
       - 'integration_resources/nested_lifecycle/**'
-      # The conformance documents the same test holds to declaring no
-      # transition function, which the hand-kept outputs of the W3C CMake
-      # route rely on.
+      # The conformance documents, which suites here read by path and parse
+      # as a corpus: an edit to one changes what they assert.
       - 'resources/**'
+      # The two CMake routes that generate at build time and the module they
+      # ask the generator's plan through, which
+      # `the_conformance_cmake_route_declares_what_the_generator_plans`
+      # compiles in and holds to declaring what the generator plans.
+      - 'cmake/SCECodegenPlan.cmake'
+      - 'cmake/SCEStaticW3CTest.cmake'
+      - 'cmake/SCEStaticIntegrationFixture.cmake'
       # The standard library: its statecharts that save are held to their
       # pinned shapes (docs/adr/0045), so an edit of one alone starts the suite.
       - 'stdlib/**'

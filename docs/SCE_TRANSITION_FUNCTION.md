@@ -279,11 +279,14 @@ and a nested lifecycle that reaches every selection rule) in all seven backends,
   among them; an in-line child's refusal on the row its author wrote; and the library entry points
   refusing, by name, the function or the table they have no hash for, a child's included.
 
-`sce-build/tests/no_conformance_document_declares_the_transition_function.rs` holds the CMake route
-of the conformance suite to the documents it can reach: none declares the function, so the outputs
-`cmake/SCEStaticW3CTest.cmake` lists by hand are every file a C++ or C11 fixture's generation writes.
-It is a target of its own so that it runs on every push: the document that would break the route is
-one an author adds under `resources/`, which the suite's own lane does not filter on.
+The CMake route of the conformance suite builds a document that declares the function as it builds
+any other. `cmake/SCEStaticW3CTest.cmake` names none of the files a C++ or C11 fixture's generation
+writes: it asks `sce-codegen --plan generate` for each generation, through the one helper the
+integration route asks it through (`cmake/SCECodegenPlan.cmake`), and declares the answer, so
+`<stem>_transition_function.h` is an output of the command that writes it the day a conformance
+document declares the function. `sce-build/tests/the_conformance_cmake_route_declares_what_the_generator_plans.rs`
+holds that shape: every command the route declares runs the generator with its OUTPUT, DEPFILE and
+byproducts taken from a plan, and the route spells no fragment of a generated file's name.
 
 The two documents are integration stems, so every channel holds its engine to its function the same
 way, in its own suite: the Rust, Go, Kotlin, Python, C11 and Swift drivers, and the C++ AOT engine and the
