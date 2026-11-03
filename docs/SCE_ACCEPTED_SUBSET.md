@@ -4752,23 +4752,27 @@ two compared, is `expression/unsupported-construct`; it is read through its
 fields, elements and length, and tested against `null` where it may be absent.
 
 The Rust backend reads a composed payload (docs/adr/0086, sections 4 and 6): its
-payload struct holds each field in the machine's own type (`Vec<T>`, `String`,
-`Vec<u8>`, `Option<T>`, the machine's record, each record it names declared
-once), the lift reads each field by one runtime call per constructor and refuses
-the delivery whole, naming the path, at the first value outside its type, and
-`len`, an index, a field of a record element and a `<foreach>` over a list the
-payload or an enclosing loop's item holds lower at any depth. A `<foreach>` over
-a list reached through an index is refused by name on Rust.
+payload struct holds each field in the machine's own type (`Vec<T>`,
+`SceString<N>`, `SceBytes<N>`, `Option<T>`, the machine's record, each record it
+names declared once), the lift reads each field by one runtime call per
+constructor and refuses the delivery whole, naming the path, at the first value
+outside its type, and `len`, an index, a field of a record element and a
+`<foreach>` over a list the payload or an enclosing loop's item holds lower at
+any depth. A list a place holds is taken whole into a list variable whose type
+it fits, each text copied into the larger bound of the place. A `<foreach>` over
+a list reached through an index, a whole copy from one, and a byte string copied
+into a larger bound are refused by name on Rust, and so is every composed value
+of a machine built without an allocator (`--no-std`).
 
 What no backend lowers yet is refused by name where the machine is generated, in
 the one gate every route asks first (`check` with or without a backend,
 `generate`), as `generate/unsupported-feature`, naming the field, the type and
 the position: a variable whose type is a composition no variable lowers (a list
 of texts, an optional list), a variable that names a record holding a
-composition at any depth, a `<send>` or `<raise>` of the event of a schema whose
-field is composed, and a list taken whole into a list variable. A read of
-`_event.data` on a transition taken on such an event is refused by name by each
-backend that does not lower it, naming the backend, where that backend is
+composition at any depth, and a `<send>` or `<raise>` of the event of a schema
+whose field is composed. A read of `_event.data` on a transition taken on such an
+event, and a list taken whole into a list variable, are refused by name by each
+backend that does not lower them, naming the backend, where that backend is
 generated. A host-run request or result and an algorithm that name such a
 record are refused where they are read. The paragraphs below name the attribute
 spelling where they were written with it; the bracket states the same bound.
