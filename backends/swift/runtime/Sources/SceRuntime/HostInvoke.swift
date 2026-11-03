@@ -212,7 +212,17 @@ struct HostInvokeBook {
 extension Engine {
     /// Registers what runs every `<invoke type="<processorType>">` this machine executes
     /// (§scxml-6.4.1). Registering twice for one type replaces the handler.
-    public func registerInvoker(_ processorType: String, handler: @escaping HostInvokeHandler) {
+    ///
+    /// - Throws: `HostRegistrationError.reservedType` when `processorType` is under
+    ///   `reservedProcessorTypePrefix`: a host that registered a handler under it would replace the
+    ///   invoker of SCE's own processor with nothing on the wire saying so. The Mesh request has
+    ///   its own door, `registerMeshRpcInvoker`.
+    public func registerInvoker(
+        _ processorType: String, handler: @escaping HostInvokeHandler
+    ) throws(HostRegistrationError) {
+        if isReservedProcessorType(processorType) {
+            throw .reservedType(call: "registerInvoker", type: processorType)
+        }
         hostInvokes.handlers[processorType] = handler
     }
 

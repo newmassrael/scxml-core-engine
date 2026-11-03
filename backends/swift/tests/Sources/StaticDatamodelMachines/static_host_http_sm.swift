@@ -874,8 +874,8 @@ public protocol StaticHostHttpSceHostHttpFetchInvoker: AnyObject {
 }
 
 /// Registers `invoker` as the handler for `type="sce-host-http-fetch"`.
-public func registerStaticHostHttpSceHostHttpFetchInvoker(on engine: Engine<StaticHostHttpPolicy>, invoker: StaticHostHttpSceHostHttpFetchInvoker) {
-    engine.registerInvoker("sce-host-http-fetch") { event in
+public func registerStaticHostHttpSceHostHttpFetchInvoker(on engine: Engine<StaticHostHttpPolicy>, invoker: StaticHostHttpSceHostHttpFetchInvoker) throws(HostRegistrationError) {
+    try engine.registerInvoker("sce-host-http-fetch") { event in
         switch event {
         case .start(let start):
             if start.invokeID.utf8.elementsEqual("fetch".utf8) {

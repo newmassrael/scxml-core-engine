@@ -280,7 +280,12 @@ private func replayHost<Policy: StatePolicy>(
     let rig = HostRig(host: ReferenceHost(clock: clock, transport: transport), clock: clock, transport: transport)
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    serve(rig.host, on: engine)
+    do {
+        try serve(rig.host, on: engine)
+    } catch {
+        fail("the reference host could not be registered: \(error)", sourceLocation)
+        return
+    }
     engine.initialize()
     // `tick` and not `step`: it takes what has come due in the scheduler, which is where
     // the end of an invocation's time waits.

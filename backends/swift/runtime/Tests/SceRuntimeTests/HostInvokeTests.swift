@@ -49,7 +49,11 @@ private func makeHostEngine() -> (Engine<ScriptedPolicy>, RecordingInvoker) {
         ]
     }
     let invoker = RecordingInvoker()
-    engine.registerInvoker("sce-host-test", handler: invoker.handle)
+    do {
+        try engine.registerInvoker("sce-host-test", handler: invoker.handle)
+    } catch {
+        Issue.record("the test invoker was refused: \(error)")
+    }
     engine.initialize()
     return (engine, invoker)
 }
@@ -304,4 +308,34 @@ private func deadlineRequest(_ written: String) -> HostInvokeRequest {
     #expect(request.requestBool("flag"))
     #expect(request.requestString("name") == "key")
     #expect(request.requestBytes("raw") == [0x41, 0xFF])
+}
+
+@Test func theTypesAHostMayNotRegisterAnInvokerForAreTheOnesTheSharedTableReserves() throws {
+    let url = repositoryRoot().appendingPathComponent(
+        "sce-build/tests/fixtures/host_processor/reserved_type_cases.json")
+    let data = try Data(contentsOf: url)
+    let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let cases = try #require(object["cases"] as? [[String: Any]])
+    #expect(!cases.isEmpty)
+    let (engine, invoker) = makeHostEngine()
+    for entry in cases {
+        let type = try #require(entry["type"] as? String)
+        let reserved = try #require(entry["reserved"] as? Bool)
+        if reserved {
+            #expect(
+                throws: HostRegistrationError.reservedType(call: "registerInvoker", type: type)
+            ) { try engine.registerInvoker(type, handler: invoker.handle) }
+            #expect(!engine.hasInvoker(type), "\(type.debugDescription) was registered")
+        } else {
+            try engine.registerInvoker(type, handler: invoker.handle)
+            #expect(engine.hasInvoker(type), "\(type.debugDescription) was refused")
+        }
+    }
+}
+
+@Test func theMeshRequestHasItsOwnDoorAndNoGeneralRegistrationReachesIt() {
+    let (engine, invoker) = makeHostEngine()
+    #expect(!engine.hasInvoker(meshRpcInvokeType))
+    engine.registerMeshRpcInvoker(invoker.handle)
+    #expect(engine.hasInvoker(meshRpcInvokeType))
 }

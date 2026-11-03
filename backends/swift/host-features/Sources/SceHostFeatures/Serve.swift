@@ -8,9 +8,11 @@ import SceRuntime
 /// A start is answered with its completion (a failure is a completion whose error is a
 /// code) or its refusal, or not at all when the host holds it. The cancel the engine
 /// delivers when a state exits or a deadline passes reaches the host too.
-public func serve<Policy: StatePolicy>(_ host: ReferenceHost, on engine: Engine<Policy>) {
+public func serve<Policy: StatePolicy>(
+    _ host: ReferenceHost, on engine: Engine<Policy>
+) throws(HostRegistrationError) {
     for operation in ReferenceHost.types {
-        engine.registerInvoker(operation) { event in
+        try engine.registerInvoker(operation) { event in
             switch event {
             case .cancel(let cancel):
                 host.cancel(cancel.invokeID)

@@ -1719,8 +1719,8 @@ public protocol StaticHostKvSceHostKvDeleteInvoker: AnyObject {
 }
 
 /// Registers `invoker` as the handler for `type="sce-host-kv-delete"`.
-public func registerStaticHostKvSceHostKvDeleteInvoker(on engine: Engine<StaticHostKvPolicy>, invoker: StaticHostKvSceHostKvDeleteInvoker) {
-    engine.registerInvoker("sce-host-kv-delete") { event in
+public func registerStaticHostKvSceHostKvDeleteInvoker(on engine: Engine<StaticHostKvPolicy>, invoker: StaticHostKvSceHostKvDeleteInvoker) throws(HostRegistrationError) {
+    try engine.registerInvoker("sce-host-kv-delete") { event in
         switch event {
         case .start(let start):
             if start.invokeID.utf8.elementsEqual("del".utf8) {
@@ -1764,8 +1764,8 @@ public protocol StaticHostKvSceHostKvGetInvoker: AnyObject {
 }
 
 /// Registers `invoker` as the handler for `type="sce-host-kv-get"`.
-public func registerStaticHostKvSceHostKvGetInvoker(on engine: Engine<StaticHostKvPolicy>, invoker: StaticHostKvSceHostKvGetInvoker) {
-    engine.registerInvoker("sce-host-kv-get") { event in
+public func registerStaticHostKvSceHostKvGetInvoker(on engine: Engine<StaticHostKvPolicy>, invoker: StaticHostKvSceHostKvGetInvoker) throws(HostRegistrationError) {
+    try engine.registerInvoker("sce-host-kv-get") { event in
         switch event {
         case .start(let start):
             if start.invokeID.utf8.elementsEqual("get".utf8) {
@@ -1809,8 +1809,8 @@ public protocol StaticHostKvSceHostKvNextKeyInvoker: AnyObject {
 }
 
 /// Registers `invoker` as the handler for `type="sce-host-kv-next-key"`.
-public func registerStaticHostKvSceHostKvNextKeyInvoker(on engine: Engine<StaticHostKvPolicy>, invoker: StaticHostKvSceHostKvNextKeyInvoker) {
-    engine.registerInvoker("sce-host-kv-next-key") { event in
+public func registerStaticHostKvSceHostKvNextKeyInvoker(on engine: Engine<StaticHostKvPolicy>, invoker: StaticHostKvSceHostKvNextKeyInvoker) throws(HostRegistrationError) {
+    try engine.registerInvoker("sce-host-kv-next-key") { event in
         switch event {
         case .start(let start):
             if start.invokeID.utf8.elementsEqual("walk".utf8) {
@@ -1854,8 +1854,8 @@ public protocol StaticHostKvSceHostKvPutInvoker: AnyObject {
 }
 
 /// Registers `invoker` as the handler for `type="sce-host-kv-put"`.
-public func registerStaticHostKvSceHostKvPutInvoker(on engine: Engine<StaticHostKvPolicy>, invoker: StaticHostKvSceHostKvPutInvoker) {
-    engine.registerInvoker("sce-host-kv-put") { event in
+public func registerStaticHostKvSceHostKvPutInvoker(on engine: Engine<StaticHostKvPolicy>, invoker: StaticHostKvSceHostKvPutInvoker) throws(HostRegistrationError) {
+    try engine.registerInvoker("sce-host-kv-put") { event in
         switch event {
         case .start(let start):
             if start.invokeID.utf8.elementsEqual("put".utf8) {

@@ -737,8 +737,8 @@ pub fn render_swift(model: &SCXMLModel, machine_name: &str) -> String {
              /// Accepted Subset \u{a7}2.12). Register it with `register{interface}`.\n\
              public protocol {interface}: AnyObject {{\n{methods}}}\n\n\
              /// Registers `invoker` as the handler for `type=\"{invoke_type}\"`.{fallback_doc}\n\
-             public func register{interface}(on engine: {engine}, invoker: {interface}{fallback_param}) {{\n\
-             \x20   engine.registerInvoker(\"{invoke_type}\") {{ event in\n\
+             public func register{interface}(on engine: {engine}, invoker: {interface}{fallback_param}) throws(HostRegistrationError) {{\n\
+             \x20   try engine.registerInvoker(\"{invoke_type}\") {{ event in\n\
              \x20       switch event {{\n\
              \x20       case .start(let start):\n{start_cases}            return {rest}\n\
              \x20       case .cancel(let cancel):\n{cancel_cases}            return {rest}\n\

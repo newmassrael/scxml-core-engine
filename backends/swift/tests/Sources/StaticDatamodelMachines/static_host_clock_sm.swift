@@ -936,8 +936,8 @@ public protocol StaticHostClockSceHostClockNowInvoker: AnyObject {
 }
 
 /// Registers `invoker` as the handler for `type="sce-host-clock-now"`.
-public func registerStaticHostClockSceHostClockNowInvoker(on engine: Engine<StaticHostClockPolicy>, invoker: StaticHostClockSceHostClockNowInvoker) {
-    engine.registerInvoker("sce-host-clock-now") { event in
+public func registerStaticHostClockSceHostClockNowInvoker(on engine: Engine<StaticHostClockPolicy>, invoker: StaticHostClockSceHostClockNowInvoker) throws(HostRegistrationError) {
+    try engine.registerInvoker("sce-host-clock-now") { event in
         switch event {
         case .start(let start):
             if start.invokeID.utf8.elementsEqual("now".utf8) {
@@ -980,8 +980,8 @@ public protocol StaticHostClockSceHostClockZoneInvoker: AnyObject {
 }
 
 /// Registers `invoker` as the handler for `type="sce-host-clock-zone"`.
-public func registerStaticHostClockSceHostClockZoneInvoker(on engine: Engine<StaticHostClockPolicy>, invoker: StaticHostClockSceHostClockZoneInvoker) {
-    engine.registerInvoker("sce-host-clock-zone") { event in
+public func registerStaticHostClockSceHostClockZoneInvoker(on engine: Engine<StaticHostClockPolicy>, invoker: StaticHostClockSceHostClockZoneInvoker) throws(HostRegistrationError) {
+    try engine.registerInvoker("sce-host-clock-zone") { event in
         switch event {
         case .start(let start):
             if start.invokeID.utf8.elementsEqual("zone".utf8) {

@@ -1787,8 +1787,8 @@ public protocol StaticHostNotifySceHostNotifyCancelInvoker: AnyObject {
 }
 
 /// Registers `invoker` as the handler for `type="sce-host-notify-cancel"`.
-public func registerStaticHostNotifySceHostNotifyCancelInvoker(on engine: Engine<StaticHostNotifyPolicy>, invoker: StaticHostNotifySceHostNotifyCancelInvoker) {
-    engine.registerInvoker("sce-host-notify-cancel") { event in
+public func registerStaticHostNotifySceHostNotifyCancelInvoker(on engine: Engine<StaticHostNotifyPolicy>, invoker: StaticHostNotifySceHostNotifyCancelInvoker) throws(HostRegistrationError) {
+    try engine.registerInvoker("sce-host-notify-cancel") { event in
         switch event {
         case .start(let start):
             if start.invokeID.utf8.elementsEqual("cancel".utf8) {
@@ -1832,8 +1832,8 @@ public protocol StaticHostNotifySceHostNotifyPermissionInvoker: AnyObject {
 }
 
 /// Registers `invoker` as the handler for `type="sce-host-notify-permission"`.
-public func registerStaticHostNotifySceHostNotifyPermissionInvoker(on engine: Engine<StaticHostNotifyPolicy>, invoker: StaticHostNotifySceHostNotifyPermissionInvoker) {
-    engine.registerInvoker("sce-host-notify-permission") { event in
+public func registerStaticHostNotifySceHostNotifyPermissionInvoker(on engine: Engine<StaticHostNotifyPolicy>, invoker: StaticHostNotifySceHostNotifyPermissionInvoker) throws(HostRegistrationError) {
+    try engine.registerInvoker("sce-host-notify-permission") { event in
         switch event {
         case .start(let start):
             if start.invokeID.utf8.elementsEqual("ask".utf8) {
@@ -1885,8 +1885,8 @@ public protocol StaticHostNotifySceHostNotifyPostInvoker: AnyObject {
 }
 
 /// Registers `invoker` as the handler for `type="sce-host-notify-post"`.
-public func registerStaticHostNotifySceHostNotifyPostInvoker(on engine: Engine<StaticHostNotifyPolicy>, invoker: StaticHostNotifySceHostNotifyPostInvoker) {
-    engine.registerInvoker("sce-host-notify-post") { event in
+public func registerStaticHostNotifySceHostNotifyPostInvoker(on engine: Engine<StaticHostNotifyPolicy>, invoker: StaticHostNotifySceHostNotifyPostInvoker) throws(HostRegistrationError) {
+    try engine.registerInvoker("sce-host-notify-post") { event in
         switch event {
         case .start(let start):
             if start.invokeID.utf8.elementsEqual("far".utf8) {
@@ -1949,8 +1949,8 @@ public protocol StaticHostNotifySceHostNotifyRequestPermissionInvoker: AnyObject
 }
 
 /// Registers `invoker` as the handler for `type="sce-host-notify-request-permission"`.
-public func registerStaticHostNotifySceHostNotifyRequestPermissionInvoker(on engine: Engine<StaticHostNotifyPolicy>, invoker: StaticHostNotifySceHostNotifyRequestPermissionInvoker) {
-    engine.registerInvoker("sce-host-notify-request-permission") { event in
+public func registerStaticHostNotifySceHostNotifyRequestPermissionInvoker(on engine: Engine<StaticHostNotifyPolicy>, invoker: StaticHostNotifySceHostNotifyRequestPermissionInvoker) throws(HostRegistrationError) {
+    try engine.registerInvoker("sce-host-notify-request-permission") { event in
         switch event {
         case .start(let start):
             if start.invokeID.utf8.elementsEqual("prompt".utf8) {
