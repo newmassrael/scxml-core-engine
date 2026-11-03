@@ -3278,13 +3278,19 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         if(_MFG_LABEL)
             set(_LABEL "${_MFG_LABEL}")
         endif()
+        # The deploy only when given: an empty value after a keyword is read
+        # differently across CMake versions (CMP0174).
+        set(_DEPLOY "")
+        if(_MFG_DEPLOY)
+            set(_DEPLOY DEPLOY "${_MFG_DEPLOY}")
+        endif()
         set(_HEADERS "")
         foreach(_MACHINE ${_MFG_MACHINES})
             sce_codegen_generation(_MFG
                 DOCUMENT "${_SOURCE_DIR}/${_MACHINE}.scxml"
                 OUTPUT_DIR "${_MFG_OUTPUT_DIR}"
                 LANGUAGE cpp
-                DEPLOY "${_MFG_DEPLOY}"
+                ${_DEPLOY}
                 ARGS ${_MFG_ARGS}
                 COMMENT "${_LABEL}: Generating ${_MACHINE}")
             list(APPEND _HEADERS ${_MFG_HEADERS})
