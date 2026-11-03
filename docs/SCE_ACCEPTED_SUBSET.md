@@ -4733,10 +4733,14 @@ local hold their value, so a text or byte string in either states its bound
 view of its argument, of any bound, and holds the argument's, so its outermost
 type writes none; every bound inside it is stated. An event schema's field holds
 any type of the grammar, a list, a record and an optional over either included,
-and its schema unit declares it. A position that does not lower a composition yet
-(a list of texts in a variable, an optional list, a statechart, an algorithm or a
-host that reads a schema whose field is composed) refuses it by name where it
-reads it, as `generate/unsupported-feature`. The paragraphs
+and its schema unit declares it. A statechart imports such a schema and takes its
+event on every target, holding the schema whole. A position that does not lower a
+composition yet refuses it by name where it reads it, as
+`generate/unsupported-feature`, naming the field, the type and the position: a list
+of texts in a variable, an optional list, a read of `_event.data` on a transition
+taken on the event of a schema whose field is composed, a `<send>` or `<raise>` of
+that event, a statechart's variable that names a record holding a composition at any
+depth, a host-run request or result, and an algorithm. The paragraphs
 below name the attribute spelling where they were written with it; the bracket
 states the same bound.
 

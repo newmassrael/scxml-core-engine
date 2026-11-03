@@ -2135,6 +2135,11 @@ pub struct InvokeSessionCommon {
 #[derive(Debug, Clone, Default)]
 pub struct ChildReceives {
     /// The schema the child declares for each event, by event name.
+    ///
+    /// Each read one entry per field ([`SCXMLModel::entry_event_schemas`]): a
+    /// child reads no payload of a schema that holds a composition, since a
+    /// read of one is refused where the child is parsed, so whatever a parent
+    /// sends with that event is read by nothing.
     pub schemas: std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
     /// For each of those events, the enum each enum field of its schema holds,
     /// by field id.
@@ -2148,7 +2153,7 @@ impl ChildReceives {
     /// What the `sce-static` document `child` reads of the events it is sent.
     pub fn of(child: &SCXMLModel) -> Self {
         Self {
-            schemas: child.imported_event_schemas.clone(),
+            schemas: child.entry_event_schemas(),
             enums: child
                 .enum_documents
                 .by_field
@@ -4023,15 +4028,22 @@ pub struct SCXMLModel {
     /// baseline. Purely an in-memory analysis/codegen aid recomputable
     /// from [`forge_imports`] + the sibling documents, so it is not
     /// serialized into the manifest.
+    ///
+    /// Each schema is held whole, every field in the one value type
+    /// (docs/adr/0086, section 6): a list, a record or an optional over either
+    /// included. A reader that holds one entry per field takes
+    /// [`Self::entry_event_schemas`].
     #[serde(skip)]
     pub imported_event_schemas:
-        std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
+        std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
     /// The same imported event-schemas keyed by import alias — what a
     /// `record:<alias>` variable of a `sce-static` document names (SCE
     /// Accepted Subset §2.15). Resolved with [`Self::imported_event_schemas`]
-    /// and, like it, empty without sibling files and not serialized.
+    /// and, like it, held whole, empty without sibling files and not
+    /// serialized. A reader that holds one entry per field takes
+    /// [`Self::entry_records`].
     #[serde(skip)]
-    pub imported_records: std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
+    pub imported_records: std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
     /// The enums a `sce-static` document imports, keyed by import alias — what
     /// an `enum:<alias>` variable names and an `<alias>.<variant>` expression
     /// refers to (SCE Accepted Subset §2.15). Resolved where the document is
@@ -5033,6 +5045,34 @@ impl SCXMLModel {
     /// Every enum [`Self::held_enum`] answers, by the name it answers it for.
     pub fn held_enums(&self) -> std::collections::BTreeMap<String, crate::forge::model::EnumModel> {
         crate::forge::event_schema_check::held_enums(&self.imported_enums, &self.schema_enums)
+    }
+
+    /// Each imported event schema, by event, as a reader that holds one entry
+    /// per field reads it ([`crate::forge::model::EventSchemaModel::entry_schema`]).
+    ///
+    /// A schema with a field that is a list, a record or an optional over
+    /// either is not among them: every use of such a schema that would read
+    /// its fields one entry at a time (its data read, the event sent, a
+    /// host-run invocation's request or result) is refused by name where the
+    /// document is parsed
+    /// ([`crate::forge::event_schema_check::check_composed_uses`]), so a
+    /// reader of this view never meets the event of one as if it carried no
+    /// schema.
+    pub fn entry_event_schemas(
+        &self,
+    ) -> std::collections::BTreeMap<String, crate::forge::model::EntrySchema> {
+        crate::forge::model::entry_views(&self.imported_event_schemas)
+    }
+
+    /// Each imported record, by alias, as a reader that holds one entry per
+    /// field reads it, as [`Self::entry_event_schemas`] gives the schemas by
+    /// event: a record whose schema holds a composition is not among them, and
+    /// every variable that names one is refused by name where the document is
+    /// parsed ([`crate::forge::event_schema_check::check_composed_uses`]).
+    pub fn entry_records(
+        &self,
+    ) -> std::collections::BTreeMap<String, crate::forge::model::EntrySchema> {
+        crate::forge::model::entry_views(&self.imported_records)
     }
 
     /// Every `<send>` written in the document, each with the state whose

@@ -186,21 +186,26 @@ pub fn check(
         return Ok(());
     };
     let held_enums = model.held_enums();
+    // The schemas read one entry per field: every use of one that holds a
+    // composition was refused where the document was parsed
+    // ([`crate::forge::event_schema_check::check_composed_uses`]).
+    let records = model.entry_records();
+    let event_schemas = model.entry_event_schemas();
     let judge = Judge {
         scope: &scope,
         enums,
         held_enums: &held_enums,
-        schemas: &model.imported_records,
+        schemas: &records,
         loop_records: Default::default(),
         loop_names: Default::default(),
-        enum_vars: enum_variables(&scope, &model.imported_records),
+        enum_vars: enum_variables(&scope, &records),
         loop_enum_paths: Default::default(),
         payload_enum_paths: Default::default(),
         payload_schema: Default::default(),
         diag_label,
         read: Default::default(),
         whole_state_call_ok: Default::default(),
-        receivers: Receivers::of(model, &held_enums),
+        receivers: Receivers::of(model, &held_enums, &event_schemas),
     };
     // Every record variable's fields, readable everywhere; a transition adds
     // its payload to these.
@@ -213,7 +218,7 @@ pub fn check(
             .as_ref()
             .and_then(crate::forge::model::AlgorithmValueType::record_alias)
         {
-            judge.record(&plain, var, alias, &model.imported_records)?;
+            judge.record(&plain, var, alias, &records)?;
             continue;
         }
         if let Some(alias) = var
@@ -222,7 +227,7 @@ pub fn check(
             .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
             .and_then(crate::forge::model::AlgorithmValueType::record_alias)
         {
-            judge.optional_record(&plain, var, alias, &model.imported_records)?;
+            judge.optional_record(&plain, var, alias, &records)?;
             continue;
         }
         if let Some(alias) = judge.enum_vars.get(&var.id) {
@@ -254,7 +259,7 @@ pub fn check(
             // A list starts empty, so it names no variant of an enum field of its
             // records, and holds one the document does not import (docs/adr/0054);
             // the enum it holds is closed all the same.
-            if let Some(schema) = model.imported_records.get(alias) {
+            if let Some(schema) = records.get(alias) {
                 judge.schema_enums_closed(var, alias, schema)?;
                 judge.schema_strings_bounded(var, alias, schema)?;
             }
@@ -284,7 +289,7 @@ pub fn check(
         for transition in &state.transitions {
             // The payload is the triggering event's, so each transition
             // judges against its own.
-            let schema = model.imported_event_schemas.get(&transition.event);
+            let schema = event_schemas.get(&transition.event);
             let paths = scope.paths(schema);
             let ctx = judge.ctx(&paths);
             // An enum field of the payload is a value of the enum the schema
@@ -925,6 +930,7 @@ impl<'a> Receivers<'a> {
     fn of(
         model: &'a SCXMLModel,
         held_enums: &'a std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
+        own_schemas: &'a std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
     ) -> Self {
         let mut children: std::collections::BTreeMap<String, Vec<_>> = Default::default();
         for invoke in model.states.values().flat_map(|s| s.invokes.iter()) {
@@ -951,7 +957,7 @@ impl<'a> Receivers<'a> {
             }
         }
         Self {
-            own_schemas: &model.imported_event_schemas,
+            own_schemas,
             own_enums: held_enums,
             children,
         }

@@ -53,12 +53,18 @@ pub struct TypedHostInvoke<'m> {
     pub result: Option<&'m EntrySchema>,
 }
 
-/// The typed host-run invokes of `model`, in document order.
-pub fn typed_host_invokes(model: &SCXMLModel) -> Vec<TypedHostInvoke<'_>> {
+/// The typed host-run invokes of `model`, in document order, each record read one
+/// entry per field from `records` ([`SCXMLModel::entry_records`]): a host-run
+/// record that holds a composition is refused where the invoke is judged
+/// ([`crate::forge::typed_invoke::validate`]).
+pub fn typed_host_invokes<'m>(
+    model: &'m SCXMLModel,
+    records: &'m BTreeMap<String, EntrySchema>,
+) -> Vec<TypedHostInvoke<'m>> {
     host_invokes(model)
         .filter_map(|info| {
-            let request = model.imported_records.get(&info.request_schema);
-            let result = model.imported_records.get(&info.result_schema);
+            let request = records.get(&info.request_schema);
+            let result = records.get(&info.result_schema);
             (request.is_some() || result.is_some()).then_some(TypedHostInvoke {
                 invoke_type: &info.invoke_type,
                 invoke_id: &info.base.invoke_id,
@@ -181,7 +187,8 @@ pub fn request_checks(
     model: &SCXMLModel,
     spell: impl Fn(RequestFieldSpelling) -> String,
 ) -> BTreeMap<String, BTreeMap<String, String>> {
-    typed_host_invokes(model)
+    let entry_records = model.entry_records();
+    typed_host_invokes(model, &entry_records)
         .into_iter()
         .filter_map(|typed| {
             let request = typed.request?;
@@ -221,7 +228,8 @@ pub fn render_rust(
     policy_generics_use: &str,
     no_std: bool,
 ) -> String {
-    let typed = typed_host_invokes(model);
+    let entry_records = model.entry_records();
+    let typed = typed_host_invokes(model, &entry_records);
     if typed.is_empty() || no_std {
         return String::new();
     }
@@ -410,7 +418,8 @@ impl{policy_generics_decl} {machine_name}HostInvokers for ::sce_rust_runtime::En
 /// fields, an invoker interface per declared `type`, and — because `Engine`
 /// is a foreign type — free functions for registration and completion.
 pub fn render_go(model: &SCXMLModel, machine_name: &str) -> String {
-    let typed = typed_host_invokes(model);
+    let entry_records = model.entry_records();
+    let typed = typed_host_invokes(model, &entry_records);
     if typed.is_empty() {
         return String::new();
     }
@@ -592,7 +601,8 @@ func Register{interface}(e {engine}, invoker {interface}{fallback_param}) {{\n\
 /// A request field is read back out of the text the start site wrote it as, with the
 /// runtime's `HostInvokeRequest.request…` reader of its type.
 pub fn render_swift(model: &SCXMLModel, machine_name: &str) -> String {
-    let typed = typed_host_invokes(model);
+    let entry_records = model.entry_records();
+    let typed = typed_host_invokes(model, &entry_records);
     if typed.is_empty() {
         return String::new();
     }
@@ -763,7 +773,8 @@ pub fn python_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<St
 /// it (`dataclass`, `Protocol`, `_json`, `_request_field`,
 /// `_RequestFieldType`) are gated in its header on this being non-empty.
 pub fn render_python(model: &SCXMLModel) -> String {
-    let typed = typed_host_invokes(model);
+    let entry_records = model.entry_records();
+    let typed = typed_host_invokes(model, &entry_records);
     if typed.is_empty() {
         return String::new();
     }
@@ -978,7 +989,8 @@ pub struct KotlinHostInvokerInterface {
 pub fn render_kotlin(model: &SCXMLModel, machine_name: &str) -> KotlinHostInvokerInterface {
     let mut defs = String::new();
     let mut members = String::new();
-    let typed = typed_host_invokes(model);
+    let entry_records = model.entry_records();
+    let typed = typed_host_invokes(model, &entry_records);
     if typed.is_empty() {
         return KotlinHostInvokerInterface { defs, members };
     }
@@ -1165,7 +1177,8 @@ pub struct CppHostInvokerInterface {
 pub fn render_cpp(model: &SCXMLModel) -> CppHostInvokerInterface {
     let mut defs = String::new();
     let mut members = String::new();
-    let typed = typed_host_invokes(model);
+    let entry_records = model.entry_records();
+    let typed = typed_host_invokes(model, &entry_records);
     if typed.is_empty() {
         return CppHostInvokerInterface { defs, members };
     }
@@ -1409,7 +1422,8 @@ pub fn render_c11(model: &SCXMLModel, sm: &str) -> Result<C11HostInvokerInterfac
     let mut defs = String::new();
     let mut header_includes: Vec<String> = Vec::new();
     let mut source_includes: Vec<String> = Vec::new();
-    let typed = typed_host_invokes(model);
+    let entry_records = model.entry_records();
+    let typed = typed_host_invokes(model, &entry_records);
     if typed.is_empty() {
         return Ok(C11HostInvokerInterface {
             decls,

@@ -60,8 +60,11 @@ use crate::forge::expr::{
     ExprKind, ExprTarget, TypedExpr, UnaryOp,
 };
 use crate::forge::expression_site::ExpressionSite;
-use crate::forge::model::{EntryField, EntrySchema, EntryType, EnumModel, ForgeKind, SceType};
+use crate::forge::model::{
+    EntryField, EntrySchema, EntryType, EnumModel, EventSchemaModel, ForgeKind, SceType,
+};
 use crate::forge::types::{InferredType, TypeCtx};
+use crate::forge::value_type::ValueType;
 use crate::model::{Action, Param, SCXMLModel, Transition};
 
 /// The W3C SCXML reserved system-variable path a typed guard reads its
@@ -117,8 +120,8 @@ pub(crate) const EVENT_DATA_PATH: &str = "_event.data";
 /// about which schemas a statechart imports.
 fn imported_schemas<'a>(
     scxml: &'a SCXMLModel,
-    event_schemas_by_doc_name: &'a BTreeMap<String, EntrySchema>,
-) -> impl Iterator<Item = (&'a str, &'a EntrySchema)> {
+    event_schemas_by_doc_name: &'a BTreeMap<String, EventSchemaModel>,
+) -> impl Iterator<Item = (&'a str, &'a EventSchemaModel)> {
     scxml
         .forge_imports
         .iter()
@@ -136,8 +139,8 @@ fn imported_schemas<'a>(
 /// variables are typed by these (SCE Accepted Subset §2.15).
 pub fn resolve_imported_records(
     scxml: &SCXMLModel,
-    event_schemas_by_doc_name: &BTreeMap<String, EntrySchema>,
-) -> BTreeMap<String, EntrySchema> {
+    event_schemas_by_doc_name: &BTreeMap<String, EventSchemaModel>,
+) -> BTreeMap<String, EventSchemaModel> {
     let mut resolved = BTreeMap::new();
     for (alias, schema) in imported_schemas(scxml, event_schemas_by_doc_name) {
         resolved
@@ -158,7 +161,7 @@ pub fn resolve_imported_records(
 /// routes, each refusing in its own words, and this is the statechart's.
 pub fn check_records_carry_payload(
     scxml: &SCXMLModel,
-    records: &BTreeMap<String, EntrySchema>,
+    records: &BTreeMap<String, EventSchemaModel>,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     let variables = scxml.variables.iter().chain(
@@ -210,11 +213,162 @@ pub fn check_records_carry_payload(
     Ok(())
 }
 
+/// Refuse by name each use of an imported event schema whose field is a list,
+/// a record or an optional over either, where the use reads the schema's
+/// fields one entry at a time (docs/adr/0086, section 7.3): a statechart's
+/// variable whose type names such a record at any depth, a read of
+/// `_event.data` on a transition taken on the schema's event, and a `<send>` or
+/// `<raise>` of that event.
+///
+/// A statechart may import such a schema and take its event: a transition that
+/// reads nothing of the event's data reads nothing of its type. Every reader
+/// past this check takes the entry views
+/// ([`SCXMLModel::entry_event_schemas`], [`SCXMLModel::entry_records`]), which
+/// leave such a schema out, so none of them meets the schema's event as an
+/// event that carries no schema. A host-run invocation's request and result are
+/// refused where the invoke is judged ([`crate::forge::typed_invoke::validate`]).
+pub fn check_composed_uses(
+    scxml: &SCXMLModel,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    let refused = |schema: &EventSchemaModel,
+                   composed: crate::forge::model::ComposedField,
+                   position: &str,
+                   at: Option<(u32, Option<u32>)>|
+     -> Located<ForgeError> {
+        Located::new(
+            crate::forge::error::GenerateError::unsupported(
+                composed.sentence(&schema.name, position),
+            )
+            .into(),
+            diag_label,
+            at.map(|(row, _)| row),
+            at.and_then(|(_, col)| col),
+        )
+    };
+    let variables = scxml.variables.iter().chain(
+        scxml
+            .states
+            .values()
+            .flat_map(|state| state.datamodel.iter()),
+    );
+    for var in variables {
+        let Some(ty) = var.value_type.as_ref() else {
+            continue;
+        };
+        for alias in ty.record_aliases() {
+            let Some(schema) = scxml.imported_records.get(alias) else {
+                continue;
+            };
+            if let Err(composed) = schema.entry_schema() {
+                let at = var
+                    .value_type_spelling
+                    .as_ref()
+                    .map(|spelling| (spelling.row(), Some(spelling.col())));
+                return Err(refused(schema, composed, "a statechart's variable", at));
+            }
+        }
+    }
+    let composed_schema = |event: &str| {
+        let schema = scxml.imported_event_schemas.get(event)?;
+        schema
+            .entry_schema()
+            .err()
+            .map(|composed| (schema, composed))
+    };
+    let at_location = |location: &Option<SourceLocation>| {
+        location
+            .as_ref()
+            .and_then(|l| l.line.map(|line| (line, l.col)))
+    };
+    let mut states: Vec<_> = scxml.states.values().collect();
+    states.sort_by_key(|s| s.document_order);
+    for state in states {
+        for trans in &state.transitions {
+            let Some((schema, composed)) = composed_schema(trans.event.as_str()) else {
+                continue;
+            };
+            let mut reads = references_event_data_lexically(&trans.cond);
+            for action in &trans.actions {
+                action.walk(&mut |a| reads |= action_reads_event_data(a));
+            }
+            if reads {
+                return Err(refused(
+                    schema,
+                    composed,
+                    "a statechart's read of `_event.data`",
+                    at_location(&trans.source_location),
+                ));
+            }
+        }
+    }
+    // Every block of executable content, a `<history>`'s default transition
+    // included, in the order the states are written.
+    let mut states: Vec<_> = scxml.states.values().collect();
+    states.sort_by_key(|s| s.document_order);
+    let blocks = states
+        .into_iter()
+        .flat_map(|state| state.executable_blocks())
+        .chain(
+            scxml
+                .history_states
+                .values()
+                .map(|history| history.default_actions.as_slice()),
+        );
+    let mut sent = None;
+    for action in blocks.flatten() {
+        action.walk(&mut |a| {
+            let carries = matches!(a.action_type.as_str(), "send" | "raise");
+            if sent.is_none() && carries {
+                if let Some((schema, composed)) = composed_schema(a.event.as_str()) {
+                    sent = Some((schema, composed, a));
+                }
+            }
+        });
+    }
+    if let Some((schema, composed, action)) = sent {
+        return Err(refused(
+            schema,
+            composed,
+            &format!("a statechart's <{}> of its event", action.action_type),
+            at_location(&action.source_location),
+        ));
+    }
+    Ok(())
+}
+
+/// Whether an expression `action` itself carries, not one of an action nested
+/// inside it, reads `_event.data`: the attributes a statement, a condition, a
+/// loop, a send and its params are written in.
+fn action_reads_event_data(action: &Action) -> bool {
+    [
+        &action.expr,
+        &action.location,
+        &action.cond,
+        &action.array,
+        &action.targetexpr,
+        &action.delayexpr,
+        &action.eventexpr,
+        &action.typeexpr,
+        &action.contentexpr,
+        &action.sendidexpr,
+    ]
+    .into_iter()
+    .chain(action.elseif_branches.iter().map(|branch| &branch.cond))
+    .chain(
+        action
+            .params
+            .iter()
+            .flat_map(|param| [&param.expr, &param.location]),
+    )
+    .any(|text| references_event_data_lexically(text))
+}
+
 pub fn resolve_imported_event_schemas(
     scxml: &SCXMLModel,
-    event_schemas_by_doc_name: &BTreeMap<String, EntrySchema>,
-) -> BTreeMap<String, EntrySchema> {
-    let mut resolved: BTreeMap<String, EntrySchema> = BTreeMap::new();
+    event_schemas_by_doc_name: &BTreeMap<String, EventSchemaModel>,
+) -> BTreeMap<String, EventSchemaModel> {
+    let mut resolved: BTreeMap<String, EventSchemaModel> = BTreeMap::new();
     for (_, schema) in imported_schemas(scxml, event_schemas_by_doc_name) {
         // First occurrence wins; the per-statechart duplicate-event-
         // name case is rejected upstream as `validation/incompatible-
@@ -349,13 +503,17 @@ pub fn name_schema_enums(model: &mut SCXMLModel) {
         };
         for field in &mut schema.fields {
             // An optional enum field holds a value of the same document when
-            // present (docs/adr/0055), so it is named alike.
-            let (EntryType::Scalar(SceType::Enum(reference))
-            | EntryType::Optional {
-                elem: SceType::Enum(reference),
-            }) = &mut field.sce_type
-            else {
-                continue;
+            // present (docs/adr/0055), so it is named alike. An enum inside a
+            // list or a record is held by no field the document reads one
+            // entry at a time ([`check_composed_uses`]), and keeps the name the
+            // schema writes.
+            let reference = match &mut field.sce_type {
+                ValueType::Scalar(SceType::Enum(reference)) => reference,
+                ValueType::Optional { elem } => match &mut **elem {
+                    ValueType::Scalar(SceType::Enum(reference)) => reference,
+                    _ => continue,
+                },
+                _ => continue,
             };
             let Some(held) = held_by_field.get(&field.id) else {
                 continue;
@@ -656,10 +814,17 @@ pub(crate) fn select_native_typed_guards(
             if trans.cond.trim().is_empty() {
                 continue;
             }
-            let Some(schema) = model.imported_event_schemas.get(&trans.event) else {
+            // A schema that holds a composition has no native payload: a
+            // transition that reads its data is refused where the document is
+            // parsed ([`check_composed_uses`]).
+            let Some(Ok(schema)) = model
+                .imported_event_schemas
+                .get(&trans.event)
+                .map(|schema| schema.entry_schema())
+            else {
                 continue;
             };
-            if !guard_is_native_lowerable(&trans.cond, schema) {
+            if !guard_is_native_lowerable(&trans.cond, &schema) {
                 continue;
             }
             guarded.push(NativeTypedGuard {

@@ -863,6 +863,9 @@ pub struct MachineFacts {
 impl MachineFacts {
     /// The facts of `model`, a statechart read from a document whose stem is `name`.
     pub fn of(model: &crate::model::SCXMLModel, name: &str) -> Self {
+        // A variable that names a record holding a composition is refused where
+        // the document is parsed, so every record a variable names is here.
+        let records = model.entry_records();
         let variables: BTreeMap<String, Holds> = model
             .variables
             .iter()
@@ -870,7 +873,7 @@ impl MachineFacts {
             .map(|v| {
                 (
                     v.id.clone(),
-                    Holds::of_variable(v.value_type.as_ref(), &model.imported_records),
+                    Holds::of_variable(v.value_type.as_ref(), &records),
                 )
             })
             .collect();
@@ -892,8 +895,11 @@ impl MachineFacts {
                 .map(|t| t.event.clone())
                 .filter(|event| !event.trim().is_empty())
                 .collect(),
+            // The payload of an event whose schema holds a composition is read by
+            // no transition of the machine ([`crate::forge::event_schema_check::check_composed_uses`]),
+            // and is typed here only once a lift reads it.
             payloads: model
-                .imported_event_schemas
+                .entry_event_schemas()
                 .iter()
                 .map(|(event, schema)| (event.clone(), Holds::of_schema(schema)))
                 .collect(),

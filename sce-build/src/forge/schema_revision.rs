@@ -537,6 +537,49 @@ pub fn divergence_with_enums(
     })
 }
 
+/// Where two schemas of one event part when either holds a list, a record or an
+/// optional over either in `field` ([`crate::forge::model::ComposedField`]),
+/// which [`divergence`] does not read one entry per field. No build sends such
+/// an event between two machines yet (docs/adr/0086, section 5.2), so the two
+/// are not judged revisions of one schema: they part at `field`, as each
+/// declares it, or where one does not declare it at all.
+pub fn composed_parting(
+    first: &crate::forge::model::EventSchemaModel,
+    second: &crate::forge::model::EventSchemaModel,
+    field: &str,
+) -> Divergence {
+    let declared = |schema: &crate::forge::model::EventSchemaModel| {
+        schema.fields.iter().find(|f| f.id == field)
+    };
+    let as_declared = |f: &crate::forge::model::SchemaField| DeclaredType {
+        sce_type: f.sce_type.to_string(),
+        optional_since: f.optional_since,
+    };
+    match (declared(first), declared(second)) {
+        (Some(one), Some(other)) => Divergence::Redeclared {
+            field: field.to_string(),
+            first: as_declared(one),
+            second: as_declared(other),
+        },
+        (Some(one), None) => Divergence::Missing {
+            field: field.to_string(),
+            since: one.since.unwrap_or(1),
+            from: Party::Second,
+        },
+        (None, Some(other)) => Divergence::Missing {
+            field: field.to_string(),
+            since: other.since.unwrap_or(1),
+            from: Party::First,
+        },
+        // `field` is a field of one of the two, which declares it.
+        (None, None) => Divergence::Missing {
+            field: field.to_string(),
+            since: 1,
+            from: Party::Second,
+        },
+    }
+}
+
 /// An enum document as a saved state and the Mesh check name it
 /// (docs/adr/0044): by the document, as every reader of an enum identifies it
 /// ([`crate::forge::stdlib::identity`]), not by the alias one document imports
@@ -883,10 +926,99 @@ mod tests {
             name: "revised".to_string(),
             ..Default::default()
         };
+        // The model holds a schema whole; these hold numbers, truth values and
+        // enums, each its own one value type.
+        let whole = |entry: &EntryType| {
+            let leaf = |t: &SceType| match t {
+                SceType::String | SceType::Bytes => {
+                    panic!("a schema of these cases holds no text and no byte string")
+                }
+                other => crate::forge::value_type::ValueType::Scalar(other.clone()),
+            };
+            match entry {
+                EntryType::Scalar(t) => leaf(t),
+                EntryType::Optional { elem } => crate::forge::value_type::ValueType::Optional {
+                    elem: Box::new(leaf(elem)),
+                },
+            }
+        };
+        let schema = crate::forge::model::EventSchemaModel {
+            name: revised.name.clone(),
+            event_name: revised.event_name.clone(),
+            fields: revised
+                .fields
+                .iter()
+                .map(|f| f.with_type(whole(&f.sce_type)))
+                .collect(),
+            payload_none: revised.payload_none,
+            datamodel_markers: revised.datamodel_markers.clone(),
+            revision: revised.revision,
+            source_location: revised.source_location.clone(),
+        };
         model
             .imported_event_schemas
-            .insert("reading.revised".to_string(), revised);
+            .insert("reading.revised".to_string(), schema);
         model
+    }
+
+    /// Two schemas of one event, one of which holds a list where the other holds
+    /// a number or nothing, part at that field, as each declares it.
+    #[test]
+    fn two_schemas_part_at_the_field_one_holds_a_composition_in() {
+        use crate::forge::model::EventSchemaModel;
+        use crate::forge::value_type::Bound;
+        let list = ValueType::List {
+            elem: Box::new(ValueType::Scalar(SceType::Uint8)),
+            max: Bound::of(2),
+        };
+        let composed = EventSchemaModel {
+            name: "schema_grid".to_string(),
+            event_name: "grid.sent".to_string(),
+            fields: vec![field("grid", SceType::Uint8, None, None).with_type(list)],
+            payload_none: false,
+            datamodel_markers: Vec::new(),
+            revision: None,
+            source_location: None,
+        };
+        let flat = EventSchemaModel {
+            fields: vec![field("grid", SceType::Uint8, None, None)
+                .with_type(ValueType::Scalar(SceType::Uint8))],
+            ..composed.clone()
+        };
+        assert_eq!(
+            composed_parting(&flat, &composed, "grid"),
+            Divergence::Redeclared {
+                field: "grid".to_string(),
+                first: DeclaredType {
+                    sce_type: "uint8".to_string(),
+                    optional_since: None,
+                },
+                second: DeclaredType {
+                    sce_type: "list<uint8>[2]".to_string(),
+                    optional_since: None,
+                },
+            }
+        );
+        let empty = EventSchemaModel {
+            fields: Vec::new(),
+            ..composed.clone()
+        };
+        assert_eq!(
+            composed_parting(&composed, &empty, "grid"),
+            Divergence::Missing {
+                field: "grid".to_string(),
+                since: 1,
+                from: Party::Second,
+            }
+        );
+        assert_eq!(
+            composed_parting(&empty, &composed, "grid"),
+            Divergence::Missing {
+                field: "grid".to_string(),
+                since: 1,
+                from: Party::First,
+            }
+        );
     }
 
     #[test]
@@ -1977,8 +2109,9 @@ mod tests {
                 ("urgent", Some(3), Some("true")),
             ]
         );
+        let entries = schema.entry_schema().expect("each field is one entry");
         assert_eq!(
-            defaults_wire(schema).map(|d| serde_json::to_string(&d).expect("JSON")),
+            defaults_wire(&entries).map(|d| serde_json::to_string(&d).expect("JSON")),
             Some(FIXTURE_DEFAULTS.to_string())
         );
 

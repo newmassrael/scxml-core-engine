@@ -4206,6 +4206,12 @@ pub fn lower(
         return Ok(StaticLowering::default());
     };
     let lang = target.name();
+    // The schemas the machine reads, one entry per field: every use of one that
+    // holds a list, a record or an optional over either was refused where the
+    // document was parsed
+    // ([`crate::forge::event_schema_check::check_composed_uses`]).
+    let schemas = model.entry_event_schemas();
+    let records = model.entry_records();
     // An optional value (docs/adr/0055) is refused before anything reads the
     // variables' types, on every target that does not lower it yet: a variable
     // that holds one, and a field of a schema the machine reads a payload by or
@@ -4230,10 +4236,9 @@ pub fn lower(
                 lang,
             ));
         }
-        if let Some((schema, field)) = model
-            .imported_event_schemas
+        if let Some((schema, field)) = schemas
             .values()
-            .chain(model.imported_records.values())
+            .chain(records.values())
             .find_map(|schema| schema.first_optional_field().map(|field| (schema, field)))
         {
             return Err(optional_not_lowered(
@@ -4279,8 +4284,6 @@ pub fn lower(
         ));
     }
     let variables = &scope.variables;
-    let schemas = model.imported_event_schemas.clone();
-    let records = model.imported_records.clone();
     // The enums the machine holds values of — the ones the document imports, and
     // the ones a field of its schemas holds that it does not (docs/adr/0054) —
     // each as the type the target declares it as. A target with none spells the
@@ -5675,6 +5678,9 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
     // Each record schema a variable is of, by the event it declares: ordered, so
     // the same document names them in the same order on every backend.
     let mut records: BTreeMap<String, SavedRecordLineage> = BTreeMap::new();
+    // The records a variable may name, one entry per field: a variable that
+    // names one holding a composition is refused where the document is parsed.
+    let entry_records = model.entry_records();
     // Where each value of an enum is held — a variable, or a field of a record a
     // variable holds — with the document the enum is: the statechart's own
     // import for a variable, the schema's for a record's field.
@@ -5714,7 +5720,7 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
             .as_ref()
             .and_then(|t| t.list_elem().and_then(|e| e.record_alias()));
         let record_alias = own_record.or(listed_record);
-        if let Some(schema) = record_alias.and_then(|alias| model.imported_records.get(alias)) {
+        if let Some(schema) = record_alias.and_then(|alias| entry_records.get(alias)) {
             records
                 .entry(schema.event_name.clone())
                 .or_insert_with(|| record_lineage(model, schema))
@@ -6090,11 +6096,14 @@ fn holds_an_optional_value(model: &SCXMLModel) -> bool {
                 .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
                 .is_some()
         });
+    // A schema that holds a composition is read by no position of the machine
+    // ([`crate::forge::event_schema_check::check_composed_uses`]), so it brings
+    // no optional value into it.
     optional_variable
         || model
-            .imported_event_schemas
+            .entry_event_schemas()
             .values()
-            .chain(model.imported_records.values())
+            .chain(model.entry_records().values())
             .any(|schema| schema.first_optional_field().is_some())
 }
 
@@ -10573,7 +10582,10 @@ impl StaticTarget for CTarget {
         // the document the schema imports (docs/adr/0054). A field is named as
         // the author wrote it; a
         // name C reserves is refused where the schema is read, for every
-        // backend at once.
+        // backend at once. A schema that holds a composition is read by no
+        // position of the machine, and is not among these.
+        let entry_records = model.entry_records();
+        let entry_events = model.entry_event_schemas();
         for var in &scope.variables {
             let Some(alias) = var.value_type.as_ref().and_then(|t| {
                 t.record_alias()
@@ -10582,7 +10594,7 @@ impl StaticTarget for CTarget {
             }) else {
                 continue;
             };
-            let Some(schema) = model.imported_records.get(alias) else {
+            let Some(schema) = entry_records.get(alias) else {
                 continue;
             };
             if let Some(field) = schema.fields.iter().find(|f| {
@@ -10605,10 +10617,9 @@ impl StaticTarget for CTarget {
         // of or reads a payload by is held in the buffer of its `sce:max-size`
         // (docs/adr/0055, section 1: a text keeps the bound its type declares);
         // one that declares none has no buffer to be held in.
-        if let Some((schema, field)) = model
-            .imported_records
+        if let Some((schema, field)) = entry_records
             .values()
-            .chain(model.imported_event_schemas.values())
+            .chain(entry_events.values())
             .find_map(|schema| {
                 schema
                     .fields
@@ -12408,9 +12419,10 @@ impl StaticTarget for SwiftTarget {
         }
         // A record's field is named as the author wrote it, so one Swift reserves cannot
         // be a field, and a field that may be absent is `T?` over an element Swift spells
-        // ([`swift_field_unwritten`]).
-        if let Some((alias, field, why)) = model
-            .imported_records
+        // ([`swift_field_unwritten`]). A schema that holds a composition is read by
+        // no position of the machine, and is not among these.
+        let entry_records = model.entry_records();
+        if let Some((alias, field, why)) = entry_records
             .iter()
             .flat_map(|(alias, schema)| schema.fields.iter().map(move |field| (alias, field)))
             .find_map(|(alias, field)| swift_field_unwritten(field).map(|why| (alias, field, why)))
@@ -12440,8 +12452,8 @@ impl StaticTarget for SwiftTarget {
         // named as the author wrote it: one Swift reserves cannot be a property, and a
         // field that may be absent is `T?` over an element Swift spells, the same
         // struct a record is ([`swift_field_unwritten`]).
-        if let Some((schema, field, why)) = model
-            .imported_event_schemas
+        let entry_events = model.entry_event_schemas();
+        if let Some((schema, field, why)) = entry_events
             .values()
             .flat_map(|schema| schema.fields.iter().map(move |field| (schema, field)))
             .find_map(|(schema, field)| {
@@ -16110,9 +16122,11 @@ mod tests {
         let schema = model
             .imported_records
             .get("Reading")
-            .expect("the schema Reading imports");
+            .expect("the schema Reading imports")
+            .entry_schema()
+            .expect("each field of Reading is one entry");
         let (_, reads) = c_record_saved_members(
-            schema,
+            &schema,
             &std::collections::BTreeMap::new(),
             &CTarget::arguments(),
         );

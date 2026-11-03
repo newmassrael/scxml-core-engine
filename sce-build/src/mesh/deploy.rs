@@ -7459,7 +7459,7 @@ pub fn validate_event_schemas_cross_machine(
     // comparison worth making.
     let mut machine_to_schemas: BTreeMap<
         &str,
-        &BTreeMap<String, crate::forge::model::EntrySchema>,
+        &BTreeMap<String, crate::forge::model::EventSchemaModel>,
     > = BTreeMap::new();
     for (machine_name, scxml) in &machine_to_scxml {
         machine_to_schemas.insert(*machine_name, &scxml.imported_event_schemas);
@@ -7533,31 +7533,49 @@ pub fn validate_event_schemas_cross_machine(
                 // holding two revisions of one enum (the document each
                 // side's schema names for the field); anything else is
                 // refused with the field the two part on.
-                (Some(s), Some(r)) => {
-                    let no_enums = BTreeMap::new();
-                    let sender_enums = scxml
-                        .enum_documents
-                        .by_field
-                        .get(site.event_name)
-                        .unwrap_or(&no_enums);
-                    let receiver_enums = machine_to_scxml
-                        .get(target_name)
-                        .and_then(|receiver| receiver.enum_documents.by_field.get(site.event_name))
-                        .unwrap_or(&no_enums);
-                    let parted = crate::forge::schema_revision::divergence_with_enums(
-                        s,
-                        sender_enums,
-                        r,
-                        receiver_enums,
-                    );
-                    parted.map(|divergence| {
+                // A schema that holds a list, a record or an optional over
+                // either is not read one entry per field, and no build sends its
+                // event between machines yet: the two part at that field.
+                (Some(s), Some(r)) => match (s.entry_schema(), r.entry_schema()) {
+                    (Err(composed), _) | (_, Err(composed)) => Some(
                         crate::mesh::error::EventSchemaMismatchReason::NotOneSchema {
                             sender_revision: s.revision(),
                             receiver_revision: r.revision(),
-                            divergence: Box::new(divergence),
-                        }
-                    })
-                }
+                            divergence: Box::new(crate::forge::schema_revision::composed_parting(
+                                s,
+                                r,
+                                &composed.field,
+                            )),
+                        },
+                    ),
+                    (Ok(s), Ok(r)) => {
+                        let no_enums = BTreeMap::new();
+                        let sender_enums = scxml
+                            .enum_documents
+                            .by_field
+                            .get(site.event_name)
+                            .unwrap_or(&no_enums);
+                        let receiver_enums = machine_to_scxml
+                            .get(target_name)
+                            .and_then(|receiver| {
+                                receiver.enum_documents.by_field.get(site.event_name)
+                            })
+                            .unwrap_or(&no_enums);
+                        let parted = crate::forge::schema_revision::divergence_with_enums(
+                            &s,
+                            sender_enums,
+                            &r,
+                            receiver_enums,
+                        );
+                        parted.map(|divergence| {
+                            crate::mesh::error::EventSchemaMismatchReason::NotOneSchema {
+                                sender_revision: s.revision(),
+                                receiver_revision: r.revision(),
+                                divergence: Box::new(divergence),
+                            }
+                        })
+                    }
+                },
             };
             if let Some(reason) = mismatch {
                 return Err(DeployError::EventSchemaMismatch {

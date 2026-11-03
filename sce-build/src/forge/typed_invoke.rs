@@ -20,16 +20,20 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
-use crate::forge::model::{EntrySchema, SceType};
+use crate::forge::error::{ForgeError, GenerateError, Located, SourceLocation, ValidationError};
+use crate::forge::model::{EntrySchema, EventSchemaModel, SceType};
 use crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM;
 use crate::model::{Invoke, SCXMLModel, UnsupportedInvokeInfo};
 
 /// Validate every typed host-run `<invoke>` in `model` against
 /// `imported_records`, the alias → schema map its imports resolved to.
+///
+/// A host-run record crosses as one entry per field, so a schema whose field is
+/// a list, a record or an optional over either is refused by name where the
+/// invoke names it (docs/adr/0086, section 7.3).
 pub fn validate(
     model: &SCXMLModel,
-    imported_records: &BTreeMap<String, EntrySchema>,
+    imported_records: &BTreeMap<String, EventSchemaModel>,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     // The per-state lists, in document order: they are authoritative, and
@@ -60,12 +64,23 @@ pub fn validate(
                     },
                 )
             };
-            let Some(schema) = imported_records.get(alias) else {
+            let Some(whole) = imported_records.get(alias) else {
                 return Err(refuse(format!(
                     "names no event schema this document imports — declare \
                      <sce:import kind=\"event-schema\" as=\"{alias}\" src=\"…\"/>"
                 )));
             };
+            let schema = whole.entry_schema().map_err(|composed| {
+                Located::new(
+                    GenerateError::unsupported(
+                        composed.sentence(&whole.name, &format!("a host-run invocation's {attr}")),
+                    )
+                    .into(),
+                    diag_label,
+                    at.as_ref().and_then(|l| l.line),
+                    at.as_ref().and_then(|l| l.col),
+                )
+            })?;
             // A schema with no field names an event that carries no data,
             // and no backend emits a payload struct for it: a request or a
             // result has to be made of fields.
@@ -117,8 +132,12 @@ pub fn validate(
                 )));
             }
         }
-        if let Some(schema) = imported_records.get(&info.request_schema) {
-            check_request(info, schema, diag_label)?;
+        // Every schema the invoke names was taken one entry per field above.
+        if let Some(Ok(schema)) = imported_records
+            .get(&info.request_schema)
+            .map(|schema| schema.entry_schema())
+        {
+            check_request(info, &schema, diag_label)?;
         }
     }
     Ok(())

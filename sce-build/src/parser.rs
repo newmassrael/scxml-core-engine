@@ -2207,7 +2207,7 @@ struct MeshRpcInvokeAttrs {
 /// The event schemas and enums a document imports, by the alias it imports
 /// them under, as `SCXMLParser::parse_imported_forge_siblings` resolves them.
 type ImportedSiblings = (
-    BTreeMap<String, crate::forge::model::EntrySchema>,
+    BTreeMap<String, crate::forge::model::EventSchemaModel>,
     BTreeMap<String, crate::forge::model::EnumModel>,
 );
 
@@ -2751,7 +2751,7 @@ impl SCXMLParser {
     {
         use crate::forge::error::{ImportError, Located};
         use crate::forge::model::{ForgeDocument, ForgeKind};
-        let mut schemas: std::collections::BTreeMap<String, crate::forge::model::EntrySchema> =
+        let mut schemas: std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel> =
             std::collections::BTreeMap::new();
         let mut enums: std::collections::BTreeMap<String, crate::forge::model::EnumModel> =
             std::collections::BTreeMap::new();
@@ -2818,24 +2818,13 @@ impl SCXMLParser {
                 ));
             }
             match parsed.document {
-                // A statechart reads an event's data one field at a time, each
-                // field one value: a schema whose field is a list, a record or an
-                // optional over either is a type of the language no statechart
-                // lowers yet, refused by name at the import that names it
-                // (docs/adr/0086, section 7.3).
+                // The schema is held whole, a field that is a list, a record or
+                // an optional over either included (docs/adr/0086, section 6):
+                // a statechart may take its event. A use that reads its fields
+                // one entry at a time is refused by name where it is written
+                // ([`crate::forge::event_schema_check::check_composed_uses`]).
                 ForgeDocument::EventSchema(schema) => {
-                    let entries = schema.entry_schema().map_err(|composed| {
-                        Located::new(
-                            crate::forge::error::GenerateError::unsupported(
-                                composed.sentence(&schema.name, "a statechart"),
-                            )
-                            .into(),
-                            diag_label,
-                            import.line,
-                            None,
-                        )
-                    })?;
-                    schemas.entry(entries.name.clone()).or_insert(entries);
+                    schemas.entry(schema.name.clone()).or_insert(schema);
                 }
                 ForgeDocument::Enum(em) => {
                     enums.entry(em.name.clone()).or_insert(em);
@@ -3399,6 +3388,11 @@ impl SCXMLParser {
                 &model,
                 &schemas_by_stem,
             );
+            // A schema whose field is a list, a record or an optional over
+            // either is held whole; each use of it that reads its fields one
+            // entry at a time is refused by name here, before any reader of the
+            // entry views below (docs/adr/0086, section 7.3).
+            crate::forge::event_schema_check::check_composed_uses(&model, diag_label)?;
             // A record variable's schema has to declare a field: a schema
             // with none names an event that carries no data, and no backend
             // emits a payload struct for it.
@@ -3439,15 +3433,16 @@ impl SCXMLParser {
             // anything reads the field's enum by name.
             crate::forge::event_schema_check::name_schema_enums(&mut model);
             let held_enums = model.held_enums();
+            let entry_schemas = model.entry_event_schemas();
             crate::forge::event_schema_check::check(
                 &model,
-                &model.imported_event_schemas,
+                &entry_schemas,
                 &held_enums,
                 diag_label,
             )?;
             crate::forge::event_schema_check::check_send_side(
                 &model,
-                &model.imported_event_schemas,
+                &entry_schemas,
                 &held_enums,
                 diag_label,
             )?;
@@ -3455,11 +3450,7 @@ impl SCXMLParser {
             // engine-free by definition, so a non-conforming construct is
             // a rejection rather than a degradation to the script engine.
             // It reads the same map, so it belongs to the same seam.
-            crate::forge::native_action::validate(
-                &model,
-                &model.imported_event_schemas,
-                diag_label,
-            )?;
+            crate::forge::native_action::validate(&model, &entry_schemas, diag_label)?;
         }
 
         // SCE Accepted Subset §2.15 — under `datamodel="sce-static"` every

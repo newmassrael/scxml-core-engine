@@ -16,9 +16,13 @@
 //!   refused at the attribute.
 //! * A composed field holds no one value, so it declares no quantity and no
 //!   retained initial value.
-//! * A statechart that imports a composed schema, and an algorithm that names
-//!   one as a record, are refused by name with `generate/unsupported-feature`,
-//!   naming the field and the type.
+//! * A statechart holds an imported schema whole and takes its event on every
+//!   target. Each use that reads the schema one entry per field is refused by
+//!   name with `generate/unsupported-feature`, naming the field, the type and
+//!   the position: a read of `_event.data` on a transition taken on the event,
+//!   a `<send>` or `<raise>` of the event, a variable that names a record
+//!   holding a composition at any depth, and a host-run record. So is an
+//!   algorithm that names such a record.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -200,46 +204,181 @@ fn run(args: &[&str], documents: &[(&str, &str)], file: &str) -> (bool, String) 
         std::fs::write(dir.path().join(name), text).expect("write a document");
     }
     let out_dir = tempdir().expect("tempdir");
-    let out = Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_sce-codegen"));
+    command
         .arg("--workspace-root")
         .arg(repo_root())
         .arg("--error-format=json")
         .args(args)
-        .arg(dir.path().join(file))
-        .arg("-o")
-        .arg(out_dir.path())
-        .output()
-        .expect("invoke sce-codegen");
+        .arg(dir.path().join(file));
+    // Only a generation writes files.
+    if args.first() == Some(&"generate") {
+        command.arg("-o").arg(out_dir.path());
+    }
+    let out = command.output().expect("invoke sce-codegen");
     (
         out.status.success(),
         String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout),
     )
 }
 
-const READER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+/// A `sce-static` statechart that imports `event_batch.scxml` as `Batch` and
+/// `event_batch_item.scxml` as `Item`, declares `data` beside a `uint32`
+/// `seen`, and takes `batch.sent` in its one state by `transition`, with
+/// `entry`, when there is any, as the state's `<onentry>` content.
+fn reader(data: &str, entry: &str, transition: &str) -> String {
+    let entry = if entry.is_empty() {
+        String::new()
+    } else {
+        format!("<onentry>{entry}</onentry>")
+    };
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="batch_reader">
   <sce:import kind="event-schema" src="event_batch.scxml" as="Batch"/>
+  <sce:import kind="event-schema" src="event_batch_item.scxml" as="Item"/>
   <datamodel>
     <data id="seen" sce:type="uint32" expr="0" sce:direction="out"/>
+    {data}
   </datamodel>
   <state id="idle">
-    <transition event="batch.sent" target="idle"/>
+    {entry}
+    {transition}
   </state>
 </scxml>
-"#;
+"#
+    )
+}
 
-#[test]
-fn a_statechart_that_imports_a_composed_schema_is_refused_by_name() {
+/// What `args` said of `document`, which it refused.
+fn refusal_of(args: &[&str], document: &str) -> String {
     let (ok, out) = run(
-        &["generate", "-l", "rust"],
-        &[("batch_reader.scxml", READER)],
+        args,
+        &[("batch_reader.scxml", document)],
         "batch_reader.scxml",
     );
-    assert!(!ok, "a statechart reads no list yet:\n{out}");
+    assert!(!ok, "refused:\n{document}\n{out}");
     assert!(out.contains("generate/unsupported-feature"), "{out}");
-    assert!(out.contains("the field `items`"), "{out}");
-    assert!(out.contains("a statechart"), "{out}");
+    out
+}
+
+/// Every target a `sce-static` document is lowered for: the Interpreter's own
+/// check, each backend's, and a Rust generation, which writes the machine.
+const EVERY_TARGET: [&[&str]; 8] = [
+    &["check"],
+    &["check", "-l", "rust"],
+    &["check", "-l", "kotlin"],
+    &["check", "-l", "cpp"],
+    &["check", "-l", "go"],
+    &["check", "-l", "python"],
+    &["check", "-l", "c11"],
+    &["generate", "-l", "rust"],
+];
+
+#[test]
+fn a_statechart_takes_the_event_of_a_composed_schema_without_reading_its_data() {
+    let document = reader(
+        "",
+        "",
+        r#"<transition event="batch.sent" target="idle">
+      <assign location="seen" expr="seen + 1"/>
+    </transition>"#,
+    );
+    for args in EVERY_TARGET {
+        let (ok, out) = run(
+            args,
+            &[("batch_reader.scxml", &document)],
+            "batch_reader.scxml",
+        );
+        assert!(
+            ok,
+            "{args:?} takes the event and reads none of its data:\n{out}"
+        );
+    }
+}
+
+#[test]
+fn a_read_of_the_data_of_a_composed_schema_is_refused_by_name() {
+    // In the guard ...
+    let guarded = reader(
+        "",
+        "",
+        r#"<transition event="batch.sent" cond="_event.data.note == 'a'" target="idle"/>"#,
+    );
+    // ... and in an action of the transition, however deep it is written.
+    let nested = reader(
+        "",
+        "",
+        r#"<transition event="batch.sent" target="idle">
+      <if cond="seen == 0">
+        <assign location="seen" expr="len(_event.data.items)"/>
+      </if>
+    </transition>"#,
+    );
+    for document in [guarded, nested] {
+        let out = refusal_of(&["check"], &document);
+        assert!(out.contains("the field `items`"), "{out}");
+        assert!(
+            out.contains("a statechart's read of `_event.data`"),
+            "{out}"
+        );
+        assert!(out.contains("list<record:Item>[batch_items=3]"), "{out}");
+    }
+}
+
+#[test]
+fn a_send_or_raise_of_the_event_of_a_composed_schema_is_refused_by_name() {
+    for (entry, element) in [
+        (
+            r##"<send event="batch.sent" target="#_internal"/>"##,
+            "<send>",
+        ),
+        (r#"<raise event="batch.sent"/>"#, "<raise>"),
+    ] {
+        let out = refusal_of(
+            &["check"],
+            &reader("", entry, r#"<transition event="go" target="idle"/>"#),
+        );
+        assert!(out.contains("the field `items`"), "{out}");
+        assert!(
+            out.contains(&format!("a statechart's {element} of its event")),
+            "{out}"
+        );
+    }
+}
+
+#[test]
+fn a_variable_that_names_a_composed_record_is_refused_by_name() {
+    // A record, an element of a list and an optional record alike: the record
+    // holds a list (`tags`) at whatever depth the variable names it.
+    for data in [
+        r#"<data id="kept" sce:type="record:Item"/>"#,
+        r#"<data id="kept" sce:type="list&lt;record:Item&gt;[2]"/>"#,
+        r#"<data id="kept" sce:type="optional&lt;record:Item&gt;" expr="null"/>"#,
+    ] {
+        let out = refusal_of(
+            &["check"],
+            &reader(data, "", r#"<transition event="go" target="idle"/>"#),
+        );
+        assert!(out.contains("the field `tags`"), "{out}");
+        assert!(out.contains("a statechart's variable"), "{out}");
+    }
+}
+
+#[test]
+fn a_host_run_record_that_holds_a_composition_is_refused_by_name() {
+    let out = refusal_of(
+        &["check"],
+        &reader(
+            "",
+            "",
+            r#"<invoke type="x-app-host" id="ask" sce:result="Item"/>
+    <transition event="done.invoke.ask" target="idle"/>"#,
+        ),
+    );
+    assert!(out.contains("the field `tags`"), "{out}");
+    assert!(out.contains("a host-run invocation's result"), "{out}");
 }
 
 const ITEM_ID: &str = r#"<?xml version="1.0" encoding="UTF-8"?>

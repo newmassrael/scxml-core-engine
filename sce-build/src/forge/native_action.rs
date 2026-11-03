@@ -314,7 +314,7 @@ pub fn validate(
 /// absent argument is written as `null`. Empty for a document [`validate`]
 /// refuses, and for one that declares no action.
 pub fn arguments_that_may_be_absent(scxml: &SCXMLModel) -> BTreeMap<String, Vec<bool>> {
-    match collect_signatures(scxml, &scxml.imported_event_schemas, "") {
+    match collect_signatures(scxml, &scxml.entry_event_schemas(), "") {
         Ok(signatures) => signatures
             .into_iter()
             .map(|(name, (types, _, _))| {
@@ -1336,7 +1336,9 @@ fn render_with_options(
     symbol_prefix: &str,
     namespace_prefix: &str,
 ) -> NativeActions {
-    let schemas = model.imported_event_schemas.clone();
+    // A host action reads a payload one entry per field; one of a schema that
+    // holds a composition is refused where the document is parsed.
+    let schemas = model.entry_event_schemas();
     // Under `datamodel="sce-static"` an argument is a typed expression over the
     // document's scope, lowered by the static lowering (SCE Accepted
     // Subset §2.15). Only a backend that lowers the model reaches here with

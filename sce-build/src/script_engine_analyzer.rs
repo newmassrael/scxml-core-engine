@@ -401,11 +401,14 @@ pub fn analyze(model: &SCXMLModel) -> Vec<NeedsScriptEngineCause> {
         collect_datamodel_causes(&state.datamodel, &mut causes);
     }
     collect_global_script_causes(model, &mut causes);
+    // A guard is native only over a schema read one entry per field; one that
+    // holds a composition keeps the engine.
+    let schemas = model.entry_event_schemas();
     for (state_id, state) in &model.states {
         collect_state_causes(
             state_id,
             state,
-            &model.imported_event_schemas,
+            &schemas,
             model.datamodel == crate::model::Datamodel::SceStatic,
             &mut causes,
         );

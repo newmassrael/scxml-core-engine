@@ -1573,7 +1573,7 @@ mod tests {
         let mut doc = Doc::new().names("error.execution").state("a", None);
         doc.model.imported_event_schemas.insert(
             "Ping".to_string(),
-            crate::forge::model::EntrySchema {
+            crate::forge::model::EventSchemaModel {
                 name: "Ping".to_string(),
                 event_name: "ping".to_string(),
                 fields: Vec::new(),

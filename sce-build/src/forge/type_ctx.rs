@@ -1106,9 +1106,11 @@ impl StaticScope {
             .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
             .cloned()
             .collect();
-        let record_paths = static_record_paths(variables.iter(), &model.imported_records);
-        let record_string_bounds =
-            static_record_string_bounds(variables.iter(), &model.imported_records);
+        // A variable that names a record holding a composition is refused where
+        // the document is parsed, so every record a variable names is here.
+        let records = model.entry_records();
+        let record_paths = static_record_paths(variables.iter(), &records);
+        let record_string_bounds = static_record_string_bounds(variables.iter(), &records);
         let optional_record_values = variables
             .iter()
             .filter(|v| {
@@ -1123,7 +1125,7 @@ impl StaticScope {
             variables
                 .iter()
                 .filter_map(|v| Some((v.limit()?, v.capacity()?)))
-                .chain(model.imported_records.values().flat_map(|schema| {
+                .chain(records.values().flat_map(|schema| {
                     schema
                         .fields
                         .iter()

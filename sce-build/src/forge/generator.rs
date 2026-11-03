@@ -4091,8 +4091,13 @@ pub fn build_rust_event_payload(
     // arm is defensive).
     let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    // Each payload event's schema, read one entry per field: a schema that holds
+    // a composition has no native guard, and a statechart that reads its data is
+    // refused where it is parsed
+    // ([`crate::forge::event_schema_check::check_composed_uses`]).
+    let entry_schemas = model.entry_event_schemas();
     for g in select_native_typed_guards(model) {
-        let schema = &model.imported_event_schemas[&g.event];
+        let schema = &entry_schemas[&g.event];
         let Ok(inner) = crate::forge::event_schema_check::lower_typed_guard(
             &g.cond,
             schema,
@@ -4146,7 +4151,7 @@ pub fn build_rust_event_payload(
     // under no_std, which has no such wire.
     let mut lift_arms = String::new();
     for event in &payload_events {
-        let schema = &model.imported_event_schemas[event];
+        let schema = &entry_schemas[event];
         let variant = filters::to_event_variant(event.clone());
         let struct_name = format!("{machine_name}{variant}Payload");
         // Per-event typed inject wrapper: one call binds the event name and
@@ -4966,8 +4971,13 @@ pub fn build_c11_event_payload(
     // (and no payload struct) is ever dead.
     let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    // Each payload event's schema, read one entry per field: a schema that holds
+    // a composition has no native guard, and a statechart that reads its data is
+    // refused where it is parsed
+    // ([`crate::forge::event_schema_check::check_composed_uses`]).
+    let entry_schemas = model.entry_event_schemas();
     for g in select_native_typed_guards(model) {
-        let schema = &model.imported_event_schemas[&g.event];
+        let schema = &entry_schemas[&g.event];
         let token = c11_event_token(&g.event);
         let member = token.to_lowercase();
         let tag_const = format!("{name_upper}_PAYLOAD_{}", token.to_uppercase());
@@ -5018,7 +5028,7 @@ pub fn build_c11_event_payload(
     let mut lift_arms = String::new();
     let raises_error = model.events.iter().any(|e| e == "error.execution");
     for event in &guarded_events {
-        let schema = &model.imported_event_schemas[event];
+        let schema = &entry_schemas[event];
         let token = c11_event_token(event);
         let member = token.to_lowercase();
         let upper = token.to_uppercase();
@@ -5455,8 +5465,13 @@ pub fn build_go_event_payload(
     // ANDed with the lowered field comparison.
     let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    // Each payload event's schema, read one entry per field: a schema that holds
+    // a composition has no native guard, and a statechart that reads its data is
+    // refused where it is parsed
+    // ([`crate::forge::event_schema_check::check_composed_uses`]).
+    let entry_schemas = model.entry_event_schemas();
     for g in select_native_typed_guards(model) {
-        let schema = &model.imported_event_schemas[&g.event];
+        let schema = &entry_schemas[&g.event];
         let variant = filters::to_event_variant(g.event.clone());
         let accessor = format!("p.pending{variant}Payload");
         let Ok(inner) = crate::forge::event_schema_check::lower_typed_guard(
@@ -5508,7 +5523,7 @@ pub fn build_go_event_payload(
     let clear = format!("\tp.pendingPayloadTag = {tag_none}\n");
 
     for event in &guarded_events {
-        let schema = &model.imported_event_schemas[event];
+        let schema = &entry_schemas[event];
         let variant = filters::to_event_variant(event.clone());
         let struct_name = format!("{machine}{variant}Payload");
         let field = format!("pending{variant}Payload");
@@ -5806,9 +5821,13 @@ pub fn build_swift_event_payload(
     let mut lift_cases = String::new();
     let mut populate_cases = String::new();
     let mut raise_seams = String::new();
+    // Each payload event's schema, read one entry per field: a statechart that
+    // reads the data of one that holds a composition is refused where it is
+    // parsed ([`crate::forge::event_schema_check::check_composed_uses`]).
+    let entry_schemas = model.entry_event_schemas();
 
     for event in payload_events {
-        let schema = &model.imported_event_schemas[event];
+        let schema = &entry_schemas[event];
         let pascal = filters::to_event_variant(event.clone());
         let case = filters::to_swift_variant(event.clone());
         let struct_name = format!("{machine}{pascal}Payload");
@@ -6144,8 +6163,13 @@ pub fn build_cpp_event_payload(
     // delivered without a typed payload) ANDed with the lowered comparison.
     let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    // Each payload event's schema, read one entry per field: a schema that holds
+    // a composition has no native guard, and a statechart that reads its data is
+    // refused where it is parsed
+    // ([`crate::forge::event_schema_check::check_composed_uses`]).
+    let entry_schemas = model.entry_event_schemas();
     for g in select_native_typed_guards(model) {
-        let schema = &model.imported_event_schemas[&g.event];
+        let schema = &entry_schemas[&g.event];
         let variant = filters::to_event_variant(g.event.clone());
         let accessor = format!("pending{variant}Payload_");
         let Ok(inner) = crate::forge::event_schema_check::lower_typed_guard(
@@ -6200,7 +6224,7 @@ pendingPayloadTag_ = {TAG}::None;\n",
     let mut inject = String::new();
 
     for event in &guarded_events {
-        let schema = &model.imported_event_schemas[event];
+        let schema = &entry_schemas[event];
         let variant = filters::to_event_variant(event.clone());
         let struct_name = format!("{machine}{variant}Payload");
         let field = format!("pending{variant}Payload_");
@@ -6435,8 +6459,13 @@ pub fn build_kotlin_event_payload(
     // prefix of the guard makes the assertion always safe.
     let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    // Each payload event's schema, read one entry per field: a schema that holds
+    // a composition has no native guard, and a statechart that reads its data is
+    // refused where it is parsed
+    // ([`crate::forge::event_schema_check::check_composed_uses`]).
+    let entry_schemas = model.entry_event_schemas();
     for g in select_native_typed_guards(model) {
-        let schema = &model.imported_event_schemas[&g.event];
+        let schema = &entry_schemas[&g.event];
         let variant = filters::to_event_variant(g.event.clone());
         let field = format!("pending{variant}Payload");
         let accessor = format!("{field}!!");
@@ -6487,7 +6516,7 @@ pub fn build_kotlin_event_payload(
     populate.push_str("        when (val tp = metadata.typedPayload) {\n");
 
     for event in &guarded_events {
-        let schema = &model.imported_event_schemas[event];
+        let schema = &entry_schemas[event];
         let variant = filters::to_event_variant(event.clone());
         let class_name = format!("{machine}{variant}Payload");
         let field = format!("pending{variant}Payload");
@@ -6699,8 +6728,13 @@ pub fn build_python_event_payload(
     // (Python is dynamic — no literal-type coercion needed, `== 0` is direct).
     let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    // Each payload event's schema, read one entry per field: a schema that holds
+    // a composition has no native guard, and a statechart that reads its data is
+    // refused where it is parsed
+    // ([`crate::forge::event_schema_check::check_composed_uses`]).
+    let entry_schemas = model.entry_event_schemas();
     for g in select_native_typed_guards(model) {
-        let schema = &model.imported_event_schemas[&g.event];
+        let schema = &entry_schemas[&g.event];
         let snake = filters::to_snake_case(g.event.clone());
         let accessor = format!("self._pending_{snake}_payload");
         let Ok(inner) = crate::forge::event_schema_check::lower_typed_guard(
@@ -6757,7 +6791,7 @@ pub fn build_python_event_payload(
 
     let mut first = true;
     for event in &guarded_events {
-        let schema = &model.imported_event_schemas[event];
+        let schema = &entry_schemas[event];
         let variant = filters::to_event_variant(event.clone());
         let snake = filters::to_snake_case(event.clone());
         let class_name = format!("{machine}{variant}Payload");
@@ -41512,8 +41546,9 @@ mod tests {
     /// present value as its own wire spelling; a field of `T` is as it was.
     #[test]
     fn a_python_payload_holds_an_optional_field_as_none_or_its_value() {
-        use crate::forge::model::{Direction, EntryField, EntrySchema, EntryType};
-        let field = |id: &str, sce_type: EntryType, max_size: Option<u32>| EntryField {
+        use crate::forge::model::{Direction, EventSchemaModel, SchemaField};
+        use crate::forge::value_type::{Bound, ValueType};
+        let field = |id: &str, sce_type: ValueType| SchemaField {
             id: id.to_string(),
             sce_type,
             direction: Direction::In,
@@ -41521,7 +41556,7 @@ mod tests {
             expr_spelling: None,
             expr_splices: None,
             quantity: None,
-            max_size,
+            max_size: None,
             limit: None,
             default_covers: Vec::new(),
             retain: None,
@@ -41532,21 +41567,23 @@ mod tests {
             default: None,
             default_spelling: None,
         };
-        let optional = |elem: SceType| EntryType::Optional { elem };
+        let optional = |elem: ValueType| ValueType::Optional {
+            elem: Box::new(elem),
+        };
         let mut model = crate::model::SCXMLModel {
             name: "due".to_string(),
             ..Default::default()
         };
         model.imported_event_schemas.insert(
             "due.set".to_string(),
-            EntrySchema {
+            EventSchemaModel {
                 name: "schema_due".to_string(),
                 event_name: "due.set".to_string(),
                 fields: vec![
-                    field("id", EntryType::Scalar(SceType::Uint32), None),
-                    field("due", optional(SceType::Int64), None),
-                    field("title", optional(SceType::String), Some(16)),
-                    field("ratio", optional(SceType::Float32), None),
+                    field("id", ValueType::Scalar(SceType::Uint32)),
+                    field("due", optional(ValueType::Scalar(SceType::Int64))),
+                    field("title", optional(ValueType::Text { max: Bound::of(16) })),
+                    field("ratio", optional(ValueType::Scalar(SceType::Float32))),
                 ],
                 payload_none: false,
                 datamodel_markers: Vec::new(),

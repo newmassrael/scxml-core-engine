@@ -1637,6 +1637,19 @@ pub struct EventSchemaModel<T = crate::forge::value_type::ValueType> {
 /// one entry ([`EventSchemaModel::entry_schema`]).
 pub type EntrySchema = EventSchemaModel<EntryType>;
 
+/// The entry view ([`EventSchemaModel::entry_schema`]) of each schema of
+/// `schemas` that holds no composition, under the key it is held by: what a
+/// reader that holds one entry per field takes of a statechart's imports
+/// ([`crate::model::SCXMLModel::entry_event_schemas`]).
+pub fn entry_views(
+    schemas: &std::collections::BTreeMap<String, EventSchemaModel>,
+) -> std::collections::BTreeMap<String, EntrySchema> {
+    schemas
+        .iter()
+        .filter_map(|(key, schema)| Some((key.clone(), schema.entry_schema().ok()?)))
+        .collect()
+}
+
 impl EntrySchema {
     /// The first field that may be absent (docs/adr/0055), if any: what a
     /// lowering that does not hold an optional value yet refuses the schema by.
