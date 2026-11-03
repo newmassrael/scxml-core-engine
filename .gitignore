@@ -251,17 +251,13 @@ MODULE.bazel.lock
 # SCE Mesh §9.6.6: synth-invoke child SCXMLs are derived artefacts —
 # `sce-codegen generate` re-materialises them into the caller-supplied
 # `-o` (and `--deploy <path>` parent when distinct) on every run, so a
-# leak into a tracked dir is pollution, not signal. Exception:
-# `resources/<num>/test<num>__sce_synth_invoke__*.scxml` files stay
-# tracked. The W3C CMake route no longer reads them: it asks
-# `sce-codegen --plan generate` for a fixture's children when the tree is
-# configured (cmake/SCECodegenPlan.cmake). What still reads them is
-# `committed_sourcemap_drift`, which resolves every document a committed
-# sidecar names through the tracked `.scxml` index and regenerates from
-# it; once it takes a synthesized child from its parent instead, the
-# corpus joins the rest of this rule.
+# leak into a tracked dir is pollution, not signal. None is tracked,
+# `resources/` included: an in-line child is named, in every generated
+# header (`// From: <document>#<invoke path>`) and in every sourcemap
+# (`scxml_invoke_path`), by the document that holds its text, and every
+# reader reaches it through that document. A copy committed beside it was
+# a second text of the child that could fall behind the first.
 **/*__sce_synth_invoke__*.scxml
-!resources/*/*__sce_synth_invoke__*.scxml
 
 # SCE embed output (regenerate via: ./scripts/package_embed.sh)
 # embed/MANIFEST.json records the public-header API surface and is

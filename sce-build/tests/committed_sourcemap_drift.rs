@@ -155,30 +155,27 @@ fn scxml_index_is_unambiguous() {
     );
 }
 
-/// Every `scxml_file` a committed sidecar names must resolve — or be a
-/// document SCE is known to synthesise.
+/// Every `scxml_file` a committed sidecar names is a document an author
+/// wrote, and opens.
 ///
 /// Nothing checked this, and the tree showed why it needed to be: 38 of the
 /// 41 `__sce_synth_invoke__` names in the Rust trees pointed at files that do
 /// not exist, and three did only because an older generator had written them
 /// to disk and they were never removed. A consumer resolving one of those
 /// paths — `addr2sce` is the one in this repository — gets nothing back, and
-/// no gate said so.
+/// no gate said so. The rows were no better: they counted lines of a text the
+/// parser built in memory from the invoke's `<content>` (on test233 the
+/// child's machine sat at line 3 of that text, its `<scxml>` at line 18 of the
+/// parent).
 ///
-/// The synthesised class is legitimate and stays: the parser builds an
-/// invoke's inline `<content>` into a document in memory, and the symbols
-/// carry line numbers relative to THAT document (measured on test233: the
-/// child's machine sits at line 3 of a synthesised text whose `<scxml>`
-/// element lives at line 18 of the parent). Renaming those symbols to the
-/// parent file would therefore point a reader at the wrong lines — which is
-/// why this gate records the class rather than rewriting it, and why
-/// `schemas/sce-sourcemap.v1.schema.json` now states it for consumers.
-///
-/// What changes is that only the DECLARED class may be unresolvable. A typo,
-/// a renamed fixture, or a document that moves out from under a sidecar now
-/// fails here instead of passing as one more name nobody tried to open.
+/// A symbol of a machine written in-line now names the document that holds
+/// its text and the rows its author wrote there, as any symbol does, and says
+/// which document inside it its state path belongs to (`scxml_invoke_path`).
+/// So no name carries the infix of a synthesised child, every name opens, and
+/// a symbol that claims an invoke path names a document that holds an in-line
+/// `<content>` machine for it to lead to.
 #[test]
-fn every_sourcemap_path_resolves_or_is_a_declared_synthesised_document() {
+fn every_sourcemap_path_names_a_document_an_author_wrote() {
     const SYNTH_INFIX: &str = "__sce_synth_invoke__";
     let idx = scxml_index();
     let sidecars = committed_sidecars();
@@ -188,8 +185,14 @@ fn every_sourcemap_path_resolves_or_is_a_declared_synthesised_document() {
         sidecars.len()
     );
 
-    let mut unresolved: Vec<String> = Vec::new();
-    let mut synthesised = 0usize;
+    let holds_inline_machine = |base: &str| {
+        idx.get(base)
+            .and_then(|paths| paths.first())
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .is_some_and(|t| t.contains("<content>") && t.matches("<scxml").count() > 1)
+    };
+    let mut wrong: Vec<String> = Vec::new();
+    let mut in_line = 0usize;
     let mut resolved = 0usize;
     for sidecar in &sidecars {
         let text = std::fs::read_to_string(sidecar).expect("read sidecar");
@@ -198,6 +201,11 @@ fn every_sourcemap_path_resolves_or_is_a_declared_synthesised_document() {
             .get("symbols")
             .and_then(|s| s.as_object())
             .expect("sidecar carries a symbols table");
+        let at = sidecar
+            .strip_prefix(repo_root())
+            .unwrap_or(sidecar)
+            .display()
+            .to_string();
         for (symbol, entry) in symbols {
             let named = entry
                 .get("scxml_file")
@@ -207,57 +215,44 @@ fn every_sourcemap_path_resolves_or_is_a_declared_synthesised_document() {
                 .file_name()
                 .and_then(|f| f.to_str())
                 .unwrap_or(named);
-            if let Some((parent, _)) = base.split_once(SYNTH_INFIX) {
-                // The infix alone is not the licence — a misspelled or
-                // orphaned name would inherit it. The PARENT has to be a real
-                // document that genuinely carries an inline `<content>`
-                // machine, which is the only thing SCE synthesises a child
-                // from.
-                let parent_doc = format!("{parent}.scxml");
-                let carries_inline = idx
-                    .get(&parent_doc)
-                    .and_then(|paths| paths.first())
-                    .and_then(|p| std::fs::read_to_string(p).ok())
-                    .map(|t| t.contains("<content>") && t.matches("<scxml").count() > 1)
-                    .unwrap_or(false);
-                if carries_inline {
-                    synthesised += 1;
+            if base.contains(SYNTH_INFIX) {
+                wrong.push(format!(
+                    "{at}: {symbol} -> {named} (a synthesised child's name, not the \
+                     document that holds its text)"
+                ));
+                continue;
+            }
+            if !(idx.contains_key(base) || sidecar.with_file_name(base).exists()) {
+                wrong.push(format!("{at}: {symbol} -> {named}"));
+                continue;
+            }
+            resolved += 1;
+            if entry.get("scxml_invoke_path").is_some() {
+                if holds_inline_machine(base) {
+                    in_line += 1;
                 } else {
-                    unresolved.push(format!(
-                        "{}: {symbol} -> {named} (no inline <content> machine in {parent_doc})",
-                        sidecar
-                            .strip_prefix(repo_root())
-                            .unwrap_or(sidecar)
-                            .display()
+                    wrong.push(format!(
+                        "{at}: {symbol} -> {named} claims an invoke path, and {base} holds \
+                         no in-line <content> machine"
                     ));
                 }
-            } else if idx.contains_key(base) || sidecar.with_file_name(base).exists() {
-                resolved += 1;
-            } else {
-                unresolved.push(format!(
-                    "{}: {symbol} -> {named}",
-                    sidecar
-                        .strip_prefix(repo_root())
-                        .unwrap_or(sidecar)
-                        .display()
-                ));
             }
         }
     }
     assert!(
-        resolved > 0 && synthesised > 0,
-        "the scan classified {resolved} resolved and {synthesised} synthesised \
-         name(s) — one of the two arms is not being exercised, so a clean \
-         result would mean nothing"
+        resolved > 0 && in_line > 0,
+        "the scan resolved {resolved} name(s), {in_line} of them of an in-line child — \
+         one of the two arms is not being exercised, so a clean result would mean nothing"
     );
-    unresolved.sort();
-    unresolved.dedup();
+    wrong.sort();
+    wrong.dedup();
     assert!(
-        unresolved.is_empty(),
-        "sourcemap symbol(s) name a document that is neither on disk nor a \
-         declared synthesised child:\n  {}\n A consumer resolving one of these \
-         gets nothing back. Either the document moved, or the name is wrong.",
-        unresolved.join("\n  ")
+        wrong.is_empty(),
+        "sourcemap symbol(s) name no document an author wrote:\n  {}\n A consumer \
+         resolving one of these gets nothing back, or the wrong rows. Either the \
+         document moved, the name is wrong, or the sidecar predates the generator \
+         (regenerate the tree).",
+        wrong.join("\n  ")
     );
 }
 
@@ -316,9 +311,11 @@ fn committed_sourcemaps_match_regeneration() {
         .unwrap_or_else(|e| panic!("{} is not valid JSON: {e}", sidecar.display()));
 
         // A sidecar covers every machine emitted into its directory,
-        // so it may name several documents: an authored parent, each
-        // synth-invoke child materialised beside it, and any external
-        // `src=` child. Rather than guess which one is "the parent" —
+        // so it may name several documents: an authored parent, and any
+        // external `src=` child. A child written in-line names the
+        // document that holds its text, so it is reached through that
+        // document, whose generation writes it, and never through a file
+        // of its own. Rather than guess which document is "the parent" —
         // the naming rules differ per tree and got this wrong twice —
         // regenerate from every document the sidecar names and compare
         // against the union. Regenerating a parent re-emits its
