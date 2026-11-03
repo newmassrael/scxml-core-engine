@@ -223,6 +223,69 @@ fn a_connection_with_no_token_makes_so_many_requests_and_is_closed() {
     );
 }
 
+/// A dial with no token refused for its source's connections a minute (429) is the relay's refusal
+/// for the rate, with the wait its `Retry-After` gave, and nothing of the request was sent: the link
+/// gives it as the transport's `RateLimited`, a `Link` as the relay's `rate_limited`, and the driver
+/// gives a login it would have to wait a minute for, by a deadline nearer than that, the refusal.
+#[test]
+fn a_dial_refused_for_the_rate_is_the_relays_refusal_with_its_wait() {
+    let one_a_minute = LoginPolicy {
+        connections_per_minute: 1,
+        ..LoginPolicy::default()
+    };
+    let running = start(one_a_minute, Bounds::default(), Vec::new());
+    let _keep = &running.runtime;
+    let none = Signal::new();
+    let heads = Request::Heads.to_json();
+    let mut first = WssLink::new(&running.base, "").unwrap();
+    assert!(
+        first.exchange(&heads, None, &none).is_ok(),
+        "the minute's one"
+    );
+
+    let mut second = WssLink::new(&running.base, "").unwrap();
+    match second.exchange(&heads, None, &none) {
+        Err(TransportError::RateLimited {
+            retry_after_ms,
+            reason,
+        }) => {
+            assert_eq!(
+                retry_after_ms, 60_000,
+                "a minute, as the server rounds it up"
+            );
+            assert!(reason.contains("connections"), "{reason}");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(second.take_notices().is_empty(), "no connection was made");
+    match second.call(&Request::Heads) {
+        Ok(Response::Refused {
+            code: Code::RateLimited { retry_after_ms },
+            ..
+        }) => assert_eq!(retry_after_ms, 60_000),
+        other => panic!("{other:?}"),
+    }
+
+    let mut login = LoginMachine::start(device(2), AUDIENCE);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let began = std::time::Instant::now();
+    assert_eq!(
+        drive(&mut login, &mut second, Some(deadline), &none),
+        sce_rust_relay::Driven::Ended
+    );
+    assert!(
+        began.elapsed() < std::time::Duration::from_secs(5),
+        "a wait past the deadline is not taken"
+    );
+    match login.outcome() {
+        Some(Err(sce_rust_relay::CourierError::Relay {
+            code: Code::RateLimited { retry_after_ms },
+            ..
+        })) => assert_eq!(*retry_after_ms, 60_000),
+        other => panic!("{other:?}"),
+    }
+}
+
 /// The status a dial with no token answers with, when it says it was forwarded for `forwarded`.
 fn dial(running: &Running, forwarded: &str) -> u16 {
     let mut request = upgrade_request(&endpoint(&running.base).unwrap(), "").unwrap();

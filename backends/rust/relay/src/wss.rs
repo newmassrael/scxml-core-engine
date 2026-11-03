@@ -19,7 +19,13 @@
 //! connection while the link held it unused (a relay closes one that asks nothing for longer than
 //! its bound): what came on the connection since the last exchange is read before a request is
 //! sent on it, so a request is never sent on a connection already closed, and never twice. A
-//! refusal of the token at the upgrade (401) is [`TransportError::Unauthorized`].
+//! refusal of the token at the upgrade (401) is [`TransportError::Unauthorized`], and a refusal of
+//! the connection for its source's rate (429, which the relay's server answers an anonymous
+//! connection past `connections_per_minute` with) is [`TransportError::RateLimited`] with the wait
+//! its `Retry-After` gives ([`retry_after_ms`]): nothing of the request was sent, and the driver
+//! waits it out as it waits out the relay's `rate_limited`. Each dial, connection, refusal and
+//! connection given up is a record of the `log` facade (`crate::logs`), which names the endpoint and
+//! whether a token is presented, and never the token.
 //!
 //! A link made with the empty token presents none, and dials the anonymous connection a device logs
 //! in on (ADR 0080); the token its login earned is given to it with [`Transport::set_token`], and
@@ -67,6 +73,11 @@ pub struct WssLink {
 /// Why one exchange on the socket did not come to its response.
 enum Broke {
     Unauthorized(String),
+    /// The upgrade was refused for the rate (429), with the wait its `Retry-After` gave.
+    RateLimited {
+        retry_after_ms: u64,
+        reason: String,
+    },
     Link(String),
 }
 
@@ -115,9 +126,25 @@ impl WssLink {
     /// Give the connection up, when there is one, and tell the host why.
     fn give_up(&mut self, why: &str) {
         if self.socket.take().is_some() {
+            log::info!(reason = why; "connection_given_up");
             self.notices.push(Notice::Lost(why.to_string()));
         }
     }
+}
+
+/// The wait a refusal of the upgrade for the rate (429) asks for, in milliseconds: its
+/// `Retry-After` in seconds (RFC 9110 section 10.2.3, the delay form, which the relay's server
+/// writes, rounded up). `None` for a header that is not there or gives a date, whose wait the link
+/// does not read.
+pub fn retry_after_ms(headers: &http::HeaderMap) -> Option<u64> {
+    let seconds: u64 = headers
+        .get(http::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    Some(seconds.saturating_mul(1000))
 }
 
 /// The address a device connects to at the relay whose base is `base` (`ws://host:port` or
@@ -156,20 +183,61 @@ pub fn upgrade_request(url: &str, token: &str) -> Result<UpgradeRequest, String>
 async fn dial(url: &str, token: &str, tls: &Arc<ClientConfig>) -> Result<Socket, Broke> {
     let upgrade = upgrade_request(url, token).map_err(Broke::Link)?;
     let connector = Connector::Rustls(Arc::clone(tls));
+    // What a record says of the dial: where, and whether it presents a token; never the token.
+    log::debug!(endpoint = url, token = !token.is_empty(); "dialling");
     match tokio_tungstenite::connect_async_tls_with_config(upgrade, None, false, Some(connector))
         .await
     {
-        Ok((socket, _)) => Ok(socket),
-        Err(WsError::Http(response)) if response.status() == http::StatusCode::UNAUTHORIZED => {
-            let why = response
-                .body()
-                .as_deref()
-                .map(String::from_utf8_lossy)
-                .unwrap_or_default();
-            Err(Broke::Unauthorized(why.into_owned()))
+        Ok((socket, _)) => {
+            log::info!(endpoint = url, token = !token.is_empty(); "connected");
+            Ok(socket)
         }
-        Err(error) => Err(Broke::Link(error.to_string())),
+        Err(WsError::Http(response)) if response.status() == http::StatusCode::UNAUTHORIZED => {
+            let why = body_of(&response);
+            log::info!(status = 401u16, reason = why.as_str(); "dial_refused");
+            Err(Broke::Unauthorized(why))
+        }
+        Err(WsError::Http(response))
+            if response.status() == http::StatusCode::TOO_MANY_REQUESTS =>
+        {
+            let why = body_of(&response);
+            match retry_after_ms(response.headers()) {
+                Some(retry_after_ms) => {
+                    log::info!(
+                        status = 429u16,
+                        retry_after_ms = retry_after_ms,
+                        reason = why.as_str();
+                        "dial_refused"
+                    );
+                    Err(Broke::RateLimited {
+                        retry_after_ms,
+                        reason: why,
+                    })
+                }
+                None => {
+                    log::info!(status = 429u16, reason = why.as_str(); "dial_refused_without_wait");
+                    Err(Broke::Link(format!(
+                        "the relay refused the connection for the rate and gave no wait in \
+                         seconds: {why}"
+                    )))
+                }
+            }
+        }
+        Err(error) => {
+            log::info!(reason = error.to_string().as_str(); "dial_failed");
+            Err(Broke::Link(error.to_string()))
+        }
     }
+}
+
+/// The text of a refused upgrade's body: what the relay said of why.
+fn body_of(response: &http::Response<Option<Vec<u8>>>) -> String {
+    response
+        .body()
+        .as_deref()
+        .map(String::from_utf8_lossy)
+        .unwrap_or_default()
+        .into_owned()
 }
 
 /// Carry `request` on the connection, dialled first when there is none.
@@ -300,6 +368,13 @@ impl Transport for WssLink {
         let error = match waited {
             Waited::Answered(Ok(text)) => return Ok(text),
             Waited::Answered(Err(Broke::Unauthorized(why))) => TransportError::Unauthorized(why),
+            Waited::Answered(Err(Broke::RateLimited {
+                retry_after_ms,
+                reason,
+            })) => TransportError::RateLimited {
+                retry_after_ms,
+                reason,
+            },
             Waited::Answered(Err(Broke::Link(why))) => TransportError::Link(why),
             Waited::Woken if cancel.is_raised() => TransportError::Cancelled,
             Waited::Woken => TransportError::Link("the network changed".to_string()),
@@ -314,6 +389,7 @@ impl Transport for WssLink {
                 TransportError::Deadline
             }
         };
+        log::info!(reason = error.to_string().as_str(); "exchange_failed");
         self.give_up(&error.to_string());
         Err(error)
     }
@@ -332,5 +408,40 @@ impl Transport for WssLink {
             self.give_up("the token changed");
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn with(value: Option<&str>) -> http::HeaderMap {
+        let mut headers = http::HeaderMap::new();
+        if let Some(value) = value {
+            headers.insert(
+                http::header::RETRY_AFTER,
+                http::HeaderValue::from_str(value).unwrap(),
+            );
+        }
+        headers
+    }
+
+    /// The wait of a 429 is its `Retry-After` in seconds, as milliseconds; a date, a word, a
+    /// negative number and no header give none, and a wait too long for milliseconds is the longest.
+    #[test]
+    fn the_wait_of_a_refusal_for_the_rate_is_its_retry_after_in_seconds() {
+        assert_eq!(retry_after_ms(&with(Some("60"))), Some(60_000));
+        assert_eq!(retry_after_ms(&with(Some(" 7 "))), Some(7_000));
+        assert_eq!(retry_after_ms(&with(Some("0"))), Some(0));
+        assert_eq!(
+            retry_after_ms(&with(Some("18446744073709551615"))),
+            Some(u64::MAX)
+        );
+        assert_eq!(
+            retry_after_ms(&with(Some("Wed, 21 Oct 2026 07:28:00 GMT"))),
+            None
+        );
+        assert_eq!(retry_after_ms(&with(Some("-1"))), None);
+        assert_eq!(retry_after_ms(&with(None)), None);
     }
 }

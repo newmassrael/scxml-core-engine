@@ -189,6 +189,22 @@ lapse (section 2). Each table forgets a key a window after it last spent, and ho
 keys. A source behind a proxy is the address its `X-Forwarded-For` names, only on a connection from
 a proxy the server is told to trust (`Server::trusting`).
 
+**A refusal for the rate is flow control, and comes before anything is done** (decided 2026-11-03).
+`rate_limited` says how long until the request may be asked again (`retry_after_ms`, the delay of RFC
+9110's `Retry-After`), and the WebSocket upgrade refused for a source's connections a minute says it
+as `429` with `Retry-After` in seconds, rounded up. On every path the relay refuses for the rate before
+it does anything of the request, and an allowance refused spends nothing of itself, so that the same
+request asked again after the wait is a request asked for the first time: a session's request meets the
+device's allowance before its role, its form or what it carries are read; an anonymous connection
+meets its source's connections a minute at the upgrade, and its challenges, logins, joins and creations
+a minute before the challenge is drawn or the rest is read; a login meets the used challenges the relay
+keeps and its node's logins of the hour before the relay appends the entries it brought (these are
+spent only once the signature held, so a stranger spends no member's); a join and a creation meet the
+used challenges and the relay's creations of the hour before the nonce is used and before the list's
+side judges or keeps anything. A device's driver waits the refusal out and asks the same request again
+(section 9). Each refusal for the rate is logged by the relay with the name of the limit, the wait and
+the counts behind it (`docs/SCE_RELAY_DEPLOY.md` section 2).
+
 ## 5. Storage
 
 A relay's state is the records it was given, in order, and nothing else. A store is an append-only
@@ -409,7 +425,11 @@ The contract, which every binding keeps:
   `Unauthorized(why)` says the relay's endpoint refused the device's token before it carried the
   request, which the core reads as the relay's refusal of the token (`unauthorized`), the answer it
   gives a token that expires on a connection that stays open, so that a host renews its token on one
-  sign; `Deadline` and `Cancelled` say which stop came first.
+  sign; `RateLimited { retry_after_ms, reason }` says the endpoint refused the connection for the rate
+  before it carried the request (the WebSocket binding's `429` with `Retry-After` in seconds, a date
+  or no header being a failure of the link), which the core reads as the relay's `rate_limited` with
+  the same wait, so that the driver waits out both alike; `Deadline` and `Cancelled` say which stop
+  came first.
 - **The token is the transport's.** The token of section 2 is carried as the medium carries
   credentials: the WebSocket binding sends it as `Authorization: Bearer` at the upgrade, and sends no
   header for the empty token, which is the anonymous connection a device logs in on. A transport
@@ -430,7 +450,19 @@ is an `Exchange`: the request it wants put, and the answer or the link's failure
 link, deadline, cancel)` is the one loop that carries it: it reads the cancellation and the deadline
 before each request and fails a request asked after either, gives every other request to the link
 (`Link::call_within`, which a transport honours), and returns how it ended (`Driven::Ended`,
-`Cancelled`, `DeadlinePassed`); the outcome waits in the exchange. A `Courier` is `drive` over its
+`Cancelled`, `DeadlinePassed`); the outcome waits in the exchange. An answer that is the relay's
+`rate_limited` is flow control, not the exchange's to see: when its wait ends before the deadline, or
+there is none, and is not `u64::MAX` (the relay's word for never), the driver waits it out and puts
+the same request again, as many times as the relay asks; a wait that would end at the deadline or
+after it gives the exchange the refusal, as before; a cancellation raised during a wait wakes it and
+ends the drive as `Cancelled`, and a deadline passed when it ends as `DeadlinePassed`, each with the
+link's failure as before any request. The wait is a clock's (`driver::Clock`: now, and a wait the
+cancellation cuts short): `drive` runs on the system's (`SystemClock`), and `drive_with` on another,
+the clock of whoever carries the texts, so that a host whose time is not the system's (a simulation)
+waits on its own; through the C ABI a host's own transport gives its wait as a function
+(`sce_peer_link_set_pause`, `docs/SCE_SHARED_LIST_PEER_ABI.md` section 11). The driver logs each wait
+with the request's kind, how long and how many refusals in a row, each refusal given over and why, each
+failure of the link and each stop. A `Courier` is `drive` over its
 `Link` with no deadline; a Rust host runs `Peer` over a transport with `drive`; a host in another
 language runs it through the C ABI (`sce_peer_run`, `docs/SCE_SHARED_LIST_PEER_ABI.md` section 11),
 which is `drive` too. Every transport is a `Link` (its texts written and read with `Request::to_json`

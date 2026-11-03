@@ -71,9 +71,11 @@ pub use sce_rust_mls::host::{Member, Step as GroupStep};
 pub use sce_rust_mls::{Device, MlsError};
 // The key a sealed state is sealed under, and why a sealed state was not made or not opened.
 pub use sce_rust_trust::backup::{BackupError, DataKey};
-// What runs the core over a transport: the one driver, the exchange it carries, how it ended, and
-// the transport's contract with what it is given.
-pub use sce_rust_relay::{drive, Driven, Exchange, Signal, Transport, TransportError};
+// What runs the core over a transport: the one driver, on the system's clock or another, the
+// exchange it carries, how it ended, and the transport's contract with what it is given.
+pub use sce_rust_relay::{
+    drive, drive_with, Clock, Driven, Exchange, Signal, SystemClock, Transport, TransportError,
+};
 pub use sce_rust_relay::{CourierError, Kept, Publication, Round, RoundKind, Token};
 pub use sce_rust_trust::membership::{Hash, LogError, Profile, OWNER, READER, WRITER};
 

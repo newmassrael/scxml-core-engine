@@ -54,7 +54,11 @@ use std::time::Instant;
 /// **What an error means.** An `Ok` is a text the relay sent: its refusal of a request is a response
 /// (`{"refused": ...}`), never an error of the transport. An error says the relay's answer did not
 /// come back, and why ([`TransportError`]); the core then ends its exchange as a failure of the link,
-/// and what the exchange took in is handed over by the next round.
+/// and what the exchange took in is handed over by the next round. Two errors are the relay's
+/// endpoint refusing before it carried the request, which the core reads as the relay's own
+/// refusals: the device's token ([`TransportError::Unauthorized`]) and the rate
+/// ([`TransportError::RateLimited`], which the driver waits out as it waits out a `rate_limited`
+/// response).
 ///
 /// **Moved, not shared.** A transport is moved to the thread that runs the rounds (`Send`); what
 /// another thread may do to it while an exchange blocks is raise the two signals: the exchange's
@@ -106,6 +110,13 @@ pub enum TransportError {
     /// token and makes a transport with it. A relay that refuses a token on a connection that stays
     /// open answers with its refusal instead, which is a response.
     Unauthorized(String),
+    /// The relay's endpoint refused the connection for the rate before it carried the request
+    /// (the WebSocket binding's upgrade answered 429 with `Retry-After`), and says how long until it
+    /// may be asked again, in milliseconds, and why. Nothing of the request was done, so asking the
+    /// same request again once the wait is over is safe; the core reads it as the relay's refusal
+    /// for the rate (`rate_limited`), the answer a relay gives on a connection it took, so that the
+    /// driver waits out both alike.
+    RateLimited { retry_after_ms: u64, reason: String },
     /// The deadline passed before the response came.
     Deadline,
     /// The exchange's cancellation was raised before the response came.
@@ -119,6 +130,14 @@ impl fmt::Display for TransportError {
             TransportError::Unauthorized(reason) => {
                 write!(f, "the relay refused the device's token: {reason}")
             }
+            TransportError::RateLimited {
+                retry_after_ms,
+                reason,
+            } => write!(
+                f,
+                "the relay refused the connection for the rate, and may be asked again in \
+                 {retry_after_ms} ms: {reason}"
+            ),
             TransportError::Deadline => {
                 f.write_str("the deadline passed before the relay answered")
             }

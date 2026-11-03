@@ -26,7 +26,7 @@
 //! * [`client`] - a host's courier to a relay, the round it makes as a state machine that does no
 //!   I/O itself, the link it speaks over, and the sealer for a host that has no hub.
 //! * [`driver`] - the one loop that carries an exchange (a round, or the peer core's) over a link,
-//!   with a deadline and a cancellation.
+//!   with a deadline and a cancellation, waiting out a relay's refusal for the rate on a clock.
 //! * `wss` (feature) - the WebSocket binding's client: the reference [`Transport`] a device reaches
 //!   a relay through, over `ws://` or `wss://`.
 //! * `tls` (with `wss`) - the TLS the binding runs on, shared with the Mesh's: `ring`'s
@@ -70,7 +70,7 @@ pub use client::{
     Courier, CourierError, CourierState, DirectLink, Keep, Kept, Link, LinkError, Publication,
     Round, RoundKind, RoundMachine, Step,
 };
-pub use driver::{drive, Driven, Exchange};
+pub use driver::{drive, drive_with, Clock, Driven, Exchange, SystemClock};
 pub use hub::{slot_of, Hub, Shards};
 pub use limits::Limits;
 pub use login::{

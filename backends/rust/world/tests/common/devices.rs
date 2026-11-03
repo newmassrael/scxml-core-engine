@@ -416,6 +416,11 @@ impl Carried {
             Carried::Failed(TransportError::Unauthorized(_)) => {
                 unreachable!("the world's relay takes every device's token")
             }
+            // The world's network has no endpoint that refuses a connection: the relay's refusal
+            // for the rate is a response the world carries.
+            Carried::Failed(TransportError::RateLimited { .. }) => {
+                unreachable!("the world's relay refuses no connection for the rate")
+            }
         }
     }
 }

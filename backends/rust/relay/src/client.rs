@@ -70,7 +70,9 @@ pub trait Link {
 /// from it, and a text that is no response of the protocol is a failure of the link, as the peer
 /// core takes one. The relay's endpoint refusing the device's token before it carried the request
 /// is the relay's refusal of the token, the answer it gives one that expires on a connection that
-/// stays open, so that a host renews its token on one sign whichever way it was refused.
+/// stays open, so that a host renews its token on one sign whichever way it was refused; and its
+/// refusing the connection for the rate is the relay's `rate_limited` with the same wait, so that
+/// the driver waits out either alike.
 impl<T: Transport + ?Sized> Link for T {
     fn call(&mut self, request: &Request) -> Result<Response, LinkError> {
         self.call_within(request, None, &Signal::new())
@@ -87,6 +89,13 @@ impl<T: Transport + ?Sized> Link for T {
             Err(TransportError::Unauthorized(reason)) => {
                 Ok(Response::refused(Code::Unauthorized, reason))
             }
+            Err(TransportError::RateLimited {
+                retry_after_ms,
+                reason,
+            }) => Ok(Response::refused(
+                Code::RateLimited { retry_after_ms },
+                reason,
+            )),
             Err(error) => Err(LinkError(error.to_string())),
         }
     }
