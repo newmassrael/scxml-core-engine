@@ -19,11 +19,9 @@ use sce_portable_bytes::SceOwnedList;
 #[allow(unused_assignments)]
 pub fn text_slot_retitled(
     slots: &[text_slot::TextSlotPayload],
-) -> Result<
-    SceOwnedList<text_slot::TextSlotPayload, 16>,
-    sce_forge_runtime::algorithm::AlgorithmError,
-> {
-    let mut out: SceOwnedList<text_slot::TextSlotPayload, 16> = SceOwnedList::new();
+    out: &mut SceOwnedList<text_slot::TextSlotPayload, 16>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     for s in slots.iter() {
         let mut shown = text_slot::TextSlotPayload {
             slot: s.slot,
@@ -35,5 +33,5 @@ pub fn text_slot_retitled(
         }
         out.push(shown.clone())?;
     }
-    return Ok(out);
+    return Ok(());
 }

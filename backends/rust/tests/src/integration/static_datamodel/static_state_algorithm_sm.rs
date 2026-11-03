@@ -291,7 +291,8 @@ fn call_AddEntry__v(
             amount: r.amount,
         })
         .collect();
-    let r = ledger_add::ledger_add(&p0_algorithm, p1, p2)?;
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    ledger_add::ledger_add(&p0_algorithm, p1, p2, &mut r)?;
     Ok(r.iter()
         .map(|r| StaticStateAlgorithmEntryRecord {
             id: r.id,

@@ -20,12 +20,13 @@ use sce_portable_bytes::{CapacityExceeded, SceOwnedList};
 pub fn ordering_prune(
     pending: &[ordering_slot::OrderingSlotPayload],
     next: u64,
-) -> Result<SceOwnedList<ordering_slot::OrderingSlotPayload, 256>, CapacityExceeded> {
-    let mut out: SceOwnedList<ordering_slot::OrderingSlotPayload, 256> = SceOwnedList::new();
+    out: &mut SceOwnedList<ordering_slot::OrderingSlotPayload, 256>,
+) -> Result<(), CapacityExceeded> {
+    out.clear();
     for &slot in pending.iter() {
         if slot.seq >= next {
             out.push(slot)?;
         }
     }
-    return Ok(out);
+    return Ok(());
 }

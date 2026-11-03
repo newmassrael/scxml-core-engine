@@ -681,7 +681,8 @@ fn forge_c11_algorithm_cobs_encode() {
 /// SCE byte-buffer-build (SCE_FORGE.md §4.12): Rust compile+run gate for the
 /// COBS encode fixture. Builds the generated `bytes`-returning algorithm in a
 /// standalone Cargo project — proving the `sce-portable-bytes` dependency and
-/// the fallible `Result<SceBytes<N>, CapacityExceeded>` signature link — and
+/// the signature that writes into the caller's `SceBytes<N>` and answers
+/// `Result<(), CapacityExceeded>` (docs/adr/0082) link — and
 /// asserts the canonical COBS reference vectors at runtime. Byte goldens alone
 /// would not catch a miscompiled buffer-build body
 /// (`feedback_byte_goldens_not_compile`).
@@ -700,7 +701,8 @@ fn forge_rust_algorithm_cobs_encode_runtime() {
          \x20   use crate::algorithm_cobs_encode::algorithm_cobs_encode as cobs;\n\
          \n\
          \x20   fn ck(input: &[u8], want: &[u8]) {{\n\
-         \x20       let got = cobs(input).expect(\"COBS output fits the 32-byte buffer\");\n\
+         \x20       let mut got = sce_portable_bytes::SceBytes::<32>::new();\n\
+         \x20       cobs(input, &mut got).expect(\"COBS output fits the 32-byte buffer\");\n\
          \x20       assert_eq!(got.as_slice(), want, \"COBS({{input:02x?}})\");\n\
          \x20   }}\n\
          \n\
@@ -717,6 +719,78 @@ fn forge_rust_algorithm_cobs_encode_runtime() {
         "algorithm_cobs_encode_runtime",
     )
     .expect("COBS encode must compile against sce-portable-bytes and match the reference vectors");
+}
+
+/// A Rust algorithm writes the list it returns into a destination its caller
+/// holds, on the tier with no allocator too (docs/adr/0082): its frame does not
+/// grow with the list's bound. The list here is 65536 numbers, 512 KiB inline
+/// (`heapless::Vec`), and the call runs on a thread whose whole stack is
+/// 128 KiB. An algorithm that built its list in its own frame and returned it by
+/// value, as Rust's did before, overflows that stack and aborts the test.
+///
+/// The document is written here rather than kept among the shared resources:
+/// the sweeps that generate every resource for every backend would meet C11's
+/// refusal of a list this large, which ADR 0082 removes in a later step.
+#[test]
+fn a_rust_list_far_larger_than_the_stack_is_written_where_its_caller_holds_it() {
+    const DOCUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="long_run"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="count" type="uint32"/>
+    <sce:return type="list&lt;uint64&gt;" returns-max-size="65536" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;uint64&gt;" capacity="65536"/>
+    <sce:var name="i" type="uint64" init="0"/>
+    <sce:while cond="i &lt; count" max-iter="65536">
+      <sce:append target="out" expr="i"/>
+      <sce:assign target="i" expr="i + 1"/>
+    </sce:while>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
+"#;
+    const CALL: &str = r#"extern crate std;
+
+#[test]
+fn the_list_is_written_where_the_caller_holds_it() {
+    // Made on the test's own thread, whose stack holds it, and moved to the heap.
+    let mut out = std::boxed::Box::new(sce_portable_bytes::SceOwnedList::<u64, 65536>::new());
+    let worker = std::thread::Builder::new()
+        .stack_size(128 * 1024)
+        .spawn(move || {
+            long_run(65536, &mut *out).expect("65536 numbers fit the list's bound");
+            let held = out.as_slice();
+            (held.len(), held[0], held[65535])
+        })
+        .expect("a thread is started");
+    assert_eq!(worker.join().expect("the call returned"), (65536, 0, 65535));
+}
+"#;
+    let dir = std::env::temp_dir().join(format!(
+        "sce_long_run_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&dir).expect("a directory for the document");
+    std::fs::write(dir.join("long_run.scxml"), DOCUMENT).expect("the document is written");
+    let mut files = generate_files_for_codec_set(
+        &dir,
+        &["long_run.scxml"],
+        sce_build::generator::Language::Rust,
+    )
+    .expect("the algorithm generates for Rust");
+    let _ = std::fs::remove_dir_all(&dir);
+    files.push(("long_run_test.rs".to_string(), CALL.to_string()));
+    rustc_run_generated_set(files, "long_run_no_alloc", "test", RustcProfile::NoAlloc)
+        .expect("a list of 512 KiB is written by a call on a stack of 128 KiB");
 }
 
 /// Per-backend RUN gates for the COBS byte-buffer-build fixture: each emit is

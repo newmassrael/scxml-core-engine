@@ -22,15 +22,13 @@ pub fn item_status_set(
     items: &[schema_item::SchemaItemPayload],
     id: u32,
     status: enum_item_status::EnumItemStatus,
-) -> Result<
-    SceOwnedList<schema_item::SchemaItemPayload, 4>,
-    sce_forge_runtime::algorithm::AlgorithmError,
-> {
+    out: &mut SceOwnedList<schema_item::SchemaItemPayload, 4>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     let moved = schema_item::SchemaItemPayload {
         id: id,
         status: status,
     };
-    let mut out: SceOwnedList<schema_item::SchemaItemPayload, 4> = SceOwnedList::new();
+    out.clear();
     for &e in items.iter() {
         if e.id == id {
             out.push(moved)?;
@@ -38,5 +36,5 @@ pub fn item_status_set(
             out.push(e)?;
         }
     }
-    return Ok(out);
+    return Ok(());
 }

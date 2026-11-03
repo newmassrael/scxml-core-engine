@@ -21,11 +21,9 @@ use sce_portable_bytes::SceOwnedList;
 pub fn sheet_show(
     cells: &[lww_cell::LwwCellPayload],
     trail: &[i64],
-) -> Result<
-    SceOwnedList<sheet_shown::SheetShownPayload, 256>,
-    sce_forge_runtime::algorithm::AlgorithmError,
-> {
-    let mut out: SceOwnedList<sheet_shown::SheetShownPayload, 256> = SceOwnedList::new();
+    out: &mut SceOwnedList<sheet_shown::SheetShownPayload, 256>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     let mut started: bool = false;
     let mut last_row: u64 = 0;
     let mut last_col: u64 = 0;
@@ -80,5 +78,5 @@ pub fn sheet_show(
             more = false;
         }
     }
-    return Ok(out);
+    return Ok(());
 }

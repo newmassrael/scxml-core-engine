@@ -8874,6 +8874,21 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
                 emitted_args.push(emit_rust(a, argument_type(params, i))?);
             }
             let symbol = wrap_postfix(callee, emit_rust(callee, InferredType::Unknown)?);
+            // A generated algorithm writes the list it returns into a destination
+            // the call holds (docs/adr/0082), and the call's value is that list. A
+            // list is taken only from an algorithm that declares `may-fail`.
+            if *fails
+                && matches!(expr.ty, InferredType::List(_))
+                && !symbol.starts_with(RUST_STATE_ADAPTER_PREFIX)
+            {
+                emitted_args.push("&mut sce_out".to_string());
+                let call = format!("{symbol}({})", emitted_args.join(", "));
+                let written = pass_failure_on(ExprTarget::Rust, &symbol, &call, expr.ty)
+                    .map_err(|e| e.at(expr.span.clone()))?;
+                return Ok(format!(
+                    "{{ let mut sce_out = {RUST_LIST_DESTINATION}; {written}; sce_out }}"
+                ));
+            }
             let call = format!("{symbol}({})", emitted_args.join(", "));
             if *fails {
                 pass_failure_on(ExprTarget::Rust, &symbol, &call, expr.ty)
@@ -9733,6 +9748,19 @@ pub(crate) const STATE_ADAPTER_PREFIX: &str = "sceAdapt_";
 /// through the enum that holds it (`Pascal.camel(…)`), so a bare name that begins with
 /// this is an adapter, whose answer is a type the lattice does not name.
 pub(crate) const SWIFT_STATE_ADAPTER_PREFIX: &str = "call_";
+
+/// What the name of the adapter a Rust statechart declares for such a call begins
+/// with. The adapter answers the machine's own `Vec`, and a generated algorithm that
+/// returns a list writes it into a destination its caller holds (docs/adr/0082), so a
+/// call of a list is spelled two ways and this tells them apart. A generated
+/// algorithm is called through its module (`day_run::day_run(…)`), never by a bare
+/// name that begins with this.
+pub(crate) const RUST_STATE_ADAPTER_PREFIX: &str = "call_";
+
+/// The empty destination a Rust caller hands an algorithm that returns a list
+/// (docs/adr/0082). Its element and bound are the algorithm's parameter's, which the
+/// call infers.
+pub(crate) const RUST_LIST_DESTINATION: &str = "sce_portable_bytes::SceOwnedList::new()";
 
 /// `call` — a call to a `may-fail` algorithm, spelled `symbol(args)` in
 /// `target` — as the calling `may-fail` body passes its failure on and keeps

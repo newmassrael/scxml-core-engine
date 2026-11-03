@@ -21,11 +21,9 @@ pub fn event_roster(
     roster: &[event_member::EventMemberPayload],
     node: u64,
     role: u8,
-) -> Result<
-    SceOwnedList<event_member::EventMemberPayload, 64>,
-    sce_forge_runtime::algorithm::AlgorithmError,
-> {
-    let mut out: SceOwnedList<event_member::EventMemberPayload, 64> = SceOwnedList::new();
+    out: &mut SceOwnedList<event_member::EventMemberPayload, 64>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     for &m in roster.iter() {
         if m.node != node {
             out.push(m)?;
@@ -38,5 +36,5 @@ pub fn event_roster(
         };
         out.push(made)?;
     }
-    return Ok(out);
+    return Ok(());
 }

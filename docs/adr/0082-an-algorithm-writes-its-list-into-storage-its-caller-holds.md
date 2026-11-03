@@ -154,9 +154,12 @@ build "for a backend whose lists live on the heap".
 - **No frame grows with a list's bound.** The C11 machine and the algorithms it calls are compiled with
   `-fstack-usage` at two values of the list limits (`merge_entries`, `merge_values`, `merge_digest`) that differ by
   a factor of 64. Every function's frame must be equal in both builds; a frame that differs is a defect of this
-  ADR's kind, wherever it is. The same is
-  measured for Rust's bare-metal tier through `backends/rust/probes/nostd-footprint`, with a list-returning
-  algorithm added to the probe.
+  ADR's kind, wherever it is. Rust's bare-metal tier is held by running, not by a report: stable Rust has no
+  `-fstack-usage`, and `backends/rust/probes/nostd-footprint` weighs `.text`, not frames. A no-alloc build of an
+  algorithm that returns 65,536 numbers (512 KiB inline) is called on a thread whose whole stack is 128 KiB
+  (`a_rust_list_far_larger_than_the_stack_is_written_where_its_caller_holds_it`). The shape before this ADR, the list
+  built in the frame and returned, overflows that stack and aborts; this was checked against a hand-written copy of
+  that shape before the test was trusted.
 - **Every backend still agrees.** The conformance cases of §4.12 (COBS and the bounded list) and every scenario
   that takes a list (`static_list_assign`, `static_state_algorithm`, the todo, sheet and calendar worlds) replay on
   every lane, with the C11 gate still driving an input past `returns-max-size` and asserting that the call fails.
@@ -177,7 +180,13 @@ changes each backend says how (ADR 0078):
 1. This ADR.
 2. Rust. The algorithm takes `&mut` its destination, on both profiles. The Rust machine's adapter, the conformance
    harness and every Rust host in the tree move with it in the same landing, and the regeneration changes the
-   generated files. The bare-metal probe gains its list-returning algorithm, and the frame measurement of §5.
+   generated files, and the bare-metal tier is held by the small-stack run of §5.
+   *Landed 2026-11-03.* The algorithm's one buffer is its last parameter, under the buffer's own name, emptied
+   where the body declares it (`SceOwnedList::clear`, `SceBytes::clear` are new), and the return is `Result<(), E>`.
+   A statechart's direct call of a list hands a destination it makes in the expression; a statechart's adapter
+   writes into its own and converts from there as before. The Mesh library's receive core, the one hand-written
+   host, writes each rule's list into a second list and swaps the two on success, so a failed rule leaves the
+   first as it was (§3's rule, for a heap list). The consumer section is in `docs/SCE_CODEC_CONSUMER_MIGRATION.md`.
 3. The C11 algorithm. The destination struct, the `bool` return and the failure pointer; the conformance harness
    and the COBS gate move with it. The machine keeps calling through an adapter that holds the destination in a
    local until step 4, so this landing changes no machine's behaviour.

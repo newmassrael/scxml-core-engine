@@ -20,9 +20,9 @@ use sce_portable_bytes::SceOwnedList;
 pub fn mv_value_keep(
     values: &[mv_value::MvValuePayload],
     held: mv_value::MvValuePayload,
-) -> Result<SceOwnedList<mv_value::MvValuePayload, 512>, sce_forge_runtime::algorithm::AlgorithmError>
-{
-    let mut out: SceOwnedList<mv_value::MvValuePayload, 512> = SceOwnedList::new();
+    out: &mut SceOwnedList<mv_value::MvValuePayload, 512>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     let mut there: bool = false;
     for v in values.iter() {
         if v.id == held.id
@@ -38,5 +38,5 @@ pub fn mv_value_keep(
     if !there {
         out.push(held.clone())?;
     }
-    return Ok(out);
+    return Ok(());
 }

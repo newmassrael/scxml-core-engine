@@ -21,14 +21,12 @@ pub fn merkle_insert(
     nodes: &[merkle_node::MerkleNodePayload],
     minute: i64,
     hash: u32,
-) -> Result<
-    SceOwnedList<merkle_node::MerkleNodePayload, 2048>,
-    sce_forge_runtime::algorithm::AlgorithmError,
-> {
+    out: &mut SceOwnedList<merkle_node::MerkleNodePayload, 2048>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     if !(minute >= 0 && minute <= 153722867280912) {
         return Err(sce_forge_runtime::algorithm::AlgorithmError::Precondition);
     }
-    let mut out: SceOwnedList<merkle_node::MerkleNodePayload, 2048> = SceOwnedList::new();
+    out.clear();
     let mut pd: u32 = 0;
     let mut pp: u64 = 0;
     let mut div: i64 = 68630377364883;
@@ -92,5 +90,5 @@ pub fn merkle_insert(
             div = sce_forge_runtime::algorithm::div::<i64>(div, 3)?;
         }
     }
-    return Ok(out);
+    return Ok(());
 }

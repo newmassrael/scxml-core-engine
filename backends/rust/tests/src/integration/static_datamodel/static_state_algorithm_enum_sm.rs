@@ -395,7 +395,8 @@ fn call_SetStatus__v(
             },
         })
         .collect();
-    let r = item_status_set::item_status_set(
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    item_status_set::item_status_set(
         &p0_algorithm,
         p1,
         match p2 {
@@ -405,6 +406,7 @@ fn call_SetStatus__v(
             }
             StaticStateAlgorithmEnumStatusEnum::Done => enum_item_status::EnumItemStatus::Done,
         },
+        &mut r,
     )?;
     Ok(r.iter()
         .map(|r| StaticStateAlgorithmEnumItemRecord {

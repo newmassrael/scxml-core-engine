@@ -21,12 +21,13 @@ pub fn ordering_hold(
     pending: &[ordering_slot::OrderingSlotPayload],
     seq: u64,
     now: i64,
-) -> Result<SceOwnedList<ordering_slot::OrderingSlotPayload, 256>, CapacityExceeded> {
+    out: &mut SceOwnedList<ordering_slot::OrderingSlotPayload, 256>,
+) -> Result<(), CapacityExceeded> {
     let arrived = ordering_slot::OrderingSlotPayload {
         seq: seq,
         arrived_at_ms: now,
     };
-    let mut out: SceOwnedList<ordering_slot::OrderingSlotPayload, 256> = SceOwnedList::new();
+    out.clear();
     let mut placed: bool = false;
     for &slot in pending.iter() {
         if slot.seq == seq {
@@ -41,5 +42,5 @@ pub fn ordering_hold(
     if !placed {
         out.push(arrived)?;
     }
-    return Ok(out);
+    return Ok(());
 }

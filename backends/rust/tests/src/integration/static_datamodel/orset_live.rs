@@ -20,11 +20,9 @@ use sce_portable_bytes::SceOwnedList;
 pub fn orset_live(
     adds: &[orset_entry::OrsetEntryPayload],
     tombstones: &[orset_entry::OrsetEntryPayload],
-) -> Result<
-    SceOwnedList<orset_entry::OrsetEntryPayload, 1024>,
-    sce_forge_runtime::algorithm::AlgorithmError,
-> {
-    let mut out: SceOwnedList<orset_entry::OrsetEntryPayload, 1024> = SceOwnedList::new();
+    out: &mut SceOwnedList<orset_entry::OrsetEntryPayload, 1024>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     for &x in adds.iter() {
         let mut removed: bool = false;
         for &t in tombstones.iter() {
@@ -40,5 +38,5 @@ pub fn orset_live(
             out.push(x)?;
         }
     }
-    return Ok(out);
+    return Ok(());
 }

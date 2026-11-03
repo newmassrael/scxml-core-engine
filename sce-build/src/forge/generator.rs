@@ -34847,15 +34847,20 @@ impl<'a> ListSpelling<'a> {
         }
     }
 
-    /// The function's return type for a list of capacity `cap`.
-    fn return_type(&self, cap: u32, primary_symbol: &str, may_fail: bool) -> String {
+    /// The Rust destination of a list of capacity `cap`: the caller's storage the
+    /// algorithm writes its list into (docs/adr/0082), never a value it returns.
+    fn rust_destination(&self, cap: u32) -> String {
+        format!("SceOwnedList<{}, {cap}>", self.elem_name)
+    }
+
+    /// The function's return type for a list. Rust returns only whether it
+    /// wrote its destination ([`Self::rust_destination`]), which carries the
+    /// capacity; C11's result struct carries it in its own typedef.
+    fn return_type(&self, primary_symbol: &str, may_fail: bool) -> String {
         use crate::generator::Language;
         let t = &self.elem_name;
         match self.lang {
-            Language::Rust => format!(
-                "Result<SceOwnedList<{t}, {cap}>, {}>",
-                rust_algorithm_failure(may_fail)
-            ),
+            Language::Rust => format!("Result<(), {}>", rust_algorithm_failure(may_fail)),
             Language::C11 => format!("{primary_symbol}_result_t"),
             Language::Cpp => format!("std::vector<{t}>"),
             Language::Go => format!("[]{t}"),
@@ -34879,22 +34884,13 @@ impl<'a> ListSpelling<'a> {
     }
 
     /// Declaration of an empty buffer local of capacity `cap`.
-    fn declare(
-        &self,
-        pad: &str,
-        local: &str,
-        cap: u32,
-        c11_result: &str,
-        rust_mut: &str,
-    ) -> String {
+    fn declare(&self, pad: &str, local: &str, cap: u32, c11_result: &str) -> String {
         use crate::generator::Language;
         let t = &self.elem_name;
         match self.lang {
-            Language::Rust => {
-                format!(
-                    "{pad}let {rust_mut}{local}: SceOwnedList<{t}, {cap}> = SceOwnedList::new();\n"
-                )
-            }
+            // The buffer is the caller's destination, a parameter of its name
+            // (docs/adr/0082): it is emptied where the body declares it.
+            Language::Rust => format!("{pad}{local}.clear();\n"),
             Language::Cpp => {
                 format!("{pad}std::vector<{t}> {local};\n{pad}{local}.reserve({cap});\n")
             }
@@ -35442,13 +35438,6 @@ fn lower_algorithm_stmt(
                         sce_type.as_attr()
                     ))
                 })?;
-                // A buffer is always appended to, so Rust needs `let mut`;
-                // `assigned` already includes `<sce:append>` targets.
-                let rust_mut = if assigned.contains(name.as_str()) {
-                    "mut "
-                } else {
-                    ""
-                };
                 // A `list<T>` takes the list spelling; a `bytes` buffer keeps
                 // the byte containers below, byte-for-byte as before.
                 if let Some(elem) = sce_type.list_elem() {
@@ -35468,15 +35457,14 @@ fn lower_algorithm_stmt(
                         | Language::Swift => "",
                     };
                     out.push_str(
-                        &ListSpelling::new(l, elem, imports)?
-                            .declare(pad, &local, cap, result_ty, rust_mut),
+                        &ListSpelling::new(l, elem, imports)?.declare(pad, &local, cap, result_ty),
                     );
                     return Ok(());
                 }
                 let line = match lang {
-                    Language::Rust => {
-                        format!("{pad}let {rust_mut}{local}: SceBytes<{cap}> = SceBytes::new();\n")
-                    }
+                    // The caller's destination, emptied where it is declared
+                    // (docs/adr/0082), as a list buffer is.
+                    Language::Rust => format!("{pad}{local}.clear();\n"),
                     Language::Cpp => {
                         format!(
                             "{pad}std::vector<std::uint8_t> {local};\n\
@@ -38265,7 +38253,10 @@ impl ReturnChannel<'_> {
     fn value(&self, pad: &str, value: &str, buffer: bool) -> String {
         use crate::generator::Language;
         match self.lang {
-            Language::Rust if self.may_fail || buffer => format!("{pad}return Ok({value});\n"),
+            // The buffer is already in the caller's destination (docs/adr/0082):
+            // the return says only that it was written.
+            Language::Rust if buffer => format!("{pad}return Ok(());\n"),
+            Language::Rust if self.may_fail => format!("{pad}return Ok({value});\n"),
             Language::Kotlin if self.may_fail => {
                 format!("{pad}return com.sce.forge.runtime.AlgorithmResult.Ok({value})\n")
             }
@@ -39528,7 +39519,7 @@ fn render_algorithm(
         .filter(|imp| imp.kind == "bounded-collection")
         .map(|imp| algorithm_format_bc_import_param(lang, imp))
         .collect();
-    let params_str = declared_params
+    let mut params_str = declared_params
         .iter()
         .chain(bc_import_params.iter())
         .cloned()
@@ -39538,8 +39529,9 @@ fn render_algorithm(
     // SCE byte-buffer-build (§4.12): a `bytes` return lowers to a per-backend
     // growable/owned byte type rather than the borrowed view used for `bytes`
     // *parameters*. The bounded backends carry the fixed cap `N`
-    // (`sce:returns-max-size`): Rust as `SceBytes<N>` inside a fallible
-    // `Result`, C11 as a by-value `<symbol>_result_t` struct (`uint8_t
+    // (`sce:returns-max-size`): Rust as the caller's `SceBytes<N>`, which the
+    // body writes and the fallible `Result<()>` reports on (docs/adr/0082),
+    // C11 as a by-value `<symbol>_result_t` struct (`uint8_t
     // bytes[N]` + len + ok). The heap backends ignore `N` and return their
     // native owned byte type. C/Cpp use literal `void` for no return; Rust
     // `()`.
@@ -39582,6 +39574,38 @@ fn render_algorithm(
             return Err(refusal.into());
         }
     }
+    // Rust writes a returned list or bytes into a destination its caller holds
+    // (docs/adr/0082), the last parameter: the body's one buffer, which is the
+    // value it returns (§4.12, v1 scope), under the buffer's own name.
+    if let (Language::Rust, Some(returned)) = (lang, declared_return) {
+        if returned.is_append_buffer() {
+            let mut buffers = std::collections::HashMap::new();
+            collect_append_buffers(&m.body, &mut buffers);
+            let mut buffers = buffers.into_iter();
+            let (name, buffer) = match (buffers.next(), buffers.next()) {
+                (Some(only), None) => only,
+                _ => {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "algorithm '{}' returns {} but does not build it in exactly one \
+                         buffer — the byte-buffer-build validator refuses this before codegen",
+                        m.name,
+                        returned.as_attr()
+                    ))
+                    .into())
+                }
+            };
+            let destination = match &return_list {
+                Some(list) => list.rust_destination(buffer.cap),
+                None => format!("SceBytes<{}>", buffer.cap),
+            };
+            let parameter = format!("{}: &mut {destination}", l.local_id(&name));
+            params_str = if params_str.is_empty() {
+                parameter
+            } else {
+                format!("{params_str}, {parameter}")
+            };
+        }
+    }
     // A record return (SCE_FORGE.md §4.12) is the imported payload struct,
     // by value on every backend.
     let return_record = match declared_return.and_then(|t| t.record_alias()) {
@@ -39610,7 +39634,7 @@ fn render_algorithm(
         ) if return_list.is_some() => return_list
             .as_ref()
             .zip(list_return_cap)
-            .map(|(list, cap)| list.return_type(cap, &primary_symbol, may_fail))
+            .map(|(list, _)| list.return_type(&primary_symbol, may_fail))
             .expect("guarded by the arm"),
         (
             _,
@@ -39643,7 +39667,9 @@ fn render_algorithm(
             | Language::Python
             | Language::C11,
         ) => {
-            let n = bytes_return_cap.ok_or_else(|| {
+            // The capacity is the buffer's (the Rust destination's, C11's
+            // result struct's); its absence is refused here all the same.
+            bytes_return_cap.ok_or_else(|| {
                 GenerateError::InvalidConfig(format!(
                     "algorithm '{}' returns `bytes` but declares no \
                      `sce:returns-max-size` — required for the output buffer's \
@@ -39652,10 +39678,9 @@ fn render_algorithm(
                 ))
             })?;
             match lang {
-                Language::Rust => format!(
-                    "Result<SceBytes<{n}>, {}>",
-                    rust_algorithm_failure(may_fail)
-                ),
+                // The bytes are written into the caller's `SceBytes<N>`
+                // (docs/adr/0082).
+                Language::Rust => format!("Result<(), {}>", rust_algorithm_failure(may_fail)),
                 Language::C11 => format!("{primary_symbol}_result_t"),
                 Language::Cpp => "std::vector<std::uint8_t>".to_string(),
                 Language::Go => "[]byte".to_string(),

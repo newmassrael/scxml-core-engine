@@ -111,20 +111,44 @@ pub enum ConfigError {
 /// One sender's receive state.
 struct Sender {
     window: SceOwnedList<EnvelopeIdPayload, 256>,
+    /// Where a rule writes the window it gives back ([`rewrite`]).
+    window_next: SceOwnedList<EnvelopeIdPayload, 256>,
     /// The sequence this sender is expected to send next; `None` until its
     /// first ordered envelope, which anchors it (a receiver that joins
     /// mid-stream did not miss what was sent before it listened).
     next: Option<u64>,
     pending: SceOwnedList<OrderingSlotPayload, 256>,
+    /// Where a rule writes the held slots it gives back ([`rewrite`]).
+    pending_next: SceOwnedList<OrderingSlotPayload, 256>,
     held: BTreeMap<u64, Received>,
+}
+
+/// Replace `list` with what `rule` writes from it, or leave it as it was when
+/// the rule fails. A generated rule writes the list it returns into a
+/// destination its caller holds (docs/adr/0082) while it reads `list`, so it
+/// writes into `next`, and only a list it wrote takes `list`'s place. This crate
+/// holds heap lists (it requires `alloc`), so the swap moves three words.
+fn rewrite<T, const N: usize, E>(
+    list: &mut SceOwnedList<T, N>,
+    next: &mut SceOwnedList<T, N>,
+    rule: impl FnOnce(&[T], &mut SceOwnedList<T, N>) -> Result<(), E>,
+) -> Result<(), E>
+where
+    T: Clone,
+{
+    rule(list.as_slice(), next)?;
+    core::mem::swap(list, next);
+    Ok(())
 }
 
 impl Sender {
     fn new() -> Self {
         Self {
             window: SceOwnedList::new(),
+            window_next: SceOwnedList::new(),
             next: None,
             pending: SceOwnedList::new(),
+            pending_next: SceOwnedList::new(),
             held: BTreeMap::new(),
         }
     }
@@ -136,8 +160,10 @@ impl Sender {
         let still_held = self.held.split_off(&drained);
         out.released
             .extend(core::mem::replace(&mut self.held, still_held).into_values());
-        self.pending =
-            ordering_prune(self.pending.as_slice(), drained).map_err(|_| AdmitError::HoldFull)?;
+        rewrite(&mut self.pending, &mut self.pending_next, |pending, out| {
+            ordering_prune(pending, drained, out)
+        })
+        .map_err(|_| AdmitError::HoldFull)?;
         self.next = Some(drained);
         Ok(())
     }
@@ -204,8 +230,13 @@ impl Inbound {
                 return Ok(out);
             }
             let full = sender.window.as_slice().len() >= self.dedup_window as usize;
-            sender.window = dedup_admit(sender.window.as_slice(), id, self.dedup_window)
-                .map_err(AdmitError::Rule)?;
+            let capacity = self.dedup_window;
+            rewrite(
+                &mut sender.window,
+                &mut sender.window_next,
+                |window, out| dedup_admit(window, id, capacity, out),
+            )
+            .map_err(AdmitError::Rule)?;
             if full {
                 out.signals.push(Signal::DedupWindowOverflow {
                     source: source.clone(),
@@ -223,8 +254,12 @@ impl Inbound {
             return Ok(out);
         }
         if seq > next {
-            sender.pending = ordering_hold(sender.pending.as_slice(), seq, now_ms)
-                .map_err(|_| AdmitError::HoldFull)?;
+            rewrite(
+                &mut sender.pending,
+                &mut sender.pending_next,
+                |pending, out| ordering_hold(pending, seq, now_ms, out),
+            )
+            .map_err(|_| AdmitError::HoldFull)?;
             // A re-delivery of a held sequence keeps its first copy, as
             // ordering_hold keeps its first arrival time.
             sender.held.entry(seq).or_insert(Received { bytes });

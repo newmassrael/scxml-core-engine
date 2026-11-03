@@ -25,6 +25,7 @@ use crate::filters;
 use crate::forge::error::GenerateError;
 use crate::forge::expr::{
     transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal,
+    RUST_LIST_DESTINATION, RUST_STATE_ADAPTER_PREFIX,
 };
 use crate::forge::model::{EnumModel, EventSchemaModel, FieldType, SceType, SchemaField};
 use crate::forge::narrowing::{Chain, Facts, Writes};
@@ -2763,8 +2764,10 @@ impl StaticTarget for RustTarget {
             _ => format!("&{held}"),
         }
     }
+    // Named apart from a generated algorithm's call, which the expression layer
+    // spells with a destination where it returns a list (docs/adr/0082).
     fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
-        format!("call_{coded}")
+        format!("{RUST_STATE_ADAPTER_PREFIX}{coded}")
     }
     fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
         format!("sce_forge_runtime::algorithm::within(({value}).as_slice(), {capacity})?.to_vec()")
@@ -3103,14 +3106,32 @@ impl StaticTarget for RustTarget {
                 ),
             ),
         };
+        // A list the algorithm returns is written into a destination the adapter
+        // holds (docs/adr/0082), and read from there as a returned value is.
+        let returns_list = matches!(
+            value.ret.as_ref()?,
+            StaticSlot::ScalarList(_) | StaticSlot::RecordList(_)
+        );
+        if returns_list {
+            arguments.push("&mut r".to_string());
+        }
         let call = format!("{}({})", spec.call, arguments.join(", "));
         let prelude: String = prelude.concat();
         Some(if spec.callee.may_fail {
+            let received = if returns_list {
+                format!("    let mut r = {RUST_LIST_DESTINATION};\n    {call}?;\n")
+            } else {
+                format!("    let r = {call}?;\n")
+            };
             format!(
-                "#[allow(non_snake_case)]\nfn {}({}) -> Result<{returned_type}, sce_forge_runtime::algorithm::AlgorithmError> {{\n{prelude}    let r = {call}?;\n    Ok({converted})\n}}",
+                "#[allow(non_snake_case)]\nfn {}({}) -> Result<{returned_type}, sce_forge_runtime::algorithm::AlgorithmError> {{\n{prelude}{received}    Ok({converted})\n}}",
                 spec.name,
                 declarations.join(", ")
             )
+        } else if returns_list {
+            // A list is taken only from an algorithm that declares `may-fail`
+            // (docs/SCE_ACCEPTED_SUBSET.md §2.15); this call is refused by name.
+            return None;
         } else {
             format!(
                 "#[allow(non_snake_case)]\nfn {}({}) -> {returned_type} {{\n{prelude}    let r = {call};\n    {converted}\n}}",

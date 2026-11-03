@@ -20,11 +20,9 @@ use sce_portable_bytes::SceOwnedList;
 pub fn orset_union(
     a: &[orset_entry::OrsetEntryPayload],
     b: &[orset_entry::OrsetEntryPayload],
-) -> Result<
-    SceOwnedList<orset_entry::OrsetEntryPayload, 1024>,
-    sce_forge_runtime::algorithm::AlgorithmError,
-> {
-    let mut out: SceOwnedList<orset_entry::OrsetEntryPayload, 1024> = SceOwnedList::new();
+    out: &mut SceOwnedList<orset_entry::OrsetEntryPayload, 1024>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     for &x in a.iter() {
         out.push(x)?;
     }
@@ -43,5 +41,5 @@ pub fn orset_union(
             out.push(y)?;
         }
     }
-    return Ok(out);
+    return Ok(());
 }

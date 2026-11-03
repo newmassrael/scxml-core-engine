@@ -21,15 +21,13 @@ pub fn ledger_add(
     entries: &[schema_entry::SchemaEntryPayload],
     id: u32,
     amount: i32,
-) -> Result<
-    SceOwnedList<schema_entry::SchemaEntryPayload, 8>,
-    sce_forge_runtime::algorithm::AlgorithmError,
-> {
+    out: &mut SceOwnedList<schema_entry::SchemaEntryPayload, 8>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
     let fresh = schema_entry::SchemaEntryPayload {
         id: id,
         amount: amount,
     };
-    let mut out: SceOwnedList<schema_entry::SchemaEntryPayload, 8> = SceOwnedList::new();
+    out.clear();
     let mut seen: bool = false;
     for &e in entries.iter() {
         if e.id == id {
@@ -42,5 +40,5 @@ pub fn ledger_add(
     if !seen {
         out.push(fresh)?;
     }
-    return Ok(out);
+    return Ok(());
 }

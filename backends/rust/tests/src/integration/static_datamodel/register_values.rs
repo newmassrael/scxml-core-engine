@@ -21,9 +21,9 @@ pub fn register_values(
     values: &[mv_value::MvValuePayload],
     id: u64,
     field: u64,
-) -> Result<SceOwnedList<mv_value::MvValuePayload, 512>, sce_forge_runtime::algorithm::AlgorithmError>
-{
-    let mut out: SceOwnedList<mv_value::MvValuePayload, 512> = SceOwnedList::new();
+    out: &mut SceOwnedList<mv_value::MvValuePayload, 512>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     let mut started: bool = false;
     let mut last_wall: i64 = 0;
     let mut last_counter: u32 = 0;
@@ -73,5 +73,5 @@ pub fn register_values(
             more = false;
         }
     }
-    return Ok(out);
+    return Ok(());
 }

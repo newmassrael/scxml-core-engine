@@ -22,9 +22,9 @@ use sce_portable_bytes::SceOwnedList;
 pub fn lww_write(
     cells: &[lww_cell::LwwCellPayload],
     write: lww_cell::LwwCellPayload,
-) -> Result<SceOwnedList<lww_cell::LwwCellPayload, 256>, sce_forge_runtime::algorithm::AlgorithmError>
-{
-    let mut out: SceOwnedList<lww_cell::LwwCellPayload, 256> = SceOwnedList::new();
+    out: &mut SceOwnedList<lww_cell::LwwCellPayload, 256>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     let mut held: bool = false;
     let incoming = hlc_timestamp::HlcTimestampPayload {
         wall_time: write.wall_time,
@@ -51,5 +51,5 @@ pub fn lww_write(
     if !held {
         out.push(write)?;
     }
-    return Ok(out);
+    return Ok(());
 }

@@ -20,9 +20,9 @@ use sce_portable_bytes::SceOwnedList;
 pub fn rga_insert(
     nodes: &[rga_node::RgaNodePayload],
     node: rga_node::RgaNodePayload,
-) -> Result<SceOwnedList<rga_node::RgaNodePayload, 256>, sce_forge_runtime::algorithm::AlgorithmError>
-{
-    let mut out: SceOwnedList<rga_node::RgaNodePayload, 256> = SceOwnedList::new();
+    out: &mut SceOwnedList<rga_node::RgaNodePayload, 256>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     let mut held: bool = false;
     for &probe in nodes.iter() {
         if probe.key == node.key {
@@ -33,7 +33,7 @@ pub fn rga_insert(
         for &same in nodes.iter() {
             out.push(same)?;
         }
-        return Ok(out);
+        return Ok(());
     }
     let mut phase: u8 = if node.after == 0 { 1 } else { 0 };
     for &n in nodes.iter() {
@@ -59,5 +59,5 @@ pub fn rga_insert(
     if phase != 2 {
         out.push(node)?;
     }
-    return Ok(out);
+    return Ok(());
 }

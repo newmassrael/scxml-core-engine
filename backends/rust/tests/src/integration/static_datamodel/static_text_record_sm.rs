@@ -324,7 +324,8 @@ fn call_Retitled__v(
             text: ::sce_portable_bytes::SceString::<32>::held(&r.text),
         })
         .collect();
-    let r = text_slot_retitled::text_slot_retitled(&p0_algorithm)?;
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    text_slot_retitled::text_slot_retitled(&p0_algorithm, &mut r)?;
     Ok(r.iter()
         .map(|r| StaticTextRecordSlotRecord {
             slot: r.slot,

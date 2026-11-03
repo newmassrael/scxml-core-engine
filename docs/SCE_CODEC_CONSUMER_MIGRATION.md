@@ -795,3 +795,21 @@ Landing: the commit that adds this section.
 - `RustDeployment` gains `storage: NodeStorage`; a caller that builds one names it or takes `..Default::default()`,
   which is `Inline`.
 
+## A Rust algorithm writes the list or bytes it returns into a destination (ADR 0082 step 2)
+
+Landing: the commit that adds this section.
+
+- A generated Rust algorithm that returns a `list<T>` or `bytes` takes one more parameter, last, named as the body's
+  buffer is: `&mut SceOwnedList<T, N>` or `&mut SceBytes<N>`. It empties the destination, writes the list into it, and
+  returns `Result<(), E>` with the `E` it returned before. On the tier with no allocator the `N` elements then live
+  where the caller put them, never in the algorithm's frame or its return.
+- A call `let list = f(a, b)?;` becomes `f(a, b, &mut list)?;`, with `list` a `SceOwnedList<T, N>` (or `SceBytes<N>`)
+  the caller keeps, made once with `::new()`. A caller that hands the same destination to every call allocates once
+  on the heap tier. What the destination holds after a failed call is not specified; read it only after `Ok(())`.
+- An input may not be the destination: `f(list.as_slice(), &mut list)` does not borrow-check. Write into a second
+  list and, on success, swap the two (`core::mem::swap`), which on the heap tier moves three words. On the inline
+  tier copy the elements back instead, since a swap of two inline lists moves their whole bound.
+- `SceOwnedList` and `SceBytes` gain `clear()`.
+- Generated statecharts and the Mesh library call the new signature already. C11 and the heap backends (C++, Go,
+  Kotlin, Python, Swift) are unchanged in this landing.
+

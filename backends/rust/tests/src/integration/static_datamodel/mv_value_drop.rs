@@ -20,9 +20,9 @@ use sce_portable_bytes::SceOwnedList;
 pub fn mv_value_drop(
     values: &[mv_value::MvValuePayload],
     gone: mv_value::MvValuePayload,
-) -> Result<SceOwnedList<mv_value::MvValuePayload, 512>, sce_forge_runtime::algorithm::AlgorithmError>
-{
-    let mut out: SceOwnedList<mv_value::MvValuePayload, 512> = SceOwnedList::new();
+    out: &mut SceOwnedList<mv_value::MvValuePayload, 512>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     for v in values.iter() {
         if v.id != gone.id
             || v.field != gone.field
@@ -33,5 +33,5 @@ pub fn mv_value_drop(
             out.push(v.clone())?;
         }
     }
-    return Ok(out);
+    return Ok(());
 }

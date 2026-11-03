@@ -134,6 +134,14 @@ impl<T: Clone, const N: usize> HeapList<T, N> {
         Self(alloc::vec::Vec::new())
     }
 
+    /// Empty the buffer and keep what it allocated. An algorithm that returns a
+    /// list or bytes writes into a destination its caller holds
+    /// (docs/adr/0082), and starts by emptying it, so a caller may hand the
+    /// same destination to every call and allocate once.
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+
     /// Append one element. The heap form grows, so this never reports
     /// overflow; the `Result` matches [`InlineList::push`] so a generated
     /// buffer-building algorithm threads one `?` per append rather than
@@ -168,6 +176,14 @@ impl<T: Clone, const N: usize> InlineList<T, N> {
     /// An empty buffer holding the fixed capacity `N` inline.
     pub fn new() -> Self {
         Self(heapless::Vec::new())
+    }
+
+    /// Empty the buffer. An algorithm that returns a list or bytes writes into a
+    /// destination its caller holds (docs/adr/0082), and starts by emptying it:
+    /// the `N` elements live where the caller put them, never in the
+    /// algorithm's frame or in its return.
+    pub fn clear(&mut self) {
+        self.0.clear();
     }
 
     /// Append one element, raising [`CapacityExceeded`] once the fixed `N` is

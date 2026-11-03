@@ -999,7 +999,12 @@ impl StatePolicy for StaticListAssignPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.shown = sce_forge_runtime::algorithm::within(
-                                (day_run::day_run(self.first, 3)?).as_slice(),
+                                ({
+                                    let mut sce_out = sce_portable_bytes::SceOwnedList::new();
+                                    day_run::day_run(self.first, 3, &mut sce_out)?;
+                                    sce_out
+                                })
+                                .as_slice(),
                                 8,
                             )?
                             .to_vec();
@@ -1029,7 +1034,12 @@ impl StatePolicy for StaticListAssignPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.shown = sce_forge_runtime::algorithm::within(
-                                (day_run::day_run(self.first, 8)?).as_slice(),
+                                ({
+                                    let mut sce_out = sce_portable_bytes::SceOwnedList::new();
+                                    day_run::day_run(self.first, 8, &mut sce_out)?;
+                                    sce_out
+                                })
+                                .as_slice(),
                                 8,
                             )?
                             .to_vec();
@@ -1059,7 +1069,12 @@ impl StatePolicy for StaticListAssignPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.shown = sce_forge_runtime::algorithm::within(
-                                (day_run::day_run(self.first, 0)?).as_slice(),
+                                ({
+                                    let mut sce_out = sce_portable_bytes::SceOwnedList::new();
+                                    day_run::day_run(self.first, 0, &mut sce_out)?;
+                                    sce_out
+                                })
+                                .as_slice(),
                                 8,
                             )?
                             .to_vec();
@@ -1089,7 +1104,12 @@ impl StatePolicy for StaticListAssignPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.few = sce_forge_runtime::algorithm::within(
-                                (day_repeat::day_repeat(self.first, 3)?).as_slice(),
+                                ({
+                                    let mut sce_out = sce_portable_bytes::SceOwnedList::new();
+                                    day_repeat::day_repeat(self.first, 3, &mut sce_out)?;
+                                    sce_out
+                                })
+                                .as_slice(),
                                 4,
                             )?
                             .to_vec();
@@ -1119,7 +1139,12 @@ impl StatePolicy for StaticListAssignPolicy {
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
                             self.few = sce_forge_runtime::algorithm::within(
-                                (day_repeat::day_repeat(self.first, 5)?).as_slice(),
+                                ({
+                                    let mut sce_out = sce_portable_bytes::SceOwnedList::new();
+                                    day_repeat::day_repeat(self.first, 5, &mut sce_out)?;
+                                    sce_out
+                                })
+                                .as_slice(),
                                 4,
                             )?
                             .to_vec();

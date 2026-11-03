@@ -21,11 +21,9 @@ pub fn record_roster(
     roster: &[record_member::RecordMemberPayload],
     node: u64,
     role: u8,
-) -> Result<
-    SceOwnedList<record_member::RecordMemberPayload, 64>,
-    sce_forge_runtime::algorithm::AlgorithmError,
-> {
-    let mut out: SceOwnedList<record_member::RecordMemberPayload, 64> = SceOwnedList::new();
+    out: &mut SceOwnedList<record_member::RecordMemberPayload, 64>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     for &m in roster.iter() {
         if m.node != node {
             out.push(m)?;
@@ -38,5 +36,5 @@ pub fn record_roster(
         };
         out.push(made)?;
     }
-    return Ok(out);
+    return Ok(());
 }

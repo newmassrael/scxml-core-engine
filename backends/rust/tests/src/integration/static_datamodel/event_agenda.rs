@@ -28,11 +28,9 @@ pub fn event_agenda(
     window_start: i64,
     window_end: i64,
     skip: u32,
-) -> Result<
-    SceOwnedList<event_occurrence::EventOccurrencePayload, 64>,
-    sce_forge_runtime::algorithm::AlgorithmError,
-> {
-    let mut out: SceOwnedList<event_occurrence::EventOccurrencePayload, 64> = SceOwnedList::new();
+    out: &mut SceOwnedList<event_occurrence::EventOccurrencePayload, 64>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     let mut emitted: i64 = 0;
     let day: i64 = 86400000;
     let skipped: i64 = skip as i64;
@@ -394,5 +392,5 @@ pub fn event_agenda(
             p = sce_forge_runtime::algorithm::add::<i64>(p, 1)?;
         }
     }
-    return Ok(out);
+    return Ok(());
 }

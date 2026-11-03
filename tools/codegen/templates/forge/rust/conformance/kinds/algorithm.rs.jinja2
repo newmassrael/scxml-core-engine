@@ -11,11 +11,11 @@
    bodies. Compound outputs would require structuring the return type,
    which is Transform's territory.
 
-   A `list<T>` return (SCE_FORGE.md §4.12) is `Result<SceOwnedList<T, N>,
-   CapacityExceeded>`; the oracle's cases stay within N, so the harness
-   unwraps it and compares the slice element by element. A `bytes` return
-   is the same bounded storage (`SceBytes<N>`), its `expected` a JSON array
-   of byte values.
+   A `list<T>` return (SCE_FORGE.md §4.12) is written into the caller's
+   `SceOwnedList<T, N>` and the call answers `Result<(), CapacityExceeded>`;
+   the oracle's cases stay within N, so the harness unwraps it and compares
+   the slice element by element. A `bytes` return is the same bounded storage
+   (`SceBytes<N>`), its `expected` a JSON array of byte values.
 
    A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
    payload struct, built from and compared against a JSON object keyed by
@@ -34,7 +34,15 @@
    writes as the name a variant declares: the value is the variant of that name,
    and an expected value is built the same way and compared as the enum. #}
 {% macro field_value(fld, raw, fixture) %}{% if fld.enum_document is defined %}match {{ raw }}.as_str().expect("{{ fixture }}.{{ fld.name }}: an enum field is the name a variant declares") { {% for v in fld.variants %}"{{ v.name }}" => fixtures::{{ fld.enum_document }}::{{ fld.enum_document | to_pascal_case }}::{{ v.ident }}, {% endfor %}other => panic!("{{ fixture }}.{{ fld.name }}: no variant is declared as {other}") }{% elif fld.type == "string" %}::sce_portable_bytes::SceString::<{{ fld.max_size }}>::from_text({{ raw | rust_unmarshal("string") }}).expect("{{ fixture }}.{{ fld.name }}: the case text fits the schema's bound"){% else %}{{ raw | rust_unmarshal(fld.type) }}{% endif %}{% endmacro %}
-{% set call %}fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" or arg_ty.list_of is defined %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
+{# A list or bytes output is written into a destination the caller holds
+   (docs/adr/0082): the call hands one in and, where the algorithm wrote it,
+   yields it, so the call reads as `Result<the list, _>` as it did before. #}
+{% set arguments %}{% for arg_ty in f.args %}{% if arg_ty == "bytes" or arg_ty.list_of is defined %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endset %}
+{% if f.output.list_of is defined or f.output.type == "bytes" %}
+{% set call %}{ let mut sce_out = sce_portable_bytes::{% if f.output.type == "bytes" %}SceBytes{% else %}SceOwnedList{% endif %}::new(); let written = fixtures::{{ f.name }}::{{ f.function }}({{ arguments }}{% if f.args %}, {% endif %}&mut sce_out); written.map(|()| sce_out) }{% endset %}
+{% else %}
+{% set call %}fixtures::{{ f.name }}::{{ f.function }}({{ arguments }}){% endset %}
+{% endif %}
 {% if f.output.compare == "tolerance" %}
     let tol = tolerance(&reference);
 {% endif %}

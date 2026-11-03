@@ -20,15 +20,13 @@ use sce_portable_bytes::SceOwnedList;
 pub fn orset_observed(
     live: &[orset_entry::OrsetEntryPayload],
     element: u64,
-) -> Result<
-    SceOwnedList<orset_entry::OrsetEntryPayload, 1024>,
-    sce_forge_runtime::algorithm::AlgorithmError,
-> {
-    let mut out: SceOwnedList<orset_entry::OrsetEntryPayload, 1024> = SceOwnedList::new();
+    out: &mut SceOwnedList<orset_entry::OrsetEntryPayload, 1024>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     for &x in live.iter() {
         if x.element == element {
             out.push(x)?;
         }
     }
-    return Ok(out);
+    return Ok(());
 }

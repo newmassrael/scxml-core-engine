@@ -2026,7 +2026,7 @@ Some transforms are runtime, data-dependent `bytes -> bytes` functions whose out
 
 | Backend | Output buffer | Append overflow | Return shape |
 |---------|---------------|-----------------|--------------|
-| Rust | `SceBytes<N>` (no-alloc `heapless::Vec<u8, N>`; `alloc` = `Vec<u8>`, `N` advisory) | `?` on `push` / `extend_from_slice` → `CapacityExceeded` | `Result<SceBytes<N>, CapacityExceeded>` |
+| Rust | the caller's `&mut SceBytes<N>`, the last parameter, named as the buffer is (no-alloc `heapless::Vec<u8, N>`; `alloc` = `Vec<u8>`, `N` advisory; docs/adr/0082) | `?` on `push` / `extend_from_slice` → `CapacityExceeded` | `Result<(), CapacityExceeded>` |
 | C11 | by-value `<symbol>_result_t { uint8_t bytes[N]; size_t len; bool ok; }` (no malloc) | bounds-check sets `ok = false` past `N` and returns the struct | the result struct (caller reads `ok`) |
 | C++ | `std::vector<std::uint8_t>`, `reserve(N)` | grows | `std::vector<std::uint8_t>` |
 | Go | `make([]byte, 0, N)` | grows | `[]byte` |
@@ -2069,7 +2069,7 @@ Some algorithms produce a data-dependent number of *numbers* rather than bytes �
 
 | Backend | Buffer | Append overflow | Return shape |
 |---------|--------|-----------------|--------------|
-| Rust | `SceOwnedList<T, N>` (`backends/rust/portable-bytes`; no-alloc `heapless::Vec<T, N>`, `alloc` = `Vec<T>`) | `?` → `CapacityExceeded` | `Result<SceOwnedList<T, N>, CapacityExceeded>` |
+| Rust | the caller's `&mut SceOwnedList<T, N>`, the last parameter, named as the buffer is (`backends/rust/portable-bytes`; no-alloc `heapless::Vec<T, N>`, `alloc` = `Vec<T>`; docs/adr/0082) | `?` → `CapacityExceeded` | `Result<(), CapacityExceeded>` |
 | C11 | by-value `<symbol>_result_t { T items[N]; size_t len; bool ok; }` | sets `ok = false` and returns | the result struct |
 | C++ | `std::vector<T>`, `reserve(N)` | grows | `std::vector<T>` |
 | Go | `make([]T, 0, N)` | grows | `[]T` |

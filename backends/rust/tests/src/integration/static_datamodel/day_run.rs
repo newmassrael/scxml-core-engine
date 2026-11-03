@@ -18,12 +18,13 @@ use sce_portable_bytes::SceOwnedList;
 pub fn day_run(
     first: u8,
     count: u8,
-) -> Result<SceOwnedList<u8, 8>, sce_forge_runtime::algorithm::AlgorithmError> {
-    let mut out: SceOwnedList<u8, 8> = SceOwnedList::new();
+    out: &mut SceOwnedList<u8, 8>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     let mut i: u8 = 0;
     while i < count {
         out.push(sce_forge_runtime::algorithm::add::<u8>(first, i)?)?;
         i = sce_forge_runtime::algorithm::add::<u8>(i, 1)?;
     }
-    return Ok(out);
+    return Ok(());
 }

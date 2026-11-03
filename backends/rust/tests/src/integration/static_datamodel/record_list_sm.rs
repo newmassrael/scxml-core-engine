@@ -1054,7 +1054,8 @@ fn call_MerkleInsert__v(
             hash: r.hash,
         })
         .collect();
-    let r = merkle_insert::merkle_insert(&p0_algorithm, p1, p2)?;
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    merkle_insert::merkle_insert(&p0_algorithm, p1, p2, &mut r)?;
     Ok(r.iter()
         .map(|r| RecordListNodeRecord {
             depth: r.depth,
@@ -1081,7 +1082,8 @@ fn call_MvValueDrop__vv(
             node_id: r.nodeId,
         })
         .collect();
-    let r = mv_value_drop::mv_value_drop(
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    mv_value_drop::mv_value_drop(
         &p0_algorithm,
         mv_value::MvValuePayload {
             id: p1.id,
@@ -1092,6 +1094,7 @@ fn call_MvValueDrop__vv(
             counter: p1.counter,
             node_id: p1.nodeId,
         },
+        &mut r,
     )?;
     Ok(r.iter()
         .map(|r| RecordListValueRecord {
@@ -1152,7 +1155,8 @@ fn call_MvValueKeep__vv(
             node_id: r.nodeId,
         })
         .collect();
-    let r = mv_value_keep::mv_value_keep(
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    mv_value_keep::mv_value_keep(
         &p0_algorithm,
         mv_value::MvValuePayload {
             id: p1.id,
@@ -1163,6 +1167,7 @@ fn call_MvValueKeep__vv(
             counter: p1.counter,
             node_id: p1.nodeId,
         },
+        &mut r,
     )?;
     Ok(r.iter()
         .map(|r| RecordListValueRecord {
@@ -1200,7 +1205,8 @@ fn call_OrsetLive__vv(
             node_id: r.nodeId,
         })
         .collect();
-    let r = orset_live::orset_live(&p0_algorithm, &p1_algorithm)?;
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    orset_live::orset_live(&p0_algorithm, &p1_algorithm, &mut r)?;
     Ok(r.iter()
         .map(|r| RecordListEntryRecord {
             element: r.element,
@@ -1234,7 +1240,8 @@ fn call_OrsetUnion__vv(
             node_id: r.nodeId,
         })
         .collect();
-    let r = orset_union::orset_union(&p0_algorithm, &p1_algorithm)?;
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    orset_union::orset_union(&p0_algorithm, &p1_algorithm, &mut r)?;
     Ok(r.iter()
         .map(|r| RecordListEntryRecord {
             element: r.element,
@@ -1258,7 +1265,8 @@ fn call_RecordRoster__v(
             role: r.role,
         })
         .collect();
-    let r = record_roster::record_roster(&p0_algorithm, p1, p2)?;
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    record_roster::record_roster(&p0_algorithm, p1, p2, &mut r)?;
     Ok(r.iter()
         .map(|r| RecordListMemberRecord {
             node: r.node,
@@ -1313,7 +1321,8 @@ fn call_RegisterValues__v(
             node_id: r.nodeId,
         })
         .collect();
-    let r = register_values::register_values(&p0_algorithm, p1, p2)?;
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    register_values::register_values(&p0_algorithm, p1, p2, &mut r)?;
     Ok(r.iter()
         .map(|r| RecordListValueRecord {
             id: r.id,

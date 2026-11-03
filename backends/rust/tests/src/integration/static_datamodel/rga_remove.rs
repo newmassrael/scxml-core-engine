@@ -20,9 +20,9 @@ use sce_portable_bytes::SceOwnedList;
 pub fn rga_remove(
     gone: &[rga_gone::RgaGonePayload],
     removal: rga_gone::RgaGonePayload,
-) -> Result<SceOwnedList<rga_gone::RgaGonePayload, 256>, sce_forge_runtime::algorithm::AlgorithmError>
-{
-    let mut out: SceOwnedList<rga_gone::RgaGonePayload, 256> = SceOwnedList::new();
+    out: &mut SceOwnedList<rga_gone::RgaGonePayload, 256>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    out.clear();
     let mut held: bool = false;
     for &g in gone.iter() {
         out.push(g)?;
@@ -33,5 +33,5 @@ pub fn rga_remove(
     if !held {
         out.push(removal)?;
     }
-    return Ok(out);
+    return Ok(());
 }

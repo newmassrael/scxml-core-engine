@@ -27,8 +27,9 @@ pub fn sheet_settle(
     gone: &[rga_gone::RgaGonePayload],
     cols: &[rga_node::RgaNodePayload],
     gone_cols: &[rga_gone::RgaGonePayload],
-) -> Result<SceOwnedList<i64, 768>, sce_forge_runtime::algorithm::AlgorithmError> {
-    let mut trail: SceOwnedList<i64, 768> = SceOwnedList::new();
+    trail: &mut SceOwnedList<i64, 768>,
+) -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    trail.clear();
     let mut moving: bool = true;
     let mut passes: i64 = 0;
     while moving && passes <= (cells).len() as i64 {
@@ -286,5 +287,5 @@ pub fn sheet_settle(
             at = sce_forge_runtime::algorithm::add::<i64>(at, 1)?;
         }
     }
-    return Ok(trail);
+    return Ok(());
 }

@@ -686,7 +686,8 @@ fn call_LwwWrite__vv(
             b_val: r.bVal,
         })
         .collect();
-    let r = lww_write::lww_write(
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    lww_write::lww_write(
         &p0_algorithm,
         lww_cell::LwwCellPayload {
             row: p1.row,
@@ -705,6 +706,7 @@ fn call_LwwWrite__vv(
             b_col: p1.bCol,
             b_val: p1.bVal,
         },
+        &mut r,
     )?;
     Ok(r.iter()
         .map(|r| SheetPeerLwwCellRecord {
@@ -752,12 +754,14 @@ fn call_RgaInsert__vv(
             after: r.after,
         })
         .collect();
-    let r = rga_insert::rga_insert(
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    rga_insert::rga_insert(
         &p0_algorithm,
         rga_node::RgaNodePayload {
             key: p1.key,
             after: p1.after,
         },
+        &mut r,
     )?;
     Ok(r.iter()
         .map(|r| SheetPeerRgaNodeRecord {
@@ -779,12 +783,14 @@ fn call_RgaRemove__vv(
             by: r.by,
         })
         .collect();
-    let r = rga_remove::rga_remove(
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    rga_remove::rga_remove(
         &p0_algorithm,
         rga_gone::RgaGonePayload {
             key: p1.key,
             by: p1.by,
         },
+        &mut r,
     )?;
     Ok(r.iter()
         .map(|r| SheetPeerRgaGoneRecord {
@@ -850,12 +856,14 @@ fn call_SheetSettle__vvvvv(
             by: r.by,
         })
         .collect();
-    let r = sheet_settle::sheet_settle(
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    sheet_settle::sheet_settle(
         &p0_algorithm,
         &p1_algorithm,
         &p2_algorithm,
         &p3_algorithm,
         &p4_algorithm,
+        &mut r,
     )?;
     Ok(r.to_vec())
 }
@@ -885,7 +893,8 @@ fn call_SheetShow__vv(
             b_val: r.bVal,
         })
         .collect();
-    let r = sheet_show::sheet_show(&p0_algorithm, p1)?;
+    let mut r = sce_portable_bytes::SceOwnedList::new();
+    sheet_show::sheet_show(&p0_algorithm, p1, &mut r)?;
     Ok(r.iter()
         .map(|r| SheetPeerShownRecord {
             row: r.row,
