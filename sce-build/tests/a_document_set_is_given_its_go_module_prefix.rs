@@ -13,6 +13,12 @@
 //! whose statechart's in-line child, calls an algorithm was refused for want of
 //! the prefix the command line had named, and `check` on the set, which
 //! compiles it the same way, refused it too.
+//!
+//! The roots `generate` names a machine and its transition function under
+//! (`--cpp-namespace-prefix`, `--kotlin-package-prefix`, `--c-symbol-prefix`)
+//! are not taken by `orchestrate`, which gives the machine none
+//! (docs/SCE_TRANSITION_FUNCTION.md): the command refuses each as a usage
+//! error rather than accept it and generate as though it had not been given.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -186,4 +192,45 @@ fn a_child_a_statechart_of_the_set_carries_imports_by_the_prefix() {
         imports_under_the_prefix(&out.join("host__sce_synth_invoke__kid_sm.go")),
         "the child's machine does not import the algorithm by the prefix the set was given"
     );
+}
+
+/// `orchestrate` refuses each root `generate` names a machine under, as a
+/// usage error (`cli/usage`, exit 20), and writes nothing: it gives the
+/// machine none of them, so accepting one would generate as though it had not
+/// been given.
+#[test]
+fn orchestrate_refuses_the_naming_roots_it_does_not_give() {
+    let work = scratch("roots");
+    let doc = work.join("caller.scxml");
+    std::fs::write(&doc, caller()).expect("write the statechart");
+    for (lang, flag) in [
+        ("cpp", "--cpp-namespace-prefix"),
+        ("kotlin", "--kotlin-package-prefix"),
+        ("c11", "--c-symbol-prefix"),
+    ] {
+        let out = work.join(format!("out_{lang}"));
+        let run = codegen(&[
+            "--error-format=json",
+            "orchestrate",
+            "--scxml",
+            doc.to_str().unwrap(),
+            "-l",
+            lang,
+            flag,
+            "acme",
+            "-o",
+            out.to_str().unwrap(),
+        ]);
+        let stderr = String::from_utf8_lossy(&run.stderr);
+        assert_eq!(run.status.code(), Some(20), "{flag}: {stderr}");
+        assert!(
+            stderr.contains("\"code\":\"cli/usage\""),
+            "{flag} is not refused as a usage error: {stderr}"
+        );
+        assert!(
+            !out.exists(),
+            "{flag}: a refused invocation wrote {}",
+            out.display()
+        );
+    }
 }
