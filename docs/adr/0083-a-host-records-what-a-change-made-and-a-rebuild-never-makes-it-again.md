@@ -1,9 +1,9 @@
 # ADR 0083 — A host records what a change made, and a rebuild never makes it again
 
-- Status: Proposed (2026-11-03). Written at the owner's order of that day, under the rule of 2026-10-26 and
+- Status: Accepted (2026-11-03). Written at the owner's order of that day, under the rule of 2026-10-26 and
   2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored. The owner approved
-  the direction (prepare and effect apart, outcomes recorded, an outbox in the core) before the draft; the draft
-  waits for acceptance.
+  the direction (prepare and effect apart, outcomes recorded, an outbox in the core) before the draft, and accepted
+  the draft the same day with the answers recorded in "Owner's answers".
 - Date: 2026-11-03
 - Amends:
   - ADR 0079 section 7 ("A replay of the application's own log does not write twice") and the status of its step 3,
@@ -57,11 +57,14 @@ They are not byte-identical, and the list does not promise that they are:
 
 Measured on a real device on 2026-11-03, against a relay at `d48f008fe9`: one restart added 182 new operations of
 the device. 151 had the register (`id`, `field`) and the wall time of an operation the relay held and differed only
-in their counter; 30 others had stamps fully equal to operations signed earlier and were signed again. The core's
-`send_kept` log records (`client.rs:2056` and `note_kept`) showed 182 taken and 65 held. The merged state is
-order-independent, as a CRDT's must be; the emitted operations are not, and every one of the 182 is a value the other
-devices now hold beside the first (a register that reads as changed twice at once) or a write-over that names another
-set of values.
+in their counter. The core's `send_kept` log records (`client.rs:2056` and `note_kept`) showed 182 taken and 65
+held. The relay's record of the device was then read whole (765 operations of node 1): its numbers run 1 to 765 with
+no gap, no number holds two operations, and no two operations share their event, register, wall time and counter.
+The "30 operations with equal stamps" the first report cited are the write and the write-over of one change, which
+share the change's stamp by design (ADR 0046 section 1). So the one path observed is the replay making another
+counter; no conflict happened. The merged state is order-independent, as a CRDT's must be; the emitted operations are
+not, and every one of the 182 is a value the other devices now hold beside the first (a register that reads as
+changed twice at once) or a write-over that names another set of values.
 
 The world test that holds ADR 0079 section 7
 (`a_copy_built_again_from_its_own_commands_writes_nothing_twice`,
@@ -70,20 +73,22 @@ replays alice's four commands into a fresh machine with nothing of bob's taken i
 which the generator happens to reproduce its output. It holds the property for that schedule and not for the
 property's domain.
 
-A second defect has the same root. A process killed after a round gave the relay an operation and before the host
-saved the core's sealed state comes back with a core that does not hold that operation. When the core was restored
+A second defect has the same root. It is latent: it is read from the code, and the measurement did not show it. A
+process killed after a round gave the relay an operation and before the host saved the core's sealed state comes back
+with a core that does not hold that operation. When the core was restored
 (`Peer::restore_sealed`, `lib.rs:1448`) it waits for its own chain (`lib.rs:1484`, `trust.rs:601` and the check at
 `trust.rs:1934`) and reads the operation back; but a core that was started without a sealed state (a device killed
 before its first save, set up again from its seed) begins with `awaiting_own_chain: false` (`trust.rs:249`) and
-numbers its next operation where the lost one stood (`trust.rs:1944`). The report of the measurement attributes the
-other bytes to a random nonce. In the tree the content nonce is derived from the list, the epoch and the write's
-stamp (`backends/rust/trust/src/secrecy.rs:13-15`, `nonce_of` at `:72`) and the signature is Ed25519's, which is
-deterministic (`backends/rust/trust/src/identity.rs:3-6`); the randomness drawn is the sealed state's data key, one
-for each save (`backends/rust/trust/src/backup.rs:398-401`), which never reaches the relay. The bytes at one number
-differ because what is signed differs: the replayed write's stamp, the epoch its content is sealed under, and the
-entry of the log its link names (`Link { seq, prev, log, log_hash }`, `backends/rust/trust/src/message.rs:254-262`).
-Every host that holds both freezes the device (`backends/rust/trust/src/chain.rs:1-20`), and the relay keeps the
-second as a new record and answers it `Accepted { new: true }` (`backends/rust/relay/src/relay.rs:921-942`).
+numbers its next operation where the lost one stood (`trust.rs:1944`). The first report of the measurement
+attributed such other bytes to a random nonce, and none is drawn there. In the tree the content nonce is derived from
+the list, the epoch and the write's stamp (`backends/rust/trust/src/secrecy.rs:13-15`, `nonce_of` at `:72`) and the
+signature is Ed25519's, which is deterministic (`backends/rust/trust/src/identity.rs:3-6`); the randomness drawn is
+the sealed state's data key, one for each save (`backends/rust/trust/src/backup.rs:398-401`), which never reaches the
+relay. The bytes at one number would differ because what is signed differs: the replayed write's stamp, the epoch
+its content is sealed under, and the entry of the log its link names (`Link { seq, prev, log, log_hash }`,
+`backends/rust/trust/src/message.rs:254-262`).
+Every host that held both would freeze the device (`backends/rust/trust/src/chain.rs:1-20`), and the relay would
+keep the second as a new record and answer it `Accepted { new: true }` (`backends/rust/relay/src/relay.rs:921-942`).
 
 Both defects are one mistake: the host's durable original is the input of a computation that reads local state (a
 command) instead of the computation's output (what the command made), and the core's durable original of a signed
@@ -146,9 +151,11 @@ bytes to its journal, and the core withholds them from the relay until the host 
    the fields of `record_part` (`stdlib/shared/record_part.scxml`) for each operation, with the change's stamp
    (`atWallTime`, `atCounter`) and its size (`parts`) on every part, a one-part change included. Nothing is added to
    what close computes; the decision is that it is reported.
-2. **A copy whose host keeps a journal reports it.** `record_join` gains `journal` (revision 2, `sce:since="2"`,
-   default `false`). A copy joined with `journal: true` reports each change it closes on a route of its own,
-   `#journal`, which a host binds as it binds `#hub`:
+2. **A copy reports it to its host's journal.** `record_join` gains `journal` (revision 2, `sce:since="2"`,
+   default `true`): a list a host starts keeps a journal unless it is told not to, and only a test copy that is
+   thrown away when its run ends (a scenario, a world test of the Mesh walk) is joined with `journal: false`. A copy
+   joined with `journal: true` reports each change it closes on a route of its own, `#journal`, which a host binds
+   as it binds `#hub`:
    - `record_list.made` (`record_made`, new): the fields of `record_part`, every one present, and `command` and
      `ordinal` (the part's place in the change, from 1), once for each operation, in the fixed order of ADR 0046
      section 3;
@@ -169,15 +176,19 @@ bytes to its journal, and the core withholds them from the relay until the host 
    its own changes to `#hub` or `#people`: its host gives the reported effector to its core, which is the delivery
    layer (ADR 0079 section 1). Sending the same effector twice by two routes would make two originals of one fact. A
    hub copy still passes on what it relays (`:1118-1123`), and the digest walk (`record_list.resync`,
-   `:1425`; `record_list.share`, `:1531`) is unchanged for a copy that has peers by Mesh routes. A copy joined with
-   `journal: false` (every scenario today, a Mesh deployment, a copy on one device) behaves exactly as it does now.
+   `:1425`; `record_list.share`, `:1531`) is unchanged for a copy that has peers by Mesh routes. A host with no
+   core that keeps a copy (a Mesh deployment, a copy on one device) records the report as every host does and
+   carries the parts to its peers itself. A copy joined with `journal: false`, a throwaway test copy, behaves
+   exactly as every copy does today.
 5. **Applying an effector is one path, idempotent by dot.** A host gives a rebuilt copy a recorded effector, its
    own or another device's, as `record_list.recall` (schema `record_part`, every field present). Recall is taken as
    a peer's part is taken by `record_list.arrive` (`:1052-1124`): a part of a change is held until its change is
    whole and then the change is taken in through `record_list.take` at once and told to the parent once. It differs
    from a peer's arrival in two things only, both because what is recalled was already admitted: it is not judged
    against the roster or the text bound again (the core admitted it, or the copy made it), and a hub does not pass it
-   on. The source's own effector at close goes through `take` as today. There is no second effect path.
+   on. The source's own effector at close goes through `take` as today. There is no second effect path. The rule
+   holds for every copy that is rebuilt, a hub's included: a hub copy (`Peer::for_a_hub`, `lib.rs:681`) is rebuilt
+   by recall from its core's history as a person's copy is, and passes nothing on while it is.
 6. **The effect path raises the clock to every stamp it takes.** A peer's write and write-over move the clock by
    `HlcReceive` (`:728`, `:787`), and the copy's own write moves it up to the write's dot (`:730-734`). The copy's
    own write-over does not move it (`:783`, `op.by !== node`), which was harmless while the source's clock was always
@@ -223,6 +234,14 @@ bytes to its journal, and the core withholds them from the relay until the host 
    operations, each as the event name and JSON payload a round's `events` already carries (`Outcome::events`,
    `lib.rs:161`), with the part's fields complete; in the ABI `sce_peer_history(ScePeer *, ScePeerBuf *events)`, a
    JSON array in the form `sce_peer_take_outcome` writes its events in. It reads no clock and makes no request.
+6. **The journal is bounded at the list's settle floor.** A floor the copies accept (`record_list.floor`, ADR 0042)
+   is a point of causal stability: every copy holds the same up to it, and none will add to it (Baquero, Almeida
+   and Shoker, DAIS 2014, use the same property to compact an operation-based CRDT's log). At a floor the host takes
+   a snapshot made of effectors, the live writes stamped at or before the floor (what every copy still holds of
+   that time; what was written over there is forgotten by the settle on every copy), records it with the floor in
+   one transaction, saves the core's checkpoint, and drops the effectors and records before the floor. A rebuild
+   recalls the snapshot, gives the floor, then recalls the history after it; `Peer::history` is bounded the same
+   way. This needs no saved state of a running child (ADR 0045) and does not wait for one.
 
 ### 3. An outbox in the core
 
@@ -284,7 +303,8 @@ bytes to its journal, and the core withholds them from the relay until the host 
    of ADR 0034 is a function of the set of operations every host holds (`chain.rs:7-20`), the relay may not be the
    one place that hides an equivocation from the other members, and a member's courier that gives the relay a
    conflicting operation it holds of another device (the proof a courier carries, `docs/SCE_SHARED_LIST_RELAY.md`
-   section 6) must have it kept. What changes is that no relay answers `accepted` to an operation that freezes its
+   section 6) must have it kept. The rule is the same whoever submits it, the author's own session included: the
+   relay never chooses a history. What changes is that no relay answers `accepted` to an operation that freezes its
    author. `Chain::insert` already says whether an operation moved the frozen position (`Inserted { before, after }`,
    `chain.rs:112-120`); `Trust::take_operation` gains a field of `Taken` (`trust.rs:1575`) that carries it, and the
    relay answers by it.
@@ -320,7 +340,9 @@ order it is read in. The clock's counter after a rebuild may differ from the one
 1. **The list.** `record_edit` revision 3, `record_clear` and `record_retire` revision 2 (`command`), `record_join`
    revision 2 (`journal`), `record_made` and `record_closed` new, `record_list.recall` new, the own write-over's clock
    (section 1.6). Every revision is a field with a default (ADR 0044), so a copy built before this ADR reads every
-   message of it, and a host that joins without `journal` sees the list it sees today. The list's saved shape gains
+   message of it. `journal` defaults to `true` (section 1.2), so every existing scenario and world test whose copy
+   is thrown away and passes its own changes on Mesh routes joins with `journal: false`, said in the commit that
+   moves it, and every other copy keeps a journal. The list's saved shape gains
    `journal` and the command it echoes; the pin in `sce-build/tests/fixtures/standard_saved_shapes.json` moves with
    the commit that moves the shape (ADR 0045). Every generated backend of the list moves with it: the committed Rust,
    Go and Kotlin `static_datamodel` trees (`record_list_sm`, `record_list_parent_sm` and its synthesised child) are
@@ -377,31 +399,43 @@ defect of the Context turns it red; each new guard also gets a mutation casefile
 3. **An offline start shows what others wrote.** With no transport at all, a restarted device's machine holds every
    value its core held, its parent is told each register once, and the first round after the network returns is a
    sync that tells it only what is new.
-4. **A kill after a push conflicts with no one.** The process is killed at each step boundary (after `made`, after
+4. **A kill after a push conflicts with no one.** The path is latent (read from the code, not observed: Context), so
+   the test holds the paths the code names. The process is killed at each step boundary (after `made`, after
    the commit, after `recorded`, after the relay's `accepted`, before the checkpoint), for a restored device and for
    a device that never saved; after the restart and a round, `Trust::equivocating` is empty on every host and on the
-   relay, and the relay holds each operation once.
+   relay, and the relay holds each operation once. A hub copy is restarted the same way (test 2) and passes nothing
+   on while it is rebuilt.
 5. **The relay's answer.** A second operation at one number with other bytes is answered `conflict` with the held
-   one, is kept, and freezes the author on every host at the same number; a second note of one author naming one
+   one, is kept, and freezes the author on every host at the same number, from the author's own session as from a
+   member's courier; a second note of one author naming one
    write is admitted and changes no register.
 6. **The list on every lane.** New scenarios `record_list_journal` (the reports' order and fields for each kind of
    change, `closed` for a refused change of a list a host started, and no pass of its own for a copy with
    `journal: true`) and `record_list_recall` (a history of own and others' changes recalled, nothing sent, each
    register told once, the clock past every stamp) replay on Rust, Kotlin, Python, Go, C++, C11 and the
-   Interpreter, and every existing `record_list_*` scenario replays unchanged with `journal` absent.
+   Interpreter, and every existing `record_list_*` scenario replays unchanged with `journal: false`. A scenario
+   joined without `journal` holds the default: its copy reports on `#journal` and passes nothing of its own.
 7. **The ABI.** The recorded scenario of section 6.3, replayed from every lane with a toolchain; the Kotlin device of
    `a_shared_list_is_held_through_the_core_on_every_device` restarted through the ABI as in test 2.
 
-## Order of work
+## Landing order
 
-1. This ADR.
-2. The list (section 1), its scenarios on seven lanes, the saved-shape pin, the regenerated trees.
-3. The core's outbox and history (sections 2 and 3), the wait on `set_identity`, the trust layer's domain version.
-4. The relay's `conflict` and protocol version 2 (section 4).
-5. ABI version 7, the Kotlin binding, the recorded scenario, the documents.
-6. The world tests of section 7, with a Kotlin device through the ABI.
+The owner's order of 2026-11-03. Each landing carries the tests of section 7 that hold it, and says how a consumer
+follows it (ADR 0078).
 
-A host moves after step 5, in one landing of its own.
+1. **The relay.** Protocol version 2 and its `conflict` answer (section 4), with the field of `Taken` that says an
+   operation froze its author; a relay of version 2 answers a version-1 request as today, so it deploys before any
+   core moves.
+2. **The standard list.** `journal` (default `true`), the `#journal` reports, `record_list.recall`, the own
+   write-over's clock (section 1), the schema revisions, the saved-shape pin, the scenarios on seven lanes with the
+   throwaway copies joined `journal: false`, and every generated backend of the list regenerated in the same landing
+   (the Rust, Go and Kotlin `static_datamodel` trees and the Go round-trip tree; Python, C++, C11 and the
+   Interpreter at test time).
+3. **The core.** The outbox and the history (sections 2 and 3), the journal's bound at the settle floor (section
+   2.6), the wait on `set_identity`, the trust layer's domain version 3, ABI version 7 with the Kotlin binding, the
+   recorded scenario recorded again, and the world tests of section 7.
+4. **The hosts.** Each host in the tree moves in a landing of its own (section 6.5); a host that pins SCE takes
+   landings 2 and 3 together, since a copy that keeps a journal by default needs a core that takes its reports.
 
 ## Consequences
 
@@ -409,8 +443,9 @@ A host moves after step 5, in one landing of its own.
 - A device's chain no longer depends on when its host saved: a crash anywhere after the commit conflicts with no one.
 - A rebuilt machine is told the list by its own core, offline, and its process's first round is a sync.
 - A host's storage holds a journal of outcomes beside the checkpoint, and every change is one transaction of it.
-- The list gains one route (`#journal`), two reports, one recall input and five schema revisions; a copy that does
-  not ask for a journal is the list it is today.
+- The list gains one route (`#journal`), two reports, one recall input and five schema revisions; every copy keeps a
+  journal by default, and only a throwaway test copy is the list it is today.
+- Every copy that is rebuilt, a hub's included, is rebuilt by recall, and the journal is bounded at the settle floor.
 - The ABI is version 7, the relay's protocol version 2, the signed bytes' domain version 3; recorded fixtures are
   recorded again.
 
@@ -435,27 +470,33 @@ A host moves after step 5, in one landing of its own.
 - **The relay refuses a conflicting operation and does not keep it.** It would let an honest device that lost its
   operation recover without being frozen. Rejected: after section 3 an honest device does not reach it, a member's
   courier that carries another device's conflict must have it kept, and a relay that drops one of two operations
-  decides which history is the device's, which ADR 0034 does not let a relay decide. Kept as an open question for the
-  narrow case of the author's own session.
+  decides which history is the device's, which ADR 0034 does not let a relay decide. The narrow case of the author's
+  own session is refused and kept as well (Owner's answers, 2).
+- **Bound the journal by a snapshot of the machine's saved state** (ADR 0045's save of a running child). Rejected for
+  now: it waits on another ADR, and a snapshot made of the live effectors at the settle floor needs nothing the list
+  does not already agree on (section 2.6).
 - **Report the effector on `#hub` and let the host tell it from relayed traffic and walk shares by context.**
   Rejected: it makes the outcome of a command a matter of what else was sent in the same macrostep, which the next
   change to the list could break silently; a route and a closing report make it a property of the document.
 
-## Open questions for the owner
+## Owner's answers
 
-1. The measured conflict: the tree's content nonce is derived and its signature deterministic (Context), so the
-   "random nonce" of the report is not what made other bytes at one number. Which number and which two operations
-   the relay holds should be read from the device's relay records before section 7.4's test is written, so the test
-   reproduces the observed path and not only the two this ADR names (a core started without a sealed state; a log
-   entry or epoch that moved between the two signings). The 30 operations whose stamps equalled earlier ones and
-   were signed again are not explained by the counter; the same reading should say whether their content or their
-   number differed.
-2. Whether the relay should, for the author's own session alone, refuse a conflicting operation without keeping it
-   (the variant the direction named), at the cost argued in "Alternatives rejected".
-3. Whether a hub copy (`Peer::for_a_hub`) is rebuilt by this procedure too, or is out of scope until a deployment
-   runs one behind a core.
-4. Whether `journal` becomes the default for a list a host starts, once every host in the tree has moved.
-5. The journal's compaction: a rebuild applies the whole history, which grows with the list. The textbook answer is
-   a snapshot of the machine plus the tail after it, which needs ADR 0045's saved state of a running child; whether
-   to wait for it or to bound the history by the list's own settle (a floor after which the core's history starts
-   from the settled state).
+The draft asked five questions. The owner accepted the ADR on 2026-11-03 and answered them as follows; the sections
+named are written to the answers.
+
+1. **What the relay holds of the measured device.** The relay's record of node 1 was read whole: 765 operations,
+   numbered 1 to 765 with no gap, no number holding two operations, and no two operations with equal event,
+   register, wall time and counter. The "30 equal stamps" of the first report were a write and a write-over of one
+   change, which share the change's stamp by design. No conflict happened. The one observed path is the replay
+   making another counter; the kill-after-push path is latent, read from the code and not observed. The Context
+   says so, and test 7.4 holds the paths the code names.
+2. **A conflicting operation from the author's own session** is refused with `conflict` and still kept as proof,
+   as from any other session: ADR 0034 stays consistent, and the relay never chooses a history (section 4.1).
+3. **Hub copies are in scope.** Every copy that is rebuilt follows the rule, a hub's included (section 1.5).
+4. **`journal: true` is the default** for a list a host starts; only a throwaway test copy may turn it off
+   (sections 1.2, 1.4 and 6.1).
+5. **Compaction bounds the journal at the list's settle floor**: a floor is a point of causal stability, the host
+   keeps a snapshot at the floor and drops the records before it, and this does not wait for ADR 0045
+   (section 2.6).
+
+No question is left open.
