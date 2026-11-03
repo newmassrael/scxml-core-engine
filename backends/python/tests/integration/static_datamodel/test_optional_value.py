@@ -89,7 +89,7 @@ def test_a_present_value_is_held_to_its_type_and_width() -> None:
 
 def test_a_field_that_is_never_absent_refuses_null() -> None:
     absent_id = {"id": None, "due": 1, "title": "t", "done": True, "level": 1, "status": "open"}
-    with pytest.raises(TypedPayloadError, match="'id' is not a whole number"):
+    with pytest.raises(TypedPayloadError, match="'id' is null, and its type is not optional"):
         lift(absent_id, _FIELDS)
 
 

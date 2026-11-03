@@ -33,8 +33,9 @@ from __future__ import annotations
 import json
 import math
 import struct
-from typing import Any, Sequence
+from typing import Any, Callable, Dict, Sequence
 
+from .number_text import number_text
 from .payload_reading import PayloadReading, payload_reading_of_text
 
 # The largest finite binary32: a payload number past it does not fit a field a
@@ -81,6 +82,278 @@ class OptionalOf:
 
     def __repr__(self) -> str:
         return f"OptionalOf({self.declared!r})"
+
+
+class Whole:
+    """Names a whole number of a width in a type: a value outside ``low`` to
+    ``high`` does not fit it. What a field spec's ``(name, int, low, high)`` says
+    of a field, said of a value at any depth."""
+
+    __slots__ = ("low", "high")
+
+    def __init__(self, low: int, high: int) -> None:
+        self.low = low
+        self.high = high
+
+    def __repr__(self) -> str:
+        return f"Whole({self.low}, {self.high})"
+
+
+class WideOf:
+    """Names a 64-bit whole number in a type (see ``Wide``), signed when ``low``
+    is below zero: read from the text of its digits, or from a number exact in a
+    double, and held to ``low`` to ``high``."""
+
+    __slots__ = ("low", "high")
+
+    def __init__(self, low: int, high: int) -> None:
+        self.low = low
+        self.high = high
+
+    def __repr__(self) -> str:
+        return f"WideOf({self.low}, {self.high})"
+
+
+class Text:
+    """Names ``string[bound]``: a text of at most ``bound`` UTF-8 bytes, held to
+    it wherever it stands, the top level of a payload included
+    (docs/adr/0086, section 4.4)."""
+
+    __slots__ = ("bound",)
+
+    def __init__(self, bound: int) -> None:
+        self.bound = bound
+
+    def __repr__(self) -> str:
+        return f"Text({self.bound})"
+
+
+class Bytes:
+    """Names ``bytes[bound]``: a byte string of at most ``bound`` bytes."""
+
+    __slots__ = ("bound",)
+
+    def __init__(self, bound: int) -> None:
+        self.bound = bound
+
+    def __repr__(self) -> str:
+        return f"Bytes({self.bound})"
+
+
+class ListOf:
+    """Names ``list<T>[bound]``, around what names ``T``: an array of at most
+    ``bound`` elements, each a value of ``T``, read in order. The bound is held
+    before any element is read (ADR 0077, section 2)."""
+
+    __slots__ = ("declared", "bound")
+
+    def __init__(self, declared: Any, bound: int) -> None:
+        self.declared = declared
+        self.bound = bound
+
+    def __repr__(self) -> str:
+        return f"ListOf({self.declared!r}, {self.bound})"
+
+
+class RecordOf:
+    """Names a record type: an object whose ``fields`` are ``(name, declared)``
+    pairs, in declaration order. ``defaults``, for a record whose schema a later
+    revision added fields to, is the JSON object of their defaults, which the
+    generator spells from that schema, and a field the value lacks is read out
+    of it (docs/adr/0086, section 10.3). ``make`` builds the record from the
+    values read, in field order; without one the record is a ``dict``. A key the
+    schema does not declare is stepped over."""
+
+    __slots__ = ("fields", "defaults", "make")
+
+    def __init__(self, fields: Sequence[tuple], defaults: str | None = None,
+                 make: Callable[..., Any] | None = None) -> None:
+        self.fields = tuple(fields)
+        self.defaults = defaults
+        self.make = make
+
+    def __repr__(self) -> str:
+        return f"RecordOf({self.fields!r})"
+
+
+_COMPOSED = (Whole, WideOf, Text, Bytes, ListOf, RecordOf)
+
+
+def _join(prefix: str, segment: str) -> str:
+    """``segment`` below ``prefix``, as a JSON Pointer's reference tokens are
+    joined."""
+    return segment if not prefix else f"{prefix}/{segment}"
+
+
+def _utf8_size(text: str) -> int:
+    return len(text.encode("utf-8", "surrogatepass"))
+
+
+def _defaults_of(defaults: str) -> dict:
+    try:
+        parsed = json.loads(defaults)
+    except ValueError:
+        parsed = None
+    if not isinstance(parsed, dict):
+        raise TypedPayloadError(
+            "the schema's defaults are not a JSON object, which the generator "
+            "never writes")
+    return parsed
+
+
+def read_value(path: str, declared: Any, value: Any) -> Any:
+    """One value of an event's data as its type declares it, at the path through
+    every depth that names it (docs/adr/0086, section 4): a field's name, then
+    each index and field name below it, joined by ``/``.
+
+    ``declared`` is what a field spec names a type by: a scalar (``int``,
+    ``bool``, ``float``, ``Single``, ``str``, ``bytes``, an enum type), or one of
+    ``Whole``, ``WideOf``, ``Text``, ``Bytes``, ``OptionalOf``, ``ListOf`` and
+    ``RecordOf``, composed to any depth. A value outside its type is refused
+    before anything of it is kept, the refusal naming the path."""
+    if isinstance(declared, OptionalOf):
+        # Absence is the one JSON `null` (docs/adr/0055, section 4).
+        return None if value is None else read_value(path, declared.declared, value)
+    if value is None:
+        raise TypedPayloadError(f"{path!r} is null, and its type is not optional")
+    if isinstance(declared, ListOf):
+        if not isinstance(value, list):
+            raise TypedPayloadError(f"{path!r} is not a list")
+        if len(value) > declared.bound:
+            raise TypedPayloadError(
+                f"{path!r} holds {len(value)} elements, past the {declared.bound} "
+                f"its type declares")
+        return [read_value(_join(path, str(index)), declared.declared, item)
+                for index, item in enumerate(value)]
+    if isinstance(declared, RecordOf):
+        if not isinstance(value, dict):
+            raise TypedPayloadError(f"{path!r} is not a record")
+        members = value
+        if declared.defaults is not None:
+            members = {**_defaults_of(declared.defaults), **value}
+        held = []
+        for name, field_type in declared.fields:
+            field_path = _join(path, name)
+            if name not in members:
+                raise TypedPayloadError(f"the event's data has no {field_path!r}")
+            held.append(read_value(field_path, field_type, members[name]))
+        if declared.make is not None:
+            return declared.make(*held)
+        return {name: v for (name, _), v in zip(declared.fields, held)}
+    if isinstance(declared, Text):
+        text = _as(path, str, value)
+        size = _utf8_size(text)
+        if size > declared.bound:
+            raise TypedPayloadError(
+                f"{path!r} is {size} bytes, past the {declared.bound} its type declares")
+        return text
+    if isinstance(declared, Bytes):
+        held_bytes = _as(path, bytes, value)
+        if len(held_bytes) > declared.bound:
+            raise TypedPayloadError(
+                f"{path!r} is {len(held_bytes)} bytes, past the {declared.bound} "
+                f"its type declares")
+        return held_bytes
+    if isinstance(declared, (Whole, WideOf)):
+        if isinstance(declared, WideOf):
+            whole = as_wide(path, value, declared.low < 0)
+        else:
+            whole = _as(path, int, value)
+        if not declared.low <= whole <= declared.high:
+            raise TypedPayloadError(
+                f"{path!r} does not fit the width its schema declares ({whole!r})")
+        return whole
+    return _as(path, declared, value)
+
+
+class BoundError(ValueError):
+    """A value a host built is past a bound its type declares: raised where the
+    value is made, by a generated record's ``__post_init__``."""
+
+
+def check_value(path: str, declared: Any, value: Any) -> None:
+    """Hold a value a host built to its type at every depth, before anything
+    reads it (docs/adr/0086, section 5.4): what a generated record's
+    ``__post_init__`` runs over each field, through the same type names the
+    reader takes. Raises ``BoundError`` naming the path."""
+    if isinstance(declared, OptionalOf):
+        if value is not None:
+            check_value(path, declared.declared, value)
+        return
+    if isinstance(declared, ListOf):
+        if len(value) > declared.bound:
+            raise BoundError(
+                f"{path!r} holds {len(value)} elements, past the {declared.bound} "
+                f"its type declares")
+        for index, item in enumerate(value):
+            check_value(_join(path, str(index)), declared.declared, item)
+        return
+    if isinstance(declared, RecordOf):
+        for name, field_type in declared.fields:
+            member = value[name] if isinstance(value, dict) else getattr(value, name)
+            check_value(_join(path, name), field_type, member)
+        return
+    if isinstance(declared, Text):
+        size = _utf8_size(value)
+        if size > declared.bound:
+            raise BoundError(
+                f"{path!r} is {size} bytes, past the {declared.bound} its type declares")
+        return
+    if isinstance(declared, Bytes):
+        if len(value) > declared.bound:
+            raise BoundError(
+                f"{path!r} is {len(value)} bytes, past the {declared.bound} its type declares")
+        return
+    if isinstance(declared, (Whole, WideOf)):
+        if not declared.low <= value <= declared.high:
+            raise BoundError(
+                f"{path!r} does not fit the width its schema declares ({value!r})")
+
+
+class Raw(str):
+    """A value already spelled as JSON text, which the writers below write as it
+    is: a list or a record a writer spelled."""
+
+
+def value_json(value: Any) -> Raw:
+    """The JSON a value of a scalar type is written as: ``null`` for ``None``, a
+    truth value, a number as its digits or as ECMAScript spells it, a text, a
+    byte string as its Latin-1 text, and a ``Raw`` as it is. A 64-bit integer
+    crosses as the text of its digits: ``wide_json``."""
+    if isinstance(value, Raw):
+        return value
+    if value is None:
+        return Raw("null")
+    if isinstance(value, bool):
+        return Raw("true" if value else "false")
+    if isinstance(value, int):
+        return Raw(str(int(value)))
+    if isinstance(value, float):
+        return Raw(number_text(value) if math.isfinite(value) else "null")
+    if isinstance(value, (bytes, bytearray)):
+        value = bytes(value).decode("latin-1")
+    return Raw(json.dumps(str(value), ensure_ascii=False))
+
+
+def wide_json(value: int) -> Raw:
+    """A 64-bit integer as the text of its digits."""
+    return Raw(json.dumps(str(int(value))))
+
+
+def list_json(items: Sequence[Any], write: Callable[[Any], Any]) -> Raw:
+    """The JSON of one list (docs/adr/0086, section 3.1): an array of what
+    ``write`` spells each element as, in the list's order. ``[]`` when empty."""
+    return Raw("[" + ",".join(value_json(write(item)) for item in items) + "]")
+
+
+def record_json(members: Dict[str, Any]) -> Raw:
+    """The JSON of one record: each member is a field's id and its value, written
+    ascending by the id's UTF-8 bytes whatever order they are given in
+    (ARCHITECTURE.md, "JSON Object Key Order", at every depth)."""
+    ordered = sorted(members.items(), key=lambda item: item[0].encode("utf-8", "surrogatepass"))
+    return Raw("{" + ",".join(
+        json.dumps(key, ensure_ascii=False) + ":" + value_json(value)
+        for key, value in ordered) + "}")
 
 
 def write_optional(value: Any, write: Any) -> Any:
@@ -271,7 +544,12 @@ def lift(data: Any, fields: Sequence[tuple], defaults: str | None = None) -> lis
     reads `None`, any other value is read and held to its width as a field of
     `T` is, and a missing key is refused as any missing field is (a default of
     `null` in `defaults` reads `None`). A field of `T` that receives `null` is
-    refused as a value of another type is.
+    refused: its type is not optional.
+
+    A field of a composed type, or a text or byte string held to its bound, is
+    `(name, declared)` with `declared` one of the type names `read_value` takes
+    (`ListOf`, `RecordOf`, `Text`, `Bytes`, `Whole`, `WideOf`, `OptionalOf` of
+    any of them), and is read at the path its name begins (docs/adr/0086).
 
     Raises `TypedPayloadError` naming the first thing that is wrong, which the
     caller reports as `error.execution` — the answer W3C SCXML 3.13 gives for
@@ -295,6 +573,13 @@ def lift(data: Any, fields: Sequence[tuple], defaults: str | None = None) -> lis
                 values.append(None)
                 continue
             declared = declared.declared
+        if carried is None:
+            raise TypedPayloadError(f"{name!r} is null, and its type is not optional")
+        if isinstance(declared, _COMPOSED):
+            # A field of a composed type, or a scalar held to its bound, is read
+            # by the one reader of a value at its path.
+            values.append(read_value(name, declared, carried))
+            continue
         if declared is Wide:
             value = as_wide(name, carried, width[0] < 0)
         else:
