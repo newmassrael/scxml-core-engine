@@ -147,7 +147,7 @@ fn with_number<R>(stem: &str, element: ElementId, read: impl FnOnce(&Number<'_>)
             .filter(|d| d.element == element)
             .filter_map(|d| match &d.by {
                 Derive::Number(number) => Some(number),
-                Derive::Roles(_) => None,
+                _ => None,
             })
             .collect();
         let [number] = numbers.as_slice() else {
@@ -235,6 +235,49 @@ fn an_encoded_length_measures_the_body_and_widens_into_a_64_bit_field() {
             ));
         },
     );
+}
+
+/// A flag bound to an input that some arms of the variant say is what the arm
+/// the value holds says, where it holds one of them (docs/adr/0065 §6 R4a), and
+/// the tag the arms are chosen by is the held arm's.
+#[test]
+fn a_flag_some_arms_say_is_the_held_arms_and_the_tag_is_derived_from_the_arm() {
+    with_number(
+        "codec_transport_envelope",
+        ElementId::Flag {
+            field: "header".to_string(),
+            flag: "S".to_string(),
+        },
+        |number| {
+            let [measure] = number.measures.as_slice() else {
+                panic!("the flag measures the arms once");
+            };
+            let Measured::ArmSays { arms } = &measure.of else {
+                panic!("the flag is what an arm says");
+            };
+            let said: Vec<(usize, &str)> = arms.iter().map(|a| (a.arm, a.codec.as_str())).collect();
+            assert_eq!(
+                said,
+                [(0, "codec_zenoh_init_body"), (6, "codec_zenoh_join")]
+            );
+            assert!(measure.gated, "five arms say nothing of it");
+            assert!(matches!(number.into, NumberInto::Flag));
+        },
+    );
+    with_plan("codec_transport_envelope", |plan| {
+        // Seven arms by tag, then the default, which keeps the tag it reads.
+        assert_eq!(plan.arms.len(), 8);
+        assert!(plan.arms[..7].iter().all(|arm| arm.tag.is_some()));
+        assert_eq!(plan.arms[7].tag, None);
+        let tag = ElementId::Flag {
+            field: "header".to_string(),
+            flag: "mid".to_string(),
+        };
+        assert!(plan
+            .derivations
+            .iter()
+            .any(|d| d.element == tag && matches!(d.by, Derive::VariantTag)));
+    });
 }
 
 #[test]

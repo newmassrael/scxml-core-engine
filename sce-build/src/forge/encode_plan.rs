@@ -15,11 +15,10 @@
 //! - the interface: the elements a value presents, each with its abstract type,
 //!   the refinement its type carries (docs/adr/0065 §6 R1, R2, R8), and whether
 //!   it may be absent (docs/adr/0058 §1);
-//! - the derived numbers: each length, count and encoded length, what it
-//!   measures, and how the number goes into the element that holds it.
-//!
-//! The other derivations are still read off the roles by each printer
-//! ([`Derive::Roles`]) until the plan holds them.
+//! - the arms of the codec's variant;
+//! - the derivations: each derived element and how the encode computes it
+//!   ([`Derive`]), a number by what it measures and how it goes into the
+//!   element that holds it.
 
 use crate::forge::codec_roles::{
     self, BindSite, CodecRoles, Derivation, ElementId, GateGroup, InputValue,
@@ -40,6 +39,9 @@ pub struct EncodePlan<'m> {
     /// order. A field a gate group holds is presented by its group
     /// ([`EncodePlan::groups`]).
     pub elements: Vec<Element<'m>>,
+    /// The arms of the codec's variant: those it names, in order, then the
+    /// default. None where it has no variant.
+    pub arms: Vec<Arm<'m>>,
     /// Each derived element and how the encode computes it, in the order of
     /// the roles, each derivation of an element apart.
     pub derivations: Vec<Derived<'m>>,
@@ -55,11 +57,84 @@ pub struct Derived<'m> {
 
 /// How the encode computes a derived element.
 pub enum Derive<'m> {
-    /// A length, a count or an encoded length.
+    /// A number: a length, a count or an encoded length, or a flag bound to an
+    /// input the codecs the value holds say (docs/adr/0065 §6 R4a, R8).
     Number(Number<'m>),
-    /// A derivation the plan does not hold yet, which a printer reads off the
-    /// roles.
-    Roles(Derivation),
+    /// The tag of the arm of the codec's variant the value holds; a default
+    /// arm presents the tag it keeps.
+    VariantTag,
+    /// The bits of a carrier the arm of an embedded variant fills.
+    ParentTag(ParentTag<'m>),
+    /// A flag set exactly when the fields it gates are present.
+    Presence(PresenceFlag<'m>),
+    /// A flag of a disjunction that decides a group (docs/adr/0065 §6 R4c):
+    /// what the arm of the group the value holds gives it.
+    ArmFlag {
+        /// The group, by its place among [`EncodePlan::groups`].
+        group: usize,
+        /// The flag, by its place among the group's gates.
+        gate: usize,
+    },
+    /// The flag a chain's entry is closed by, which the chain sets on each
+    /// entry as it writes it, and which is no value of this codec's own.
+    ChainContinuation,
+}
+
+/// One arm of the codec's variant.
+pub struct Arm<'m> {
+    /// The import alias of the arm's codec.
+    pub codec: &'m str,
+    /// The tag the arm is chosen by, or `None` for the default arm, which
+    /// keeps the tag no arm names.
+    pub tag: Option<u64>,
+    /// The build feature the arm is compiled under (docs/adr/0072).
+    pub feature: Option<&'m str>,
+}
+
+/// The bits of the carrier `carrier` that the arms of embedded variants fill,
+/// each body's arm masked to the bits: the terms are joined bit by bit.
+pub struct ParentTag<'m> {
+    /// The carrier.
+    pub carrier: &'m CodecField,
+    /// One for each embedded body whose arm fills the bits.
+    pub terms: Vec<TagTerm<'m>>,
+}
+
+/// The bits the arm of the embedded body `body` fills: the tag of each arm,
+/// masked to the bits, and nothing where a gated body is absent.
+pub struct TagTerm<'m> {
+    /// The embedded body.
+    pub body: &'m CodecField,
+    /// The import alias of its codec.
+    pub codec: String,
+    /// The bits the tag is masked to.
+    pub mask: u64,
+    /// Each arm of the body's variant and its masked tag.
+    pub arms: Vec<TagArm>,
+    /// Whether the body's variant has a default arm, which fills the bits with
+    /// the tag it keeps, masked.
+    pub catch_all: bool,
+}
+
+/// One arm of an embedded variant and the bits it fills.
+pub struct TagArm {
+    /// The import alias the embedded codec names the arm's body by.
+    pub codec: String,
+    /// The arm's tag, masked to the bits.
+    pub tag: u64,
+    /// The build feature the arm is compiled under (docs/adr/0072).
+    pub feature: Option<String>,
+}
+
+/// A flag set exactly when the fields it gates are present (or absent, for a
+/// field gated on the flag's clear state). Fields that disagree have no frame,
+/// and the encode refuses them with [`RefusalKind::InconsistentSource`], unless
+/// one group holds them all and they cannot disagree.
+pub struct PresenceFlag<'m> {
+    /// Each gated field, and whether it is present when the flag is clear.
+    pub of: Vec<(&'m CodecField, bool)>,
+    /// Whether one group holds every field, so the first says the flag.
+    pub together: bool,
 }
 
 /// A derived number (docs/adr/0058 §1): what it measures, and how it goes into
@@ -96,6 +171,9 @@ pub struct Measure<'m> {
     pub of: Measured<'m>,
     /// Whether it may be absent, and the number is then not its.
     pub gated: bool,
+    /// The place of the declaration that names it among those of the
+    /// derivation, which a printer may name what it computes by.
+    pub at: usize,
 }
 
 /// What a derived number measures.
@@ -125,6 +203,41 @@ pub enum Measured<'m> {
         /// count then passes on.
         refuses: bool,
     },
+    /// The input `input` the embedded body `body` says, of the codec imported
+    /// as `codec` (docs/adr/0065 §6 R4a): 0 or 1.
+    Says {
+        /// The embedded body.
+        body: &'m CodecField,
+        /// The import alias of its codec.
+        codec: String,
+        /// The input.
+        input: String,
+    },
+    /// The value of the input `input` the list `list` hands every entry and
+    /// holds them to by its law: the list's start (docs/adr/0065 §6 R8).
+    Start {
+        /// The list.
+        list: &'m CodecField,
+        /// The input.
+        input: String,
+    },
+    /// The input the arm of the variant the value holds says, where it holds
+    /// one of `arms` (docs/adr/0065 §6 R4a). The measure is always there when
+    /// every arm says it.
+    ArmSays {
+        /// Each arm that says it, in the order the declarations name them.
+        arms: Vec<ArmInput>,
+    },
+}
+
+/// An arm of the codec's variant and the input of its codec it says.
+pub struct ArmInput {
+    /// The arm, by its place among [`EncodePlan::arms`].
+    pub arm: usize,
+    /// The import alias of the arm's codec.
+    pub codec: String,
+    /// The input.
+    pub input: String,
 }
 
 /// How the wire's length differs from the count of bytes it measures: the wire
@@ -313,12 +426,14 @@ impl<'m> EncodePlan<'m> {
                 presence: presence(model, &roles, field),
             })
             .collect();
-        let derivations = derivations(model, &roles, &totality, imports);
+        let arms = arms(model);
+        let derivations = derivations(model, &roles, &totality, &arms, imports);
         EncodePlan {
             model,
             roles,
             totality,
             elements,
+            arms,
             derivations,
         }
     }
@@ -412,17 +527,22 @@ fn derivations<'m>(
     model: &'m CodecModel,
     roles: &CodecRoles,
     totality: &Totality,
+    arms: &[Arm<'m>],
     imports: &[ImportContext],
 ) -> Vec<Derived<'m>> {
     let field = |id: &str| model.fields.iter().find(|f| f.id == id);
     let mut out = Vec::new();
     for (element, by) in roles.derived() {
         for derivation in by {
-            let measures: Option<Vec<Measure<'m>>> = match derivation {
-                Derivation::LengthOf { contents } => Some(
+            let measured = |measures: Vec<Measure<'m>>| {
+                Derive::Number(number(model, roles, totality, element, measures))
+            };
+            let by = match derivation {
+                Derivation::LengthOf { contents } => measured(
                     contents
                         .iter()
-                        .filter_map(|content| {
+                        .enumerate()
+                        .filter_map(|(at, content)| {
                             let field = field(&content.field)?;
                             Some(Measure {
                                 of: Measured::Bytes {
@@ -430,28 +550,32 @@ fn derivations<'m>(
                                     offset: offset(field, &model.fields, content.arith),
                                 },
                                 gated: field.present_if.is_some(),
+                                at,
                             })
                         })
                         .collect(),
                 ),
                 // A list held with another is of its count already
                 // (docs/adr/0065 §6 R5).
-                Derivation::CountOf { lists } => Some(
+                Derivation::CountOf { lists } => measured(
                     lists
                         .iter()
-                        .filter(|list| !roles.counted_with_another(list))
-                        .filter_map(|list| field(list))
-                        .map(|list| Measure {
+                        .enumerate()
+                        .filter(|(_, list)| !roles.counted_with_another(list))
+                        .filter_map(|(at, list)| Some((at, field(list)?)))
+                        .map(|(at, list)| Measure {
                             of: Measured::Entries { list },
                             gated: list.present_if.is_some(),
+                            at,
                         })
                         .collect(),
                 ),
-                Derivation::EncodedLengthOf { bodies } => Some(
+                Derivation::EncodedLengthOf { bodies } => measured(
                     bodies
                         .iter()
-                        .filter_map(|body| field(body))
-                        .map(|body| {
+                        .enumerate()
+                        .filter_map(|(at, body)| Some((at, field(body)?)))
+                        .map(|(at, body)| {
                             let codec = codec_totality::child_alias(body)
                                 .expect("a body whose length is derived holds a codec");
                             Measure {
@@ -465,24 +589,201 @@ fn derivations<'m>(
                                     }),
                                 },
                                 gated: false,
+                                at,
                             }
                         })
                         .collect(),
                 ),
-                _ => None,
+                Derivation::BoundInput { binders } => measured(bound_input(model, binders, arms)),
+                Derivation::VariantTag { .. } => Derive::VariantTag,
+                Derivation::ParentTag { .. } => match parent_tag(model, imports, element) {
+                    Some(tag) => Derive::ParentTag(tag),
+                    // A carrier the codec does not hold has no bits to fill.
+                    None => continue,
+                },
+                Derivation::PresenceOf { gated } => Derive::Presence(PresenceFlag {
+                    of: gated
+                        .iter()
+                        .filter_map(|g| Some((field(&g.field)?, g.when_clear)))
+                        .collect(),
+                    // Fields one group holds are present together
+                    // (docs/adr/0065 §6 R4b).
+                    together: gated
+                        .first()
+                        .and_then(|g| roles.group_of(&g.field))
+                        .is_some_and(|group| gated.iter().all(|g| group.contains(&g.field))),
+                }),
+                Derivation::ArmOf { gates } => arm_flag(roles, element, gates),
+                Derivation::ChainContinuation { .. } => Derive::ChainContinuation,
             };
             out.push(Derived {
                 element: element.clone(),
-                by: match measures {
-                    Some(measures) => {
-                        Derive::Number(number(model, roles, totality, element, measures))
-                    }
-                    None => Derive::Roles(derivation.clone()),
-                },
+                by,
             });
         }
     }
     out
+}
+
+/// What a flag bound to an input of the codecs the value holds measures
+/// (docs/adr/0065 §6 R4a, R8): the input each embedded body says, the start of
+/// each list that hands it to its entries, and the input the arm the value
+/// holds says, where one that binds it is held.
+fn bound_input<'m>(
+    model: &'m CodecModel,
+    binders: &[codec_roles::Binder],
+    arms: &[Arm<'m>],
+) -> Vec<Measure<'m>> {
+    let site = |id: &str| {
+        model
+            .fields
+            .iter()
+            .find(|f| f.id == id)
+            .expect("a bind site is a field of the codec")
+    };
+    let mut measures = Vec::new();
+    let mut said = Vec::new();
+    for (at, binder) in binders.iter().enumerate() {
+        match &binder.site {
+            BindSite::Embed { field } => {
+                let body = site(field);
+                measures.push(Measure {
+                    of: Measured::Says {
+                        body,
+                        codec: binder.alias.clone(),
+                        input: binder.input.clone(),
+                    },
+                    gated: body.present_if.is_some(),
+                    at,
+                });
+            }
+            BindSite::Arm => {
+                for (arm, _) in arms
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, arm)| arm.codec == binder.alias)
+                {
+                    said.push(ArmInput {
+                        arm,
+                        codec: binder.alias.clone(),
+                        input: binder.input.clone(),
+                    });
+                }
+            }
+            BindSite::List { field } => {
+                let list = site(field);
+                measures.push(Measure {
+                    of: Measured::Start {
+                        list,
+                        input: binder.input.clone(),
+                    },
+                    gated: list.present_if.is_some(),
+                    at,
+                });
+            }
+        }
+    }
+    // The arms are one measure, there when the value holds one that says it:
+    // always, where every arm does.
+    if !said.is_empty() {
+        let every = said.len() == arms.len();
+        measures.push(Measure {
+            of: Measured::ArmSays { arms: said },
+            gated: !every,
+            at: binders.len(),
+        });
+    }
+    measures
+}
+
+/// The bits of the carrier flag `element` that the arms of embedded variants
+/// fill, or `None` where the codec holds no such carrier.
+fn parent_tag<'m>(
+    model: &'m CodecModel,
+    imports: &[ImportContext],
+    element: &ElementId,
+) -> Option<ParentTag<'m>> {
+    let ElementId::Flag { field, flag } = element else {
+        unreachable!("a parent tag fills a flag of a carrier");
+    };
+    let carrier = model.fields.iter().find(|f| &f.id == field)?;
+    let terms = crate::forge::generator::collect_parent_tag_derivations(model, imports)
+        .into_iter()
+        .filter(|d| &d.carrier_field_id == field && &d.carrier_flag == flag)
+        .filter_map(|d| {
+            let import = imports.iter().find(|i| i.alias == d.embed_alias)?;
+            let body = model.fields.iter().find(|f| f.id == d.embed_field_id)?;
+            let mask: u64 = (1u64 << d.width) - 1;
+            Some(TagTerm {
+                body,
+                mask,
+                arms: d
+                    .arms
+                    .iter()
+                    .map(|arm| TagArm {
+                        codec: arm.body_alias.clone(),
+                        tag: arm.value & mask,
+                        feature: arm.feature.clone(),
+                    })
+                    .collect(),
+                // A catch-all arm presents the tag it could not name, and that
+                // is what the carrier holds.
+                catch_all: import.codec_variant_has_catch_all,
+                codec: d.embed_alias,
+            })
+        })
+        .collect();
+    Some(ParentTag { carrier, terms })
+}
+
+/// The flag `element` of the disjunction `gates` that decides a group
+/// (docs/adr/0065 §6 R4c).
+fn arm_flag<'m>(
+    roles: &CodecRoles,
+    element: &ElementId,
+    gates: &[codec_roles::GateVar],
+) -> Derive<'m> {
+    let ElementId::Flag { field, flag } = element else {
+        unreachable!("a disjunction's gate is a flag of a carrier");
+    };
+    let group = roles
+        .groups
+        .iter()
+        .position(|g| g.gates == gates)
+        .expect("a flag derived from an arm has its group");
+    let gate = roles.groups[group]
+        .gates
+        .iter()
+        .position(|g| {
+            matches!(g, codec_roles::GateVar::Flag { carrier, flag: f } if carrier == field && f == flag)
+        })
+        .expect("the flag is one of the group's gates");
+    Derive::ArmFlag { group, gate }
+}
+
+/// The arms of the variant of `model`: those it names, in order, then the
+/// default.
+fn arms(model: &CodecModel) -> Vec<Arm<'_>> {
+    let Some(variant) = &model.variant else {
+        return Vec::new();
+    };
+    let mut arms: Vec<Arm<'_>> = variant
+        .arms
+        .iter()
+        .map(|arm| Arm {
+            codec: &arm.body_alias,
+            tag: Some(arm.value),
+            feature: arm.feature.as_deref(),
+        })
+        .collect();
+    if let Some(default) = &variant.default_arm {
+        arms.push(Arm {
+            codec: &default.body_alias,
+            tag: None,
+            feature: None,
+        });
+    }
+    arms
 }
 
 /// The derived number of `element` that `measures` say.

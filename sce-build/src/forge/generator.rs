@@ -21472,15 +21472,15 @@ pub(crate) fn collect_parent_tag_derivations(
 #[derive(Debug, Clone)]
 pub(crate) struct ParentTagDerivation {
     pub(crate) embed_field_id: String,
-    embed_alias: String,
+    pub(crate) embed_alias: String,
     pub(crate) carrier_field_id: String,
     /// The flag of the carrier whose bit-range the embed's active arm fills.
     pub(crate) carrier_flag: String,
     bit: u32,
-    width: u32,
+    pub(crate) width: u32,
     present_if: Option<PresentIfPredicate>,
     /// Each embedded variant arm, in declaration order.
-    arms: Vec<InvertedArm>,
+    pub(crate) arms: Vec<InvertedArm>,
     /// Whether the embedded variant has a catch-all `<sce:default>` arm. A
     /// body it holds presents the tag no arm names, and that tag, masked to
     /// the flag's width, is what the carrier holds (ADR 0058).

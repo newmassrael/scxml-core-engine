@@ -22,13 +22,13 @@
 
 use super::*;
 use crate::forge::codec_roles::{
-    self, BindSite, Binder, CodecRoles, Derivation, ElementId, GateGroup, GateVar, GroupArm,
-    InputCheck, InputSource, InputValue, Role,
+    BindSite, Binder, CodecRoles, ElementId, GateGroup, GateVar, GroupArm, InputCheck, InputSource,
+    InputValue, Role,
 };
 use crate::forge::codec_totality::{self, child_alias, RefusalKind};
 use crate::forge::encode_plan::{
-    self, Absent, Automaton, Derive, EncodePlan, Law, Measured, Narrow, Number, NumberInto, Offset,
-    Value,
+    self, Absent, ArmInput, Automaton, Derive, EncodePlan, Law, Measured, Narrow, Number,
+    NumberInto, Offset, ParentTag, PresenceFlag, Value,
 };
 use std::collections::BTreeSet;
 
@@ -2608,25 +2608,15 @@ impl<'a> Plan<'a> {
     fn derive_arm_flag(
         &self,
         id: &ElementId,
-        gates: &[GateVar],
+        group: usize,
+        index: usize,
         lines: &mut Vec<String>,
         derived: &mut Derived,
     ) {
         let ElementId::Flag { field, flag } = id else {
             unreachable!("a disjunction's gate is a flag of a carrier");
         };
-        let group = self
-            .encode
-            .roles
-            .groups
-            .iter()
-            .find(|g| g.gates == gates)
-            .expect("a flag derived from an arm has its group");
-        let index = group
-            .gates
-            .iter()
-            .position(|g| matches!(g, GateVar::Flag { carrier, flag: f } if carrier == field && f == flag))
-            .expect("the flag is one of the group's gates");
+        let group = &self.encode.groups()[group];
         let local = self.local("_d_", id);
         let held = format!("src.{}()", self.group_accessor(group));
         lines.push(format!(
@@ -2748,37 +2738,30 @@ impl<'a> Plan<'a> {
 
     /// The arms of the variant: those it enumerates, then the default.
     fn arms(&self) -> Vec<Arm> {
-        let Some(variant) = &self.m().variant else {
-            return Vec::new();
-        };
-        let mut arms: Vec<Arm> = variant
+        self.encode
             .arms
             .iter()
             .enumerate()
-            .filter_map(|(i, arm)| {
-                Some(Arm {
-                    alias: arm.body_alias.clone(),
-                    variant_name: filters::to_pascal_case(arm.body_alias.clone()),
-                    generic: format!("A{i}"),
-                    child: self.child_of(&arm.body_alias)?,
-                    value: Some(arm.value),
-                    feature: arm.feature.clone(),
-                })
+            .map(|(i, arm)| {
+                let known = arm.tag.is_some();
+                Arm {
+                    alias: arm.codec.to_string(),
+                    variant_name: if known {
+                        filters::to_pascal_case(arm.codec.to_string())
+                    } else {
+                        "Default".to_string()
+                    },
+                    generic: if known {
+                        format!("A{i}")
+                    } else {
+                        "D".to_string()
+                    },
+                    child: self.child_of_plan(arm.codec),
+                    value: arm.tag,
+                    feature: arm.feature.map(str::to_string),
+                }
             })
-            .collect();
-        if let Some(default) = &variant.default_arm {
-            if let Some(child) = self.child_of(&default.body_alias) {
-                arms.push(Arm {
-                    alias: default.body_alias.clone(),
-                    variant_name: "Default".to_string(),
-                    generic: "D".to_string(),
-                    child,
-                    value: None,
-                    feature: None,
-                });
-            }
-        }
-        arms
+            .collect()
     }
 
     /// The builds the variant's arms tell apart (docs/adr/0072): one for each
@@ -3571,35 +3554,36 @@ impl<'a> Plan<'a> {
     /// The bits of a carrier that an embedded variant's active arm fills: the
     /// arm's value, read from the embedded body's source. A gated body that is
     /// absent fills none.
-    fn derive_parent_tag(&self, id: &ElementId, lines: &mut Vec<String>, derived: &mut Derived) {
+    fn derive_parent_tag(
+        &self,
+        id: &ElementId,
+        planned: &ParentTag<'_>,
+        lines: &mut Vec<String>,
+        derived: &mut Derived,
+    ) {
         let ElementId::Flag { field, flag } = id else {
             unreachable!("a parent tag fills a flag of a carrier");
         };
-        let Some(carrier) = self.m().fields.iter().find(|f| &f.id == field) else {
-            return;
-        };
-        let ty = self.l().type_name(&carrier.sce_type).to_string();
+        let ty = self.l().type_name(&planned.carrier.sce_type).to_string();
         let local = self.local("_d_", id);
         let mut terms: Vec<String> = Vec::new();
-        for d in collect_parent_tag_derivations(self.m(), self.input.imports) {
-            if &d.carrier_field_id != field || &d.carrier_flag != flag {
-                continue;
-            }
-            let Some(import) = self.input.imports.iter().find(|i| i.alias == d.embed_alias) else {
-                continue;
-            };
-            let Some(embed) = self.m().fields.iter().find(|f| f.id == d.embed_field_id) else {
-                continue;
-            };
+        for term in &planned.terms {
+            let import = self
+                .input
+                .imports
+                .iter()
+                .find(|i| i.alias == term.codec)
+                .expect("the plan names an embedded codec the codec imports");
+            let embed = term.body;
+            let mask = term.mask;
             let enum_path = format!(
                 "super::{}::{}VariantSource",
                 import.namespace, import.type_name
             );
-            let mask: u64 = (1u64 << d.width) - 1;
             // An arm the embedded codec compiles under a build feature has no
             // variant in a build without it, so its arm here is compiled under
             // the same feature (docs/adr/0072).
-            let mut arms: Vec<String> = d
+            let mut arms: Vec<String> = term
                 .arms
                 .iter()
                 .map(|arm| {
@@ -3609,14 +3593,14 @@ impl<'a> Plan<'a> {
                             .as_deref()
                             .map(|f| format!("{} ", rust_feature_cfg(f)))
                             .unwrap_or_default(),
-                        filters::to_pascal_case(arm.body_alias.clone()),
-                        arm.value & mask
+                        filters::to_pascal_case(arm.codec.clone()),
+                        arm.tag
                     )
                 })
                 .collect();
             // A catch-all arm presents the tag it could not name, and that is
             // what the carrier holds.
-            if import.codec_variant_has_catch_all {
+            if term.catch_all {
                 arms.push(format!(
                     "{enum_path}::Default {{ tag, .. }} => {ty}::from(tag.get()) & 0x{mask:X}"
                 ));
@@ -3689,31 +3673,19 @@ impl<'a> Plan<'a> {
         self.count_lists(lines);
         for planned in &self.encode.derivations {
             let id = &planned.element;
-            let derivation = match &planned.by {
-                Derive::Number(number) => {
-                    self.derive_number(id, number, lines, &mut derived);
-                    continue;
+            match &planned.by {
+                Derive::Number(number) => self.derive_number(id, number, lines, &mut derived),
+                Derive::VariantTag => self.derive_variant_tag(id, lines, &mut derived),
+                Derive::ParentTag(tag) => self.derive_parent_tag(id, tag, lines, &mut derived),
+                Derive::Presence(presence) => {
+                    self.derive_presence(id, presence, lines, &mut derived)
                 }
-                Derive::Roles(derivation) => derivation,
-            };
-            match derivation {
-                Derivation::VariantTag { .. } => self.derive_variant_tag(id, lines, &mut derived),
-                Derivation::ParentTag { .. } => self.derive_parent_tag(id, lines, &mut derived),
-                Derivation::PresenceOf { gated } => {
-                    self.derive_presence(id, gated, lines, &mut derived)
+                Derive::ArmFlag { group, gate } => {
+                    self.derive_arm_flag(id, *group, *gate, lines, &mut derived)
                 }
-                Derivation::BoundInput { binders } => {
-                    self.derive_bound_input(id, binders, lines, &mut derived)
-                }
-                Derivation::ArmOf { gates } => self.derive_arm_flag(id, gates, lines, &mut derived),
                 // The end flag of a chain is the entries' to set, as each is
                 // written (`streamed`), and no value of this codec's own.
-                Derivation::ChainContinuation { .. } => {}
-                Derivation::LengthOf { .. }
-                | Derivation::CountOf { .. }
-                | Derivation::EncodedLengthOf { .. } => {
-                    unreachable!("the plan holds a derived number")
-                }
+                Derive::ChainContinuation => {}
             }
         }
         derived.close(self, lines);
@@ -3731,21 +3703,19 @@ impl<'a> Plan<'a> {
         }
     }
 
-    /// The local that holds the measure `index` of the number held in `local`,
-    /// computed into `lines` (0 while the content is absent), with the test that
-    /// its content is there where it may not be.
+    /// The local that holds `measure` of the number held in `local`, computed
+    /// into `lines` (0 while the content is absent), with the test that its
+    /// content is there where it may not be.
     fn measure(
         &self,
         measure: &encode_plan::Measure<'_>,
-        index: usize,
         local: &str,
         derived: &Derived,
         lines: &mut Vec<String>,
     ) -> Measure {
+        let number = format!("_n{local}_{}", measure.at);
         match &measure.of {
-            Measured::Bytes { field, offset } => {
-                self.measure_bytes(field, *offset, index, local, lines)
-            }
+            Measured::Bytes { field, offset } => self.measure_bytes(field, *offset, number, lines),
             Measured::Entries { list } => Measure {
                 number: self.count_local(list),
                 present: self.presence_test(list),
@@ -3755,19 +3725,127 @@ impl<'a> Plan<'a> {
                 codec,
                 refuses,
             } => self.measure_encoded(body, codec, *refuses, derived, lines),
+            Measured::Says { body, codec, input } => {
+                let read = self.read_src(body);
+                if body.present_if.is_some() {
+                    lines.push(format!(
+                        "let {number}: usize = {read}.map_or(0, |_b| {});",
+                        self.says(codec, input, "_b")
+                    ));
+                    Measure {
+                        number,
+                        present: Some(format!("{read}.is_some()")),
+                    }
+                } else {
+                    lines.push(format!(
+                        "let {number}: usize = {};",
+                        self.says(codec, input, &read)
+                    ));
+                    Measure {
+                        number,
+                        present: None,
+                    }
+                }
+            }
+            // A list hands every entry the flag, which its law holds them to:
+            // the flag is the list's start, empty or not (docs/adr/0065 §6 R8).
+            Measured::Start { list, input } => {
+                let read = self.read_src(list);
+                let start = |l: &str| {
+                    format!(
+                        "usize::from({})",
+                        law_start(&self.encode.roles, &list.id, input, l)
+                    )
+                };
+                if list.present_if.is_some() {
+                    lines.push(format!(
+                        "let {number}: usize = {read}.map_or(0, |_l| {});",
+                        start("_l")
+                    ));
+                    Measure {
+                        number,
+                        present: Some(format!("{read}.is_some()")),
+                    }
+                } else {
+                    lines.push(format!("let {number}: usize = {};", start(&read)));
+                    Measure {
+                        number,
+                        present: None,
+                    }
+                }
+            }
+            Measured::ArmSays { arms } => self.measure_arms(arms, measure.gated, local, lines),
         }
     }
 
-    /// How many bytes `field` holds, as the wire's length of it (`offset`).
+    /// `usize::from` of the input `input` that `body`, a value of the codec
+    /// imported as `codec`, says (docs/adr/0065 §6 R4a).
+    fn says(&self, codec: &str, input: &str, body: &str) -> String {
+        format!(
+            "usize::from({}::input_{}({body}))",
+            self.child_of_plan(codec).type_name,
+            filters::to_snake_case(input.to_string())
+        )
+    }
+
+    /// The input the arm of the variant the value holds says, where it holds one
+    /// of `said` (docs/adr/0065 §6 R4a): one match says both whether an arm that
+    /// says it is there and what it says. An arm under a build feature carries
+    /// its `#[cfg]`, which an alternative of `matches!` cannot.
+    fn measure_arms(
+        &self,
+        said: &[ArmInput],
+        gated: bool,
+        local: &str,
+        lines: &mut Vec<String>,
+    ) -> Measure {
+        let arms = self.arms();
+        let arm_lines = |wrap: &dyn Fn(String) -> String| -> Vec<String> {
+            said.iter()
+                .map(|s| {
+                    let arm = &arms[s.arm];
+                    format!(
+                        "    {}{} => {},",
+                        arm.cfg_prefix(),
+                        self.arm_pattern(arm),
+                        wrap(self.says(&s.codec, &s.input, "_b"))
+                    )
+                })
+                .collect()
+        };
+        if !gated {
+            // Every arm says it: the value always does.
+            let number = format!("_n{local}_arm");
+            lines.push(format!(
+                "let {number}: usize = match src.body() {{\n{}\n}};",
+                arm_lines(&|v| v).join("\n")
+            ));
+            Measure {
+                number,
+                present: None,
+            }
+        } else {
+            let said = format!("_o{local}_arm");
+            lines.push(format!(
+                "let {said}: Option<usize> = match src.body() {{\n{}\n    _ => None,\n}};",
+                arm_lines(&|v| format!("Some({v})")).join("\n")
+            ));
+            Measure {
+                number: format!("{said}.unwrap_or(0)"),
+                present: Some(format!("{said}.is_some()")),
+            }
+        }
+    }
+
+    /// How many bytes `field` holds, as the wire's length of it (`offset`), in
+    /// the local `number`.
     fn measure_bytes(
         &self,
         field: &CodecField,
         offset: Offset,
-        index: usize,
-        local: &str,
+        number: String,
         lines: &mut Vec<String>,
     ) -> Measure {
-        let number = format!("_n{local}_{index}");
         // A length plus a constant cannot pass `usize`, since a slice is at most
         // `isize::MAX` bytes.
         let measure = |count: &str| match offset {
@@ -3903,8 +3981,7 @@ impl<'a> Plan<'a> {
         let measures: Vec<Measure> = planned
             .measures
             .iter()
-            .enumerate()
-            .map(|(index, measure)| self.measure(measure, index, &local, derived, lines))
+            .map(|measure| self.measure(measure, &local, derived, lines))
             .collect();
         self.combine(id, &local, measures, &planned.into, lines, derived);
     }
@@ -4043,143 +4120,10 @@ impl<'a> Plan<'a> {
         }
     }
 
-    /// A flag bound to an input the held codecs say (docs/adr/0065 §6 R4a): the
-    /// input of the body, or of the arm the value holds. Where no body or arm
-    /// that binds it is there, the carrier keeps the bit the value presents.
-    fn derive_bound_input(
-        &self,
-        id: &ElementId,
-        binders: &[Binder],
-        lines: &mut Vec<String>,
-        derived: &mut Derived,
-    ) {
-        let local = self.local("_d_", id);
-        let mut measures: Vec<Measure> = Vec::new();
-        // Each arm that binds it: its pattern, with its `#[cfg]`, and what it says.
-        let mut arms: Vec<(String, String)> = Vec::new();
-        let says = |binder: &Binder, body: &str| {
-            let child = self
-                .child_of(&binder.alias)
-                .expect("`check` found the codec a bind names");
-            format!(
-                "usize::from({}::input_{}({body}))",
-                child.type_name,
-                filters::to_snake_case(binder.input.clone())
-            )
-        };
-        for (index, binder) in binders.iter().enumerate() {
-            let number = format!("_n{local}_{index}");
-            match &binder.site {
-                BindSite::Embed { field } => {
-                    let body = self
-                        .m()
-                        .fields
-                        .iter()
-                        .find(|f| &f.id == field)
-                        .expect("a bind site is a field of the codec");
-                    let read = self.read_src(body);
-                    if body.present_if.is_some() {
-                        lines.push(format!(
-                            "let {number}: usize = {read}.map_or(0, |_b| {});",
-                            says(binder, "_b")
-                        ));
-                        measures.push(Measure {
-                            number,
-                            present: Some(format!("{read}.is_some()")),
-                        });
-                    } else {
-                        lines.push(format!("let {number}: usize = {};", says(binder, &read)));
-                        measures.push(Measure {
-                            number,
-                            present: None,
-                        });
-                    }
-                }
-                BindSite::Arm => {
-                    for arm in self.arms().iter().filter(|a| a.alias == binder.alias) {
-                        arms.push((
-                            format!("{}{}", arm.cfg_prefix(), self.arm_pattern(arm)),
-                            says(binder, "_b"),
-                        ));
-                    }
-                }
-                // A list hands every entry the flag, which its law holds them to:
-                // the flag is the list's start, empty or not (docs/adr/0065 §6 R8).
-                BindSite::List { field } => {
-                    let list = self
-                        .m()
-                        .fields
-                        .iter()
-                        .find(|f| &f.id == field)
-                        .expect("a bind site is a field of the codec");
-                    let read = self.read_src(list);
-                    let start = |l: &str| {
-                        format!(
-                            "usize::from({})",
-                            law_start(&self.encode.roles, field, &binder.input, l)
-                        )
-                    };
-                    if list.present_if.is_some() {
-                        lines.push(format!(
-                            "let {number}: usize = {read}.map_or(0, |_l| {});",
-                            start("_l")
-                        ));
-                        measures.push(Measure {
-                            number,
-                            present: Some(format!("{read}.is_some()")),
-                        });
-                    } else {
-                        lines.push(format!("let {number}: usize = {};", start(&read)));
-                        measures.push(Measure {
-                            number,
-                            present: None,
-                        });
-                    }
-                }
-            }
-        }
-        // The arms of the variant are one source, there when the value holds
-        // one of them.
-        if !arms.is_empty() && arms.len() == self.arms().len() {
-            // Every arm binds it: the value always says it.
-            let number = format!("_n{local}_arm");
-            let arms: Vec<String> = arms
-                .iter()
-                .map(|(pattern, value)| format!("    {pattern} => {value},"))
-                .collect();
-            lines.push(format!(
-                "let {number}: usize = match src.body() {{\n{}\n}};",
-                arms.join("\n")
-            ));
-            measures.push(Measure {
-                number,
-                present: None,
-            });
-        } else if !arms.is_empty() {
-            // One match says both whether an arm that binds it is there and what
-            // it says. An arm under a build feature carries its `#[cfg]`, which
-            // an alternative of `matches!` cannot.
-            let said = format!("_o{local}_arm");
-            let arms: Vec<String> = arms
-                .iter()
-                .map(|(pattern, value)| format!("    {pattern} => Some({value}),"))
-                .collect();
-            lines.push(format!(
-                "let {said}: Option<usize> = match src.body() {{\n{}\n    _ => None,\n}};",
-                arms.join("\n")
-            ));
-            measures.push(Measure {
-                number: format!("{said}.unwrap_or(0)"),
-                present: Some(format!("{said}.is_some()")),
-            });
-        }
-        self.combine(id, &local, measures, &NumberInto::Flag, lines, derived);
-    }
-
     fn derive_presence(
         &self,
         id: &ElementId,
-        gated: &[codec_roles::Gated],
+        planned: &PresenceFlag<'_>,
         lines: &mut Vec<String>,
         derived: &mut Derived,
     ) {
@@ -4187,17 +4131,14 @@ impl<'a> Plan<'a> {
             unreachable!("a gate flag is a flag of a carrier");
         };
         let mut presences: Vec<String> = Vec::new();
-        for (index, gate) in gated.iter().enumerate() {
-            let Some(gated_field) = self.m().fields.iter().find(|f| f.id == gate.field) else {
-                continue;
-            };
+        for (index, (gated_field, when_clear)) in planned.of.iter().enumerate() {
             let present = format!("{}.is_some()", self.read_src(gated_field));
             // The flag is set exactly when the field is present, or exactly when
             // it is absent for a field gated on `!flag`.
             let local = format!("{}_{index}", self.local("_p_", id));
             lines.push(format!(
                 "let {local}: bool = {};",
-                if gate.when_clear {
+                if *when_clear {
                     format!("!{present}")
                 } else {
                     present
@@ -4207,11 +4148,7 @@ impl<'a> Plan<'a> {
         }
         // Fields one group holds are present together (docs/adr/0065 §6 R4b):
         // the first says the flag and the rest cannot disagree with it.
-        let one_group = gated
-            .first()
-            .and_then(|g| self.encode.roles.group_of(&g.field))
-            .is_some_and(|group| gated.iter().all(|g| group.contains(&g.field)));
-        if one_group {
+        if planned.together {
             presences.truncate(1);
         }
         for pair in presences.windows(2) {

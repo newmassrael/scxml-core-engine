@@ -169,7 +169,11 @@ old encode, the old encode and its templates are removed in the same landing.
    *The derived numbers landed 2026-11-03:* each length, count and encoded length as what it measures (the bytes of a
    field with its `length-arith` offset, the entries of a list, the encoded length of a body), whether each measure
    may be absent, and how the number goes into its element (checked, widened or cast, and what the field holds where
-   nothing it measures is there). The other derivations are still read off the roles until their part lands. The
+   nothing it measures is there). The regeneration changed no file.
+   *Every derivation landed 2026-11-03:* the plan holds the variant's arms, and a flag bound to an input the held
+   codecs say is a number whose measures are what each body says, each list's start and what the held arm says. The
+   variant's tag, a parent tag (each embedded body's arms and their masked tags), a presence flag, a disjunction's arm
+   flag and a chain's continuation are kinds of their own. No printer reads a derivation off the roles. The
    regeneration changed no file.
 3. The oracle's byte cases for every shape (§5), held first by Rust.
 4. C++, then Go, Kotlin, Python and C11, each by §6, with its runtime's counting sink, refinements and walk. C++ comes
