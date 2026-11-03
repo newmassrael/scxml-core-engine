@@ -92,6 +92,12 @@ static const kind_info_t KINDS[K_COUNT] = {
      2 + (6 + 1 + 2 + BOUND * (2 + 6 * TEXT_BOUND) + (BOUND - 1))},
 };
 
+/* Whether a read was refused with the sentence `want`: a sentence is compared by its
+ * text, never by where the string lives. */
+static bool refused_as(const char *refusal, const char *want) {
+    return refusal != NULL && strcmp(refusal, want) == 0;
+}
+
 /* ── The model's text of a value, which a read renders and a case expects ── */
 
 static void append(char *out, size_t cap, const char *text) {
@@ -233,7 +239,7 @@ static const char *read_leaf(kind_t kind, const char *at, const char *path, char
     case K_ENUM: {
         /* The longest name the enum declares is the bound its reader reads with. */
         refusal = sce_payload_value_text(at, text, 6u);
-        if (refusal == SCE_PAYLOAD_REFUSE_PAST_BOUND ||
+        if (refused_as(refusal, SCE_PAYLOAD_REFUSE_PAST_BOUND) ||
             (refusal == NULL && strcmp(text, "low") != 0 && strcmp(text, "medium") != 0 && strcmp(text, "high") != 0)) {
             refusal = ENUM_SENTENCE;
         }
@@ -702,46 +708,46 @@ static void check_top_level_bounds_and_records(void) {
     uint8_t bytes[4];
     size_t len = 0u;
     (void)sce_payload_field(&fields, "note", &v);
-    if (sce_payload_value_text(v, text, 4u) != SCE_PAYLOAD_REFUSE_PAST_BOUND) {
+    if (!refused_as(sce_payload_value_text(v, text, 4u), SCE_PAYLOAD_REFUSE_PAST_BOUND)) {
         fprintf(stderr, "FAIL: a text past its bound was not refused as past it\n");
         failures++;
     }
     (void)sce_payload_field(&fields, "blob", &v);
-    if (sce_payload_value_bytes(v, bytes, 4u, &len) != SCE_PAYLOAD_REFUSE_PAST_BOUND) {
+    if (!refused_as(sce_payload_value_bytes(v, bytes, 4u, &len), SCE_PAYLOAD_REFUSE_PAST_BOUND)) {
         fprintf(stderr, "FAIL: a byte string past its bound was not refused as past it\n");
         failures++;
     }
     /* The buffer a build reserved is not a bound the type declares, and says so. */
-    if (sce_payload_read_text(&fields, "note", text, sizeof(text)) != SCE_PAYLOAD_REFUSE_TOO_LONG) {
+    if (!refused_as(sce_payload_read_text(&fields, "note", text, sizeof(text)), SCE_PAYLOAD_REFUSE_TOO_LONG)) {
         fprintf(stderr, "FAIL: a text past a reserved buffer was not refused as too long\n");
         failures++;
     }
     int64_t n = 0;
-    if (sce_payload_read_i64(&fields, "n", &n) != SCE_PAYLOAD_REFUSE_NULL) {
+    if (!refused_as(sce_payload_read_i64(&fields, "n", &n), SCE_PAYLOAD_REFUSE_NULL)) {
         fprintf(stderr, "FAIL: null where the type is not optional was not refused as null\n");
         failures++;
     }
     sce_payload_fields_t record;
     (void)sce_payload_field(&fields, "s", &v);
-    if (sce_payload_record_open(v, NULL, &record) != SCE_PAYLOAD_REFUSE_NOT_RECORD) {
+    if (!refused_as(sce_payload_record_open(v, NULL, &record), SCE_PAYLOAD_REFUSE_NOT_RECORD)) {
         fprintf(stderr, "FAIL: a number was opened as a record\n");
         failures++;
     }
     (void)sce_payload_field(&fields, "r", &v);
-    if (sce_payload_record_open(v, "[]", &record) != SCE_PAYLOAD_REFUSE_BAD_DEFAULTS) {
+    if (!refused_as(sce_payload_record_open(v, "[]", &record), SCE_PAYLOAD_REFUSE_BAD_DEFAULTS)) {
         fprintf(stderr, "FAIL: defaults that are no object were taken\n");
         failures++;
     }
     sce_payload_list_t list;
-    if (sce_payload_list_open(v, 2u, &list) != SCE_PAYLOAD_REFUSE_NOT_LIST) {
+    if (!refused_as(sce_payload_list_open(v, 2u, &list), SCE_PAYLOAD_REFUSE_NOT_LIST)) {
         fprintf(stderr, "FAIL: an object was opened as a list\n");
         failures++;
     }
-    if (sce_payload_list_open("[1,2", 2u, &list) != SCE_PAYLOAD_REFUSE_NOT_LIST) {
+    if (!refused_as(sce_payload_list_open("[1,2", 2u, &list), SCE_PAYLOAD_REFUSE_NOT_LIST)) {
         fprintf(stderr, "FAIL: an array that never closes was opened as a list\n");
         failures++;
     }
-    if (sce_payload_field(&fields, "gone", &v) != SCE_PAYLOAD_REFUSE_MISSING) {
+    if (!refused_as(sce_payload_field(&fields, "gone", &v), SCE_PAYLOAD_REFUSE_MISSING)) {
         fprintf(stderr, "FAIL: a missing field was found\n");
         failures++;
     }
