@@ -429,7 +429,8 @@ static void check_cross_product(void) {
             char inner[PATH_CAP];
             char leaf[PATH_CAP];
             innermost(depth, inner, sizeof(inner));
-            (void)snprintf(leaf, sizeof(leaf), "%s/1", inner);
+            /* The last element of the innermost list: the path one index below it. */
+            innermost(depth + 1, leaf, sizeof(leaf));
 
             expect("empty", kind, depth, "{\"v\":[],\"zz\":1}", NULL, "[]", NULL, NULL);
 
