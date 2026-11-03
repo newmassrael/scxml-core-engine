@@ -88,10 +88,15 @@
 
     // Zero-allocation overload for SCE Mesh shared memory transport.
     // Avoids std::string construction in the lock-free drain path.
+    // Compared as views, length first, as the std::string overload compares:
+    // `strcmp` against a name the optimizer can see whole (the `*` member a
+    // resolver asks for) is a comparison GCC proves constant and refuses
+    // under -Werror=string-compare.
     [[nodiscard]] static std::optional<Event> getEventFromName(const char* eventName) noexcept {
         if (!eventName || eventName[0] == '\0') return std::nullopt;
+        const std::string_view name(eventName);
 {% for event_name in model.events | sort %}
-        if (std::strcmp(eventName, "{{ event_name | event_wire_name }}") == 0) return Event::{{ event_name | to_cpp_event_variant }};
+        if (name == "{{ event_name | event_wire_name }}") return Event::{{ event_name | to_cpp_event_variant }};
 {% endfor %}
         return std::nullopt;
     }
