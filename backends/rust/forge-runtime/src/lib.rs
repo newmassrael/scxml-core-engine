@@ -61,6 +61,9 @@ pub mod optional;
 pub mod queue;
 pub mod storage;
 pub mod timer;
+/// The type of a value as generated code declares it, a constant of no heap: the runtime's
+/// mirror of the build's one value type (docs/adr/0086, section 1).
+pub mod value_type;
 pub mod view;
 // The generated views, compiled from where they are committed and run against the
 // eager codecs (`view_generated`). They spell this crate as `sce_forge_runtime`, as

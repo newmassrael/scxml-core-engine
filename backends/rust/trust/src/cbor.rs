@@ -24,12 +24,10 @@
 //!   schema does not declare is not written.
 //! * A list is an array of definite length, its elements in their order.
 //!
-//! The type is the runtime's mirror of the build's one value type (`sce-build`'s
-//! `forge::value_type::ValueType`, docs/adr/0086 section 1): one constructor per line of the
-//! grammar, each taking every type at any depth, built only of `&'static` parts so that a schema
-//! unit declares its type as a constant. `optional<optional<T>>`, which the grammar refuses because
-//! no wire tells its two absences apart (section 1.5), cannot be written here at all:
-//! [`ValueType::Optional`] holds a [`Shape`], and no shape is optional.
+//! The type is the one a schema unit declares as a constant ([`ValueType`], re-exported from
+//! `sce_forge_runtime::value_type`, which a generated unit depends on without depending on this
+//! crate): the runtime's mirror of the build's one value type, in which `optional<optional<T>>`
+//! has no spelling.
 //!
 //! A value outside its type is refused before any of it is signed ([`Refused`]), naming the place by
 //! its path as a lift of a delivery names it (docs/adr/0086, section 4.2).
@@ -42,6 +40,9 @@ use sce_forge_runtime::cbor::{
     write_bool, write_bytes, write_head, write_map_head, write_text, MAJOR_SIMPLE, MAJOR_UNSIGNED,
 };
 use sce_forge_runtime::codec::{widen_usize, SceSink, VecSink};
+pub use sce_forge_runtime::value_type::{
+    EnumType, Field, FieldDefault, Integer, RecordType, Shape, ValueType, Variant,
+};
 
 /// Major type 1: the negative integer `-1 - n` for the argument `n` (RFC 8949 section 3.1).
 const MAJOR_NEGATIVE: u8 = 1;
@@ -60,206 +61,6 @@ const DOUBLE: u8 = (MAJOR_SIMPLE << 5) | 27;
 /// The one NaN written: the quiet NaN of half precision (docs/adr/0086, section 9.2).
 const NAN: [u8; 3] = [HALF, 0x7e, 0x00];
 
-/// One of the eight fixed-width integers of the grammar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Integer {
-    Uint8,
-    Uint16,
-    Uint32,
-    Uint64,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-}
-
-impl Integer {
-    /// The least and the greatest value of the integer.
-    fn range(self) -> (i128, i128) {
-        match self {
-            Self::Uint8 => (0, i128::from(u8::MAX)),
-            Self::Uint16 => (0, i128::from(u16::MAX)),
-            Self::Uint32 => (0, i128::from(u32::MAX)),
-            Self::Uint64 => (0, i128::from(u64::MAX)),
-            Self::Int8 => (i128::from(i8::MIN), i128::from(i8::MAX)),
-            Self::Int16 => (i128::from(i16::MIN), i128::from(i16::MAX)),
-            Self::Int32 => (i128::from(i32::MIN), i128::from(i32::MAX)),
-            Self::Int64 => (i128::from(i64::MIN), i128::from(i64::MAX)),
-        }
-    }
-
-    /// The integer as the grammar spells it.
-    fn name(self) -> &'static str {
-        match self {
-            Self::Uint8 => "uint8",
-            Self::Uint16 => "uint16",
-            Self::Uint32 => "uint32",
-            Self::Uint64 => "uint64",
-            Self::Int8 => "int8",
-            Self::Int16 => "int16",
-            Self::Int32 => "int32",
-            Self::Int64 => "int64",
-        }
-    }
-}
-
-impl fmt::Display for Integer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
-    }
-}
-
-/// A type of the grammar: a shape that every value has, or a shape that a value may also be absent
-/// from (`optional<T>`).
-///
-/// An optional holds a [`Shape`], never another optional, so the type the grammar refuses has no
-/// spelling:
-///
-/// ```
-/// use sce_rust_trust::cbor::{Integer, Shape, ValueType};
-/// const MAYBE: ValueType = ValueType::Optional(Shape::Integer(Integer::Int64));
-/// ```
-///
-/// ```compile_fail
-/// use sce_rust_trust::cbor::{Integer, Shape, ValueType};
-/// const TWICE: ValueType =
-///     ValueType::Optional(ValueType::Optional(Shape::Integer(Integer::Int64)));
-/// ```
-///
-/// A list of optionals and an optional list are both types, as the grammar's are:
-///
-/// ```
-/// use sce_rust_trust::cbor::{Integer, Shape, ValueType};
-/// const MAYBE_EACH: ValueType = ValueType::Required(Shape::List {
-///     elem: &ValueType::Optional(Shape::Integer(Integer::Uint16)),
-///     max: 2,
-/// });
-/// const MAYBE_ALL: ValueType = ValueType::Optional(Shape::List {
-///     elem: &ValueType::Required(Shape::Integer(Integer::Uint8)),
-///     max: 2,
-/// });
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ValueType {
-    /// A value of the shape, always present.
-    Required(Shape),
-    /// `optional<T>`: absent, or a value of the shape.
-    Optional(Shape),
-}
-
-/// Every constructor of the grammar but `optional<T>` (docs/adr/0086, section 1.1), each over every
-/// type. A bound is the number a build holds, after its limit name and `--limit`.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Shape {
-    /// A fixed-width integer.
-    Integer(Integer),
-    Float32,
-    Float64,
-    Bool,
-    /// `enum:<alias>`: the enum's number, as an integer of its underlying type.
-    Enum(&'static EnumType),
-    /// `string[B]`: a UTF-8 text of at most `max` bytes.
-    Text {
-        max: u32,
-    },
-    /// `bytes[B]`: a byte string of at most `max` bytes.
-    Bytes {
-        max: u32,
-    },
-    /// `record:<alias>`: a value of the struct an event schema declares.
-    Record(&'static RecordType),
-    /// `list<T>[B]`: an ordered sequence of at most `max` values of `elem`.
-    List {
-        elem: &'static ValueType,
-        max: u32,
-    },
-}
-
-impl Shape {
-    /// The constructor at the top of the shape, as a refusal names it.
-    fn name(&self) -> &'static str {
-        match self {
-            Self::Integer(integer) => integer.name(),
-            Self::Float32 => "float32",
-            Self::Float64 => "float64",
-            Self::Bool => "bool",
-            Self::Enum(_) => "enum",
-            Self::Text { .. } => "string",
-            Self::Bytes { .. } => "bytes",
-            Self::Record(_) => "record",
-            Self::List { .. } => "list",
-        }
-    }
-}
-
-/// An enum document (`sce:kind="enum"`), as a value of it is written: its number.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EnumType {
-    /// The integer its numbers are (`sce:underlying-type`).
-    pub underlying: Integer,
-    /// Its variants, each with its declared name and number (`value=`).
-    pub variants: &'static [Variant],
-    /// Whether a number no variant declares is refused (`sce:strict-variants`, true unless the
-    /// document says otherwise). An open enum holds every number of its underlying type, which is
-    /// why it is its number, not its name, that is signed (docs/adr/0086, section 9.2).
-    pub strict: bool,
-}
-
-/// A variant of an enum.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Variant {
-    pub name: &'static str,
-    /// The declared number, as the build holds it: one carrier for every underlying type.
-    pub value: i128,
-}
-
-/// The struct an event schema declares, as a record of a value.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RecordType {
-    /// Every field of the schema's revision the build holds.
-    pub fields: &'static [Field],
-}
-
-/// A field of a record.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Field {
-    /// The field's id: its key in the record's map.
-    pub id: &'static str,
-    pub ty: ValueType,
-    /// The revision of the schema that added the field (`sce:since`), 1 for the first. Every value
-    /// holds a field of the first revision; one a later revision added may be lacking, from a
-    /// delivery of an earlier revision, and is then written as its default.
-    pub since: u32,
-    /// What a value that lacks the field holds (`sce:default`). Without one, a later field reads
-    /// absent when it is optional and empty when it is a list (docs/adr/0086, section 10.2).
-    pub default: Option<FieldDefault>,
-}
-
-/// A field's `sce:default`: a value of a type with no parts, which is all a default may be (a field
-/// that holds a list or a record declares none).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FieldDefault {
-    /// An integer, or an enum's number.
-    Integer(i128),
-    Float(f64),
-    Bool(bool),
-    Text(&'static str),
-    Bytes(&'static [u8]),
-}
-
-impl FieldDefault {
-    /// The default as a value.
-    pub fn value(self) -> Value {
-        match self {
-            Self::Integer(n) => Value::Integer(n),
-            Self::Float(x) => Value::Float(x),
-            Self::Bool(b) => Value::Bool(b),
-            Self::Text(text) => Value::Text(text.to_string()),
-            Self::Bytes(bytes) => Value::Bytes(bytes.to_vec()),
-        }
-    }
-}
-
 /// A value of a type of the grammar.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -276,6 +77,19 @@ pub enum Value {
     /// A record: each field's value by its id.
     Record(BTreeMap<String, Value>),
     List(Vec<Value>),
+}
+
+impl Value {
+    /// The value a field's `sce:default` states.
+    pub fn of_default(default: FieldDefault) -> Self {
+        match default {
+            FieldDefault::Integer(n) => Self::Integer(n),
+            FieldDefault::Float(x) => Self::Float(x),
+            FieldDefault::Bool(b) => Self::Bool(b),
+            FieldDefault::Text(text) => Self::Text(text.to_string()),
+            FieldDefault::Bytes(bytes) => Self::Bytes(bytes.to_vec()),
+        }
+    }
 }
 
 /// A step from a value to one of its parts.
@@ -536,7 +350,7 @@ impl Encoder<'_> {
                 Ok(())
             }
             (shape, _) => Err(self.refuse(Why::NotOf {
-                expected: shape.name(),
+                expected: shape.constructor(),
             })),
         }
     }
@@ -621,7 +435,7 @@ impl Encoder<'_> {
             return Err(self.refuse(Why::Missing));
         }
         let implied = match (field.default, &field.ty) {
-            (Some(default), _) => default.value(),
+            (Some(default), _) => Value::of_default(default),
             (None, ValueType::Optional(_)) => Value::Absent,
             (None, ValueType::Required(Shape::List { .. })) => Value::List(Vec::new()),
             (None, ValueType::Required(_)) => return Err(self.refuse(Why::NoDefault)),
