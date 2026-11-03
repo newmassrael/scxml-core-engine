@@ -12331,8 +12331,7 @@ fn fold_legacy_bound(
     written: WrittenType,
     legacy: Option<LegacyBound>,
 ) -> Result<(WrittenType, Option<LegacyBound>), Located<ForgeError>> {
-    let resolve =
-        |ty: WrittenType| ty.resolve_limits(&mut |name, n| crate::limits::resolve(name, n));
+    let resolve = |ty: WrittenType| ty.resolve_limits(&mut crate::limits::resolve);
     let Some(legacy) = legacy else {
         return Ok((resolve(written), None));
     };
