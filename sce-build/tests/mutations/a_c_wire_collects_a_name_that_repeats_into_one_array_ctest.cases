@@ -47,8 +47,8 @@ PY
 
 mutation_case "the array is not closed at the end of the object" <<'PY'
 edit("backends/c/forge-runtime/include/sce/forge/wire.h",
-     "static inline bool sce_forge_wire_end(sce_forge_wire_t *w) {\n    sce_forge_wire_close_array(w);\n",
-     "static inline bool sce_forge_wire_end(sce_forge_wire_t *w) {\n")
+     "    sce_forge_wire_close_array(w);\n    if (!w->overflow) {\n        sce_forge_wire_put(w, \"}\", 1u);",
+     "    if (!w->overflow) {\n        sce_forge_wire_put(w, \"}\", 1u);")
 PY
 
 mutation_case "a key with one value is an array of one" <<'PY'

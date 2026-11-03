@@ -5023,6 +5023,27 @@ set_tests_properties(c11_unit_payload_bytes PROPERTIES
     LABELS "unit;c11"
 )
 
+# ─── Payload composed unit test ─────────────────────────────────────
+#
+# A value of any bounded type at its path (docs/adr/0086): the list cursor and the
+# record view of `sce/event_payload.h` over every element kind at three depths, the
+# nested containers of the wire writer, and the bounded list of
+# `sce/forge/bounded_list.h`. Header-only code.
+add_executable(sce_c_payload_composed_unit_test unit/payload_composed_test.c)
+target_link_libraries(sce_c_payload_composed_unit_test PRIVATE sce_c_runtime)
+target_include_directories(sce_c_payload_composed_unit_test PRIVATE
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
+set_target_properties(sce_c_payload_composed_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_payload_composed COMMAND sce_c_payload_composed_unit_test)
+set_tests_properties(c11_unit_payload_composed PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
 # ─── C++ consumption gate ───────────────────────────────────────────
 #
 # Every header the C11 backend publishes (`backends/c/runtime/include/sce`,

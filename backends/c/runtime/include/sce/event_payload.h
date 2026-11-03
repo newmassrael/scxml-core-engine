@@ -76,6 +76,15 @@ extern "C" {
 #define SCE_PAYLOAD_REFUSE_NOT_TEXT "is not a text"
 #define SCE_PAYLOAD_REFUSE_TOO_LONG "is longer than this build reserved room for"
 #define SCE_PAYLOAD_REFUSE_NOT_ONE_BYTE "carries a character above U+00FF, which no single byte spells"
+/* The refusals of a value of a composed type (docs/adr/0086, section 4): each is said
+   of the value at its path, which the caller composes from its generation-time
+   literals and the indices (`sce_payload_path_index`). */
+#define SCE_PAYLOAD_REFUSE_NULL "is null, and its type is not optional"
+#define SCE_PAYLOAD_REFUSE_NOT_LIST "is not a list"
+#define SCE_PAYLOAD_REFUSE_NOT_RECORD "is not a record"
+#define SCE_PAYLOAD_REFUSE_PAST_COUNT "holds more elements than its type declares"
+#define SCE_PAYLOAD_REFUSE_PAST_BOUND "is more bytes than its type declares"
+#define SCE_PAYLOAD_REFUSE_BAD_DEFAULTS "the schema's defaults are not a JSON object, which the generator never writes"
 
 /* The fields an event's data names — a borrowed view, valid only while the
    event record it came from is. */
@@ -287,7 +296,30 @@ SCE_C_UNUSED static inline const char *sce_payload_decode_with_defaults(const ch
     return NULL;
 }
 
-/* ── Reading one field at its declared type ─────────────────────────────── */
+/* ── Reading one value at its declared type ─────────────────────────────── */
+
+/* Every reader comes in two forms. `sce_payload_value_<kind>(at, ...)` reads the
+   value whose text begins at `at`, at whatever depth of the payload it stands: an
+   element a list cursor handed out, a field of a record value. The
+   `sce_payload_read_<kind>(fields, name, ...)` form finds the field `name` of an
+   object first, and refuses a delivery that lacks it. */
+
+/* Whether the value at `p` is the keyword `null`, and not a longer word that
+   starts with it. */
+SCE_C_UNUSED static inline bool sce_payload_is_null(const char *p) {
+    if (strncmp(p, "null", 4) != 0) {
+        return false;
+    }
+    const char after = p[4];
+    return after == '\0' || after == ',' || after == '}' || after == ']' || after == ' ' || after == '\t' ||
+           after == '\r' || after == '\n';
+}
+
+/* The refusal of `null` where the type is not optional, or `otherwise` of any
+   other value of the wrong kind. */
+SCE_C_UNUSED static inline const char *sce_payload_wrong_kind(const char *p, const char *otherwise) {
+    return sce_payload_is_null(p) ? SCE_PAYLOAD_REFUSE_NULL : otherwise;
+}
 
 /* A whole number, as wide as this backend reads them, with the refusals the
    width-specific readers narrow further.
@@ -295,14 +327,9 @@ SCE_C_UNUSED static inline const char *sce_payload_decode_with_defaults(const ch
    ⚠ A truth value is not a number here. JSON spells both, and a schema that
    declared `uint32` and received `true` has been handed something its own type
    says cannot occur. */
-SCE_C_UNUSED static inline const char *sce_payload_read_whole(const sce_payload_fields_t *fields, const char *name,
-                                                              bool *negative, uint64_t *magnitude) {
-    const char *p = sce_payload_find(fields, name);
-    if (p == NULL) {
-        return SCE_PAYLOAD_REFUSE_MISSING;
-    }
+SCE_C_UNUSED static inline const char *sce_payload_value_whole(const char *p, bool *negative, uint64_t *magnitude) {
     if (*p != '-' && (*p < '0' || *p > '9')) {
-        return SCE_PAYLOAD_REFUSE_NOT_NUMBER;
+        return sce_payload_wrong_kind(p, SCE_PAYLOAD_REFUSE_NOT_NUMBER);
     }
     *negative = (*p == '-');
     const char *digits = *negative ? p + 1 : p;
@@ -324,6 +351,12 @@ SCE_C_UNUSED static inline const char *sce_payload_read_whole(const sce_payload_
     return NULL;
 }
 
+SCE_C_UNUSED static inline const char *sce_payload_read_whole(const sce_payload_fields_t *fields, const char *name,
+                                                              bool *negative, uint64_t *magnitude) {
+    const char *p = sce_payload_find(fields, name);
+    return (p == NULL) ? SCE_PAYLOAD_REFUSE_MISSING : sce_payload_value_whole(p, negative, magnitude);
+}
+
 /* A 64-bit whole number: written as a text of its digits, or as a JSON number
    when it is exact in a double (|n| <= 2^53).
 
@@ -331,14 +364,10 @@ SCE_C_UNUSED static inline const char *sce_payload_read_whole(const sce_payload_
    through a double carries one past 2^53 with its low bits wrong and no error; a
    number past that is refused here on every engine, so the same payload gives
    the same field wherever it is read. */
-SCE_C_UNUSED static inline const char *sce_payload_read_wide(const sce_payload_fields_t *fields, const char *name,
-                                                             bool is_signed, bool *negative, uint64_t *magnitude) {
-    const char *p = sce_payload_find(fields, name);
-    if (p == NULL) {
-        return SCE_PAYLOAD_REFUSE_MISSING;
-    }
+SCE_C_UNUSED static inline const char *sce_payload_value_wide(const char *p, bool is_signed, bool *negative,
+                                                              uint64_t *magnitude) {
     if (*p != '"') {
-        const char *refusal = sce_payload_read_whole(fields, name, negative, magnitude);
+        const char *refusal = sce_payload_value_whole(p, negative, magnitude);
         if (refusal == NULL && *magnitude > (((uint64_t)1 << 53) - 1u)) {
             return SCE_PAYLOAD_REFUSE_PAST_2_53;
         }
@@ -367,6 +396,12 @@ SCE_C_UNUSED static inline const char *sce_payload_read_wide(const sce_payload_f
     return NULL;
 }
 
+SCE_C_UNUSED static inline const char *sce_payload_read_wide(const sce_payload_fields_t *fields, const char *name,
+                                                             bool is_signed, bool *negative, uint64_t *magnitude) {
+    const char *p = sce_payload_find(fields, name);
+    return (p == NULL) ? SCE_PAYLOAD_REFUSE_MISSING : sce_payload_value_wide(p, is_signed, negative, magnitude);
+}
+
 SCE_C_UNUSED static inline const char *sce_payload_fit_signed(bool negative, uint64_t magnitude, int64_t min,
                                                               int64_t max, int64_t *out) {
     if (negative) {
@@ -386,22 +421,26 @@ SCE_C_UNUSED static inline const char *sce_payload_fit_signed(bool negative, uin
     return NULL;
 }
 
-SCE_C_UNUSED static inline const char *sce_payload_read_signed(const sce_payload_fields_t *fields, const char *name,
-                                                               int64_t min, int64_t max, int64_t *out) {
+SCE_C_UNUSED static inline const char *sce_payload_value_signed(const char *p, int64_t min, int64_t max, int64_t *out) {
     bool negative = false;
     uint64_t magnitude = 0;
-    const char *refusal = sce_payload_read_whole(fields, name, &negative, &magnitude);
+    const char *refusal = sce_payload_value_whole(p, &negative, &magnitude);
     if (refusal != NULL) {
         return refusal;
     }
     return sce_payload_fit_signed(negative, magnitude, min, max, out);
 }
 
-SCE_C_UNUSED static inline const char *sce_payload_read_unsigned(const sce_payload_fields_t *fields, const char *name,
-                                                                 uint64_t max, uint64_t *out) {
+SCE_C_UNUSED static inline const char *sce_payload_read_signed(const sce_payload_fields_t *fields, const char *name,
+                                                               int64_t min, int64_t max, int64_t *out) {
+    const char *p = sce_payload_find(fields, name);
+    return (p == NULL) ? SCE_PAYLOAD_REFUSE_MISSING : sce_payload_value_signed(p, min, max, out);
+}
+
+SCE_C_UNUSED static inline const char *sce_payload_value_unsigned(const char *p, uint64_t max, uint64_t *out) {
     bool negative = false;
     uint64_t magnitude = 0;
-    const char *refusal = sce_payload_read_whole(fields, name, &negative, &magnitude);
+    const char *refusal = sce_payload_value_whole(p, &negative, &magnitude);
     if (refusal != NULL) {
         return refusal;
     }
@@ -412,31 +451,45 @@ SCE_C_UNUSED static inline const char *sce_payload_read_unsigned(const sce_paylo
     return NULL;
 }
 
-/* One reader per declared width. A value the width cannot hold is refused
-   rather than wrapped — silently truncating is how a guard on a boundary
-   answers for a value the document never received. */
+SCE_C_UNUSED static inline const char *sce_payload_read_unsigned(const sce_payload_fields_t *fields, const char *name,
+                                                                 uint64_t max, uint64_t *out) {
+    const char *p = sce_payload_find(fields, name);
+    return (p == NULL) ? SCE_PAYLOAD_REFUSE_MISSING : sce_payload_value_unsigned(p, max, out);
+}
+
+/* One reader per declared width, in both forms. A value the width cannot hold
+   is refused rather than wrapped — silently truncating is how a guard on a
+   boundary answers for a value the document never received. */
 #define SCE_PAYLOAD_SIGNED_READER(suffix, type, min, max)                                                              \
-    SCE_C_UNUSED static inline const char *sce_payload_read_##suffix(const sce_payload_fields_t *fields,               \
-                                                                     const char *name, type *out) {                    \
+    SCE_C_UNUSED static inline const char *sce_payload_value_##suffix(const char *p, type *out) {                      \
         int64_t wide = 0;                                                                                              \
-        const char *refusal = sce_payload_read_signed(fields, name, (min), (max), &wide);                              \
+        const char *refusal = sce_payload_value_signed(p, (min), (max), &wide);                                        \
         if (refusal != NULL) {                                                                                         \
             return refusal;                                                                                            \
         }                                                                                                              \
         *out = (type)wide;                                                                                             \
         return NULL;                                                                                                   \
+    }                                                                                                                  \
+    SCE_C_UNUSED static inline const char *sce_payload_read_##suffix(const sce_payload_fields_t *fields,               \
+                                                                     const char *name, type *out) {                    \
+        const char *p = sce_payload_find(fields, name);                                                                \
+        return (p == NULL) ? SCE_PAYLOAD_REFUSE_MISSING : sce_payload_value_##suffix(p, out);                          \
     }
 
 #define SCE_PAYLOAD_UNSIGNED_READER(suffix, type, max)                                                                 \
-    SCE_C_UNUSED static inline const char *sce_payload_read_##suffix(const sce_payload_fields_t *fields,               \
-                                                                     const char *name, type *out) {                    \
+    SCE_C_UNUSED static inline const char *sce_payload_value_##suffix(const char *p, type *out) {                      \
         uint64_t wide = 0;                                                                                             \
-        const char *refusal = sce_payload_read_unsigned(fields, name, (max), &wide);                                   \
+        const char *refusal = sce_payload_value_unsigned(p, (max), &wide);                                             \
         if (refusal != NULL) {                                                                                         \
             return refusal;                                                                                            \
         }                                                                                                              \
         *out = (type)wide;                                                                                             \
         return NULL;                                                                                                   \
+    }                                                                                                                  \
+    SCE_C_UNUSED static inline const char *sce_payload_read_##suffix(const sce_payload_fields_t *fields,               \
+                                                                     const char *name, type *out) {                    \
+        const char *p = sce_payload_find(fields, name);                                                                \
+        return (p == NULL) ? SCE_PAYLOAD_REFUSE_MISSING : sce_payload_value_##suffix(p, out);                          \
     }
 
 SCE_PAYLOAD_SIGNED_READER(i8, int8_t, INT8_MIN, INT8_MAX)
@@ -448,22 +501,26 @@ SCE_PAYLOAD_UNSIGNED_READER(u32, uint32_t, UINT32_MAX)
 
 /* The 64-bit readers read the text of the digits, or a number exact in a double
    (`sce_payload_read_wide`). */
-SCE_C_UNUSED static inline const char *sce_payload_read_i64(const sce_payload_fields_t *fields, const char *name,
-                                                            int64_t *out) {
+SCE_C_UNUSED static inline const char *sce_payload_value_i64(const char *p, int64_t *out) {
     bool negative = false;
     uint64_t magnitude = 0;
-    const char *refusal = sce_payload_read_wide(fields, name, true, &negative, &magnitude);
+    const char *refusal = sce_payload_value_wide(p, true, &negative, &magnitude);
     if (refusal != NULL) {
         return refusal;
     }
     return sce_payload_fit_signed(negative, magnitude, INT64_MIN, INT64_MAX, out);
 }
 
-SCE_C_UNUSED static inline const char *sce_payload_read_u64(const sce_payload_fields_t *fields, const char *name,
-                                                            uint64_t *out) {
+SCE_C_UNUSED static inline const char *sce_payload_read_i64(const sce_payload_fields_t *fields, const char *name,
+                                                            int64_t *out) {
+    const char *p = sce_payload_find(fields, name);
+    return (p == NULL) ? SCE_PAYLOAD_REFUSE_MISSING : sce_payload_value_i64(p, out);
+}
+
+SCE_C_UNUSED static inline const char *sce_payload_value_u64(const char *p, uint64_t *out) {
     bool negative = false;
     uint64_t magnitude = 0;
-    const char *refusal = sce_payload_read_wide(fields, name, false, &negative, &magnitude);
+    const char *refusal = sce_payload_value_wide(p, false, &negative, &magnitude);
     if (refusal != NULL) {
         return refusal;
     }
@@ -474,14 +531,15 @@ SCE_C_UNUSED static inline const char *sce_payload_read_u64(const sce_payload_fi
     return NULL;
 }
 
-SCE_C_UNUSED static inline const char *sce_payload_read_floating(const sce_payload_fields_t *fields, const char *name,
-                                                                 double *out) {
+SCE_C_UNUSED static inline const char *sce_payload_read_u64(const sce_payload_fields_t *fields, const char *name,
+                                                            uint64_t *out) {
     const char *p = sce_payload_find(fields, name);
-    if (p == NULL) {
-        return SCE_PAYLOAD_REFUSE_MISSING;
-    }
+    return (p == NULL) ? SCE_PAYLOAD_REFUSE_MISSING : sce_payload_value_u64(p, out);
+}
+
+SCE_C_UNUSED static inline const char *sce_payload_value_floating(const char *p, double *out) {
     if (*p != '-' && (*p < '0' || *p > '9')) {
-        return SCE_PAYLOAD_REFUSE_NOT_NUMBER;
+        return sce_payload_wrong_kind(p, SCE_PAYLOAD_REFUSE_NOT_NUMBER);
     }
     errno = 0;
     char *end = NULL;
@@ -496,10 +554,15 @@ SCE_C_UNUSED static inline const char *sce_payload_read_floating(const sce_paylo
     return NULL;
 }
 
-SCE_C_UNUSED static inline const char *sce_payload_read_f32(const sce_payload_fields_t *fields, const char *name,
-                                                            float *out) {
+SCE_C_UNUSED static inline const char *sce_payload_read_floating(const sce_payload_fields_t *fields, const char *name,
+                                                                 double *out) {
+    const char *p = sce_payload_find(fields, name);
+    return (p == NULL) ? SCE_PAYLOAD_REFUSE_MISSING : sce_payload_value_floating(p, out);
+}
+
+SCE_C_UNUSED static inline const char *sce_payload_value_f32(const char *p, float *out) {
     double wide = 0.0;
-    const char *refusal = sce_payload_read_floating(fields, name, &wide);
+    const char *refusal = sce_payload_value_floating(p, &wide);
     if (refusal != NULL) {
         return refusal;
     }
@@ -510,17 +573,22 @@ SCE_C_UNUSED static inline const char *sce_payload_read_f32(const sce_payload_fi
     return NULL;
 }
 
+SCE_C_UNUSED static inline const char *sce_payload_read_f32(const sce_payload_fields_t *fields, const char *name,
+                                                            float *out) {
+    const char *p = sce_payload_find(fields, name);
+    return (p == NULL) ? SCE_PAYLOAD_REFUSE_MISSING : sce_payload_value_f32(p, out);
+}
+
+SCE_C_UNUSED static inline const char *sce_payload_value_f64(const char *p, double *out) {
+    return sce_payload_value_floating(p, out);
+}
+
 SCE_C_UNUSED static inline const char *sce_payload_read_f64(const sce_payload_fields_t *fields, const char *name,
                                                             double *out) {
     return sce_payload_read_floating(fields, name, out);
 }
 
-SCE_C_UNUSED static inline const char *sce_payload_read_bool(const sce_payload_fields_t *fields, const char *name,
-                                                             bool *out) {
-    const char *p = sce_payload_find(fields, name);
-    if (p == NULL) {
-        return SCE_PAYLOAD_REFUSE_MISSING;
-    }
+SCE_C_UNUSED static inline const char *sce_payload_value_bool(const char *p, bool *out) {
     if (strncmp(p, "true", 4) == 0) {
         *out = true;
         return NULL;
@@ -529,18 +597,13 @@ SCE_C_UNUSED static inline const char *sce_payload_read_bool(const sce_payload_f
         *out = false;
         return NULL;
     }
-    return SCE_PAYLOAD_REFUSE_NOT_TRUTH;
+    return sce_payload_wrong_kind(p, SCE_PAYLOAD_REFUSE_NOT_TRUTH);
 }
 
-/* Whether the value at `p` is the keyword `null`, and not a longer word that
-   starts with it. */
-SCE_C_UNUSED static inline bool sce_payload_is_null(const char *p) {
-    if (strncmp(p, "null", 4) != 0) {
-        return false;
-    }
-    const char after = p[4];
-    return after == '\0' || after == ',' || after == '}' || after == ']' || after == ' ' || after == '\t' ||
-           after == '\r' || after == '\n';
+SCE_C_UNUSED static inline const char *sce_payload_read_bool(const sce_payload_fields_t *fields, const char *name,
+                                                             bool *out) {
+    const char *p = sce_payload_find(fields, name);
+    return (p == NULL) ? SCE_PAYLOAD_REFUSE_MISSING : sce_payload_value_bool(p, out);
 }
 
 /* Whether the field `name` of an optional type (docs/adr/0055) carries a value:
@@ -570,6 +633,10 @@ typedef struct {
     size_t cap;
     size_t len;
     bool above_one_byte;
+    /* Whether `cap` is the bound the value's type declares (a text's bound and its
+       terminator, a byte string's bound), so running out of room is a value past
+       its bound and not a buffer this build sized too small. */
+    bool bounded;
 } sce_payload_sink_t;
 
 SCE_C_UNUSED static inline bool sce_payload_emit(sce_payload_sink_t *sink, unsigned long code) {
@@ -732,7 +799,10 @@ SCE_C_UNUSED static inline const char *sce_payload_walk_text(const char *p, sce_
             }
         }
         if (!(named ? sce_payload_emit_code_point(sink, code) : sce_payload_emit(sink, code))) {
-            return sink->above_one_byte ? SCE_PAYLOAD_REFUSE_NOT_ONE_BYTE : SCE_PAYLOAD_REFUSE_TOO_LONG;
+            if (sink->above_one_byte) {
+                return SCE_PAYLOAD_REFUSE_NOT_ONE_BYTE;
+            }
+            return sink->bounded ? SCE_PAYLOAD_REFUSE_PAST_BOUND : SCE_PAYLOAD_REFUSE_TOO_LONG;
         }
     }
     if (*p != '"') {
@@ -744,25 +814,37 @@ SCE_C_UNUSED static inline const char *sce_payload_walk_text(const char *p, sce_
 /* A text field, copied into a caller-owned buffer of `cap` bytes including the
    terminator. A text longer than the buffer is refused rather than truncated: a
    guard comparing a cut-off text answers for a value nobody sent. */
-SCE_C_UNUSED static inline const char *sce_payload_read_text(const sce_payload_fields_t *fields, const char *name,
-                                                             char *out, size_t cap) {
-    const char *p = sce_payload_find(fields, name);
-    if (p == NULL) {
-        return SCE_PAYLOAD_REFUSE_MISSING;
+SCE_C_UNUSED static inline const char *sce_payload_text_into(const char *p, char *out, size_t cap, bool bounded) {
+    if (*p != '"') {
+        return sce_payload_wrong_kind(p, SCE_PAYLOAD_REFUSE_NOT_TEXT);
     }
     if (cap == 0u) {
-        return SCE_PAYLOAD_REFUSE_TOO_LONG;
+        return bounded ? SCE_PAYLOAD_REFUSE_PAST_BOUND : SCE_PAYLOAD_REFUSE_TOO_LONG;
     }
     sce_payload_sink_t sink;
     memset(&sink, 0, sizeof(sink));
     sink.text = out;
     sink.cap = cap;
+    sink.bounded = bounded;
     const char *refusal = sce_payload_walk_text(p, &sink);
     if (refusal != NULL) {
         return refusal;
     }
     out[sink.len] = '\0';
     return NULL;
+}
+
+SCE_C_UNUSED static inline const char *sce_payload_read_text(const sce_payload_fields_t *fields, const char *name,
+                                                             char *out, size_t cap) {
+    const char *p = sce_payload_find(fields, name);
+    return (p == NULL) ? SCE_PAYLOAD_REFUSE_MISSING : sce_payload_text_into(p, out, cap, false);
+}
+
+/* A text of at most `bound` UTF-8 bytes (docs/adr/0086, section 4.4), into `out`,
+   which holds `bound + 1` bytes for the text and its terminator. One past the
+   bound is refused at whatever depth it stands, and never cut. */
+SCE_C_UNUSED static inline const char *sce_payload_value_text(const char *p, char *out, size_t bound) {
+    return sce_payload_text_into(p, out, bound + 1u, true);
 }
 
 /* A byte-string field, copied into a caller-owned buffer of `cap` bytes, with
@@ -772,22 +854,176 @@ SCE_C_UNUSED static inline const char *sce_payload_read_text(const sce_payload_f
    inject seam writes, and this reads it back the same way: every one of the 256
    values is one character and back. Printable ASCII — what a bytes guard
    compares — is the same bytes under either reading. */
-SCE_C_UNUSED static inline const char *sce_payload_read_bytes(const sce_payload_fields_t *fields, const char *name,
-                                                              uint8_t *out, size_t cap, size_t *out_len) {
-    const char *p = sce_payload_find(fields, name);
-    if (p == NULL) {
-        return SCE_PAYLOAD_REFUSE_MISSING;
+SCE_C_UNUSED static inline const char *sce_payload_bytes_into(const char *p, uint8_t *out, size_t cap, bool bounded,
+                                                              size_t *out_len) {
+    if (*p != '"') {
+        return sce_payload_wrong_kind(p, SCE_PAYLOAD_REFUSE_NOT_TEXT);
     }
     sce_payload_sink_t sink;
     memset(&sink, 0, sizeof(sink));
     sink.bytes = out;
     sink.cap = cap;
+    sink.bounded = bounded;
     const char *refusal = sce_payload_walk_text(p, &sink);
     if (refusal != NULL) {
         return refusal;
     }
     *out_len = sink.len;
     return NULL;
+}
+
+SCE_C_UNUSED static inline const char *sce_payload_read_bytes(const sce_payload_fields_t *fields, const char *name,
+                                                              uint8_t *out, size_t cap, size_t *out_len) {
+    const char *p = sce_payload_find(fields, name);
+    return (p == NULL) ? SCE_PAYLOAD_REFUSE_MISSING : sce_payload_bytes_into(p, out, cap, false, out_len);
+}
+
+/* A byte string of at most `bound` bytes, into `out`, which holds `bound` bytes;
+   its length is written to `out_len`. One past the bound is refused. */
+SCE_C_UNUSED static inline const char *sce_payload_value_bytes(const char *p, uint8_t *out, size_t bound,
+                                                               size_t *out_len) {
+    return sce_payload_bytes_into(p, out, bound, true, out_len);
+}
+
+/* ── Walking a composed value (docs/adr/0086, section 4.3) ──────────────── */
+
+/* A cursor over the elements of a list value, handed out one at a time with no
+   copy and no allocation. The elements are counted when the cursor is opened,
+   and a list longer than its bound is refused then, before any element is read
+   (ADR 0077, section 2). */
+typedef struct {
+    const char *next; /* at the next element, or at the closing ']' */
+    uint32_t count;   /* how many elements the list holds */
+    uint32_t index;   /* the index of the next element */
+} sce_payload_list_t;
+
+/* Open the list value at `p`, of at most `bound` elements. A value that is no
+   array, or an array that never closes, is not a list. */
+SCE_C_UNUSED static inline const char *sce_payload_list_open(const char *p, uint32_t bound, sce_payload_list_t *out) {
+    if (*p != '[') {
+        return sce_payload_wrong_kind(p, SCE_PAYLOAD_REFUSE_NOT_LIST);
+    }
+    out->next = sce_payload_skip_space(p + 1);
+    out->count = 0u;
+    out->index = 0u;
+    const char *q = out->next;
+    if (*q == ']') {
+        return NULL;
+    }
+    for (;;) {
+        if (out->count == UINT32_MAX) {
+            return SCE_PAYLOAD_REFUSE_PAST_COUNT;
+        }
+        out->count++;
+        if (out->count > bound) {
+            /* Counted, never decoded: the walk stops at the first element past
+               the bound. */
+            return SCE_PAYLOAD_REFUSE_PAST_COUNT;
+        }
+        q = sce_payload_skip_value(q);
+        if (q == NULL) {
+            return SCE_PAYLOAD_REFUSE_NOT_LIST;
+        }
+        q = sce_payload_skip_space(q);
+        if (*q == ',') {
+            q = sce_payload_skip_space(q + 1);
+            continue;
+        }
+        return (*q == ']') ? NULL : SCE_PAYLOAD_REFUSE_NOT_LIST;
+    }
+}
+
+/* The next element of an open list: `*element` is at its text, and false is
+   answered once every element has been handed out. */
+SCE_C_UNUSED static inline bool sce_payload_list_next(sce_payload_list_t *list, const char **element) {
+    if (list->index >= list->count) {
+        return false;
+    }
+    *element = list->next;
+    list->index++;
+    const char *after = sce_payload_skip_space(sce_payload_skip_value(list->next));
+    list->next = (*after == ',') ? sce_payload_skip_space(after + 1) : after;
+    return true;
+}
+
+/* Open the record value at `p` as the fields its schema's reader reads with the
+   `sce_payload_read_*` readers. `defaults`, for a record whose schema a later
+   revision added fields to, is the JSON object of their defaults, a literal the
+   generated machine holds, and a field the value lacks is read out of it
+   (docs/adr/0086, section 10.3); NULL for a schema with none. A key the schema
+   does not declare is never asked for, so it is stepped over. */
+SCE_C_UNUSED static inline const char *sce_payload_record_open(const char *p, const char *defaults,
+                                                               sce_payload_fields_t *out) {
+    out->object = NULL;
+    out->defaults = NULL;
+    if (*p != '{') {
+        return sce_payload_wrong_kind(p, SCE_PAYLOAD_REFUSE_NOT_RECORD);
+    }
+    if (defaults != NULL) {
+        const char *d = sce_payload_skip_space(defaults);
+        if (*d != '{') {
+            return SCE_PAYLOAD_REFUSE_BAD_DEFAULTS;
+        }
+        out->defaults = d;
+    }
+    out->object = p;
+    return NULL;
+}
+
+/* The value of the field `name` of `fields`, at `*value`: what a reader of a
+   field of a composed type walks from. */
+SCE_C_UNUSED static inline const char *sce_payload_field(const sce_payload_fields_t *fields, const char *name,
+                                                         const char **value) {
+    const char *p = sce_payload_find(fields, name);
+    if (p == NULL) {
+        return SCE_PAYLOAD_REFUSE_MISSING;
+    }
+    *value = p;
+    return NULL;
+}
+
+/* The path below `prefix` of the element at `index`, or of the field `name`,
+   written into `out` of `cap` bytes: what a refusal names a value at any depth by
+   (`items/2/tags/0`). False when it does not fit, and `out` then holds the prefix
+   alone, never a path cut in the middle of a segment. */
+SCE_C_UNUSED static inline bool sce_payload_path_join(char *out, size_t cap, const char *prefix, const char *name) {
+    if (cap == 0u) {
+        return false;
+    }
+    const size_t head = (prefix != NULL) ? strlen(prefix) : 0u;
+    const size_t tail = strlen(name);
+    const size_t slash = (head > 0u) ? 1u : 0u;
+    if (head + slash + tail + 1u > cap) {
+        if (head < cap && prefix != NULL && prefix != out) {
+            memmove(out, prefix, head);
+            out[head] = '\0';
+        }
+        return false;
+    }
+    if (prefix != NULL && prefix != out) {
+        memmove(out, prefix, head);
+    }
+    if (slash != 0u) {
+        out[head] = '/';
+    }
+    memcpy(out + head + slash, name, tail);
+    out[head + slash + tail] = '\0';
+    return true;
+}
+
+SCE_C_UNUSED static inline bool sce_payload_path_index(char *out, size_t cap, const char *prefix, uint32_t position) {
+    char digits[11];
+    size_t n = 0u;
+    do {
+        digits[n++] = (char)('0' + (position % 10u));
+        position /= 10u;
+    } while (position != 0u);
+    char segment[11];
+    for (size_t i = 0u; i < n; ++i) {
+        segment[i] = digits[n - 1u - i];
+    }
+    segment[n] = '\0';
+    return sce_payload_path_join(out, cap, prefix, segment);
 }
 
 /* The short form JSON gives a control character, or 0 when it has none. */

@@ -158,7 +158,18 @@ typedef struct {
     const char *last_key;
     size_t last_value_at;
     size_t last_count;
+    /* The containers open inside a pair's value (docs/adr/0086, section 5.3): how
+       deep the writer is, and, one bit per depth, whether the container there has
+       written anything yet and whether it is an object rather than an array. */
+    uint32_t depth;
+    uint32_t any_at;
+    uint32_t object_at;
 } sce_forge_wire_t;
+
+/* How deep a value a pair writes may nest: one bit of `any_at` and `object_at` per
+   level. A type nested deeper is refused by the build, and a writer asked for one
+   more level marks the object as not fitting, never as written. */
+#define SCE_FORGE_WIRE_MAX_DEPTH 31u
 
 static inline void sce_forge_wire_put(sce_forge_wire_t *w, const char *text, size_t n) {
     if (w->overflow || w->len + n >= w->cap) {
@@ -179,6 +190,9 @@ static inline void sce_forge_wire_begin(sce_forge_wire_t *w, char *buf, size_t c
     w->last_key = NULL;
     w->last_value_at = 0;
     w->last_count = 0;
+    w->depth = 0u;
+    w->any_at = 0u;
+    w->object_at = 0u;
     sce_forge_wire_put(w, "{", 1u);
 }
 
@@ -314,8 +328,26 @@ static inline void sce_forge_wire_close_array(sce_forge_wire_t *w) {
  * moves its text up one byte for the `[`. A key that has one value only — the
  * others failed to compute and were left out — is that value, not an array of
  * one. */
+/* Start the pair `key` of the top object, a scalar one or a container one: end the
+ * array the last key's values were collected into, then write the separator and the
+ * key. */
+static inline void sce_forge_wire_key(sce_forge_wire_t *w, const char *key) {
+    if (w->any) {
+        sce_forge_wire_close_array(w);
+        sce_forge_wire_put(w, ",", 1u);
+    }
+    w->any = true;
+    sce_forge_wire_put(w, key, strlen(key));
+    sce_forge_wire_put(w, ":", 1u);
+}
+
 static inline void sce_forge_wire_pair(sce_forge_wire_t *w, const char *key, sce_forge_wire_value_t value) {
     if (w->overflow) {
+        return;
+    }
+    if (w->depth != 0u) {
+        /* A pair belongs to the top object; inside a container it is a member. */
+        w->overflow = true;
         return;
     }
     if (w->any && w->last_key != NULL && strcmp(w->last_key, key) == 0) {
@@ -333,17 +365,122 @@ static inline void sce_forge_wire_pair(sce_forge_wire_t *w, const char *key, sce
         w->last_count += 1u;
         return;
     }
-    if (w->any) {
-        sce_forge_wire_close_array(w);
-        sce_forge_wire_put(w, ",", 1u);
-    }
-    w->any = true;
-    sce_forge_wire_put(w, key, strlen(key));
-    sce_forge_wire_put(w, ":", 1u);
+    sce_forge_wire_key(w, key);
     w->last_key = key;
     w->last_value_at = w->len;
     w->last_count = 1u;
     sce_forge_wire_put_value(w, value);
+}
+
+/* ── A pair whose value is a list or a record (docs/adr/0086, section 5.3) ──
+ *
+ * `sce_forge_wire_pair_open` starts a pair whose value is an array (`'['`) or an
+ * object (`'{'`); inside it, `sce_forge_wire_element` writes an array's element and
+ * `sce_forge_wire_member` an object's member, `..._open` of either starts a
+ * container nested there, and `sce_forge_wire_close` ends the innermost container.
+ * An array keeps its order; the generator lists an object's members sorted by their
+ * name's bytes once, as it lists the pairs (ARCHITECTURE.md, "JSON Object Key
+ * Order", at every depth). A key is the JSON text of the name, quotes included, a
+ * string literal the generator has already escaped. A pair whose value is a
+ * container is never collected into the array of a name that repeats. */
+
+/* Write the separator an element or a member of the innermost container needs. */
+static inline void sce_forge_wire_next_in_container(sce_forge_wire_t *w) {
+    const uint32_t bit = (uint32_t)1u << w->depth;
+    if ((w->any_at & bit) != 0u) {
+        sce_forge_wire_put(w, ",", 1u);
+    }
+    w->any_at |= bit;
+}
+
+/* Open a container, `'['` or `'{'`, one level deeper. */
+static inline void sce_forge_wire_open_container(sce_forge_wire_t *w, char open) {
+    if (w->depth >= SCE_FORGE_WIRE_MAX_DEPTH || (open != '[' && open != '{')) {
+        w->overflow = true;
+        return;
+    }
+    sce_forge_wire_put(w, &open, 1u);
+    w->depth += 1u;
+    const uint32_t bit = (uint32_t)1u << w->depth;
+    w->any_at &= ~bit;
+    if (open == '{') {
+        w->object_at |= bit;
+    } else {
+        w->object_at &= ~bit;
+    }
+}
+
+/* A pair of the top object whose value is a container, `'['` or `'{'`. */
+static inline void sce_forge_wire_pair_open(sce_forge_wire_t *w, const char *key, char open) {
+    if (w->overflow) {
+        return;
+    }
+    if (w->depth != 0u) {
+        /* A pair belongs to the top object; inside a container it is a member. */
+        w->overflow = true;
+        return;
+    }
+    sce_forge_wire_key(w, key);
+    w->last_key = NULL;
+    w->last_count = 0;
+    sce_forge_wire_open_container(w, open);
+}
+
+/* An element of the innermost container, which is an array. */
+static inline void sce_forge_wire_element(sce_forge_wire_t *w, sce_forge_wire_value_t value) {
+    if (w->depth == 0u || (w->object_at & ((uint32_t)1u << w->depth)) != 0u) {
+        w->overflow = true;
+        return;
+    }
+    sce_forge_wire_next_in_container(w);
+    sce_forge_wire_put_value(w, value);
+}
+
+/* An element of the innermost array that is itself a container. */
+static inline void sce_forge_wire_element_open(sce_forge_wire_t *w, char open) {
+    if (w->depth == 0u || (w->object_at & ((uint32_t)1u << w->depth)) != 0u) {
+        w->overflow = true;
+        return;
+    }
+    sce_forge_wire_next_in_container(w);
+    sce_forge_wire_open_container(w, open);
+}
+
+/* A member of the innermost container, which is an object. */
+static inline void sce_forge_wire_member(sce_forge_wire_t *w, const char *key, sce_forge_wire_value_t value) {
+    if (w->depth == 0u || (w->object_at & ((uint32_t)1u << w->depth)) == 0u) {
+        w->overflow = true;
+        return;
+    }
+    sce_forge_wire_next_in_container(w);
+    sce_forge_wire_put(w, key, strlen(key));
+    sce_forge_wire_put(w, ":", 1u);
+    sce_forge_wire_put_value(w, value);
+}
+
+/* A member of the innermost object whose value is itself a container. */
+static inline void sce_forge_wire_member_open(sce_forge_wire_t *w, const char *key, char open) {
+    if (w->depth == 0u || (w->object_at & ((uint32_t)1u << w->depth)) == 0u) {
+        w->overflow = true;
+        return;
+    }
+    sce_forge_wire_next_in_container(w);
+    sce_forge_wire_put(w, key, strlen(key));
+    sce_forge_wire_put(w, ":", 1u);
+    sce_forge_wire_open_container(w, open);
+}
+
+/* End the innermost container. */
+static inline void sce_forge_wire_close(sce_forge_wire_t *w) {
+    if (w->depth == 0u) {
+        w->overflow = true;
+        return;
+    }
+    const uint32_t bit = (uint32_t)1u << w->depth;
+    sce_forge_wire_put(w, (w->object_at & bit) != 0u ? "}" : "]", 1u);
+    w->any_at &= ~bit;
+    w->object_at &= ~bit;
+    w->depth -= 1u;
 }
 
 /* One value alone, as the JSON text of an event's data, written into `buf` of
@@ -363,6 +500,9 @@ static inline bool sce_forge_wire_json(sce_forge_wire_value_t value, char *buf, 
     w.last_key = NULL;
     w.last_value_at = 0;
     w.last_count = 0;
+    w.depth = 0u;
+    w.any_at = 0u;
+    w.object_at = 0u;
     sce_forge_wire_put_value(&w, value);
     if (w.overflow) {
         buf[0] = '\0';
@@ -468,6 +608,10 @@ static inline char *sce_forge_concat_into(char *buf, size_t cap, const sce_forge
 
 /* Finish the object. False when it did not fit the buffer, which then holds `{}`. */
 static inline bool sce_forge_wire_end(sce_forge_wire_t *w) {
+    if (w->depth != 0u) {
+        /* A container left open is a value written in part, never one written. */
+        w->overflow = true;
+    }
     sce_forge_wire_close_array(w);
     if (!w->overflow) {
         sce_forge_wire_put(w, "}", 1u);
