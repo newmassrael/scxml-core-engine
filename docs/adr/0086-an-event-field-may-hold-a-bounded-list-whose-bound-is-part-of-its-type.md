@@ -6,8 +6,9 @@
   hold and refused nesting. On review the owner replaced that with one orthogonal type system, a machine's event slot
   sized by the build and signed values in deterministic CBOR; on a second review, the same day, with every text and
   byte string bounded without exception and one notation for every bound, written in the type. The owner accepted
-  the result the same day ("Owner's answers").
-- Date: 2026-11-03
+  the result the same day ("Owner's answers"). Amended after acceptance on 2026-11-04, at the owner's order: every
+  place of a Rust machine holds its bound in its Rust type (section 7.4, answer G, landing step 4).
+- Date: 2026-11-03; amended 2026-11-04
 - Amends:
   - ADR 0042 section 2: its sentence "an event cannot carry a list" stops being true (section 12);
   - ADR 0077 section 7: a bound "absent where the protocol states none" stays a reading of a codec's frame, which
@@ -381,7 +382,7 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    | Backend | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
    |---|---|---|---|---|
    | Rust (schema unit) | `BoundedList<T, N>` | bounded text / `SceBytes<N>` checked | `Option<T>` | struct, `Clone` |
-   | Rust (machine) | `Vec<T>`, bound kept by the machine | `SceString<N>` / `SceBytes<N>` | `Option<T>` | the machine's record |
+   | Rust (machine) | `sce_portable_bytes::BoundedList<T, N>` | `SceString<N>` / `SceBytes<N>` | `Option<T>` | the machine's record |
    | Kotlin | `List<T>` | `String` / `ByteArray` | `T?` | data class, checked in `init` |
    | C++ | `std::vector<T>` | `std::string` / `std::vector<uint8_t>` | `std::optional<T>` | struct |
    | Go | `[]T` | `string` / `[]byte` | the backend's optional (ADR 0055) | struct |
@@ -398,6 +399,44 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
 3. **A backend or position that does not lower a composition yet refuses it by name** with
    `generate/unsupported-feature` (as `swift_event_schema_unlowered`, `generator.rs:28396`, does today), naming the
    field and the constructor. That is a step of the landing, not a rule of the language.
+4. **A Rust machine holds every bound in its type** (amended 2026-11-04, answer G). The machine row of the table is
+   every place a Rust machine has, not only a composed one: a variable, a record the machine declares, the payload
+   struct of an event it reads, at the top level and at any depth. A `list<T>[N]` is
+   `sce_portable_bytes::BoundedList<T, N>`, a `string[N]` is `SceString<N>`, a `bytes[N]` is `SceBytes<N>`, an
+   `optional<T>` is `Option<T>` and a record is the machine's record, one representation per type of the machine.
+   The first landing of step 3 held a list in a `Vec<T>` and a text in a `String`, with the bound kept by the
+   machine at run time (each append and each assignment comparing a length to a number the generator wrote beside
+   it); the schema unit already held the same values in bounded types, and C11 in fixed layouts. Four reasons, each
+   one the textbook's, decide for the bounded types:
+   - **An illegal value cannot be represented.** A list past its bound is not a value of `BoundedList<T, N>`: every
+     constructor and every append refuses it. The refinement `{ xs : [T] | len xs <= N }` (Liquid Types, above) is
+     then held by construction, where it was held by every write remembering to check (King's "parse, don't
+     validate", applied to the machine's own storage).
+   - **One representation per type.** A value of `list<T>[N]` is one Rust type in the machine, in the schema unit and
+     in a composed payload, so nothing converts it where it crosses from one to another, and two places of one type
+     are copied by `Clone`.
+   - **The build's proof is checked again by rustc.** Where the judge proved that a value of `S` fits a place of `T`
+     (section 5.1) and the two bounds differ, the copy is a widening conversion of `sce-portable-bytes` whose bounds
+     are const parameters, `BoundedList::<T, N>::widened(&list)`, whose body names a constant that asserts `M <= N`
+     (`Fits::<M, N>::OK`, evaluated by rustc where the conversion is instantiated; the minimum Rust version has no
+     inline `const` block), as `SceString::widened` already does. A generator that writes a copy the judge did not prove fails to compile where
+     it is written, rather than refusing at run time a value that was never meant to arrive.
+   - **No allocator is needed.** `sce-portable-bytes` holds these types inline (`heapless`) on the profile without
+     `alloc` and in growable storage on the others, behind one name. A composed value therefore lowers on a machine
+     built `--no-std`, and the refusal of a composed read and copy for that profile (`rust no_std`) goes; what is
+     still refused there is refused by name for what the profile lacks, the JSON wire (section 3), not for its storage.
+
+   The bound refusal stays where the language puts it: an assignment or an `<sce:append>` that would pass a place's
+   bound is refused at that statement and raises `error.execution` (section 5, docs/SCE_ACCEPTED_SUBSET.md
+   section 2.15); a value the judge proved to fit is copied by a conversion that cannot fail. The generated public
+   types a host compiles against change with it (the published `Data` struct, the payload structs, the records): the
+   consumer's migration is in docs/SCE_CODEC_CONSUMER_MIGRATION.md, "A Rust machine holds a list's bound in its type".
+
+   **C++ is the next target of the same reasoning**, which holds there unchanged: the C++ runtime gains bounded
+   container templates, a list and a text whose bound is a template argument, and the C++ machine row moves to them
+   in a later landing; this amendment does not change C++. **Kotlin, Go, Python and Swift keep the rows of the
+   table**, a checked constructor or a bound kept by the machine: none of their type systems has a constant
+   parameter a bound could be, so a bound in the type has no spelling there.
 
 ### 8. C11 sizes each machine's slot, and `SCE_MAX_DATA_LEN` is retired
 
@@ -654,14 +693,21 @@ Each test fails when the rule it pins is removed; the landing checks each once a
    statechart reads at any depth, the queue bound, then the fixtures and the scenario on eight lanes, and every
    committed generated tree regenerated (Rust, Go, Kotlin and Swift `static_datamodel`; the Go round-trip tree where
    its source set takes the fixtures).
-4. **C11's slot**: `<SM>_DATA_LEN`, the runtime's views, the engine-allocated data of a script-engine machine,
+4. **The Rust machine holds every bound in its type** (section 7.4, added 2026-11-04), after step 3's Rust lane and
+   before its other lanes: `sce-portable-bytes` gains the widening conversions and the operations a machine performs
+   on a list, a text and a byte string, each refusing past its bound on both profiles; the Rust target spells every
+   place of a machine (variables, records, payload structs, saved state, host views) in the bounded types, and every
+   lowering of an assignment, an `<sce:append>`, a `<foreach>`, `len`, a comparison and a copy over them; the
+   refusal of a composed value on a machine built `--no-std` goes; the Rust trees are regenerated.
+5. **C11's slot**: `<SM>_DATA_LEN`, the runtime's views, the engine-allocated data of a script-engine machine,
    `SCE_MAX_DATA_LEN` retired with its `#error`, the tests that set it moved.
-5. **Algorithms' slots and bodies** over every composition, on every backend.
-6. **The deterministic CBOR encoder** with its vectors; unused for signing until ADR 0085 landing 5.
-7. **The next revision of the authoring grammar**, after this ADR's landings: the legacy attributes are refused,
+6. **Algorithms' slots and bodies** over every composition, on every backend.
+7. **The deterministic CBOR encoder** with its vectors; unused for signing until ADR 0085 landing 5.
+8. **The next revision of the authoring grammar**, after this ADR's landings: the legacy attributes are refused,
    with the same code and fix.
 
-ADR 0085 landing 4 is the first user of steps 1 to 4, and its landing 5 of step 6.
+ADR 0085 landing 4 is the first user of steps 1 to 5, and its landing 5 of step 7. (Steps 5 to 8 were numbered 4
+to 7 before the amendment of 2026-11-04 inserted step 4.)
 
 ## Consequences
 
@@ -756,3 +802,16 @@ the bounds given to the five schemas (section 1.4); a machine with a script engi
 engine allocates, since no type bounds a script value and such a machine allocates already, and a machine without
 one keeps no data for an event no schema declares, since nothing can read it (section 8.1); the new code and the
 new fix kind, `move_bound_into_type` (section 11).
+
+The owner reviewed the first landing of step 3 on 2026-11-04 and answered:
+
+- **G. Every place of a Rust machine holds its bound in its Rust type**, one representation per machine type:
+  `list<T>[N]` is `sce_portable_bytes::BoundedList<T, N>`, `string[N]` `SceString<N>`, `bytes[N]` `SceBytes<N>`,
+  `optional<T>` `Option<T>`, a record the machine's record, for variables, records and payload structs, at the top
+  level and composed alike. The reasons are section 7.4's: an illegal value is unrepresentable, the machine and the
+  schema unit hold one type and convert nothing between them, each proven fit is checked again by rustc through a
+  widening conversion whose bounds are const parameters, and the types are inline without an allocator, so the
+  `rust no_std` refusal of a composed value goes. C++ is the next target of the same reasoning, with bounded
+  container templates in its runtime, in a later landing; Kotlin, Go, Python and Swift keep checked constructors and
+  bounds kept by the machine, having no constant parameter for a bound. The change of the generated public types is
+  a consumer's migration, recorded with the landing (landing step 4).
