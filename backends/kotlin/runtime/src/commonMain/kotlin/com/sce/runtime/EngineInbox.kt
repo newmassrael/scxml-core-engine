@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // The inbox of a Kotlin engine: the one part of it a thread that does not own it
-// may use (docs/adr/0083, ARCHITECTURE.md "Engine Threading").
+// may use (docs/adr/0084, ARCHITECTURE.md "Engine Threading").
 
 package com.sce.runtime
 

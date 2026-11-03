@@ -577,7 +577,7 @@ TEST_F(HostInvokerAotTest, ATypedCompletionIsReadAsItsRecord) {
     EXPECT_EQ(complete("yes"), (Counts{0, 0, 1})) << "not the record";
 }
 
-// docs/adr/0083: a typed completion made on the host's own thread goes through
+// docs/adr/0084: a typed completion made on the host's own thread goes through
 // the machine's inbox (`postComplete<Id>`), typed as the direct one is, and the
 // owner applies it at its next macrostep boundary, where the token is checked.
 TEST_F(HostInvokerAotTest, ATypedCompletionPostedFromAnotherThreadIsReadAsItsRecord) {

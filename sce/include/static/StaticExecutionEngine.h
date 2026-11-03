@@ -28,7 +28,7 @@
 #include "core/AOTEventQueue.h"
 #include "core/ConfigurationHelper.h"
 #include "core/ConflictResolutionHelper.h"
-// docs/adr/0083: what another thread has for this engine, applied by its owner.
+// docs/adr/0084: what another thread has for this engine, applied by its owner.
 #include "core/EngineInbox.h"
 #include "core/EntrySetHelper.h"
 #include "core/EventMatchingHelper.h"
@@ -270,7 +270,7 @@ using ChildMeshRouters =
  * - Entry/exit action execution (§scxml-3.8, 3.9)
  * - Event processing loop (§scxml-D-mainEventLoop)
  *
- * Threading: the rule is ARCHITECTURE.md "Engine Threading" (docs/adr/0083).
+ * Threading: the rule is ARCHITECTURE.md "Engine Threading" (docs/adr/0084).
  * This engine runs no loop of its own; its owner is the thread that drives it.
  * A run is entered (`initialize`, `enterAt`, a restore) on any thread, and the
  * first macrostep a host drives after that (`step`, `tick`, `processEvent`,
@@ -406,7 +406,7 @@ public:
             : event(e), data(d), origin(o), sendId(s), type(t), originType(ot), invokeId(i), target(tgt) {}
     };
 
-    // ── What another thread may post (docs/adr/0083) ─────────────────────
+    // ── What another thread may post (docs/adr/0084) ─────────────────────
     //
     // The set is closed: it is the inputs that have a caller on another thread,
     // each carrying exactly what the owner-thread operation that applies it
@@ -872,7 +872,7 @@ private:
     SCE::Core::EventQueueManager<EventWithMetadata>
         internalQueue_;  // §scxml-3.13: Internal event queue (high priority)
     SCE::Core::EventQueueManager<EventWithMetadata> externalQueue_;  // §scxml-3.13: External event queue (low priority)
-    // docs/adr/0083: what other threads posted, which the owner applies at each
+    // docs/adr/0084: what other threads posted, which the owner applies at each
     // macrostep boundary (`drainInbox`), and the record of who the owner is. Open
     // from construction, so what is posted before the first run is kept for it.
     ::SCE::Core::EngineInboxOwner<InboxInput> inbox_;
@@ -1195,7 +1195,7 @@ private:
     }
 
     /**
-     * @brief The macrostep boundary's half of the inbox (docs/adr/0083)
+     * @brief The macrostep boundary's half of the inbox (docs/adr/0084)
      *
      * Applies, on the owner, what other threads posted, in the order the inbox
      * took it, each by the owner-thread operation of the same name
@@ -1274,7 +1274,7 @@ public:
     /**
      * @brief This engine's inbox: the handle a thread that does not own the
      *        engine posts external events and host-run invocations' endings
-     *        through (docs/adr/0083)
+     *        through (docs/adr/0084)
      *
      * Thread-safe, as is every copy of it; everything else of the engine that
      * changes its state is an owner-thread operation (ARCHITECTURE.md "Engine
@@ -1283,7 +1283,7 @@ public:
      * took it. `post` answers whether the inbox took the input: it refuses one
      * once the run has ended or been stopped (until the next `initialize` or
      * `enterAt`), and when the heap refuses the memory for it. It is unbounded
-     * otherwise (docs/adr/0083, D2), and never refuses a post for contention. A
+     * otherwise (docs/adr/0084, D2), and never refuses a post for contention. A
      * post taken before the first run is applied at that run's first boundary.
      * `wakeWith` installs what each post calls, so a host that drives the
      * engine itself knows when to drive it.
@@ -2520,7 +2520,7 @@ protected:
                 continue;
             }
 
-            // docs/adr/0083: the macrostep is complete, and this is the point
+            // docs/adr/0084: the macrostep is complete, and this is the point
             // before the external queue is consulted. What other threads posted
             // since the last boundary is applied here, in the order the inbox
             // took it, so an event it carries joins the external queue behind

@@ -12,7 +12,7 @@
 // boundary and transitions Computing → Failed.
 //
 // The scheduler thread does not own brake, so it never touches brake's
-// queues (ARCHITECTURE.md "Engine Threading", docs/adr/0083): the inbox
+// queues (ARCHITECTURE.md "Engine Threading", docs/adr/0084): the inbox
 // is the one part of the engine it may use, and the post happens-before
 // the step that applies it through the inbox's own atomics. The test
 // therefore builds without SCE_THREAD_SAFE, whose queue mutex is the

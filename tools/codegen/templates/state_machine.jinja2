@@ -874,7 +874,7 @@ struct {{ model.name }}Policy {
     // (`hasActiveChildSession`), wire-18 (`onInvokeDone`) and a peer-down
     // signal (`failScxmlRemoteInvokesForPeer`) — is posted to the machine's
     // inbox and applied by the owner at a macrostep boundary
-    // (docs/adr/0083), so the table needs no lock.
+    // (docs/adr/0084), so the table needs no lock.
     mutable std::unordered_map<std::string, ChildSession> activeInvokes_;
     {% endif %}
     {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote or model.invokes | unsupported %}
@@ -1320,7 +1320,7 @@ public:
     /// worker peer(s). Safe from any thread: it posts the child's session id
     /// to this machine's inbox, and the owner stamps it into the Policy's
     /// `activeInvokes_` (`onInvokeStarted`) at its next macrostep boundary
-    /// (docs/adr/0083). An envelope missing its subject or session id names
+    /// (docs/adr/0084). An envelope missing its subject or session id names
     /// no invoke and is dropped.
     void onInvokeStarted(const ::SCE::Mesh::MeshEnvelope& env) {
         if (!env.subject || !env.child_session_id) {

@@ -197,7 +197,7 @@
                         // child's events via the same sessionId the local
                         // path uses. `sessionId` is filled by onInvokeStarted
                         // when wire-15 arrives (§9.6.3 L1463), applied by this
-                        // session's owner from its inbox (docs/adr/0083), so the
+                        // session's owner from its inbox (docs/adr/0084), so the
                         // table is the owner's alone.
                         activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
                             "",  // filled on wire-15 InvokeStarted
@@ -900,7 +900,7 @@
                 }
                 // SCE_MESH.md §16.7 row 5 sub-atomic C — the peer-down path
                 // erases from the same table, on the owner too: its signal is
-                // posted to the inbox (docs/adr/0083).
+                // posted to the inbox (docs/adr/0084).
                 activeInvokes_.erase("{{ invoke_info.invoke_id }}");
 {% endfor %}
                 {% for invoke_info in state.invokes | hybrid %}

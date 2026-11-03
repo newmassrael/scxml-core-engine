@@ -12,7 +12,7 @@
 //!
 //! Each suite used to write the list itself. When the engine's own header
 //! started including the forge runtime (`core/EngineInbox.h` holds the
-//! inbox on the forge LSCQ, docs/adr/0083), six of them stopped compiling
+//! inbox on the forge LSCQ, docs/adr/0084), six of them stopped compiling
 //! every generated machine at once, while the CMake build — which reads the
 //! interface — was green. A dependency of the engine is added here and in
 //! `sce_core`'s interface, nowhere else.

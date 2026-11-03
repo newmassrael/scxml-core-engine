@@ -8,7 +8,7 @@
 // does not own the parent posts `InboxPeerLost{"worker_session_f_peer_drop"}`
 // to its inbox — what the TransportRouter's Zenoh liveliness DELETE and
 // SOMEIP machine-level availability handlers do in production, on their
-// own threads (docs/adr/0083) — and the parent's owner applies it with
+// own threads (docs/adr/0084) — and the parent's owner applies it with
 // the Policy's `failScxmlRemoteInvokesForPeer` at its next macrostep
 // boundary.
 //

@@ -101,7 +101,7 @@ struct RecordingEngine {
                           std::move(meta.originType), std::move(meta.sendId)});
     }
 
-    // docs/adr/0083: `dispatchEnvelope` runs on transport threads, so it hands an
+    // docs/adr/0084: `dispatchEnvelope` runs on transport threads, so it hands an
     // event to the engine's inbox rather than raising it, and the owner raises it
     // later with `raiseExternal`. The double's inbox does both at once, so what
     // `events` records is what the owner would raise; `refusing` is an inbox that
@@ -213,7 +213,7 @@ TEST(MeshDispatchTest, RpcRequestUnknownEventNameIsDropped) {
     EXPECT_TRUE(engine.events.empty());
 }
 
-// docs/adr/0083: an inbound event reaches the engine through its inbox, and an
+// docs/adr/0084: an inbound event reaches the engine through its inbox, and an
 // inbox that refuses it (the run ended, or memory ran out) leaves the envelope
 // undelivered, which the caller is told rather than left to assume.
 TEST(MeshDispatchTest, AnEventTheInboxRefusesIsReportedUndelivered) {
@@ -383,7 +383,7 @@ TEST(MeshDispatchTest, ChildEventFromRetiredInvokeIsDiscarded) {
     // selection in whatever state the parent moved on to.
     //
     // The envelope is handed to the parent's inbox, which takes it; the owner
-    // asks whether the invoke is still active when it applies it (docs/adr/0083),
+    // asks whether the invoke is still active when it applies it (docs/adr/0084),
     // so the discard happens there, and the event never reaches the queue.
     RecordingEngine engine;
     engine.activeChildSessions.push_back("dev_a:parent:other_inv");

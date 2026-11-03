@@ -235,7 +235,7 @@ data class EventMetadata(
  * state and running a transition's content do ([onEntry], [onExit],
  * [executeTransitionContent], [executeHistoryDefaultContent]).
  *
- * Threading: the rule is ARCHITECTURE.md "Engine Threading" (docs/adr/0083).
+ * Threading: the rule is ARCHITECTURE.md "Engine Threading" (docs/adr/0084).
  * This engine's owner is the thread that drives it in the synchronous mode
  * ([initialize], [enterAt] or a restore records it), and in the coroutine mode
  * ([start]) its own loop, which runs on [Dispatchers.Default] holding the
@@ -698,7 +698,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     // --- The inbox and the owner (ARCHITECTURE.md "Engine Threading") ---
 
     /**
-     * The inbox (docs/adr/0083): what other threads post, in the order it was
+     * The inbox (docs/adr/0084): what other threads post, in the order it was
      * taken. Unbounded, so a post never blocks and is refused only once the
      * channel is closed ([closeInbox]). In the coroutine mode the loop suspends
      * on it, which is how a post wakes the loop; in the synchronous mode the
@@ -817,7 +817,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * The macrostep boundary's half of the inbox (docs/adr/0083): apply, on the
+     * The macrostep boundary's half of the inbox (docs/adr/0084): apply, on the
      * owner, everything posted so far, in the order it was taken, each by the
      * owner-thread operation of the same name ([applyInboxInput]). Called before
      * the external queue is consulted, so what was posted joins it behind what
@@ -4601,7 +4601,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // before the external dequeue.
             macrostepSettled()
             // What other threads posted since the last boundary joins the external
-            // queue here, in the order it was posted (docs/adr/0083).
+            // queue here, in the order it was posted (docs/adr/0084).
             drainInbox()
             if (externalEventQueue.isEmpty()) break
             // Every macrostep this loop runs ends, so [MAX_MACROSTEP_MICROSTEPS]
@@ -5673,7 +5673,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * handed to the caller, one at a time, because the macrostep an earlier send
      * starts may `<cancel>` a later one that has not been taken yet.
      *
-     * The channel it waits on is the inbox (docs/adr/0083): what another thread
+     * The channel it waits on is the inbox (docs/adr/0084): what another thread
      * posted is applied at the top of each pass, at the macrostep boundary and
      * before the external queue is consulted ([drainInbox]), and the input the
      * wait itself received is applied first, being the oldest.

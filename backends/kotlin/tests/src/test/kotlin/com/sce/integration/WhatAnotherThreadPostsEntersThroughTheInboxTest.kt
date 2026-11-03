@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// docs/adr/0083, ARCHITECTURE.md "Engine Threading": a Kotlin engine is confined
+// docs/adr/0084, ARCHITECTURE.md "Engine Threading": a Kotlin engine is confined
 // to its owner, and what another thread has for it enters through its inbox.
 //
 // The defect this repays: a host-run invocation's ending made from the host's own
@@ -174,7 +174,7 @@ private class InboxProbeMachine(
     }
 }
 
-@DisplayName("What another thread posts enters through the inbox (docs/adr/0083)")
+@DisplayName("What another thread posts enters through the inbox (docs/adr/0084)")
 class WhatAnotherThreadPostsEntersThroughTheInboxTest {
 
     private val type = InboxProbeMachine.TYPE

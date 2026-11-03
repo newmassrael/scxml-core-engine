@@ -268,7 +268,7 @@ TEST(ASavedTreeHoldsEverySessionWhereItStood, AChildsInvocationReachesTheRootsIn
     EXPECT_EQ(machine->stamps(), 1u) << "the child took done.invoke.clock and told its parent";
 }
 
-// docs/adr/0083: a host that serves the tree on a thread of its own posts the
+// docs/adr/0084: a host that serves the tree on a thread of its own posts the
 // ending, naming the child session, to the root's inbox; the root's owner routes
 // it at its next macrostep boundary as `endHostInvokeIn` does, and a stale one
 // is refused there as a direct one is.

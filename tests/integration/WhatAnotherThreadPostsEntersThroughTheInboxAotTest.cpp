@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// docs/adr/0083, ARCHITECTURE.md "Engine Threading": the generated C++ engine is
+// docs/adr/0084, ARCHITECTURE.md "Engine Threading": the generated C++ engine is
 // confined to its owner, and what another thread has for it enters through its
 // inbox.
 //

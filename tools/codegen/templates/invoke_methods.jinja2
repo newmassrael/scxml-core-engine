@@ -415,7 +415,7 @@
                         // Child may send events during initialize() that need autoforward
                         // SCE_MESH.md §16.7 row 5 sub-atomic C — activeInvokes_ is
                         // the owner's alone: a peer-down signal reaches it through
-                        // the inbox (docs/adr/0083).
+                        // the inbox (docs/adr/0084).
                         {# §scxml-6.5: the finalize body crosses as AUTHOR text here, and
                            that is this channel's contract rather than an omission — the
                            C++ engine runs `EcmaScriptToLuaTransformer` itself, which is
@@ -1272,7 +1272,7 @@
     // ── SCE_MESH.md §9.6: what a remote child session's transport delivers ──
     //
     // Every member below is an owner-thread operation (ARCHITECTURE.md
-    // "Engine Threading", docs/adr/0083). Wire-15 and wire-18 arrive on a
+    // "Engine Threading", docs/adr/0084). Wire-15 and wire-18 arrive on a
     // transport's thread, and a peer-down signal on its availability or
     // liveliness thread; none of those owns this session, so the machine's
     // `onInvokeStarted` / `onInvokeDone` hooks and the router's peer-down

@@ -198,7 +198,7 @@ struct HasHostInvokerChildrenTrait<P, Ending,
 /// SCE_MESH.md §9.6: a policy that runs child sessions on remote devices. What their
 /// transport delivers on a thread of its own (the child's session id, its events, its
 /// completion, the loss of its peer) is posted to the engine's inbox, and the engine
-/// applies it on its owner through these members (docs/adr/0083). Emitted together, and
+/// applies it on its owner through these members (docs/adr/0084). Emitted together, and
 /// asked only through this trait.
 template <typename P, typename E, typename = void> struct HasRemoteChildSessionsTrait : std::false_type {};
 

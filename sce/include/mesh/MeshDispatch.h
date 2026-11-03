@@ -160,7 +160,7 @@ bool tryDeliverInvokeStarted(const MeshEnvelope & /*env*/, Engine & /*engine*/, 
 /// envelope reaching it is misrouted and drops fail-closed — the same shape
 /// the wire-15/18 hooks use when absent. Probed, never called here: the
 /// question reads the engine's invoke table, which is its owner's, so the
-/// owner asks it when it applies the posted event (docs/adr/0083).
+/// owner asks it when it applies the posted event (docs/adr/0084).
 template <typename Engine, typename = void> struct HasActiveChildSessionHook : std::false_type {};
 
 template <typename Engine>
@@ -214,7 +214,7 @@ void recordArrivalName(Meta &meta, const Event &event, const std::string &type) 
 }
 
 /// Hand @p meta to @p engine as an external event through the engine's inbox
-/// (docs/adr/0083, ARCHITECTURE.md "Engine Threading"); whether the inbox took
+/// (docs/adr/0084, ARCHITECTURE.md "Engine Threading"); whether the inbox took
 /// it. This helper runs on transport threads (a vsomeip application thread, a
 /// zenoh runtime thread, a TCP read thread) as well as on the engine's owner,
 /// and the inbox is the one part of an engine any thread may use. The owner
@@ -357,7 +357,7 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
         // queue would still be offered to transition selection.
         //
         // The event arrives where the parent's owner takes it: at its
-        // macrostep boundary (docs/adr/0083), since no input is observed in
+        // macrostep boundary (docs/adr/0084), since no input is observed in
         // the middle of a macrostep. So the envelope is posted with the
         // child's session id, and the owner asks `hasActiveChildSession` when
         // it applies it — the parent's invoke table is its owner's alone, and

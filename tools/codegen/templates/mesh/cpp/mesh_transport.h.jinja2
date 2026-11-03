@@ -6167,7 +6167,7 @@ struct TransportRouter {
         // transport thread for a reply or a dropped query, the deadline
         // scheduler's thread for `_mesh_deadline_ms`. None of them owns the
         // sender, so the outcome is posted to the sender's inbox and its
-        // owner raises it at its next macrostep boundary (docs/adr/0083,
+        // owner raises it at its next macrostep boundary (docs/adr/0084,
         // ARCHITECTURE.md "Engine Threading"). The inbox answers whether it
         // took the event; one it refused (closed because the run ended, or
         // the heap refused it) is counted by the engine

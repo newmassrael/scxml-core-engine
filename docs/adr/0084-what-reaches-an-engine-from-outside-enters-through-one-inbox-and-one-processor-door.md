@@ -1,9 +1,11 @@
-# ADR 0083 — What reaches an engine from outside enters through one inbox, and every host type through one processor door
+# ADR 0084 — What reaches an engine from outside enters through one inbox, and every host type through one processor door
 
 - Status: Accepted (2026-11-03). The owner asked for the most long-term correct, textbook structure with cost ignored,
   took the recommendation of that day (one processor door shared by both engines, the Mesh request as one row of it,
   one threading rule for every engine) and ordered the work started.
 - Date: 2026-11-03
+- Number: written as 0083 on its branch, and given 0084 when ADR 0083 (a host records what a change made) reached
+  `main` first.
 - Amends:
   - `SCE_MESH.md` §1 and §19, which say the Interpreter has no Mesh route. It has one for a send (the target factory
     under `SendHelper::MESH_TARGET_SCHEME`, and `IChildMeshRouter` for a child) and gains one for a request.

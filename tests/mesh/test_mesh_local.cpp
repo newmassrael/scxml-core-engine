@@ -137,7 +137,7 @@ struct MockEngine {
 
     void raiseExternal(const EventWithMetadata &) {}
 
-    // docs/adr/0083: MeshDispatch posts an inbound event to the engine's inbox.
+    // docs/adr/0084: MeshDispatch posts an inbound event to the engine's inbox.
     struct InboxExternalEvent {
         EventWithMetadata event;
     };

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // The inbox of an engine: the one part of it a thread that does not own it may
-// use (docs/adr/0083, ARCHITECTURE.md "Engine Threading").
+// use (docs/adr/0084, ARCHITECTURE.md "Engine Threading").
 //
 // A multi-producer, single-consumer queue of what other threads have for an
 // engine, which the engine's owner applies at its next macrostep boundary, each
@@ -12,7 +12,7 @@
 //
 // The queue is the forge LSCQ (`sce/forge/queue_segmented.h`): Nikolaev's list
 // of SCQ rings, lock-free on both sides and unbounded but for the memory it is
-// given. A hosted inbox is unbounded on every runtime (ADR 0083, D2), so a post
+// given. A hosted inbox is unbounded on every runtime (ADR 0084, D2), so a post
 // is refused only when the inbox is closed or the heap refuses a segment, never
 // because the inbox is full. A stalled poster hides nothing another thread
 // posted, and a post never waits for a macrostep.

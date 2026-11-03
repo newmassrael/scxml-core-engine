@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// docs/adr/0083 D2: an engine's inbox (`core/EngineInbox.h`), apart from any
+// docs/adr/0084 D2: an engine's inbox (`core/EngineInbox.h`), apart from any
 // engine. A hosted inbox is unbounded: it grows by segments of the forge LSCQ as
 // posts arrive, refuses a post only when it is closed or its allocator refuses a
 // segment, and makes a poster that finds every place taken wait for one rather

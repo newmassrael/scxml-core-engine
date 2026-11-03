@@ -351,7 +351,7 @@ struct TreeInvokers {
  *
  * Everything the engine's completion and failure take, so an ending posted to an
  * engine's inbox from another thread carries what a direct call on its owner
- * would have passed (docs/adr/0083).
+ * would have passed (docs/adr/0084).
  */
 struct HostInvokeEnding {
     /// The `type` the request named.

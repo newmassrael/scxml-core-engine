@@ -179,7 +179,7 @@ add_executable(sce_scxml_tests
     simple_scxml_test.cpp
     core/TypeRegistryTest.cpp
     core/InvokeHelperTest.cpp
-    # docs/adr/0083 D2: an engine's inbox, with its allocator injected.
+    # docs/adr/0084 D2: an engine's inbox, with its allocator injected.
     core/EngineInboxTest.cpp
     concurrency/TypeRegistryThreadSafetyTest.cpp
     common/EventDataHelperTest.cpp
@@ -1878,7 +1878,7 @@ add_executable(integration_tests
     integration/HostProcessorAotTest.cpp
     integration/DelayedHostSendAotTest.cpp
     integration/HostInvokerAotTest.cpp
-    # docs/adr/0083: what another thread has for the generated engine enters
+    # docs/adr/0084: what another thread has for the generated engine enters
     # through its inbox, while the owner runs macrosteps.
     integration/WhatAnotherThreadPostsEntersThroughTheInboxAotTest.cpp
     integration/NativeActionAotTest.cpp
@@ -2721,7 +2721,7 @@ sce_add_state_machine(
     HOST_INVOKER x-sce-host
 )
 
-# docs/adr/0083: the machine WhatAnotherThreadPostsEntersThroughTheInboxAotTest
+# docs/adr/0084: the machine WhatAnotherThreadPostsEntersThroughTheInboxAotTest
 # posts to from other threads. It sits beside its driver, as
 # parallel_current_state.scxml does, because only the C++ engine is driven with
 # it; the declaration is the one above, since its `job` is a host-run invocation.
@@ -4894,7 +4894,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     # §9.5 deadline expiry: motor never replies, 50ms deadline fires
     # error.invoke on the scheduler thread, which posts it to brake's inbox
-    # (docs/adr/0083). The inbox is what orders the scheduler thread's post
+    # (docs/adr/0084). The inbox is what orders the scheduler thread's post
     # before the main thread's step(), so this test builds without
     # SCE_THREAD_SAFE: no queue of the engine is touched off its owner.
     add_executable(mesh_invoke_deadline_test

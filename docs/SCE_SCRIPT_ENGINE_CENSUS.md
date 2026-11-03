@@ -415,7 +415,7 @@ telling the truth, not the tree getting worse.
   ECMAScript document: the machine appends each event it takes, with its
   untyped `_event.data`, to one string, so that the order in which the C++
   engine's inbox applied what other threads posted can be read back; one
-  data item, three assigns; docs/adr/0083) raised `assign-action` by three
+  data item, three assigns; docs/adr/0084) raised `assign-action` by three
   (403 to 406). `engine-documents` and `datamodel-variable-init` rose too and
   stayed under their ceilings.
   A consumer pairing `cond="cpp:…"` with

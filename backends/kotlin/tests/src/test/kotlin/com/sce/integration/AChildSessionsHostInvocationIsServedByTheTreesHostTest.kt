@@ -191,7 +191,7 @@ class AChildSessionsHostInvocationIsServedByTheTreesHostTest {
     )
 
     /**
-     * docs/adr/0083: what a host's own thread has for a child session is posted to
+     * docs/adr/0084: what a host's own thread has for a child session is posted to
      * the inbox of the machine the host holds, naming the session. The root applies
      * it at its next macrostep boundary with the call the host would have made on
      * the owner (`completeHostInvokeIn`, `applyMeshCall` on the child), and the

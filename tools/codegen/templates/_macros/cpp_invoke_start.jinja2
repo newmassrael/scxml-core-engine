@@ -60,7 +60,7 @@
     is the finalize script as the string literal's text. The record is written before the
     child initializes, so an event it sends as it starts can already be autoforwarded.
     The table is the owner's alone: a peer-down signal reaches it through the inbox
-    (docs/adr/0083). #}
+    (docs/adr/0084). #}
 {% macro child_session_record(inv, finalize, indent) %}
 {{ indent }}{
 {{ indent }}    activeInvokes_["{{ inv.invoke_id }}"] = ChildSession{
