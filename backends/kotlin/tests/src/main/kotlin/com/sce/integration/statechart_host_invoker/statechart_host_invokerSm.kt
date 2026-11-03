@@ -478,10 +478,29 @@ class StatechartHostInvokerStateMachine(
     /**
      * Complete `<invoke id="perm">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompletePerm].
      */
     fun completePerm(token: Long, result: StatechartHostInvokerPermResult): Boolean =
         completeHostInvoke("x-sce-host", "perm", token, result.wire())
+
+    /**
+     * [completePerm] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompletePerm(token: Long, result: StatechartHostInvokerPermResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "x-sce-host",
+                invokeId = "perm",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
 
     /**
      * Register [invoker] as the handler for `type="x-sce-host"`.

@@ -393,10 +393,29 @@ class StaticHostHttpStateMachine(
     /**
      * Complete `<invoke id="fetch">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompleteFetch].
      */
     fun completeFetch(token: Long, result: StaticHostHttpFetchResult): Boolean =
         completeHostInvoke("sce-host-http-fetch", "fetch", token, result.wire())
+
+    /**
+     * [completeFetch] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompleteFetch(token: Long, result: StaticHostHttpFetchResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-http-fetch",
+                invokeId = "fetch",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
 
     /**
      * Register [invoker] as the handler for `type="sce-host-http-fetch"`.

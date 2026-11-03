@@ -330,10 +330,29 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
     /**
      * Complete `<invoke id="clock">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompleteClock].
      */
     fun completeClock(token: Long, result: StaticInvokeTreeSceSynthInvokeWorkerClockResult): Boolean =
         completeHostInvoke("sce-host-clock-now", "clock", token, result.wire())
+
+    /**
+     * [completeClock] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompleteClock(token: Long, result: StaticInvokeTreeSceSynthInvokeWorkerClockResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-clock-now",
+                invokeId = "clock",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
 
     /**
      * Register [invoker] as the handler for `type="sce-host-clock-now"`.

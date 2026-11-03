@@ -594,10 +594,29 @@ class StaticHostNotifyStateMachine(
     /**
      * Complete `<invoke id="cancel">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompleteCancel].
      */
     fun completeCancel(token: Long, result: StaticHostNotifyCancelResult): Boolean =
         completeHostInvoke("sce-host-notify-cancel", "cancel", token, result.wire())
+
+    /**
+     * [completeCancel] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompleteCancel(token: Long, result: StaticHostNotifyCancelResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-notify-cancel",
+                invokeId = "cancel",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
 
     /**
      * Register [invoker] as the handler for `type="sce-host-notify-cancel"`.
@@ -633,10 +652,29 @@ class StaticHostNotifyStateMachine(
     /**
      * Complete `<invoke id="ask">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompleteAsk].
      */
     fun completeAsk(token: Long, result: StaticHostNotifyAskResult): Boolean =
         completeHostInvoke("sce-host-notify-permission", "ask", token, result.wire())
+
+    /**
+     * [completeAsk] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompleteAsk(token: Long, result: StaticHostNotifyAskResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-notify-permission",
+                invokeId = "ask",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
 
     /**
      * Register [invoker] as the handler for `type="sce-host-notify-permission"`.
@@ -669,18 +707,56 @@ class StaticHostNotifyStateMachine(
     /**
      * Complete `<invoke id="far">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompleteFar].
      */
     fun completeFar(token: Long, result: StaticHostNotifyFarResult): Boolean =
         completeHostInvoke("sce-host-notify-post", "far", token, result.wire())
 
     /**
+     * [completeFar] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompleteFar(token: Long, result: StaticHostNotifyFarResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-notify-post",
+                invokeId = "far",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
+
+    /**
      * Complete `<invoke id="post">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompletePost].
      */
     fun completePost(token: Long, result: StaticHostNotifyPostResult): Boolean =
         completeHostInvoke("sce-host-notify-post", "post", token, result.wire())
+
+    /**
+     * [completePost] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompletePost(token: Long, result: StaticHostNotifyPostResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-notify-post",
+                invokeId = "post",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
 
     /**
      * Register [invoker] as the handler for `type="sce-host-notify-post"`.
@@ -732,10 +808,29 @@ class StaticHostNotifyStateMachine(
     /**
      * Complete `<invoke id="prompt">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompletePrompt].
      */
     fun completePrompt(token: Long, result: StaticHostNotifyPromptResult): Boolean =
         completeHostInvoke("sce-host-notify-request-permission", "prompt", token, result.wire())
+
+    /**
+     * [completePrompt] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompletePrompt(token: Long, result: StaticHostNotifyPromptResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-notify-request-permission",
+                invokeId = "prompt",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
 
     /**
      * Register [invoker] as the handler for `type="sce-host-notify-request-permission"`.

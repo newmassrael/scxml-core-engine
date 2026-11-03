@@ -381,10 +381,29 @@ class StaticHostClockStateMachine(
     /**
      * Complete `<invoke id="now">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompleteNow].
      */
     fun completeNow(token: Long, result: StaticHostClockNowResult): Boolean =
         completeHostInvoke("sce-host-clock-now", "now", token, result.wire())
+
+    /**
+     * [completeNow] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompleteNow(token: Long, result: StaticHostClockNowResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-clock-now",
+                invokeId = "now",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
 
     /**
      * Register [invoker] as the handler for `type="sce-host-clock-now"`.
@@ -417,10 +436,29 @@ class StaticHostClockStateMachine(
     /**
      * Complete `<invoke id="zone">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompleteZone].
      */
     fun completeZone(token: Long, result: StaticHostClockZoneResult): Boolean =
         completeHostInvoke("sce-host-clock-zone", "zone", token, result.wire())
+
+    /**
+     * [completeZone] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompleteZone(token: Long, result: StaticHostClockZoneResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-clock-zone",
+                invokeId = "zone",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
 
     /**
      * Register [invoker] as the handler for `type="sce-host-clock-zone"`.

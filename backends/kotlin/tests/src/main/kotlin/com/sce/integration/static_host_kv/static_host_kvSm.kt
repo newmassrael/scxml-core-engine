@@ -655,10 +655,29 @@ class StaticHostKvStateMachine(
     /**
      * Complete `<invoke id="del">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompleteDel].
      */
     fun completeDel(token: Long, result: StaticHostKvDelResult): Boolean =
         completeHostInvoke("sce-host-kv-delete", "del", token, result.wire())
+
+    /**
+     * [completeDel] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompleteDel(token: Long, result: StaticHostKvDelResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-kv-delete",
+                invokeId = "del",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
 
     /**
      * Register [invoker] as the handler for `type="sce-host-kv-delete"`.
@@ -694,10 +713,29 @@ class StaticHostKvStateMachine(
     /**
      * Complete `<invoke id="get">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompleteGet].
      */
     fun completeGet(token: Long, result: StaticHostKvGetResult): Boolean =
         completeHostInvoke("sce-host-kv-get", "get", token, result.wire())
+
+    /**
+     * [completeGet] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompleteGet(token: Long, result: StaticHostKvGetResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-kv-get",
+                invokeId = "get",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
 
     /**
      * Register [invoker] as the handler for `type="sce-host-kv-get"`.
@@ -733,10 +771,29 @@ class StaticHostKvStateMachine(
     /**
      * Complete `<invoke id="walk">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompleteWalk].
      */
     fun completeWalk(token: Long, result: StaticHostKvWalkResult): Boolean =
         completeHostInvoke("sce-host-kv-next-key", "walk", token, result.wire())
+
+    /**
+     * [completeWalk] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompleteWalk(token: Long, result: StaticHostKvWalkResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-kv-next-key",
+                invokeId = "walk",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
 
     /**
      * Register [invoker] as the handler for `type="sce-host-kv-next-key"`.
@@ -773,10 +830,29 @@ class StaticHostKvStateMachine(
     /**
      * Complete `<invoke id="put">`'s start [token] with its record —
      * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
-     * refused the same way (`false`).
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompletePut].
      */
     fun completePut(token: Long, result: StaticHostKvPutResult): Boolean =
         completeHostInvoke("sce-host-kv-put", "put", token, result.wire())
+
+    /**
+     * [completePut] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompletePut(token: Long, result: StaticHostKvPutResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-kv-put",
+                invokeId = "put",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
 
     /**
      * Register [invoker] as the handler for `type="sce-host-kv-put"`.
