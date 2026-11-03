@@ -1332,7 +1332,7 @@ fn size(
         }
         ValueType::Record { alias } => {
             let record_key = env.record_key(alias);
-            if records.iter().any(|r| *r == record_key) {
+            if records.contains(&record_key) {
                 let mut cycle = records.clone();
                 cycle.push(record_key);
                 return Err(SizeError::ContainsItself { cycle });
