@@ -1174,8 +1174,9 @@ restate the rule.
 
 **Status.** The rule is decided, and the runtimes are brought to it in the
 ADR's order of work. Until a runtime's step lands, its existing contract stands
-and is listed in the ADR's Context table. Two of them are known to be broken by
-a host-invoke ending from another thread: Kotlin and the generated C++ engine.
+and is listed in the ADR's Context table. Kotlin follows the rule (its engine
+checks the owner and has the inbox, `EngineInbox`). The generated C++ engine is
+still known to be broken by a host-invoke ending from another thread.
 
 **The invariant.** A macrostep runs to completion: no input is observed in the
 middle of one (§scxml-C-1). Every engine holds it by the same mechanism.
