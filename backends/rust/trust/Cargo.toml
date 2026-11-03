@@ -49,3 +49,15 @@ argon2 = { version = "0.6", default-features = false, features = ["alloc"] }
 hkdf = "0.12"
 hmac = "0.12"
 serde_json = "1"
+# The CBOR head a typed value is written with (`cbor`): the one shortest-head writer the codecs
+# already use, so the deterministic encoding of a signed value and a codec's frame cannot disagree
+# on what a preferred head is. `alloc` for the growing sink, which the Mesh crate above turns on.
+sce-forge-runtime = { path = "../forge-runtime", features = ["alloc"] }
+
+[dev-dependencies]
+# A CBOR decoder this repository did not write: what a value's encoding is read back with, so that
+# the encoding is held to RFC 8949 by a reader that shares nothing with the writer.
+ciborium = "0.2"
+# What says, apart from the encoder, whether a half precision float holds a number exactly: the
+# oracle of the shortest float.
+half = "2"

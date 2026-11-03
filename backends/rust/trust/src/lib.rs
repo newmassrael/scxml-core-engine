@@ -29,6 +29,9 @@
 //! * [`audit`] - the record of a list that someone who is not in it checks with the hash of the
 //!   genesis and no key: the log, the operations as they travelled, the checkpoints, and a report of
 //!   what holds and what does not.
+//! * [`cbor`] - the deterministic CBOR (RFC 8949 section 4.2.1) of a value of a type of the one type
+//!   grammar, written by its type: what a signature covers from ADR 0085's domain bump on
+//!   (docs/adr/0086, section 9), and nothing before it.
 //! * [`checkpoint`] - what a member's device says it holds (an instant, the digest of its copy up
 //!   to it, the head of every chain it has in full), signed; and the settlement the checkpoints
 //!   of every writer make together, which a host checks alone, with no administrator, and which
@@ -56,6 +59,7 @@
 
 pub mod audit;
 pub mod backup;
+pub mod cbor;
 mod chain;
 pub mod checkpoint;
 pub mod creation;
