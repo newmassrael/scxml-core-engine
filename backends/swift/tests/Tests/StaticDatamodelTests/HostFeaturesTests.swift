@@ -40,23 +40,6 @@ private func integerValue<T: FixedWidthInteger>(_ value: JSONValue, as: T.Type) 
     return T(text)
 }
 
-/// `value` with the members of every object in the order of their keys' bytes: an object a
-/// scenario writes has no order, and a host's record of what it holds has no reason to
-/// write one in the author's.
-private func byKey(_ value: JSONValue) -> JSONValue {
-    switch value {
-    case .object(let members):
-        return .object(
-            members.map { (key: $0.key, value: byKey($0.value)) }
-                .sorted { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }
-        )
-    case .array(let items):
-        return .array(items.map(byKey))
-    default:
-        return value
-    }
-}
-
 /// A transport that answers what a scenario says and keeps what it was given.
 private final class ScriptedTransport: HostTransport {
     private var answer: HostExchange?

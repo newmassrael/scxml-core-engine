@@ -62,6 +62,19 @@ struct Machine {
     /// `child_hosts` writes it (`ChildHostBook.take`). Asking forgets what was asked. Nil for a
     /// machine whose host gives no child one.
     var childHosts: (() -> [JSONValue])? = nil
+
+    /// What the machine sent its Mesh peers since it was last asked, oldest first, each as a
+    /// scenario's `sent` writes it (`RecordedSends.take`). Asking forgets what was asked. Nil
+    /// for a machine given no Mesh router, which is what a scenario of `"router": false` is.
+    var sent: (() -> [JSONValue])? = nil
+
+    /// Hands the event `name`, with its JSON data (the third), to the running child session of
+    /// the invoke path (the first), through the router it was given, as a peer's event; false
+    /// when no child of that path is running. Nil for a machine whose children are given none.
+    var deliverToChild: ((String, String, String) -> Bool)? = nil
+
+    /// Runs what was handed to the machine to quiescence.
+    var settle: () -> Void = {}
 }
 
 /// The child hosts a machine's host was asked for, in the order asked, and what each child
@@ -138,10 +151,18 @@ func drive<Policy: StatePolicy>(
     _ policy: Policy,
     variables: [String: () -> JSONValue],
     hostCalls: (() -> [JSONValue])? = nil,
-    childHosts: (() -> [JSONValue])? = nil
+    childHosts: (() -> [JSONValue])? = nil,
+    peers: PeerRecorder? = nil
 ) -> Machine {
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
+    // A machine whose host attached a link has a Mesh router and a router for each child it
+    // starts, registered before it starts so that what its start sends is recorded too. With
+    // none a send to a peer is `error.execution` and reaches nobody (docs/adr/0046, section 4).
+    if let peers {
+        engine.registerMeshRouter(peers.sends.router)
+        engine.registerChildMeshRouters(peers.children.factory)
+    }
     engine.initialize()
     // `step` drains the queues and nothing else: a child session is run by the
     // parent's `tick`, so a machine that has one is driven by rounds of it.
@@ -172,7 +193,12 @@ func drive<Policy: StatePolicy>(
         donedata: { engine.donedataAtFinal },
         variables: variables,
         hostCalls: hostCalls,
-        childHosts: childHosts
+        childHosts: childHosts,
+        sent: peers.map { recorder in { recorder.sends.take() } },
+        deliverToChild: peers.map { recorder in
+            { path, event, data in recorder.children.deliver(path: path, event: event, data: data) }
+        },
+        settle: settle
     )
 }
 
@@ -269,10 +295,24 @@ private let scenarioDirectory: String = {
 
 /// The members of a step that a driver replays only by doing something this one does
 /// not: each fails the step that carries it.
-private let unreplayedStepMembers = ["restore", "invoke"]
+private let unreplayedStepMembers = ["restore"]
 
-/// The members of a step's `expect` this driver does not judge yet.
-private let unreplayedExpectMembers = ["sent"]
+/// `value` with the members of every object in the order of their keys' bytes: an object a
+/// scenario writes has no order, and what a machine or a host records of what it holds has no
+/// reason to write one in the author's.
+func byKey(_ value: JSONValue) -> JSONValue {
+    switch value {
+    case .object(let members):
+        return .object(
+            members.map { (key: $0.key, value: byKey($0.value)) }
+                .sorted { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }
+        )
+    case .array(let items):
+        return .array(items.map(byKey))
+    default:
+        return value
+    }
+}
 
 /// Fails the test that is replaying, at the line of the test that asked for it.
 private func record(_ message: String, _ at: SourceLocation) {
@@ -296,9 +336,11 @@ func replay(_ name: String, _ machine: Machine, sourceLocation: SourceLocation =
         record("scenario \(name) has no steps, which judges nothing", sourceLocation)
         return
     }
-    if case .bool(false)? = scenario.member("router") {
+    // A scenario of a machine given no router is replayed by a driver that registered none:
+    // one that records sends registered a router, and would replay another machine.
+    if case .bool(false)? = scenario.member("router"), machine.sent != nil {
         record(
-            "scenario \(name) gives the machine no Mesh router, which this driver does not replay yet",
+            "scenario \(name) gives the machine no Mesh router, and this driver gave it one",
             sourceLocation
         )
         return
@@ -329,10 +371,23 @@ func replay(_ name: String, _ machine: Machine, sourceLocation: SourceLocation =
             } else {
                 dropped = false
             }
-            if machine.resolves(event) == dropped {
-                fail("the machine's events \(dropped ? "match" : "do not match") `\(event)`")
+            if case .text(let path)? = step.member("invoke") {
+                // A peer's event for a running child session, handed to it through the router
+                // its parent gave it; the machine applies it when it next drives the child.
+                if let deliver = machine.deliverToChild {
+                    if !deliver(path, event, data) {
+                        fail("no child of `\(path)` is running to be sent `\(event)`")
+                    }
+                    machine.settle()
+                } else {
+                    fail("this driver gives children no routers, so it cannot send `\(event)` to `\(path)`")
+                }
+            } else {
+                if machine.resolves(event) == dropped {
+                    fail("the machine's events \(dropped ? "match" : "do not match") `\(event)`")
+                }
+                machine.send(event, data)
             }
-            machine.send(event, data)
         }
         // What the machine asked of its host in this step. Read on every step, so that
         // a step which states nothing does not hand its calls to the next, and a step
@@ -341,11 +396,10 @@ func replay(_ name: String, _ machine: Machine, sourceLocation: SourceLocation =
         // The child hosts asked for in this step, and what each child asked of its host,
         // read and held for the same reason.
         let children = machine.childHosts?()
+        // What the machine sent its Mesh peers in this step, read and held the same way.
+        let sentToPeers = machine.sent?()
         guard let expect = step.member("expect") else {
             continue
-        }
-        for member in unreplayedExpectMembers where expect.member(member) != nil {
-            fail("this driver does not judge `\(member)` yet")
         }
         if let want = expect.member("host_calls") {
             if let asked {
@@ -363,6 +417,15 @@ func replay(_ name: String, _ machine: Machine, sourceLocation: SourceLocation =
                 }
             } else {
                 fail("this driver records no child hosts, so it cannot hold a step to them")
+            }
+        }
+        if let want = expect.member("sent") {
+            if let sentToPeers {
+                if !sameValue(byKey(.array(sentToPeers)), byKey(want)) {
+                    fail("the machine sent its Mesh peers \(writeJSON(.array(sentToPeers))), not \(writeJSON(want))")
+                }
+            } else {
+                fail("this driver records no sends to Mesh peers, so it cannot hold a step to them")
             }
         }
         if case .bool(true)? = expect.member("ended") {
@@ -405,7 +468,7 @@ func replay(_ name: String, _ machine: Machine, sourceLocation: SourceLocation =
                     continue
                 }
                 let got = read()
-                if !sameValue(got, want) {
+                if !sameValue(byKey(got), byKey(want)) {
                     fail("variable \(variable) is \(writeJSON(got)), not \(writeJSON(want))")
                 }
             }

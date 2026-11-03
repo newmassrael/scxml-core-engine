@@ -1484,3 +1484,81 @@ private func recordBytes() -> Machine {
 @Test func aSendOfAComputedTypeGoesByAProcessorTheDocumentDeclares() {
     replay("static_send_type", sendType())
 }
+
+// MARK: - Mesh peers
+
+// The copies of a shared list, as each took part in a run of the world: every event a copy
+// was given, by its host or by a peer, with what it held and what it sent its peers after each.
+// The expected values are what the Rust engine did, which a test there holds to oracles that
+// read the network (`backends/rust/world`), and every other backend is held to them here.
+
+@Test func aPresenceCopyOfAliceAnswersAsTheWorldSawIt() {
+    replay("presence_peer_alice", presencePeer())
+}
+
+@Test func aPresenceCopyOfBobAnswersAsTheWorldSawIt() {
+    replay("presence_peer_bob", presencePeer())
+}
+
+@Test func aPresenceCopyOfTheServerAnswersAsTheWorldSawIt() {
+    replay("presence_peer_server", presencePeer())
+}
+
+@Test func aToDoCopyOfAliceAnswersAsTheWorldSawIt() {
+    replay("todo_peer_alice", todoPeer())
+}
+
+@Test func aToDoCopyOfBobAnswersAsTheWorldSawIt() {
+    replay("todo_peer_bob", todoPeer())
+}
+
+@Test func aToDoCopyOfTheServerAnswersAsTheWorldSawIt() {
+    replay("todo_peer_server", todoPeer())
+}
+
+@Test func aSheetCopyOfAliceAnswersAsTheWorldSawIt() {
+    replay("sheet_peer_alice", sheetPeer())
+}
+
+@Test func aSheetCopyOfBobAnswersAsTheWorldSawIt() {
+    replay("sheet_peer_bob", sheetPeer())
+}
+
+@Test func aSheetCopyOfTheServerAnswersAsTheWorldSawIt() {
+    replay("sheet_peer_server", sheetPeer())
+}
+
+// The standard record list, alone, as a person's copy, as a hub, and as the ones that change,
+// retire and take a record.
+
+@Test func aRecordListAloneHoldsWhatItIsGiven() {
+    replay("record_list_alone", sharedRecordList())
+}
+
+@Test func aRecordListTakesAChangeAndTellsItsPeers() {
+    replay("record_list_change", sharedRecordList())
+}
+
+@Test func aRecordListHubSettlesWhatItsPeopleSend() {
+    replay("record_list_hub", sharedRecordList())
+}
+
+@Test func aRecordListPersonWritesOverAValueAndSendsIt() {
+    replay("record_list_person", sharedRecordList())
+}
+
+@Test func aRecordListRetiresARecordAndTellsItsPeers() {
+    replay("record_list_retire", sharedRecordList())
+}
+
+// With no Mesh router every send to a peer is refused where it is made, and what a copy does to
+// itself is taken in all the same (docs/adr/0046, section 4).
+@Test func aRecordListWithNoRouterRefusesItsSendsAndTakesItsOwnChanges() {
+    replay("record_list_offline", sharedRecordList(routed: false))
+}
+
+// A child session that talks to a Mesh peer is given a router of its own by the machine that
+// starts it, and so is the child's own child (SCE_MESH.md, Child Sessions in Mesh).
+@Test func aChildSessionIsGivenAMeshRouterByTheMachineThatStartsIt() {
+    replay("static_child_mesh", childMesh())
+}
