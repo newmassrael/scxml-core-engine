@@ -16,14 +16,18 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-forge-conformance --features alloc --test forge_source_round_trip
-mutation_targets sce-build/src/forge/generator/rust_source.rs
+mutation_targets sce-build/src/forge/generator/rust_source.rs sce-build/src/forge/encode_plan.rs
 mutation_oracles backends/rust/forge-conformance/tests/forge_source_round_trip.rs
 
 mutation_case "an input is read with the wrong polarity" <<'PY'
 edit("sce-build/src/forge/generator/rust_source.rs",
-     r'''                if *when_clear {
+     r'''                    self.accessor(field)
+                );
+                if *when_clear {
                     format!("!{present}")''',
-     r'''                if !*when_clear {
+     r'''                    self.accessor(field)
+                );
+                if !*when_clear {
                     format!("!{present}")''')
 PY
 
@@ -47,13 +51,15 @@ edit("sce-build/src/forge/generator/rust_source.rs",
      r'''                    said.push("_ => Some(false),".to_string());''')
 PY
 
+# The encode plan derives the flag (docs/adr/0081 §1); the mutant plans none, so
+# the carrier keeps the bit the value presents. The measures are still made, so
+# nothing is left unused.
 mutation_case "a bound flag keeps the bit the value presents" <<'PY'
-edit("sce-build/src/forge/generator/rust_source.rs",
+edit("sce-build/src/forge/encode_plan.rs",
+     r'''                Derivation::BoundInput { binders } => measured(bound_input(model, binders, arms)),''',
      r'''                Derivation::BoundInput { binders } => {
-                    self.derive_bound_input(id, binders, lines, &mut derived)
-                }''',
-     r'''                Derivation::BoundInput { binders } => {
-                    let _ = (Self::derive_bound_input, binders);
+                    let _ = (measured, bound_input(model, binders, arms));
+                    continue;
                 }''')
 PY
 
