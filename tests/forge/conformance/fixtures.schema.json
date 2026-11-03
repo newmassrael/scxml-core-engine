@@ -504,7 +504,7 @@
               }
             },
             "grows": {
-              "description": "`Inline` holds no container of some entry of the codec: the protocol bounds it by nothing (docs/adr/0077 §7), so a fragment that names a storage profile names the growing one. Derived from the same parse the generator reads; fixtures.json never states it.",
+              "description": "The codec has no form at the default profile a fragment can name (docs/adr/0077 §7): `Inline` holds no container of some entry of a content-line codec, or no list of a positional one or of a codec it holds, whose protocol bounds it by nothing. A fragment names the growing profile instead. Derived from the same parse the generator reads; fixtures.json never states it.",
               "type": "boolean"
             },
             "has_test_vectors": {

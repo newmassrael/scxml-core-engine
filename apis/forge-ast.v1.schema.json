@@ -384,7 +384,7 @@
           "type": "string"
         },
         "type": {
-          "$ref": "#/definitions/AlgorithmValueType"
+          "$ref": "#/definitions/WrittenType"
         }
       },
       "required": [
@@ -409,28 +409,13 @@
         "return_type": {
           "anyOf": [
             {
-              "$ref": "#/definitions/AlgorithmValueType"
+              "$ref": "#/definitions/WrittenType"
             },
             {
               "type": "null"
             }
-          ]
-        },
-        "returns_limit": {
-          "description": "The name a build gives another number for (`sce:limit` on the `<sce:return>`, [`crate::limits`]): `returns_max_size` is already the number the build gave it, when it gave one.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "returns_max_size": {
-          "description": "Cap on the bytes a `return_type = bytes` algorithm may produce, declared via `sce:returns-max-size=\"N\"` on the `<sce:signature>`. Required when `return_type` is `bytes` (the output buffer's fixed capacity on the no-alloc profile); ignored otherwise. Mirrors [`ProcedureHelper::returns_max_size`]. `None` ⇒ non-bytes return.",
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
+          ],
+          "description": "The return's type, its bound inside it (docs/adr/0086, section 1.2): a return holds its value, so a text, byte string or list it returns states the most it holds ([`Self::returns_max_size`])."
         }
       },
       "required": [
@@ -442,24 +427,9 @@
       "description": "One statement in an algorithm body. Lowered to language-idiomatic constructs by each backend (RFC §synth-5-J-5 emitter table).",
       "oneOf": [
         {
-          "description": "`<sce:var name=... type=... init=... capacity=.../>` — local mutable binding. `capacity` is the fixed buffer bound, in bytes, and is required for — and only meaningful on — `type=\"bytes\"` locals: the growable byte buffer that `<sce:append>` ([`AlgorithmStmt::Append`]) fills (SCE byte-buffer-build, SCE_FORGE.md §4.12). It is `None` for scalar locals.\n\n`init` is the other half of the same split, the other way round: a scalar local starts at its initializer, so the parser requires one, and a bytes buffer starts empty, so the parser refuses one — absent on a bytes buffer, present on every other local.",
+          "description": "`<sce:var name=... type=... init=.../>` — local mutable binding. A buffer local (`bytes[N]`, `list<T>[N]`) that `<sce:append>` ([`AlgorithmStmt::Append`]) fills (SCE byte-buffer-build, SCE_FORGE.md §4.12), and a text, state their bound in `sce_type` (docs/adr/0086, section 1.2), the legacy `capacity=` read as that bracket ([`crate::forge::value_type::WrittenType::stated_outer_bound`]).\n\n`init` is the other half of the same split, the other way round: a scalar local starts at its initializer, so the parser requires one, and a bytes buffer starts empty, so the parser refuses one — absent on a bytes buffer, present on every other local.",
           "properties": {
-            "capacity": {
-              "format": "uint32",
-              "minimum": 0.0,
-              "type": [
-                "integer",
-                "null"
-              ]
-            },
             "init": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "limit": {
-              "description": "The name a build gives another number for (`sce:limit`, [`crate::limits`]): `capacity` is already the number the build gave it, when it gave one.",
               "type": [
                 "string",
                 "null"
@@ -475,7 +445,7 @@
               "type": "string"
             },
             "type": {
-              "$ref": "#/definitions/AlgorithmValueType"
+              "$ref": "#/definitions/WrittenType"
             }
           },
           "required": [
@@ -755,55 +725,6 @@
           "type": "object"
         }
       ]
-    },
-    "AlgorithmValueType": {
-      "anyOf": [
-        {
-          "allOf": [
-            {
-              "$ref": "#/definitions/SceType"
-            }
-          ],
-          "description": "A scalar — any [`SceType`], including `bytes`."
-        },
-        {
-          "description": "`list<T>` — a runtime-length sequence of `T`, bounded by the `capacity` of the local that builds it or the `returns-max-size` of the signature that returns it (SCE_FORGE.md §4.12, which states the same bound for a `bytes` buffer). `T` is a fixed-width scalar or a record whose fields are ([`ListElemType`]).",
-          "properties": {
-            "list": {
-              "$ref": "#/definitions/ListElemType"
-            }
-          },
-          "required": [
-            "list"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "`record:<alias>` — a value of the struct an imported `sce:kind=\"event-schema\"` document declares, named by that import's alias. Its fields are the schema's, read at import resolution, not here: this names the type the way `enum:<alias>` names an enum (SCE_FORGE.md §4.12).",
-          "properties": {
-            "record": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "record"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "`optional<T>` — a value that is either absent or a value of `T` (docs/adr/0055), over a scalar or a record ([`OptionalElemType`]). Absent is a value of this type and of no other.",
-          "properties": {
-            "optional": {
-              "$ref": "#/definitions/OptionalElemType"
-            }
-          },
-          "required": [
-            "optional"
-          ],
-          "type": "object"
-        }
-      ],
-      "description": "The type of an algorithm parameter, local or return: a scalar, a record, or a bounded list of either.\n\n⚠ A list is deliberately NOT a [`SceType`] variant. `SceType` is the type of a codec field, an event-schema field, a validator input — surfaces that are scalar-only by contract (see [`AlgorithmConstType`], which keeps its build-time `array<T, N>` out of `SceType` for the same reason). Adding the variant there would hand every one of those surfaces a case to refuse. The algorithm kind is the one place a runtime-length sequence is computed and returned, so the widening lives here.\n\nSerialized untagged: a scalar stays the bare string it always was (`\"int64\"`), so the forge-AST wire is byte-identical for every document that declares no list; a list serializes as `{\"list\": \"int64\"}`.\n\nAn optional value, `optional<T>` (docs/adr/0055), is a constructor of this type for the same reason: a scalar surface never meets a case it would only have to refuse. It serializes as `{\"optional\": \"int64\"}`."
     },
     "BackpressurePolicy": {
       "description": "`<sce:backpressure>` policy — RFC §synth-5-C body. All three policies parse, and the rust template lowers them uniformly (the policy threading into the runtime crate is an implementation concern of `sce-link-runtime`).",
@@ -5411,31 +5332,6 @@
       ],
       "type": "object"
     },
-    "ListElemType": {
-      "anyOf": [
-        {
-          "allOf": [
-            {
-              "$ref": "#/definitions/SceType"
-            }
-          ],
-          "description": "A fixed-width number or `bool`."
-        },
-        {
-          "description": "`record:<alias>` — a value of the struct the aliased event-schema import declares.",
-          "properties": {
-            "record": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "record"
-          ],
-          "type": "object"
-        }
-      ],
-      "description": "The element of an algorithm `list<T>`: a fixed-width scalar ([`AlgorithmValueType::list_elem_admitted`]) or a record named by its event-schema import alias, whose fields are fixed-width by the record rule itself (SCE_FORGE.md §4.12).\n\n⚠ One list type with a wider element, not a second list variant. Every site that asks a list for its element — the renderer, the type context, the statechart datamodel — must then say what it does with a record element; a separate variant would let each of them skip it silently.\n\nSerialized untagged, as [`AlgorithmValueType`] is: a scalar element stays the bare string (`{\"list\": \"int64\"}`), and a record one takes the record type's own shape (`{\"list\": {\"record\": \"Hlc\"}}`)."
-    },
     "LookupEntry": {
       "description": "A single key-value entry in a lookup table.",
       "properties": {
@@ -5547,31 +5443,6 @@
         "link"
       ],
       "type": "object"
-    },
-    "OptionalElemType": {
-      "anyOf": [
-        {
-          "allOf": [
-            {
-              "$ref": "#/definitions/SceType"
-            }
-          ],
-          "description": "A scalar: a fixed-width number, `bool`, `string`, `bytes` or a value of an enum."
-        },
-        {
-          "description": "`record:<alias>` — a value of the struct the aliased event-schema import declares.",
-          "properties": {
-            "record": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "record"
-          ],
-          "type": "object"
-        }
-      ],
-      "description": "The element of an `optional<T>` (docs/adr/0055): a scalar, or a record named by its event-schema import alias.\n\nA list is no element: a list is a variable and never a value, and its resting state, empty, is its own. An optional value is no element either: the carriers that spell absence as one value (JSON's and ECMAScript's `null`, Python's `None`, Kotlin's `T?`) would hold two absences as one.\n\nSerialized untagged, as [`ListElemType`] is: a scalar element stays the bare string (`{\"optional\": \"int64\"}`), and a record one takes the record type's own shape (`{\"optional\": {\"record\": \"Item\"}}`)."
     },
     "OutOfBounds": {
       "description": "Out-of-bounds handling for interpolation.",
@@ -7188,19 +7059,13 @@
     "ValueType": {
       "anyOf": [
         {
-          "allOf": [
-            {
-              "$ref": "#/definitions/SceType"
-            }
-          ],
-          "description": "A fixed-width number, `bool`, or `enum:<alias>`."
+          "$ref": "#/definitions/SceType"
         },
         {
-          "description": "`string[B]`: a UTF-8 text of at most `max` bytes.",
           "properties": {
             "string": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 1.0,
               "type": "integer"
             }
           },
@@ -7210,11 +7075,10 @@
           "type": "object"
         },
         {
-          "description": "`bytes[B]`: a byte string of at most `max` bytes.",
           "properties": {
             "bytes": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 1.0,
               "type": "integer"
             }
           },
@@ -7224,7 +7088,6 @@
           "type": "object"
         },
         {
-          "description": "`optional<T>`: absent, or a value of `elem`. `elem` is never itself optional.",
           "properties": {
             "optional": {
               "$ref": "#/definitions/ValueType"
@@ -7236,7 +7099,6 @@
           "type": "object"
         },
         {
-          "description": "`record:<alias>`: a value of the struct the aliased event schema declares.",
           "properties": {
             "record": {
               "type": "string"
@@ -7248,14 +7110,13 @@
           "type": "object"
         },
         {
-          "description": "`list<T>[B]`: an ordered sequence of at most `max` values of `elem`.",
           "properties": {
             "list": {
               "$ref": "#/definitions/ValueType"
             },
             "max": {
               "format": "uint32",
-              "minimum": 0.0,
+              "minimum": 1.0,
               "type": "integer"
             }
           },
@@ -7266,21 +7127,11 @@
           "type": "object"
         }
       ],
-      "description": "A type of the grammar, generic over what stands where a bound is written: [`Bound`] in a [`ValueType`], whose every bound is stated, and `Option<Bound>` in a [`WrittenType`], a type as written before a legacy attribute has supplied its outermost bound.\n\nOne constructor per line of the grammar. `Scalar` holds a fixed-width number, `bool` or a value of an enum, never `string` or `bytes`: a text and a byte string are `Text` and `Bytes`, whose bound is part of them.\n\nSerialized untagged, as the model's other types are: a scalar is the bare string it always was (`\"int64\"`), and each other constructor an object keyed by its own name, its bound beside it: `{\"string\": 8}`, `{\"bytes\": 4}`, `{\"optional\": \"int64\"}`, `{\"record\": \"Item\"}`, `{\"list\": \"uint8\", \"max\": 2}`."
+      "description": "A type of the one type grammar (docs/adr/0086, section 1): a scalar's bare name, or an object keyed by its constructor, its bound beside it."
     },
     "Variable": {
       "description": "§scxml-5.2: Datamodel variable",
       "properties": {
-        "capacity": {
-          "default": null,
-          "description": "A `list<T>` or `string` variable's declared bound, `sce:capacity`: the most elements, or UTF-8 bytes, it ever holds, on every backend. An append or an assignment past it is an execution error, not growth. `None` for any other variable, serialised as `null`: a template probes `capacity` with `is not none` (the module's `Option<T>` convention).",
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
         "content": {
           "type": "string"
         },
@@ -7300,13 +7151,6 @@
         },
         "id": {
           "type": "string"
-        },
-        "limit": {
-          "description": "The name a build gives another number for (`sce:limit`, [`crate::limits`]): `capacity` is already the number the build gave it, when it gave one.",
-          "type": [
-            "string",
-            "null"
-          ]
         },
         "presence": {
           "anyOf": [
@@ -7379,13 +7223,13 @@
         "value_type": {
           "anyOf": [
             {
-              "$ref": "#/definitions/AlgorithmValueType"
+              "$ref": "#/definitions/WrittenType"
             },
             {
               "type": "null"
             }
           ],
-          "description": "The type `sce:type` declares, in the Forge value-type grammar. Present exactly when the document declares [`Datamodel::SceStatic`], which requires it on every `<data>` (docs/SCE_ACCEPTED_SUBSET.md §2.15). Under any other data model an `sce:type` is the authoring tool's typed I/O declaration and is not carried here."
+          "description": "The type `sce:type` declares, in the Forge value-type grammar. Present exactly when the document declares [`Datamodel::SceStatic`], which requires it on every `<data>` (docs/SCE_ACCEPTED_SUBSET.md §2.15). Under any other data model an `sce:type` is the authoring tool's typed I/O declaration and is not carried here.\n\nA list, text or byte string variable states its bound in the type (docs/adr/0086, section 1.2), the legacy `sce:capacity` read as that bracket: [`Self::capacity`] and [`Self::limit`] read it."
         }
       },
       "required": [
@@ -7427,6 +7271,78 @@
         "value"
       ],
       "type": "object"
+    },
+    "WrittenType": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/SceType"
+        },
+        {
+          "properties": {
+            "string": {
+              "format": "uint32",
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "string"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "bytes": {
+              "format": "uint32",
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "optional": {
+              "$ref": "#/definitions/WrittenType"
+            }
+          },
+          "required": [
+            "optional"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "record": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "record"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "list": {
+              "$ref": "#/definitions/WrittenType"
+            },
+            "max": {
+              "format": "uint32",
+              "minimum": 1.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "list"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "A type of the one type grammar (docs/adr/0086, section 1): a scalar's bare name, or an object keyed by its constructor, its bound beside it."
     }
   },
   "description": "Compiler-IR-faithful serialization of a parsed SCE Forge document, emitted by `sce-codegen generate --emit-ast=<path>`. Authoritative definitions live in sce-build/src/forge/model.rs (`ForgeDocument`, `ParsedForge`). Consumers MUST ignore unknown fields inside `ast.document` (which mirrors the Rust IR type tree); the top-level envelope is closed. See docs/SCE_FORGE_AST.md for the consumer contract.",
