@@ -402,6 +402,30 @@ when it is called production.
   (HKDF-Expand written as its one HMAC block, HMAC-SHA-256, XChaCha20-Poly1305), so it pins the
   construction and not only the bytes, and the recorded bytes open into the contents sealed. It is
   recorded with `SCE_SEALED_KAT=write` (`docs/SCE_SHARED_LIST_PEER_ABI.md` section 6).
+- **A relay's refusal for the rate is flow control, waited out on the clock of whoever carries the
+  texts, and every decision is logged** (2026-11-03). A phone pushing the log of a list it had just
+  made (195 operations, one `submit` each) met the per-device allowance (`Limits::default`: a burst of
+  120, 20 a second) and the relay's `rate_limited` with a wait of 20 ms; the driver handed it to the
+  exchange, so the whole round ended `rate_limited` and the host had to schedule a round for a wait of
+  20 ms, and neither side logged anything, so the diagnosis took inference. The driver now waits a
+  `rate_limited` out and puts the same request again while the wait ends before the deadline (RFC
+  9110's `Retry-After`), and gives the exchange the refusal only when it would end at the deadline or
+  after, or never; a cancellation wakes the wait. Every path of the relay refuses for the rate before
+  it does anything of the request, the login's included, whose node limit and used challenges are now
+  asked before the entries it brought are appended (`docs/SCE_SHARED_LIST_RELAY.md` section 4). The
+  WebSocket upgrade's `429` is the transport's `TransportError::RateLimited`, which a link reads as
+  the relay's `rate_limited`, so both are waited out alike. The wait belongs to the clock of whoever
+  carries the texts (`driver::Clock`, `drive_with`): the system's for a link the library holds, and
+  through the C ABI the function a host's own transport gives (`sce_peer_link_set_pause`), so that a
+  host whose time is not the system's (the world, whose relay counts virtual time) waits on its own
+  clock rather than sleeping. Each decision of the relay (every refusal and limit, by name, with its
+  wait and counts; admissions, appends, lapses), of the WebSocket link (dials, refusals, connections
+  given up), of the driver (waits, refusals given over, failures, stops) and of the peer core
+  (exchanges ended, what the relay is owed given or kept, logins and joins) is a record of the `log`
+  facade, written in one form (`sce_rust_relay::logs`), naming a list by a digest and never a token,
+  a key, a signature or anything a list holds; `sce-relay` writes them to the journal at the level
+  `SCE_RELAY_LOG` says, and a host installs a sink through the C ABI (`sce_peer_set_log_sink`). The
+  ABI is version 6 (`docs/SCE_SHARED_LIST_PEER_ABI.md` sections 11 and 14).
 
 ## Alternatives considered
 

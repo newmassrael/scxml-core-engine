@@ -310,11 +310,53 @@ fun interface HostTransport {
 }
 
 /**
+ * A host's wait on its own clock (`ScePeerPauseFn`): the wait a run over the host's transport takes
+ * when the relay refused a request for the rate. A host whose time is not the system's (a simulation)
+ * gives one; with none, the run's thread sleeps the wait.
+ */
+fun interface HostPause {
+    /**
+     * Waits [waitMs] of the host's time: `true` when it waited all of it, `false` when it returned
+     * earlier, as it must once the host raises the run's cancellation.
+     */
+    fun pause(waitMs: Long): Boolean
+}
+
+/** The process's sink of what the library logs (`sce_peer_set_log_sink`). */
+object PeerLog {
+    /** The sink installed, held so that the JVM does not collect a callback the library calls. */
+    @Volatile private var installed: LogFn? = null
+
+    /**
+     * Gives [sink] each record at [maxLevel] (`ScePeerAbi.LOG_*`) and the levels before it: its level,
+     * the module that decided it and the record as one line. It may be called from any thread, and
+     * from several at once. A later call replaces it; [sink] `null` or `LOG_OFF` removes it.
+     */
+    fun install(lib: ScePeerLib, maxLevel: Int, sink: ((Int, String, String) -> Unit)?) {
+        val callback =
+            sink?.let {
+                object : LogFn {
+                    override fun callback(level: Int, target: String?, message: String?, user: Pointer?) {
+                        it(level, target ?: "", message ?: "")
+                    }
+                }
+            }
+        lib.check(lib.sce_peer_set_log_sink(maxLevel, callback, null), "set_log_sink")
+        installed = callback
+    }
+}
+
+/**
  * A link to the relay that the library holds (`ScePeerLink`). A host's transport is held here as
  * long as the link is, since the library calls it until the link is freed and a callback the JVM
  * collected is one JNA can no longer call.
  */
-class PeerLink private constructor(lib: ScePeerLib, handle: Pointer, @Suppress("unused") private val exchange: ExchangeFn?) : Handle(lib, handle, lib::sce_peer_link_free) {
+class PeerLink private constructor(
+    lib: ScePeerLib,
+    handle: Pointer,
+    @Suppress("unused") private val exchange: ExchangeFn?,
+    @Suppress("unused") private val pause: PauseFn? = null,
+) : Handle(lib, handle, lib::sce_peer_link_free) {
     companion object {
         /**
          * The relay's WebSocket binding at [base], presenting [token] (`sce_peer_link_wss`), or none
@@ -342,9 +384,11 @@ class PeerLink private constructor(lib: ScePeerLib, handle: Pointer, @Suppress("
 
         /**
          * A link whose every exchange [transport] carries (`sce_peer_link_host`). It is called on the
-         * thread that runs, and a failure it throws is the link's failure, with its words.
+         * thread that runs, and a failure it throws is the link's failure, with its words. A run waits
+         * out the relay's refusal for the rate with [pause], on the host's clock
+         * (`sce_peer_link_set_pause`), or, with none, by sleeping its thread.
          */
-        fun host(lib: ScePeerLib, transport: HostTransport): PeerLink {
+        fun host(lib: ScePeerLib, transport: HostTransport, pause: HostPause? = null): PeerLink {
             val exchange = object : ExchangeFn {
                 override fun callback(context: Pointer?, request: Pointer?, len: NativeLong, timeoutMs: Long, reply: Pointer?): Int {
                     val text = request?.getByteArray(0, len.toInt())?.toString(Charsets.UTF_8) ?: ""
@@ -366,9 +410,27 @@ class PeerLink private constructor(lib: ScePeerLib, handle: Pointer, @Suppress("
                     return status
                 }
             }
-            // The callback is held by the link for as long as the library may call it.
+            // The callbacks are held by the link for as long as the library may call them.
             val handle = lib.sce_peer_link_host(exchange, null, null) ?: throw ScePeerException(ScePeerAbi.ERR_NULL_ARGUMENT, "link_host: ${lib.sce_peer_last_error()}")
-            return PeerLink(lib, handle, exchange)
+            val paused =
+                pause?.let {
+                    object : PauseFn {
+                        override fun callback(context: Pointer?, waitMs: Long): Int =
+                            try {
+                                if (it.pause(waitMs)) ScePeerAbi.PAUSE_WAITED else ScePeerAbi.PAUSE_WOKEN
+                            } catch (failure: Exception) {
+                                ScePeerAbi.PAUSE_WOKEN
+                            }
+                    }
+                }
+            if (paused != null) {
+                val status = lib.sce_peer_link_set_pause(handle, paused)
+                if (status != ScePeerAbi.OK) {
+                    lib.sce_peer_link_free(handle)
+                    throw ScePeerException(status, "link_set_pause: ${lib.sce_peer_last_error()}")
+                }
+            }
+            return PeerLink(lib, handle, exchange, paused)
         }
     }
 

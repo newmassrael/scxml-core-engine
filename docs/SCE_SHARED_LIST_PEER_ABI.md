@@ -43,7 +43,14 @@ reviewer learns one set of rules:
   version 5, which holds the invitations (section 6). The creation of a list with no token and its
   lapse (ADR 0080 section 3, section 13) move no number either: `sce_peer_certified_name` is a
   function added alone, and `sce_peer_login` creates a list only at a relay whose challenge asks
-  work, which no relay asked before, with an outcome of a login's shape;
+  work, which no relay asked before, with an outcome of a login's shape. The version is 6
+  (2026-11-03): `sce_peer_run` waits out a relay's refusal for the rate and puts the same request
+  again while the wait ends before its deadline (section 11), where version 5 ended the round with the
+  refusal, a changed meaning of a function; a host's transport may say its connection was refused for
+  the rate (`SCE_PEER_TRANSPORT_RATE_LIMITED`) and give the wait on its own clock
+  (`sce_peer_link_set_pause`, `ScePeerPauseFn`, `SCE_PEER_PAUSE_*`); and a host installs the sink of
+  what the library logs (`sce_peer_set_log_sink`, `ScePeerLogFn`, `SCE_PEER_LOG_*`, section 14),
+  with a status appended (`SCE_PEER_ERR_SINK_TAKEN`);
 - a handle (`ScePeer`, `ScePeerLink`, `ScePeerCancel`) is made and freed by the library and used by
   one thread at a time, but for the two calls section 11 lets any thread make at any time (raising a
   run's cancellation, telling a link the network changed);
@@ -107,6 +114,7 @@ The reason of a refusal and the count of a restore may be null.
 | `SCE_PEER_ERR_BAD_ARGUMENT` | 23 | a number is outside what it may be (a kind of round, a profile, a role); an address a link cannot be made to; a token given to a host's own transport |
 | `SCE_PEER_ERR_CANCELLED` | 24 | `sce_peer_run` stopped because its cancellation was raised; the exchange ended as a failure of the link, and its outcome waits (section 11) |
 | `SCE_PEER_ERR_DEADLINE` | 25 | `sce_peer_run` stopped because its deadline passed, with the same end |
+| `SCE_PEER_ERR_SINK_TAKEN` | 26 | `sce_peer_set_log_sink`: another sink of the library's records was installed in the process first (a Rust library in the same image installed its own); nothing was installed (section 14) |
 
 A refusal by the trust of what the machine sent, and a failure of the transport or the relay in a
 round, are not statuses: they are answers, in the answer to a send and in the outcome (sections 4
@@ -158,7 +166,9 @@ log is written (section 7).
 | `sce_peer_link_network_changed(link)` | the link's `Transport::network` raised | the device's network changed; any thread, at any time |
 | `sce_peer_link_take_notices(link, out)` | `Transport::take_notices` | what became of the connection and what the relay pushed, as one JSON array; empty when nothing |
 | `sce_peer_link_set_token(link, token)` | `Transport::set_token` | the token the link presents from its next dial, null or empty for none (section 11); `SCE_PEER_ERR_BAD_ARGUMENT` for a host's own transport |
+| `sce_peer_link_set_pause(link, pause)` | the run's `driver::Clock` | the wait of a run over a host's own transport, on the host's clock, null for the system's (section 11); `SCE_PEER_ERR_BAD_ARGUMENT` for a link of the library's own transport |
 | `sce_peer_reply(reply, text, len)` | | from a host's transport: the response of the exchange, or the reason it has none |
+| `sce_peer_set_log_sink(max_level, sink, user)` | the `log` facade's sink | the process's sink of what the library logs, replaceable, null or `SCE_PEER_LOG_OFF` for none (section 14) |
 | `sce_peer_cancel_new()`, `sce_peer_cancel_free(cancel)` | a `Signal` | a cancellation of a run, and freeing it |
 | `sce_peer_cancel_raise(cancel)` | `Signal::raise` | cancels the run given it; any thread, at any time |
 | `sce_peer_run(peer, link, within_ms, cancel)` | `drive` | runs the exchange begun on the core over the link, on the calling thread, to its end, its deadline or its cancellation |
@@ -227,7 +237,7 @@ The outcome is a JSON object, read by its members' names:
 | `owed` | ended | how many commits, Welcomes and keys given of the administrator's acts the relay is still owed once the exchange ended (section 7); one the relay did not take is among `refused` |
 | `token` | a login that ended | `{"token": text, "expires_at_ms": text}`: the token the relay issued, and when it expires by the relay's clock; the member is not written for any other exchange |
 | `failure` | failed | `"link"` (the transport), `"relay"` (the relay refused the round as a whole) or `"unexpected"` (an answer that is not the answer to the request) |
-| `code` | failed by the relay | the relay protocol's word for the refusal (`"forbidden"`, `"rate_limited"`, ...), and `retry_after_ms` as text when it is a rate limit |
+| `code` | failed by the relay | the relay protocol's word for the refusal (`"forbidden"`, `"rate_limited"`, ...), and `retry_after_ms` as text when it is a rate limit: over a run (section 11), only one whose wait would end at the run's deadline or after it, or never, since a run waits out every other |
 | `reason` | failed | why |
 
 A 64-bit number is written as text, as the relay protocol writes it. The MLS records a round read are
@@ -568,10 +578,28 @@ reachability and the permission to run (ADR 0079 section 5). The link is one of 
   *reply)`: it carries the request (`len` bytes of UTF-8, not NUL-terminated, valid for the call),
   gives the response text with `sce_peer_reply(reply, text, len)` (copied), and returns
   `SCE_PEER_TRANSPORT_ANSWERED` (0); or it returns `SCE_PEER_TRANSPORT_LINK` (1, not carried),
-  `_UNAUTHORIZED` (2, the token was refused), `_DEADLINE` (3) or `_CANCELLED` (4), with the reason
-  given by `sce_peer_reply` when there is one. It may take at most `timeout_ms` (`UINT64_MAX` when
-  the run has no deadline). `release`, which may be null, is called once with `context` when the link
-  is freed.
+  `_UNAUTHORIZED` (2, the token was refused), `_DEADLINE` (3), `_CANCELLED` (4) or `_RATE_LIMITED`
+  (5, the relay's endpoint refused the connection for the rate before it carried the request, an
+  HTTP 429), with the reason given by `sce_peer_reply` when there is one; for `_RATE_LIMITED` the text
+  given is the wait the endpoint asked for, in milliseconds, as decimal digits (a host reading
+  `Retry-After: 2` gives `2000`), which the run waits out as it waits out the relay's `rate_limited`,
+  and a text that is no such number makes the exchange the link's failure. It may take at most
+  `timeout_ms` (`UINT64_MAX` when the run has no deadline). `release`, which may be null, is called
+  once with `context` when the link is freed.
+- `sce_peer_link_set_pause(link, pause)` gives a link whose transport the host carries the wait its
+  runs take on the host's clock: `int32_t (*)(void *context, uint64_t wait_ms)`, called with the
+  transport's context on the running thread between two exchanges, which waits `wait_ms` of the
+  host's time and returns `SCE_PEER_PAUSE_WAITED` (0), or returns `SCE_PEER_PAUSE_WOKEN` (1) earlier,
+  at the latest once the host raises the run's cancellation. Null is the system's clock, which a host's
+  transport has until it is given a pause: the run's thread then sleeps the relay's wait, woken by the
+  cancellation. That is what a host whose time is the system's wants, and what a host whose time is
+  its own does not: a simulation whose relay counts the host's time would see the run sleep while its
+  relay's allowance never refills, and the request asked again at the same instant of its own clock
+  refused again; it gives a pause that moves its clock (the world's step server does, as `peer_pause`
+  of `sce_rust_world::external`, `backends/kotlin/world`). A pause that returns early
+  without the cancellation costs one more request, which the relay refuses with the wait that is left.
+  `SCE_PEER_ERR_BAD_ARGUMENT` for a link of the library's own transport, whose time is the system's.
+  Not while a run uses the link.
 - `sce_peer_run(peer, link, within_ms, cancel)` runs the exchange begun on the core
   (`sce_peer_start`, a publication) over the link **on the calling thread, blocking**, until it ends,
   `within_ms` milliseconds pass (`UINT64_MAX`: no deadline) or `cancel` (which may be null) is
@@ -581,7 +609,17 @@ reachability and the permission to run (ADR 0079 section 5). The link is one of 
   leaves an outcome of a failure of the link (`"the exchange was cancelled"`, `"the deadline passed
   before the relay answered"`, `"the network changed"`, or the transport's words), and what the
   exchange took in is handed over by the next round, as section 5 says of any exchange that does not
-  end.
+  end. **A refusal for the rate is waited out** (version 6): when the relay answers a request
+  `rate_limited`, or the endpoint refuses the connection for the rate (the WebSocket link's `429`, a
+  host's `SCE_PEER_TRANSPORT_RATE_LIMITED`), and its wait ends before the run's deadline (or there is
+  none) and is not `u64::MAX` (the relay's word for never), the run waits it out, on the host's clock
+  when the link was given a pause and on the system's otherwise, and puts the same request again, as
+  many times as the relay asks: the relay refuses for the rate before it does anything of a request
+  (`docs/SCE_SHARED_LIST_RELAY.md` section 4), so the request asked again is a request asked for the
+  first time. A wait that would end at the deadline or after it ends the exchange with the refusal,
+  whose outcome holds `code: "rate_limited"` and `retry_after_ms`; a cancellation raised during a wait
+  stops the run as during an exchange (`SCE_PEER_ERR_CANCELLED`). A host that gives no deadline
+  gives the relay the word on how long a run lasts; its cancellation is what ends it.
 - `sce_peer_link_set_token(link, token)` gives the link the token it presents from its next dial
   (null or empty for none): the one a login's outcome holds. A connection open now that was dialled
   with another is given up, and the next run dials again (a `lost` notice, then `connected`). It is
@@ -729,3 +767,36 @@ core does both through the login, so a lane adds one call.
 The recorded scenario keeps creation closed (alice's device gives the list's first entries with a
 token of the authority); the creation, its lapse and its creation again through the ABI are
 `a_list_created_with_no_token_lapses_and_a_device_that_holds_it_creates_it_again`.
+
+## 14. What the library logs, and the sink a host installs
+
+Each decision of the library is a record (version 6): of the relay's WebSocket link (a dial, with the
+endpoint and whether a token is presented; a connection made; an upgrade refused, with its status and
+the relay's words, and the wait of a `429`; a connection given up and why), of the driver (each wait
+for the rate, with the request's kind, how long and how many refusals in a row; a refusal given over
+because its wait does not fit, with the time left; a failure of the link; a run stopped by its
+cancellation or deadline; each request answered, at debug), of a host's pause (at debug), and of the
+core (an exchange ended, in counts: the events, what the relay was given, the refusals, whether it
+stalled or the machine is to be rebuilt, what the relay is still owed, and whether a token came; an
+exchange failed, with the link's words or the relay's code, reason and wait, and an unexpected answer
+by its kind alone; what the relay is owed given or kept, by its kind). A relay in the same process
+logs its own decisions the same way (`docs/SCE_RELAY_DEPLOY.md` section 2). A record names counts,
+codes, node numbers, durations, an endpoint, the relay's reasons and a list by a digest of its name
+(`list=1a2b3c4d`); never a token, a key, a signature, a nonce, an invitation's text or anything a list
+holds.
+
+`sce_peer_set_log_sink(max_level, sink, user)` installs the sink, process-wide: `void (*)(int32_t
+level, const char *target, const char *message, void *user)`, given each record at `max_level` and
+the levels before it (`SCE_PEER_LOG_ERROR` 1, `_WARN` 2, `_INFO` 3, `_DEBUG` 4, `_TRACE` 5), the
+module that decided it (`sce_rust_relay::driver`, `sce_rust_peer`, ...), the record as one line of
+`key=value` words (`event=rate_limited_wait op=submit wait_ms=20 limited=1 deadline=true`, a value in
+quotes when it holds a space, a quote, an `=` or a control character, which is escaped), both
+NUL-terminated UTF-8 valid for the call, and `user`. The sink may be called from any thread that
+calls the library and from several at once, so it is thread-safe, and it calls no function of the
+library. It is replaceable: a later call replaces it, and a null `sink` or `SCE_PEER_LOG_OFF` (0)
+removes it; once the call returns, the sink it replaced is called no more and its `user` may be
+freed. The library logs nothing, and formats nothing, until a sink is installed. A level that is none
+of these is refused (`SCE_PEER_ERR_BAD_ARGUMENT`); and `SCE_PEER_ERR_SINK_TAKEN` says another sink of
+the facade was installed in the process first, which a host that links only this library never meets.
+An Android host forwards each record to `android.util.Log`, an iOS host to `os_log`, at the level
+given.

@@ -39,14 +39,16 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::{Cell, RefCell, UnsafeCell};
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::{OnceLock, PoisonError, RwLock};
 use std::time::{Duration, Instant};
 
 use sce_rust_peer::{
-    drive, CourierError, DataKey, Device, Driven, GroupStep, Kept, Outcome, Peer, PeerError,
-    Profile, Publication, Round, RoundKind, Signal, Standing, Transport, TransportError,
+    drive, drive_with, Clock, CourierError, DataKey, Device, Driven, GroupStep, Kept, Outcome,
+    Peer, PeerError, Profile, Publication, Round, RoundKind, Signal, Standing, Transport,
+    TransportError,
 };
 use sce_rust_relay::tls::{self, Roots};
 use sce_rust_relay::wss::WssLink;
@@ -77,8 +79,13 @@ use serde_json::{json, Value};
 /// which holds the invitations. The creation of ADR 0080 section 3 moves none either: a login that
 /// meets a relay holding no such list and asking work creates the list ([`sce_peer_login`]), work no
 /// relay asked before, and its outcome has the shape of a login's; and [`sce_peer_certified_name`]
-/// is a function added alone.
-pub const SCE_PEER_ABI_VERSION: u32 = 5;
+/// is a function added alone. Version 6: a run waits out the relay's refusal for the rate and puts
+/// the same request again while the wait ends before its deadline, where version 5 ended the round
+/// with the refusal, a changed meaning of [`sce_peer_run`]; a host's transport may say the relay
+/// refused it for the rate (`SCE_PEER_TRANSPORT_RATE_LIMITED`) and give the wait its run takes on
+/// the host's own clock ([`sce_peer_link_set_pause`]); and a host installs the sink of what the
+/// library logs ([`sce_peer_set_log_sink`]), with a status appended (`SCE_PEER_ERR_SINK_TAKEN`).
+pub const SCE_PEER_ABI_VERSION: u32 = 6;
 
 pub const SCE_PEER_OK: i32 = 0;
 pub const SCE_PEER_ERR_NOTHING_ASKED: i32 = 1;
@@ -115,6 +122,9 @@ pub const SCE_PEER_ERR_BAD_ARGUMENT: i32 = 23;
 /// the exchange ended as a failure of the link, and its outcome waits.
 pub const SCE_PEER_ERR_CANCELLED: i32 = 24;
 pub const SCE_PEER_ERR_DEADLINE: i32 = 25;
+/// [`sce_peer_set_log_sink`]: the process has another sink of the library's records installed (a
+/// Rust library in the same image installed its own), and the host's is not installed.
+pub const SCE_PEER_ERR_SINK_TAKEN: i32 = 26;
 
 /// What a host's transport says of one exchange ([`ScePeerExchangeFn`]): the response was given,
 /// or why it was not ([`TransportError`]).
@@ -123,6 +133,24 @@ pub const SCE_PEER_TRANSPORT_LINK: i32 = 1;
 pub const SCE_PEER_TRANSPORT_UNAUTHORIZED: i32 = 2;
 pub const SCE_PEER_TRANSPORT_DEADLINE: i32 = 3;
 pub const SCE_PEER_TRANSPORT_CANCELLED: i32 = 4;
+/// The relay's endpoint refused the connection for the rate before it carried the request (an
+/// HTTP 429): the text given with [`sce_peer_reply`] is the wait it asked for, in milliseconds, as
+/// decimal digits. The run waits it out as it waits out the relay's `rate_limited`.
+pub const SCE_PEER_TRANSPORT_RATE_LIMITED: i32 = 5;
+
+/// What a host's pause says of the wait it was asked for ([`ScePeerPauseFn`]): it waited all of
+/// it, or it returned before (the run's cancellation was raised, or a reason of the host's).
+pub const SCE_PEER_PAUSE_WAITED: i32 = 0;
+pub const SCE_PEER_PAUSE_WOKEN: i32 = 1;
+
+/// The levels of what the library logs ([`sce_peer_set_log_sink`]): a sink is given the records at
+/// its level and the levels before it; `SCE_PEER_LOG_OFF` is none.
+pub const SCE_PEER_LOG_OFF: i32 = 0;
+pub const SCE_PEER_LOG_ERROR: i32 = 1;
+pub const SCE_PEER_LOG_WARN: i32 = 2;
+pub const SCE_PEER_LOG_INFO: i32 = 3;
+pub const SCE_PEER_LOG_DEBUG: i32 = 4;
+pub const SCE_PEER_LOG_TRACE: i32 = 5;
 
 /// What [`sce_peer_outbound`] says the core did with a send ([`Kept`]).
 pub const SCE_PEER_KEPT_TAKEN: i32 = 0;
@@ -378,19 +406,6 @@ fn group_step(step: &GroupStep) -> Value {
     }
 }
 
-/// The word the relay's protocol names a refusal by.
-fn code_tag(code: &Code) -> &'static str {
-    match code {
-        Code::Unauthorized => "unauthorized",
-        Code::Forbidden => "forbidden",
-        Code::RateLimited { .. } => "rate_limited",
-        Code::TooLarge => "too_large",
-        Code::Invalid => "invalid",
-        Code::Behind => "behind",
-        Code::Unavailable => "unavailable",
-    }
-}
-
 /// What an exchange came to, as the one text [`sce_peer_take_outcome`] gives.
 fn outcome_text(outcome: &Result<Outcome, CourierError>) -> String {
     let value = match outcome {
@@ -449,7 +464,7 @@ fn outcome_text(outcome: &Result<Outcome, CourierError>) -> String {
             let mut value = json!({
                 "outcome": "failed",
                 "failure": "relay",
-                "code": code_tag(code),
+                "code": code.tag(),
                 "reason": reason,
             });
             if let Code::RateLimited { retry_after_ms } = code {
@@ -1328,14 +1343,55 @@ pub unsafe extern "C" fn sce_peer_restore_sealed(
 pub struct ScePeerLink {
     transport: UnsafeCell<Box<dyn Transport>>,
     network: Signal,
+    /// The context of a host's transport, which its pause is called with; `None` for a transport
+    /// of the library's own, whose time is the system's.
+    host: Option<*mut c_void>,
+    /// The wait of a run over a host's transport, on the host's clock ([`sce_peer_link_set_pause`]);
+    /// `None` for the system's clock.
+    pause: Cell<Option<ScePeerPauseFn>>,
 }
 
 impl ScePeerLink {
+    /// A link over one of the library's own transports.
     fn over(transport: Box<dyn Transport>) -> Self {
         Self {
             network: transport.network(),
             transport: UnsafeCell::new(transport),
+            host: None,
+            pause: Cell::new(None),
         }
+    }
+
+    /// A link over a host's transport, whose functions are given `context`.
+    fn hosted(transport: Box<dyn Transport>, context: *mut c_void) -> Self {
+        Self {
+            host: Some(context),
+            ..Self::over(transport)
+        }
+    }
+}
+
+/// A run's clock when its link is a host's transport that gave its pause: the system's time, which
+/// the run's deadline is given in, and the host's wait, on the host's own clock.
+struct HostClock {
+    pause: ScePeerPauseFn,
+    context: *mut c_void,
+}
+
+impl Clock for HostClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+
+    fn wait(&self, wait: Duration, cancel: &Signal) {
+        if cancel.is_raised() {
+            return;
+        }
+        let wait_ms = u64::try_from(wait.as_millis()).unwrap_or(u64::MAX);
+        // SAFETY: the host's function, given the context it gave with its transport, on the thread
+        // that runs (`sce_peer_link_host`, `sce_peer_link_set_pause`).
+        let paused = unsafe { (self.pause)(self.context, wait_ms) };
+        log::debug!(wait_ms = wait_ms, woken = paused == SCE_PEER_PAUSE_WOKEN; "host_paused");
     }
 }
 
@@ -1367,6 +1423,26 @@ pub type ScePeerExchangeFn = unsafe extern "C" fn(
 
 /// Called once with the host's context when the link that holds it is freed.
 pub type ScePeerReleaseFn = unsafe extern "C" fn(context: *mut c_void);
+
+/// A host's wait, on its own clock ([`sce_peer_link_set_pause`]): wait `wait_ms` milliseconds of the
+/// host's time, the wait a relay asked for when it refused a request for the rate, and return
+/// `SCE_PEER_PAUSE_WAITED`; or return earlier with `SCE_PEER_PAUSE_WOKEN`, at the latest once the
+/// host raises the run's cancellation. It is called with the context of the host's transport, on
+/// the thread that runs, between two exchanges, and calls no function of the library on that link
+/// or its core.
+pub type ScePeerPauseFn = unsafe extern "C" fn(context: *mut c_void, wait_ms: u64) -> i32;
+
+/// The sink of what the library logs ([`sce_peer_set_log_sink`]): called with a record's level
+/// (`SCE_PEER_LOG_*`), the module that decided it and the record as one line (both NUL-terminated
+/// UTF-8, the library's, valid for the call), and the `user` pointer the host gave. It may be called
+/// from any thread that calls the library, and from several at once; it calls no function of the
+/// library.
+pub type ScePeerLogFn = unsafe extern "C" fn(
+    level: i32,
+    target: *const c_char,
+    message: *const c_char,
+    user: *mut c_void,
+);
 
 /// A transport the host carries itself, through the function it gave.
 struct HostTransport {
@@ -1433,6 +1509,19 @@ impl Transport for HostTransport {
             }
             SCE_PEER_TRANSPORT_DEADLINE => Err(TransportError::Deadline),
             SCE_PEER_TRANSPORT_CANCELLED => Err(TransportError::Cancelled),
+            SCE_PEER_TRANSPORT_RATE_LIMITED => {
+                match given.as_deref().map(str::trim).map(str::parse::<u64>) {
+                    Some(Ok(retry_after_ms)) => Err(TransportError::RateLimited {
+                        retry_after_ms,
+                        reason: "the host's transport was refused for the rate".to_string(),
+                    }),
+                    _ => Err(TransportError::Link(
+                        "the host's transport said it was refused for the rate and gave no wait \
+                         in milliseconds"
+                            .to_string(),
+                    )),
+                }
+            }
             other => Err(TransportError::Link(format!(
                 "the host's transport said {other}, which is no status of a transport"
             ))),
@@ -1565,12 +1654,15 @@ pub unsafe extern "C" fn sce_peer_link_host(
                 "a host's transport has no exchange function",
             )
         })?;
-        Ok(ScePeerLink::over(Box::new(HostTransport {
-            exchange,
-            release,
+        Ok(ScePeerLink::hosted(
+            Box::new(HostTransport {
+                exchange,
+                release,
+                context,
+                network: Signal::new(),
+            }),
             context,
-            network: Signal::new(),
-        })))
+        ))
     })
 }
 
@@ -1664,6 +1756,40 @@ pub unsafe extern "C" fn sce_peer_link_set_token(
     })
 }
 
+/// The wait of a run over a host's own transport ([`sce_peer_link_host`]) is `pause`, on the host's
+/// clock, called with the transport's context ([`ScePeerPauseFn`]); null for the system's clock,
+/// which is what a host's transport has until it is given one. A run waits whenever the relay
+/// refuses a request for the rate with a wait that ends before the run's deadline, and then puts the
+/// same request again: on the system's clock the run's thread sleeps that long (woken by the run's
+/// cancellation), which is what a host whose time is the system's wants, and what a host whose time
+/// is its own (a simulation, whose relay counts the host's time) does not, since its relay would
+/// not have moved on when the run asks again. `SCE_PEER_ERR_BAD_ARGUMENT` for a link of the
+/// library's own transport, whose time is the system's.
+///
+/// # Safety
+/// `link` is a live handle no run uses meanwhile; `pause` is null or a function as
+/// [`ScePeerPauseFn`] says, which may be called with the transport's context from whichever thread
+/// runs over the link, until the link is freed.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_link_set_pause(
+    link: *mut ScePeerLink,
+    pause: Option<ScePeerPauseFn>,
+) -> i32 {
+    guard(|| {
+        // SAFETY: the promise in the function's contract.
+        let link = unsafe { shared(link.cast_const())? };
+        if link.host.is_none() {
+            return Err(fail(
+                SCE_PEER_ERR_BAD_ARGUMENT,
+                "a link of the library's own transport waits on the system's clock, and takes no \
+                 host's pause",
+            ));
+        }
+        link.pause.set(pause);
+        Ok(())
+    })
+}
+
 /// Give the text of one exchange of a host's transport: the response, or why there is none. Called
 /// by the host's [`ScePeerExchangeFn`] on the `reply` it was given, before it returns; a second call
 /// replaces the first. The text is copied.
@@ -1735,6 +1861,14 @@ pub unsafe extern "C" fn sce_peer_cancel_free(cancel: *mut ScePeerCancel) {
 /// and at once when none runs), `SCE_PEER_ERR_CANCELLED` or `SCE_PEER_ERR_DEADLINE` when the run
 /// stopped.
 ///
+/// A relay's refusal of a request for the rate (`rate_limited`, or its endpoint's refusal of the
+/// connection, `SCE_PEER_TRANSPORT_RATE_LIMITED`) is waited out and the same request put again,
+/// as many times as the relay asks, while its wait ends before the deadline (or there is none):
+/// on the host's clock when the link is a host's transport that gave its pause
+/// ([`sce_peer_link_set_pause`]), on the system's otherwise. A wait that would end at the deadline
+/// or after it ends the exchange with the refusal, which the outcome holds with `retry_after_ms`;
+/// the cancellation raised during a wait stops the run as it does an exchange.
+///
 /// # Safety
 /// `peer` and `link` are live handles no other thread uses meanwhile, but to raise the link's
 /// network signal; `cancel` is null or a live handle.
@@ -1758,7 +1892,19 @@ pub unsafe extern "C" fn sce_peer_run(
         // SAFETY: this run is the one user of the link's transport; other threads reach only the
         // network's signal, which is outside the cell.
         let transport = unsafe { &mut **link.transport.get() };
-        match drive(&mut held.peer, transport, deadline, cancel) {
+        // A refusal for the rate is waited out on the clock of whoever carries the texts: the
+        // host's, when its transport gave its pause, and the system's otherwise.
+        let driven = match (link.host, link.pause.get()) {
+            (Some(context), Some(pause)) => drive_with(
+                &mut held.peer,
+                transport,
+                deadline,
+                cancel,
+                &HostClock { pause, context },
+            ),
+            _ => drive(&mut held.peer, transport, deadline, cancel),
+        };
+        match driven {
             Driven::Ended => Ok(()),
             Driven::Cancelled => Err(fail(
                 SCE_PEER_ERR_CANCELLED,
@@ -1771,5 +1917,128 @@ pub unsafe extern "C" fn sce_peer_run(
                  outcome waits",
             )),
         }
+    })
+}
+
+/// The sink a host installed ([`sce_peer_set_log_sink`]): its function, its pointer, and the most
+/// verbose level it is given.
+struct HostSink {
+    sink: ScePeerLogFn,
+    user: *mut c_void,
+    most: log::LevelFilter,
+}
+
+// SAFETY: by the contract of `sce_peer_set_log_sink`, the host's function may be called from any
+// thread, and from several at once, with the pointer it gave.
+unsafe impl Send for HostSink {}
+// SAFETY: as for `Send`: the function and its pointer are read, never written, while it is installed.
+unsafe impl Sync for HostSink {}
+
+/// The sink of the process, while a host has one installed. A record is handed to it under the
+/// read lock, and a sink is replaced under the write lock, so that once a replacement returns the
+/// function it replaced is called no more.
+static SINK: RwLock<Option<HostSink>> = RwLock::new(None);
+
+/// What the facade is given as the process's sink: the host's, when one is installed.
+struct Facade;
+
+impl log::Log for Facade {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        SINK.read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .is_some_and(|host| metadata.level() <= host.most)
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        let held = SINK.read().unwrap_or_else(PoisonError::into_inner);
+        let Some(host) = held.as_ref().filter(|host| record.level() <= host.most) else {
+            return;
+        };
+        // The record's line escapes every control character, NUL among them; a target is a module's
+        // path. Neither holds a NUL, and one that did would be written without the record.
+        let line = sce_rust_relay::logs::line(record);
+        let (Ok(target), Ok(message)) = (CString::new(record.target()), CString::new(line)) else {
+            return;
+        };
+        let level = match record.level() {
+            log::Level::Error => SCE_PEER_LOG_ERROR,
+            log::Level::Warn => SCE_PEER_LOG_WARN,
+            log::Level::Info => SCE_PEER_LOG_INFO,
+            log::Level::Debug => SCE_PEER_LOG_DEBUG,
+            log::Level::Trace => SCE_PEER_LOG_TRACE,
+        };
+        // SAFETY: the host's function and pointer, as `sce_peer_set_log_sink` was given them; the
+        // texts live until it returns.
+        unsafe { (host.sink)(level, target.as_ptr(), message.as_ptr(), host.user) };
+    }
+
+    fn flush(&self) {}
+}
+
+static FACADE: Facade = Facade;
+
+/// Whether the facade's sink of the process is this library's: installed the first time a host
+/// installs a sink, and never again.
+fn facade_installed() -> bool {
+    static INSTALLED: OnceLock<bool> = OnceLock::new();
+    *INSTALLED.get_or_init(|| log::set_logger(&FACADE).is_ok())
+}
+
+/// Install `sink` as the sink of what the library logs, process-wide, given `user` with each record
+/// and the records at `max_level` (`SCE_PEER_LOG_*`) and the levels before it: each decision of the
+/// relay's client side, the driver and the core (a dial and a connection, a wait for the rate, a
+/// refusal given over, a failure of the link, an exchange ended or failed, what the relay is owed
+/// given or kept), as one line of `key=value` words (`docs/SCE_SHARED_LIST_PEER_ABI.md` section
+/// 14), which names counts, codes, nodes, durations and a list by a digest of its name, and never a
+/// token, a key, a signature or anything a list holds.
+///
+/// A sink is replaceable: a later call replaces the one installed, and a null `sink` or
+/// `SCE_PEER_LOG_OFF` removes it. When the call returns, the function it replaced is called no more,
+/// and its `user` may be freed. The library logs nothing until a sink is installed.
+/// `SCE_PEER_ERR_BAD_ARGUMENT` for a level that is none of `SCE_PEER_LOG_*`;
+/// `SCE_PEER_ERR_SINK_TAKEN` when another sink of the facade was installed in the process first (a
+/// Rust library in the same image installed its own), and nothing is installed.
+///
+/// # Safety
+/// `sink` is null or a function as [`ScePeerLogFn`] says, which may be called from any thread, and
+/// from several at once, with `user`, until a later call replaces it; it calls no function of the
+/// library.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_set_log_sink(
+    max_level: i32,
+    sink: Option<ScePeerLogFn>,
+    user: *mut c_void,
+) -> i32 {
+    guard(|| {
+        let most = match max_level {
+            SCE_PEER_LOG_OFF => log::LevelFilter::Off,
+            SCE_PEER_LOG_ERROR => log::LevelFilter::Error,
+            SCE_PEER_LOG_WARN => log::LevelFilter::Warn,
+            SCE_PEER_LOG_INFO => log::LevelFilter::Info,
+            SCE_PEER_LOG_DEBUG => log::LevelFilter::Debug,
+            SCE_PEER_LOG_TRACE => log::LevelFilter::Trace,
+            other => {
+                return Err(fail(
+                    SCE_PEER_ERR_BAD_ARGUMENT,
+                    format!("{other} is not a level of the library's log"),
+                ))
+            }
+        };
+        if !facade_installed() {
+            return Err(fail(
+                SCE_PEER_ERR_SINK_TAKEN,
+                "another sink of the library's records is installed in this process",
+            ));
+        }
+        let installed = sink
+            .filter(|_| most != log::LevelFilter::Off)
+            .map(|sink| HostSink { sink, user, most });
+        let level = installed
+            .as_ref()
+            .map_or(log::LevelFilter::Off, |host| host.most);
+        *SINK.write().unwrap_or_else(PoisonError::into_inner) = installed;
+        log::set_max_level(level);
+        Ok(())
     })
 }

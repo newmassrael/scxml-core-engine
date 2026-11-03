@@ -31,6 +31,9 @@ sce-rust-peer = { path = "../peer" }
 sce-rust-relay = { path = "../relay", features = ["wss"] }
 sce-rust-trust = { path = "../trust" }
 serde_json = "1"
+# The process's sink of what the core, the driver and the link log, which hands each record to the
+# function a host installs (`sce_peer_set_log_sink`).
+log = { workspace = true, features = ["kv"] }
 
 [dev-dependencies]
 # The relay's server, run in the tests' process and reached over a socket.

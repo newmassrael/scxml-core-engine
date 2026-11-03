@@ -3836,6 +3836,7 @@ dependencies = [
 name = "sce-rust-peer-capi"
 version = "0.1.0"
 dependencies = [
+ "log",
  "rcgen",
  "sce-rust-peer",
  "sce-rust-relay",

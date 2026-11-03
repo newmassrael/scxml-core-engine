@@ -35,7 +35,7 @@
 extern "C" {
 #endif
 
-#define SCE_PEER_ABI_VERSION 5u
+#define SCE_PEER_ABI_VERSION 6u
 
 #define SCE_PEER_OK 0
 #define SCE_PEER_ERR_NOTHING_ASKED 1
@@ -62,13 +62,29 @@ extern "C" {
 #define SCE_PEER_ERR_BAD_ARGUMENT 23
 #define SCE_PEER_ERR_CANCELLED 24
 #define SCE_PEER_ERR_DEADLINE 25
+#define SCE_PEER_ERR_SINK_TAKEN 26
 
-/* What a host's transport says of one exchange (ScePeerExchangeFn). */
+/* What a host's transport says of one exchange (ScePeerExchangeFn). RATE_LIMITED: the relay's
+ * endpoint refused the connection for the rate (an HTTP 429), and the text given with sce_peer_reply
+ * is the wait it asked for, in milliseconds, as decimal digits. */
 #define SCE_PEER_TRANSPORT_ANSWERED 0
 #define SCE_PEER_TRANSPORT_LINK 1
 #define SCE_PEER_TRANSPORT_UNAUTHORIZED 2
 #define SCE_PEER_TRANSPORT_DEADLINE 3
 #define SCE_PEER_TRANSPORT_CANCELLED 4
+#define SCE_PEER_TRANSPORT_RATE_LIMITED 5
+
+/* What a host's pause says of the wait it was asked for (ScePeerPauseFn). */
+#define SCE_PEER_PAUSE_WAITED 0
+#define SCE_PEER_PAUSE_WOKEN 1
+
+/* The levels of what the library logs (sce_peer_set_log_sink). */
+#define SCE_PEER_LOG_OFF 0
+#define SCE_PEER_LOG_ERROR 1
+#define SCE_PEER_LOG_WARN 2
+#define SCE_PEER_LOG_INFO 3
+#define SCE_PEER_LOG_DEBUG 4
+#define SCE_PEER_LOG_TRACE 5
 
 /* What the core did with a send (sce_peer_outbound). */
 #define SCE_PEER_KEPT_TAKEN 0
@@ -213,7 +229,11 @@ int32_t sce_peer_restore_sealed(ScePeer *peer, uint64_t node, const uint8_t *sta
  * link, on the calling thread (a background worker's), and returns SCE_PEER_OK when it ended, or
  * SCE_PEER_ERR_CANCELLED or SCE_PEER_ERR_DEADLINE when it stopped within_ms milliseconds from the
  * call (UINT64_MAX: no deadline) or once cancel (may be NULL) was raised; the outcome is then taken
- * with sce_peer_take_outcome.
+ * with sce_peer_take_outcome. A relay's refusal of a request for the rate is waited out and the
+ * request put again while the wait ends before the deadline; one that would not ends the exchange
+ * with the refusal. The wait is the system's (the thread sleeps, woken by cancel), or, for a link
+ * whose transport the host carries and that was given a pause (sce_peer_link_set_pause), the
+ * host's, on its own clock: a host whose time is not the system's gives one.
  * The core and the link are used by that thread alone while it runs, but that any thread may raise the
  * run's cancellation and tell the link the network changed.
  *
@@ -238,6 +258,11 @@ typedef struct ScePeerReply ScePeerReply;
 typedef int32_t (*ScePeerExchangeFn)(void *context, const uint8_t *request, size_t len, uint64_t timeout_ms,
                                      ScePeerReply *reply);
 typedef void (*ScePeerReleaseFn)(void *context);
+/* A host's wait on its own clock: wait wait_ms of the host's time and return SCE_PEER_PAUSE_WAITED,
+ * or return SCE_PEER_PAUSE_WOKEN earlier, at the latest once the host raises the run's cancellation.
+ * Called with the transport's context, on the thread that runs, between two exchanges; it calls
+ * nothing of the library on that link or core. */
+typedef int32_t (*ScePeerPauseFn)(void *context, uint64_t wait_ms);
 
 ScePeerLink *sce_peer_link_wss(const char *base, const char *token);
 ScePeerLink *sce_peer_link_wss_believing(const char *base, const char *token, const uint8_t *authorities, size_t len,
@@ -247,6 +272,9 @@ void sce_peer_link_free(ScePeerLink *link);
 int32_t sce_peer_link_network_changed(const ScePeerLink *link);
 int32_t sce_peer_link_take_notices(ScePeerLink *link, ScePeerBuf *out);
 int32_t sce_peer_link_set_token(ScePeerLink *link, const char *token);
+/* The pause of a link whose transport the host carries (NULL: the system's clock, the default);
+ * SCE_PEER_ERR_BAD_ARGUMENT for a link of the library's own transport. Not while a run uses it. */
+int32_t sce_peer_link_set_pause(ScePeerLink *link, ScePeerPauseFn pause);
 int32_t sce_peer_reply(ScePeerReply *reply, const uint8_t *text, size_t len);
 
 ScePeerCancel *sce_peer_cancel_new(void);
@@ -254,6 +282,17 @@ int32_t sce_peer_cancel_raise(const ScePeerCancel *cancel);
 void sce_peer_cancel_free(ScePeerCancel *cancel);
 
 int32_t sce_peer_run(ScePeer *peer, ScePeerLink *link, uint64_t within_ms, const ScePeerCancel *cancel);
+
+/* The sink of what the library logs, process-wide: sink is called with each record at max_level
+ * (SCE_PEER_LOG_*) and the levels before it, the module that decided it and the record as one line of
+ * key=value words (NUL-terminated UTF-8, valid for the call), and user. It may be called from any
+ * thread that calls the library, and from several at once, and calls nothing of the library. A later
+ * call replaces the sink, and NULL or SCE_PEER_LOG_OFF removes it; once the call returns, the sink it
+ * replaced is called no more. A record names counts, codes, nodes, durations and a list by a digest;
+ * never a token, a key, a signature or anything a list holds. SCE_PEER_ERR_SINK_TAKEN when another
+ * sink was installed in the process first. */
+typedef void (*ScePeerLogFn)(int32_t level, const char *target, const char *message, void *user);
+int32_t sce_peer_set_log_sink(int32_t max_level, ScePeerLogFn sink, void *user);
 
 #ifdef __cplusplus
 }

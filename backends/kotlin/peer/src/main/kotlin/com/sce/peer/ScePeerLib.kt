@@ -21,7 +21,7 @@ import com.sun.jna.ptr.LongByReference
 /** The numbers of `include/sce_peer.h`, by the names it gives them without `SCE_PEER_`. */
 object ScePeerAbi {
     /** `SCE_PEER_ABI_VERSION`: the ABI this binding declares. */
-    const val VERSION = 5
+    const val VERSION = 6
 
     const val OK = 0
     const val ERR_NOTHING_ASKED = 1
@@ -48,6 +48,7 @@ object ScePeerAbi {
     const val ERR_BAD_ARGUMENT = 23
     const val ERR_CANCELLED = 24
     const val ERR_DEADLINE = 25
+    const val ERR_SINK_TAKEN = 26
 
     /** What a host's transport says of one exchange (`ScePeerExchangeFn`). */
     const val TRANSPORT_ANSWERED = 0
@@ -55,6 +56,21 @@ object ScePeerAbi {
     const val TRANSPORT_UNAUTHORIZED = 2
     const val TRANSPORT_DEADLINE = 3
     const val TRANSPORT_CANCELLED = 4
+
+    /** The relay's endpoint refused the connection for the rate: the reason given is the wait, in milliseconds. */
+    const val TRANSPORT_RATE_LIMITED = 5
+
+    /** What a host's pause says of the wait it was asked for (`ScePeerPauseFn`). */
+    const val PAUSE_WAITED = 0
+    const val PAUSE_WOKEN = 1
+
+    /** The levels of what the library logs (`sce_peer_set_log_sink`). */
+    const val LOG_OFF = 0
+    const val LOG_ERROR = 1
+    const val LOG_WARN = 2
+    const val LOG_INFO = 3
+    const val LOG_DEBUG = 4
+    const val LOG_TRACE = 5
 
     /** What the core did with a send of the machine (`sce_peer_outbound`). */
     const val KEPT_TAKEN = 0
@@ -121,6 +137,23 @@ interface ReleaseFn : Callback {
     fun callback(context: Pointer?)
 }
 
+/**
+ * `ScePeerPauseFn`: a host's wait on its own clock. It waits `waitMs` of the host's time (a `uint64_t`'s
+ * bits) and returns `PAUSE_WAITED`, or returns `PAUSE_WOKEN` earlier, at the latest once the host raises
+ * the run's cancellation.
+ */
+interface PauseFn : Callback {
+    fun callback(context: Pointer?, waitMs: Long): Int
+}
+
+/**
+ * `ScePeerLogFn`: the sink of what the library logs, given a record's level (`LOG_*`), the module that
+ * decided it and the record as one line, from any thread, and from several at once.
+ */
+interface LogFn : Callback {
+    fun callback(level: Int, target: String?, message: String?, user: Pointer?)
+}
+
 /** Every function `include/sce_peer.h` declares. */
 @Suppress("FunctionName")
 interface ScePeerLib : Library {
@@ -173,7 +206,9 @@ interface ScePeerLib : Library {
     fun sce_peer_link_network_changed(link: Pointer): Int
     fun sce_peer_link_take_notices(link: Pointer, out: Buf): Int
     fun sce_peer_link_set_token(link: Pointer, token: String?): Int
+    fun sce_peer_link_set_pause(link: Pointer, pause: PauseFn?): Int
     fun sce_peer_reply(reply: Pointer, text: ByteArray, len: NativeLong): Int
+    fun sce_peer_set_log_sink(maxLevel: Int, sink: LogFn?, user: Pointer?): Int
     fun sce_peer_cancel_new(): Pointer?
     fun sce_peer_cancel_raise(cancel: Pointer): Int
     fun sce_peer_cancel_free(cancel: Pointer)
