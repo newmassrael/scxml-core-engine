@@ -14,6 +14,10 @@ name: sce-rust-runtime no_std MCU target build
 # `.cargo/config.toml` (C3 Atomic B-γ1 `dfad80b4`); this workflow only adds the
 # rustup target and runs the build.
 #
+# It also builds a generated machine that holds a composed payload (`backends/rust/probes/nostd-composed`,
+# docs/adr/0086 section 7.4), so a change to the lowering or to `sce-portable-bytes` that brings an
+# allocator into such a machine fails here; those sources trigger it too.
+#
 # It also builds `sce-forge-runtime` without default features for `thumbv6m-none-eabi`, whose atomics
 # are loads and stores alone: a queue module that needs a compare-and-swap must be absent there
 # (`backends/rust/forge-runtime/src/queue/mod.rs`), which thumbv7em cannot show, and a consumer that
@@ -33,6 +37,14 @@ on:
       - 'backends/rust/probes/feature-unification/**'
       - 'backends/rust/probes/nostd-queue-size/**'
       - 'backends/rust/probes/nostd-footprint/**'
+      - 'backends/rust/probes/nostd-composed/**'
+      - 'backends/rust/portable-bytes/**'
+      - 'sce-build/src/forge/composed_lowering.rs'
+      - 'sce-build/src/forge/static_lowering.rs'
+      - 'sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml'
+      - 'sce-build/tests/fixtures/static_datamodel/event_batch.scxml'
+      - 'sce-build/tests/fixtures/static_datamodel/event_batch_item.scxml'
+      - 'sce-build/tests/fixtures/static_datamodel/enum_signal_level.scxml'
       - 'sce-build/tests/fixtures/no_std/**'
       - 'sce-build/tests/fixtures/event_schema/statechart_native_action.scxml'
       - 'sce-build/tests/fixtures/event_schema/schema_fragment.scxml'
@@ -53,6 +65,14 @@ on:
       - 'backends/rust/probes/feature-unification/**'
       - 'backends/rust/probes/nostd-queue-size/**'
       - 'backends/rust/probes/nostd-footprint/**'
+      - 'backends/rust/probes/nostd-composed/**'
+      - 'backends/rust/portable-bytes/**'
+      - 'sce-build/src/forge/composed_lowering.rs'
+      - 'sce-build/src/forge/static_lowering.rs'
+      - 'sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml'
+      - 'sce-build/tests/fixtures/static_datamodel/event_batch.scxml'
+      - 'sce-build/tests/fixtures/static_datamodel/event_batch_item.scxml'
+      - 'sce-build/tests/fixtures/static_datamodel/enum_signal_level.scxml'
       - 'sce-build/tests/fixtures/no_std/**'
       - 'sce-build/tests/fixtures/event_schema/statechart_native_action.scxml'
       - 'sce-build/tests/fixtures/event_schema/schema_fragment.scxml'

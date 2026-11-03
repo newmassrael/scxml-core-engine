@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# no_std MCU-target compile gate for a generated machine that holds a composed
+# payload (docs/adr/0086, section 7.4): every list, text and byte string such a
+# machine holds is `sce_portable_bytes::BoundedList<T, N>`, `SceString<N>` or
+# `SceBytes<N>`, which are inline (`heapless`) where there is no allocator, so
+# the machine builds for `thumbv7em-none-eabihf` with no `#[global_allocator]`.
+# A lowering that spelled a `Vec` or a `String` into such a machine fails here.
+#
+# This crate's `[lib] path` points at the machine the gate generates with
+# `--no-std` from `sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml`
+# (git-ignored, produced fresh by the gate, see README.md).
+#
+# Detached from the parent workspace (own empty `[workspace]` table), as
+# `nostd-build` is: it is built for the MCU target by itself, and its `src`
+# exists only after the gate's generation step. Every dependency is asked for
+# no features: the bare-metal profile is their absence (docs/adr/0053).
+
+[package]
+name = "sce-nostd-composed-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "no_std MCU-target compile gate for a generated SCE machine that holds a composed payload (docs/adr/0086)"
+license = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+
+[lib]
+name = "sce_nostd_composed_probe"
+path = "src/static_composed_payload_sm.rs"
+
+[dependencies]
+sce-rust-runtime = { path = "../../runtime", default-features = false }
+sce-forge-runtime = { path = "../../forge-runtime", default-features = false }
+sce-portable-bytes = { path = "../../portable-bytes", default-features = false }
+
+[workspace]

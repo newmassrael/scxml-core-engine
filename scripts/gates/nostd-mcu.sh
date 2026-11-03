@@ -91,6 +91,22 @@ cargo build --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
     --target=thumbv7em-none-eabihf \
     || sce_gate_fail "native-action probe compile"
 
+# The composed-payload probe: a machine that reads a payload of lists of
+# records that hold lists of texts, and takes a list whole into a variable,
+# holds every one of them in `BoundedList<T, N>`, `SceString<N>` and
+# `SceBytes<N>`, which are inline without an allocator (docs/adr/0086, section
+# 7.4). The host tests run where an allocator is, so only this build shows that
+# the generated machine names no `Vec` and no `String`. A crate of its own, so
+# the steps that stage other machines into `nostd-build` cannot replace it.
+sce_gate_step "composed-payload probe (no_std thumb)"
+"$CODEGEN" --workspace-root "$SCE_REPO_ROOT" generate \
+    -l rust --no-std --output-dir backends/rust/probes/nostd-composed/src \
+    sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml >/dev/null 2>&1 \
+    || sce_gate_fail "composed-payload probe generation"
+cargo build --manifest-path backends/rust/probes/nostd-composed/Cargo.toml \
+    --target=thumbv7em-none-eabihf \
+    || sce_gate_fail "composed-payload probe compile"
+
 # One workspace holding a bare-metal crate and an application crate, as a
 # downstream workspace does (docs/adr/0053). Cargo builds one runtime for both
 # with the union of their features; when `no_std` refused `http-send`, this
