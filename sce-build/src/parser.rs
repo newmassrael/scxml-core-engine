@@ -5407,9 +5407,8 @@ impl SCXMLParser {
                 // (`invoke_methods.jinja2` etc.) and for
                 // `parse_child_metadata` below. `xml_content` rides
                 // on the invoke so codegen can re-emit it to `-o`
-                // for downstream consumers (`inject_partition_context_
-                // for` + CMake stage-3 synth codegen + W3C
-                // `process_children_<N>.cmake`).
+                // for the consumers that read the child as a document
+                // (`ScxmlInvokeInfo::inline_child_xml` names them).
                 (
                     format!("#{synth_name}"),
                     synth_name,

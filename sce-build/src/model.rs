@@ -2425,9 +2425,10 @@ pub struct ScxmlInvokeInfo {
     /// re-materialise the synth SCXML next to the parent's `_sm.*`
     /// in `-o` when a downstream consumer needs it on disk:
     /// `--deploy` topology iteration (`inject_partition_context_for`
-    /// parses every declared machine by name), CMake's stage-3 synth
-    /// codegen (`tests/CMakeLists.txt:2442-2456`), and W3C
-    /// `process_children_<N>.cmake` (`--as-child` per child SCXML).
+    /// parses every declared machine by name), and a build that generates
+    /// the child as a machine of a deployment of its own (the mesh rule-3
+    /// override in `tests/CMakeLists.txt`). The child's local machine is
+    /// written by the run that writes the parent, from [`Self::inline_child`].
     /// Re-emit lands in the caller-controlled `-o`, never in the
     /// parent's source directory — the bug-report pollution case stays
     /// closed.

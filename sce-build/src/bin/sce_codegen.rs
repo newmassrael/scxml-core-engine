@@ -7180,13 +7180,19 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
 
     // SCE_MESH.md §9.6.6: re-materialise every inline-`<content>`
     // synth child, at every depth, to `-o` (and `deploy_dir` when
-    // distinct) so downstream consumers find a file on disk:
+    // distinct) so a consumer that reads the child as a document finds a
+    // file on disk:
     // - `inject_partition_context_for` opens every declared machine
     //   SCXML when `--deploy` is set (reads from `deploy_dir`)
-    // - CMake's stage-3 synth codegen reads from the parent's `-o`
-    //   (`tests/CMakeLists.txt:2442-2456`)
-    // - W3C `process_children_<N>.cmake` reads `${child}.scxml` from
-    //   the parent's `-o` for the per-child `--as-child` pass
+    // - a build that generates the child as a machine of a deployment of
+    //   its own reads it from the parent's `-o`: the mesh rule-3 override
+    //   in `tests/CMakeLists.txt` (`mesh_synth_invoke_override_e2e_test`)
+    //   generates it with `--deploy` as a remote machine
+    // The child's local machine is not one of those reads: this run
+    // writes it (`sce_build::emit_carried_children`, below). The CMake
+    // routes that generate at build time declare the `.scxml` as an
+    // output of this run because `--plan generate` names it
+    // (`cmake/SCECodegenPlan.cmake`), and generate nothing from it.
     // Pollution of the parent's *source* directory stays closed: the
     // write targets are caller-controlled (`-o`, `--deploy <path>`),
     // never `scxml_path`'s parent.
@@ -7497,20 +7503,23 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
 
         // §scxml-6.4: Generate children metadata + hybrid SCXML stubs for all languages.
         // C++ lists, in `_children.txt`, every child a machine this run writes
-        // starts, for a build that generates those children itself; nothing in
-        // this repository reads it since the W3C CMake rules name each child
-        // from RESOURCE_DIR (cmake/SCEStaticW3CTest.cmake). All languages need
-        // hybrid stubs.
+        // starts, for a build of its own that generates those children itself.
+        // Nothing in this repository reads it: the CMake routes that generate
+        // at build time ask `--plan generate`, which names this file among the
+        // run's outputs, so they declare it as a byproduct, and name each child
+        // document to generate from the same answer (cmake/SCECodegenPlan.cmake).
+        // All languages need hybrid stubs.
         let children = collect_invoke_child_names(&model);
         if lang == Language::Cpp && !children.is_empty() {
             let children_file = out_path.join(format!("{input_stem}_children.txt"));
             let listing = children.join("\n") + "\n";
             emit_generated(&children_file, listing.as_bytes(), WritePolicy::Always);
         }
-        // §scxml-6.4: Copy static invoke child SCXML files to the output
-        // directory so CMake's post-processing script can find them next to the
-        // parent. `process_static_invokes` extracts inline <scxml> content to
-        // the *source* directory; the build system expects them in OUTPUT_DIR.
+        // §scxml-6.4: Copy each child document the machines start by `src`, or
+        // as a candidate, to the output directory, beside the parent that
+        // starts it, where a build generates the child's own machine from it
+        // (`copy_static_invoke_children` says which). An in-line child is not
+        // copied: it has no file, and this run writes its machine.
         // ⚠ `drift_input_root`, not the document's own directory. A build
         // that stages the parent into its output tree first — which the
         // CMake integration flow does — would otherwise look for the
@@ -7523,11 +7532,13 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         // output goes — for every backend.
         //
         // ⚠ C11 used to write it beside the SCXML source instead, because the
-        // W3C C11 harness discovers children by globbing RESOURCE_DIR at
-        // configure time. That glob finds the TRACKED stubs under
-        // `resources/<N>/`, which `hybrid_stubs_are_tracked_as_generated`
-        // holds to `HybridInvokeInfo::stub_document`; a write into the source
-        // tree was never what made them visible. What the write did do was put
+        // W3C C11 harness found children by globbing RESOURCE_DIR at configure
+        // time. The harness now asks `--plan generate` which child documents a
+        // fixture's generation names, and stages each one `resources/<N>/`
+        // holds (cmake/SCECodegenPlan.cmake): the TRACKED stubs, which
+        // `hybrid_stubs_are_tracked_as_generated` holds to
+        // `HybridInvokeInfo::stub_document`. A write into the source tree was
+        // never what made them visible. What the write did do was put
         // an ignored `.scxml` into whatever directory a C11 generate was
         // pointed at — and the §synth-6.2.6 source set reads every `.scxml`
         // under the input root, so the next committed-tree regeneration there
@@ -7696,10 +7707,14 @@ fn child_documents(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
 /// §scxml-6.4: Copy external `src="…"` static invoke children from
 /// source to output directory.
 ///
-/// CMake post-processing for the W3C test corpus expects static child
-/// `.scxml` files alongside their parent in the output tree. External
-/// (`<invoke src="file.scxml"/>`) children live on disk in the parent's
-/// source directory and are copied unchanged into `output_dir`.
+/// A build that generates the machine of each child document itself reads
+/// the document beside the parent in the output tree, where the parent's
+/// generation named it. External (`<invoke src="file.scxml"/>`) children live
+/// on disk in the parent's source directory and are copied unchanged into
+/// `output_dir`. The CMake routes of this repository stage the ones a fixture
+/// holds into that directory before the build (`--plan generate` names them,
+/// cmake/SCECodegenPlan.cmake), and the copy then finds the file already
+/// there and changes nothing.
 ///
 /// Inline (`<invoke><content><scxml>…</scxml></content></invoke>`) children
 /// are kept in-memory on [`ScxmlInvokeInfo::inline_child`] and never
@@ -10768,9 +10783,12 @@ impl W3cBackend for CppBackend {
         _test_mod_dir: &Path,
         _drift_ctx: &DriftContext,
     ) {
-        // C++ children are generated by the CMake rules of
-        // cmake/SCEStaticW3CTest.cmake (an in-line child by its parent's own
-        // `generate`), not the W3C generator
+        // C++ children are generated by the commands
+        // cmake/SCEStaticW3CTest.cmake declares from what `--plan generate`
+        // answers for the fixture: a child document by its own `generate
+        // --as-child`, an in-line child by its parent's `generate`, which
+        // writes it. This route writes no C++ child, and `uses_per_test_subdirs`
+        // keeps it from being asked to.
     }
 
     fn clean(&self) {
