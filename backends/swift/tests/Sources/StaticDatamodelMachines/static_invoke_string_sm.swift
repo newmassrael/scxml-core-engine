@@ -434,6 +434,10 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
         // clock, so a delay on either side of the boundary is the same instant and a
         // clock its host advances moves the child too.
         session.engine.setClock(engine.clock())
+        // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
+        // and this document (empty for a child written in line), installed before the child
+        // initializes, since its first state may already send.
+        engine.startChildMesh(of: session, invokeID: "fits", document: "")
         session.initialize()
         sceInvokeChildFits = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -501,6 +505,10 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
         // clock, so a delay on either side of the boundary is the same instant and a
         // clock its host advances moves the child too.
         session.engine.setClock(engine.clock())
+        // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
+        // and this document (empty for a child written in line), installed before the child
+        // initializes, since its first state may already send.
+        engine.startChildMesh(of: session, invokeID: "over", document: "")
         session.initialize()
         sceInvokeChildOver = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -568,6 +576,10 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
         // clock, so a delay on either side of the boundary is the same instant and a
         // clock its host advances moves the child too.
         session.engine.setClock(engine.clock())
+        // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
+        // and this document (empty for a child written in line), installed before the child
+        // initializes, since its first state may already send.
+        engine.startChildMesh(of: session, invokeID: "wide", document: "")
         session.initialize()
         sceInvokeChildWide = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it

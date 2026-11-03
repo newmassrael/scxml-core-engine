@@ -860,6 +860,10 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         // clock, so a delay on either side of the boundary is the same instant and a
         // clock its host advances moves the child too.
         session.engine.setClock(engine.clock())
+        // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
+        // and this document (empty for a child written in line), installed before the child
+        // initializes, since its first state may already send.
+        engine.startChildMesh(of: session, invokeID: "inv_infinite", document: "")
         session.initialize()
         sceInvokeChildInvInfinite = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -923,6 +927,10 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         // clock, so a delay on either side of the boundary is the same instant and a
         // clock its host advances moves the child too.
         session.engine.setClock(engine.clock())
+        // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
+        // and this document (empty for a child written in line), installed before the child
+        // initializes, since its first state may already send.
+        engine.startChildMesh(of: session, invokeID: "inv_namelist", document: "")
         session.initialize()
         sceInvokeChildInvNamelist = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -986,6 +994,10 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         // clock, so a delay on either side of the boundary is the same instant and a
         // clock its host advances moves the child too.
         session.engine.setClock(engine.clock())
+        // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
+        // and this document (empty for a child written in line), installed before the child
+        // initializes, since its first state may already send.
+        engine.startChildMesh(of: session, invokeID: "inv_shadow", document: "")
         session.initialize()
         sceInvokeChildInvShadow = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -1049,6 +1061,10 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         // clock, so a delay on either side of the boundary is the same instant and a
         // clock its host advances moves the child too.
         session.engine.setClock(engine.clock())
+        // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
+        // and this document (empty for a child written in line), installed before the child
+        // initializes, since its first state may already send.
+        engine.startChildMesh(of: session, invokeID: "inv_sole", document: "")
         session.initialize()
         sceInvokeChildInvSole = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
@@ -1109,6 +1125,10 @@ public final class InvokeParamSeedsDeclaredChildDataPolicy: InvocablePolicy {
         // clock, so a delay on either side of the boundary is the same instant and a
         // clock its host advances moves the child too.
         session.engine.setClock(engine.clock())
+        // SCE_MESH.md §21.3: the child's router is the one the factory answers for this invoke
+        // and this document (empty for a child written in line), installed before the child
+        // initializes, since its first state may already send.
+        engine.startChildMesh(of: session, invokeID: "inv_unmatched", document: "")
         session.initialize()
         sceInvokeChildInvUnmatched = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
