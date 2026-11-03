@@ -1175,8 +1175,11 @@ restate the rule.
 **Status.** The rule is decided, and the runtimes are brought to it in the
 ADR's order of work. Until a runtime's step lands, its existing contract stands
 and is listed in the ADR's Context table. Kotlin follows the rule (its engine
-checks the owner and has the inbox, `EngineInbox`). The generated C++ engine is
-still known to be broken by a host-invoke ending from another thread.
+checks the owner and has the inbox, `EngineInbox`). So does the generated C++
+engine: its inbox is `inbox()` on the forge SCQ queue (`core/EngineInbox.h`),
+SCE's own Mesh deliveries and deadlines post to it, and a debug build checks the
+owner; its owner is the thread that drives it after the run is entered
+(`StaticExecutionEngine.h`).
 
 **The invariant.** A macrostep runs to completion: no input is observed in the
 middle of one (§scxml-C-1). Every engine holds it by the same mechanism.
