@@ -299,7 +299,7 @@ every variant (§1).
 
 ### 10. Lifting the C, C++ and Swift emissions (the design of step 4)
 
-Status of this section: Accepted (2026-11-03, by the owner: "이어서해", continue, given to the proposal of the same
+Status of this section: Accepted (2026-11-03, by the owner's word to continue, given to the proposal of the same
 day); being implemented in the order below.
 
 §9 holds for every backend that keeps the variability: derive each distinct variant, generate it as any document is
