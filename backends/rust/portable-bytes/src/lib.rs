@@ -397,6 +397,183 @@ macro_rules! str_view_parity {
 str_view_parity!(HeapStr);
 str_view_parity!(InlineStr);
 
+// ── bounded values: the bound is part of the type on every profile ──────────
+
+/// Where a [`BoundedList`] keeps its elements: a `Vec<T>` where an allocator is
+/// available, and `heapless::Vec<T, N>`, `N` inline, where none is. The bound
+/// is held by the list's constructors on both, so the storage only decides
+/// where the elements live, never how many there may be.
+#[cfg(feature = "alloc")]
+type BoundedListStorage<T, const N: usize> = alloc::vec::Vec<T>;
+#[cfg(not(feature = "alloc"))]
+type BoundedListStorage<T, const N: usize> = heapless::Vec<T, N>;
+
+/// A list of at most `N` elements of any `T`, `N` a hard bound on every profile
+/// (docs/adr/0086, section 5.4): the value of a `list<T>[N]` that a host builds
+/// and hands to a typed send.
+///
+/// [`SceOwnedList`] is the storage a machine keeps a list in, and under `alloc`
+/// its `N` is advisory, because the machine holds the bound itself. A value a
+/// host builds has no machine around it, so every constructor of this type
+/// refuses more than `N` elements, and a value that exists is one of its type.
+/// A nested type is the composition, `BoundedList<BoundedList<BoundedText<8>,
+/// 4>, 3>`, each level holding its own bound.
+#[repr(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundedList<T, const N: usize>(BoundedListStorage<T, N>);
+
+/// A byte string of at most `N` bytes on every profile: [`BoundedList`] of `u8`.
+pub type BoundedBytes<const N: usize> = BoundedList<u8, N>;
+
+impl<T, const N: usize> BoundedList<T, N> {
+    /// The bound the type declares.
+    pub const CAPACITY: usize = N;
+
+    /// The empty list.
+    pub fn new() -> Self {
+        Self(BoundedListStorage::<T, N>::new())
+    }
+
+    /// Append one element, refusing it once the list holds `N`; the list is then
+    /// as it was.
+    pub fn push(&mut self, value: T) -> Result<(), CapacityExceeded> {
+        if self.0.len() >= N {
+            return Err(CapacityExceeded);
+        }
+        #[cfg(feature = "alloc")]
+        {
+            self.0.push(value);
+            Ok(())
+        }
+        #[cfg(not(feature = "alloc"))]
+        {
+            self.0.push(value).map_err(|_| CapacityExceeded)
+        }
+    }
+
+    /// The elements, in order.
+    pub fn as_slice(&self) -> &[T] {
+        self.0.as_slice()
+    }
+
+    /// The list of the elements `items` yields, in order, refused whole when it
+    /// yields more than `N`: the elements past the bound are never taken.
+    pub fn try_from_iter(items: impl IntoIterator<Item = T>) -> Result<Self, CapacityExceeded> {
+        let mut list = Self::new();
+        for item in items {
+            list.push(item)?;
+        }
+        Ok(list)
+    }
+}
+
+impl<T: Clone, const N: usize> BoundedList<T, N> {
+    /// Copy `items` into a list, refused whole past `N`.
+    pub fn from_slice(items: &[T]) -> Result<Self, CapacityExceeded> {
+        if items.len() > N {
+            return Err(CapacityExceeded);
+        }
+        Self::try_from_iter(items.iter().cloned())
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T, const N: usize> BoundedList<T, N> {
+    /// Take `items` as the list, refused whole past `N` and without copying them.
+    pub fn try_from_vec(items: alloc::vec::Vec<T>) -> Result<Self, CapacityExceeded> {
+        if items.len() > N {
+            return Err(CapacityExceeded);
+        }
+        Ok(Self(items))
+    }
+
+    /// The elements, as the `Vec` a machine keeps a list of this type in.
+    pub fn into_vec(self) -> alloc::vec::Vec<T> {
+        self.0
+    }
+}
+
+impl<T, const N: usize> Default for BoundedList<T, N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a, T, const N: usize> IntoIterator for &'a BoundedList<T, N> {
+    type Item = &'a T;
+    type IntoIter = core::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_slice().iter()
+    }
+}
+
+byte_view_parity!(BoundedList);
+
+/// Where a [`BoundedText`] keeps its bytes, as [`BoundedListStorage`] does.
+#[cfg(feature = "alloc")]
+type BoundedTextStorage<const N: usize> = alloc::string::String;
+#[cfg(not(feature = "alloc"))]
+type BoundedTextStorage<const N: usize> = heapless::String<N>;
+
+/// A text of at most `N` UTF-8 bytes, `N` a hard bound on every profile
+/// (docs/adr/0086, section 5.4): the value of a `string[N]` a host builds. The
+/// sibling of [`BoundedList`] for text; [`SceString`]'s `N` is advisory under
+/// `alloc`, this one's never is.
+#[repr(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundedText<const N: usize>(BoundedTextStorage<N>);
+
+impl<const N: usize> BoundedText<N> {
+    /// The bound the type declares, in UTF-8 bytes.
+    pub const CAPACITY: usize = N;
+
+    /// The empty text.
+    pub fn new() -> Self {
+        Self(BoundedTextStorage::<N>::new())
+    }
+
+    /// Copy `text`, refused when it is more than `N` bytes; nothing is cut.
+    pub fn from_text(text: &str) -> Result<Self, CapacityExceeded> {
+        if text.len() > N {
+            return Err(CapacityExceeded);
+        }
+        let mut held = Self::new();
+        held.try_push_str(text)?;
+        Ok(held)
+    }
+
+    /// Append `text`, refused where the whole would pass `N` bytes; the text is
+    /// then as it was.
+    pub fn try_push_str(&mut self, text: &str) -> Result<(), CapacityExceeded> {
+        if self.0.len() + text.len() > N {
+            return Err(CapacityExceeded);
+        }
+        #[cfg(feature = "alloc")]
+        {
+            self.0.push_str(text);
+            Ok(())
+        }
+        #[cfg(not(feature = "alloc"))]
+        {
+            self.0.push_str(text).map_err(|_| CapacityExceeded)
+        }
+    }
+
+    /// Borrow the text.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl<const N: usize> Default for BoundedText<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+str_view_parity!(BoundedText);
+
 /// A text of the default profile ([`SceString`]) written as a literal, in a
 /// buffer of `$n` bytes. The literal's length against `$n` is judged at build
 /// time, so a literal that does not fit is a compile error where it is
@@ -518,6 +695,90 @@ mod tests {
         let wide = SceString::<9>::widened(&small);
         assert_eq!(wide, "abcd");
         assert_eq!(sce_text!(2, "é"), "é");
+    }
+
+    // A bounded list refuses past its bound through every constructor, on the
+    // profile this test runs under whichever it is: the bound is the type's, not
+    // the storage's.
+    #[test]
+    fn a_bounded_list_refuses_past_its_bound_through_every_constructor() {
+        assert_eq!(BoundedList::<u8, 2>::CAPACITY, 2);
+        let full = BoundedList::<u8, 2>::from_slice(&[1, 2]).expect("two fit two");
+        assert_eq!(full.as_slice(), &[1u8, 2]);
+        assert_eq!(
+            BoundedList::<u8, 2>::from_slice(&[1, 2, 3]),
+            Err(CapacityExceeded)
+        );
+        assert_eq!(
+            BoundedList::<u8, 2>::try_from_iter([1u8, 2, 3]),
+            Err(CapacityExceeded)
+        );
+        let mut grown = BoundedList::<u8, 2>::new();
+        assert!(grown.push(7).is_ok());
+        assert!(grown.push(8).is_ok());
+        assert_eq!(grown.push(9), Err(CapacityExceeded));
+        assert_eq!(grown, &[7u8, 8]);
+        assert!(BoundedList::<u8, 0>::default().is_empty());
+        assert_eq!(BoundedList::<u8, 0>::new().push(1), Err(CapacityExceeded));
+    }
+
+    // Under `alloc` a list is taken from a `Vec` without a copy and handed back
+    // as one, the bound held on the way in.
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn a_bounded_list_takes_a_vec_within_its_bound_and_gives_it_back() {
+        let list =
+            BoundedList::<i64, 3>::try_from_vec(alloc::vec![-1, 0, 1]).expect("three fit three");
+        assert_eq!(list.into_vec(), alloc::vec![-1i64, 0, 1]);
+        assert_eq!(
+            BoundedList::<i64, 3>::try_from_vec(alloc::vec![0; 4]),
+            Err(CapacityExceeded)
+        );
+    }
+
+    // A bounded text counts UTF-8 bytes, refuses past its bound whole and keeps
+    // what it held when an append would pass it.
+    #[test]
+    fn a_bounded_text_refuses_past_its_bound_in_bytes() {
+        assert_eq!(BoundedText::<4>::from_text("abcd").expect("fits"), "abcd");
+        assert_eq!(BoundedText::<4>::from_text("abcde"), Err(CapacityExceeded));
+        // `é` is two bytes: three characters, five bytes.
+        assert_eq!(BoundedText::<4>::from_text("aéé"), Err(CapacityExceeded));
+        let mut text = BoundedText::<3>::new();
+        assert!(text.try_push_str("ab").is_ok());
+        assert_eq!(text.try_push_str("cd"), Err(CapacityExceeded));
+        assert_eq!(text.as_str(), "ab");
+        assert_eq!(BoundedText::<3>::CAPACITY, 3);
+        assert!(BoundedText::<1>::default().is_empty());
+    }
+
+    // A nested type is the composition, and each level holds its own bound: an
+    // inner list past its bound cannot be built, so an outer list of them holds
+    // none.
+    #[test]
+    fn a_nested_bounded_type_holds_each_bound_at_its_own_level() {
+        type Tags = BoundedList<BoundedText<8>, 4>;
+        let tag = BoundedText::<8>::from_text("eight888").expect("eight bytes fit eight");
+        assert_eq!(
+            BoundedText::<8>::from_text("nine99999"),
+            Err(CapacityExceeded)
+        );
+        let tags = Tags::from_slice(&[tag.clone(), tag.clone()]).expect("two fit four");
+        assert_eq!(
+            Tags::try_from_iter((0..5).map(|_| tag.clone())),
+            Err(CapacityExceeded)
+        );
+        let mut items = BoundedList::<Tags, 3>::new();
+        for _ in 0..3 {
+            assert!(items.push(tags.clone()).is_ok());
+        }
+        assert_eq!(items.push(tags), Err(CapacityExceeded));
+        let mut held = 0;
+        for each in &items {
+            held += each.len();
+        }
+        assert_eq!(held, 6);
+        assert_eq!(items[2][1], "eight888");
     }
 
     // Both profiles coexist in one binary and carry the same bytes — the
