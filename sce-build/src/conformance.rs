@@ -4522,7 +4522,13 @@ mod tests {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
         let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
 
-        let options = crate::ForgeCompileOptions::default();
+        // The options the Rust harness generates its fixtures with
+        // (`backends/rust/forge-conformance/build.rs`): with views, which a codec
+        // whose list states no bound requires (docs/adr/0077 §7).
+        let options = crate::ForgeCompileOptions {
+            views: true,
+            ..crate::ForgeCompileOptions::default()
+        };
         let mut failures: Vec<String> = Vec::new();
 
         // Gate 1: per-fixture generated Rust code
