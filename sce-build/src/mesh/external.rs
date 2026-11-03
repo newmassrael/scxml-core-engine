@@ -23,7 +23,7 @@
 // `service_id`, `method_id`, etc. are reserved and rejected here.
 // Numeric IDs come from vsomeip.json, referenced by name.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use crate::mesh::deploy::{BindingConfig, DeployConfig, EventBinding};
@@ -81,6 +81,11 @@ pub struct ExternalResolution {
     /// Consumed by `topology::resolve_server_binding` to produce
     /// server-side transport state for codegen.
     pub server_bindings: HashMap<String, PerBindingResolution>,
+    /// Every external configuration file the resolution read (a device's
+    /// `vsomeip.json`). The transport is made from them as much as from the
+    /// deploy, so a build that regenerates it when the deploy changes has to
+    /// regenerate it when one of them does: they are inputs of the run.
+    pub configs: BTreeSet<PathBuf>,
 }
 
 /// Resolve all name-based external references in `deploy_cfg`.
@@ -128,6 +133,7 @@ pub fn resolve_external_bindings(
         if let Some(rel_path) = someip_config_path.as_ref() {
             let abs_path = resolve_relative(deploy_dir, rel_path);
             let cfg = VsomeipConfig::load(&abs_path)?;
+            result.configs.insert(abs_path.clone());
             someip_cache.insert(device_name.clone(), (abs_path, cfg));
         }
 

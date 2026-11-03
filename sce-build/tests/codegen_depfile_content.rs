@@ -43,6 +43,11 @@
 //      per-kind fragments (missing whatever they include) and no fixture
 //      document at all, though the harness folds all 165 into its hash.
 //
+//   7. a transport resolved against a device's `vsomeip.json` (the
+//      `config:` its deploy names) did not declare it: the deploy was a
+//      prerequisite and the file the deploy points the IDs at was not, so
+//      a build declared it by hand on the commands it thought of.
+//
 // The first three have one cause: the depfile computed its template set
 // with a second walk of its own instead of asking the loader what it
 // loads. The fourth is the same shape one layer over, in the import
@@ -1524,5 +1529,44 @@ fn the_conformance_harness_declares_the_inputs_it_reads() {
         violations.is_empty(),
         "the conformance harness does not declare the inputs it reads:\n\n{}",
         violations.join("\n\n"),
+    );
+}
+
+/// Defect 7: the `vsomeip.json` a deploy's device names is read to resolve
+/// the transport's IDs, so it is a prerequisite of the run as the deploy is.
+/// The fixture is the SOME/IP pool sender the test tree builds, whose deploy
+/// names `vsomeip_pool_send.json`.
+#[test]
+fn the_configuration_a_deploy_names_is_a_declared_prerequisite() {
+    let mesh = repo_root().join("tests").join("mesh");
+    let out = TempDir::new().expect("tempdir");
+    let depfile = out.path().join("pool_sender_someip_sm.h.d");
+    let output = Command::new(codegen_bin())
+        .arg("generate")
+        .arg(mesh.join("pool_sender_someip.scxml"))
+        .args(["-l", "cpp", "--no-format", "-o"])
+        .arg(out.path())
+        .arg("--deploy")
+        .arg(mesh.join("deploy_someip_pool.yaml"))
+        .arg("--write-deps")
+        .arg(&depfile)
+        .output()
+        .expect("sce-codegen is runnable");
+    assert!(
+        output.status.success(),
+        "generate of the pool sender with its deploy failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let prerequisites = depfile_prerequisites(&depfile);
+    let config = mesh.join("vsomeip_pool_send.json");
+    assert!(
+        prerequisites.contains(&config),
+        "the depfile does not name {}, which the deploy's device names and the transport's \
+         IDs are resolved from: {prerequisites:?}",
+        config.display()
+    );
+    assert!(
+        prerequisites.contains(&mesh.join("deploy_someip_pool.yaml")),
+        "the depfile does not name the deploy: {prerequisites:?}"
     );
 }

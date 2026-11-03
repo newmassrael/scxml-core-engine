@@ -10681,9 +10681,13 @@ pub fn compile_mesh_transport(
         && !has_wire21_routing
         && !has_scxml_remote_wire
     {
-        let _ = external_resolution; // no bindings → no resolved IDs to consume
+        // No bindings, so no resolved ID is consumed; the configurations were
+        // read all the same, and are inputs of the run.
         return Ok(MeshResult {
-            output: generator::GeneratedOutput::default(),
+            output: generator::GeneratedOutput {
+                files: Vec::new(),
+                deps: external_resolution.configs.iter().cloned().collect(),
+            },
             dynamic_target_sends,
             deadline_override_notices,
             auto_subscriptions,
@@ -10820,7 +10824,7 @@ pub fn compile_mesh_transport(
     // `SCE_MACHINE_LIVENESS_SERVICE_PEER_<peer_machine>`).
     let someip_machine_liveness_service_ids =
         mesh::deploy::assign_someip_machine_liveness_service_ids(&deploy_cfg)?;
-    let output = mesh::codegen::generate_mesh(
+    let mut output = mesh::codegen::generate_mesh(
         mesh::codegen::MeshCodegenInputs {
             machine_name: &model.name,
             deploy_machine_name: &effective_machine_name,
@@ -10848,6 +10852,11 @@ pub fn compile_mesh_transport(
         },
         language,
     )?;
+    // The external configurations the transport was resolved against are
+    // inputs of it as the deploy is (`ExternalResolution::configs`).
+    output
+        .deps
+        .extend(external_resolution.configs.iter().cloned());
     Ok(MeshResult {
         output,
         dynamic_target_sends,
