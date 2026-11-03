@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: the entry of a chain that ends on an entry's flag
+     and states its depth (codec_chain_depth_plain, codec_chain_depth_gated).
+
+     One header byte: an id in bits 0..3 and `Z` in bit 7, set on every entry
+     but the last. An entry is exactly one byte, so a frame of N entries is N
+     bytes and a test can build one entry past the depth by hand. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_depth_entry">
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="id" bit="0" width="4"/>
+      <sce:flag name="Z" bit="7"/>
+    </sce:flags>
+  </datamodel>
+</scxml>

@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_query:51 :: _forge_body
+// SCE-MAP: codec_zenoh_query:52 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -80,8 +80,6 @@ data class CodecZenohQuery(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        this.parameters?.let { if (it.size > 256) return CodecError.LengthOutOfRange }
-        this.extensions?.let { if (it.size > 8) return CodecError.TooManyElements }
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -109,17 +107,12 @@ data class CodecZenohQuery(
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
-    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
-    /// `null` when `encode` refuses the value before its first byte: a
-    /// gated field and the `sce:present-if` that gates it contradict each
-    /// other (`CodecError.PresentIfMismatch`), or a byte string, text or
-    /// list lies outside its bound (`CodecError.LengthOutOfRange`,
-    /// `CodecError.TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink (e.g. `ByteArraySink`).
-    fun encodeToByteArray(): ByteArray? {
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
         val _list = mutableListOf<Byte>()
-        if (encode(MutableListSink(_list)) != null) return null
+        encode(MutableListSink(_list))
         return _list.toByteArray()
     }
 
@@ -163,9 +156,7 @@ data class CodecZenohQuery(
             }
             val parameters = if ((header.toInt() and 0x40) != 0) {
                 val _len = parameters_len!!
-                if (_len > 256uL) {
-                    cursor.refuse(CodecError.LengthOutOfRange); return null
-                }
+                if (_len > (Int.MAX_VALUE - 0).toULong()) return null
                 val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
@@ -176,11 +167,10 @@ data class CodecZenohQuery(
             }
             val extensions: MutableList<CodecZenohExtEntry>? = if ((header.toInt() and 0x80) != 0) {
             mutableListOf<CodecZenohExtEntry>().also {
-                for (_i in 0 until 8) {
+                while (true) {
                     if (cursor.remaining() == 0) break
                     it.add(CodecZenohExtEntry.decode(cursor) ?: return null)
                 }
-                if (cursor.remaining() > 0) { cursor.refuse(CodecError.TooManyElements); return null }
             }
         } else {
             null

@@ -1,0 +1,83 @@
+# What the conformance run's storing forms hold (docs/adr/0077 §7).
+#
+# A codec document states the protocol's bound: a byte string, a list or a
+# chain the protocol leaves unbounded has none, and one it bounds by a u32
+# length has 2^32 - 1. A form that stores holds what its deployment gives it,
+# its capacity, and C11 stores every field, so a field with no bound, or one
+# whose bound no array of this run could hold, needs one. These are the
+# capacities of the conformance run: the sizes these fixtures held before
+# their documents moved to the protocol's bounds, so its storage is what it
+# was. A frame inside a field's bound and past its capacity is refused with
+# CapacityExceeded, which is this node's limit and not a malformed frame.
+#
+# A Rust tree takes no capacity (its profiles answer for each field), so only
+# the C11 build reads this file.
+codecs:
+  codec_zenoh_ext_zbuf:
+    capacity:
+      value: 32
+  codec_zenoh_init_body:
+    capacity:
+      cookie: 128
+  codec_zenoh_open_body:
+    capacity:
+      cookie: 128
+  codec_zenoh_hello:
+    capacity:
+      locators: 64
+  codec_zenoh_err:
+    capacity:
+      payload: 256
+      extensions: 4
+  codec_zenoh_msg_put:
+    capacity:
+      payload: 256
+      extensions: 8
+  codec_zenoh_msg_del:
+    capacity:
+      extensions: 8
+  codec_zenoh_query:
+    capacity:
+      parameters: 256
+      extensions: 8
+  codec_zenoh_wireexpr:
+    capacity:
+      suffix: 128
+  codec_zenoh_response:
+    capacity:
+      suffix: 256
+      extensions: 4
+  codec_zenoh_decl_ext_keyexpr_inner:
+    capacity:
+      suffix: 128
+  codec_zenoh_value_slice:
+    capacity:
+      data: 16
+  codec_zenoh_value_zbuf:
+    capacity:
+      value: 32
+      slices: 4
+  codec_zenoh_ext_envelope:
+    capacity:
+      extensions: 8
+  codec_zenoh_declare:
+    capacity:
+      extensions: 4
+  codec_zenoh_interest:
+    capacity:
+      extensions: 4
+  codec_zenoh_oam:
+    capacity:
+      extensions: 4
+  codec_zenoh_query_value:
+    capacity:
+      exts: 4
+  codec_zenoh_reply:
+    capacity:
+      extensions: 4
+  codec_zenoh_request:
+    capacity:
+      extensions: 4
+  codec_zenoh_response_final:
+    capacity:
+      extensions: 4

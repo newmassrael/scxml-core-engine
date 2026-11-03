@@ -26,10 +26,10 @@
                   termination on entry header.Z — atomic 1 grammar;
                   chain is followed by the push_body embed so the
                   exhaust-or-depth termination would not detect the
-                  body boundary. max-depth=4 covers reply's actual
-                  ext slots — upstream defines none mandatory but
-                  the wire allows source_info per `_Z_MSG_EXT_ENC_ZBUF`
-                  conventions).
+                  body boundary. Upstream states no depth, so the
+                  chain has none; upstream defines no mandatory ext
+                  but the wire allows source_info per
+                  `_Z_MSG_EXT_ENC_ZBUF` conventions).
        embed:
          bytes  : codec_zenoh_push_body (1B push_header MID selector +
                   per-arm body bytes — push_body's own byte 0 is the
@@ -66,7 +66,7 @@
     <sce:field id="consolidation" sce:type="uint8" sce:byte="1" sce:bit-size="8"
                sce:present-if="header.C"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="2"
-                   max-depth="4"                   sce:present-if="header.Z"
+                   sce:present-if="header.Z"
                    terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:embed id="body" type="codec_zenoh_push_body" sce:byte="3"/>
   </datamodel>

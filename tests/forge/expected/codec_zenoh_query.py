@@ -1,4 +1,4 @@
-# SCE-MAP: codec_zenoh_query:51 :: _forge_body
+# SCE-MAP: codec_zenoh_query:52 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 # Runtime: none
@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink, TooManyElements
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
 
 from dataclasses import dataclass, field
@@ -61,8 +61,6 @@ class CodecZenohQuery:
                 f_parameters_len = None
             if (f_header & 0x40) != 0:
                 _len = f_parameters_len
-                if _len > 256:
-                    raise LengthOutOfRange()
                 _n = _len
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
@@ -72,15 +70,13 @@ class CodecZenohQuery:
                 f_parameters = None
             if (f_header & 0x80) != 0:
                 f_extensions = []
-                for _ in range(8):
+                while True:
                     if cursor.remaining() == 0:
                         break
                     _elem = CodecZenohExtEntry.decode(cursor)
                     if _elem is None:
                         return None
                     f_extensions.append(_elem)
-                if cursor.remaining() > 0:
-                    raise TooManyElements()
             else:
                 f_extensions = None
         except CodecError:
@@ -140,14 +136,7 @@ class CodecZenohQuery:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if self.parameters is not None and (len(self.parameters) > 256):
-            raise LengthOutOfRange()
-        if self.extensions is not None and (len(self.extensions) > 8):
-            raise TooManyElements()
+        :class:`BytearraySink`) are effectively infallible."""
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes
         # in declaration order through the per-field encode blocks, so a

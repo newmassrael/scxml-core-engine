@@ -57,7 +57,7 @@ class CodecZenohInterest:
             if (f_header & 0x80) != 0:
                 f_extensions = []
                 _more = False
-                for _ in range(4):
+                while True:
                     _elem = CodecZenohExtEntry.decode(cursor)
                     if _elem is None:
                         return None
@@ -67,8 +67,6 @@ class CodecZenohInterest:
                         break
                 if _more and cursor.remaining() == 0:
                     raise NeedMoreBytes()
-                if _more:
-                    raise TooManyElements()
             else:
                 f_extensions = None
         except CodecError:
@@ -136,7 +134,7 @@ class CodecZenohInterest:
                 raise PresentIfMismatch("body")
         elif self.body is not None:
             raise PresentIfMismatch("body")
-        if self.extensions is not None and (len(self.extensions) < 1 or len(self.extensions) > 4):
+        if self.extensions is not None and (len(self.extensions) < 1):
             raise TooManyElements()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes

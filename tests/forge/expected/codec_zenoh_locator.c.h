@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_locator:25 :: _forge_body
+// SCE-MAP: codec_zenoh_locator:26 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */
@@ -15,16 +15,16 @@
 #include "sce/forge/codec.h"
 
 #define CODEC_ZENOH_LOCATOR_MIN_BYTES 0
-#define CODEC_ZENOH_LOCATOR_MAX_BYTES 137
+#define CODEC_ZENOH_LOCATOR_MAX_BYTES 264
 
 typedef struct {
     uint64_t locator_len;
-    /* RFC §synth-5-B sce:type="string" payload (sce:max-size="128").
+    /* RFC §synth-5-B sce:type="string" payload (sce:max-size="255").
      * `char[N] + size_t len` parallels the bytes pair (uint8_t[N] + len)
      * but the host-language type signals UTF-8 text storage; the C
      * string is NOT NUL-terminated — payloads of exactly `max_size`
      * bytes are valid wire input. */
-    char    locator[128];
+    char    locator[255];
 } codec_zenoh_locator_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -52,7 +52,7 @@ static inline sce_forge_codec_status_t codec_zenoh_locator_decode(sce_forge_curs
     }
     out->locator_len = locator_len;
     {
-        if (out->locator_len > 128) {
+        if (out->locator_len > 255) {
             return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
         }
         size_t _n = (size_t)out->locator_len;
@@ -76,7 +76,7 @@ static inline sce_forge_codec_status_t codec_zenoh_locator_encode(const codec_ze
     /* A byte string, text, list or chain above the bound of the array that
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
-    if (!sce_forge_length_within_bound(self->locator_len, 128)) {
+    if (!sce_forge_length_within_bound(self->locator_len, 255)) {
         return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).

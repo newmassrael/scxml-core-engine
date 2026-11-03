@@ -15,8 +15,9 @@
                                   bits 1..31 = real id zero-extended)
        has_schema-gated:
          VLE bytes: schema_len   (VLE u64 byte-count of schema)
-         bytes    : schema       (UTF-8 string max=128, length-prefixed
-                                  by schema_len above)
+         bytes    : schema       (UTF-8 string, length-prefixed by
+                                  schema_len above; at most 255 bytes,
+                                  the u8 length upstream reads it with)
 
      Composition (no new SCE primitives — the VLE+flags carrier
      composition was first shipped in codec_ext_encoding_info):
@@ -75,7 +76,7 @@
     <sce:field id="schema_len" sce:type="uint64" sce:byte="1" sce:bit-size="vle"
                sce:present-if="packed_id.has_schema"/>
     <sce:field id="schema" sce:type="string" sce:byte="2" sce:bit-size="length-ref"
-               sce:length-field="schema_len" sce:max-size="128"
+               sce:length-field="schema_len" sce:max-size="255"
                sce:present-if="packed_id.has_schema"/>
   </datamodel>
 </scxml>

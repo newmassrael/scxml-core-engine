@@ -26,7 +26,7 @@
                               `_z_encoding_encode` codec.c:356-381:
                               VLE u32 packed_id with LSB has_schema
                               flag + has_schema-gated VLE u64
-                              schema_len + UTF-8 schema bytes max=128).
+                              schema_len + UTF-8 schema bytes, at most 255).
                               Replaces the prior Q1(b) inline VLE u32
                               encoding_id field (atomic 2b-iii-α closure).
        Z-gated:
@@ -34,14 +34,15 @@
                   termination on entry header.Z — atomic 1 grammar;
                   chain is followed by the always-present payload pair
                   so the exhaust-or-depth termination would not detect
-                  the payload boundary. max-depth=8 covers PUT's
-                  upstream ext slots — source_info via
-                  `_Z_MSG_EXT_ENC_ZBUF | 0x01` and attachment via
-                  `_Z_MSG_EXT_ENC_ZBUF | 0x03` per push_body_encode).
+                  the payload boundary. Upstream states no depth, so
+                  the chain has none. PUT's upstream ext slots are
+                  source_info via `_Z_MSG_EXT_ENC_ZBUF | 0x01` and
+                  attachment via `_Z_MSG_EXT_ENC_ZBUF | 0x03` per
+                  push_body_encode).
        always:
-         bytes  : payload_len (VLE u64) + payload (bytes max=256;
-                              upstream is unbounded zbuf — caller-
-                              supplied length-prefix per
+         bytes  : payload_len (VLE u64) + payload (bytes, at most
+                              2^32 - 1: the u32 length upstream bounds
+                              a zbuf with, length-prefixed per the
                               `_z_bytes_encode` convention).
 
      Composition: flags (header) + present-if-on-fields
@@ -79,10 +80,10 @@
     <sce:embed id="encoding" type="codec_zenoh_encoding" sce:byte="2"
                sce:present-if="header.E"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="3"
-                   max-depth="8"                   sce:present-if="header.Z"
+                   sce:present-if="header.Z"
                    terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:field id="payload_len" sce:type="uint64" sce:byte="4" sce:bit-size="vle"/>
     <sce:field id="payload" sce:type="bytes" sce:byte="5" sce:bit-size="length-ref"
-               sce:length-field="payload_len" sce:max-size="256"/>
+               sce:length-field="payload_len" sce:max-size="4294967295"/>
   </datamodel>
 </scxml>

@@ -39,6 +39,6 @@
   <datamodel>
     <sce:field id="header_flags" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="1"
-                   max-depth="8"                   terminate-on="entry-flag" entry-flag-name="Z"/>
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
   </datamodel>
 </scxml>

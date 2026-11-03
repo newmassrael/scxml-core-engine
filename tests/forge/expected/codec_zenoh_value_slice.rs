@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_value_slice:14 :: _forge_body"]
-// SCE-MAP: codec_zenoh_value_slice:14 :: _forge_body
+#![doc = "SCE-MAP: codec_zenoh_value_slice:15 :: _forge_body"]
+// SCE-MAP: codec_zenoh_value_slice:15 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -27,7 +27,7 @@ use sce_forge_runtime::codec::VecSink;
 pub struct CodecZenohValueSliceDataField;
 
 impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueSliceDataField> for ::sce_forge_runtime::codec::Inline {
-    type Bytes = ::sce_forge_runtime::codec::InlineBytes<16>;
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<4294967295>;
 }
 
 /// What `CodecZenohValueSliceIn` and the codecs it holds ask of a storage profile.
@@ -60,7 +60,7 @@ impl<'f, S: CodecZenohValueSliceStorage + ::sce_forge_runtime::codec::StoresByte
 pub struct CodecZenohValueSliceIn<S: CodecZenohValueSliceStorage> {
     pub kind: u8,
     pub len: u64,
-    pub data: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueSliceDataField>>::Bytes, 16>,
+    pub data: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueSliceDataField>>::Bytes, 4294967295>,
 }
 
 /// The eager form: bytes and text borrowed from the frame, lists held inline.
@@ -153,10 +153,10 @@ impl<S: CodecZenohValueSliceStorage> CodecZenohValueSliceIn<S> {
         let len = cursor.read_vle_u64()?;
         let data = {
             let _len = len;
-            if _len > 16 {
+            if _len > 4294967295 {
                 return Err(CodecError::LengthOutOfRange);
             }
-            let _n = _len as usize;
+            let _n = usize::try_from(_len).map_err(|_| CodecError::NeedMoreBytes)?;
             let raw = cursor.peek_slice(_n)?;
             let _v = raw;
             cursor.advance(_n)?;
@@ -170,11 +170,6 @@ impl<S: CodecZenohValueSliceStorage> CodecZenohValueSliceIn<S> {
         Ok(())
     }
 
-    /// Worst-case encoded byte count for this codec — the upper bound
-    /// against which `VecSink::new` reserves capacity in the
-    /// `encode_to_vec` facade, and the natural reserve hint for
-    /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 26;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -185,9 +180,9 @@ impl<S: CodecZenohValueSliceStorage> CodecZenohValueSliceIn<S> {
         CodecZenohValueSliceWire::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade. Pre-reserves
-    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
-    /// most one allocation, then delegates to `encode` over a
+    /// Heap-backed convenience facade. It reserves nothing, since the
+    /// largest frame passes `u32` (docs/adr/0077 §7), and delegates to
+    /// `encode` over a
     /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
     /// no value and the vector cannot run out of room. Callers targeting
     /// zero-alloc hot paths should call `encode` directly against a
@@ -199,7 +194,7 @@ impl<S: CodecZenohValueSliceStorage> CodecZenohValueSliceIn<S> {
     /// primary `encode`.
     #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_v: Vec<u8> = Vec::new();
         let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
         _sce_v
     }
@@ -213,14 +208,14 @@ pub trait CodecZenohValueSliceSource {
     /// The `kind` field.
     fn kind(&self) -> u8;
     /// The `data` field.
-    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16>;
+    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4294967295>;
 }
 
 impl<T: CodecZenohValueSliceSource + ?Sized> CodecZenohValueSliceSource for &T {
     fn kind(&self) -> u8 {
         (**self).kind()
     }
-    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
+    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4294967295> {
         (**self).data()
     }
 }
@@ -234,14 +229,14 @@ pub struct CodecZenohValueSliceParts<'a> {
     /// The `kind` field.
     pub kind: u8,
     /// The `data` field.
-    pub data: ::sce_forge_runtime::codec::Bytes<'a, 16>,
+    pub data: ::sce_forge_runtime::codec::Bytes<'a, 4294967295>,
 }
 
 impl<'a> CodecZenohValueSliceSource for CodecZenohValueSliceParts<'a> {
     fn kind(&self) -> u8 {
         self.kind
     }
-    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
+    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4294967295> {
         self.data
     }
 }
@@ -250,7 +245,7 @@ impl<S: CodecZenohValueSliceStorage> CodecZenohValueSliceSource for CodecZenohVa
     fn kind(&self) -> u8 {
         self.kind
     }
-    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16> {
+    fn data(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4294967295> {
         self.data.as_bytes()
     }
 }

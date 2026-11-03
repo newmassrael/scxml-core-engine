@@ -104,9 +104,11 @@ pub struct CodecTransportEnvelopeIn<S: CodecTransportEnvelopeStorage> {
 #[allow(dead_code)]
 pub type CodecTransportEnvelope<'a> = CodecTransportEnvelopeIn<::sce_forge_runtime::codec::Lent<'a>>;
 
-/// The value at a profile that holds its bytes and text.
+/// The value at a profile that holds its bytes and text, named
+/// with the profile: the build's default on the heap-free tier is `Inline`, which
+/// holds no field whose protocol states no bound (docs/adr/0077 §7).
 #[allow(dead_code)]
-pub type CodecTransportEnvelopeOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecTransportEnvelopeIn<S>;
+pub type CodecTransportEnvelopeOwned<S> = CodecTransportEnvelopeIn<S>;
 
 impl<S: CodecTransportEnvelopeStorage> Default for CodecTransportEnvelopeIn<S> {
     fn default() -> Self {
@@ -149,7 +151,7 @@ pub enum CodecTransportEnvelopeVariantIn<S: CodecTransportEnvelopeStorage> {
 pub type CodecTransportEnvelopeVariant<'a> = CodecTransportEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'a>>;
 
 #[allow(dead_code)]
-pub type CodecTransportEnvelopeOwnedVariant<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecTransportEnvelopeVariantIn<S>;
+pub type CodecTransportEnvelopeOwnedVariant<S> = CodecTransportEnvelopeVariantIn<S>;
 
 impl<S: CodecTransportEnvelopeStorage> Default for CodecTransportEnvelopeVariantIn<S> {
     fn default() -> Self {
@@ -332,11 +334,6 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeIn<S> {
         }
     }
 
-    /// Worst-case encoded byte count for this codec — the upper bound
-    /// against which `VecSink::new` reserves capacity in the
-    /// `encode_to_vec` facade, and the natural reserve hint for
-    /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 65546;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -347,9 +344,9 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeIn<S> {
         CodecTransportEnvelopeWire::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade. Pre-reserves
-    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
-    /// most one allocation, then delegates to `encode` over a
+    /// Heap-backed convenience facade. It reserves nothing, since the
+    /// largest frame passes `u32` (docs/adr/0077 §7), and delegates to
+    /// `encode` over a
     /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
     /// no value and the vector cannot run out of room. Callers targeting
     /// zero-alloc hot paths should call `encode` directly against a
@@ -361,7 +358,7 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeIn<S> {
     /// primary `encode`.
     #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_v: Vec<u8> = Vec::new();
         let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
         _sce_v
     }
@@ -667,11 +664,6 @@ impl<'a, D> CodecTransportEnvelopeVariantIn<::sce_forge_runtime::codec::Lent<'a,
             Self::Default { tag, body } => CodecTransportEnvelopeOwnedVariant::Default { tag, body },
         })
     }
-
-    /// The same projection at the build's default storage profile.
-    pub fn try_into_owned(self) -> Result<CodecTransportEnvelopeOwnedVariant, CodecError> {
-        self.try_into_owned_in()
-    }
 }
 
 #[allow(dead_code)]
@@ -774,11 +766,9 @@ impl<'a, D> CodecTransportEnvelopeIn<::sce_forge_runtime::codec::Lent<'a, D>> wh
         })
     }
 
-    /// The same projection at the build's default storage profile — growable
-    /// where an allocator exists, inline on the heap-free tier.
-    pub fn try_into_owned(self) -> Result<CodecTransportEnvelopeOwned, CodecError> {
-        self.try_into_owned_in()
-    }
+    // No projection at the build's default profile: on the heap-free tier
+    // that is `Inline`, which holds no field whose protocol states no bound
+    // (docs/adr/0077 §7). Name the profile, `try_into_owned_in::<S>()`.
 }
 
 #[allow(dead_code)]

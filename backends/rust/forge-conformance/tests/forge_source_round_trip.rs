@@ -858,7 +858,8 @@ mod groups {
             );
             bytes
         };
-        let none: Bounded<&[CodecZenohValueSliceParts<'_>], 4> =
+        // The protocol bounds the slices by nothing (docs/adr/0077 §7).
+        let none: Bounded<&[CodecZenohValueSliceParts<'_>], { usize::MAX }> =
             Bounded::new(&[][..]).expect("no entries");
         // The sliced side states a length its bytes do not measure.
         let sliced = AfterShm::AfterShm {
@@ -908,7 +909,7 @@ mod groups {
             Some(false)
         );
 
-        let none: Bounded<&[CodecZenohValueSliceParts<'_>], 4> =
+        let none: Bounded<&[CodecZenohValueSliceParts<'_>], { usize::MAX }> =
             Bounded::new(&[][..]).expect("no entries");
         let sliced = CodecZenohValueZbufParts {
             after_shm: AfterShm::AfterShm {
@@ -1237,11 +1238,9 @@ mod shared_counts {
 // last has the flag set, so the grammar has no word for none. A frame that ends
 // before the chain's first entry is short, gated or not (docs/adr/0065 §6 R7).
 mod chain_ends {
+    use super::codecs::codec_chain_depth_entry::CodecChainDepthEntryParts;
+    use super::codecs::codec_chain_depth_plain::{CodecChainDepthPlain, CodecChainDepthPlainWire};
     use super::codecs::codec_chain_has_marker::CodecChainHasMarker;
-    use super::codecs::codec_zenoh_ext_entry::CodecZenohExtEntryParts;
-    use super::codecs::codec_zenoh_ext_envelope::{
-        CodecZenohExtEnvelope, CodecZenohExtEnvelopeWire,
-    };
     use sce_forge_runtime::codec::{Bounded, CodecError, SceCursor, VecSink};
 
     // The list of the chain is one entry or more where the value is made, so no
@@ -1249,16 +1248,15 @@ mod chain_ends {
     // it encodes to a frame its decode reads back.
     #[test]
     fn a_chain_closed_by_an_entry_flag_is_presented_with_an_entry() {
-        let none: &[CodecZenohExtEntryParts<'_>] = &[];
+        let none: &[CodecChainDepthEntryParts] = &[];
         assert!(Bounded::<_, 8, 1>::new(none).is_none());
-        let value = CodecZenohExtEnvelope::default();
+        let value = CodecChainDepthPlain::default();
         assert_eq!(value.extensions.len(), 1);
         let mut bytes = Vec::new();
-        let Ok(()) =
-            CodecZenohExtEnvelopeWire::encode_source(&value, &mut VecSink::new(&mut bytes));
-        // The header, and one entry: a unit extension of id 0, the last.
+        let Ok(()) = CodecChainDepthPlainWire::encode_source(&value, &mut VecSink::new(&mut bytes));
+        // The header, and one entry: id 0, the last.
         assert_eq!(bytes, [0x00, 0x00]);
-        let decoded = CodecZenohExtEnvelope::decode(&mut SceCursor::new(&bytes)).expect("a frame");
+        let decoded = CodecChainDepthPlain::decode(&mut SceCursor::new(&bytes)).expect("a frame");
         assert_eq!(decoded.extensions.len(), 1);
     }
 
@@ -1266,7 +1264,7 @@ mod chain_ends {
     fn a_frame_that_ends_before_a_chains_first_entry_is_short() {
         // The header and no entry of the chain that always follows it.
         assert_eq!(
-            CodecZenohExtEnvelope::decode(&mut SceCursor::new(&[0x00])).err(),
+            CodecChainDepthPlain::decode(&mut SceCursor::new(&[0x00])).err(),
             Some(CodecError::NeedMoreBytes)
         );
         // `E` set, and nothing after the header.

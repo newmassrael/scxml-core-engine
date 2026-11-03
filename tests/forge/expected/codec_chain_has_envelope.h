@@ -165,11 +165,6 @@ struct CodecChainHasEnvelope {
         }
     }
 
-    /// Worst-case encoded byte count for this codec — the upper bound
-    /// against which `VectorSink::new` reserves capacity in the
-    /// `encode_to_vec` facade, and the natural reserve hint for
-    /// caller-owned `SpanSink` allocations.
-    static constexpr std::size_t MAX_ENCODED_BYTES = 1511;
 
     /// Encode `self` into the caller-owned sink. Returns
     /// `CodecError::BufferOverflow` from a bounded sink when the
@@ -227,9 +222,9 @@ struct CodecChainHasEnvelope {
         return std::nullopt;
     }
 
-    /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
-    /// so the worst-case write path performs at most one allocation,
-    /// then delegates to `encode` over a `VectorSink`. Returns the
+    /// Heap-backed convenience facade. It reserves nothing, since the
+    /// largest frame passes `u32` (docs/adr/0077 §7), and delegates to
+    /// `encode` over a `VectorSink`. Returns the
     /// freshly-encoded byte vector, or `std::nullopt` when `encode`
     /// refuses the value before its first byte: a gated field and the
     /// `sce:present-if` that gates it contradict each other
@@ -240,7 +235,6 @@ struct CodecChainHasEnvelope {
     /// sink.
     [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec() const {
         std::vector<std::uint8_t> _sce_v;
-        _sce_v.reserve(MAX_ENCODED_BYTES);
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
         if (encode(_sce_sink)) {
             return std::nullopt;

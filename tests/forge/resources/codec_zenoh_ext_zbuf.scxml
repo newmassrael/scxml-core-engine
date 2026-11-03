@@ -13,13 +13,14 @@
 
      Wire shape:
        byte 0+ : value_len  (VLE u64, 1..=9 bytes)
-       bytes   : value      (length=value_len, max 32) -->
+       bytes   : value      (length=value_len, at most 2^32 - 1: the u32
+                             length upstream bounds a slice with) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_ext_zbuf">
   <datamodel>
     <sce:field id="value_len" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
     <sce:field id="value" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
-               sce:length-field="value_len" sce:max-size="32"/>
+               sce:length-field="value_len" sce:max-size="4294967295"/>
   </datamodel>
 </scxml>

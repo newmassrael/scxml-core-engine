@@ -16,7 +16,7 @@
 #include "codec_zenoh_value_entry.h"
 
 #define CODEC_ZENOH_QUERY_VALUE_MIN_BYTES 0
-#define CODEC_ZENOH_QUERY_VALUE_MAX_BYTES 656
+#define CODEC_ZENOH_QUERY_VALUE_MAX_BYTES 18446744073709551615
 
 typedef struct {
     /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_zenoh_value_entry_t entries (max-depth 4) */
@@ -30,6 +30,11 @@ typedef struct {
  * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_query_value_decode(sce_forge_cursor_t *cursor, codec_zenoh_query_value_t *out) {
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Streaming cursor decode (SSOT selection: `needs_streaming`).
      * The positional `raw[byte_off]` path is valid only when every
      * field's absolute offset is fixed at codegen time; this branch
@@ -46,18 +51,18 @@ static inline sce_forge_codec_status_t codec_zenoh_query_value_decode(sce_forge_
         out->exts_len = 0;
         uint8_t _prev_exts_after_shm = 0;
         bool _more = false;
-        for (size_t _i = 0; _i < 4; ++_i) {
-            sce_forge_codec_status_t _st = codec_zenoh_value_entry_decode(cursor, &out->exts[out->exts_len], _prev_exts_after_shm);
+        for (;;) {
+            size_t _just = out->exts_len < 4U ? out->exts_len : 4U - 1U;
+            sce_forge_codec_status_t _st = sce_forge_codec_note_capacity(codec_zenoh_value_entry_decode(cursor, &out->exts[_just], _prev_exts_after_shm), &_over);
             if (_st != SCE_FORGE_CODEC_OK) return _st;
-            size_t _just = out->exts_len;
-            out->exts_len++;
+            if (out->exts_len < 4U) out->exts_len++; else _over = true;
             _more = codec_zenoh_value_entry_z(&out->exts[_just]);
             _prev_exts_after_shm = (uint8_t)(((uint64_t)(codec_zenoh_value_entry_ext_id(&out->exts[_just])) == 4ULL) ? 1 : 0);
             if (!_more) break;
         }
         if (_more && sce_forge_cursor_remaining(cursor) == 0) { return SCE_FORGE_CODEC_NEED_MORE_BYTES; }
-        if (_more) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

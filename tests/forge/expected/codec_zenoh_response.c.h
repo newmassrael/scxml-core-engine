@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_response:75 :: _forge_body
+// SCE-MAP: codec_zenoh_response:76 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */
@@ -19,7 +19,7 @@
 #include "codec_zenoh_err.h"
 
 #define CODEC_ZENOH_RESPONSE_MIN_BYTES 1
-#define CODEC_ZENOH_RESPONSE_MAX_BYTES 856
+#define CODEC_ZENOH_RESPONSE_MAX_BYTES 17179870035
 
 /* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
@@ -101,6 +101,11 @@ typedef struct {
  * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_response_decode(sce_forge_cursor_t *cursor, codec_zenoh_response_t *out) {
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* RFC §synth-5-B peek-byte / streaming-prefix:
      * streaming prefix decode (variable-length fields supported via
      * per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -135,7 +140,7 @@ static inline sce_forge_codec_status_t codec_zenoh_response_decode(sce_forge_cur
         out->suffix_len = sce_optional_uint64_none();
     }
     if ((out->header & 0x20) != 0) {
-        if (out->suffix_len.value > 256) {
+        if (out->suffix_len.value > 65535) {
             return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
         }
         size_t _n = (size_t)out->suffix_len.value;
@@ -143,8 +148,7 @@ static inline sce_forge_codec_status_t codec_zenoh_response_decode(sce_forge_cur
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;
         out->suffix = sce_optional_bytes_256_none();
-        memcpy(out->suffix.value.data, raw, _n);
-        out->suffix.value.len = _n;
+        out->suffix.value.len = sce_forge_codec_hold(out->suffix.value.data, 256U, raw, _n, &_over);
         out->suffix.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
@@ -154,16 +158,15 @@ static inline sce_forge_codec_status_t codec_zenoh_response_decode(sce_forge_cur
         if ((out->header & 0x80) != 0) {
             out->extensions.present = true;
             bool _more = false;
-            for (size_t _i = 0; _i < 4; ++_i) {
-                sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions.value.data[out->extensions.value.len]);
+            for (;;) {
+                size_t _just = out->extensions.value.len < 4U ? out->extensions.value.len : 4U - 1U;
+                sce_forge_codec_status_t _st = sce_forge_codec_note_capacity(codec_zenoh_ext_entry_decode(cursor, &out->extensions.value.data[_just]), &_over);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
-                size_t _just = out->extensions.value.len;
-                out->extensions.value.len++;
+                if (out->extensions.value.len < 4U) out->extensions.value.len++; else _over = true;
                 _more = codec_zenoh_ext_entry_z(&out->extensions.value.data[_just]);
                 if (!_more) break;
             }
             if (_more && sce_forge_cursor_remaining(cursor) == 0) { return SCE_FORGE_CODEC_NEED_MORE_BYTES; }
-            if (_more) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
         }
     const uint8_t *_peek_raw = sce_forge_cursor_peek(cursor, 1);
     if (_peek_raw == NULL) {
@@ -193,6 +196,7 @@ static inline sce_forge_codec_status_t codec_zenoh_response_decode(sce_forge_cur
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

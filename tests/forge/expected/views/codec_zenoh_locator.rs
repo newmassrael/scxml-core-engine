@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_locator:25 :: _forge_body"]
-// SCE-MAP: codec_zenoh_locator:25 :: _forge_body
+#![doc = "SCE-MAP: codec_zenoh_locator:26 :: _forge_body"]
+// SCE-MAP: codec_zenoh_locator:26 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -28,7 +28,7 @@ use sce_forge_runtime::codec::VecSink;
 pub struct CodecZenohLocatorLocatorField;
 
 impl ::sce_forge_runtime::codec::HoldsStr<CodecZenohLocatorLocatorField> for ::sce_forge_runtime::codec::Inline {
-    type Str = ::sce_forge_runtime::codec::InlineStr<128>;
+    type Str = ::sce_forge_runtime::codec::InlineStr<255>;
 }
 
 /// What `CodecZenohLocatorIn` and the codecs it holds ask of a storage profile.
@@ -60,7 +60,7 @@ impl<'f, S: CodecZenohLocatorStorage + ::sce_forge_runtime::codec::StoresStr<'f,
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohLocatorIn<S: CodecZenohLocatorStorage> {
     pub locator_len: u64,
-    pub locator: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsStr<CodecZenohLocatorLocatorField>>::Str, 128>,
+    pub locator: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsStr<CodecZenohLocatorLocatorField>>::Str, 255>,
 }
 
 /// The eager form: bytes and text borrowed from the frame, lists held inline.
@@ -146,7 +146,7 @@ impl<S: CodecZenohLocatorStorage> CodecZenohLocatorIn<S> {
         let locator_len = cursor.read_vle_u64()?;
         let locator = {
             let _len = locator_len;
-            if _len > 128 {
+            if _len > 255 {
                 return Err(CodecError::LengthOutOfRange);
             }
             let _n = _len as usize;
@@ -167,7 +167,7 @@ impl<S: CodecZenohLocatorStorage> CodecZenohLocatorIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 137;
+    pub const MAX_ENCODED_BYTES: usize = 264;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -204,11 +204,11 @@ impl<S: CodecZenohLocatorStorage> CodecZenohLocatorIn<S> {
 /// encode computes those from what is ([`CodecZenohLocatorWire::encode_source`]).
 pub trait CodecZenohLocatorSource {
     /// The `locator` field.
-    fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 128>;
+    fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 255>;
 }
 
 impl<T: CodecZenohLocatorSource + ?Sized> CodecZenohLocatorSource for &T {
-    fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 128> {
+    fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 255> {
         (**self).locator()
     }
 }
@@ -220,17 +220,17 @@ impl<T: CodecZenohLocatorSource + ?Sized> CodecZenohLocatorSource for &T {
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohLocatorParts<'a> {
     /// The `locator` field.
-    pub locator: ::sce_forge_runtime::codec::Text<'a, 128>,
+    pub locator: ::sce_forge_runtime::codec::Text<'a, 255>,
 }
 
 impl<'a> CodecZenohLocatorSource for CodecZenohLocatorParts<'a> {
-    fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 128> {
+    fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 255> {
         self.locator
     }
 }
 
 impl<S: CodecZenohLocatorStorage> CodecZenohLocatorSource for CodecZenohLocatorOwned<S> {
-    fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 128> {
+    fn locator(&self) -> ::sce_forge_runtime::codec::Text<'_, 255> {
         self.locator.as_text()
     }
 }

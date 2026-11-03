@@ -793,7 +793,9 @@ FIXTURES = {
             ({"locator": "tcp/127.0.0.1:7447"}, "the length is derived from the text"),
             ({"locator": "héllo"}, "the length counts the bytes of the UTF-8, not the characters"),
             ({"locator": "".join(chr(c) for c in ASCII) * 4 + "abcdefghijklmnopqrstuvwx"},
-             "text at its bound of 128 bytes: the length takes two VLE bytes"),
+             "128 bytes of text: the length takes two VLE bytes"),
+            ({"locator": "".join(chr(c) for c in ASCII) * 9 + "abcdefghijklmnopqrstu"},
+             "text at its bound of 255 bytes, the u8 length upstream reads it with"),
         ]
     ),
     "codec_length_ref_dotted_basic": Fixture(
@@ -847,7 +849,8 @@ FIXTURES = {
     "codec_zenoh_value_slice": Fixture(
         [
             ({"kind": 0, "data": []}, "no data"),
-            ({"kind": 0xFF, "data": list(range(16))}, "data at its bound"),
+            ({"kind": 0xFF, "data": list(range(16))}, "sixteen bytes of data"),
+            ({"kind": 1, "data": list(range(200))}, "200 bytes: the length takes two VLE bytes"),
         ],
         "a kind, then bytes whose VLE length is derived from them.",
     ),
@@ -909,7 +912,8 @@ FIXTURES = {
     "codec_zenoh_ext_zbuf": Fixture(
         [
             ({"value": []}, "no bytes"),
-            ({"value": list(range(32))}, "bytes at their bound"),
+            ({"value": list(range(32))}, "thirty-two bytes"),
+            ({"value": list(range(200))}, "200 bytes: the length takes two VLE bytes"),
         ],
         "bytes whose VLE length is derived from them.",
     ),

@@ -82,9 +82,6 @@ func DecodeCodecZenohHello(cursor *codec.SceCursor, L byte) (*CodecZenohHello, e
 	var Locators optional.Of[[]codec_zenoh_locator.CodecZenohLocator]
 	if (L & 0x01) != 0 {
 		_n := NumLocators.Proven()
-		if _n > 64 {
-			return nil, codec.ErrTooManyElements
-		}
 		_list := make([]codec_zenoh_locator.CodecZenohLocator, 0, cursor.EntriesBacked(uint64(_n)))
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_zenoh_locator.DecodeCodecZenohLocator(cursor)
@@ -145,9 +142,6 @@ func (s *CodecZenohHello) Encode(w codec.SceSink, L byte) error {
 	if len(s.Zid) < 1 || len(s.Zid) > 16 {
 		return codec.ErrLengthOutOfRange
 	}
-	if s.Locators.IsPresent() && (len(s.Locators.Proven()) > 64) {
-		return codec.ErrTooManyElements
-	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
 	// Mirrors the streaming decode: every field appends its own bytes in
 	// declaration order through the per-field encode blocks, so a gated
@@ -191,7 +185,7 @@ func (s *CodecZenohHello) Encode(w codec.SceSink, L byte) error {
 // Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecZenohHello) EncodeToBytes(L byte) ([]byte, error) {
-	_dst := make([]byte, 0, 8795)
+	_dst := make([]byte, 0)
 	if err := s.Encode(codec.NewBytesSink(&_dst), L); err != nil {
 		return nil, err
 	}

@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_query:51 :: _forge_body
+// SCE-MAP: codec_zenoh_query:52 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */
@@ -17,7 +17,7 @@
 #include "codec_zenoh_ext_entry.h"
 
 #define CODEC_ZENOH_QUERY_MIN_BYTES 2
-#define CODEC_ZENOH_QUERY_MAX_BYTES 603
+#define CODEC_ZENOH_QUERY_MAX_BYTES 34359738707
 
 #ifndef SCE_OPTIONAL_BYTES_256
 #define SCE_OPTIONAL_BYTES_256
@@ -73,6 +73,11 @@ typedef struct {
  * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_query_decode(sce_forge_cursor_t *cursor, codec_zenoh_query_t *out) {
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Streaming cursor decode (SSOT selection: `needs_streaming`).
      * The positional `raw[byte_off]` path is valid only when every
      * field's absolute offset is fixed at codegen time; this branch
@@ -110,15 +115,12 @@ static inline sce_forge_codec_status_t codec_zenoh_query_decode(sce_forge_cursor
         out->parameters_len = sce_optional_uint64_none();
     }
     if ((out->header & 0x40) != 0) {
-        if (out->parameters_len.value > 256) {
-            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
-        }
+        if ((uint64_t)out->parameters_len.value > (uint64_t)SIZE_MAX - 0u) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         size_t _n = (size_t)out->parameters_len.value;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->parameters = sce_optional_bytes_256_none();
-        memcpy(out->parameters.value.data, raw, _n);
-        out->parameters.value.len = _n;
+        out->parameters.value.len = sce_forge_codec_hold(out->parameters.value.data, 256U, raw, _n, &_over);
         out->parameters.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
@@ -127,14 +129,15 @@ static inline sce_forge_codec_status_t codec_zenoh_query_decode(sce_forge_cursor
     memset(&out->extensions, 0, sizeof out->extensions);
         if ((out->header & 0x80) != 0) {
             out->extensions.present = true;
-            for (size_t _i = 0; _i < 8; ++_i) {
+            for (;;) {
                 if (sce_forge_cursor_remaining(cursor) == 0) break;
-                sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions.value.data[out->extensions.value.len]);
+                size_t _just = out->extensions.value.len < 8U ? out->extensions.value.len : 8U - 1U;
+                sce_forge_codec_status_t _st = sce_forge_codec_note_capacity(codec_zenoh_ext_entry_decode(cursor, &out->extensions.value.data[_just]), &_over);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
-                out->extensions.value.len++;
+                if (out->extensions.value.len < 8U) out->extensions.value.len++; else _over = true;
             }
-            if (sce_forge_cursor_remaining(cursor) > 0) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
         }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

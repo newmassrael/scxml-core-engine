@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 358e4be4a52e72432bafa7ddd2eec2846145e67e377ccdbb35331d5342f38402
+// source-hash: fa5ddc51db35d1c9e510043884e7304fa6a695359f6c17b684d5f8bf2823ccdb
 // SCE-MAP: codec_zenoh_value_zbuf.scxml:27 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -67,7 +67,7 @@ public struct CodecZenohValueZbuf: Equatable, Sendable {
         var frame = CodecZenohValueZbuf()
         frame.value_len = try reader.readVle(UInt64.self)
         if (after_shm & 0x1) == 0 {
-            if frame.value_len > 32 {
+            if frame.value_len > 4294967295 {
                 throw CodecError.lengthOutOfRange
             }
             frame.value = Array(try reader.readSlice(Int(clamping: frame.value_len)))
@@ -79,9 +79,6 @@ public struct CodecZenohValueZbuf: Equatable, Sendable {
             frame.slice_count = try reader.readVle(UInt64.self)
         }
         if (after_shm & 0x1) != 0 {
-            if (frame.slice_count ?? 0) > 4 {
-                throw CodecError.tooManyElements
-            }
             var slices_items: [CodecZenohValueSlice] = []
             for _ in 0..<Int(clamping: (frame.slice_count ?? 0)) {
                 slices_items.append(try CodecZenohValueSlice.decode(&reader))
@@ -116,11 +113,8 @@ public struct CodecZenohValueZbuf: Equatable, Sendable {
         } else if self.slices != nil {
             throw CodecError.presentIfMismatch
         }
-        if let value = self.value, value.count > 32 {
+        if let value = self.value, value.count > 4294967295 {
             throw CodecError.lengthOutOfRange
-        }
-        if let value = self.slices, value.count > 4 {
-            throw CodecError.tooManyElements
         }
         var frame: [UInt8] = []
         appendVle(self.value_len, to: &frame)

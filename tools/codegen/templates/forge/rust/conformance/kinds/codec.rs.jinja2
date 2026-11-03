@@ -20,7 +20,20 @@
    only needs a Default::default() probe to drag the type's pub API
    (struct fields, encode, decode, new) through the type checker.
    Catches the silently-broken-codegen class of bug that motivated
-   commit 91ae355a (Kotlin embed default + Go pointer/value mismatch). #}
+   commit 91ae355a (Kotlin embed default + Go pointer/value mismatch).
+
+   A codec whose list the protocol bounds by nothing has no eager form at the
+   default profile (`f.grows`, docs/adr/0077 §7): the fragment names it at the
+   growing profile, `{Name}In<Lent<'_, Heap>>`, as a type (`eager_ty`) and as a
+   path to its functions (`eager`). #}
+{% set pascal = f.name | to_pascal_case %}
+{% if f.grows %}
+{% set eager_ty = pascal ~ "In<::sce_forge_runtime::codec::Lent<'_, ::sce_forge_runtime::codec::Heap>>" %}
+{% set eager = pascal ~ "In::<::sce_forge_runtime::codec::Lent<'_, ::sce_forge_runtime::codec::Heap>>" %}
+{% else %}
+{% set eager_ty = pascal %}
+{% set eager = pascal %}
+{% endif %}
 {% if f.oracle_eligible %}
     let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
     for (i, case) in spec["cases"]
@@ -150,8 +163,8 @@
     // -class regression of commit 91ae355a's variety surfaces here
     // before reaching consumers.
     let _ = &reference;
-    let _val: {{ f.name | to_pascal_case }} = {{ f.name | to_pascal_case }}::default();
-    let _val2: {{ f.name | to_pascal_case }} = {{ f.name | to_pascal_case }}::new();
+    let _val: {{ eager_ty }} = {{ eager }}::default();
+    let _val2: {{ eager_ty }} = {{ eager }}::new();
     let _ = (_val, _val2);
 {% endif %}
 
@@ -186,7 +199,7 @@
         );
         let mut cursor = ::sce_forge_runtime::codec::SceCursor::new(&encoded);
         {# A value of no element is compared by its decode being accepted alone. #}
-        let {% if not s.checks %}_{% endif %}decoded = {{ f.name | to_pascal_case }}::decode(&mut cursor)
+        let {% if not s.checks %}_{% endif %}decoded = {{ eager }}::decode(&mut cursor)
             .unwrap_or_else(|e| panic!("{{ f.name }} source {{ loop.index0 }}: decode refused with {e:?}"));
         assert_eq!(
             cursor.remaining(),
@@ -216,7 +229,7 @@
         {# Bound before the match so a borrowed codec's temporary is dropped
            with this binding rather than at the end of the enclosing block,
            where `wire` is already gone. #}
-        let outcome = {{ f.name | to_pascal_case }}::decode(&mut cursor);
+        let outcome = {{ eager }}::decode(&mut cursor);
         match outcome {
             Ok(accepted) => panic!(
                 "{{ f.name }} reject {{ loop.index0 }} ({{ r.why }}): decode returned Ok({accepted:?})"

@@ -352,7 +352,7 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 164;
+    pub const MAX_ENCODED_BYTES: usize = 65571;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:

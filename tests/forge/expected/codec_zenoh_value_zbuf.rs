@@ -17,6 +17,9 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
+use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use super::codec_zenoh_value_slice::CodecZenohValueSliceView;
+
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
@@ -28,7 +31,7 @@ use super::codec_zenoh_value_slice::CodecZenohValueSliceOwned;
 pub struct CodecZenohValueZbufValueField;
 
 impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueZbufValueField> for ::sce_forge_runtime::codec::Inline {
-    type Bytes = ::sce_forge_runtime::codec::InlineBytes<32>;
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<4294967295>;
 }
 
 /// The field `slices` of `CodecZenohValueZbuf`, which a storage profile
@@ -36,9 +39,9 @@ impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueZbufValueField> for :
 #[allow(dead_code)]
 pub struct CodecZenohValueZbufSlicesField;
 
-impl ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField> for ::sce_forge_runtime::codec::Inline {
-    type List<T> = ::sce_forge_runtime::heapless::Vec<T, 4> where T: Default + ::core::fmt::Debug + Clone + PartialEq;
-}
+// `Inline` does not answer for `slices`: the protocol states no bound of
+// it, so it is held only by a profile whose container grows, or by a deployment
+// that gives it a capacity (docs/adr/0077 §7).
 
 /// What `CodecZenohValueZbufIn` and the codecs it holds ask of a storage profile.
 #[allow(dead_code)]
@@ -64,7 +67,7 @@ impl<'f, S: CodecZenohValueZbufStorage + ::sce_forge_runtime::codec::StoresBytes
 /// The group `CodecZenohValueZbufAfterShm` as `CodecZenohValueZbufOwned` holds it, in the storage
 /// profile `S`.
 #[allow(dead_code)]
-pub type CodecZenohValueZbufAfterShmOwned<S> = CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField>>::List<CodecZenohValueSliceOwned<S>>, 4>, ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueZbufValueField>>::Bytes, 32>>;
+pub type CodecZenohValueZbufAfterShmOwned<S> = CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField>>::List<CodecZenohValueSliceOwned<S>>, { usize::MAX }>, ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueZbufValueField>>::Bytes, 4294967295>>;
 
 // `CodecZenohValueZbufIn<S>` is the one value this codec has, at the storage
 // profile `S` (docs/adr/0077 §7). `CodecZenohValueZbuf<'a>` is it on `Lent`, which
@@ -77,13 +80,16 @@ pub struct CodecZenohValueZbufIn<S: CodecZenohValueZbufStorage> {
     pub slice_count: Option<u64>,
 }
 
-/// The eager form: bytes and text borrowed from the frame, lists held inline.
-#[allow(dead_code)]
-pub type CodecZenohValueZbuf<'a> = CodecZenohValueZbufIn<::sce_forge_runtime::codec::Lent<'a>>;
+// No eager form at the default profile: `Lent<'a>` holds each list as `Inline`
+// does, and `Inline` holds no list whose protocol states no bound
+// (docs/adr/0077 §7). Name the eager form at a profile that holds its lists,
+// `CodecZenohValueZbufIn<Lent<'a, D>>`.
 
-/// The value at a profile that holds its bytes and text.
+/// The value at a profile that holds its bytes and text, named
+/// with the profile: the build's default on the heap-free tier is `Inline`, which
+/// holds no field whose protocol states no bound (docs/adr/0077 §7).
 #[allow(dead_code)]
-pub type CodecZenohValueZbufOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecZenohValueZbufIn<S>;
+pub type CodecZenohValueZbufOwned<S> = CodecZenohValueZbufIn<S>;
 
 impl<S: CodecZenohValueZbufStorage> Default for CodecZenohValueZbufIn<S> {
     fn default() -> Self {
@@ -135,7 +141,7 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufIn<S> {
         let mut _frame = *cursor;
         match Self::store_into(cursor, _out, after_shm) {
             Err(CodecError::CapacityExceeded) => {
-                CodecZenohValueZbuf::store_into(&mut _frame, &mut CodecZenohValueZbuf::default(), after_shm)?;
+                CodecZenohValueZbufView::decode(&mut _frame, after_shm)?;
                 Err(CodecError::CapacityExceeded)
             }
             stored => stored,
@@ -165,10 +171,10 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufIn<S> {
         let value_len = cursor.read_vle_u64()?;
         let value = if (after_shm & 0x01u8) == 0 {
             let _len = value_len;
-            if _len > 32 {
+            if _len > 4294967295 {
                 return Err(CodecError::LengthOutOfRange);
             }
-            let _n = _len as usize;
+            let _n = usize::try_from(_len).map_err(|_| CodecError::NeedMoreBytes)?;
             let raw = cursor.peek_slice(_n)?;
             let _v = raw;
             cursor.advance(_n)?;
@@ -190,12 +196,9 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufIn<S> {
         } else {
             None
         };
-        let mut slices: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField>>::List<CodecZenohValueSliceOwned<S>>, 4>> = None;
+        let mut slices: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField>>::List<CodecZenohValueSliceOwned<S>>, { usize::MAX }>> = None;
         if (after_shm & 0x01u8) != 0 {
             let _n = slice_count.expect("co-gating: count present-if matches repeat");
-            if _n > 4 {
-                return Err(CodecError::TooManyElements);
-            }
             slices.insert(Default::default()).refill(|_vec| {
                 for _ in 0.._n {
                     ::sce_forge_runtime::codec::SceList::try_push(_vec, CodecZenohValueSliceOwned::<S>::decode(cursor)?)?;
@@ -210,11 +213,6 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufIn<S> {
         Ok(())
     }
 
-    /// Worst-case encoded byte count for this codec — the upper bound
-    /// against which `VecSink::new` reserves capacity in the
-    /// `encode_to_vec` facade, and the natural reserve hint for
-    /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 163;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -225,9 +223,9 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufIn<S> {
         CodecZenohValueZbufWire::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade. Pre-reserves
-    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
-    /// most one allocation, then delegates to `encode` over a
+    /// Heap-backed convenience facade. It reserves nothing, since the
+    /// largest frame passes `u32` (docs/adr/0077 §7), and delegates to
+    /// `encode` over a
     /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
     /// no value and the vector cannot run out of room. Callers targeting
     /// zero-alloc hot paths should call `encode` directly against a
@@ -239,7 +237,7 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufIn<S> {
     /// primary `encode`.
     #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_v: Vec<u8> = Vec::new();
         let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
         _sce_v
     }
@@ -279,11 +277,11 @@ impl<Slices: Default, Value: Default> Default for CodecZenohValueZbufAfterShm<Sl
 /// encode computes those from what is ([`CodecZenohValueZbufWire::encode_source`]).
 pub trait CodecZenohValueZbufSource {
     /// The fields `after_shm` decides, held together (docs/adr/0065 §6 R4).
-    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 32>>;
+    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, { usize::MAX }>, ::sce_forge_runtime::codec::Bytes<'_, 4294967295>>;
 }
 
 impl<T: CodecZenohValueZbufSource + ?Sized> CodecZenohValueZbufSource for &T {
-    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 32>> {
+    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, { usize::MAX }>, ::sce_forge_runtime::codec::Bytes<'_, 4294967295>> {
         (**self).after_shm()
     }
 }
@@ -295,11 +293,11 @@ impl<T: CodecZenohValueZbufSource + ?Sized> CodecZenohValueZbufSource for &T {
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohValueZbufParts<'a> {
     /// The fields `after_shm` decides, held together (docs/adr/0065 §6 R4).
-    pub after_shm: CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_value_slice::CodecZenohValueSliceParts<'a>], 4>, ::sce_forge_runtime::codec::Bytes<'a, 32>>,
+    pub after_shm: CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_value_slice::CodecZenohValueSliceParts<'a>], { usize::MAX }>, ::sce_forge_runtime::codec::Bytes<'a, 4294967295>>,
 }
 
 impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbufParts<'a> {
-    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 32>> {
+    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, { usize::MAX }>, ::sce_forge_runtime::codec::Bytes<'_, 4294967295>> {
         match &self.after_shm {
             CodecZenohValueZbufAfterShm::AfterShm { encoding, slices, value_len } => CodecZenohValueZbufAfterShm::AfterShm { encoding: *encoding, slices: slices.iter(), value_len: *value_len },
             CodecZenohValueZbufAfterShm::NotAfterShm { value } => CodecZenohValueZbufAfterShm::NotAfterShm { value: *value },
@@ -308,10 +306,19 @@ impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbufParts<'a> {
 }
 
 impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufSource for CodecZenohValueZbufOwned<S> {
-    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, 4>, ::sce_forge_runtime::codec::Bytes<'_, 32>> {
+    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, { usize::MAX }>, ::sce_forge_runtime::codec::Bytes<'_, 4294967295>> {
         match &self.after_shm {
             CodecZenohValueZbufAfterShm::AfterShm { encoding, slices, value_len } => CodecZenohValueZbufAfterShm::AfterShm { encoding: *encoding, slices: slices.list_iter(), value_len: *value_len },
             CodecZenohValueZbufAfterShm::NotAfterShm { value } => CodecZenohValueZbufAfterShm::NotAfterShm { value: value.as_bytes() },
+        }
+    }
+}
+
+impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbufView<'a> {
+    fn after_shm(&self) -> CodecZenohValueZbufAfterShm<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone, { usize::MAX }>, ::sce_forge_runtime::codec::Bytes<'_, 4294967295>> {
+        match &self.after_shm {
+            CodecZenohValueZbufAfterShm::AfterShm { encoding, slices, value_len } => CodecZenohValueZbufAfterShm::AfterShm { encoding: *encoding, slices: slices.iter(), value_len: *value_len },
+            CodecZenohValueZbufAfterShm::NotAfterShm { value } => CodecZenohValueZbufAfterShm::NotAfterShm { value: *value },
         }
     }
 }
@@ -419,6 +426,180 @@ impl CodecZenohValueZbufWire {
 }
 
 
+// ── View (ADR 0049) ──────────────────────────────────────────────────
+// `CodecZenohValueZbufView` is what a decode of `CodecZenohValueZbuf` learned, not a
+// copy of what the wire repeated: a scalar, a string or a bytes field is held
+// as `CodecZenohValueZbuf` holds it, an embedded body or a variant arm as its
+// own view, and a bounded list as the frame it was read from, how many entries
+// it holds and what a walk needs to read them again (`ListView`). Its size
+// depends on the number of fields and not on any `sce:max-count`, so moving
+// one copies a few words however long its lists may be. `decode` refuses the
+// frames `CodecZenohValueZbuf::decode` refuses, with the same error: the entries
+// are decoded once to check them, and a walk afterwards cannot fail.
+#[allow(dead_code)]
+pub struct CodecZenohValueZbufSlicesWalk;
+
+impl ListWalk<0> for CodecZenohValueZbufSlicesWalk {
+    type Entry<'b> = CodecZenohValueSliceView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohValueSliceView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
+#[allow(dead_code)]
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct CodecZenohValueZbufView<'a> {
+    pub after_shm: CodecZenohValueZbufAfterShm<Bounded<ListView<'a, CodecZenohValueZbufSlicesWalk, 0>, { usize::MAX }>, ::sce_forge_runtime::codec::Bytes<'a, 4294967295>>,
+    pub slice_count: Option<u64>,
+}
+
+#[allow(dead_code)]
+impl<'a> CodecZenohValueZbufView<'a> {
+    /// A view with every field at its own type's [`Default`]: the destination
+    /// [`Self::decode_into`] fills.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Decode the next frame from `cursor`: the bytes, the bounds and the
+    /// errors of [`CodecZenohValueZbufIn::decode`], held as a view. On success the
+    /// cursor advances past the consumed bytes.
+    pub fn decode(cursor: &mut SceCursor<'a>, after_shm: u8) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out, after_shm)?;
+        Ok(_out)
+    }
+
+    /// [`Self::decode`] into a destination the caller owns, so a view that
+    /// embeds or dispatches to this one is filled where it will live. On
+    /// `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self, after_shm: u8) -> Result<(), CodecError> {
+        // Declared-but-unconsumed flag inputs: defensive suppress per declared
+        // `<sce:flag-input>` so codecs that haven't (yet) consumed an
+        // input via `present-if` compile cleanly. The validator enforces
+        // declaration; consumption is a per-codec design choice.
+        let _ = after_shm;
+        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        // The positional `raw[byte_off]` path is valid only when every
+        // field's absolute offset is fixed at codegen time; this branch
+        // handles every codec where it is not — present-if-gated fields
+        // (runtime presence), VLE / repeat / TLV-chain / embed fields
+        // (runtime width), string fields (UTF-8 decode), and a fixed field
+        // after a variable-length payload (offset depends on the payload
+        // length). Each field reads its own bytes from the cursor and
+        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
+        // every other field flows through `present_if_decode_stmt`, whose
+        // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
+        let value_len = cursor.read_vle_u64()?;
+        let value = if (after_shm & 0x01u8) == 0 {
+            let _len = value_len;
+            if _len > 4294967295 {
+                return Err(CodecError::LengthOutOfRange);
+            }
+            let _n = usize::try_from(_len).map_err(|_| CodecError::NeedMoreBytes)?;
+            let raw = cursor.peek_slice(_n)?;
+            let _v = raw;
+            cursor.advance(_n)?;
+            Some(_v)
+        } else {
+            None
+        };
+        let value = value.map(|_v| ::sce_forge_runtime::codec::Bounded::new(_v).ok_or(CodecError::LengthOutOfRange)).transpose()?;
+        let encoding = if (after_shm & 0x01u8) != 0 {
+            let _v = cursor.read_vle_u64()?;
+            Some(_v)
+        } else {
+            None
+        };
+        let slice_count = if (after_shm & 0x01u8) != 0 {
+            let _v = cursor.read_vle_u64()?;
+            Some(_v)
+        } else {
+            None
+        };
+        #[allow(clippy::needless_late_init)]
+        let slices: Option<Bounded<ListView<'a, CodecZenohValueZbufSlicesWalk, 0>, { usize::MAX }>>;
+        if (after_shm & 0x01u8) != 0 {
+            let _n = slice_count.expect("co-gating: count present-if matches repeat");
+            let _rest = cursor.peek_slice(cursor.remaining())?;
+            let mut _count: u32 = 0;
+            for _ in 0.._n {
+                CodecZenohValueSliceView::decode(cursor)?;
+                _count += 1;
+            }
+            slices = Some(Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements)?);
+        } else {
+            slices = None;
+        }
+        _out.after_shm = if (after_shm & 0x01u8) != 0 { CodecZenohValueZbufAfterShm::AfterShm { encoding: encoding.unwrap_or_default(), slices: slices.unwrap_or_default(), value_len } } else { CodecZenohValueZbufAfterShm::NotAfterShm { value: value.unwrap_or_default() } };
+        _out.slice_count = slice_count;
+        Ok(())
+    }
+
+    /// Fill `_out`, the builder form [`CodecZenohValueZbuf`] a sender fills and
+    /// encodes, with what this view says: every field, each embedded body, the
+    /// variant arm, and each list entry as the walk yields it, built in the
+    /// destination where it will live. Fails only where the destination cannot
+    /// hold it, which a destination of the same declared bounds does.
+    // The name every view's method has (ADR 0049), which borrows because a
+    // view is read, not consumed. Clippy leaves an exported method's name
+    // alone; a crate that includes this module privately is asked to rename
+    // it, and the one name is what lets a codec reach every view it holds.
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_builder<D>(&self, _out: &mut CodecZenohValueZbufIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecZenohValueZbufLentStorage {
+        match &self.after_shm {
+            CodecZenohValueZbufAfterShm::AfterShm { encoding, slices, value_len } => {
+                let mut _o_encoding: u64 = Default::default();
+                _o_encoding = *encoding;
+                let mut _o_slices: ::sce_forge_runtime::codec::Bounded<<::sce_forge_runtime::codec::Lent<'a, D> as ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField>>::List<CodecZenohValueSliceOwned<::sce_forge_runtime::codec::Lent<'a, D>>>, { usize::MAX }> = Default::default();
+                _o_slices.refill(|_vec| {
+                    for _e in slices.iter() {
+                        ::sce_forge_runtime::codec::SceList::try_push(_vec, Default::default())?;
+                        if let Some(_slot) = ::sce_forge_runtime::codec::SceList::last_mut(_vec) {
+                            _e.into_builder(_slot)?;
+                        }
+                    }
+                    Ok(())
+                })?;
+                let mut _o_value_len: u64 = Default::default();
+                _o_value_len = *value_len;
+                _out.after_shm = CodecZenohValueZbufAfterShm::AfterShm { encoding: _o_encoding, slices: _o_slices, value_len: _o_value_len };
+            }
+            CodecZenohValueZbufAfterShm::NotAfterShm { value } => {
+                let mut _o_value: ::sce_forge_runtime::codec::Bounded<<::sce_forge_runtime::codec::Lent<'a, D> as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueZbufValueField>>::Bytes, 4294967295> = Default::default();
+                _o_value = *value;
+                _out.after_shm = CodecZenohValueZbufAfterShm::NotAfterShm { value: _o_value };
+            }
+        }
+        _out.slice_count = self.slice_count;
+        Ok(())
+    }
+
+
+    /// Encode what this view says into the caller-owned sink: the bytes
+    /// [`CodecZenohValueZbuf::encode`] writes for the value [`Self::into_builder`]
+    /// fills, written straight from the view, walking each list, without the
+    /// builder. It writes the canonical wire, not the frame the view was decoded
+    /// from, so a frame `decode` accepted in a form that is not canonical is
+    /// not passed on as it came.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
+        CodecZenohValueZbufWire::encode_source(self, w)
+    }
+
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
+    /// value (docs/adr/0065).
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::new();
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
+    }
+}
+
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohValueZbuf<'a>` above is a zero-copy view borrowing the decode
 // buffer. Consumers that persist a decoded value beyond the buffer's
@@ -476,11 +657,9 @@ impl<'a, D> CodecZenohValueZbufIn<::sce_forge_runtime::codec::Lent<'a, D>> where
         })
     }
 
-    /// The same projection at the build's default storage profile — growable
-    /// where an allocator exists, inline on the heap-free tier.
-    pub fn try_into_owned(self) -> Result<CodecZenohValueZbufOwned, CodecError> {
-        self.try_into_owned_in()
-    }
+    // No projection at the build's default profile: on the heap-free tier
+    // that is `Inline`, which holds no field whose protocol states no bound
+    // (docs/adr/0077 §7). Name the profile, `try_into_owned_in::<S>()`.
 }
 
 #[allow(dead_code)]
@@ -515,14 +694,14 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufOwned<S> {
             CodecZenohValueZbufAfterShm::AfterShm { encoding, slices, value_len } => {
                 let mut _o_encoding: u64 = Default::default();
                 _o_encoding = *encoding;
-                let mut _o_slices: ::sce_forge_runtime::codec::Bounded<<::sce_forge_runtime::codec::Lent<'o, S> as ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField>>::List<CodecZenohValueSliceOwned<::sce_forge_runtime::codec::Lent<'o, S>>>, 4> = Default::default();
+                let mut _o_slices: ::sce_forge_runtime::codec::Bounded<<::sce_forge_runtime::codec::Lent<'o, S> as ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField>>::List<CodecZenohValueSliceOwned<::sce_forge_runtime::codec::Lent<'o, S>>>, { usize::MAX }> = Default::default();
                 _o_slices.refill(|_d| ::sce_forge_runtime::codec::try_project_bounded_into(_d, slices.inner(), |_e| Ok(_e.as_borrowed())))?;
                 let mut _o_value_len: u64 = Default::default();
                 _o_value_len = *value_len;
                 _out.after_shm = CodecZenohValueZbufAfterShm::AfterShm { encoding: _o_encoding, slices: _o_slices, value_len: _o_value_len };
             }
             CodecZenohValueZbufAfterShm::NotAfterShm { value } => {
-                let mut _o_value: ::sce_forge_runtime::codec::Bounded<<::sce_forge_runtime::codec::Lent<'o, S> as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueZbufValueField>>::Bytes, 32> = Default::default();
+                let mut _o_value: ::sce_forge_runtime::codec::Bounded<<::sce_forge_runtime::codec::Lent<'o, S> as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohValueZbufValueField>>::Bytes, 4294967295> = Default::default();
                 _o_value = value.as_bytes();
                 _out.after_shm = CodecZenohValueZbufAfterShm::NotAfterShm { value: _o_value };
             }

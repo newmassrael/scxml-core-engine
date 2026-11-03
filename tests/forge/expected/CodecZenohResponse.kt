@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_response:75 :: _forge_body
+// SCE-MAP: codec_zenoh_response:76 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -101,8 +101,8 @@ data class CodecZenohResponse(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        this.suffix?.let { if (it.encodeToByteArray().size > 256) return CodecError.LengthOutOfRange }
-        this.extensions?.let { if (it.size < 1 || it.size > 4) return CodecError.TooManyElements }
+        this.suffix?.let { if (it.encodeToByteArray().size > 65535) return CodecError.LengthOutOfRange }
+        this.extensions?.let { if (it.size < 1) return CodecError.TooManyElements }
         // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix encode. Peek-byte mode: arm body's encode
         // prepends its own header byte (which the decoder peeked); no
@@ -175,7 +175,7 @@ data class CodecZenohResponse(
             }
             val suffix = if ((header.toInt() and 0x20) != 0) {
                 val _len = suffix_len!!
-                if (_len > 256uL) {
+                if (_len > 65535uL) {
                     cursor.refuse(CodecError.LengthOutOfRange); return null
                 }
                 val _n = _len.toInt()
@@ -192,14 +192,13 @@ data class CodecZenohResponse(
             val extensions: MutableList<CodecZenohExtEntry>? = if ((header.toInt() and 0x80) != 0) {
             mutableListOf<CodecZenohExtEntry>().also {
                 var _more = false
-                for (_i in 0 until 4) {
+                while (true) {
                     val _entry = CodecZenohExtEntry.decode(cursor) ?: return null
                     _more = _entry.Z()
                     it.add(_entry)
                     if (!_more) break
                 }
                 if (_more && cursor.remaining() == 0) { return null }
-                if (_more) { cursor.refuse(CodecError.TooManyElements); return null }
             }
         } else {
             null

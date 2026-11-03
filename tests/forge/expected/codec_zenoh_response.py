@@ -1,4 +1,4 @@
-# SCE-MAP: codec_zenoh_response:75 :: _forge_body
+# SCE-MAP: codec_zenoh_response:76 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 # Runtime: none
@@ -73,7 +73,7 @@ class CodecZenohResponse:
                 f_suffix_len = None
             if (f_header & 0x20) != 0:
                 _len = f_suffix_len
-                if _len > 256:
+                if _len > 65535:
                     raise LengthOutOfRange()
                 _n = _len
                 raw = cursor.peek_slice(_n)
@@ -88,7 +88,7 @@ class CodecZenohResponse:
             if (f_header & 0x80) != 0:
                 f_extensions = []
                 _more = False
-                for _ in range(4):
+                while True:
                     _elem = CodecZenohExtEntry.decode(cursor)
                     if _elem is None:
                         return None
@@ -98,8 +98,6 @@ class CodecZenohResponse:
                         break
                 if _more and cursor.remaining() == 0:
                     raise NeedMoreBytes()
-                if _more:
-                    raise TooManyElements()
             else:
                 f_extensions = None
             _peek = cursor.peek_slice(1)[0]
@@ -190,9 +188,9 @@ class CodecZenohResponse:
         before the first byte, the error a decode of the frame would give
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with."""
-        if self.suffix is not None and (len(self.suffix.encode("utf-8")) > 256):
+        if self.suffix is not None and (len(self.suffix.encode("utf-8")) > 65535):
             raise LengthOutOfRange()
-        if self.extensions is not None and (len(self.extensions) < 1 or len(self.extensions) > 4):
+        if self.extensions is not None and (len(self.extensions) < 1):
             raise TooManyElements()
         # RFC §synth-5-B peek-byte / streaming-prefix:
         # streaming prefix encode.

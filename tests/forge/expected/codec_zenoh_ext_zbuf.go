@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_ext_zbuf:17 :: _forge_body
+// SCE-MAP: codec_zenoh_ext_zbuf:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -38,8 +38,11 @@ func DecodeCodecZenohExtZbuf(cursor *codec.SceCursor) (*CodecZenohExtZbuf, error
 	var Value []byte
 	{
 		_len := ValueLen
-		if _len > 32 {
+		if _len > 4294967295 {
 			return nil, codec.ErrLengthOutOfRange
+		}
+		if uint64(_len) > uint64(^uint(0)>>1)-0 {
+			return nil, codec.ErrNeedMoreBytes
 		}
 		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
@@ -62,7 +65,7 @@ func DecodeCodecZenohExtZbuf(cursor *codec.SceCursor) (*CodecZenohExtZbuf, error
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohExtZbuf) Encode(w codec.SceSink) error {
-	if len(s.Value) > 32 {
+	if len(s.Value) > 4294967295 {
 		return codec.ErrLengthOutOfRange
 	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
@@ -91,7 +94,7 @@ func (s *CodecZenohExtZbuf) Encode(w codec.SceSink) error {
 // Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecZenohExtZbuf) EncodeToBytes() ([]byte, error) {
-	_dst := make([]byte, 0, 41)
+	_dst := make([]byte, 0)
 	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
 		return nil, err
 	}

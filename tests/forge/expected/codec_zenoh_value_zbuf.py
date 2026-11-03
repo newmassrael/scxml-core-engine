@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink, TooManyElements
+from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink
 from .codec_zenoh_value_slice import CodecZenohValueSlice
 
 from dataclasses import dataclass, field
@@ -47,7 +47,7 @@ class CodecZenohValueZbuf:
             f_value_len = cursor.read_vle_u64()
             if (after_shm & 0x01) == 0:
                 _len = f_value_len
-                if _len > 32:
+                if _len > 4294967295:
                     raise LengthOutOfRange()
                 _n = _len
                 raw = cursor.peek_slice(_n)
@@ -67,8 +67,6 @@ class CodecZenohValueZbuf:
             else:
                 f_slice_count = None
             if (after_shm & 0x01) != 0:
-                if f_slice_count > 4:
-                    raise TooManyElements()
                 f_slices = []
                 for _ in range(f_slice_count):
                     _elem = CodecZenohValueSlice.decode(cursor)
@@ -111,10 +109,8 @@ class CodecZenohValueZbuf:
                 raise PresentIfMismatch("slices")
         elif self.slices is not None:
             raise PresentIfMismatch("slices")
-        if self.value is not None and (len(self.value) > 32):
+        if self.value is not None and (len(self.value) > 4294967295):
             raise LengthOutOfRange()
-        if self.slices is not None and (len(self.slices) > 4):
-            raise TooManyElements()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes
         # in declaration order through the per-field encode blocks, so a

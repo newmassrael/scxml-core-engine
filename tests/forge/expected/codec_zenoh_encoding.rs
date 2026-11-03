@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_encoding:68 :: _forge_body"]
-// SCE-MAP: codec_zenoh_encoding:68 :: _forge_body
+#![doc = "SCE-MAP: codec_zenoh_encoding:69 :: _forge_body"]
+// SCE-MAP: codec_zenoh_encoding:69 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -27,7 +27,7 @@ use sce_forge_runtime::codec::VecSink;
 pub struct CodecZenohEncodingSchemaField;
 
 impl ::sce_forge_runtime::codec::HoldsStr<CodecZenohEncodingSchemaField> for ::sce_forge_runtime::codec::Inline {
-    type Str = ::sce_forge_runtime::codec::InlineStr<128>;
+    type Str = ::sce_forge_runtime::codec::InlineStr<255>;
 }
 
 /// What `CodecZenohEncodingIn` and the codecs it holds ask of a storage profile.
@@ -60,7 +60,7 @@ impl<'f, S: CodecZenohEncodingStorage + ::sce_forge_runtime::codec::StoresStr<'f
 pub struct CodecZenohEncodingIn<S: CodecZenohEncodingStorage> {
     pub packed_id: u32,
     pub schema_len: Option<u64>,
-    pub schema: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsStr<CodecZenohEncodingSchemaField>>::Str, 128>>,
+    pub schema: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsStr<CodecZenohEncodingSchemaField>>::Str, 255>>,
 }
 
 /// The eager form: bytes and text borrowed from the frame, lists held inline.
@@ -153,7 +153,7 @@ impl<S: CodecZenohEncodingStorage> CodecZenohEncodingIn<S> {
         };
         let schema = if (packed_id & 0x00000001u32) != 0 {
             let _len = schema_len.unwrap();
-            if _len > 128 {
+            if _len > 255 {
                 return Err(CodecError::LengthOutOfRange);
             }
             let _n = _len as usize;
@@ -195,7 +195,7 @@ impl<S: CodecZenohEncodingStorage> CodecZenohEncodingIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 142;
+    pub const MAX_ENCODED_BYTES: usize = 269;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -234,14 +234,14 @@ pub trait CodecZenohEncodingSource {
     /// The `packed_id` field.
     fn packed_id(&self) -> u32;
     /// The `schema` field.
-    fn schema(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>>;
+    fn schema(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 255>>;
 }
 
 impl<T: CodecZenohEncodingSource + ?Sized> CodecZenohEncodingSource for &T {
     fn packed_id(&self) -> u32 {
         (**self).packed_id()
     }
-    fn schema(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
+    fn schema(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 255>> {
         (**self).schema()
     }
 }
@@ -255,14 +255,14 @@ pub struct CodecZenohEncodingParts<'a> {
     /// The `packed_id` field.
     pub packed_id: u32,
     /// The `schema` field.
-    pub schema: Option<::sce_forge_runtime::codec::Text<'a, 128>>,
+    pub schema: Option<::sce_forge_runtime::codec::Text<'a, 255>>,
 }
 
 impl<'a> CodecZenohEncodingSource for CodecZenohEncodingParts<'a> {
     fn packed_id(&self) -> u32 {
         self.packed_id
     }
-    fn schema(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
+    fn schema(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 255>> {
         self.schema
     }
 }
@@ -271,7 +271,7 @@ impl<S: CodecZenohEncodingStorage> CodecZenohEncodingSource for CodecZenohEncodi
     fn packed_id(&self) -> u32 {
         self.packed_id
     }
-    fn schema(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
+    fn schema(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 255>> {
         self.schema.as_ref().map(::sce_forge_runtime::codec::Bounded::as_text)
     }
 }

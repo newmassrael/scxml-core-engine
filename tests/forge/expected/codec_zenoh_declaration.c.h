@@ -23,7 +23,7 @@
 #include "codec_zenoh_decl_final.h"
 
 #define CODEC_ZENOH_DECLARATION_MIN_BYTES 1
-#define CODEC_ZENOH_DECLARATION_MAX_BYTES 164
+#define CODEC_ZENOH_DECLARATION_MAX_BYTES 65571
 
 /* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
@@ -87,6 +87,11 @@ typedef struct {
  * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_declaration_decode(sce_forge_cursor_t *cursor, codec_zenoh_declaration_t *out) {
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix). */
     const uint8_t *raw = sce_forge_cursor_peek(cursor, CODEC_ZENOH_DECLARATION_MIN_BYTES);
     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
@@ -150,6 +155,7 @@ static inline sce_forge_codec_status_t codec_zenoh_declaration_decode(sce_forge_
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

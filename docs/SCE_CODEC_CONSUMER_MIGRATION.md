@@ -853,3 +853,22 @@ Landing: the commit that adds this section.
   does for every other backend.
 - Nothing a host calls changed: the machine's functions, its readers and its saved form are as they were.
 
+## A codec whose list states no bound has no eager form at the default profile (ADR 0077 §7)
+
+Landing: the commit that adds this section.
+
+- A Rust codec with a `<sce:repeat>` or `<sce:tlv-chain>` that states no `max-count` or `max-depth`, or that holds such
+  a codec, and to which the generation gives no capacity, is generated with no `{Codec}<'a>` and, for a variant, no
+  `{Codec}Variant<'a>`. Each was `{Codec}In<Lent<'a>>`, whose `Lent<'a>` holds lists as `Inline` does, and `Inline`
+  holds no list of no bound, so no code could use it: a use failed to compile with an unsatisfied `HoldsList` bound.
+  Code that names it now fails with the name not found.
+- Name the eager form at a profile that holds the lists: `{Codec}In<Lent<'a, D>>`, `D` a deployment's profile or
+  `Heap`, and its arms `{Codec}VariantIn<Lent<'a, D>>`. Its functions are called the same way, as
+  `{Codec}In::<Lent<'a, D>>::decode(..)`. A program that used its own alias for it, as a `lent` module of
+  `pub type Msg<'a> = MsgIn<Lent<'a, Node>>` does, changes nothing.
+- A codec whose lists all have a bound or a capacity is generated as before, and so is every C++, Go, Kotlin, Python,
+  Swift and C11 codec.
+- SCE's own Zenoh fixtures moved to the protocol's bounds in the same landing: a reject vector that refused a ninth
+  extension of a chain of depth 8 now belongs to `codec_chain_depth_plain` and `codec_chain_depth_gated`, which state
+  a depth. A consumer's documents are its own; nothing here changes what they state.
+

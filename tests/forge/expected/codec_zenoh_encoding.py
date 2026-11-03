@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# SCE-MAP: codec_zenoh_encoding:68 :: _forge_body
+# SCE-MAP: codec_zenoh_encoding:69 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 # Runtime: none
@@ -50,7 +50,7 @@ class CodecZenohEncoding:
                 f_schema_len = None
             if (f_packed_id & 0x00000001) != 0:
                 _len = f_schema_len
-                if _len > 128:
+                if _len > 255:
                     raise LengthOutOfRange()
                 _n = _len
                 raw = cursor.peek_slice(_n)
@@ -95,7 +95,7 @@ class CodecZenohEncoding:
         before the first byte, the error a decode of the frame would give
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with."""
-        if self.schema is not None and (len(self.schema.encode("utf-8")) > 128):
+        if self.schema is not None and (len(self.schema.encode("utf-8")) > 255):
             raise LengthOutOfRange()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes

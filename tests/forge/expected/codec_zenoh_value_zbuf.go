@@ -43,8 +43,11 @@ func DecodeCodecZenohValueZbuf(cursor *codec.SceCursor, afterShm byte) (*CodecZe
 	var Value optional.Of[[]byte]
 	if (afterShm & 0x01) == 0 {
 		_len := ValueLen
-		if _len > 32 {
+		if _len > 4294967295 {
 			return nil, codec.ErrLengthOutOfRange
+		}
+		if uint64(_len) > uint64(^uint(0)>>1)-0 {
+			return nil, codec.ErrNeedMoreBytes
 		}
 		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
@@ -71,9 +74,6 @@ func DecodeCodecZenohValueZbuf(cursor *codec.SceCursor, afterShm byte) (*CodecZe
 	var Slices optional.Of[[]codec_zenoh_value_slice.CodecZenohValueSlice]
 	if (afterShm & 0x01) != 0 {
 		_n := SliceCount.Proven()
-		if _n > 4 {
-			return nil, codec.ErrTooManyElements
-		}
 		_list := make([]codec_zenoh_value_slice.CodecZenohValueSlice, 0, cursor.EntriesBacked(uint64(_n)))
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_zenoh_value_slice.DecodeCodecZenohValueSlice(cursor)
@@ -119,11 +119,8 @@ func (s *CodecZenohValueZbuf) Encode(w codec.SceSink, afterShm byte) error {
 	} else if s.Slices.IsPresent() {
 		return codec.ErrPresentIfMismatch
 	}
-	if s.Value.IsPresent() && (len(s.Value.Proven()) > 32) {
+	if s.Value.IsPresent() && (len(s.Value.Proven()) > 4294967295) {
 		return codec.ErrLengthOutOfRange
-	}
-	if s.Slices.IsPresent() && (len(s.Slices.Proven()) > 4) {
-		return codec.ErrTooManyElements
 	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
 	// Mirrors the streaming decode: every field appends its own bytes in
@@ -173,7 +170,7 @@ func (s *CodecZenohValueZbuf) Encode(w codec.SceSink, afterShm byte) error {
 // Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecZenohValueZbuf) EncodeToBytes(afterShm byte) ([]byte, error) {
-	_dst := make([]byte, 0, 163)
+	_dst := make([]byte, 0)
 	if err := s.Encode(codec.NewBytesSink(&_dst), afterShm); err != nil {
 		return nil, err
 	}

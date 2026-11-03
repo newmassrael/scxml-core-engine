@@ -25,8 +25,8 @@
        Q_C-gated:
          byte 1 : consolidation (uint8 0..3)
        Q_P-gated:
-         bytes  : parameters_len (VLE u64) + parameters (UTF-8 bytes,
-                                                          max 256)
+         bytes  : parameters_len (VLE u64) + parameters (UTF-8 bytes;
+                                                          no bound)
        Z-gated:
          chain  : codec_zenoh_ext_entry tlv-chain (exhaust-or-depth
                   termination — chain is codec's last field; max-
@@ -45,9 +45,10 @@
      dispatch header — the wire byte 0 here IS the request body's
      dispatch header from the request envelope's perspective.
 
-     stripped-down scope: parameters max-size=256 (full upstream is
-     unbounded zbuf — caller-supplied length-prefix). All other
-     fields match upstream wire 1:1. -->
+     The parameters and the extension chain carry no bound: upstream
+     states none, and what a node holds of them is its capacity, not
+     the document's (docs/adr/0077 §7). The fields match upstream wire
+     1:1. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_query">
@@ -64,9 +65,9 @@
     <sce:field id="parameters_len" sce:type="uint64" sce:byte="2" sce:bit-size="vle"
                sce:present-if="header.P"/>
     <sce:field id="parameters" sce:type="bytes" sce:byte="3" sce:bit-size="length-ref"
-               sce:length-field="parameters_len" sce:max-size="256"
+               sce:length-field="parameters_len"
                sce:present-if="header.P"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="4"
-                   max-depth="8"                   sce:present-if="header.Z"/>
+                   sce:present-if="header.Z"/>
   </datamodel>
 </scxml>

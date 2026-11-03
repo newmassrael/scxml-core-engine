@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_init_body:42 :: _forge_body
+// SCE-MAP: codec_zenoh_init_body:43 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -96,7 +96,7 @@ struct CodecZenohInitBody {
         std::optional<std::vector<uint8_t>> cookie;
         if ((a & 0x01) != 0) {
             const auto _len = cookie_len.value();
-            if (_len > 128) {
+            if (_len > 65535) {
                 cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
             }
             std::size_t _n = static_cast<std::size_t>(_len);
@@ -165,7 +165,7 @@ struct CodecZenohInitBody {
     /// against which `VectorSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SpanSink` allocations.
-    static constexpr std::size_t MAX_ENCODED_BYTES = 159;
+    static constexpr std::size_t MAX_ENCODED_BYTES = 65566;
 
     /// Encode `self` into the caller-owned sink. Returns
     /// `CodecError::BufferOverflow` from a bounded sink when the
@@ -184,7 +184,7 @@ struct CodecZenohInitBody {
             if (!cookie.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
         } else if (cookie.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
         if (zid.size() < 1 || zid.size() > 16) return ::SCE::Forge::CodecError::LengthOutOfRange;
-        if (cookie.has_value() && ((*cookie).size() > 128)) return ::SCE::Forge::CodecError::LengthOutOfRange;
+        if (cookie.has_value() && ((*cookie).size() > 65535)) return ::SCE::Forge::CodecError::LengthOutOfRange;
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a

@@ -1,4 +1,4 @@
-# SCE-MAP: codec_zenoh_wireexpr:53 :: _forge_body
+# SCE-MAP: codec_zenoh_wireexpr:55 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 # Runtime: none
@@ -49,7 +49,7 @@ class CodecZenohWireexpr:
                 f_suffix_len = None
             if (n & 0x01) != 0:
                 _len = f_suffix_len
-                if _len > 128:
+                if _len > 65535:
                     raise LengthOutOfRange()
                 _n = _len
                 raw = cursor.peek_slice(_n)
@@ -83,7 +83,7 @@ class CodecZenohWireexpr:
                 raise PresentIfMismatch("suffix")
         elif self.suffix is not None:
             raise PresentIfMismatch("suffix")
-        if self.suffix is not None and (len(self.suffix.encode("utf-8")) > 128):
+        if self.suffix is not None and (len(self.suffix.encode("utf-8")) > 65535):
             raise LengthOutOfRange()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes

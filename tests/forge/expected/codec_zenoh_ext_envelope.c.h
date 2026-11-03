@@ -16,7 +16,7 @@
 #include "codec_zenoh_ext_entry.h"
 
 #define CODEC_ZENOH_EXT_ENVELOPE_MIN_BYTES 1
-#define CODEC_ZENOH_EXT_ENVELOPE_MAX_BYTES 337
+#define CODEC_ZENOH_EXT_ENVELOPE_MAX_BYTES 34359738441
 
 typedef struct {
     uint8_t header_flags;
@@ -31,6 +31,11 @@ typedef struct {
  * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_ext_envelope_decode(sce_forge_cursor_t *cursor, codec_zenoh_ext_envelope_t *out) {
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Streaming cursor decode (SSOT selection: `needs_streaming`).
      * The positional `raw[byte_off]` path is valid only when every
      * field's absolute offset is fixed at codegen time; this branch
@@ -52,17 +57,17 @@ static inline sce_forge_codec_status_t codec_zenoh_ext_envelope_decode(sce_forge
     {
         out->extensions_len = 0;
         bool _more = false;
-        for (size_t _i = 0; _i < 8; ++_i) {
-            sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions[out->extensions_len]);
+        for (;;) {
+            size_t _just = out->extensions_len < 8U ? out->extensions_len : 8U - 1U;
+            sce_forge_codec_status_t _st = sce_forge_codec_note_capacity(codec_zenoh_ext_entry_decode(cursor, &out->extensions[_just]), &_over);
             if (_st != SCE_FORGE_CODEC_OK) return _st;
-            size_t _just = out->extensions_len;
-            out->extensions_len++;
+            if (out->extensions_len < 8U) out->extensions_len++; else _over = true;
             _more = codec_zenoh_ext_entry_z(&out->extensions[_just]);
             if (!_more) break;
         }
         if (_more && sce_forge_cursor_remaining(cursor) == 0) { return SCE_FORGE_CODEC_NEED_MORE_BYTES; }
-        if (_more) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

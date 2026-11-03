@@ -57,7 +57,7 @@
     <sce:field id="num_locators" sce:type="uint64" sce:byte="3" sce:bit-size="vle"
                sce:present-if="L"/>
     <sce:repeat id="locators" type="codec_zenoh_locator" sce:byte="4"
-                count="num_locators" max-count="64"
+                count="num_locators"
                 sce:present-if="L"/>
   </datamodel>
 </scxml>

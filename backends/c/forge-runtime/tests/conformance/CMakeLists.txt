@@ -148,6 +148,11 @@ endif()
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${GENERATED_DIR}")
 
+# What this run's storing forms hold (docs/adr/0077 §7). A document states the
+# protocol's bound, and C11 stores every field, so a field with no bound, or one
+# no array of this run could hold, takes its capacity from this deploy input.
+set(CONFORMANCE_DEPLOY "${REPO_ROOT}/tests/forge/conformance/deploy.yaml")
+
 # Step 1: per-fixture product code generation. Each fixture's SCXML is
 # fed to sce-codegen --language c11 to produce a single header. RFC §synth-5-B
 # B2-test-vector: fixtures whose SCXML carries `<sce:test-vector>` rows
@@ -182,9 +187,10 @@ foreach(_fixture_index RANGE ${_fixture_count})
         OUTPUT ${_outputs}
         COMMAND "${SCE_CODEGEN}" generate "${scxml}"
                 --language c11
+                --deploy "${CONFORMANCE_DEPLOY}"
                 --output-dir "${GENERATED_DIR}"
                 --write-deps "${GENERATED_DIR}/${fixture}.h.d"
-        DEPENDS ${_document_deps} "${SCE_CODEGEN}"
+        DEPENDS ${_document_deps} "${CONFORMANCE_DEPLOY}" "${SCE_CODEGEN}"
         DEPFILE "${GENERATED_DIR}/${fixture}.h.d"
         COMMENT "Generating C11 fixture ${fixture}.h"
         VERBATIM

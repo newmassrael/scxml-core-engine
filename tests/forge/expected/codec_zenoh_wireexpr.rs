@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_wireexpr:53 :: _forge_body"]
-// SCE-MAP: codec_zenoh_wireexpr:53 :: _forge_body
+#![doc = "SCE-MAP: codec_zenoh_wireexpr:55 :: _forge_body"]
+// SCE-MAP: codec_zenoh_wireexpr:55 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -27,7 +27,7 @@ use sce_forge_runtime::codec::VecSink;
 pub struct CodecZenohWireexprSuffixField;
 
 impl ::sce_forge_runtime::codec::HoldsStr<CodecZenohWireexprSuffixField> for ::sce_forge_runtime::codec::Inline {
-    type Str = ::sce_forge_runtime::codec::InlineStr<128>;
+    type Str = ::sce_forge_runtime::codec::InlineStr<65535>;
 }
 
 /// What `CodecZenohWireexprIn` and the codecs it holds ask of a storage profile.
@@ -60,7 +60,7 @@ impl<'f, S: CodecZenohWireexprStorage + ::sce_forge_runtime::codec::StoresStr<'f
 pub struct CodecZenohWireexprIn<S: CodecZenohWireexprStorage> {
     pub id: u64,
     pub suffix_len: Option<u64>,
-    pub suffix: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsStr<CodecZenohWireexprSuffixField>>::Str, 128>>,
+    pub suffix: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsStr<CodecZenohWireexprSuffixField>>::Str, 65535>>,
 }
 
 /// The eager form: bytes and text borrowed from the frame, lists held inline.
@@ -158,7 +158,7 @@ impl<S: CodecZenohWireexprStorage> CodecZenohWireexprIn<S> {
         };
         let suffix = if (n & 0x01u8) != 0 {
             let _len = suffix_len.unwrap();
-            if _len > 128 {
+            if _len > 65535 {
                 return Err(CodecError::LengthOutOfRange);
             }
             let _n = _len as usize;
@@ -182,7 +182,7 @@ impl<S: CodecZenohWireexprStorage> CodecZenohWireexprIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 146;
+    pub const MAX_ENCODED_BYTES: usize = 65553;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -221,14 +221,14 @@ pub trait CodecZenohWireexprSource {
     /// The `id` field.
     fn id(&self) -> u64;
     /// The `suffix` field.
-    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>>;
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 65535>>;
 }
 
 impl<T: CodecZenohWireexprSource + ?Sized> CodecZenohWireexprSource for &T {
     fn id(&self) -> u64 {
         (**self).id()
     }
-    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 65535>> {
         (**self).suffix()
     }
 }
@@ -242,14 +242,14 @@ pub struct CodecZenohWireexprParts<'a> {
     /// The `id` field.
     pub id: u64,
     /// The `suffix` field.
-    pub suffix: Option<::sce_forge_runtime::codec::Text<'a, 128>>,
+    pub suffix: Option<::sce_forge_runtime::codec::Text<'a, 65535>>,
 }
 
 impl<'a> CodecZenohWireexprSource for CodecZenohWireexprParts<'a> {
     fn id(&self) -> u64 {
         self.id
     }
-    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 65535>> {
         self.suffix
     }
 }
@@ -258,7 +258,7 @@ impl<S: CodecZenohWireexprStorage> CodecZenohWireexprSource for CodecZenohWireex
     fn id(&self) -> u64 {
         self.id
     }
-    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 128>> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 65535>> {
         self.suffix.as_ref().map(::sce_forge_runtime::codec::Bounded::as_text)
     }
 }

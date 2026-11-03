@@ -67,7 +67,7 @@ class CodecZenohOam:
             if (f_header & 0x80) != 0:
                 f_extensions = []
                 _more = False
-                for _ in range(4):
+                while True:
                     _elem = CodecZenohExtEntry.decode(cursor)
                     if _elem is None:
                         return None
@@ -77,8 +77,6 @@ class CodecZenohOam:
                         break
                 if _more and cursor.remaining() == 0:
                     raise NeedMoreBytes()
-                if _more:
-                    raise TooManyElements()
             else:
                 f_extensions = None
         except NeedMoreBytes:
@@ -161,7 +159,7 @@ class CodecZenohOam:
         before the first byte, the error a decode of the frame would give
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with."""
-        if self.extensions is not None and (len(self.extensions) < 1 or len(self.extensions) > 4):
+        if self.extensions is not None and (len(self.extensions) < 1):
             raise TooManyElements()
         # RFC §synth-5-B peek-byte / streaming-prefix:
         # streaming prefix encode.

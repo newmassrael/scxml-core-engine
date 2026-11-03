@@ -142,7 +142,7 @@ struct CodecZenohDeclExtKeyexpr {
     /// against which `VectorSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SpanSink` allocations.
-    static constexpr std::size_t MAX_ENCODED_BYTES = 148;
+    static constexpr std::size_t MAX_ENCODED_BYTES = 65555;
 
     /// Encode `self` into the caller-owned sink. Returns
     /// `CodecError::BufferOverflow` from a bounded sink when the

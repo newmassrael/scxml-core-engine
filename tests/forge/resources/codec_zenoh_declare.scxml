@@ -60,7 +60,7 @@
     <sce:field id="interest_id" sce:type="uint32" sce:byte="1" sce:bit-size="vle"
                sce:present-if="header.I"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="2"
-                   max-depth="4"                   sce:present-if="header.Z"
+                   sce:present-if="header.Z"
                    terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:embed id="declaration" type="codec_zenoh_declaration" sce:byte="3"/>
   </datamodel>

@@ -27,7 +27,8 @@
                                 shared VLE shape; SCE picks u64 for
                                 upper bound — actual values fit u16)
        parent.N : suffix_len  (VLE u64, present iff parent.N=1)
-                  suffix      (UTF-8 string, length=suffix_len, max 128,
+                  suffix      (UTF-8 string, length=suffix_len, at most
+                               65535, the u16 bound of a key suffix,
                                present iff parent.N=1)
 
      Co-gating contract: `suffix_len` and `suffix` BOTH carry
@@ -48,8 +49,9 @@
        Kotlin: `ULong` + `ULong?` + `String?`
        Go:     `uint64` + `*uint64` + `*string`
        Python: `int` + `Optional[int]` + `Optional[str]`
-       C11:    `uint64_t id` + `sce_optional_uint64_t suffix_len` + `sce_optional_bytes_128_t
-               suffix` (`value.data`, `value.len`; wire presence is parent.N) -->
+       C11:    `uint64_t id` + `sce_optional_uint64_t suffix_len` + `sce_optional_bytes_<N>_t
+               suffix`, N the deployment's capacity (`value.data`, `value.len`; wire
+               presence is parent.N) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_wireexpr">
@@ -61,7 +63,7 @@
     <sce:field id="suffix_len" sce:type="uint64" sce:byte="1" sce:bit-size="vle"
                sce:present-if="N"/>
     <sce:field id="suffix" sce:type="string" sce:byte="2" sce:bit-size="length-ref"
-               sce:length-field="suffix_len" sce:max-size="128"
+               sce:length-field="suffix_len" sce:max-size="65535"
                sce:present-if="N"/>
   </datamodel>
 </scxml>

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 358e4be4a52e72432bafa7ddd2eec2846145e67e377ccdbb35331d5342f38402
-// SCE-MAP: codec_zenoh_query.scxml:51 :: _forge_body
+// source-hash: fa5ddc51db35d1c9e510043884e7304fa6a695359f6c17b684d5f8bf2823ccdb
+// SCE-MAP: codec_zenoh_query.scxml:52 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -62,7 +62,7 @@ public struct CodecZenohQuery: Equatable, Sendable {
 
     /// On the wire only when `(header & 0x80) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
-    /// Entries of `CodecZenohExtEntry`, one after another, at most 8: to the end of the frame. A frame
+    /// Entries of `CodecZenohExtEntry`, one after another, at most none: to the end of the frame. A frame
     /// with more is refused with `tooManyElements`, as is a value with more at its encode.
     public var extensions: [CodecZenohExtEntry]? = nil
 
@@ -95,14 +95,11 @@ public struct CodecZenohQuery: Equatable, Sendable {
             frame.parameters_len = try reader.readVle(UInt64.self)
         }
         if (frame.header & 0x40) != 0 {
-            if (frame.parameters_len ?? 0) > 256 {
-                throw CodecError.lengthOutOfRange
-            }
             frame.parameters = Array(try reader.readSlice(Int(clamping: (frame.parameters_len ?? 0))))
         }
         if (frame.header & 0x80) != 0 {
             var extensions_items: [CodecZenohExtEntry] = []
-            for _ in 0..<8 {
+            for _ in 0..<none {
                 if reader.remaining == 0 { break }
                 let entry = try CodecZenohExtEntry.decode(&reader)
                 extensions_items.append(entry)
@@ -119,12 +116,6 @@ public struct CodecZenohQuery: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if let value = self.parameters, value.count > 256 {
-            throw CodecError.lengthOutOfRange
-        }
-        if let value = self.extensions, value.count > 8 {
-            throw CodecError.tooManyElements
-        }
         var frame: [UInt8] = []
         appendInteger(self.header, to: &frame, .big)
         if let consolidation = self.consolidation {

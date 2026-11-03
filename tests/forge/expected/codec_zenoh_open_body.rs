@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_open_body:41 :: _forge_body"]
-// SCE-MAP: codec_zenoh_open_body:41 :: _forge_body
+#![doc = "SCE-MAP: codec_zenoh_open_body:42 :: _forge_body"]
+// SCE-MAP: codec_zenoh_open_body:42 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -26,9 +26,9 @@ use sce_forge_runtime::codec::VecSink;
 #[allow(dead_code)]
 pub struct CodecZenohOpenBodyCookieField;
 
-impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohOpenBodyCookieField> for ::sce_forge_runtime::codec::Inline {
-    type Bytes = ::sce_forge_runtime::codec::InlineBytes<128>;
-}
+// `Inline` does not answer for `cookie`: the protocol states no bound of
+// it, so it is held only by a profile whose container grows, or by a deployment
+// that gives it a capacity (docs/adr/0077 §7).
 
 /// What `CodecZenohOpenBodyIn` and the codecs it holds ask of a storage profile.
 #[allow(dead_code)]
@@ -61,16 +61,18 @@ pub struct CodecZenohOpenBodyIn<S: CodecZenohOpenBodyStorage> {
     pub lease: u64,
     pub initial_sn: u64,
     pub cookie_len: Option<u64>,
-    pub cookie: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohOpenBodyCookieField>>::Bytes, 128>>,
+    pub cookie: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohOpenBodyCookieField>>::Bytes, { usize::MAX }>>,
 }
 
 /// The eager form: bytes and text borrowed from the frame, lists held inline.
 #[allow(dead_code)]
 pub type CodecZenohOpenBody<'a> = CodecZenohOpenBodyIn<::sce_forge_runtime::codec::Lent<'a>>;
 
-/// The value at a profile that holds its bytes and text.
+/// The value at a profile that holds its bytes and text, named
+/// with the profile: the build's default on the heap-free tier is `Inline`, which
+/// holds no field whose protocol states no bound (docs/adr/0077 §7).
 #[allow(dead_code)]
-pub type CodecZenohOpenBodyOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecZenohOpenBodyIn<S>;
+pub type CodecZenohOpenBodyOwned<S> = CodecZenohOpenBodyIn<S>;
 
 impl<S: CodecZenohOpenBodyStorage> Default for CodecZenohOpenBodyIn<S> {
     fn default() -> Self {
@@ -161,10 +163,7 @@ impl<S: CodecZenohOpenBodyStorage> CodecZenohOpenBodyIn<S> {
         };
         let cookie = if (a & 0x01u8) == 0 {
             let _len = cookie_len.unwrap();
-            if _len > 128 {
-                return Err(CodecError::LengthOutOfRange);
-            }
-            let _n = _len as usize;
+            let _n = usize::try_from(_len).map_err(|_| CodecError::NeedMoreBytes)?;
             let raw = cursor.peek_slice(_n)?;
             let _v = raw;
             cursor.advance(_n)?;
@@ -181,11 +180,6 @@ impl<S: CodecZenohOpenBodyStorage> CodecZenohOpenBodyIn<S> {
         Ok(())
     }
 
-    /// Worst-case encoded byte count for this codec — the upper bound
-    /// against which `VecSink::new` reserves capacity in the
-    /// `encode_to_vec` facade, and the natural reserve hint for
-    /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 155;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -196,9 +190,9 @@ impl<S: CodecZenohOpenBodyStorage> CodecZenohOpenBodyIn<S> {
         CodecZenohOpenBodyWire::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade. Pre-reserves
-    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
-    /// most one allocation, then delegates to `encode` over a
+    /// Heap-backed convenience facade. It reserves nothing, since the
+    /// largest frame passes `u32` (docs/adr/0077 §7), and delegates to
+    /// `encode` over a
     /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
     /// no value and the vector cannot run out of room. Callers targeting
     /// zero-alloc hot paths should call `encode` directly against a
@@ -210,7 +204,7 @@ impl<S: CodecZenohOpenBodyStorage> CodecZenohOpenBodyIn<S> {
     /// primary `encode`.
     #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_v: Vec<u8> = Vec::new();
         let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
         _sce_v
     }
@@ -226,7 +220,7 @@ pub trait CodecZenohOpenBodySource {
     /// The `initial_sn` field.
     fn initial_sn(&self) -> u64;
     /// The `cookie` field.
-    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>>;
+    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, { usize::MAX }>>;
 }
 
 impl<T: CodecZenohOpenBodySource + ?Sized> CodecZenohOpenBodySource for &T {
@@ -236,7 +230,7 @@ impl<T: CodecZenohOpenBodySource + ?Sized> CodecZenohOpenBodySource for &T {
     fn initial_sn(&self) -> u64 {
         (**self).initial_sn()
     }
-    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
+    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, { usize::MAX }>> {
         (**self).cookie()
     }
 }
@@ -252,7 +246,7 @@ pub struct CodecZenohOpenBodyParts<'a> {
     /// The `initial_sn` field.
     pub initial_sn: u64,
     /// The `cookie` field.
-    pub cookie: Option<::sce_forge_runtime::codec::Bytes<'a, 128>>,
+    pub cookie: Option<::sce_forge_runtime::codec::Bytes<'a, { usize::MAX }>>,
 }
 
 impl<'a> CodecZenohOpenBodySource for CodecZenohOpenBodyParts<'a> {
@@ -262,7 +256,7 @@ impl<'a> CodecZenohOpenBodySource for CodecZenohOpenBodyParts<'a> {
     fn initial_sn(&self) -> u64 {
         self.initial_sn
     }
-    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
+    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, { usize::MAX }>> {
         self.cookie
     }
 }
@@ -274,7 +268,7 @@ impl<S: CodecZenohOpenBodyStorage> CodecZenohOpenBodySource for CodecZenohOpenBo
     fn initial_sn(&self) -> u64 {
         self.initial_sn
     }
-    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
+    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, { usize::MAX }>> {
         self.cookie.as_ref().map(::sce_forge_runtime::codec::Bounded::as_bytes)
     }
 }
@@ -424,11 +418,9 @@ impl<'a, D> CodecZenohOpenBodyIn<::sce_forge_runtime::codec::Lent<'a, D>> where 
         })
     }
 
-    /// The same projection at the build's default storage profile — growable
-    /// where an allocator exists, inline on the heap-free tier.
-    pub fn try_into_owned(self) -> Result<CodecZenohOpenBodyOwned, CodecError> {
-        self.try_into_owned_in()
-    }
+    // No projection at the build's default profile: on the heap-free tier
+    // that is `Inline`, which holds no field whose protocol states no bound
+    // (docs/adr/0077 §7). Name the profile, `try_into_owned_in::<S>()`.
 }
 
 #[allow(dead_code)]

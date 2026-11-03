@@ -21,7 +21,7 @@
 #include "codec_zenoh_oam.h"
 
 #define CODEC_ZENOH_NETWORK_ENVELOPE_MIN_BYTES 0
-#define CODEC_ZENOH_NETWORK_ENVELOPE_MAX_BYTES 856
+#define CODEC_ZENOH_NETWORK_ENVELOPE_MAX_BYTES 18446744073709551615
 
 /* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
@@ -80,6 +80,11 @@ typedef struct {
  * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_network_envelope_decode(sce_forge_cursor_t *cursor, codec_zenoh_network_envelope_t *out) {
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* RFC §synth-5-B peek-byte / streaming-prefix:
      * streaming prefix decode (variable-length fields supported via
      * per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -138,6 +143,7 @@ static inline sce_forge_codec_status_t codec_zenoh_network_envelope_decode(sce_f
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

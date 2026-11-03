@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_wireexpr:53 :: _forge_body
+// SCE-MAP: codec_zenoh_wireexpr:55 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -33,7 +33,7 @@ data class CodecZenohWireexpr(
         if ((N.toInt() and 0x01) != 0) {
             if (this.suffix == null) return CodecError.PresentIfMismatch
         } else if (this.suffix != null) return CodecError.PresentIfMismatch
-        this.suffix?.let { if (it.encodeToByteArray().size > 128) return CodecError.LengthOutOfRange }
+        this.suffix?.let { if (it.encodeToByteArray().size > 65535) return CodecError.LengthOutOfRange }
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -95,7 +95,7 @@ data class CodecZenohWireexpr(
             }
             val suffix = if ((N.toInt() and 0x01) != 0) {
                 val _len = suffix_len!!
-                if (_len > 128uL) {
+                if (_len > 65535uL) {
                     cursor.refuse(CodecError.LengthOutOfRange); return null
                 }
                 val _n = _len.toInt()

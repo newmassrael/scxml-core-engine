@@ -20,15 +20,16 @@
      surface for `<sce:field sce:type="string">`.
 
      Wire shape:
-       byte 0+ : locator_len  (VLE u64, 1..=9 bytes, max-size 128)
-       bytes   : locator      (UTF-8 string, length=locator_len, max 128) -->
+       byte 0+ : locator_len  (VLE u64, 1..=9 bytes)
+       bytes   : locator      (UTF-8 string, length=locator_len, at most 255:
+                               upstream reads the length as a u8) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_locator">
   <datamodel>
     <sce:field id="locator_len" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
     <sce:field id="locator" sce:type="string" sce:byte="1" sce:bit-size="length-ref"
-               sce:length-field="locator_len" sce:max-size="128"/>
+               sce:length-field="locator_len" sce:max-size="255"/>
   </datamodel>
   <!-- RFC §synth-5-B test-vector inline test vectors. Pinned single-byte / multi-
        byte UTF-8 round-trips so the byte-count semantics ("héllo" = 6

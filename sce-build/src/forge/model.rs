@@ -3898,9 +3898,26 @@ impl CodecModel {
                 .iter()
                 .all(|f| !f.takes_capacity() || f.storage_held(&self.fields).is_some())
         };
-        if !own {
-            return false;
-        }
+        own && self.held_codecs().all(&mut body_holds)
+    }
+
+    /// Whether the eager form at the default profile, `{Codec}In<Lent<'a>>`,
+    /// holds this positional codec (docs/adr/0077 §7): `Lent` borrows bytes
+    /// and text from the frame and holds each list as `Inline` does, so every
+    /// list of it and of every codec it holds has a bound or a capacity.
+    /// `body_holds` answers the same of the codec an alias imports. Where this
+    /// is false the tree names no `{Codec}<'a>`: a caller names the eager form
+    /// at a profile that holds its lists, `{Codec}In<Lent<'a, D>>`.
+    pub(crate) fn lent_holds_with(&self, mut body_holds: impl FnMut(&str) -> bool) -> bool {
+        let own = self.fields.iter().all(|f| {
+            !(f.is_repeat() || f.is_tlv_chain()) || f.storage_held(&self.fields).is_some()
+        });
+        own && self.held_codecs().all(&mut body_holds)
+    }
+
+    /// The import alias of each codec this one holds: the body of each variant
+    /// arm, embedded body, list and chain.
+    fn held_codecs(&self) -> impl Iterator<Item = &str> {
         let arms = self
             .variant
             .iter()
@@ -3912,7 +3929,7 @@ impl CodecModel {
                 .or(f.repeat_body_alias.as_deref())
                 .or(f.tlv_chain_body_alias.as_deref())
         });
-        arms.chain(bodies).all(&mut body_holds)
+        arms.chain(bodies)
     }
 
     /// Whether this codec's generated Rust view (`{Codec}View`, ADR 0049)

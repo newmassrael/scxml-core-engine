@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_wireexpr:53 :: _forge_body
+// SCE-MAP: codec_zenoh_wireexpr:55 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -58,7 +58,7 @@ struct CodecZenohWireexpr {
         std::optional<std::string> suffix;
         if ((n & 0x01) != 0) {
             const auto _len = suffix_len.value();
-            if (_len > 128) {
+            if (_len > 65535) {
                 cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
             }
             std::size_t _n = static_cast<std::size_t>(_len);
@@ -79,7 +79,7 @@ struct CodecZenohWireexpr {
     /// against which `VectorSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SpanSink` allocations.
-    static constexpr std::size_t MAX_ENCODED_BYTES = 146;
+    static constexpr std::size_t MAX_ENCODED_BYTES = 65553;
 
     /// Encode `self` into the caller-owned sink. Returns
     /// `CodecError::BufferOverflow` from a bounded sink when the
@@ -90,7 +90,7 @@ struct CodecZenohWireexpr {
         if ((n & 0x01) != 0) {
             if (!suffix.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
         } else if (suffix.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
-        if (suffix.has_value() && ((*suffix).size() > 128)) return ::SCE::Forge::CodecError::LengthOutOfRange;
+        if (suffix.has_value() && ((*suffix).size() > 65535)) return ::SCE::Forge::CodecError::LengthOutOfRange;
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a

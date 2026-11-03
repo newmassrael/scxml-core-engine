@@ -1,4 +1,4 @@
-# SCE-MAP: codec_zenoh_locator:25 :: _forge_body
+# SCE-MAP: codec_zenoh_locator:26 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 # Runtime: none
@@ -42,7 +42,7 @@ class CodecZenohLocator:
         try:
             f_locator_len = cursor.read_vle_u64()
             _len = f_locator_len
-            if _len > 128:
+            if _len > 255:
                 raise LengthOutOfRange()
             _n = _len
             raw = cursor.peek_slice(_n)
@@ -67,7 +67,7 @@ class CodecZenohLocator:
         before the first byte, the error a decode of the frame would give
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with."""
-        if len(self.locator.encode("utf-8")) > 128:
+        if len(self.locator.encode("utf-8")) > 255:
             raise LengthOutOfRange()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes

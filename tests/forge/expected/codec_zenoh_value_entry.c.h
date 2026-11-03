@@ -17,7 +17,7 @@
 #include "codec_zenoh_value_zbuf.h"
 
 #define CODEC_ZENOH_VALUE_ENTRY_MIN_BYTES 1
-#define CODEC_ZENOH_VALUE_ENTRY_MAX_BYTES 164
+#define CODEC_ZENOH_VALUE_ENTRY_MAX_BYTES 17179869280
 
 /* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
@@ -73,6 +73,11 @@ static inline sce_forge_codec_status_t codec_zenoh_value_entry_decode(sce_forge_
      * `<sce:flag-input>` so codecs that haven't consumed an input via
      * `present-if` yet compile cleanly under -Wunused-parameter. */
     (void)after_shm;
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix). */
     const uint8_t *raw = sce_forge_cursor_peek(cursor, CODEC_ZENOH_VALUE_ENTRY_MIN_BYTES);
     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
@@ -106,6 +111,7 @@ static inline sce_forge_codec_status_t codec_zenoh_value_entry_decode(sce_forge_
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

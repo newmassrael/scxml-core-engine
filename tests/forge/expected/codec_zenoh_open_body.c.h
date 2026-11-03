@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_open_body:41 :: _forge_body
+// SCE-MAP: codec_zenoh_open_body:42 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */
@@ -60,6 +60,11 @@ static inline sce_forge_codec_status_t codec_zenoh_open_body_decode(sce_forge_cu
      * `<sce:flag-input>` so codecs that haven't consumed an input via
      * `present-if` yet compile cleanly under -Wunused-parameter. */
     (void)a;
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Streaming cursor decode (SSOT selection: `needs_streaming`).
      * The positional `raw[byte_off]` path is valid only when every
      * field's absolute offset is fixed at codegen time; this branch
@@ -95,20 +100,18 @@ static inline sce_forge_codec_status_t codec_zenoh_open_body_decode(sce_forge_cu
         out->cookie_len = sce_optional_uint64_none();
     }
     if ((a & 0x01) == 0) {
-        if (out->cookie_len.value > 128) {
-            return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
-        }
+        if ((uint64_t)out->cookie_len.value > (uint64_t)SIZE_MAX - 0u) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         size_t _n = (size_t)out->cookie_len.value;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->cookie = sce_optional_bytes_128_none();
-        memcpy(out->cookie.value.data, raw, _n);
-        out->cookie.value.len = _n;
+        out->cookie.value.len = sce_forge_codec_hold(out->cookie.value.data, 128U, raw, _n, &_over);
         out->cookie.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
         out->cookie = sce_optional_bytes_128_none();
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

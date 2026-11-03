@@ -18,7 +18,7 @@
 #include "codec_chain_has_slice.h"
 
 #define CODEC_CHAIN_HAS_ENVELOPE_MIN_BYTES 1
-#define CODEC_CHAIN_HAS_ENVELOPE_MAX_BYTES 1511
+#define CODEC_CHAIN_HAS_ENVELOPE_MAX_BYTES 17179870563
 
 #ifndef SCE_OPTIONAL_BYTES_256
 #define SCE_OPTIONAL_BYTES_256
@@ -63,6 +63,11 @@ typedef struct {
  * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_chain_has_envelope_decode(sce_forge_cursor_t *cursor, codec_chain_has_envelope_t *out) {
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Streaming cursor decode (SSOT selection: `needs_streaming`).
      * The positional `raw[byte_off]` path is valid only when every
      * field's absolute offset is fixed at codegen time; this branch
@@ -86,7 +91,7 @@ static inline sce_forge_codec_status_t codec_chain_has_envelope_decode(sce_forge
             out->extensions.present = true;
             bool _more = false;
             for (size_t _i = 0; _i < 4; ++_i) {
-                sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions.value.data[out->extensions.value.len]);
+                sce_forge_codec_status_t _st = sce_forge_codec_note_capacity(codec_zenoh_ext_entry_decode(cursor, &out->extensions.value.data[out->extensions.value.len]), &_over);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
                 size_t _just = out->extensions.value.len;
                 out->extensions.value.len++;
@@ -145,7 +150,7 @@ static inline sce_forge_codec_status_t codec_chain_has_envelope_decode(sce_forge
         size_t _n = (size_t)out->slice_count.value;
         memset(&out->slices, 0, sizeof out->slices);
         for (size_t _i = 0; _i < _n; ++_i) {
-            sce_forge_codec_status_t _st = codec_chain_has_slice_decode(cursor, &out->slices.value.data[_i]);
+            sce_forge_codec_status_t _st = sce_forge_codec_note_capacity(codec_chain_has_slice_decode(cursor, &out->slices.value.data[_i]), &_over);
             if (_st != SCE_FORGE_CODEC_OK) return _st;
         }
         out->slices.value.len = _n;
@@ -153,6 +158,7 @@ static inline sce_forge_codec_status_t codec_chain_has_envelope_decode(sce_forge
     } else {
         memset(&out->slices, 0, sizeof out->slices);
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

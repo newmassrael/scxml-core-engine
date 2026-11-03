@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_decl_ext_keyexpr_inner:64 :: _forge_body
+// SCE-MAP: codec_zenoh_decl_ext_keyexpr_inner:65 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -55,7 +55,7 @@ data class CodecZenohDeclExtKeyexprInner(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        this.suffix?.let { if (it.size > 128) return CodecError.LengthOutOfRange }
+        this.suffix?.let { if (it.size > 65535) return CodecError.LengthOutOfRange }
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -114,7 +114,7 @@ data class CodecZenohDeclExtKeyexprInner(
             val id = cursor.readVleU64() ?: return null
             val suffix = if ((inner_header.toInt() and 0x01) != 0) {
                 val _n = cursor.remaining()
-                if (_n > 128) {
+                if (_n > 65535) {
                     cursor.refuse(CodecError.LengthOutOfRange); return null
                 }
                 val raw = cursor.peekSlice(_n) ?: return null

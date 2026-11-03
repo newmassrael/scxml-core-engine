@@ -33,6 +33,11 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_subscriber_decode(sce_fo
      * `<sce:flag-input>` so codecs that haven't consumed an input via
      * `present-if` yet compile cleanly under -Wunused-parameter. */
     (void)n;
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Streaming cursor decode (SSOT selection: `needs_streaming`).
      * The positional `raw[byte_off]` path is valid only when every
      * field's absolute offset is fixed at codegen time; this branch
@@ -52,9 +57,10 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_subscriber_decode(sce_fo
     }
     out->id = id;
     {
-        sce_forge_codec_status_t _st = codec_zenoh_wireexpr_decode(cursor, &out->wireexpr, n);
+        sce_forge_codec_status_t _st = sce_forge_codec_note_capacity(codec_zenoh_wireexpr_decode(cursor, &out->wireexpr, n), &_over);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_wireexpr:53 :: _forge_body
+// SCE-MAP: codec_zenoh_wireexpr:55 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */
@@ -59,6 +59,11 @@ static inline sce_forge_codec_status_t codec_zenoh_wireexpr_decode(sce_forge_cur
      * `<sce:flag-input>` so codecs that haven't consumed an input via
      * `present-if` yet compile cleanly under -Wunused-parameter. */
     (void)n;
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Streaming cursor decode (SSOT selection: `needs_streaming`).
      * The positional `raw[byte_off]` path is valid only when every
      * field's absolute offset is fixed at codegen time; this branch
@@ -88,7 +93,7 @@ static inline sce_forge_codec_status_t codec_zenoh_wireexpr_decode(sce_forge_cur
         out->suffix_len = sce_optional_uint64_none();
     }
     if ((n & 0x01) != 0) {
-        if (out->suffix_len.value > 128) {
+        if (out->suffix_len.value > 65535) {
             return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
         }
         size_t _n = (size_t)out->suffix_len.value;
@@ -96,13 +101,13 @@ static inline sce_forge_codec_status_t codec_zenoh_wireexpr_decode(sce_forge_cur
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;
         out->suffix = sce_optional_bytes_128_none();
-        memcpy(out->suffix.value.data, raw, _n);
-        out->suffix.value.len = _n;
+        out->suffix.value.len = sce_forge_codec_hold(out->suffix.value.data, 128U, raw, _n, &_over);
         out->suffix.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
         out->suffix = sce_optional_bytes_128_none();
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

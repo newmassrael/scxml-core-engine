@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_ext_zbuf:17 :: _forge_body"]
-// SCE-MAP: codec_zenoh_ext_zbuf:17 :: _forge_body
+#![doc = "SCE-MAP: codec_zenoh_ext_zbuf:18 :: _forge_body"]
+// SCE-MAP: codec_zenoh_ext_zbuf:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -27,7 +27,7 @@ use sce_forge_runtime::codec::VecSink;
 pub struct CodecZenohExtZbufValueField;
 
 impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohExtZbufValueField> for ::sce_forge_runtime::codec::Inline {
-    type Bytes = ::sce_forge_runtime::codec::InlineBytes<32>;
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<4294967295>;
 }
 
 /// What `CodecZenohExtZbufIn` and the codecs it holds ask of a storage profile.
@@ -59,7 +59,7 @@ impl<'f, S: CodecZenohExtZbufStorage + ::sce_forge_runtime::codec::StoresBytes<'
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohExtZbufIn<S: CodecZenohExtZbufStorage> {
     pub value_len: u64,
-    pub value: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohExtZbufValueField>>::Bytes, 32>,
+    pub value: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohExtZbufValueField>>::Bytes, 4294967295>,
 }
 
 /// The eager form: bytes and text borrowed from the frame, lists held inline.
@@ -145,10 +145,10 @@ impl<S: CodecZenohExtZbufStorage> CodecZenohExtZbufIn<S> {
         let value_len = cursor.read_vle_u64()?;
         let value = {
             let _len = value_len;
-            if _len > 32 {
+            if _len > 4294967295 {
                 return Err(CodecError::LengthOutOfRange);
             }
-            let _n = _len as usize;
+            let _n = usize::try_from(_len).map_err(|_| CodecError::NeedMoreBytes)?;
             let raw = cursor.peek_slice(_n)?;
             let _v = raw;
             cursor.advance(_n)?;
@@ -161,11 +161,6 @@ impl<S: CodecZenohExtZbufStorage> CodecZenohExtZbufIn<S> {
         Ok(())
     }
 
-    /// Worst-case encoded byte count for this codec — the upper bound
-    /// against which `VecSink::new` reserves capacity in the
-    /// `encode_to_vec` facade, and the natural reserve hint for
-    /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 41;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -176,9 +171,9 @@ impl<S: CodecZenohExtZbufStorage> CodecZenohExtZbufIn<S> {
         CodecZenohExtZbufWire::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade. Pre-reserves
-    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
-    /// most one allocation, then delegates to `encode` over a
+    /// Heap-backed convenience facade. It reserves nothing, since the
+    /// largest frame passes `u32` (docs/adr/0077 §7), and delegates to
+    /// `encode` over a
     /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
     /// no value and the vector cannot run out of room. Callers targeting
     /// zero-alloc hot paths should call `encode` directly against a
@@ -190,7 +185,7 @@ impl<S: CodecZenohExtZbufStorage> CodecZenohExtZbufIn<S> {
     /// primary `encode`.
     #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_v: Vec<u8> = Vec::new();
         let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
         _sce_v
     }
@@ -202,11 +197,11 @@ impl<S: CodecZenohExtZbufStorage> CodecZenohExtZbufIn<S> {
 /// encode computes those from what is ([`CodecZenohExtZbufWire::encode_source`]).
 pub trait CodecZenohExtZbufSource {
     /// The `value` field.
-    fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32>;
+    fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4294967295>;
 }
 
 impl<T: CodecZenohExtZbufSource + ?Sized> CodecZenohExtZbufSource for &T {
-    fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32> {
+    fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4294967295> {
         (**self).value()
     }
 }
@@ -218,17 +213,17 @@ impl<T: CodecZenohExtZbufSource + ?Sized> CodecZenohExtZbufSource for &T {
 #[derive(Debug, Clone, Copy)]
 pub struct CodecZenohExtZbufParts<'a> {
     /// The `value` field.
-    pub value: ::sce_forge_runtime::codec::Bytes<'a, 32>,
+    pub value: ::sce_forge_runtime::codec::Bytes<'a, 4294967295>,
 }
 
 impl<'a> CodecZenohExtZbufSource for CodecZenohExtZbufParts<'a> {
-    fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32> {
+    fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4294967295> {
         self.value
     }
 }
 
 impl<S: CodecZenohExtZbufStorage> CodecZenohExtZbufSource for CodecZenohExtZbufOwned<S> {
-    fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 32> {
+    fn value(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4294967295> {
         self.value.as_bytes()
     }
 }

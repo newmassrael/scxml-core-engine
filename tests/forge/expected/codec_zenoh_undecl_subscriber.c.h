@@ -16,7 +16,7 @@
 #include "codec_zenoh_decl_ext_keyexpr.h"
 
 #define CODEC_ZENOH_UNDECL_SUBSCRIBER_MIN_BYTES 0
-#define CODEC_ZENOH_UNDECL_SUBSCRIBER_MAX_BYTES 153
+#define CODEC_ZENOH_UNDECL_SUBSCRIBER_MAX_BYTES 65560
 
 typedef struct {
     uint32_t id;
@@ -34,6 +34,11 @@ static inline sce_forge_codec_status_t codec_zenoh_undecl_subscriber_decode(sce_
      * `<sce:flag-input>` so codecs that haven't consumed an input via
      * `present-if` yet compile cleanly under -Wunused-parameter. */
     (void)z;
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Streaming cursor decode (SSOT selection: `needs_streaming`).
      * The positional `raw[byte_off]` path is valid only when every
      * field's absolute offset is fixed at codegen time; this branch
@@ -54,10 +59,11 @@ static inline sce_forge_codec_status_t codec_zenoh_undecl_subscriber_decode(sce_
     out->id = id;
     memset(&out->ext_keyexpr, 0, sizeof out->ext_keyexpr);
     if ((z & 0x01) != 0) {
-        sce_forge_codec_status_t _st = codec_zenoh_decl_ext_keyexpr_decode(cursor, &out->ext_keyexpr.value);
+        sce_forge_codec_status_t _st = sce_forge_codec_note_capacity(codec_zenoh_decl_ext_keyexpr_decode(cursor, &out->ext_keyexpr.value), &_over);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
         out->ext_keyexpr.present = true;
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

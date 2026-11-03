@@ -28,7 +28,8 @@
        VLE u64 lease       (always)
        VLE u64 initial_sn  (always)
        VLE u64 cookie_len  (parent.A=0 only)
-       length-ref bytes cookie (parent.A=0 only, length=cookie_len, max=128)
+       length-ref bytes cookie (parent.A=0 only, length=cookie_len; the
+                                protocol states no bound, so none is here)
 
      The lease semantics (T-flag scaling lease/1000 vs lease, line
      292-296) is a host-level concern and not wire-visible — both
@@ -50,7 +51,7 @@
     <sce:field id="cookie_len" sce:type="uint64" sce:byte="2" sce:bit-size="vle"
                sce:present-if="!A"/>
     <sce:field id="cookie" sce:type="bytes" sce:byte="3" sce:bit-size="length-ref"
-               sce:length-field="cookie_len" sce:max-size="128"
+               sce:length-field="cookie_len"
                sce:present-if="!A"/>
   </datamodel>
 </scxml>

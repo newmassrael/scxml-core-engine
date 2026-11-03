@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_locator:25 :: _forge_body
+// SCE-MAP: codec_zenoh_locator:26 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -39,7 +39,7 @@ func DecodeCodecZenohLocator(cursor *codec.SceCursor) (*CodecZenohLocator, error
 	var Locator string
 	{
 		_len := LocatorLen
-		if _len > 128 {
+		if _len > 255 {
 			return nil, codec.ErrLengthOutOfRange
 		}
 		_n := int(_len)
@@ -66,7 +66,7 @@ func DecodeCodecZenohLocator(cursor *codec.SceCursor) (*CodecZenohLocator, error
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohLocator) Encode(w codec.SceSink) error {
-	if len(s.Locator) > 128 {
+	if len(s.Locator) > 255 {
 		return codec.ErrLengthOutOfRange
 	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
@@ -95,7 +95,7 @@ func (s *CodecZenohLocator) Encode(w codec.SceSink) error {
 // Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecZenohLocator) EncodeToBytes() ([]byte, error) {
-	_dst := make([]byte, 0, 137)
+	_dst := make([]byte, 0, 264)
 	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
 		return nil, err
 	}

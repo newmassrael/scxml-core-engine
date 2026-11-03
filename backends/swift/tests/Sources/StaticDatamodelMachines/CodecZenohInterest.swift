@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 358e4be4a52e72432bafa7ddd2eec2846145e67e377ccdbb35331d5342f38402
+// source-hash: fa5ddc51db35d1c9e510043884e7304fa6a695359f6c17b684d5f8bf2823ccdb
 // SCE-MAP: codec_zenoh_interest.scxml:73 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -55,7 +55,7 @@ public struct CodecZenohInterest: Equatable, Sendable {
 
     /// On the wire only when `(header & 0x80) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
-    /// Entries of `CodecZenohExtEntry`, one after another, at most 4: until one says it is the last. A frame
+    /// Entries of `CodecZenohExtEntry`, one after another, at most none: until one says it is the last. A frame
     /// with more is refused with `tooManyElements`, as is a value with more at its encode.
     public var extensions: [CodecZenohExtEntry]? = nil
 
@@ -87,7 +87,7 @@ public struct CodecZenohInterest: Equatable, Sendable {
         if (frame.header & 0x80) != 0 {
             var extensions_items: [CodecZenohExtEntry] = []
             var extensions_more = false
-            for _ in 0..<4 {
+            for _ in 0..<none {
                 let entry = try CodecZenohExtEntry.decode(&reader)
                 extensions_more = entry.Z
                 extensions_items.append(entry)
@@ -115,7 +115,7 @@ public struct CodecZenohInterest: Equatable, Sendable {
         } else if self.body != nil {
             throw CodecError.presentIfMismatch
         }
-        if let value = self.extensions, value.count < 1 || value.count > 4 {
+        if let value = self.extensions, value.count < 1 {
             throw CodecError.tooManyElements
         }
         var frame: [UInt8] = []

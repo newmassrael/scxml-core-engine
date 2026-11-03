@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_decl_ext_keyexpr_inner:64 :: _forge_body"]
-// SCE-MAP: codec_zenoh_decl_ext_keyexpr_inner:64 :: _forge_body
+#![doc = "SCE-MAP: codec_zenoh_decl_ext_keyexpr_inner:65 :: _forge_body"]
+// SCE-MAP: codec_zenoh_decl_ext_keyexpr_inner:65 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -27,7 +27,7 @@ use sce_forge_runtime::codec::VecSink;
 pub struct CodecZenohDeclExtKeyexprInnerSuffixField;
 
 impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohDeclExtKeyexprInnerSuffixField> for ::sce_forge_runtime::codec::Inline {
-    type Bytes = ::sce_forge_runtime::codec::InlineBytes<128>;
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<65535>;
 }
 
 /// What `CodecZenohDeclExtKeyexprInnerIn` and the codecs it holds ask of a storage profile.
@@ -60,7 +60,7 @@ impl<'f, S: CodecZenohDeclExtKeyexprInnerStorage + ::sce_forge_runtime::codec::S
 pub struct CodecZenohDeclExtKeyexprInnerIn<S: CodecZenohDeclExtKeyexprInnerStorage> {
     pub inner_header: u8,
     pub id: u64,
-    pub suffix: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohDeclExtKeyexprInnerSuffixField>>::Bytes, 128>>,
+    pub suffix: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohDeclExtKeyexprInnerSuffixField>>::Bytes, 65535>>,
 }
 
 /// The eager form: bytes and text borrowed from the frame, lists held inline.
@@ -153,7 +153,7 @@ impl<S: CodecZenohDeclExtKeyexprInnerStorage> CodecZenohDeclExtKeyexprInnerIn<S>
         let id = cursor.read_vle_u64()?;
         let suffix = if (inner_header & 0x01u8) != 0 {
             let _n = cursor.remaining();
-            if _n > 128 {
+            if _n > 65535 {
                 return Err(CodecError::LengthOutOfRange);
             }
             let raw = cursor.peek_slice(_n)?;
@@ -205,7 +205,7 @@ impl<S: CodecZenohDeclExtKeyexprInnerStorage> CodecZenohDeclExtKeyexprInnerIn<S>
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 138;
+    pub const MAX_ENCODED_BYTES: usize = 65545;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -265,7 +265,7 @@ pub trait CodecZenohDeclExtKeyexprInnerSource {
     /// The `id` field.
     fn id(&self) -> u64;
     /// The `suffix` field.
-    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>>;
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 65535>>;
 }
 
 impl<T: CodecZenohDeclExtKeyexprInnerSource + ?Sized> CodecZenohDeclExtKeyexprInnerSource for &T {
@@ -275,7 +275,7 @@ impl<T: CodecZenohDeclExtKeyexprInnerSource + ?Sized> CodecZenohDeclExtKeyexprIn
     fn id(&self) -> u64 {
         (**self).id()
     }
-    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 65535>> {
         (**self).suffix()
     }
 }
@@ -291,7 +291,7 @@ pub struct CodecZenohDeclExtKeyexprInnerParts<'a> {
     /// The `id` field.
     pub id: u64,
     /// The `suffix` field.
-    pub suffix: Option<::sce_forge_runtime::codec::Bytes<'a, 128>>,
+    pub suffix: Option<::sce_forge_runtime::codec::Bytes<'a, 65535>>,
 }
 
 impl<'a> CodecZenohDeclExtKeyexprInnerSource for CodecZenohDeclExtKeyexprInnerParts<'a> {
@@ -301,7 +301,7 @@ impl<'a> CodecZenohDeclExtKeyexprInnerSource for CodecZenohDeclExtKeyexprInnerPa
     fn id(&self) -> u64 {
         self.id
     }
-    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 65535>> {
         self.suffix
     }
 }
@@ -313,7 +313,7 @@ impl<S: CodecZenohDeclExtKeyexprInnerStorage> CodecZenohDeclExtKeyexprInnerSourc
     fn id(&self) -> u64 {
         self.id
     }
-    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
+    fn suffix(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 65535>> {
         self.suffix.as_ref().map(::sce_forge_runtime::codec::Bounded::as_bytes)
     }
 }

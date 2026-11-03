@@ -1,4 +1,4 @@
-# SCE-MAP: codec_zenoh_decl_ext_keyexpr_inner:64 :: _forge_body
+# SCE-MAP: codec_zenoh_decl_ext_keyexpr_inner:65 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 # Runtime: none
@@ -47,7 +47,7 @@ class CodecZenohDeclExtKeyexprInner:
             f_id = cursor.read_vle_u64()
             if (f_inner_header & 0x01) != 0:
                 _n = cursor.remaining()
-                if _n > 128:
+                if _n > 65535:
                     raise LengthOutOfRange()
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
@@ -97,7 +97,7 @@ class CodecZenohDeclExtKeyexprInner:
         before the first byte, the error a decode of the frame would give
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with."""
-        if self.suffix is not None and (len(self.suffix) > 128):
+        if self.suffix is not None and (len(self.suffix) > 65535):
             raise LengthOutOfRange()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes

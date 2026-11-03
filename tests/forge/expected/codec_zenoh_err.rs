@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_err:54 :: _forge_body"]
-// SCE-MAP: codec_zenoh_err:54 :: _forge_body
+#![doc = "SCE-MAP: codec_zenoh_err:57 :: _forge_body"]
+// SCE-MAP: codec_zenoh_err:57 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -17,6 +17,10 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
+use sce_forge_runtime::codec::{Bounded, ListView, ListWalk};
+use super::codec_zenoh_encoding::CodecZenohEncodingView;
+use super::codec_zenoh_ext_entry::CodecZenohExtEntryView;
+
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
@@ -28,9 +32,9 @@ use super::codec_zenoh_ext_entry::CodecZenohExtEntryOwned;
 #[allow(dead_code)]
 pub struct CodecZenohErrExtensionsField;
 
-impl ::sce_forge_runtime::codec::HoldsList<CodecZenohErrExtensionsField> for ::sce_forge_runtime::codec::Inline {
-    type List<T> = ::sce_forge_runtime::heapless::Vec<T, 4> where T: Default + ::core::fmt::Debug + Clone + PartialEq;
-}
+// `Inline` does not answer for `extensions`: the protocol states no bound of
+// it, so it is held only by a profile whose container grows, or by a deployment
+// that gives it a capacity (docs/adr/0077 §7).
 
 /// The field `payload` of `CodecZenohErr`, which a storage profile
 /// answers for by this type.
@@ -38,7 +42,7 @@ impl ::sce_forge_runtime::codec::HoldsList<CodecZenohErrExtensionsField> for ::s
 pub struct CodecZenohErrPayloadField;
 
 impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohErrPayloadField> for ::sce_forge_runtime::codec::Inline {
-    type Bytes = ::sce_forge_runtime::codec::InlineBytes<256>;
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<4294967295>;
 }
 
 /// What `CodecZenohErrIn` and the codecs it holds ask of a storage profile.
@@ -71,18 +75,21 @@ impl<'f, S: CodecZenohErrStorage + ::sce_forge_runtime::codec::StoresBytes<'f, C
 pub struct CodecZenohErrIn<S: CodecZenohErrStorage> {
     pub header: u8,
     pub encoding: Option<CodecZenohEncodingOwned<S>>,
-    pub extensions: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecZenohErrExtensionsField>>::List<CodecZenohExtEntryOwned<S>>, 4, 1>>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecZenohErrExtensionsField>>::List<CodecZenohExtEntryOwned<S>>, { usize::MAX }, 1>>,
     pub payload_len: u64,
-    pub payload: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohErrPayloadField>>::Bytes, 256>,
+    pub payload: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohErrPayloadField>>::Bytes, 4294967295>,
 }
 
-/// The eager form: bytes and text borrowed from the frame, lists held inline.
-#[allow(dead_code)]
-pub type CodecZenohErr<'a> = CodecZenohErrIn<::sce_forge_runtime::codec::Lent<'a>>;
+// No eager form at the default profile: `Lent<'a>` holds each list as `Inline`
+// does, and `Inline` holds no list whose protocol states no bound
+// (docs/adr/0077 §7). Name the eager form at a profile that holds its lists,
+// `CodecZenohErrIn<Lent<'a, D>>`.
 
-/// The value at a profile that holds its bytes and text.
+/// The value at a profile that holds its bytes and text, named
+/// with the profile: the build's default on the heap-free tier is `Inline`, which
+/// holds no field whose protocol states no bound (docs/adr/0077 §7).
 #[allow(dead_code)]
-pub type CodecZenohErrOwned<S = ::sce_forge_runtime::codec::DefaultStorage> = CodecZenohErrIn<S>;
+pub type CodecZenohErrOwned<S> = CodecZenohErrIn<S>;
 
 impl<S: CodecZenohErrStorage> Default for CodecZenohErrIn<S> {
     fn default() -> Self {
@@ -137,7 +144,7 @@ impl<S: CodecZenohErrStorage> CodecZenohErrIn<S> {
         let mut _frame = *cursor;
         match Self::store_into(cursor, _out) {
             Err(CodecError::CapacityExceeded) => {
-                CodecZenohErr::store_into(&mut _frame, &mut CodecZenohErr::default())?;
+                CodecZenohErrView::decode(&mut _frame)?;
                 Err(CodecError::CapacityExceeded)
             }
             stored => stored,
@@ -173,7 +180,7 @@ impl<S: CodecZenohErrStorage> CodecZenohErrIn<S> {
         if (header & 0x80u8) != 0 {
             _out.extensions.insert(Default::default()).refill(|_vec| {
                 let mut _more = false;
-                for _ in 0..4u32 {
+                loop {
                     let _entry = CodecZenohExtEntryOwned::<S>::decode(cursor)?;
                     _more = _entry.z();
                     // The loop walks the chain's depth and `_vec` holds the capacity, so
@@ -185,9 +192,6 @@ impl<S: CodecZenohErrStorage> CodecZenohErrIn<S> {
                 if _more && cursor.remaining() == 0 {
                     return Err(CodecError::NeedMoreBytes);
                 }
-                if _more {
-                    return Err(CodecError::TooManyElements);
-                }
                 Ok(())
             })?;
         } else {
@@ -196,10 +200,10 @@ impl<S: CodecZenohErrStorage> CodecZenohErrIn<S> {
         let payload_len = cursor.read_vle_u64()?;
         let payload = {
             let _len = payload_len;
-            if _len > 256 {
+            if _len > 4294967295 {
                 return Err(CodecError::LengthOutOfRange);
             }
-            let _n = _len as usize;
+            let _n = usize::try_from(_len).map_err(|_| CodecError::NeedMoreBytes)?;
             let raw = cursor.peek_slice(_n)?;
             let _v = raw;
             cursor.advance(_n)?;
@@ -263,11 +267,6 @@ impl<S: CodecZenohErrStorage> CodecZenohErrIn<S> {
         }
     }
 
-    /// Worst-case encoded byte count for this codec — the upper bound
-    /// against which `VecSink::new` reserves capacity in the
-    /// `encode_to_vec` facade, and the natural reserve hint for
-    /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 576;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -278,9 +277,9 @@ impl<S: CodecZenohErrStorage> CodecZenohErrIn<S> {
         CodecZenohErrWire::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade. Pre-reserves
-    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
-    /// most one allocation, then delegates to `encode` over a
+    /// Heap-backed convenience facade. It reserves nothing, since the
+    /// largest frame passes `u32` (docs/adr/0077 §7), and delegates to
+    /// `encode` over a
     /// `VecSink`, and returns the freshly-encoded bytes: the encode refuses
     /// no value and the vector cannot run out of room. Callers targeting
     /// zero-alloc hot paths should call `encode` directly against a
@@ -292,7 +291,7 @@ impl<S: CodecZenohErrStorage> CodecZenohErrIn<S> {
     /// primary `encode`.
     #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_v: Vec<u8> = Vec::new();
         let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
         _sce_v
     }
@@ -327,9 +326,9 @@ pub trait CodecZenohErrSource {
     /// The `encoding` field.
     fn encoding(&self) -> Option<&impl super::codec_zenoh_encoding::CodecZenohEncodingSource>;
     /// The `extensions` field.
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>>;
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, { usize::MAX }, 1>>;
     /// The `payload` field.
-    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256>;
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4294967295>;
 }
 
 impl<T: CodecZenohErrSource + ?Sized> CodecZenohErrSource for &T {
@@ -339,10 +338,10 @@ impl<T: CodecZenohErrSource + ?Sized> CodecZenohErrSource for &T {
     fn encoding(&self) -> Option<&impl super::codec_zenoh_encoding::CodecZenohEncodingSource> {
         (**self).encoding()
     }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, { usize::MAX }, 1>> {
         (**self).extensions()
     }
-    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256> {
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4294967295> {
         (**self).payload()
     }
 }
@@ -358,9 +357,9 @@ pub struct CodecZenohErrParts<'a> {
     /// The `encoding` field.
     pub encoding: Option<&'a super::codec_zenoh_encoding::CodecZenohEncodingParts<'a>>,
     /// The `extensions` field.
-    pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], 4, 1>>,
+    pub extensions: Option<::sce_forge_runtime::codec::Bounded<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>], { usize::MAX }, 1>>,
     /// The `payload` field.
-    pub payload: ::sce_forge_runtime::codec::Bytes<'a, 256>,
+    pub payload: ::sce_forge_runtime::codec::Bytes<'a, 4294967295>,
 }
 
 impl<'a> CodecZenohErrSource for CodecZenohErrParts<'a> {
@@ -370,10 +369,10 @@ impl<'a> CodecZenohErrSource for CodecZenohErrParts<'a> {
     fn encoding(&self) -> Option<&impl super::codec_zenoh_encoding::CodecZenohEncodingSource> {
         self.encoding
     }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, { usize::MAX }, 1>> {
         self.extensions.as_ref().map(|_l| _l.iter())
     }
-    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256> {
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4294967295> {
         self.payload
     }
 }
@@ -385,11 +384,26 @@ impl<S: CodecZenohErrStorage> CodecZenohErrSource for CodecZenohErrOwned<S> {
     fn encoding(&self) -> Option<&impl super::codec_zenoh_encoding::CodecZenohEncodingSource> {
         self.encoding.as_ref()
     }
-    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, 4, 1>> {
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, { usize::MAX }, 1>> {
         self.extensions.as_ref().map(|_l| _l.list_iter())
     }
-    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 256> {
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4294967295> {
         self.payload.as_bytes()
+    }
+}
+
+impl<'a> CodecZenohErrSource for CodecZenohErrView<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn encoding(&self) -> Option<&impl super::codec_zenoh_encoding::CodecZenohEncodingSource> {
+        self.encoding.as_ref()
+    }
+    fn extensions(&self) -> Option<::sce_forge_runtime::codec::BoundedIter<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone, { usize::MAX }, 1>> {
+        self.extensions.as_ref().map(|_l| _l.iter())
+    }
+    fn payload(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 4294967295> {
+        self.payload
     }
 }
 
@@ -484,6 +498,202 @@ impl CodecZenohErrWire {
 }
 
 
+// ── View (ADR 0049) ──────────────────────────────────────────────────
+// `CodecZenohErrView` is what a decode of `CodecZenohErr` learned, not a
+// copy of what the wire repeated: a scalar, a string or a bytes field is held
+// as `CodecZenohErr` holds it, an embedded body or a variant arm as its
+// own view, and a bounded list as the frame it was read from, how many entries
+// it holds and what a walk needs to read them again (`ListView`). Its size
+// depends on the number of fields and not on any `sce:max-count`, so moving
+// one copies a few words however long its lists may be. `decode` refuses the
+// frames `CodecZenohErr::decode` refuses, with the same error: the entries
+// are decoded once to check them, and a walk afterwards cannot fail.
+#[allow(dead_code)]
+pub struct CodecZenohErrExtensionsWalk;
+
+impl ListWalk<0> for CodecZenohErrExtensionsWalk {
+    type Entry<'b> = CodecZenohExtEntryView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohExtEntryView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecZenohErrView<'a> {
+    pub header: u8,
+    pub encoding: Option<CodecZenohEncodingView<'a>>,
+    pub extensions: Option<Bounded<ListView<'a, CodecZenohErrExtensionsWalk, 0>, { usize::MAX }, 1>>,
+    pub payload_len: u64,
+    pub payload: ::sce_forge_runtime::codec::Bytes<'a, 4294967295>,
+}
+
+impl<'a> Default for CodecZenohErrView<'a> {
+    fn default() -> Self {
+        Self {
+            header: 0x05u8,
+            encoding: Default::default(),
+            extensions: Default::default(),
+            payload_len: Default::default(),
+            payload: Default::default(),
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecZenohErrView<'a> {
+    /// A view with every field at its own type's [`Default`]: the destination
+    /// [`Self::decode_into`] fills.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Decode the next frame from `cursor`: the bytes, the bounds and the
+    /// errors of [`CodecZenohErrIn::decode`], held as a view. On success the
+    /// cursor advances past the consumed bytes.
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
+        let mut _out = Self::default();
+        Self::decode_into(cursor, &mut _out)?;
+        Ok(_out)
+    }
+
+    /// [`Self::decode`] into a destination the caller owns, so a view that
+    /// embeds or dispatches to this one is filled where it will live. On
+    /// `Err`, `_out` holds the fields decoded so far and is not to be read.
+    pub fn decode_into(cursor: &mut SceCursor<'a>, _out: &mut Self) -> Result<(), CodecError> {
+        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        // The positional `raw[byte_off]` path is valid only when every
+        // field's absolute offset is fixed at codegen time; this branch
+        // handles every codec where it is not — present-if-gated fields
+        // (runtime presence), VLE / repeat / TLV-chain / embed fields
+        // (runtime width), string fields (UTF-8 decode), and a fixed field
+        // after a variable-length payload (offset depends on the payload
+        // length). Each field reads its own bytes from the cursor and
+        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
+        // every other field flows through `present_if_decode_stmt`, whose
+        // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
+        let header = {
+            let raw = cursor.peek_slice(1)?;
+            let _v = raw[0];
+            cursor.advance(1)?;
+            _v
+        };
+        if (header & 0x40u8) != 0 {
+            CodecZenohEncodingView::decode_into(cursor, _out.encoding.insert(CodecZenohEncodingView::default()))?;
+        } else {
+            _out.encoding = None;
+        }
+        if (header & 0x80u8) != 0 {
+            let _rest = cursor.peek_slice(cursor.remaining())?;
+            let mut _count: u32 = 0;
+            let mut _more = false;
+            loop {
+                let _entry = CodecZenohExtEntryView::decode(cursor)?;
+                _more = _entry.z();
+                _count += 1;
+                if !_more { break; }
+            }
+            if _more && cursor.remaining() == 0 {
+                return Err(CodecError::NeedMoreBytes);
+            }
+            _out.extensions = Some(Bounded::new(ListView::new(_rest, _count, [])).ok_or(CodecError::TooManyElements)?);
+        } else {
+            _out.extensions = None;
+        }
+        let payload_len = cursor.read_vle_u64()?;
+        let payload = {
+            let _len = payload_len;
+            if _len > 4294967295 {
+                return Err(CodecError::LengthOutOfRange);
+            }
+            let _n = usize::try_from(_len).map_err(|_| CodecError::NeedMoreBytes)?;
+            let raw = cursor.peek_slice(_n)?;
+            let _v = raw;
+            cursor.advance(_n)?;
+            _v
+        };
+        let payload = ::sce_forge_runtime::codec::Bounded::new(payload).ok_or(CodecError::LengthOutOfRange)?;
+        _out.header = header;
+        _out.payload_len = payload_len;
+        _out.payload = payload;
+        Ok(())
+    }
+
+    /// Fill `_out`, the builder form [`CodecZenohErr`] a sender fills and
+    /// encodes, with what this view says: every field, each embedded body, the
+    /// variant arm, and each list entry as the walk yields it, built in the
+    /// destination where it will live. Fails only where the destination cannot
+    /// hold it, which a destination of the same declared bounds does.
+    // The name every view's method has (ADR 0049), which borrows because a
+    // view is read, not consumed. Clippy leaves an exported method's name
+    // alone; a crate that includes this module privately is asked to rename
+    // it, and the one name is what lets a codec reach every view it holds.
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_builder<D>(&self, _out: &mut CodecZenohErrIn<::sce_forge_runtime::codec::Lent<'a, D>>) -> Result<(), CodecError> where D: CodecZenohErrLentStorage {
+        _out.header = self.header;
+        match &self.encoding {
+            Some(_b) => _b.into_builder(_out.encoding.insert(Default::default()))?,
+            None => _out.encoding = None,
+        }
+        match &self.extensions {
+            Some(_l) => _out.extensions.insert(Default::default()).refill(|_vec| {
+                    for _e in _l.iter() {
+                        ::sce_forge_runtime::codec::SceList::try_push(_vec, Default::default())?;
+                        if let Some(_slot) = ::sce_forge_runtime::codec::SceList::last_mut(_vec) {
+                            _e.into_builder(_slot)?;
+                        }
+                    }
+                    Ok(())
+                })?,
+            None => _out.extensions = None,
+        }
+        _out.payload_len = self.payload_len;
+        _out.payload = self.payload;
+        Ok(())
+    }
+
+
+    /// Encode what this view says into the caller-owned sink: the bytes
+    /// [`CodecZenohErr::encode`] writes for the value [`Self::into_builder`]
+    /// fills, written straight from the view, walking each list, without the
+    /// builder. It writes the canonical wire, not the frame the view was decoded
+    /// from, so a frame `decode` accepted in a form that is not canonical is
+    /// not passed on as it came.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), S::Error> {
+        CodecZenohErrWire::encode_source(self, w)
+    }
+
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses no
+    /// value (docs/adr/0065).
+    #[cfg(feature = "alloc")]
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::new();
+        let Ok(()) = self.encode(&mut VecSink::new(&mut _sce_v));
+        _sce_v
+    }
+
+    pub fn mid(&self) -> u8 {
+        self.header & 0x1F
+    }
+
+    pub fn x(&self) -> bool {
+        (self.header & 0x20) != 0
+    }
+
+    pub fn e(&self) -> bool {
+        (self.header & 0x40) != 0
+    }
+
+    pub fn z(&self) -> bool {
+        (self.header & 0x80) != 0
+    }
+
+}
+
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohErr<'a>` above is a zero-copy view borrowing the decode
 // buffer. Consumers that persist a decoded value beyond the buffer's
@@ -544,11 +754,9 @@ impl<'a, D> CodecZenohErrIn<::sce_forge_runtime::codec::Lent<'a, D>> where D: Co
         })
     }
 
-    /// The same projection at the build's default storage profile — growable
-    /// where an allocator exists, inline on the heap-free tier.
-    pub fn try_into_owned(self) -> Result<CodecZenohErrOwned, CodecError> {
-        self.try_into_owned_in()
-    }
+    // No projection at the build's default profile: on the heap-free tier
+    // that is `Inline`, which holds no field whose protocol states no bound
+    // (docs/adr/0077 §7). Name the profile, `try_into_owned_in::<S>()`.
 }
 
 #[allow(dead_code)]

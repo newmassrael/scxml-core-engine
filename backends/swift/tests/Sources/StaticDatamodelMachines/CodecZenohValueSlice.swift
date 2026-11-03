@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 358e4be4a52e72432bafa7ddd2eec2846145e67e377ccdbb35331d5342f38402
-// SCE-MAP: codec_zenoh_value_slice.scxml:14 :: _forge_body
+// source-hash: fa5ddc51db35d1c9e510043884e7304fa6a695359f6c17b684d5f8bf2823ccdb
+// SCE-MAP: codec_zenoh_value_slice.scxml:15 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -47,7 +47,7 @@ public struct CodecZenohValueSlice: Equatable, Sendable {
         var frame = CodecZenohValueSlice()
         frame.kind = try reader.readInteger(UInt8.self, .big)
         frame.len = try reader.readVle(UInt64.self)
-        if frame.len > 16 {
+        if frame.len > 4294967295 {
             throw CodecError.lengthOutOfRange
         }
         frame.data = Array(try reader.readSlice(Int(clamping: frame.len)))
@@ -58,7 +58,7 @@ public struct CodecZenohValueSlice: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if self.data.count > 16 {
+        if self.data.count > 4294967295 {
             throw CodecError.lengthOutOfRange
         }
         var frame: [UInt8] = []

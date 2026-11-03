@@ -206,7 +206,7 @@ impl<S: CodecNestedParentStorage> CodecNestedParentIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 3296;
+    pub const MAX_ENCODED_BYTES: usize = 6344;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -541,7 +541,7 @@ impl<'a> CodecNestedParentView<'a> {
 
     /// Worst-case encoded byte count for this codec, as
     /// [`CodecNestedParent::MAX_ENCODED_BYTES`].
-    pub const MAX_ENCODED_BYTES: usize = 3296;
+    pub const MAX_ENCODED_BYTES: usize = 6344;
 
     /// Encode what this view says into the caller-owned sink: the bytes
     /// [`CodecNestedParent::encode`] writes for the value [`Self::into_builder`]

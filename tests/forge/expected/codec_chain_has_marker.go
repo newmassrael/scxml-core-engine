@@ -258,7 +258,7 @@ func (s *CodecChainHasMarker) Encode(w codec.SceSink) error {
 // Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecChainHasMarker) EncodeToBytes() ([]byte, error) {
-	_dst := make([]byte, 0, 1511)
+	_dst := make([]byte, 0)
 	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
 		return nil, err
 	}

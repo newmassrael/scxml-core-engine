@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a chain that ends on an entry's flag and whose
+     protocol states its depth, the codec's last field (docs/adr/0077 §7).
+
+     A depth the document states is the language's: a frame with one entry
+     past it is malformed, and every form refuses it with `TooManyElements`,
+     a view included, since a view stores nothing. A chain whose protocol
+     states no depth has none in its document (the Zenoh extension chains
+     of codec_zenoh_ext_envelope and codec_zenoh_msg_put), so this shape is
+     held here.
+
+     A chain is MCU-class: it emits on Rust and C11 only, as every TLV chain
+     fixture does.
+
+     Wire: header_flags, then entries of codec_chain_depth_entry, each with
+     `Z` set but the last; at most 8. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_depth_plain">
+  <sce:import src="codec_chain_depth_entry.scxml" kind="codec" as="codec_chain_depth_entry"/>
+  <datamodel>
+    <sce:field id="header_flags" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:tlv-chain id="extensions" type="codec_chain_depth_entry" sce:byte="1"
+                   max-depth="8" terminate-on="entry-flag" entry-flag-name="Z"/>
+  </datamodel>
+</scxml>

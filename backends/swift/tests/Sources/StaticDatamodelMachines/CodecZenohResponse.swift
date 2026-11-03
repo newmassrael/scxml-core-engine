@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 358e4be4a52e72432bafa7ddd2eec2846145e67e377ccdbb35331d5342f38402
-// SCE-MAP: codec_zenoh_response.scxml:75 :: _forge_body
+// source-hash: fa5ddc51db35d1c9e510043884e7304fa6a695359f6c17b684d5f8bf2823ccdb
+// SCE-MAP: codec_zenoh_response.scxml:76 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -74,7 +74,7 @@ public struct CodecZenohResponse: Equatable, Sendable {
 
     /// On the wire only when `(header & 0x80) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
-    /// Entries of `CodecZenohExtEntry`, one after another, at most 4: until one says it is the last. A frame
+    /// Entries of `CodecZenohExtEntry`, one after another, at most none: until one says it is the last. A frame
     /// with more is refused with `tooManyElements`, as is a value with more at its encode.
     public var extensions: [CodecZenohExtEntry]? = nil
 
@@ -113,7 +113,7 @@ public struct CodecZenohResponse: Equatable, Sendable {
             frame.suffix_len = try reader.readVle(UInt64.self)
         }
         if (frame.header & 0x20) != 0 {
-            if (frame.suffix_len ?? 0) > 256 {
+            if (frame.suffix_len ?? 0) > 65535 {
                 throw CodecError.lengthOutOfRange
             }
             frame.suffix = try reader.readString(Int(clamping: (frame.suffix_len ?? 0)))
@@ -121,7 +121,7 @@ public struct CodecZenohResponse: Equatable, Sendable {
         if (frame.header & 0x80) != 0 {
             var extensions_items: [CodecZenohExtEntry] = []
             var extensions_more = false
-            for _ in 0..<4 {
+            for _ in 0..<none {
                 let entry = try CodecZenohExtEntry.decode(&reader)
                 extensions_more = entry.Z
                 extensions_items.append(entry)
@@ -151,10 +151,10 @@ public struct CodecZenohResponse: Equatable, Sendable {
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
     /// `bufferOverflow` and holds none of it.
     public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if let value = self.suffix, value.utf8.count > 256 {
+        if let value = self.suffix, value.utf8.count > 65535 {
             throw CodecError.lengthOutOfRange
         }
-        if let value = self.extensions, value.count < 1 || value.count > 4 {
+        if let value = self.extensions, value.count < 1 {
             throw CodecError.tooManyElements
         }
         var frame: [UInt8] = []

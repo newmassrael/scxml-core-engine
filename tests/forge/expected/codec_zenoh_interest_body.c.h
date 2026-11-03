@@ -30,6 +30,11 @@ typedef struct {
  * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_interest_body_decode(sce_forge_cursor_t *cursor, codec_zenoh_interest_body_t *out) {
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Streaming cursor decode (SSOT selection: `needs_streaming`).
      * The positional `raw[byte_off]` path is valid only when every
      * field's absolute offset is fixed at codegen time; this branch
@@ -50,10 +55,11 @@ static inline sce_forge_codec_status_t codec_zenoh_interest_body_decode(sce_forg
     }
     memset(&out->keyexpr, 0, sizeof out->keyexpr);
     if ((out->header & 0x10) != 0) {
-        sce_forge_codec_status_t _st = codec_zenoh_wireexpr_decode(cursor, &out->keyexpr.value, (uint8_t)((out->header >> 5) & 0x1));
+        sce_forge_codec_status_t _st = sce_forge_codec_note_capacity(codec_zenoh_wireexpr_decode(cursor, &out->keyexpr.value, (uint8_t)((out->header >> 5) & 0x1)), &_over);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
         out->keyexpr.present = true;
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

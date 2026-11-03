@@ -3113,6 +3113,22 @@ pub fn encode_plan_file<R>(
     encode_plan_file_with_imports(path, include_dirs, options, |plan, _| read(plan))
 }
 
+/// Whether the Rust tree names the eager form of the positional codec at
+/// `path` at its default profile, `{Codec}<'a> = {Codec}In<Lent<'a>>`
+/// (docs/adr/0077 §7): every list of it and of every codec it holds has a
+/// bound or a capacity. Read as `compile_forge_file` reads it, its imports
+/// resolved, which is what the generator answers from. `None` for a document
+/// that is not a codec.
+pub fn codec_lent_holds_file(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Result<Option<bool>, forge::error::Located<forge::error::ForgeError>> {
+    read_codec_file(path, include_dirs, options, |model, imports, _| {
+        forge::generator::codec_lent_holds(&model, imports)
+    })
+}
+
 /// A codec a codec imports: the alias it is imported as, the file it is read
 /// from, and the names the Rust generator gives it, so a caller can read the
 /// codec it holds as it read the codec holding it.
@@ -6299,6 +6315,28 @@ fn codec_inline_holds_recursive(
     })
 }
 
+/// Whether the eager form at the default profile holds `cm` and every codec it
+/// holds (`CodecModel::lent_holds_with`, docs/adr/0077 §7), read through the
+/// same file-graph resolver as [`codec_inline_holds_recursive`].
+fn codec_lent_holds_recursive(
+    cm: &forge::model::CodecModel,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> bool {
+    cm.lent_holds_with(|alias| {
+        with_resolved_import_codec(alias, imports, base_dir, visited, |inner| {
+            Some(codec_lent_holds_recursive(
+                inner.model,
+                inner.imports,
+                inner.base_dir,
+                inner.visited,
+            ))
+        })
+        .unwrap_or(false)
+    })
+}
+
 /// Whether the decode of `cm` can answer `CAPACITY_EXCEEDED` in a tree that
 /// holds the deployment's capacities (docs/adr/0077 §7): the deployment gives
 /// `cm` or a codec it holds, read through the same file-graph resolver as
@@ -6931,6 +6969,13 @@ fn validate_and_enrich_imports(
                     &inner_base,
                     &mut inline_visited,
                 );
+                // docs/adr/0077 §7: whether the eager form at the default
+                // profile holds the import, which decides whether the parent
+                // names its own eager form.
+                let mut lent_visited: HashSet<PathBuf> = HashSet::new();
+                lent_visited.insert(source.path.clone());
+                ctx.codec_lent_holds =
+                    codec_lent_holds_recursive(cm, &parsed.imports, &inner_base, &mut lent_visited);
                 // docs/adr/0077 §7: whether the import's decode can answer a
                 // capacity, in a tree that holds the deployment's.
                 if language.tree_holds_capacities() {

@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_decl_ext_keyexpr_inner:64 :: _forge_body
+// SCE-MAP: codec_zenoh_decl_ext_keyexpr_inner:65 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */
@@ -54,6 +54,11 @@ typedef struct {
  * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_decl_ext_keyexpr_inner_decode(sce_forge_cursor_t *cursor, codec_zenoh_decl_ext_keyexpr_inner_t *out) {
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Streaming cursor decode (SSOT selection: `needs_streaming`).
      * The positional `raw[byte_off]` path is valid only when every
      * field's absolute offset is fixed at codegen time; this branch
@@ -80,19 +85,19 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_ext_keyexpr_inner_decode
     out->id = id;
     if ((out->inner_header & 0x01) != 0) {
         size_t _n = sce_forge_cursor_remaining(cursor);
-        if (_n > 128) {
+        if (_n > 65535) {
             return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
         }
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->suffix = sce_optional_bytes_128_none();
-        memcpy(out->suffix.value.data, raw, _n);
-        out->suffix.value.len = _n;
+        out->suffix.value.len = sce_forge_codec_hold(out->suffix.value.data, 128U, raw, _n, &_over);
         out->suffix.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
         out->suffix = sce_optional_bytes_128_none();
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

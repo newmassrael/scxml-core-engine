@@ -33,10 +33,10 @@ func DecodeCodecZenohQueryValue(cursor *codec.SceCursor) (*CodecZenohQueryValue,
 	// advances past what it consumed. Per-field `is_repeat` /
 	// `is_tlv_chain` / `is_embed` route to their dedicated helpers; every
 	// other field flows through `present_if_decode_stmt`.
-	Exts := make([]codec_zenoh_value_entry.CodecZenohValueEntry, 0, 4)
+	Exts := make([]codec_zenoh_value_entry.CodecZenohValueEntry, 0)
 	var _prev_exts_after_shm byte
 	_more := false
-	for _i := 0; _i < int(4); _i++ {
+	for {
 		_elem, err := codec_zenoh_value_entry.DecodeCodecZenohValueEntry(cursor, _prev_exts_after_shm)
 		if err != nil {
 			return nil, err
@@ -54,9 +54,6 @@ func DecodeCodecZenohQueryValue(cursor *codec.SceCursor) (*CodecZenohQueryValue,
 	if _more && cursor.Remaining() == 0 {
 		return nil, codec.ErrNeedMoreBytes
 	}
-	if _more {
-		return nil, codec.ErrTooManyElements
-	}
 	return &CodecZenohQueryValue{
 		Exts: Exts,
 	}, nil
@@ -67,7 +64,7 @@ func DecodeCodecZenohQueryValue(cursor *codec.SceCursor) (*CodecZenohQueryValue,
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohQueryValue) Encode(w codec.SceSink) error {
-	if len(s.Exts) < 1 || len(s.Exts) > 4 {
+	if len(s.Exts) < 1 {
 		return codec.ErrTooManyElements
 	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
@@ -100,7 +97,7 @@ func (s *CodecZenohQueryValue) Encode(w codec.SceSink) error {
 // Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecZenohQueryValue) EncodeToBytes() ([]byte, error) {
-	_dst := make([]byte, 0, 656)
+	_dst := make([]byte, 0)
 	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
 		return nil, err
 	}

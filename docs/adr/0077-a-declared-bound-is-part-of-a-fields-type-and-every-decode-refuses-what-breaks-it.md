@@ -476,7 +476,11 @@ are one value held two ways. So:
   normalizing. An owned value re-borrows to `{Codec}In<Lent<'_, S>>`, its lists as `S` holds them; it was re-borrowed
   into `Inline`'s lists, which refused one past its bound. `{Codec}<'a>` stays the eager form at `Inline` for a codec
   that has one, and only using it on a codec with a list of no bound fails to compile, as this section says of
-  `Inline`.
+  `Inline`. *Settled when the tree's own documents moved to the protocol's bounds (2026-11-03):* a codec that has
+  none, because a list of it or of a codec it holds states no bound and is given no capacity, is generated with no
+  `{Codec}<'a>` and no `{Codec}Variant<'a>`, which no program could use. Its eager form is named at a profile that
+  holds its lists, `{Codec}In<Lent<'a, D>>`. The conformance build and harness already named it so; the generator
+  emitted the name regardless, which no fixture showed until one had such a list.
 - **A heap node, as landed.** The deploy input's `codec_storage:` says which kind of node a deployment is, `inline`
   by default or `heap` (`NodeStorage`). A heap node's deployment holds each field on the heap to what it holds, the
   deployment's capacity (its policy limit) or else the field's bound, in containers that grow and refuse past their
@@ -485,6 +489,17 @@ are one value held two ways. So:
   the deployment limits by nothing grows there (`GrowVec`, `GrowStr`, `GrowBytes`), where an inline deployment is
   refused for it. A storing decode on either kind of node reads a frame past what it holds whole and answers the
   capacity last, so the two kinds differ in where a field is held and not in what a frame is answered.
+- **The tree's own Zenoh documents, as landed (2026-11-03).** The fixtures that model the consumer's protocol
+  (`tests/forge/resources/codec_zenoh_*.scxml`) stated the sizes a node held as bounds, the defect this section
+  names, which the consumer found against its own documents. Each now states what upstream states: a locator and an
+  encoding schema 255 (a `u8` length), a key suffix and an INIT cookie 65535 (`u16`), a zbuf and its slices
+  4294967295 (`u32`), and no bound for an OPEN cookie, a HELLO's locators, query parameters, a slice count or any
+  extension chain's depth. The sizes they held moved to the conformance run's deploy input,
+  `tests/forge/conformance/deploy.yaml`, as capacities: the C11 conformance build and the C11 goldens read it, so the
+  storage of the run is what it was. A depth the document states is still refused past with `TooManyElements`; that
+  shape is held by fixtures of its own (`codec_chain_depth_plain`, `codec_chain_depth_gated`) and the reject vectors
+  moved with it. A Rust tree of a set that holds a list of no bound is generated with views, as the generator
+  requires.
 
 ## Alternatives
 

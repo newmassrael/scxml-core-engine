@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 358e4be4a52e72432bafa7ddd2eec2846145e67e377ccdbb35331d5342f38402
+// source-hash: fa5ddc51db35d1c9e510043884e7304fa6a695359f6c17b684d5f8bf2823ccdb
 // SCE-MAP: codec_zenoh_hello.scxml:41 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -80,9 +80,6 @@ public struct CodecZenohHello: Equatable, Sendable {
             frame.num_locators = try reader.readVle(UInt64.self)
         }
         if (L & 0x1) != 0 {
-            if (frame.num_locators ?? 0) > 64 {
-                throw CodecError.tooManyElements
-            }
             var locators_items: [CodecZenohLocator] = []
             for _ in 0..<Int(clamping: (frame.num_locators ?? 0)) {
                 locators_items.append(try CodecZenohLocator.decode(&reader))
@@ -105,9 +102,6 @@ public struct CodecZenohHello: Equatable, Sendable {
         }
         if self.zid.count < 1 || self.zid.count > 16 {
             throw CodecError.lengthOutOfRange
-        }
-        if let value = self.locators, value.count > 64 {
-            throw CodecError.tooManyElements
         }
         var frame: [UInt8] = []
         appendInteger(self.version, to: &frame, .big)

@@ -227,9 +227,16 @@ pub struct {{ struct_name }}In{{ owned_generics_impl }} {
 {% endif %}
 }
 
+{% if eager_default_holds %}
 /// The eager form: bytes and text borrowed from the frame, lists held inline.
 #[allow(dead_code)]
 pub type {{ struct_name }}{{ struct_lifetime }} = {{ struct_name }}In<{{ runtime_codec }}::Lent<'a>>;
+{% else %}
+// No eager form at the default profile: `Lent<'a>` holds each list as `Inline`
+// does, and `Inline` holds no list whose protocol states no bound
+// (docs/adr/0077 §7). Name the eager form at a profile that holds its lists,
+// `{{ struct_name }}In<Lent<'a, D>>`.
+{% endif %}
 
 /// The value at a profile that holds its bytes and text{% if not default_profile_holds %}, named
 /// with the profile: the build's default on the heap-free tier is `Inline`, which
@@ -280,8 +287,10 @@ pub enum {{ struct_name }}VariantIn{{ variant_owned_generics_impl }} {
 {% endif %}
 }
 
+{% if eager_default_holds %}
 #[allow(dead_code)]
 pub type {{ struct_name }}Variant{{ variant_lifetime }} = {{ struct_name }}VariantIn{% if variant_lifetime %}<{{ runtime_codec }}::Lent<'a>>{% endif %};
+{% endif %}
 
 #[allow(dead_code)]
 pub type {{ struct_name }}OwnedVariant{% if variant_owned_generics_args %}<S{% if default_profile_holds %} = {{ runtime_codec }}::DefaultStorage{% endif %}>{% endif %} = {{ struct_name }}VariantIn{{ variant_owned_generics_args }};
@@ -695,7 +704,7 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     }
 
     /// Decode the next frame from `cursor`: the bytes, the bounds and the
-    /// errors of [`{{ struct_name }}::decode`], held as a view. On success the
+    /// errors of [`{{ struct_name }}{% if not eager_default_holds %}In{% endif %}::decode`], held as a view. On success the
     /// cursor advances past the consumed bytes.
     pub fn decode(cursor: &mut SceCursor<{{ view_cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError> {
         let mut _out = Self::default();

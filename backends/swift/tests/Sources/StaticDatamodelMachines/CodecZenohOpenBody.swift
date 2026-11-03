@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 358e4be4a52e72432bafa7ddd2eec2846145e67e377ccdbb35331d5342f38402
-// SCE-MAP: codec_zenoh_open_body.scxml:41 :: _forge_body
+// source-hash: fa5ddc51db35d1c9e510043884e7304fa6a695359f6c17b684d5f8bf2823ccdb
+// SCE-MAP: codec_zenoh_open_body.scxml:42 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -61,9 +61,6 @@ public struct CodecZenohOpenBody: Equatable, Sendable {
             frame.cookie_len = try reader.readVle(UInt64.self)
         }
         if (A & 0x1) == 0 {
-            if (frame.cookie_len ?? 0) > 128 {
-                throw CodecError.lengthOutOfRange
-            }
             frame.cookie = Array(try reader.readSlice(Int(clamping: (frame.cookie_len ?? 0))))
         }
         cursor = reader
@@ -79,9 +76,6 @@ public struct CodecZenohOpenBody: Equatable, Sendable {
             }
         } else if self.cookie != nil {
             throw CodecError.presentIfMismatch
-        }
-        if let value = self.cookie, value.count > 128 {
-            throw CodecError.lengthOutOfRange
         }
         var frame: [UInt8] = []
         appendVle(self.lease, to: &frame)

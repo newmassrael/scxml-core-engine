@@ -30,7 +30,8 @@
                                  unsigned-int VLE shape)
 
        byte ?+  : suffix        (bytes Tail, present-if
-                                 `inner_header.N`, max-size 128).
+                                 `inner_header.N`, at most 65535,
+                                 the u16 bound of a key suffix).
                                  Wire length is whatever bytes remain
                                  in the inner cursor after the inner
                                  header + VLE id are consumed —
@@ -71,6 +72,6 @@
     </sce:flags>
     <sce:field id="id" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
     <sce:field id="suffix" sce:type="bytes" sce:byte="2" sce:bit-size="tail"
-               sce:max-size="128" sce:present-if="inner_header.N"/>
+               sce:max-size="65535" sce:present-if="inner_header.N"/>
   </datamodel>
 </scxml>

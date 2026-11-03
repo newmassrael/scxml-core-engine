@@ -22,7 +22,7 @@
 
      Wire shape:
        byte 0+ : value_len    (VLE u64)
-       !after_shm : value       (length=value_len, max 32)
+       !after_shm : value       (length=value_len, at most 2^32 - 1)
        after_shm  : encoding    (VLE u64), slice_count (VLE u64), slices -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -34,14 +34,14 @@
   <datamodel>
     <sce:field id="value_len" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
     <sce:field id="value" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
-               sce:length-field="value_len" sce:max-size="32"
+               sce:length-field="value_len" sce:max-size="4294967295"
                sce:present-if="!after_shm"/>
     <sce:field id="encoding" sce:type="uint64" sce:byte="2" sce:bit-size="vle"
                sce:present-if="after_shm"/>
     <sce:field id="slice_count" sce:type="uint64" sce:byte="3" sce:bit-size="vle"
                sce:present-if="after_shm"/>
     <sce:repeat id="slices" type="codec_zenoh_value_slice" sce:byte="4"
-                count="slice_count" max-count="4"
+                count="slice_count"
                 sce:present-if="after_shm"/>
   </datamodel>
 </scxml>

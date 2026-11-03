@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a chain gated on a header flag that ends on an
+     entry's flag, states its depth, and is followed on the wire by a length
+     and the bytes it says (docs/adr/0077 §7).
+
+     The field after the chain is what makes a wrongly dropped entry a
+     corruption rather than a loss, and what a wrongly refused chain would
+     deny a conforming peer: an entry one past the depth is refused with
+     `TooManyElements`, never read as `payload_len`.
+
+     A chain is MCU-class: it emits on Rust and C11 only, as every TLV chain
+     fixture does.
+
+     Wire: header (Z in bit 7 gates the chain), entries of
+     codec_chain_depth_entry (at most 8, `Z` set on each but the last), then
+     payload_len (VLE) and payload (at most 16 bytes). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_depth_gated">
+  <sce:import src="codec_chain_depth_entry.scxml" kind="codec" as="codec_chain_depth_entry"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="Z" bit="7"/>
+    </sce:flags>
+    <sce:tlv-chain id="extensions" type="codec_chain_depth_entry" sce:byte="1"
+                   max-depth="8" sce:present-if="header.Z"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
+    <sce:field id="payload_len" sce:type="uint64" sce:byte="2" sce:bit-size="vle"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="3" sce:bit-size="length-ref"
+               sce:length-field="payload_len" sce:max-size="16"/>
+  </datamodel>
+</scxml>

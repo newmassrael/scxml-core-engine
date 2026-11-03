@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_query:51 :: _forge_body
+// SCE-MAP: codec_zenoh_query:52 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -83,8 +83,8 @@ func DecodeCodecZenohQuery(cursor *codec.SceCursor) (*CodecZenohQuery, error) {
 	var Parameters optional.Of[[]byte]
 	if (Header & 0x40) != 0 {
 		_len := ParametersLen.Proven()
-		if _len > 256 {
-			return nil, codec.ErrLengthOutOfRange
+		if uint64(_len) > uint64(^uint(0)>>1)-0 {
+			return nil, codec.ErrNeedMoreBytes
 		}
 		_n := int(_len)
 		raw, err := cursor.PeekSlice(_n)
@@ -98,8 +98,8 @@ func DecodeCodecZenohQuery(cursor *codec.SceCursor) (*CodecZenohQuery, error) {
 	}
 	var Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
 	if (Header & 0x80) != 0 {
-		_list := make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 8)
-		for _i := 0; _i < int(8); _i++ {
+		_list := make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0)
+		for {
 			if cursor.Remaining() == 0 {
 				break
 			}
@@ -108,9 +108,6 @@ func DecodeCodecZenohQuery(cursor *codec.SceCursor) (*CodecZenohQuery, error) {
 				return nil, err
 			}
 			_list = append(_list, *_elem)
-		}
-		if cursor.Remaining() > 0 {
-			return nil, codec.ErrTooManyElements
 		}
 		Extensions = optional.Some(_list)
 	}
@@ -180,12 +177,6 @@ func (s *CodecZenohQuery) SetZ(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohQuery) Encode(w codec.SceSink) error {
-	if s.Parameters.IsPresent() && (len(s.Parameters.Proven()) > 256) {
-		return codec.ErrLengthOutOfRange
-	}
-	if s.Extensions.IsPresent() && (len(s.Extensions.Proven()) > 8) {
-		return codec.ErrTooManyElements
-	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
 	// Mirrors the streaming decode: every field appends its own bytes in
 	// declaration order through the per-field encode blocks, so a gated
@@ -226,17 +217,11 @@ func (s *CodecZenohQuery) Encode(w codec.SceSink) error {
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecZenohQuery) EncodeToBytes() ([]byte, error) {
-	_dst := make([]byte, 0, 603)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohQuery) EncodeToBytes() []byte {
+	_dst := make([]byte, 0)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

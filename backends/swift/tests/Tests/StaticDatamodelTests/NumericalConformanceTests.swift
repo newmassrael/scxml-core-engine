@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 358e4be4a52e72432bafa7ddd2eec2846145e67e377ccdbb35331d5342f38402
+// source-hash: fa5ddc51db35d1c9e510043884e7304fa6a695359f6c17b684d5f8bf2823ccdb
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
@@ -5265,6 +5265,30 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecTlvChainPresentIfBasic.frameLength
+}
+
+// MARK: - codec: codec_chain_depth_entry
+
+@Test func codecChainDepthEntryMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainDepthEntry.frameLength
+}
+
+// MARK: - codec: codec_chain_depth_plain
+
+@Test func codecChainDepthPlainMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainDepthPlain.frameLength
+}
+
+// MARK: - codec: codec_chain_depth_gated
+
+@Test func codecChainDepthGatedMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainDepthGated.frameLength
 }
 
 // MARK: - codec: codec_tlv_entry

@@ -67,7 +67,6 @@ data class CodecZenohHello(
             if (this.locators == null) return CodecError.PresentIfMismatch
         } else if (this.locators != null) return CodecError.PresentIfMismatch
         if (this.zid.size < 1 || this.zid.size > 16) return CodecError.LengthOutOfRange
-        this.locators?.let { if (it.size > 64) return CodecError.TooManyElements }
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -152,9 +151,6 @@ data class CodecZenohHello(
             }
             val locators: MutableList<CodecZenohLocator>? = if ((L.toInt() and 0x01) != 0) {
                 val _n = num_locators!!
-                if (_n > 64uL) {
-                    cursor.refuse(CodecError.TooManyElements); return null
-                }
                 mutableListOf<CodecZenohLocator>().apply {
                     repeat(_n.toInt()) {
                         add(CodecZenohLocator.decode(cursor) ?: return null)

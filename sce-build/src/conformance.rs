@@ -713,10 +713,12 @@ pub enum FixtureSpec {
         /// states it.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         content_line: bool,
-        /// `Inline` holds no container of some entry of the codec: the
-        /// protocol bounds it by nothing (docs/adr/0077 §7), so a fragment
-        /// that names a storage profile names the growing one. Derived from
-        /// the same parse the generator reads; fixtures.json never states it.
+        /// The codec has no form at the default profile a fragment can name
+        /// (docs/adr/0077 §7): `Inline` holds no container of some entry of a
+        /// content-line codec, or no list of a positional one or of a codec it
+        /// holds, whose protocol bounds it by nothing. A fragment names the
+        /// growing profile instead. Derived from the same parse the generator
+        /// reads; fixtures.json never states it.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         grows: bool,
         /// The document declares `sce:encode-may-fail` (docs/adr/0065): its
@@ -3651,6 +3653,17 @@ pub fn render_harness(
                             &model.fields,
                             language,
                         );
+                        // A positional codec has an eager form at the default
+                        // profile only where `Inline` holds every list of it
+                        // and of what it holds; otherwise a fragment names the
+                        // eager form at the growing profile.
+                        *grows = !crate::codec_lent_holds_file(
+                            &scxml_path,
+                            &[],
+                            &crate::ForgeCompileOptions::default(),
+                        )
+                        .map_err(|e| format!("{}: {e:?}", scxml_path.display()))?
+                        .unwrap_or(true);
                     }
                 }
                 // RFC §synth-5-B test-vector: enrich the manifest with the

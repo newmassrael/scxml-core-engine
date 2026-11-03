@@ -64,6 +64,11 @@ static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_decode(sce_forge_c
      * `<sce:flag-input>` so codecs that haven't consumed an input via
      * `present-if` yet compile cleanly under -Wunused-parameter. */
     (void)after_shm;
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Streaming cursor decode (SSOT selection: `needs_streaming`).
      * The positional `raw[byte_off]` path is valid only when every
      * field's absolute offset is fixed at codegen time; this branch
@@ -83,15 +88,15 @@ static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_decode(sce_forge_c
     }
     out->value_len = value_len;
     if ((after_shm & 0x01) == 0) {
-        if (out->value_len > 32) {
+        if (out->value_len > 4294967295ULL) {
             return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
         }
+        if ((uint64_t)out->value_len > (uint64_t)SIZE_MAX - 0u) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         size_t _n = (size_t)out->value_len;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->value = sce_optional_bytes_32_none();
-        memcpy(out->value.value.data, raw, _n);
-        out->value.value.len = _n;
+        out->value.value.len = sce_forge_codec_hold(out->value.value.data, 32U, raw, _n, &_over);
         out->value.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
@@ -118,20 +123,20 @@ static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_decode(sce_forge_c
         out->slice_count = sce_optional_uint64_none();
     }
     if ((after_shm & 0x01) != 0) {
-        if (out->slice_count.value > 4) {
-            return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS;
-        }
         size_t _n = (size_t)out->slice_count.value;
         memset(&out->slices, 0, sizeof out->slices);
         for (size_t _i = 0; _i < _n; ++_i) {
-            sce_forge_codec_status_t _st = codec_zenoh_value_slice_decode(cursor, &out->slices.value.data[_i]);
+            size_t _at = _i < 4U ? _i : 4U - 1U;
+            if (_i >= 4U) _over = true;
+            sce_forge_codec_status_t _st = sce_forge_codec_note_capacity(codec_zenoh_value_slice_decode(cursor, &out->slices.value.data[_at]), &_over);
             if (_st != SCE_FORGE_CODEC_OK) return _st;
         }
-        out->slices.value.len = _n;
+        out->slices.value.len = _n < 4U ? _n : 4U;
         out->slices.present = true;
     } else {
         memset(&out->slices, 0, sizeof out->slices);
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

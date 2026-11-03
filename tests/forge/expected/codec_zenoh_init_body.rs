@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_init_body:42 :: _forge_body"]
-// SCE-MAP: codec_zenoh_init_body:42 :: _forge_body
+#![doc = "SCE-MAP: codec_zenoh_init_body:43 :: _forge_body"]
+// SCE-MAP: codec_zenoh_init_body:43 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -36,7 +36,7 @@ impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohInitBodyZidField> for ::sc
 pub struct CodecZenohInitBodyCookieField;
 
 impl ::sce_forge_runtime::codec::HoldsBytes<CodecZenohInitBodyCookieField> for ::sce_forge_runtime::codec::Inline {
-    type Bytes = ::sce_forge_runtime::codec::InlineBytes<128>;
+    type Bytes = ::sce_forge_runtime::codec::InlineBytes<65535>;
 }
 
 /// What `CodecZenohInitBodyIn` and the codecs it holds ask of a storage profile.
@@ -72,7 +72,7 @@ pub struct CodecZenohInitBodyIn<S: CodecZenohInitBodyStorage> {
     pub zid: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohInitBodyZidField>>::Bytes, 16, 1>,
     pub s: Option<CodecZenohInitBodyS>,
     pub cookie_len: Option<u64>,
-    pub cookie: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohInitBodyCookieField>>::Bytes, 128>>,
+    pub cookie: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsBytes<CodecZenohInitBodyCookieField>>::Bytes, 65535>>,
 }
 
 /// The eager form: bytes and text borrowed from the frame, lists held inline.
@@ -211,7 +211,7 @@ impl<S: CodecZenohInitBodyStorage> CodecZenohInitBodyIn<S> {
         };
         let cookie = if (a & 0x01u8) != 0 {
             let _len = cookie_len.unwrap();
-            if _len > 128 {
+            if _len > 65535 {
                 return Err(CodecError::LengthOutOfRange);
             }
             let _n = _len as usize;
@@ -259,7 +259,7 @@ impl<S: CodecZenohInitBodyStorage> CodecZenohInitBodyIn<S> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 159;
+    pub const MAX_ENCODED_BYTES: usize = 65566;
 
     /// Encode `self` into the caller-owned sink. Every value has a frame
     /// (docs/adr/0065), so the only error is the sink's own:
@@ -314,7 +314,7 @@ pub trait CodecZenohInitBodySource {
     /// The `zid` field.
     fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 1>;
     /// The `cookie` field.
-    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>>;
+    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 65535>>;
     /// The fields `S` decides, held together (docs/adr/0065 §6 R4).
     fn s(&self) -> Option<CodecZenohInitBodyS>;
 }
@@ -329,7 +329,7 @@ impl<T: CodecZenohInitBodySource + ?Sized> CodecZenohInitBodySource for &T {
     fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 1> {
         (**self).zid()
     }
-    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
+    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 65535>> {
         (**self).cookie()
     }
     fn s(&self) -> Option<CodecZenohInitBodyS> {
@@ -350,7 +350,7 @@ pub struct CodecZenohInitBodyParts<'a> {
     /// The `zid` field.
     pub zid: ::sce_forge_runtime::codec::Bytes<'a, 16, 1>,
     /// The `cookie` field.
-    pub cookie: Option<::sce_forge_runtime::codec::Bytes<'a, 128>>,
+    pub cookie: Option<::sce_forge_runtime::codec::Bytes<'a, 65535>>,
     /// The fields `S` decides, held together (docs/adr/0065 §6 R4).
     pub s: Option<CodecZenohInitBodyS>,
 }
@@ -368,7 +368,7 @@ impl<'a> CodecZenohInitBodySource for CodecZenohInitBodyParts<'a> {
     fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 1> {
         self.zid
     }
-    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
+    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 65535>> {
         self.cookie
     }
 }
@@ -386,7 +386,7 @@ impl<S: CodecZenohInitBodyStorage> CodecZenohInitBodySource for CodecZenohInitBo
     fn zid(&self) -> ::sce_forge_runtime::codec::Bytes<'_, 16, 1> {
         self.zid.as_bytes()
     }
-    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 128>> {
+    fn cookie(&self) -> Option<::sce_forge_runtime::codec::Bytes<'_, 65535>> {
         self.cookie.as_ref().map(::sce_forge_runtime::codec::Bounded::as_bytes)
     }
 }

@@ -1,4 +1,4 @@
-# SCE-MAP: codec_zenoh_init_body:42 :: _forge_body
+# SCE-MAP: codec_zenoh_init_body:43 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 # Runtime: none
@@ -77,7 +77,7 @@ class CodecZenohInitBody:
                 f_cookie_len = None
             if (a & 0x01) != 0:
                 _len = f_cookie_len
-                if _len > 128:
+                if _len > 65535:
                     raise LengthOutOfRange()
                 _n = _len
                 raw = cursor.peek_slice(_n)
@@ -147,7 +147,7 @@ class CodecZenohInitBody:
             raise PresentIfMismatch("cookie")
         if len(self.zid) < 1 or len(self.zid) > 16:
             raise LengthOutOfRange()
-        if self.cookie is not None and (len(self.cookie) > 128):
+        if self.cookie is not None and (len(self.cookie) > 65535):
             raise LengthOutOfRange()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes

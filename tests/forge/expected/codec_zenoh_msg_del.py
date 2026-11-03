@@ -55,7 +55,7 @@ class CodecZenohMsgDel:
             if (f_header & 0x80) != 0:
                 f_extensions = []
                 _more = False
-                for _ in range(8):
+                while True:
                     _elem = CodecZenohExtEntry.decode(cursor)
                     if _elem is None:
                         return None
@@ -65,8 +65,6 @@ class CodecZenohMsgDel:
                         break
                 if _more and cursor.remaining() == 0:
                     raise NeedMoreBytes()
-                if _more:
-                    raise TooManyElements()
             else:
                 f_extensions = None
         except CodecError:
@@ -128,7 +126,7 @@ class CodecZenohMsgDel:
         before the first byte, the error a decode of the frame would give
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with."""
-        if self.extensions is not None and (len(self.extensions) < 1 or len(self.extensions) > 8):
+        if self.extensions is not None and (len(self.extensions) < 1):
             raise TooManyElements()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes

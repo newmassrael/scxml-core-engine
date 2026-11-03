@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_decl_ext_keyexpr_inner:64 :: _forge_body
+// SCE-MAP: codec_zenoh_decl_ext_keyexpr_inner:65 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -53,7 +53,7 @@ struct CodecZenohDeclExtKeyexprInner {
         std::optional<std::vector<uint8_t>> suffix;
         if ((inner_header & 0x01) != 0) {
             std::size_t _n = cursor.remaining();
-            if (_n > 128) {
+            if (_n > 65535) {
                 cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
             }
             const std::uint8_t* raw = cursor.peek_slice(_n);
@@ -101,14 +101,14 @@ struct CodecZenohDeclExtKeyexprInner {
     /// against which `VectorSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SpanSink` allocations.
-    static constexpr std::size_t MAX_ENCODED_BYTES = 138;
+    static constexpr std::size_t MAX_ENCODED_BYTES = 65545;
 
     /// Encode `self` into the caller-owned sink. Returns
     /// `CodecError::BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        if (suffix.has_value() && ((*suffix).size() > 128)) return ::SCE::Forge::CodecError::LengthOutOfRange;
+        if (suffix.has_value() && ((*suffix).size() > 65535)) return ::SCE::Forge::CodecError::LengthOutOfRange;
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a

@@ -74,9 +74,9 @@ func DecodeCodecZenohInterest(cursor *codec.SceCursor) (*CodecZenohInterest, err
 	}
 	var Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
 	if (Header & 0x80) != 0 {
-		_list := make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
+		_list := make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0)
 		_more := false
-		for _i := 0; _i < int(4); _i++ {
+		for {
 			_elem, err := codec_zenoh_ext_entry.DecodeCodecZenohExtEntry(cursor)
 			if err != nil {
 				return nil, err
@@ -89,9 +89,6 @@ func DecodeCodecZenohInterest(cursor *codec.SceCursor) (*CodecZenohInterest, err
 		}
 		if _more && cursor.Remaining() == 0 {
 			return nil, codec.ErrNeedMoreBytes
-		}
-		if _more {
-			return nil, codec.ErrTooManyElements
 		}
 		Extensions = optional.Some(_list)
 	}
@@ -167,7 +164,7 @@ func (s *CodecZenohInterest) Encode(w codec.SceSink) error {
 	} else if s.Body.IsPresent() {
 		return codec.ErrPresentIfMismatch
 	}
-	if s.Extensions.IsPresent() && (len(s.Extensions.Proven()) < 1 || len(s.Extensions.Proven()) > 4) {
+	if s.Extensions.IsPresent() && (len(s.Extensions.Proven()) < 1) {
 		return codec.ErrTooManyElements
 	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
@@ -210,7 +207,7 @@ func (s *CodecZenohInterest) Encode(w codec.SceSink) error {
 // Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecZenohInterest) EncodeToBytes() ([]byte, error) {
-	_dst := make([]byte, 0, 325)
+	_dst := make([]byte, 0)
 	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
 		return nil, err
 	}

@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_open_body:41 :: _forge_body
+// SCE-MAP: codec_zenoh_open_body:42 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -34,7 +34,6 @@ data class CodecZenohOpenBody(
         if ((A.toInt() and 0x01) == 0) {
             if (this.cookie == null) return CodecError.PresentIfMismatch
         } else if (this.cookie != null) return CodecError.PresentIfMismatch
-        this.cookie?.let { if (it.size > 128) return CodecError.LengthOutOfRange }
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -98,9 +97,7 @@ data class CodecZenohOpenBody(
             }
             val cookie = if ((A.toInt() and 0x01) == 0) {
                 val _len = cookie_len!!
-                if (_len > 128uL) {
-                    cursor.refuse(CodecError.LengthOutOfRange); return null
-                }
+                if (_len > (Int.MAX_VALUE - 0).toULong()) return null
                 val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()

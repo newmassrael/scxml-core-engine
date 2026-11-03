@@ -28,11 +28,12 @@
        byte ~   : key_id     (VLE u32 — keyexpr id; pairs with N-gated
                               suffix below to form a "qualified
                               keyexpr" per Z_RESPONSE convention).
-       N-gated  : suffix     (VLE u64 length + UTF-8 string up to 256B)
+       N-gated  : suffix     (VLE u64 length + UTF-8 string of at most
+                              65535 bytes, the u16 bound of a key suffix)
                               — keyexpr suffix string, present iff
                               header.N is set.
-       Z-gated  : extensions (codec_zenoh_ext_entry tlv-chain, max-
-                              depth=4, entry-flag-Z termination since
+       Z-gated  : extensions (codec_zenoh_ext_entry tlv-chain, no depth
+                              upstream, entry-flag-Z termination since
                               the body variant follows the chain — the
                               atomic 1 termination strategy).
        inner    : body       — peek-byte primitive dispatches on the
@@ -54,7 +55,7 @@
      2b-iii-α), bit-shifted-length-prefix for timestamp (atomic
      2b-iii-β), source_info ext nested encoding (atomic 2b-iii-γ).
      The envelope-level framing here is wire-correct against
-     network.c verbatim (header bits + max-depth=4 + entry-flag-Z
+     network.c verbatim (header bits + an undepthed entry-flag-Z
      chain termination + body MID dispatch); inner body details are
      stripped through the atomic 2b-i sub-codec layer (msg_reply /
      msg_err already inherit the Q1(b) envelope-only scoping).
@@ -90,10 +91,10 @@
     <sce:field id="suffix_len" sce:type="uint64" sce:byte="3" sce:bit-size="vle"
                sce:present-if="header.N"/>
     <sce:field id="suffix" sce:type="string" sce:byte="4" sce:bit-size="length-ref"
-               sce:length-field="suffix_len" sce:max-size="256"
+               sce:length-field="suffix_len" sce:max-size="65535"
                sce:present-if="header.N"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="5"
-                   max-depth="4"                   sce:present-if="header.Z"
+                   sce:present-if="header.Z"
                    terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:variant tag="peek.mid">
       <sce:peek-byte id="peek" sce:type="uint8">

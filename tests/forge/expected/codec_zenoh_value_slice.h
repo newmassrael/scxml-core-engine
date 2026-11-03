@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_value_slice:14 :: _forge_body
+// SCE-MAP: codec_zenoh_value_slice:15 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -53,9 +53,10 @@ struct CodecZenohValueSlice {
         std::vector<uint8_t> data;
         {
             const auto _len = len;
-            if (_len > 16) {
+            if (_len > 4294967295ULL) {
                 cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
             }
+            if (static_cast<std::uint64_t>(_len) > static_cast<std::uint64_t>(SIZE_MAX) - 0u) return std::nullopt;
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
@@ -69,18 +70,13 @@ struct CodecZenohValueSlice {
         };
     }
 
-    /// Worst-case encoded byte count for this codec — the upper bound
-    /// against which `VectorSink::new` reserves capacity in the
-    /// `encode_to_vec` facade, and the natural reserve hint for
-    /// caller-owned `SpanSink` allocations.
-    static constexpr std::size_t MAX_ENCODED_BYTES = 26;
 
     /// Encode `self` into the caller-owned sink. Returns
     /// `CodecError::BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        if (data.size() > 16) return ::SCE::Forge::CodecError::LengthOutOfRange;
+        if (data.size() > 4294967295) return ::SCE::Forge::CodecError::LengthOutOfRange;
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -95,9 +91,9 @@ struct CodecZenohValueSlice {
         return std::nullopt;
     }
 
-    /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
-    /// so the worst-case write path performs at most one allocation,
-    /// then delegates to `encode` over a `VectorSink`. Returns the
+    /// Heap-backed convenience facade. It reserves nothing, since the
+    /// largest frame passes `u32` (docs/adr/0077 §7), and delegates to
+    /// `encode` over a `VectorSink`. Returns the
     /// freshly-encoded byte vector, or `std::nullopt` when `encode`
     /// refuses the value before its first byte: a gated field and the
     /// `sce:present-if` that gates it contradict each other
@@ -108,7 +104,6 @@ struct CodecZenohValueSlice {
     /// sink.
     [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec() const {
         std::vector<std::uint8_t> _sce_v;
-        _sce_v.reserve(MAX_ENCODED_BYTES);
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
         if (encode(_sce_sink)) {
             return std::nullopt;

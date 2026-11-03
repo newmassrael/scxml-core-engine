@@ -6,16 +6,20 @@
 //
 // Which wire a chain refuses is asserted from the fixture catalog
 // (`tests/forge/conformance/numerical_reference.json`, the `rejects` arrays
-// on `codec_zenoh_ext_envelope` / `codec_zenoh_msg_put`) so all six backends
-// make that assertion from one source. This file is the other half of the
+// on `codec_chain_depth_plain` / `codec_chain_depth_gated`) so every backend
+// makes that assertion from one source. This file is the other half of the
 // contract and is deliberately not a second copy of it: a guard that refused
 // everything would satisfy every reject vector, so the cases below pin where
 // the guard must stay quiet.
 //
-// Two chain shapes, because the emit has two independent call sites:
-//   - `codec_zenoh_ext_envelope` — plain (non-gated) chain, max-depth=8,
+// The depth here is one the document states, which is the language's
+// (docs/adr/0077 §7). A chain whose protocol states none, as the Zenoh
+// extension chains, has no depth to refuse past, so the shapes are held by
+// fixtures of their own. Two chain shapes, because the emit has two
+// independent call sites:
+//   - `codec_chain_depth_plain` — plain (non-gated) chain, max-depth=8,
 //     chain is the codec's last field.
-//   - `codec_zenoh_msg_put`      — `present-if`-gated chain (header.Z),
+//   - `codec_chain_depth_gated` — `present-if`-gated chain (header.Z),
 //     max-depth=8, followed on the wire by `payload_len` + `payload`.
 //
 // The gated shape is the load-bearing one: the field after the chain is what
@@ -28,46 +32,29 @@
 // codecs cross-reference via `use super::codec_<x>`, so they share one parent
 // module here.
 mod chain_codecs {
-    pub mod codec_zenoh_ext_unit {
-        include!(concat!(env!("OUT_DIR"), "/codec_zenoh_ext_unit.rs"));
+    pub mod codec_chain_depth_entry {
+        include!(concat!(env!("OUT_DIR"), "/codec_chain_depth_entry.rs"));
     }
-    pub mod codec_zenoh_ext_zint {
-        include!(concat!(env!("OUT_DIR"), "/codec_zenoh_ext_zint.rs"));
+    pub mod codec_chain_depth_plain {
+        include!(concat!(env!("OUT_DIR"), "/codec_chain_depth_plain.rs"));
     }
-    pub mod codec_zenoh_ext_zbuf {
-        include!(concat!(env!("OUT_DIR"), "/codec_zenoh_ext_zbuf.rs"));
-    }
-    pub mod codec_zenoh_ext_entry {
-        include!(concat!(env!("OUT_DIR"), "/codec_zenoh_ext_entry.rs"));
-    }
-    pub mod codec_zenoh_ext_envelope {
-        include!(concat!(env!("OUT_DIR"), "/codec_zenoh_ext_envelope.rs"));
-    }
-    pub mod codec_zenoh_timestamp {
-        include!(concat!(env!("OUT_DIR"), "/codec_zenoh_timestamp.rs"));
-    }
-    pub mod codec_zenoh_encoding {
-        include!(concat!(env!("OUT_DIR"), "/codec_zenoh_encoding.rs"));
-    }
-    pub mod codec_zenoh_msg_put {
-        include!(concat!(env!("OUT_DIR"), "/codec_zenoh_msg_put.rs"));
+    pub mod codec_chain_depth_gated {
+        include!(concat!(env!("OUT_DIR"), "/codec_chain_depth_gated.rs"));
     }
 }
 
-use chain_codecs::codec_zenoh_ext_envelope::CodecZenohExtEnvelope;
-use chain_codecs::codec_zenoh_msg_put::CodecZenohMsgPut;
+use chain_codecs::codec_chain_depth_gated::CodecChainDepthGated;
+use chain_codecs::codec_chain_depth_plain::CodecChainDepthPlain;
 use sce_forge_runtime::codec::SceCursor;
 
-/// `codec_zenoh_ext_entry` header byte: `ext_id` at bit 0 width 4, `M` at
-/// bit 4, `enc` at bit 5 width 2 (0 = unit, a zero-byte body), `Z` at bit 7.
-/// A unit entry is therefore exactly one byte.
+/// `codec_chain_depth_entry` header byte: an id at bit 0 width 4 and `Z` at
+/// bit 7. An entry is therefore exactly one byte.
 const fn unit_entry(ext_id: u8, more: bool) -> u8 {
     ext_id | if more { 0x80 } else { 0x00 }
 }
 
-/// A `Put` header with only `Z` (bit 7) set: MID 0x01, no timestamp, no
-/// encoding, ext chain follows.
-const PUT_HEADER_Z: u8 = 0x01 | 0x80;
+/// A `codec_chain_depth_gated` header with `Z` (bit 7) set: the chain follows.
+const HEADER_Z: u8 = 0x80;
 
 #[test]
 fn a_plain_chain_that_ends_within_max_depth_still_decodes() {
@@ -81,7 +68,7 @@ fn a_plain_chain_that_ends_within_max_depth_still_decodes() {
     ];
 
     let mut cursor = SceCursor::new(&wire);
-    let decoded = CodecZenohExtEnvelope::decode(&mut cursor).expect("chain within the cap decodes");
+    let decoded = CodecChainDepthPlain::decode(&mut cursor).expect("chain within the cap decodes");
     assert_eq!(decoded.extensions.len(), 3);
     assert_eq!(cursor.remaining(), 0);
 }
@@ -101,7 +88,7 @@ fn a_plain_chain_filling_max_depth_exactly_is_not_an_overflow() {
     let probe_wire = [0x00u8, unit_entry(1, false)];
     let probe = {
         let mut cursor = SceCursor::new(&probe_wire);
-        CodecZenohExtEnvelope::decode(&mut cursor)
+        CodecChainDepthPlain::decode(&mut cursor)
             .expect("a one-entry chain decodes")
             .extensions
             .capacity()
@@ -114,7 +101,7 @@ fn a_plain_chain_filling_max_depth_exactly_is_not_an_overflow() {
     wire.push(unit_entry(probe as u8, false));
 
     let mut cursor = SceCursor::new(&wire);
-    let decoded = CodecZenohExtEnvelope::decode(&mut cursor).expect("a full but closed chain");
+    let decoded = CodecChainDepthPlain::decode(&mut cursor).expect("a full but closed chain");
     assert_eq!(
         decoded.extensions.len(),
         decoded.extensions.capacity(),
@@ -134,7 +121,7 @@ fn a_plain_chain_filling_max_depth_exactly_is_not_an_overflow() {
 
     let mut cursor = SceCursor::new(&over);
     assert!(
-        CodecZenohExtEnvelope::decode(&mut cursor).is_err(),
+        CodecChainDepthPlain::decode(&mut cursor).is_err(),
         "one entry past the cap must be refused",
     );
 }
@@ -145,7 +132,7 @@ fn a_gated_chain_within_max_depth_reads_the_payload_that_follows_it() {
     // at exactly `payload_len` — this is the read the catalog's reject vector
     // says must never happen one entry early.
     let wire = [
-        PUT_HEADER_Z,
+        HEADER_Z,
         unit_entry(1, true),
         unit_entry(2, false),
         0x03, // payload_len
@@ -155,7 +142,7 @@ fn a_gated_chain_within_max_depth_reads_the_payload_that_follows_it() {
     ];
 
     let mut cursor = SceCursor::new(&wire);
-    let decoded = CodecZenohMsgPut::decode(&mut cursor).expect("chain within the cap decodes");
+    let decoded = CodecChainDepthGated::decode(&mut cursor).expect("chain within the cap decodes");
     assert_eq!(decoded.extensions.as_ref().map(|v| v.len()), Some(2));
     assert_eq!(decoded.payload_len, 3);
     assert_eq!(decoded.payload, &[0xAA, 0xBB, 0xCC]);
@@ -172,10 +159,10 @@ fn a_gated_chain_filling_max_depth_exactly_still_reaches_the_payload() {
     // above. Writing them out restates `max-depth`, and this case read four
     // against a cap of four until the chain widened to eight, after which it
     // kept passing while testing a chain well inside the cap.
-    let probe_wire = [PUT_HEADER_Z, unit_entry(1, false), 0x00];
+    let probe_wire = [HEADER_Z, unit_entry(1, false), 0x00];
     let cap = {
         let mut cursor = SceCursor::new(&probe_wire);
-        CodecZenohMsgPut::decode(&mut cursor)
+        CodecChainDepthGated::decode(&mut cursor)
             .expect("a one-entry gated chain decodes")
             .extensions
             .as_ref()
@@ -183,7 +170,7 @@ fn a_gated_chain_filling_max_depth_exactly_still_reaches_the_payload() {
             .capacity()
     };
 
-    let mut wire = vec![PUT_HEADER_Z];
+    let mut wire = vec![HEADER_Z];
     for id in 1..cap as u8 {
         wire.push(unit_entry(id, true));
     }
@@ -191,7 +178,7 @@ fn a_gated_chain_filling_max_depth_exactly_still_reaches_the_payload() {
     wire.extend_from_slice(&[0x03, 0xAA, 0xBB, 0xCC]);
 
     let mut cursor = SceCursor::new(&wire);
-    let decoded = CodecZenohMsgPut::decode(&mut cursor).expect("a full but closed gated chain");
+    let decoded = CodecChainDepthGated::decode(&mut cursor).expect("a full but closed gated chain");
     let ext = decoded.extensions.as_ref().expect("the Z gate is set");
     assert_eq!(
         ext.len(),
@@ -205,7 +192,7 @@ fn a_gated_chain_filling_max_depth_exactly_still_reaches_the_payload() {
     // And the entry past the cap is refused rather than read as
     // `payload_len` — the read the catalog's reject vector says must never
     // happen one entry early.
-    let mut over = vec![PUT_HEADER_Z];
+    let mut over = vec![HEADER_Z];
     for id in 1..=cap as u8 {
         over.push(unit_entry(id, true));
     }
@@ -214,7 +201,7 @@ fn a_gated_chain_filling_max_depth_exactly_still_reaches_the_payload() {
 
     let mut cursor = SceCursor::new(&over);
     assert!(
-        CodecZenohMsgPut::decode(&mut cursor).is_err(),
+        CodecChainDepthGated::decode(&mut cursor).is_err(),
         "one entry past the cap must be refused, not read as payload_len",
     );
 }
@@ -223,10 +210,10 @@ fn a_gated_chain_filling_max_depth_exactly_still_reaches_the_payload() {
 fn a_gated_chain_the_header_switches_off_leaves_the_cursor_at_the_payload() {
     // Z clear: no chain at all. The gate, not the chain, decides — and the
     // guard must not fire on a chain that was never entered.
-    let wire = [0x01u8, 0x02, 0xAA, 0xBB];
+    let wire = [0x00u8, 0x02, 0xAA, 0xBB];
 
     let mut cursor = SceCursor::new(&wire);
-    let decoded = CodecZenohMsgPut::decode(&mut cursor).expect("no chain decodes");
+    let decoded = CodecChainDepthGated::decode(&mut cursor).expect("no chain decodes");
     assert!(decoded.extensions.is_none());
     assert_eq!(decoded.payload_len, 2);
     assert_eq!(decoded.payload, &[0xAA, 0xBB]);

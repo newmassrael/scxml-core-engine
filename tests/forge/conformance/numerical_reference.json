@@ -39652,8 +39652,25 @@
     },
     "codec_zenoh_ext_envelope": {
       "fixture": "CodecZenohExtEnvelope",
-      "signature": "(raw: &[u8]) -> {header_flags: u8 @ byte 0, extensions: tlv-chain<codec_zenoh_ext_entry> max-depth=8 terminate-on=entry-flag(Z)}",
-      "description": "Decode-rejection vectors only. The chain's entries are typed sub-codecs, so the field shape is not expressible as StructField and the fixture stays oracle_eligible=false for round-trip cases -- but what a chain refuses needs no field values to pin. Entries here are unit extensions, one byte each: ext_id in bits 0..3, enc=0 in bits 5..6, Z (another entry follows) in bit 7.",
+      "signature": "(raw: &[u8]) -> {header_flags: u8 @ byte 0, extensions: tlv-chain<codec_zenoh_ext_entry> terminate-on=entry-flag(Z)}",
+      "description": "Decode-rejection vectors only. The chain's entries are typed sub-codecs, so the field shape is not expressible as StructField and the fixture stays oracle_eligible=false for round-trip cases -- but what a chain refuses needs no field values to pin. Entries here are unit extensions, one byte each: ext_id in bits 0..3, enc=0 in bits 5..6, Z (another entry follows) in bit 7. The protocol states no depth for the chain, so no depth is refused here; a chain past a depth its document states is codec_chain_depth_plain's (docs/adr/0077 §7).",
+      "rejects": [
+        {
+          "why": "the last entry declares a successor and the frame ends there, so the chain is short rather than finished",
+          "encoded": [
+            0,
+            129,
+            130,
+            131
+          ],
+          "error": "need-more-bytes"
+        }
+      ]
+    },
+    "codec_chain_depth_plain": {
+      "fixture": "CodecChainDepthPlain",
+      "signature": "(raw: &[u8]) -> {header_flags: u8 @ byte 0, extensions: tlv-chain<codec_chain_depth_entry> max-depth=8 terminate-on=entry-flag(Z)}",
+      "description": "Decode-rejection vectors only. A chain whose document states its depth (docs/adr/0077 §7): one entry past it is a frame past its bound, refused by every form with too-many-elements, a view included. Entries are one byte each: an id in bits 0..3 and Z (another entry follows) in bit 7.",
       "rejects": [
         {
           "why": "chain saturates max-depth=8 with the entry flag still set, so the ninth entry the peer sent is refused rather than dropped",
@@ -39670,28 +39687,18 @@
             9
           ],
           "error": "too-many-elements"
-        },
-        {
-          "why": "the last entry declares a successor and the frame ends there, so the chain is short rather than finished",
-          "encoded": [
-            0,
-            129,
-            130,
-            131
-          ],
-          "error": "need-more-bytes"
         }
       ]
     },
-    "codec_zenoh_msg_put": {
-      "fixture": "CodecZenohMsgPut",
-      "signature": "(raw: &[u8]) -> {header: u8 flags @ byte 0, timestamp: T-gated embed, encoding: E-gated embed, extensions: Z-gated tlv-chain<codec_zenoh_ext_entry> max-depth=8 terminate-on=entry-flag(Z), payload_len: vle u64, payload: bytes}",
-      "description": "Decode-rejection vectors only (see codec_zenoh_ext_envelope). This is the present-if-gated chain, and the chain is followed on the wire by payload_len + payload -- which is what makes a refused entry a corruption rather than a loss: dropping it silently leaves its header byte under the cursor, where payload_len then reads it. Header 0x81 = MID 0x01 with Z set, T and E clear.",
+    "codec_chain_depth_gated": {
+      "fixture": "CodecChainDepthGated",
+      "signature": "(raw: &[u8]) -> {header: u8 flags @ byte 0 (Z bit 7), extensions: Z-gated tlv-chain<codec_chain_depth_entry> max-depth=8 terminate-on=entry-flag(Z), payload_len: vle u64, payload: bytes (max 16)}",
+      "description": "Decode-rejection vectors only (see codec_chain_depth_plain). This is the present-if-gated chain, and the chain is followed on the wire by payload_len + payload -- which is what makes a refused entry a corruption rather than a loss: dropping it silently leaves its header byte under the cursor, where payload_len then reads it. Header 0x80 = Z set.",
       "rejects": [
         {
-          "why": "nine extensions on a max-depth=8 chain: the ninth entry's header byte must not be read as payload_len",
+          "why": "nine entries on a max-depth=8 chain: the ninth entry's header byte must not be read as payload_len",
           "encoded": [
-            129,
+            128,
             129,
             130,
             131,
@@ -40689,7 +40696,8 @@
         {"source": {"locator": ""}, "encoded": [0], "note": "empty text: its length is zero"},
         {"source": {"locator": "tcp/127.0.0.1:7447"}, "encoded": [18, 116, 99, 112, 47, 49, 50, 55, 46, 48, 46, 48, 46, 49, 58, 55, 52, 52, 55], "note": "the length is derived from the text"},
         {"source": {"locator": "h\u00e9llo"}, "encoded": [6, 104, 195, 169, 108, 108, 111], "note": "the length counts the bytes of the UTF-8, not the characters"},
-        {"source": {"locator": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwx"}, "encoded": [128, 1, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120], "note": "text at its bound of 128 bytes: the length takes two VLE bytes"}
+        {"source": {"locator": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwx"}, "encoded": [128, 1, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120], "note": "128 bytes of text: the length takes two VLE bytes"},
+        {"source": {"locator": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstu"}, "encoded": [255, 1, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117], "note": "text at its bound of 255 bytes, the u8 length upstream reads it with"}
       ]
     },
     "codec_zenoh_keep_alive": {
@@ -40985,7 +40993,8 @@
       "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a kind, then bytes whose VLE length is derived from them.",
       "sources": [
         {"source": {"kind": 0, "data": []}, "encoded": [0, 0], "note": "no data"},
-        {"source": {"kind": 255, "data": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]}, "encoded": [255, 16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], "note": "data at its bound"}
+        {"source": {"kind": 255, "data": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]}, "encoded": [255, 16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], "note": "sixteen bytes of data"},
+        {"source": {"kind": 1, "data": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199]}, "encoded": [1, 200, 1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199], "note": "200 bytes: the length takes two VLE bytes"}
       ]
     },
     "codec_ext_attachment": {
@@ -41055,7 +41064,8 @@
       "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. bytes whose VLE length is derived from them.",
       "sources": [
         {"source": {"value": []}, "encoded": [0], "note": "no bytes"},
-        {"source": {"value": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]}, "encoded": [32, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], "note": "bytes at their bound"}
+        {"source": {"value": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]}, "encoded": [32, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], "note": "thirty-two bytes"},
+        {"source": {"value": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199]}, "encoded": [200, 1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199], "note": "200 bytes: the length takes two VLE bytes"}
       ]
     },
     "codec_zenoh_ext_zint": {

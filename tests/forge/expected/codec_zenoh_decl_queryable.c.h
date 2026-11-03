@@ -39,6 +39,11 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_for
      * `present-if` yet compile cleanly under -Wunused-parameter. */
     (void)n;
     (void)z;
+    /* A field or a body past what this node holds: the frame is read on,
+     * judged as one that holds it would be, and the capacity is answered
+     * once every other refusal has had its turn (docs/adr/0077 §7). */
+    bool _over = false;
+    (void)_over;
     /* Streaming cursor decode (SSOT selection: `needs_streaming`).
      * The positional `raw[byte_off]` path is valid only when every
      * field's absolute offset is fixed at codegen time; this branch
@@ -58,7 +63,7 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_for
     }
     out->id = id;
     {
-        sce_forge_codec_status_t _st = codec_zenoh_wireexpr_decode(cursor, &out->wireexpr, n);
+        sce_forge_codec_status_t _st = sce_forge_codec_note_capacity(codec_zenoh_wireexpr_decode(cursor, &out->wireexpr, n), &_over);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
     }
     if ((z & 0x01) != 0) {
@@ -79,6 +84,7 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_for
     } else {
         out->ext_value = sce_optional_uint64_none();
     }
+    if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
     return SCE_FORGE_CODEC_OK;
 }
 

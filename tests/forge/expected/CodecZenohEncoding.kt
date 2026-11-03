@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_encoding:68 :: _forge_body
+// SCE-MAP: codec_zenoh_encoding:69 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -45,7 +45,7 @@ data class CodecZenohEncoding(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        this.schema?.let { if (it.encodeToByteArray().size > 128) return CodecError.LengthOutOfRange }
+        this.schema?.let { if (it.encodeToByteArray().size > 255) return CodecError.LengthOutOfRange }
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -106,7 +106,7 @@ data class CodecZenohEncoding(
             }
             val schema = if ((packed_id.toLong() and 0x00000001L) != 0L) {
                 val _len = schema_len!!
-                if (_len > 128uL) {
+                if (_len > 255uL) {
                     cursor.refuse(CodecError.LengthOutOfRange); return null
                 }
                 val _n = _len.toInt()

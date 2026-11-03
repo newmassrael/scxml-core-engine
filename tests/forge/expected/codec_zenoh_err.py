@@ -1,4 +1,4 @@
-# SCE-MAP: codec_zenoh_err:54 :: _forge_body
+# SCE-MAP: codec_zenoh_err:57 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 # Runtime: none
@@ -57,7 +57,7 @@ class CodecZenohErr:
             if (f_header & 0x80) != 0:
                 f_extensions = []
                 _more = False
-                for _ in range(4):
+                while True:
                     _elem = CodecZenohExtEntry.decode(cursor)
                     if _elem is None:
                         return None
@@ -67,13 +67,11 @@ class CodecZenohErr:
                         break
                 if _more and cursor.remaining() == 0:
                     raise NeedMoreBytes()
-                if _more:
-                    raise TooManyElements()
             else:
                 f_extensions = None
             f_payload_len = cursor.read_vle_u64()
             _len = f_payload_len
-            if _len > 256:
+            if _len > 4294967295:
                 raise LengthOutOfRange()
             _n = _len
             raw = cursor.peek_slice(_n)
@@ -140,9 +138,9 @@ class CodecZenohErr:
         before the first byte, the error a decode of the frame would give
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with."""
-        if self.extensions is not None and (len(self.extensions) < 1 or len(self.extensions) > 4):
+        if self.extensions is not None and (len(self.extensions) < 1):
             raise TooManyElements()
-        if len(self.payload) > 256:
+        if len(self.payload) > 4294967295:
             raise LengthOutOfRange()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes

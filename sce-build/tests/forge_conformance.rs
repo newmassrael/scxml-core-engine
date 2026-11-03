@@ -48,6 +48,111 @@ fn golden_options(language: sce_build::generator::Language) -> sce_build::ForgeC
     opts
 }
 
+/// What the conformance run's storing forms hold
+/// (`tests/forge/conformance/deploy.yaml`, docs/adr/0077 §7): a field the
+/// protocol bounds by nothing, or by more than an array of the run could hold,
+/// takes its capacity from there, in the C11 conformance build and here alike.
+fn conformance_capacities() -> sce_build::forge::model::CodecCapacities {
+    let path = resource_dir()
+        .parent()
+        .expect("the resources sit under tests/forge")
+        .join("conformance/deploy.yaml");
+    sce_build::mesh::deploy::parse_deploy(&path)
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+        .codec_capacities()
+}
+
+/// Each codec of `documents` in `dir` and each codec they hold, by its file,
+/// once: what a compile of the set reads.
+fn codecs_of_set(
+    dir: &std::path::Path,
+    documents: &[&str],
+) -> Vec<sce_build::forge::model::CodecModel> {
+    fn walk(
+        path: &std::path::Path,
+        seen: &mut std::collections::BTreeSet<std::path::PathBuf>,
+        out: &mut Vec<sce_build::forge::model::CodecModel>,
+    ) {
+        if !seen.insert(path.to_path_buf()) {
+            return;
+        }
+        let text =
+            std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        let Ok(Some(parsed)) = sce_build::forge::parser::parse_forge_with_imports(
+            &text,
+            sce_build::DocumentLabel::symmetric(stem),
+        ) else {
+            return;
+        };
+        let base = path.parent().unwrap_or(std::path::Path::new("."));
+        // A standard document (`sce:std/...`) is the generator's own and
+        // states no bound a test would set.
+        for import in parsed.imports.iter().filter(|i| !i.src.starts_with("sce:")) {
+            walk(&base.join(&import.src), seen, out);
+        }
+        if let sce_build::forge::model::ForgeDocument::Codec(m) = parsed.document {
+            out.push(m);
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::new();
+    for document in documents {
+        walk(&dir.join(document), &mut seen, &mut out);
+    }
+    out
+}
+
+/// Whether a codec of the set `documents` has a list of its own the protocol
+/// bounds by nothing (docs/adr/0077 §7): a Rust tree of it judges a frame past a
+/// profile's capacity by the codec's view, so the set is generated with views,
+/// as the generator requires.
+fn holds_an_unbounded_list(dir: &std::path::Path, documents: &[&str]) -> bool {
+    codecs_of_set(dir, documents).iter().any(|m| {
+        m.fields
+            .iter()
+            .any(|f| (f.is_repeat() || f.is_tlv_chain()) && f.bound(&m.fields).is_none())
+    })
+}
+
+/// [`conformance_capacities`] of the codecs the set `documents` reaches: a
+/// deployment refuses a capacity for a codec its set does not hold, which is
+/// how a misspelled name is caught.
+fn conformance_capacities_of(
+    dir: &std::path::Path,
+    documents: &[&str],
+) -> sce_build::forge::model::CodecCapacities {
+    let names: std::collections::BTreeSet<String> = codecs_of_set(dir, documents)
+        .into_iter()
+        .map(|m| m.name)
+        .collect();
+    conformance_capacities()
+        .into_iter()
+        .filter(|(codec, _)| names.contains(codec))
+        .collect()
+}
+
+/// [`golden_options`] for a tree of the set `documents`: a C11 tree takes the
+/// conformance run's capacities, and a Rust tree of a set that holds a list the
+/// protocol bounds by nothing is generated with views (docs/adr/0077 §7).
+fn golden_options_for(
+    language: sce_build::generator::Language,
+    dir: &std::path::Path,
+    documents: &[&str],
+) -> sce_build::ForgeCompileOptions {
+    use sce_build::generator::Language;
+    let mut opts = golden_options(language);
+    match language {
+        Language::C11 => opts.codec_capacities = conformance_capacities(),
+        Language::Rust => opts.views = holds_an_unbounded_list(dir, documents),
+        _ => {}
+    }
+    opts
+}
+
 /// Generate code from a standalone forge SCXML for a specific language and compare
 /// against expected output.
 fn assert_standalone_forge_lang(
@@ -55,11 +160,12 @@ fn assert_standalone_forge_lang(
     expected_filename: &str,
     language: sce_build::generator::Language,
 ) {
+    let document = format!("{scxml_name}.scxml");
     assert_standalone_forge_with(
         scxml_name,
         expected_filename,
         language,
-        golden_options(language),
+        golden_options_for(language, &resource_dir(), &[document.as_str()]),
     );
 }
 
@@ -15964,7 +16070,12 @@ fn generate_files_for_codec_set(
     scxml_filenames: &[&str],
     lang: sce_build::generator::Language,
 ) -> Result<Vec<(String, String)>, String> {
-    generate_files_for_codec_set_with(dir, scxml_filenames, lang, golden_options(lang))
+    generate_files_for_codec_set_with(
+        dir,
+        scxml_filenames,
+        lang,
+        golden_options_for(lang, dir, scxml_filenames),
+    )
 }
 
 /// `golden_options` with a deployment that holds `capacity` entries of
@@ -16198,11 +16309,14 @@ pub fn copied(frame: &[u8]) -> Option<CodecZenohRequestOwned<Mcu>> {
 "#;
     let language = sce_build::generator::Language::Rust;
     let set = ["codec_zenoh_request.scxml", "codec_cbor_map.scxml"];
-    let capacities = [(
-        "codec_zenoh_msg_put".to_string(),
-        [("payload".to_string(), 64)].into(),
-    )]
-    .into();
+    // A deployment holds every field inline, so each field the protocol bounds
+    // by nothing takes a capacity (docs/adr/0077 §7): the conformance run's,
+    // with the payload of a Put held at 64.
+    let mut capacities = conformance_capacities_of(&resource_dir(), &set);
+    capacities
+        .entry("codec_zenoh_msg_put".to_string())
+        .or_default()
+        .insert("payload".to_string(), 64);
     let output = deployment_output(&set, "Mcu", capacities, Default::default())
         .expect("the deployment generates");
     // The tree is every document the deployment read: the set and what it imports.
@@ -20119,11 +20233,17 @@ fn a_query_value_in_shared_memory_is_read_in_rust() {
     const HARNESS: &str = r#"// Injected by a_query_value_in_shared_memory_is_read_in_rust.
 #[cfg(test)]
 mod tests {
-    use crate::codec_zenoh_query_value::CodecZenohQueryValue;
-    use crate::codec_zenoh_value_entry::CodecZenohValueEntryVariant;
-    use crate::codec_zenoh_value_zbuf::CodecZenohValueZbuf;
+    use crate::codec_zenoh_query_value::CodecZenohQueryValueIn;
+    use crate::codec_zenoh_value_entry::CodecZenohValueEntryVariantIn as CodecZenohValueEntryVariant;
+    use crate::codec_zenoh_value_zbuf::CodecZenohValueZbufIn;
     use crate::codec_zenoh_value_zbuf::CodecZenohValueZbufAfterShm as AfterShm;
-    use ::sce_forge_runtime::codec::SceCursor;
+    use ::sce_forge_runtime::codec::{Heap, Lent, SceCursor};
+
+    // The chain and the slices state no bound (docs/adr/0077 §7), so the tree
+    // names no eager form of these codecs at the default profile; the test
+    // takes it at the growing one.
+    type CodecZenohQueryValue<'a> = CodecZenohQueryValueIn<Lent<'a, Heap>>;
+    type CodecZenohValueZbuf<'a> = CodecZenohValueZbufIn<Lent<'a, Heap>>;
 
     const SHM: [u8; 15] = [@SHM@];
     const PLAIN: [u8; 6] = [@PLAIN@];

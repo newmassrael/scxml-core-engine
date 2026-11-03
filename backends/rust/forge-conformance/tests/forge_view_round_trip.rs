@@ -185,8 +185,16 @@ use codecs::codec_tlv_chain_present_if_basic::{
 use codecs::codec_until_eof_basic::{CodecUntilEofBasic, CodecUntilEofBasicView};
 use codecs::codec_variant_dispatch::{CodecVariantDispatch, CodecVariantDispatchView};
 use codecs::codec_variant_peek_basic::{CodecVariantPeekBasic, CodecVariantPeekBasicView};
-use codecs::codec_zenoh_request::{CodecZenohRequest, CodecZenohRequestView};
-use codecs::codec_zenoh_response::{CodecZenohResponse, CodecZenohResponseView};
+use codecs::codec_zenoh_request::{CodecZenohRequestIn, CodecZenohRequestView};
+use codecs::codec_zenoh_response::{CodecZenohResponseIn, CodecZenohResponseView};
+
+// The Zenoh extension chains state no depth (docs/adr/0077 §7), so `Inline`
+// holds no list of the request or the response and the tree names no eager form
+// of them at the default profile. The sweeps take it at the growing profile.
+type CodecZenohRequest<'a> =
+    CodecZenohRequestIn<sce_forge_runtime::codec::Lent<'a, sce_forge_runtime::codec::Heap>>;
+type CodecZenohResponse<'a> =
+    CodecZenohResponseIn<sce_forge_runtime::codec::Lent<'a, sce_forge_runtime::codec::Heap>>;
 use sce_forge_runtime::codec::{
     CodecError, Copying, Heap, HoldsBytes, HoldsList, HoldsStr, InlineBytes, InlineStr, SceCursor,
     VecSink,

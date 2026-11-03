@@ -43,7 +43,7 @@ class CodecZenohQueryValue:
             f_exts = []
             _prev_exts_after_shm = 0
             _more = False
-            for _ in range(4):
+            while True:
                 _elem = CodecZenohValueEntry.decode(cursor, _prev_exts_after_shm)
                 if _elem is None:
                     return None
@@ -54,8 +54,6 @@ class CodecZenohQueryValue:
                     break
             if _more and cursor.remaining() == 0:
                 raise NeedMoreBytes()
-            if _more:
-                raise TooManyElements()
         except CodecError:
             return None
         return cls(
@@ -71,7 +69,7 @@ class CodecZenohQueryValue:
         before the first byte, the error a decode of the frame would give
         for a value it cannot carry: a byte string, text or list outside its
         bound, or a gated field its gate disagrees with."""
-        if len(self.exts) < 1 or len(self.exts) > 4:
+        if len(self.exts) < 1:
             raise TooManyElements()
         # Streaming cursor encode (SSOT selection: `needs_streaming`).
         # Mirrors the streaming decode: every field appends its own bytes

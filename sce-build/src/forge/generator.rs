@@ -368,6 +368,16 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_inline_holds: bool,
 
+    /// docs/adr/0077 §7: `true` when the eager form at the default profile,
+    /// `{Codec}In<Lent<'a>>`, holds the imported codec: every list of it and
+    /// of every codec it holds has a bound or a capacity, `Lent` borrowing its
+    /// bytes and text (`CodecModel::lent_holds_with`). A parent reads it to
+    /// know whether to name its own `{Codec}<'a>`. `false` for non-codec
+    /// imports and codec imports whose model failed to parse during
+    /// enrichment.
+    #[serde(skip)]
+    pub codec_lent_holds: bool,
+
     /// docs/adr/0077 §7: `true` when the imported codec, or a codec it holds,
     /// is given a capacity by the deployment of a tree that holds capacities
     /// (C11), so its decode can answer `CAPACITY_EXCEEDED`. A parent notes that
@@ -1265,6 +1275,7 @@ fn resolve_single_import(
         codec_emits_default_ctor: false,
         codec_is_borrowed: false,
         codec_inline_holds: false,
+        codec_lent_holds: false,
         codec_may_exceed_capacity: false,
         codec_view_is_borrowed: false,
         codec_has_source: false,
@@ -6866,6 +6877,20 @@ pub(crate) fn codec_inline_holds(m: &CodecModel, imports: &[ImportContext]) -> b
     })
 }
 
+/// Whether the eager form at the default profile, `{Codec}In<Lent<'a>>`,
+/// holds `m` (`CodecModel::lent_holds_with`, docs/adr/0077 §7), the codecs it
+/// imports answered by their import's [`ImportContext::codec_lent_holds`].
+/// Where it does not, the tree names no `{Codec}<'a>`, which would be a name no
+/// program could use.
+pub(crate) fn codec_lent_holds(m: &CodecModel, imports: &[ImportContext]) -> bool {
+    m.lent_holds_with(|alias| {
+        imports
+            .iter()
+            .find(|i| i.alias == alias)
+            .is_some_and(|i| i.codec_lent_holds)
+    })
+}
+
 fn import_codec_borrowed(imports: &[ImportContext], alias: &str) -> bool {
     imports
         .iter()
@@ -11766,6 +11791,10 @@ fn render_codec(
         ctx.insert(
             "default_profile_holds".into(),
             codec_inline_holds(m, imports).into(),
+        );
+        ctx.insert(
+            "eager_default_holds".into(),
+            codec_lent_holds(m, imports).into(),
         );
         let storage_decl =
             format!("<{STORAGE_PARAM}: {storage_trait} = {RUNTIME_CODEC}::DefaultStorage>");
@@ -41685,6 +41714,7 @@ mod tests {
             codec_emits_default_ctor: false,
             codec_is_borrowed: false,
             codec_inline_holds: false,
+            codec_lent_holds: false,
             codec_may_exceed_capacity: false,
             codec_view_is_borrowed: false,
             codec_has_source: false,
@@ -42576,6 +42606,7 @@ mod tests {
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
                 codec_inline_holds: false,
+                codec_lent_holds: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
@@ -42635,6 +42666,7 @@ mod tests {
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
                 codec_inline_holds: false,
+                codec_lent_holds: false,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,

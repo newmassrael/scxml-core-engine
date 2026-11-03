@@ -42,8 +42,6 @@ data class CodecZenohValueZbuf(
         if ((afterShm.toInt() and 0x01) != 0) {
             if (this.slices == null) return CodecError.PresentIfMismatch
         } else if (this.slices != null) return CodecError.PresentIfMismatch
-        this.value?.let { if (it.size > 32) return CodecError.LengthOutOfRange }
-        this.slices?.let { if (it.size > 4) return CodecError.TooManyElements }
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -107,9 +105,10 @@ data class CodecZenohValueZbuf(
             val value_len = cursor.readVleU64() ?: return null
             val value = if ((afterShm.toInt() and 0x01) == 0) {
                 val _len = value_len
-                if (_len > 32uL) {
+                if (_len > 4294967295uL) {
                     cursor.refuse(CodecError.LengthOutOfRange); return null
                 }
+                if (_len > (Int.MAX_VALUE - 0).toULong()) return null
                 val _n = _len.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()
@@ -132,9 +131,6 @@ data class CodecZenohValueZbuf(
             }
             val slices: MutableList<CodecZenohValueSlice>? = if ((afterShm.toInt() and 0x01) != 0) {
                 val _n = slice_count!!
-                if (_n > 4uL) {
-                    cursor.refuse(CodecError.TooManyElements); return null
-                }
                 mutableListOf<CodecZenohValueSlice>().apply {
                     repeat(_n.toInt()) {
                         add(CodecZenohValueSlice.decode(cursor) ?: return null)

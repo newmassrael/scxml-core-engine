@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_encoding:68 :: _forge_body
+// SCE-MAP: codec_zenoh_encoding:69 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */
@@ -16,29 +16,29 @@
 #include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 
 #define CODEC_ZENOH_ENCODING_MIN_BYTES 0
-#define CODEC_ZENOH_ENCODING_MAX_BYTES 142
+#define CODEC_ZENOH_ENCODING_MAX_BYTES 269
 
-#ifndef SCE_OPTIONAL_BYTES_128
-#define SCE_OPTIONAL_BYTES_128
-#ifndef SCE_STATIC_BYTES_128
-#define SCE_STATIC_BYTES_128
-/* SCE Accepted Subset §2.15: a `bytes` of at most 128 bytes. */
+#ifndef SCE_OPTIONAL_BYTES_255
+#define SCE_OPTIONAL_BYTES_255
+#ifndef SCE_STATIC_BYTES_255
+#define SCE_STATIC_BYTES_255
+/* SCE Accepted Subset §2.15: a `bytes` of at most 255 bytes. */
 typedef struct {
-    uint8_t data[128];
+    uint8_t data[255];
     size_t len;
-} sce_static_bytes_128_t;
+} sce_static_bytes_255_t;
 
-static inline sce_static_bytes_128_t sce_static_bytes_128_of(sce_forge_bytes_view_t bytes) {
-    sce_static_bytes_128_t value = { { 0 }, 0 };
-    for (size_t i = 0; i < bytes.len && i < 128u; ++i) {
+static inline sce_static_bytes_255_t sce_static_bytes_255_of(sce_forge_bytes_view_t bytes) {
+    sce_static_bytes_255_t value = { { 0 }, 0 };
+    for (size_t i = 0; i < bytes.len && i < 255u; ++i) {
         value.data[i] = bytes.data[i];
     }
-    value.len = bytes.len < 128u ? bytes.len : 128u;
+    value.len = bytes.len < 255u ? bytes.len : 255u;
     return value;
 }
 #endif
-/* docs/adr/0055: a value of `sce_static_bytes_128_t` that may be absent. */
-SCE_OPTIONAL_DECLARE_BYTES(128)
+/* docs/adr/0055: a value of `sce_static_bytes_255_t` that may be absent. */
+SCE_OPTIONAL_DECLARE_BYTES(255)
 #endif
 
 typedef struct {
@@ -46,7 +46,7 @@ typedef struct {
     /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
     sce_optional_uint64_t schema_len;
     /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
-    sce_optional_bytes_128_t schema;
+    sce_optional_bytes_255_t schema;
 } codec_zenoh_encoding_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -84,20 +84,20 @@ static inline sce_forge_codec_status_t codec_zenoh_encoding_decode(sce_forge_cur
         out->schema_len = sce_optional_uint64_none();
     }
     if ((out->packed_id & 0x00000001) != 0) {
-        if (out->schema_len.value > 128) {
+        if (out->schema_len.value > 255) {
             return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
         }
         size_t _n = (size_t)out->schema_len.value;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;
-        out->schema = sce_optional_bytes_128_none();
+        out->schema = sce_optional_bytes_255_none();
         memcpy(out->schema.value.data, raw, _n);
         out->schema.value.len = _n;
         out->schema.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->schema = sce_optional_bytes_128_none();
+        out->schema = sce_optional_bytes_255_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -112,7 +112,7 @@ static inline sce_forge_codec_status_t codec_zenoh_encoding_encode(const codec_z
     /* A byte string, text, list or chain above the bound of the array that
      * holds it is refused before the first byte is written: the array cannot
      * hold that many, and a frame of fewer is not the value given. */
-    if (self->schema.present && !sce_forge_length_within_bound(self->schema.value.len, 128)) {
+    if (self->schema.present && !sce_forge_length_within_bound(self->schema.value.len, 255)) {
         return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
     }
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).

@@ -29,7 +29,7 @@ data class CodecZenohExtEnvelope(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        if (this.extensions.size < 1 || this.extensions.size > 8) return CodecError.TooManyElements
+        if (this.extensions.size < 1) return CodecError.TooManyElements
         // Streaming cursor encode (SSOT selection: `needs_streaming`).
         // Mirrors the streaming decode: every field appends its own bytes
         // in declaration order through the per-field encode blocks, so a
@@ -86,14 +86,13 @@ data class CodecZenohExtEnvelope(
             }
             val extensions: MutableList<CodecZenohExtEntry> = mutableListOf<CodecZenohExtEntry>().also {
                 var _more = false
-                for (_i in 0 until 8) {
+                while (true) {
                     val _entry = CodecZenohExtEntry.decode(cursor) ?: return null
                     _more = _entry.Z()
                     it.add(_entry)
                     if (!_more) break
                 }
                 if (_more && cursor.remaining() == 0) { return null }
-                if (_more) { cursor.refuse(CodecError.TooManyElements); return null }
             }
             return CodecZenohExtEnvelope(
                 header_flags = header_flags,

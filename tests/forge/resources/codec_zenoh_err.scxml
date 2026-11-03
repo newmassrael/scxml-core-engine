@@ -7,7 +7,7 @@
      fidelity. The encoding embed is the full upstream wire per
      `_z_encoding_encode` codec.c:356-381 — VLE u32 packed_id with
      LSB has_schema flag + has_schema-gated VLE u64 schema_len +
-     UTF-8 schema bytes max=128 — landed at atomic 2b-iii-α as
+     UTF-8 schema bytes of at most 255 — landed at atomic 2b-iii-α as
      codec_zenoh_encoding (replaces the prior Q1(b) inline VLE u32
      encoding_id field).
 
@@ -27,12 +27,13 @@
                   termination on entry header.Z — atomic 1 grammar;
                   chain is followed by the payload pair so the
                   exhaust-or-depth termination would not detect the
-                  payload boundary. max-depth=4 covers err's actual
-                  ext slots — upstream defines source_info via
+                  payload boundary. Upstream states no depth, so the
+                  chain has none. Upstream defines source_info via
                   `_Z_MSG_EXT_ENC_ZBUF | 0x01`).
        always:
-         bytes  : payload_len (VLE u64) + payload (UTF-8/bytes,
-                                                    max 256)
+         bytes  : payload_len (VLE u64) + payload (UTF-8/bytes, at most
+                                                    2^32 - 1: the u32
+                                                    length of a zbuf)
 
      Composition: flags (header) + present-if-on-fields
      (E_E gate) + atomic 2a present-if-on-tlv-chain (header.Z gate)
@@ -49,8 +50,10 @@
      Wire byte 0 here IS the response body's dispatch header from the
      response envelope's perspective.
 
-     stripped-down scope: payload max-size=256 (upstream is unbounded
-     zbuf). All other envelope-level fields match upstream wire 1:1. -->
+     The bounds are upstream's (docs/adr/0077 §7): a payload is a zbuf
+     of a u32 length, and the extension chain has no depth. What a node
+     holds of them is its capacity, not the document's. The envelope-level
+     fields match upstream wire 1:1. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_err">
@@ -66,10 +69,10 @@
     <sce:embed id="encoding" type="codec_zenoh_encoding" sce:byte="1"
                sce:present-if="header.E"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="2"
-                   max-depth="4"                   sce:present-if="header.Z"
+                   sce:present-if="header.Z"
                    terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:field id="payload_len" sce:type="uint64" sce:byte="3" sce:bit-size="vle"/>
     <sce:field id="payload" sce:type="bytes" sce:byte="4" sce:bit-size="length-ref"
-               sce:length-field="payload_len" sce:max-size="256"/>
+               sce:length-field="payload_len" sce:max-size="4294967295"/>
   </datamodel>
 </scxml>

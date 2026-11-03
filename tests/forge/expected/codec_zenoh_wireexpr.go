@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_wireexpr:53 :: _forge_body
+// SCE-MAP: codec_zenoh_wireexpr:55 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -47,7 +47,7 @@ func DecodeCodecZenohWireexpr(cursor *codec.SceCursor, N byte) (*CodecZenohWiree
 	var Suffix optional.Of[string]
 	if (N & 0x01) != 0 {
 		_len := SuffixLen.Proven()
-		if _len > 128 {
+		if _len > 65535 {
 			return nil, codec.ErrLengthOutOfRange
 		}
 		_n := int(_len)
@@ -82,7 +82,7 @@ func (s *CodecZenohWireexpr) Encode(w codec.SceSink, N byte) error {
 	} else if s.Suffix.IsPresent() {
 		return codec.ErrPresentIfMismatch
 	}
-	if s.Suffix.IsPresent() && (len(s.Suffix.Proven()) > 128) {
+	if s.Suffix.IsPresent() && (len(s.Suffix.Proven()) > 65535) {
 		return codec.ErrLengthOutOfRange
 	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
@@ -119,7 +119,7 @@ func (s *CodecZenohWireexpr) Encode(w codec.SceSink, N byte) error {
 // Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
 // BoundedSink over a stack buffer).
 func (s *CodecZenohWireexpr) EncodeToBytes(N byte) ([]byte, error) {
-	_dst := make([]byte, 0, 146)
+	_dst := make([]byte, 0, 65553)
 	if err := s.Encode(codec.NewBytesSink(&_dst), N); err != nil {
 		return nil, err
 	}

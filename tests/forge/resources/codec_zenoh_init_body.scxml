@@ -26,7 +26,8 @@
                   batch_size (uint16 LE — zenoh-pico _z_uint16_encode writes
                               LSB then MSB per codec.c:82-85)
        parent.A : cookie_len (VLE u64)
-                  cookie     (length-ref bytes, length=cookie_len, max=128)
+                  cookie     (length-ref bytes, length=cookie_len, at most
+                              65535: the u16 length upstream reads it with)
 
      Composition: multi-bit flag (cbyte) + dotted-path
      dotted-path length-field (`cbyte.zid_len_m1`) + length-ref
@@ -62,7 +63,7 @@
     <sce:field id="cookie_len" sce:type="uint64" sce:byte="6" sce:bit-size="vle"
                sce:present-if="A"/>
     <sce:field id="cookie" sce:type="bytes" sce:byte="7" sce:bit-size="length-ref"
-               sce:length-field="cookie_len" sce:max-size="128"
+               sce:length-field="cookie_len" sce:max-size="65535"
                sce:present-if="A"/>
   </datamodel>
 </scxml>
