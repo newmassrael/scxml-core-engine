@@ -111,6 +111,50 @@ public enum AComputedEventNameIsMatchedLikeAnyOtherEvent: Int, Hashable, Sendabl
 }
 
 // ======================================================================
+// Transition table, because the document declares it
+// (docs/SCE_TRANSITION_TABLE.md)
+// ======================================================================
+
+/// One transition of this machine, as constant data. Nothing in the machine
+/// reads it: a host that draws the machine, or checks it against its own
+/// design, does. `from`, `to` and `event` are this file's own
+/// `AComputedEventNameIsMatchedLikeAnyOtherState` and `AComputedEventNameIsMatchedLikeAnyOtherEvent`; `index` is the
+/// transition's position within its state in document order; `annotation` is
+/// the `sce:req` tokens as written, space-separated and uninterpreted. `to` and
+/// `event` are `nil` where a transition has no single id in those enums: a
+/// targetless transition, a first target that is a `<history>`, an eventless
+/// transition, a wildcard or prefix descriptor, or several descriptors.
+/// `targets` and `events` are the complete answer there: the whole target set
+/// and every descriptor as written, space-separated (`*`, a prefix such as
+/// `error.*` and a literal name alike, none resolved), empty when the
+/// transition has none. `sce-codegen transition-table` lists the same
+/// transitions in the same order.
+public struct AComputedEventNameIsMatchedLikeAnyOtherTransition: Hashable, Sendable {
+    public let from: AComputedEventNameIsMatchedLikeAnyOtherState
+    public let to: AComputedEventNameIsMatchedLikeAnyOtherState?
+    public let event: AComputedEventNameIsMatchedLikeAnyOtherEvent?
+    public let targets: String
+    public let events: String
+    public let index: Int
+    public let annotation: String
+
+    /// The digest of the source set this machine was generated from: the
+    /// `source-hash` of the file's own header, as a value.
+    public static let sourceHash = "28cabab9febf446d1abb3eb5ae325b382374a8683804404e452d87dfbbb0500b"
+
+    /// Every transition of the machine. Each id is written with its type, so a
+    /// state or an event the document calls `none` is never read as `nil`.
+    public static let all: [AComputedEventNameIsMatchedLikeAnyOtherTransition] = [
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(from: AComputedEventNameIsMatchedLikeAnyOtherState.s1, to: AComputedEventNameIsMatchedLikeAnyOtherState.s2, event: AComputedEventNameIsMatchedLikeAnyOtherEvent.request, targets: "s2", events: "request", index: 0, annotation: ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(from: AComputedEventNameIsMatchedLikeAnyOtherState.s2, to: AComputedEventNameIsMatchedLikeAnyOtherState.s3, event: nil, targets: "s3", events: "*", index: 0, annotation: ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(from: AComputedEventNameIsMatchedLikeAnyOtherState.s3, to: AComputedEventNameIsMatchedLikeAnyOtherState.s4, event: AComputedEventNameIsMatchedLikeAnyOtherEvent.request, targets: "s4", events: "request", index: 0, annotation: ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(from: AComputedEventNameIsMatchedLikeAnyOtherState.s4, to: AComputedEventNameIsMatchedLikeAnyOtherState.s5, event: nil, targets: "s5", events: "*", index: 0, annotation: ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(from: AComputedEventNameIsMatchedLikeAnyOtherState.s5, to: AComputedEventNameIsMatchedLikeAnyOtherState.s6, event: AComputedEventNameIsMatchedLikeAnyOtherEvent.request, targets: "s6", events: "request", index: 0, annotation: ""),
+        AComputedEventNameIsMatchedLikeAnyOtherTransition(from: AComputedEventNameIsMatchedLikeAnyOtherState.s6, to: AComputedEventNameIsMatchedLikeAnyOtherState.pass, event: nil, targets: "pass", events: "*", index: 0, annotation: ""),
+    ]
+}
+
+// ======================================================================
 // Policy
 // ======================================================================
 
