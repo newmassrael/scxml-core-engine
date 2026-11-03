@@ -8151,10 +8151,16 @@ and `std::uint32_t REVISION` in its namespace, Go `EventName string` and
 `Revision uint32` in its package, Python `EVENT_NAME: Final[str]` and
 `REVISION: Final[int]` in its module, and C `<SCHEMA>_EVENT_NAME` and
 `<SCHEMA>_REVISION` (`UINT32_C`), named by the schema since C has no namespace.
-Each `string` or `bytes` field with a `sce:max-size` adds its bound as the build
-resolved it (`sce:limit`, so `--limit` moves it with the buffer, docs/adr/0050):
-`TEXT_MAX_SIZE` (Go `TextMaxSize`, C `<SCHEMA>_TEXT_MAX_SIZE`), a `uint32` of the
-language, its comment naming the `sce:limit` when one names it.
+Each field with a length adds its outermost bound, seen through `optional<…>`, as
+the build resolved it (`[name=N]`, so `--limit` moves it with the buffer,
+docs/adr/0050): a `string` or `bytes` its most bytes, `TEXT_MAX_SIZE` (Go
+`TextMaxSize`, Swift `textMaxSize`, C `<SCHEMA>_TEXT_MAX_SIZE`), a `list` its most
+elements, `ITEMS_MAX_COUNT` (Go `ItemsMaxCount`, Swift `itemsMaxCount`), a `uint32`
+of the language, its comment naming the limit when one names it. Every unit adds
+`DATA_MAX_LEN` (Go `DataMaxLen`, Swift `dataMaxLen`, C `<SCHEMA>_DATA_MAX_LEN`), a
+`uint64`: the most bytes the event's `_event.data` JSON text takes, every list full,
+every text at its bound at its longest escape and every number at its longest
+spelling, `J` of the payload as a record of its fields (docs/adr/0086, section 2).
 `sce-build/tests/a_schema_unit_names_its_event_revision_and_bounds.rs` holds each
 spelling.
 

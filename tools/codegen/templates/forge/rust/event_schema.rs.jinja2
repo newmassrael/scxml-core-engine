@@ -23,10 +23,14 @@ pub const EVENT_NAME: &str = {{ event_name_literal }};
 #[allow(dead_code)]
 pub const REVISION: u32 = {{ schema_revision }};
 {% for b in field_bounds %}
-/// The most {{ b.unit }} `{{ b.id }}` holds (`sce:max-size`{% if b.limit %}, the bound `sce:limit="{{ b.limit }}"` names{% endif %}), as this build resolved it.
+/// The most {{ b.unit }} `{{ b.id }}` holds (the bound its type writes{% if b.limit %}, named `{{ b.limit }}`{% endif %}), as this build resolved it.
 #[allow(dead_code)]
 pub const {{ b.upper }}: u32 = {{ b.value }};
 {% endfor %}
+/// The most bytes the event's `_event.data` JSON text takes: every list full, every
+/// text at its bound, every number at its longest spelling.
+#[allow(dead_code)]
+pub const DATA_MAX_LEN: u64 = {{ data_max_len }};
 
 {% if fields %}
 {{ event_schema_payload_derives_attr }}

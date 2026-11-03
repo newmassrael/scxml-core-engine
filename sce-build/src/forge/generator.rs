@@ -3480,6 +3480,39 @@ fn c11_found_reading(name: &str, value: &str, params: &str, about: &str, body: &
     )
 }
 
+/// The enums an event schema's fields name, as the schema's imports resolve
+/// them: what the size of its payload reads (docs/adr/0086, section 2). No
+/// record is resolved here: no event schema's field holds a record yet (the
+/// parser refuses a composition by name), and a record's own fields name enums
+/// by the aliases of its own document, which these imports do not carry.
+struct SchemaImportTypes<'a>(&'a [ImportContext]);
+
+impl SchemaImportTypes<'_> {
+    fn enum_import(&self, alias: &str) -> Option<&ImportContext> {
+        self.0.iter().find(|i| i.kind == "enum" && i.alias == alias)
+    }
+}
+
+impl crate::forge::value_type::TypeEnv for SchemaImportTypes<'_> {
+    fn record_fields(
+        &self,
+        _alias: &str,
+    ) -> Option<Vec<(String, crate::forge::value_type::ValueType)>> {
+        None
+    }
+    /// An enum declares at least one variant, so an import that carries none
+    /// was not read from its document, and its names are not known.
+    fn enum_names(&self, alias: &str) -> Option<Vec<String>> {
+        self.enum_import(alias)
+            .map(|i| i.enum_variants.clone())
+            .filter(|names| !names.is_empty())
+    }
+    fn enum_underlying(&self, alias: &str) -> Option<SceType> {
+        self.enum_import(alias)
+            .and_then(|i| i.enum_underlying.clone())
+    }
+}
+
 fn render_event_schema(
     env: &minijinja::Environment,
     m: &EventSchemaModel,
@@ -3700,31 +3733,74 @@ fn render_event_schema(
     ctx.insert("schema_revision".into(), m.revision().into());
     // C has no namespace: the unit's constants carry the schema's name.
     ctx.insert("c_const_prefix".into(), to_upper_snake(&m.name).into());
-    // The bound of each text and byte string the schema declares one for, as the
-    // build resolved it (`sce:limit`, so `--limit` moves the constant with the
-    // buffer), named after the field: what a host holds a value to before it sends
-    // it, rather than learning the bound from a refusal (docs/adr/0050).
-    let bounds: Vec<serde_json::Value> = m
+    // Each field's type as the one type grammar reads it (docs/adr/0086,
+    // section 1): what the unit's sizes are computed from.
+    let typed: Vec<(String, crate::forge::value_type::ValueType)> = m
         .fields
         .iter()
-        .filter_map(|f| {
-            let unit = match f.sce_type.present_type() {
-                SceType::String => "UTF-8 bytes",
-                SceType::Bytes => "bytes",
-                _ => return None,
+        .map(|f| {
+            crate::forge::value_type::ValueType::of_field(
+                &f.sce_type,
+                f.max_size,
+                f.limit.as_deref(),
+            )
+            .map(|ty| (f.id.clone(), ty))
+            .ok_or_else(|| {
+                ForgeError::from(GenerateError::unsupported(format!(
+                    "{}: the field `{}` is a text or a byte string that states no bound, and \
+                     every text and byte string of an event schema states one (docs/adr/0086, \
+                     section 1.4)",
+                    m.name, f.id
+                )))
+            })
+        })
+        .collect::<Result<_, ForgeError>>()?;
+    // The outer bound of each field that has a length, as the build resolved it
+    // (`[name=N]`, so `--limit` moves the constant with the buffer), named after
+    // the field: the most bytes of a text or a byte string (`<FIELD>_MAX_SIZE`),
+    // the most elements of a list (`<FIELD>_MAX_COUNT`). What a host holds a value
+    // to before it sends it, rather than learning the bound from a refusal
+    // (docs/adr/0050, docs/adr/0086 section 2.2).
+    let bounds: Vec<serde_json::Value> = typed
+        .iter()
+        .filter_map(|(id, ty)| {
+            use crate::forge::value_type::ValueType;
+            let (bound, part) = ty.outermost_bound()?;
+            let (unit, upper, pascal) = match part {
+                ValueType::Text { .. } => ("UTF-8 bytes", "MAX_SIZE", "MaxSize"),
+                ValueType::Bytes { .. } => ("bytes", "MAX_SIZE", "MaxSize"),
+                ValueType::List { .. } => ("elements", "MAX_COUNT", "MaxCount"),
+                ValueType::Scalar(_) | ValueType::Optional { .. } | ValueType::Record { .. } => {
+                    return None
+                }
             };
-            let max = f.max_size?;
             Some(serde_json::json!({
-                "id": f.id,
-                "upper": format!("{}_MAX_SIZE", to_upper_snake(&f.id)),
-                "go_name": format!("{}MaxSize", filters::to_pascal_case(f.id.clone())),
-                "value": max,
+                "id": id,
+                "upper": format!("{}_{upper}", to_upper_snake(id)),
+                "go_name": format!("{}{pascal}", filters::to_pascal_case(id.clone())),
+                "swift_name": format!("{id}{pascal}"),
+                "value": bound.max,
                 "unit": unit,
-                "limit": f.limit,
+                "limit": bound.limit,
             }))
         })
         .collect();
     ctx.insert("field_bounds".into(), serde_json::json!(bounds));
+    // The longest `_event.data` of the event, in bytes of JSON: the payload as a
+    // record of its fields, every list full, every text at its bound at its
+    // longest escape, every number at its longest spelling (docs/adr/0086,
+    // section 2.2). What a host sizes a buffer the event's data is written into
+    // by, and a C11 machine its slot.
+    let data_max_len =
+        crate::forge::value_type::payload_json_max_len(&typed, &SchemaImportTypes(imports))
+            .map_err(|refusal| {
+                ForgeError::from(GenerateError::unsupported(format!(
+                    "{}: the largest payload of the event has no size the build can compute: \
+                     {refusal}",
+                    m.name
+                )))
+            })?;
+    ctx.insert("data_max_len".into(), data_max_len.into());
     ctx.insert("fields".into(), serde_json::json!(fields));
     // A field that may be absent is held in a type C++'s `<optional>`, C11's
     // `sce/forge/optional.h` and Python's `typing` declare (docs/adr/0055); Go's

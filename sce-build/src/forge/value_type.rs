@@ -500,6 +500,43 @@ impl WrittenType {
 }
 
 impl ValueType {
+    /// The type an event schema's field declares, from the model's reading of
+    /// it: its scalar or optional scalar, and the bound and limit name beside
+    /// it that the field's text or byte string states. `None` for a text or a
+    /// byte string with no bound, which no event schema of the language holds
+    /// (docs/adr/0086, section 1.4).
+    pub fn of_field(ty: &FieldType, max_size: Option<u32>, limit: Option<&str>) -> Option<Self> {
+        let bound = || {
+            max_size.map(|max| Bound {
+                max,
+                limit: limit.map(str::to_string),
+            })
+        };
+        let leaf = |t: &SceType| match t {
+            SceType::String => bound().map(|max| Self::Text { max }),
+            SceType::Bytes => bound().map(|max| Self::Bytes { max }),
+            other => Some(Self::Scalar(other.clone())),
+        };
+        match ty {
+            FieldType::Scalar(t) => leaf(t),
+            FieldType::Optional { elem } => leaf(elem).map(|elem| Self::Optional {
+                elem: Box::new(elem),
+            }),
+        }
+    }
+
+    /// The bound of the outermost text, byte string or list of the type, seen
+    /// through every `optional<…>`, and that part of the type; `None` for a
+    /// type with no length (a number, `bool`, an enum, a record, or an
+    /// optional over one): what a unit names its field's outer bound by.
+    pub fn outermost_bound(&self) -> Option<(&Bound, &Self)> {
+        match self {
+            Self::Text { max } | Self::Bytes { max } | Self::List { max, .. } => Some((max, self)),
+            Self::Optional { elem } => elem.outermost_bound(),
+            Self::Scalar(_) | Self::Record { .. } => None,
+        }
+    }
+
     /// The same type, as a type that may leave a bound out: what a printer of
     /// the written form reads.
     pub fn written(&self) -> WrittenType {
@@ -811,6 +848,24 @@ pub enum SizeError {
     ContainsItself { cycle: Vec<String> },
     /// A size past 2^64 - 1 bytes.
     Overflow,
+}
+
+impl fmt::Display for SizeError {
+    /// The reason as a refusal states it.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unresolved { alias } => {
+                write!(f, "`{alias}` names no record or enum the document imports")
+            }
+            Self::ContainsItself { cycle } => write!(
+                f,
+                "the record `{}` holds itself ({}), and has no largest value",
+                cycle.first().map_or("", String::as_str),
+                cycle.join(" -> ")
+            ),
+            Self::Overflow => write!(f, "it is past 2^64 - 1 bytes"),
+        }
+    }
 }
 
 /// The length of a CBOR head whose argument is `n` (RFC 8949 section 3): 1 below

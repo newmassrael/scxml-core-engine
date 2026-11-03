@@ -188,6 +188,69 @@ fn every_backend_names_the_bound_of_each_text_a_schema_bounds() {
     assert!(!rust.contains("ID_MAX_SIZE"), "{rust}");
 }
 
+/// The largest `_event.data` of `record_edit` with its text bounded at `text_bound`,
+/// written out: every number at its longest spelling (a 64-bit integer as the quoted
+/// text of its digits), the text at its bound of control characters at their
+/// longest escape, the keys in their wire order.
+fn largest_record_edit(text_bound: usize) -> String {
+    let wide = "\"-9223372036854775808\"";
+    format!(
+        "{{\"field\":65535,\"id\":4294967295,\"more\":false,\"now\":{wide},\"text\":\"{}\",\
+         \"value\":{wide}}}",
+        "\\u0001".repeat(text_bound)
+    )
+}
+
+/// Every unit declares the most bytes its event's data takes (docs/adr/0086, section
+/// 2.2), as the build resolved each bound in it: `record_edit`'s largest data is 306
+/// bytes with its text at 32, and 402 with `--limit shared_typed_text=48`.
+#[test]
+fn every_backend_names_the_longest_data_of_a_schema() {
+    let written = largest_record_edit(32).len();
+    let moved = largest_record_edit(48).len();
+    assert_eq!((written, moved), (306, 402));
+    for (language, spelling) in [
+        ("rust", "pub const DATA_MAX_LEN: u64 = {};"),
+        ("kotlin", "const val DATA_MAX_LEN: ULong = {}uL"),
+        ("cpp", "inline constexpr std::uint64_t DATA_MAX_LEN = {}u;"),
+        ("go", "const DataMaxLen uint64 = {}"),
+        ("python", "DATA_MAX_LEN: Final[int] = {}"),
+        ("c", "#define RECORD_EDIT_DATA_MAX_LEN UINT64_C({})"),
+        ("swift", "public static let dataMaxLen: UInt64 = {}"),
+    ] {
+        for (given, size) in [(&[][..], written), (&["shared_typed_text=48"][..], moved)] {
+            let out = generated(SCHEMA, language, given);
+            let fragment = spelling.replace("{}", &size.to_string());
+            assert!(
+                out.contains(&fragment),
+                "{language} under {given:?}: the unit declares `{fragment}`:\n{out}"
+            );
+        }
+    }
+}
+
+/// A schema with no field carries `{}`, two bytes, and one of numbers only the
+/// longest spelling of each: `record_clear` holds no text, so no limit moves it.
+#[test]
+fn the_longest_data_of_a_schema_is_its_fields_at_their_longest() {
+    let fieldless = generated(
+        "sce-build/tests/fixtures/event_schema_payload_free/job_requested.scxml",
+        "rust",
+        &[],
+    );
+    assert!(
+        fieldless.contains("pub const DATA_MAX_LEN: u64 = 2;"),
+        "{fieldless}"
+    );
+    let largest =
+        "{\"field\":65535,\"id\":4294967295,\"more\":false,\"now\":\"-9223372036854775808\"}";
+    let out = generated("stdlib/shared/record_clear.scxml", "rust", &[]);
+    assert!(
+        out.contains(&format!("pub const DATA_MAX_LEN: u64 = {};", largest.len())),
+        "{out}"
+    );
+}
+
 /// A schema that declares no revision is the first, and says so.
 #[test]
 fn a_schema_with_no_revision_declared_is_the_first() {
