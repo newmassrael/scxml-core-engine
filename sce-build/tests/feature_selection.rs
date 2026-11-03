@@ -114,6 +114,16 @@ fn the_rust_backend_writes_one_machine_for_every_build() {
         open.len() == 2 && open.iter().all(|l| l.contains("#[cfg(")),
         "every declaration of the gated state is under its presence: {open:?}"
     );
+    // The machine refuses a build that breaks the model's edge (ADR 0057 §6),
+    // since its conditions leave the implied feature out.
+    assert!(
+        code.contains(
+            "#[cfg(all(feature = \"session-unicast-accept\", not(feature = \"session-unicast\")))]\n\
+             compile_error!(\"feature `session-unicast-accept` requires `session-unicast`, \
+             which this build leaves out (feature model `features`)\");"
+        ),
+        "the model's edge is a refusal in the machine"
+    );
     let check = sce_codegen(&["check", path(&machine), "-l", "rust"]);
     assert!(
         check.status.success(),

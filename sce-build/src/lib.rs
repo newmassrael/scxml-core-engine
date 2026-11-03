@@ -2602,6 +2602,12 @@ fn emit_lifted_rust_artifacts(
         };
         files.push((name.clone(), merged));
     }
+    let machine = format!("{input_stem}_sm.rs");
+    let (_, machine_source) = files
+        .iter_mut()
+        .find(|(name, _)| *name == machine)
+        .expect("a Rust generation writes the statechart's machine");
+    push_rust_requirement_refusals(machine_source, variants.product_line());
     let references: Vec<Vec<(String, String)>> =
         outputs.iter().map(|output| output.files.clone()).collect();
     let mismatch = variants.first_mismatch(&files, &references).map_err(|e| {
@@ -2620,6 +2626,34 @@ fn emit_lifted_rust_artifacts(
     deps.sort();
     deps.dedup();
     Ok(generator::GeneratedOutput { files, deps })
+}
+
+/// Write the edges of `line`'s feature model into the machine `source` as
+/// refusals (ADR 0057 §6): the machine is written for every build the model
+/// admits, its conditions in a canonical form that leaves implied features out,
+/// so a build that breaks *requires* would compile code the model never
+/// allowed. The machine carries the check of the edges it relies on, and a
+/// build cannot include the one and leave the other out.
+///
+/// No build the model admits holds a refusal's selector, so the check of the
+/// lifted machine, which resolves it for each such build, finds every refusal
+/// gone, as it is from the machine each variant generates alone.
+fn push_rust_requirement_refusals(source: &mut String, line: &product_line::ProductLine) {
+    let refusals = feature_selector::Refusal::of_model(line.model());
+    if refusals.is_empty() {
+        return;
+    }
+    if !source.ends_with('\n') {
+        source.push('\n');
+    }
+    source.push_str(&format!(
+        "\n// The builds the feature model `{}` admits (docs/adr/0057 §6): a build\n\
+         // that turns a feature on and leaves out one it requires compiles none of this.\n",
+        line.model_name()
+    ));
+    for refusal in &refusals {
+        source.push_str(&refusal.rust(line.model_name()));
+    }
 }
 
 /// [`emit_model_artifacts`] for a model generated as it stands, the Rust

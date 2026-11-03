@@ -56,12 +56,15 @@ fn main() {
     let document = document.to_str().expect("a path of text");
 
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=product-line");
     println!("cargo:rerun-if-changed={}", templates.display());
     println!(
         "cargo:rerun-if-changed={}",
         manifest_dir.join("../../../sce-build/src").display()
     );
+
+    check_manifest(&manifest_dir.join("Cargo.toml"), document);
 
     let mut machines = String::new();
     push_module(
@@ -127,6 +130,39 @@ fn generate(template_dir: &Path, document: &str, features: Option<Vec<String>>) 
         );
     };
     machine.clone()
+}
+
+/// Refuse a manifest whose `[features]` table is not the one the feature model
+/// of `document` states (docs/adr/0057 §1): the model is the one source of the
+/// product line's features and of what each requires, and the manifest is
+/// where Cargo reads them. The table's entries are compared line for line,
+/// comments and blank lines aside, and a refusal prints the table to write.
+fn check_manifest(manifest: &Path, document: &str) {
+    let model = SCXMLParser::new()
+        .parse_file(document)
+        .unwrap_or_else(|e| panic!("parse {document}: {e:?}"));
+    let line = model
+        .product_line
+        .as_ref()
+        .unwrap_or_else(|| panic!("{document} is written against no feature model"));
+    let stated = line.model().cargo_features();
+    let text = std::fs::read_to_string(manifest)
+        .unwrap_or_else(|e| panic!("read {}: {e}", manifest.display()));
+    let written: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .skip_while(|row| *row != "[features]")
+        .skip(1)
+        .take_while(|row| !row.starts_with('['))
+        .filter(|row| !row.is_empty() && !row.starts_with('#'))
+        .collect();
+    assert!(
+        written == stated,
+        "the [features] of {} are not those the feature model `{}` states; write:\n\n[features]\n{}\n",
+        manifest.display(),
+        line.model_name(),
+        stated.join("\n")
+    );
 }
 
 fn push_module(out: &mut String, name: &str, body: &str) {

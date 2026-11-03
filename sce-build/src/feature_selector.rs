@@ -158,6 +158,67 @@ impl Selector {
     }
 }
 
+/// A build the feature model does not admit: one that turns `feature` on and
+/// leaves out `requires`, a feature it requires directly (ADR 0057 §6).
+///
+/// The canonical form of a condition leaves out the features its least
+/// configurations imply, so code written under `accept` alone relies on what
+/// `accept` requires being built with it. An output that keeps the variability
+/// therefore refuses, for each edge of the model, the builds that break it.
+/// The refusals of the edges refuse every set of features that is not a
+/// configuration: a set closed under each direct requirement is closed under
+/// *requires*, so a set that is not breaks an edge from one of its features.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Refusal {
+    pub feature: String,
+    pub requires: String,
+}
+
+impl Refusal {
+    /// One refusal for each edge of `model`, sorted, so an output spells them
+    /// in one order whatever order the model was written in.
+    pub fn of_model(model: &FeatureModel) -> Vec<Refusal> {
+        let mut refusals: Vec<Refusal> = model
+            .features()
+            .flat_map(|feature| {
+                model.requires(feature).map(move |required| Refusal {
+                    feature: model.name(feature).to_string(),
+                    requires: model.name(required).to_string(),
+                })
+            })
+            .collect();
+        refusals.sort();
+        refusals
+    }
+
+    /// The builds refused: `feature` on and `requires` off.
+    pub fn selector(&self) -> Selector {
+        Selector::all([
+            Selector::Feature(self.feature.clone()),
+            !Selector::Feature(self.requires.clone()),
+        ])
+    }
+
+    /// What the refused build is told, naming the model by its document name.
+    pub fn message(&self, model_name: &str) -> String {
+        format!(
+            "feature `{}` requires `{}`, which this build leaves out (feature model `{model_name}`)",
+            self.feature, self.requires
+        )
+    }
+
+    /// The refusal as a Rust item: a `compile_error!` under the selector of
+    /// the builds it refuses. The `not` there selects no code; it refuses a
+    /// build.
+    pub fn rust(&self, model_name: &str) -> String {
+        format!(
+            "#[cfg({})]\ncompile_error!({:?});\n",
+            self.selector().rust(),
+            self.message(model_name)
+        )
+    }
+}
+
 /// The negation, a double negation and a negated constant folded away.
 impl std::ops::Not for Selector {
     type Output = Selector;
@@ -182,6 +243,8 @@ fn join(operands: &[Selector], spell: fn(&Selector) -> String, separator: &str) 
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use crate::feature_model::FeatureDeclaration;
     use crate::presence_condition::parse;
@@ -277,5 +340,75 @@ mod tests {
         assert_eq!(!!a.clone(), a);
         assert_eq!(Selector::all(Vec::new()), Selector::True);
         assert_eq!(Selector::any(Vec::new()), Selector::False);
+    }
+
+    /// The refusals of a model's edges refuse exactly the sets of its features
+    /// that are not configurations: a build the model admits compiles, and
+    /// every other is refused by at least one edge.
+    #[test]
+    fn the_refusals_refuse_exactly_the_sets_that_are_not_configurations() {
+        let m = FeatureModel::new(&[
+            FeatureDeclaration {
+                name: "base".into(),
+                requires: vec![],
+            },
+            FeatureDeclaration {
+                name: "mid".into(),
+                requires: vec!["base".into()],
+            },
+            FeatureDeclaration {
+                name: "top".into(),
+                requires: vec!["mid".into(), "side".into()],
+            },
+            FeatureDeclaration {
+                name: "side".into(),
+                requires: vec![],
+            },
+        ])
+        .unwrap();
+        let refusals = Refusal::of_model(&m);
+        let edges: Vec<(&str, &str)> = refusals
+            .iter()
+            .map(|r| (r.feature.as_str(), r.requires.as_str()))
+            .collect();
+        assert_eq!(
+            edges,
+            [("mid", "base"), ("top", "mid"), ("top", "side")],
+            "one refusal for each edge as declared, sorted"
+        );
+        let names: Vec<&str> = m.features().map(|f| m.name(f)).collect();
+        let all = m.configurations();
+        let configurations: BTreeSet<BTreeSet<&str>> =
+            all.iter().map(|c| m.names_of(c).collect()).collect();
+        for mask in 0u32..(1 << names.len()) {
+            let set: BTreeSet<&str> = names
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| mask & (1 << i) != 0)
+                .map(|(_, name)| *name)
+                .collect();
+            let refused = refusals
+                .iter()
+                .any(|r| r.selector().holds_with(&|name| set.contains(name)));
+            assert_eq!(
+                refused,
+                !configurations.contains(&set),
+                "the set {set:?} is refused iff it is not a configuration"
+            );
+        }
+    }
+
+    #[test]
+    fn a_refusal_is_a_compile_error_under_the_builds_it_refuses() {
+        let refusal = Refusal {
+            feature: "session-unicast-accept".into(),
+            requires: "session-unicast".into(),
+        };
+        assert_eq!(
+            refusal.rust("features"),
+            "#[cfg(all(feature = \"session-unicast-accept\", not(feature = \"session-unicast\")))]\n\
+             compile_error!(\"feature `session-unicast-accept` requires `session-unicast`, \
+             which this build leaves out (feature model `features`)\");\n"
+        );
     }
 }

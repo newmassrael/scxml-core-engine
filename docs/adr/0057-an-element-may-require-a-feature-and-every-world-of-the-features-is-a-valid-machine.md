@@ -370,10 +370,15 @@ every variant (§1).
   machine of each feature set alone; the tests build the crate under each set — rustc resolves the `#[cfg]` itself —
   and drive both through every run of up to four events, asserting equal observations (configuration, host calls,
   discarded events, end). The default set runs in the workspace sweep and the gate `workspace-tests` builds the
-  other two. The model's requires edge is the crate manifest's feature implication, kept by hand in both places;
-  a manifest without it builds a set no variant generates, which the observations refuse.
-- Still to do: the same for the C, C++ and Swift emissions (step 4), and a Cargo-facing statement of the edge
-  generated from the model rather than written twice.
+  other two.
+- **The model guards itself** (§6). The machine for every build ends with a `compile_error!` for each edge of the
+  model (`feature_selector::Refusal`), under `all(feature = "a", not(feature = "b"))`; a set of features is refused
+  by some edge exactly when it is no configuration, since a set closed under each direct requirement is closed
+  under *requires*. No build the model admits holds a refusal, so the check of the lifted machine finds each gone.
+- **The manifest states the model.** `FeatureModel::cargo_features` is the `[features]` table the model states,
+  each feature implying what it requires directly. The conformance crate's `build.rs` refuses a manifest whose
+  table is not that one and prints the table to write, so the edge has one source, the model, and Cargo keeps it.
+- Still to do: the same for the C, C++ and Swift emissions (step 4).
 
 ## Questions left open
 

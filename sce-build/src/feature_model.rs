@@ -343,6 +343,25 @@ impl FeatureModel {
             current.0.remove(&feature);
         }
     }
+
+    /// The entries of the `[features]` table of a crate that compiles the
+    /// product line's Rust machines, one for each feature in the model's order,
+    /// each implying what the feature requires directly: `a = ["b"]` for the
+    /// edge `a ≤ b`, which is how Cargo keeps *requires* (ADR 0057 §1). A crate
+    /// whose manifest states these entries builds only configurations; one that
+    /// generates its model from its manifest (§2) has them by construction.
+    pub fn cargo_features(&self) -> Vec<String> {
+        self.features()
+            .map(|feature| {
+                let mut required: Vec<String> = self
+                    .requires(feature)
+                    .map(|r| format!("{:?}", self.name(r)))
+                    .collect();
+                required.sort_unstable();
+                format!("{} = [{}]", self.name(feature), required.join(", "))
+            })
+            .collect()
+    }
 }
 
 impl fmt::Display for FeatureModel {
@@ -667,5 +686,22 @@ mod tests {
         let set = m.select(["a", "b", "c"]).unwrap();
         assert_eq!(m.generators(&set), ["a", "c"]);
         assert!(m.generators(&Configuration::empty()).is_empty());
+    }
+
+    #[test]
+    fn the_cargo_features_imply_what_each_feature_requires_directly() {
+        let m = model(&[
+            ("session-unicast-accept", &["session-unicast", "auth"]),
+            ("session-unicast", &[]),
+            ("auth", &[]),
+        ]);
+        assert_eq!(
+            m.cargo_features(),
+            [
+                "auth = []",
+                "session-unicast = []",
+                "session-unicast-accept = [\"auth\", \"session-unicast\"]",
+            ]
+        );
     }
 }

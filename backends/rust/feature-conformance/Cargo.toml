@@ -17,13 +17,13 @@ build = "build.rs"
 path = "src/lib.rs"
 
 [features]
-# The features of `product-line/features.scxml`, spelled as that model spells
-# them. A feature a model says requires another implies it here, which is how
-# Cargo keeps the one thing the model asserts: a build holds what each of its
-# features requires (docs/adr/0057 §1). The edge is spelled by hand in both
-# places; the tests build `session-unicast-accept` on its own, and a manifest
-# without the edge builds a set that is no configuration of the model, which
-# no variant generates and the observations then refuse.
+# The features of `product-line/features.scxml`, as the model states them
+# (`FeatureModel::cargo_features`): a feature the model says requires another
+# implies it here, which is how Cargo keeps the one thing the model asserts, a
+# build holds what each of its features requires (docs/adr/0057 §1). build.rs
+# refuses a table that is not the model's and prints the one to write. The
+# machine refuses a build that breaks an edge on its own as well, with a
+# `compile_error!` for each edge of the model (§6).
 session-unicast = []
 session-unicast-accept = ["session-unicast"]
 
