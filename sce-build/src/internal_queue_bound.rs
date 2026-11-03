@@ -139,6 +139,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::event_descriptor::attribute_matches;
+use crate::forge::event_schema_check::EVENT_DATA_PATH;
+use crate::forge::value_path::{self, Place};
+use crate::forge::value_type::TypeScope;
 use crate::microstep_bounds::MicrostepBounds;
 use crate::model::{Action, BlockRole, DoneData, DoneDataContent, SCXMLModel};
 
@@ -284,17 +287,66 @@ struct Analysis<'m> {
     held: BTreeSet<String>,
     /// Whether some counted site raises an error event.
     may_raise_error: bool,
+    /// The scope the places a `<foreach>` walks are typed in
+    /// ([`crate::forge::value_path::statechart_scope`]).
+    scope: TypeScope,
+    /// Each name that holds a value where the walk stands, innermost last: the
+    /// document's variables, `_event.data` in a transition taken on an event
+    /// whose schema it imports, and the item of each `<foreach>` around it.
+    places: Vec<(String, Place)>,
 }
 
 impl<'m> Analysis<'m> {
     fn new(model: &'m SCXMLModel) -> Self {
+        let places = model
+            .variables
+            .iter()
+            .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
+            .filter_map(|var| Some((var.id.clone(), value_path::variable_place(var)?)))
+            .collect();
         Self {
             model,
             raises_execution: model.events.contains("error.execution"),
             raises_communication: model.events.contains("error.communication"),
             held: BTreeSet::new(),
             may_raise_error: false,
+            scope: value_path::statechart_scope(model),
+            places,
         }
+    }
+
+    /// The place `path` names where the walk stands ([`value_path::resolve`]).
+    fn place(&self, path: &str) -> Option<Place> {
+        value_path::resolve(
+            Some(&self.scope),
+            |name| {
+                self.places
+                    .iter()
+                    .rev()
+                    .find(|(held, _)| held == name)
+                    .map(|(_, place)| place)
+            },
+            path,
+        )
+    }
+
+    /// The most one run of a transition's content enqueues: the content read
+    /// where `_event.data` is the payload of the event it is taken on.
+    fn transition(&mut self, transition: &crate::model::Transition) -> Result<usize, String> {
+        let payload = self
+            .model
+            .imported_event_schemas
+            .get(&transition.event)
+            .and_then(|schema| value_path::payload_place(self.model, &schema.name));
+        let held = payload.is_some();
+        if let Some(payload) = payload {
+            self.places.push((EVENT_DATA_PATH.to_string(), payload));
+        }
+        let run = self.block(&transition.actions);
+        if held {
+            self.places.pop();
+        }
+        run
     }
 
     fn run(mut self) -> Result<InternalQueueBound, String> {
@@ -335,7 +387,7 @@ impl<'m> Analysis<'m> {
                 per_microstep = per_microstep.saturating_add(self.block(block)?);
             }
             for transition in &state.transitions {
-                per_microstep = per_microstep.saturating_add(self.block(&transition.actions)?);
+                per_microstep = per_microstep.saturating_add(self.transition(transition)?);
             }
             per_microstep =
                 per_microstep.saturating_add(self.block(&state.initial_transition_actions)?);
@@ -484,15 +536,34 @@ impl<'m> Analysis<'m> {
     /// section 6.3), so `N` passes enqueue `N` times what one pass does, and a
     /// `<foreach>` inside it multiplies again. An error in a pass ends the
     /// block: at most in the last pass, after the passes before it ran whole.
-    /// A body that enqueues anything over a list whose bound the model does
-    /// not state is not proven; a body that only fails raises once however
-    /// many items there are.
+    /// The passes are the bound of the list's type, wherever the list is held
+    /// (a variable typed `list<T>[N]`, a list of the payload, a list an
+    /// enclosing loop's item holds), the number the build holds after its
+    /// limit name. A body that enqueues anything over a list whose bound the
+    /// model does not state is not proven; a body that only fails raises once
+    /// however many items there are.
     fn foreach(&mut self, action: &Action) -> Result<Cost, String> {
-        let body = self.list(&action.actions)?;
+        // The list walked is a place, a variable's, the payload's or an
+        // enclosing item's, and its item is a place of its body's.
+        let list = self.place(&action.array);
+        let item = list.as_ref().and_then(Place::element);
+        let bound_item = item.is_some();
+        if let Some(item) = item {
+            self.places.push((action.item.trim().to_string(), item));
+        }
+        let body = self.list(&action.actions);
+        if bound_item {
+            self.places.pop();
+        }
+        let body = body?;
         if body.completes == 0 {
             return Ok(Cost::ending(body.ends));
         }
-        let Some(passes) = self.passes(&action.array) else {
+        let Some(passes) = list
+            .as_ref()
+            .and_then(Place::list_bound)
+            .and_then(|n| usize::try_from(n).ok())
+        else {
             return Err(format!(
                 "a <foreach> body enqueues an internal event on each pass, and `{}` is not a \
                  list whose bound the document declares, so the passes are not counted",
@@ -506,27 +577,6 @@ impl<'m> Analysis<'m> {
                 .saturating_mul(passes.saturating_sub(1))
                 .saturating_add(body.ends),
         })
-    }
-
-    /// The most passes a `<foreach>` over `array` makes: the declared bound of
-    /// the list it names, a `sce-static` variable typed `list<T>[N]` (the
-    /// number the build holds, after its limit name). `None` for any other
-    /// array, whose length the model does not bound.
-    fn passes(&self, array: &str) -> Option<usize> {
-        let name = array.trim();
-        self.model
-            .variables
-            .iter()
-            .chain(self.model.states.values().flat_map(|s| s.datamodel.iter()))
-            .find(|v| v.id == name)
-            .filter(|v| {
-                matches!(
-                    v.value_type,
-                    Some(crate::forge::model::AlgorithmValueType::List { .. })
-                )
-            })
-            .and_then(|v| v.capacity())
-            .and_then(|n| usize::try_from(n).ok())
     }
 
     /// A `<send>`: its delivery, and its errors when it can fail.
@@ -1306,6 +1356,61 @@ mod tests {
         let inner = foreach_over("cells", vec![raise("cell")]);
         let outer = foreach_over("rows", vec![inner, raise("row")]);
         assert_eq!(doc.entry("a", vec![outer]).bound(), chain(3 * 4 + 3, 0));
+    }
+
+    /// A `<foreach>` over a list the payload holds, and one inside it over a
+    /// list each of its items holds, run their bodies at most as many times as
+    /// the bounds their types declare, multiplied (docs/adr/0086, section 6.3):
+    /// three items of at most four tags each raise twelve events. The item's
+    /// list is read in the scope of the item's own document.
+    #[test]
+    fn nested_foreaches_over_a_payload_multiply_the_bounds_its_type_declares() {
+        use crate::forge::value_type::{ScopedRecord, TypeScope, WrittenType};
+        let ty = |text: &str| {
+            WrittenType::read(text)
+                .expect("a type")
+                .bounded()
+                .expect("every bound stated")
+        };
+        let mut doc = Doc::new().state("a", None);
+        let schema = crate::forge::model::EventSchemaModel {
+            name: "event_batch".to_string(),
+            event_name: "batch.sent".to_string(),
+            fields: Vec::new(),
+            payload_none: false,
+            datamodel_markers: Vec::new(),
+            revision: None,
+            source_location: None,
+        };
+        doc.model
+            .imported_event_schemas
+            .insert("batch.sent".to_string(), schema.clone());
+        doc.model
+            .imported_records
+            .insert("Batch".to_string(), schema);
+        let mut batch_scope = TypeScope::default();
+        batch_scope.records.insert(
+            "Item".to_string(),
+            ScopedRecord {
+                identity: "event_batch_item".to_string(),
+                fields: vec![("tags".to_string(), ty("list<string[8]>[4]"))],
+                scope: TypeScope::default(),
+            },
+        );
+        doc.model.imported_type_scope.records.insert(
+            "Batch".to_string(),
+            ScopedRecord {
+                identity: "event_batch".to_string(),
+                fields: vec![("items".to_string(), ty("list<record:Item>[3]"))],
+                scope: batch_scope,
+            },
+        );
+        let mut inner = foreach_over("row.tags", vec![raise("tag")]);
+        inner.item = "word".to_string();
+        let mut outer = foreach_over("_event.data.items", vec![inner]);
+        outer.item = "row".to_string();
+        let doc = doc.transition("a", on("batch.sent", "a", vec![outer]));
+        assert_eq!(doc.bound(), chain(3 * 4, 0));
     }
 
     /// A pass whose body raises and then fails ends the block in its last

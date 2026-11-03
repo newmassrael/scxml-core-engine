@@ -160,8 +160,11 @@ PY
 # state is given its body's count, once.
 mutation_case "a raising foreach body over an unbounded list is not refused" <<'PY'
 edit("sce-build/src/internal_queue_bound.rs",
-     r'''        let Some(passes) = self.passes(&action.array) else {''',
-     r'''        let Some(passes) = self.passes(&action.array).or(Some(1)) else {''')
+     r'''            .and_then(|n| usize::try_from(n).ok())
+        else {''',
+     r'''            .and_then(|n| usize::try_from(n).ok())
+            .or(Some(1))
+        else {''')
 PY
 
 # A `<foreach>` over a bounded list is given its body's count, once, not once
@@ -179,11 +182,19 @@ edit("sce-build/src/internal_queue_bound.rs",
      r'''                .saturating_mul(0)''')
 PY
 
-# A variable of any type bounds a loop over it by its capacity.
+# A loop's item names nothing in its body, so a loop over a list the item
+# holds has no bound to count by (docs/adr/0086, section 6.3).
+mutation_case "a loop over an item's list is not counted" <<'PY'
+edit("sce-build/src/internal_queue_bound.rs",
+     r'''            self.places.push((action.item.trim().to_string(), item));''',
+     r'''            let _ = item;''')
+PY
+
+# A value of any type bounds a loop over it, as if it were a list.
 mutation_case "a variable that is not a list bounds a foreach" <<'PY'
 edit("sce-build/src/internal_queue_bound.rs",
-     r'''                    Some(crate::forge::model::AlgorithmValueType::List { .. })''',
-     r'''                    Some(_)''')
+     r'''            .and_then(Place::list_bound)''',
+     r'''            .map(|_| 4u32)''')
 PY
 
 # A delayed send to `#_internal` is counted as delivered nowhere.
