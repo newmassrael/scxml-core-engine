@@ -1103,12 +1103,32 @@ invoker.{start_method}({typed_arg}start.token){answer}\n                    }}\n
                 "                    \"{id}\" -> {{\n                        invoker.cancel{pascal}(cancel.token)\n                        null\n                    }}\n"
             ));
             if invoke.result.is_some() {
+                // The direct completion is an owner-thread operation of the
+                // engine (ARCHITECTURE.md "Engine Threading"), and a host whose
+                // invocation finishes on a thread of its own is given the inbox
+                // route beside it, typed the same way.
                 members.push_str(&format!(
                     "\n    /**\n     * Complete `<invoke id=\"{id}\">`'s start [token] with its record —\n     \
 * `completeHostInvoke` with the record's JSON, so a stale or unknown token is\n     \
-* refused the same way (`false`).\n     */\n    \
+* refused the same way (`false`). An owner-thread operation; from another\n     \
+* thread, [postComplete{pascal}].\n     */\n    \
 fun complete{pascal}(token: Long, result: {machine_name}{pascal}Result): Boolean =\n        \
-completeHostInvoke(\"{invoke_type}\", \"{id}\", token, result.wire())\n"
+completeHostInvoke(\"{invoke_type}\", \"{id}\", token, result.wire())\n\n    \
+/**\n     * [complete{pascal}] from any thread: the completion is posted to this\n     \
+* machine's `inbox`, and its owner applies it with `completeHostInvoke` at\n     \
+* its next macrostep boundary, where the token is checked. `true` when the\n     \
+* inbox took it.\n     */\n    \
+fun postComplete{pascal}(token: Long, result: {machine_name}{pascal}Result): Boolean =\n        \
+inbox.post(\n            \
+com.sce.runtime.InboxInput.HostInvokeEnding(\n                \
+sessionId = null,\n                \
+processorType = \"{invoke_type}\",\n                \
+invokeId = \"{id}\",\n                \
+token = token,\n                \
+done = true,\n                \
+data = result.wire(),\n            \
+),\n        \
+)\n"
                 ));
             }
         }
