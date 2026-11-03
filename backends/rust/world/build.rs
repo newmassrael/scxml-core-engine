@@ -33,7 +33,9 @@ const TODO_PEER: &str = "../../../sce-build/tests/fixtures/static_datamodel/todo
 /// §2.15), each under the name it is mounted by (`machines::tiny::todo_peer`): `tiny`
 /// holds a handful, so that a test reaches the end of the room in a few writes, and
 /// `large` is the room of a team of twenty with a great many events, the build a server
-/// has, which only the backends whose lists live on the heap can run.
+/// has. Every backend runs it: C11 holds the storage of its calls in the machine
+/// (docs/adr/0082) and replays the to-do list's scenarios at these bounds
+/// (`c11_integration_static_large`).
 const TIERS: &[(&str, &[(&str, u32)])] = &[
     (
         "tiny",

@@ -226,6 +226,10 @@ changes each backend says how (ADR 0078):
    (`static_scenario_harness.h`, `todo_peer_scenario.h`), now holds every machine so.
 5. SCE_FORGE.md §4.12 and SCE_ACCEPTED_SUBSET §2.15 are rewritten to the new signatures and the removed refusal, in
    the landings that change them.
+   *Done in steps 2 to 4.* §4.12's two tables and its read-back, append and gate sentences changed with steps 2 and 3,
+   §2.15's paragraph on a bound moved far with step 4, and each landing has its section in
+   `docs/SCE_CODEC_CONSUMER_MIGRATION.md`. The comments of the Rust world that said only a heap backend runs the
+   to-do list's `large` build were corrected once C11 ran it. Every step of this ADR has landed.
 
 ## Consequences
 

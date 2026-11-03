@@ -11,8 +11,8 @@
 // is full (`full`), and what lifts it is a settle, which forgets tombstones.
 //
 // The world builds the to-do list three times: as written, with a handful of room (`tiny`),
-// and with the room of a team of twenty with a great many events (`large`, backends whose
-// lists live on the heap). What is asked is that a list refuses at the room the host gave it
+// and with the room of a team of twenty with a great many events (`large`, which C11 runs
+// too, docs/adr/0082). What is asked is that a list refuses at the room the host gave it
 // and not before, and that every copy agrees on what it holds when it does; that a change to
 // a register that has a value is not refused for the values, since it adds none; that a
 // settle lifts a refusal for tombstones; that a list given more room by another account's
