@@ -459,6 +459,18 @@ that backend gap to be closed, as its own change, rather than holding to a weake
   table is not that one and prints the table to write, so the edge has one source, the model, and Cargo keeps it.
 - Still to do: the same for the C, C++ and Swift emissions (step 4).
 
+### What step 4 has landed so far (2026-11-03)
+
+- **The core and the Rust dialect** (§10). `variant_merge` is the merge no language decides: it aligns members,
+  writes shared ones once and merges inside a list the versions share, comparing members by the id of their token
+  trees (hash-consed, so two trees have one id exactly when they are the same tokens). A
+  [`Dialect`](../../sce-build/src/variant_dialect/mod.rs) is what a language decides: its reader, writer, resolver
+  and guard. [`variant_dialect::rust`](../../sce-build/src/variant_dialect/rust.rs) is the first, the reader with
+  `syn`, `#[cfg]` as the writer, `lift_validation` as the resolver, `compile_error!` as the guard. The output did not
+  change: the lifted machine and sourcemap of the conformance crate's `session.scxml` are the same bytes as before
+  the split.
+- Still to do: the C11 dialect and its CMake matrix, then C++, then Swift; the fixtures to `tests/product_line/`.
+
 ## Questions left open
 
 None of the design.

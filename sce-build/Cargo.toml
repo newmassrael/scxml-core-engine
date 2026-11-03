@@ -81,7 +81,7 @@ object = { version = "0.36", default-features = false, features = [
 syn = { version = "2", features = ["parsing", "full", "visit", "visit-mut", "printing"] }
 quote = "1"
 # Where each member of a generated source starts and ends, so the merge of the
-# variants' sources (`variant_merge`) cuts and joins their own text and leaves
+# variants' Rust sources (`variant_dialect::rust`) cuts and joins their own text and leaves
 # every comment where the variant wrote it.
 proc-macro2 = { version = "1", features = ["span-locations"] }
 

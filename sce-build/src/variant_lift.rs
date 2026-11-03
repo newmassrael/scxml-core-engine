@@ -20,10 +20,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::feature_selector::Selector;
-use crate::lift_validation::{first_difference, Lifted, Reference};
 use crate::model::SCXMLModel;
 use crate::parser::SCXMLParser;
 use crate::product_line::ProductLine;
+use crate::variant_dialect::Dialect;
 use crate::CompileError;
 
 /// One distinct variant: the selector that picks it, the least configuration
@@ -162,37 +162,46 @@ impl Variants {
         }))
     }
 
-    /// The first build for which the files `lifted`, each Rust file resolved
-    /// for that build, are not the files its variant generates alone —
-    /// `references[i]` being those of `self.variants()[i]` — or `None` when
+    /// The first build for which the files `lifted`, each source of `dialect`
+    /// resolved for that build, are not the files its variant generates alone
+    /// — `references[i]` being those of `self.variants()[i]` — or `None` when
     /// there is none (ADR 0057 §9). Files are `(name, text)`; a file that is
-    /// not Rust source is compared as text, since nothing in it is selected.
+    /// not a source of the dialect is compared as text, since nothing in it is
+    /// selected.
     ///
     /// Every build the product line tells apart is judged
     /// ([`ProductLine::configurations`]), not one per variant: a predicate the
     /// lifted machine writes may tell apart builds that build one variant, and
     /// a check of one of them would say nothing of the other. The files are
     /// resolved once for each pair of a variant and a valuation of their
-    /// predicates ([`Lifted::valuation`]), since two builds alike in both
-    /// resolve them alike and are held to one reference. An error is a Rust
-    /// file `syn` could not read.
-    pub fn first_mismatch(
+    /// predicates ([`Dialect::valuation`]), since two builds alike in both
+    /// resolve them alike and are held to one reference. An error is a source
+    /// the dialect's resolver could not read.
+    pub fn first_mismatch<D: Dialect>(
         &self,
+        dialect: &D,
         lifted: &[(String, String)],
         references: &[Vec<(String, String)>],
     ) -> Result<Option<LiftingMismatch>, String> {
         let model = self.line.model();
         let is_feature = |name: &str| model.lookup(name).is_some();
-        let lifted: BTreeMap<&str, LiftedFile> = lifted
+        let lifted: BTreeMap<&str, LiftedFile<D>> = lifted
             .iter()
-            .map(|(name, text)| Ok((name.as_str(), LiftedFile::read(name, text, &is_feature)?)))
+            .map(|(name, text)| {
+                Ok((
+                    name.as_str(),
+                    LiftedFile::read(dialect, name, text, &is_feature)?,
+                ))
+            })
             .collect::<Result<_, String>>()?;
-        let references: Vec<BTreeMap<&str, ReferenceFile>> = references
+        let references: Vec<BTreeMap<&str, ReferenceFile<D>>> = references
             .iter()
             .map(|files| {
                 files
                     .iter()
-                    .map(|(name, text)| Ok((name.as_str(), ReferenceFile::read(name, text)?)))
+                    .map(|(name, text)| {
+                        Ok((name.as_str(), ReferenceFile::read(dialect, name, text)?))
+                    })
                     .collect::<Result<_, String>>()
             })
             .collect::<Result<_, String>>()?;
@@ -207,7 +216,7 @@ impl Variants {
                 .expect("the selectors of the variants partition the builds");
             let valuation: Vec<bool> = lifted
                 .values()
-                .flat_map(|file| file.valuation(&answer))
+                .flat_map(|file| file.valuation(dialect, &answer))
                 .collect();
             if !judged.insert((variant, valuation)) {
                 continue;
@@ -221,7 +230,7 @@ impl Variants {
                 ))
             } else {
                 lifted.iter().find_map(|(name, file)| {
-                    file.difference(&answer, &reference[name])
+                    file.difference(dialect, &answer, &reference[name])
                         .map(|difference| format!("in `{name}`, {difference}"))
                 })
             };
@@ -287,37 +296,47 @@ fn minimal_cover(on: &[&[bool]], off: &[&[bool]]) -> Vec<Product> {
     products
 }
 
-/// A file of the lifted generation: Rust source, resolved for each build, or
-/// any other text, which no build selects within.
-enum LiftedFile {
-    Rust(Lifted),
+/// A file of the lifted generation: a source of the dialect, resolved for
+/// each build, or any other text, which no build selects within.
+enum LiftedFile<D: Dialect> {
+    Source(D::Lifted),
     Text(String),
 }
 
-impl LiftedFile {
-    fn read(name: &str, text: &str, is_feature: &dyn Fn(&str) -> bool) -> Result<Self, String> {
-        Ok(if is_rust(name) {
-            LiftedFile::Rust(Lifted::parse(text, is_feature).map_err(|e| format!("{name}: {e}"))?)
+impl<D: Dialect> LiftedFile<D> {
+    fn read(
+        dialect: &D,
+        name: &str,
+        text: &str,
+        is_feature: &dyn Fn(&str) -> bool,
+    ) -> Result<Self, String> {
+        Ok(if dialect.is_source(name) {
+            LiftedFile::Source(
+                dialect
+                    .lift(text, is_feature)
+                    .map_err(|e| format!("{name}: {e}"))?,
+            )
         } else {
             LiftedFile::Text(text.to_string())
         })
     }
 
-    fn valuation(&self, answer: &dyn Fn(&str) -> Option<bool>) -> Vec<bool> {
+    fn valuation(&self, dialect: &D, answer: &dyn Fn(&str) -> Option<bool>) -> Vec<bool> {
         match self {
-            LiftedFile::Rust(lifted) => lifted.valuation(answer),
+            LiftedFile::Source(lifted) => dialect.valuation(lifted, answer),
             LiftedFile::Text(_) => Vec::new(),
         }
     }
 
     fn difference(
         &self,
+        dialect: &D,
         answer: &dyn Fn(&str) -> Option<bool>,
-        reference: &ReferenceFile,
+        reference: &ReferenceFile<D>,
     ) -> Option<String> {
         match (self, reference) {
-            (LiftedFile::Rust(lifted), ReferenceFile::Rust(reference)) => {
-                first_difference(&lifted.resolve(answer), reference)
+            (LiftedFile::Source(lifted), ReferenceFile::Source(reference)) => {
+                dialect.difference(lifted, answer, reference)
             }
             (LiftedFile::Text(text), ReferenceFile::Text(reference)) => (text != reference)
                 .then(|| "the generation writes a text the variant does not".to_string()),
@@ -327,23 +346,23 @@ impl LiftedFile {
 }
 
 /// A file a variant generates alone.
-enum ReferenceFile {
-    Rust(Reference),
+enum ReferenceFile<D: Dialect> {
+    Source(D::Reference),
     Text(String),
 }
 
-impl ReferenceFile {
-    fn read(name: &str, text: &str) -> Result<Self, String> {
-        Ok(if is_rust(name) {
-            ReferenceFile::Rust(Reference::parse(text).map_err(|e| format!("{name}: {e}"))?)
+impl<D: Dialect> ReferenceFile<D> {
+    fn read(dialect: &D, name: &str, text: &str) -> Result<Self, String> {
+        Ok(if dialect.is_source(name) {
+            ReferenceFile::Source(
+                dialect
+                    .reference(text)
+                    .map_err(|e| format!("{name}: {e}"))?,
+            )
         } else {
             ReferenceFile::Text(text.to_string())
         })
     }
-}
-
-fn is_rust(name: &str) -> bool {
-    name.ends_with(".rs")
 }
 
 #[cfg(test)]
