@@ -14,6 +14,9 @@
 // which says what became of it. The run then goes on, and the round's reply is said when it ends.
 // It is still one line for one line, and nothing here reads a clock or waits on anything but the
 // next line, so what the device does is a function of the requests, as the machine's steps are.
+// When the relay refuses a request for the rate, the run waits on the world's clock, not this
+// process's (the link's pause, `sce_peer_link_set_pause`): it says `{"ok":true,"pause":<ms>}`, and
+// the world's next line is `peer_paused` once its time reached the end of the wait.
 //
 // What the world can say of an exchange is what a transport can: the response, the link's
 // failure, the deadline passing (the world measures it on its own clock), or the job's time
@@ -61,6 +64,7 @@ class HostedDevice(private val lines: Lines) : AutoCloseable {
             "peer_round" -> round(request)
             "peer_standing" -> ok { put("standing", core().standing()) }
             "peer_carried" -> throw ProtocolError("no exchange of the device's core waits for what was carried")
+            "peer_paused" -> throw ProtocolError("no run of the device's core waits on the world's clock")
             else -> throw ProtocolError("unknown op `$op`")
         }
 
@@ -99,7 +103,9 @@ class HostedDevice(private val lines: Lines) : AutoCloseable {
         made.setIdentity(node, seed)
         optionalText(request, "administrator")?.let { made.setAdministrator(unhex(it)) }
         if (request["group"]?.jsonPrimitive?.booleanOrNull == true) made.withGroup(node, seed)
-        link = PeerLink.host(loaded) { exchange, _ -> carry(exchange) }
+        // A run waits out the relay's refusal for the rate on the world's clock, not this process's:
+        // the world's relay counts the world's time.
+        link = PeerLink.host(loaded, { exchange, _ -> carry(exchange) }) { waitMs -> pause(waitMs) }
         return ok()
     }
 
@@ -169,6 +175,29 @@ class HostedDevice(private val lines: Lines) : AutoCloseable {
             }
             else -> refused("no exchange is carried as `$failed`")
         }
+    }
+
+    /**
+     * One wait of the run, on the world's clock: the relay refused a request for the rate, and the
+     * run asks again once [waitMs] of the world's time have passed. Said to the world as
+     * `{"ok":true,"pause":<ms>}`, and over when it says `peer_paused`; `false` when the world said
+     * anything else, or went away, which the run reads as a wait cut short.
+     */
+    private fun pause(waitMs: Long): Boolean {
+        lines.say(ok { put("pause", waitMs) }.toString())
+        val line = lines.hear() ?: return false
+        val answer =
+            try {
+                Json.parseToJsonElement(line).jsonObject
+            } catch (failure: IllegalArgumentException) {
+                refused("what the world said of a wait is not a JSON object: ${failure.message}")
+                return false
+            }
+        if (answer["op"]?.jsonPrimitive?.content != "peer_paused") {
+            refused("a wait of the device's core waits for `peer_paused`, and the world asked another")
+            return false
+        }
+        return true
     }
 
     /**

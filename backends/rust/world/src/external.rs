@@ -82,7 +82,8 @@
 //! | `peer_make` | `library` (the core's shared library), `list`, `node` (a number), `seed` (hex), `genesis` (hex or null: the hash a device is invited with), `administrator` (hex or null), `group` (bool) | `ok` |
 //! | `peer_outbound` | `event`, `data` | `ok`, `kept` (`taken`, `held`, `not_signed`, `refused`), `reason` (text or null) |
 //! | `peer_round` | `begin` (`sync`, `resync`, `reread`, `key_package`) | an exchange, or the end of the run |
-//! | `peer_carried` | `response` (text), or `failed` (`link`, `deadline`, `cancelled`) and `reason` | an exchange, or the end of the run |
+//! | `peer_carried` | `response` (text), or `failed` (`link`, `deadline`, `cancelled`) and `reason` | an exchange, a wait, or the end of the run |
+//! | `peer_paused` | | an exchange, a wait, or the end of the run |
 //! | `peer_standing` | | `ok`, `standing` (the ABI's text) |
 //!
 //! A round is run by the core's own driver (`sce_peer_run`) over a transport whose every
@@ -92,8 +93,11 @@
 //! last reply is `{"ok":true,"ran":<status of the run>,"outcome":<outcome text>}`. A
 //! `failed` of `cancelled` is the job's time ending: the child raises the run's
 //! cancellation and its transport gives the exchange up, so the run stops with the ABI's
-//! `SCE_PEER_ERR_CANCELLED`. Still one line for one line, and still a function of the
-//! requests.
+//! `SCE_PEER_ERR_CANCELLED`. When the relay refuses a request for the rate, the run waits on
+//! the world's clock rather than the child's (the link's pause, `sce_peer_link_set_pause`):
+//! the reply is `{"ok":true,"pause":<ms>}`, and the world's next line is `peer_paused` once
+//! its time reached the end of the wait, after which the run asks the same request again.
+//! Still one line for one line, and still a function of the requests.
 //!
 //! # Not carried yet
 //!

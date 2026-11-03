@@ -183,11 +183,36 @@ fn the_relays_allowance_slows_every_device_and_they_still_agree() {
         devices.set("bob", 10 + row, 20);
         devices.set("carol", 20 + row, 30);
     }
+    let began = std::time::Instant::now();
     devices.settle();
+    let took = began.elapsed();
     assert!(
         devices.limited > 0,
         "the relay refused no round for its allowance"
     );
+    // Bob's Kotlin device runs its rounds by the library's driver, which waits out a refusal for
+    // the rate and asks again, on the clock of whoever carries the texts: the world's, through the
+    // pause the step server gives its link. So bob asked again after waits the world's clock took,
+    // and the run slept none of them: a run on the system's clock would sleep each wait in real
+    // time and ask again of a relay whose clock had not moved, and be refused again for as long as
+    // the world's paths took to move it.
+    if devices.is_kotlin("bob") {
+        let resent = devices.paused.get("bob").copied().unwrap_or(0);
+        let waited_ms = devices.paused_ms.get("bob").copied().unwrap_or(0);
+        assert!(
+            resent > 0,
+            "bob's run waited out no refusal for the rate on the world's clock"
+        );
+        assert!(
+            waited_ms > 0,
+            "a wait of the relay's is a wait of some time"
+        );
+        assert!(
+            took < std::time::Duration::from_secs(120),
+            "bob waited {resent} times, {waited_ms} ms of the world's time, and the settling took \
+             {took:?} of real time"
+        );
+    }
     devices.assert_holds_what_was_written();
     every_send_was_taken_once(&mut devices);
 }

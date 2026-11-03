@@ -428,6 +428,10 @@ impl Carried {
 /// What a device's exchange asks next, or what it came to.
 enum Next {
     Ask(String),
+    /// The run waits this long on the world's clock before it asks again: the relay refused a
+    /// request for the rate, and a Kotlin device's run waits on its host's clock
+    /// (`sce_peer_link_set_pause`), which is the world's.
+    Pause(u64),
     Ran(Ran),
 }
 
@@ -540,6 +544,17 @@ impl Device {
         }
     }
 
+    /// The wait the device's run asked for is over on the world's clock: its run goes on.
+    fn resume(&mut self) -> Next {
+        let name = self.name;
+        match &mut self.core {
+            Core::Rust(_) => unreachable!("{name}: a core the world drives by hand never pauses"),
+            Core::Kotlin(machine) => {
+                next_of_text(name, &ask(name, machine, &json!({ "op": "peer_paused" })))
+            }
+        }
+    }
+
     /// The epochs whose keys the device holds.
     fn keys(&mut self) -> Vec<u64> {
         let name = self.name;
@@ -584,6 +599,9 @@ fn next_of_text(name: &str, reply: &Value) -> Next {
     if let Some(request) = reply["exchange"].as_str() {
         return Next::Ask(request.to_string());
     }
+    if let Some(wait_ms) = reply["pause"].as_u64() {
+        return Next::Pause(wait_ms);
+    }
     let status = reply["ran"]
         .as_i64()
         .unwrap_or_else(|| panic!("{name}: a round ends with the status of its run: {reply}"));
@@ -608,6 +626,8 @@ enum Due {
         flight: u64,
         carried: Carried,
     },
+    /// The wait of `flight` a device's run asked for is over.
+    Resume { device: usize, flight: u64 },
 }
 
 struct Pending {
@@ -672,6 +692,11 @@ pub struct Devices {
     pub failed_exchanges: usize,
     /// How many rounds the relay refused for a device's allowance.
     pub limited: usize,
+    /// How many times each device's run waited on the world's clock for the relay's allowance and
+    /// asked again (a Kotlin device's; one the world drives by hand ends its round instead).
+    pub paused: BTreeMap<&'static str, usize>,
+    /// How long, on the world's clock, each device's run waited in all.
+    pub paused_ms: BTreeMap<&'static str, u64>,
     /// How many writes the relay made up and gave each node.
     pub forged: BTreeMap<u64, usize>,
 }
@@ -780,6 +805,8 @@ impl Devices {
             reordered: 0,
             failed_exchanges: 0,
             limited: 0,
+            paused: BTreeMap::new(),
+            paused_ms: BTreeMap::new(),
             forged: BTreeMap::new(),
         };
         devices.quiet();
@@ -970,6 +997,13 @@ impl Devices {
                     let next = self.devices[device].carry(carried);
                     self.go_on(device, next, &mut flights);
                 }
+                Due::Resume { device, flight } => {
+                    if !flights.awaits(device, flight) {
+                        continue;
+                    }
+                    let next = self.devices[device].resume();
+                    self.go_on(device, next, &mut flights);
+                }
             }
         }
         for name in names {
@@ -999,6 +1033,22 @@ impl Devices {
                 held.refused.extend(came.refused.iter().cloned());
                 held.steps.extend(came.steps.iter().cloned());
                 flights.ran.insert(name, came);
+                return;
+            }
+            Next::Pause(wait_ms) => {
+                // The run waits on the world's clock: nothing is on the network meanwhile, and the
+                // run goes on once the world's time reaches the end of the wait.
+                *self.paused.entry(name).or_default() += 1;
+                *self.paused_ms.entry(name).or_default() += wait_ms;
+                flights.order += 1;
+                let flight = flights.order;
+                let asked = flights.waiting.get(&device).map_or(0, |(_, asked)| *asked);
+                flights.waiting.insert(device, (flight, asked));
+                let until = self
+                    .world
+                    .now_ms()
+                    .saturating_add(i64::try_from(wait_ms).unwrap_or(i64::MAX / 2));
+                flights.push(until, Due::Resume { device, flight });
                 return;
             }
             Next::Ask(request) => request,
