@@ -26,13 +26,16 @@ use std::net::IpAddr;
 
 use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{Entry, LogError};
-use sce_rust_trust::{Checkpoint, CheckpointError, PublicKey, TakeError, Trust};
+use sce_rust_trust::{Checkpoint, CheckpointError, Conflict, PublicKey, TakeError, Trust};
 use sha2::{Digest, Sha256};
 
 use crate::limits::{Allowances, Limits};
 use crate::login::{self, Asked, Checked, Doorway, Opened};
 use crate::logs::{list_digest, refused};
-use crate::protocol::{Code, Join, Joined, Login, Record, Request, Response};
+use crate::protocol::{
+    version_of, Code, Join, Joined, Login, Record, Request, Response, CONFLICT_SINCE,
+    OLDEST_VERSION,
+};
 use crate::store::{Openly, Store};
 use crate::token::{Authority, Session, TokenError};
 
@@ -248,10 +251,12 @@ impl<S: Store> Relay<S> {
     }
 
     /// Answer a request text made at `now_ms` on a connection from `source` that presents no token
-    /// the relay takes, as a response text: a challenge, a login, and a refusal of the rest.
+    /// the relay takes, as a response text in the version the request names
+    /// (`protocol::version_of`): a challenge, a login, and a refusal of the rest.
     pub fn anonymous(&mut self, source: Option<IpAddr>, request: &str, now_ms: u64) -> String {
+        let version = version_of(request);
         let asked = match self.doorway.as_mut() {
-            None => return login::not_offered(request).to_json(),
+            None => return login::not_offered(request).to_json_in(version),
             Some(doorway) => doorway.ask(source, request, self.limits.max_request_bytes, now_ms),
         };
         let response = match asked {
@@ -317,7 +322,7 @@ impl<S: Store> Relay<S> {
                 }
             }
         };
-        response.to_json()
+        response.to_json_in(version)
     }
 
     /// Keep the key package a device leaves under an administrator's invitation (ADR 0080 section
@@ -643,37 +648,52 @@ impl<S: Store> Relay<S> {
         self.authority.verify(token, now_ms)
     }
 
-    /// Answer a request text made with `token` at `now_ms`, as a response text.
+    /// Answer a request text made with `token` at `now_ms`, as a response text: in the version the
+    /// request was written in, and in the oldest the relay speaks when it was not read as a request
+    /// of one it speaks (`protocol::version_of`), which every client reads.
     pub fn handle(&mut self, token: &str, request: &str, now_ms: u64) -> String {
-        let response = match self.authority.verify(token, now_ms) {
-            Err(error) => refused!(Code::Unauthorized, token_reason(error)),
+        let (response, version) = match self.authority.verify(token, now_ms) {
+            Err(error) => (
+                refused!(Code::Unauthorized, token_reason(error)),
+                version_of(request),
+            ),
             Ok(session) => {
                 if request.len() > self.limits.max_request_bytes {
-                    refused!(
+                    let refusal = refused!(
                         Code::TooLarge,
                         format!(
                             "a request is at most {} bytes",
                             self.limits.max_request_bytes
                         ),
-                    )
+                    );
+                    (refusal, OLDEST_VERSION)
                 } else {
-                    match Request::from_json(request) {
-                        Ok(request) => self.call(&session, request, now_ms),
-                        Err(reason) => refused!(Code::Invalid, reason),
+                    match Request::read(request) {
+                        Ok((asked, version)) => {
+                            (self.call(&session, asked, version, now_ms), version)
+                        }
+                        Err(reason) => (refused!(Code::Invalid, reason), version_of(request)),
                     }
                 }
             }
         };
-        response.to_json()
+        response.to_json_in(version)
     }
 
-    /// Answer `request` made by `session` at `now_ms`.
+    /// Answer `request` made by `session` at `now_ms`, which was written in `version` of the
+    /// protocol: a client is answered only what its version knows.
     ///
     /// A request answered as asked is logged at `debug` with what it was and what answered it; a
     /// refusal is logged where it was decided, with its reason.
-    pub fn call(&mut self, session: &Session, request: Request, now_ms: u64) -> Response {
+    pub fn call(
+        &mut self,
+        session: &Session,
+        request: Request,
+        version: u64,
+        now_ms: u64,
+    ) -> Response {
         let op = request.op();
-        let response = self.answer_session(session, request, now_ms);
+        let response = self.answer_session(session, request, version, now_ms);
         if !matches!(response, Response::Refused { .. }) {
             log::debug!(
                 op = op,
@@ -686,7 +706,13 @@ impl<S: Store> Relay<S> {
         response
     }
 
-    fn answer_session(&mut self, session: &Session, request: Request, now_ms: u64) -> Response {
+    fn answer_session(
+        &mut self,
+        session: &Session,
+        request: Request,
+        version: u64,
+        now_ms: u64,
+    ) -> Response {
         if let Some(reason) = &self.failed {
             return refused!(Code::Unavailable, reason.clone());
         }
@@ -751,7 +777,7 @@ impl<S: Store> Relay<S> {
                 Some(parsed) => self.append(&session.list, entry, parsed),
                 None => refused!(Code::Invalid, "it is not an entry of a log"),
             },
-            Request::Submit { event, data } => self.submit(&session.list, event, data),
+            Request::Submit { event, data } => self.submit(session, event, data, version),
             Request::Checkpoint { checkpoint } => match Checkpoint::from_json(&checkpoint) {
                 Some(parsed) => self.checkpoint(&session.list, checkpoint, parsed),
                 None => refused!(Code::Invalid, "it is not a checkpoint"),
@@ -918,7 +944,14 @@ impl<S: Store> Relay<S> {
         }
     }
 
-    fn submit(&mut self, list: &str, event: String, data: String) -> Response {
+    /// Take an operation `session` gave, written in `version` of the protocol. One that conflicts
+    /// with what the relay holds of its author is kept as proof as every operation that verifies
+    /// is, whoever gave it, the author's own session included: the relay never chooses a history
+    /// (ADR 0083 section 4). It is answered `conflict`, with what the relay held, to a client of
+    /// [`CONFLICT_SINCE`] or later, and `accepted` to one before, as a relay of that version
+    /// answered it.
+    fn submit(&mut self, session: &Session, event: String, data: String, version: u64) -> Response {
+        let list = session.list.as_str();
         if let Err(full) = self.room(list) {
             return full;
         }
@@ -927,7 +960,12 @@ impl<S: Store> Relay<S> {
         };
         match state.trust.take_operation(&event, &data) {
             Ok(taken) if taken.new => match self.keep(list, Record::Operation { event, data }) {
-                Ok(cursor) => Response::Accepted { new: true, cursor },
+                Ok(cursor) => match taken.conflict {
+                    None => Response::Accepted { new: true, cursor },
+                    Some(conflict) => {
+                        answer_conflict(session, taken.node, taken.seq, conflict, cursor, version)
+                    }
+                },
                 Err(response) => response,
             },
             Ok(_) => Response::Accepted {
@@ -1193,6 +1231,53 @@ fn check_join(
         return unauthorized("the proof does not hold under the invitation's key");
     }
     Ok(())
+}
+
+/// What the relay answers `session`, a client of `version`, for operation `seq` of `node`, which
+/// it kept as record `cursor` and which conflicts with what it held of `node` as `conflict` says:
+/// `conflict` with what it held from [`CONFLICT_SINCE`], and `accepted` before, as a relay of that
+/// version answered it. Logged at `info` once, with what was kept and what was answered, the list
+/// by its digest and nothing of what the operations carry.
+fn answer_conflict(
+    session: &Session,
+    node: u64,
+    seq: u64,
+    conflict: Conflict,
+    cursor: u64,
+    version: u64,
+) -> Response {
+    let told = version >= CONFLICT_SINCE;
+    log::info!(
+        list = list_digest(&session.list).as_str(),
+        node = node,
+        seq = seq,
+        at = conflict.at,
+        frozen = conflict.after,
+        froze = conflict.froze(),
+        by = session.node,
+        cursor = cursor,
+        version = version,
+        answer = if told { "conflict" } else { "accepted" };
+        "conflict_kept"
+    );
+    if !told {
+        return Response::Accepted { new: true, cursor };
+    }
+    let reason = format!(
+        "operation {seq} of node {node} conflicts with what the relay holds of it at {}: it is \
+         kept as proof, and the chain of node {node} is frozen from {}",
+        conflict.at, conflict.after
+    );
+    Response::refused(
+        Code::Conflict {
+            node,
+            seq,
+            frozen: conflict.after,
+            cursor,
+            held: conflict.with,
+        },
+        reason,
+    )
 }
 
 pub(crate) fn token_reason(error: TokenError) -> &'static str {

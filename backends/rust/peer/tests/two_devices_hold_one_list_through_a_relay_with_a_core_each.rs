@@ -33,7 +33,7 @@ use sce_rust_peer::{
     CourierError, DataKey, Device, GroupStep, Kept, LogError, MlsError, Outcome, Peer, PeerError,
     Profile, Publication, RoundKind, SealedState, OWNER,
 };
-use sce_rust_relay::{Authority, Limits, MemoryStore, Record, Relay, Request, Response};
+use sce_rust_relay::{Authority, Code, Limits, MemoryStore, Record, Relay, Request, Response};
 use sce_rust_trust::membership::{Body, Entry, Log};
 use sce_rust_trust::{Identity, Trust};
 use serde_json::{json, Value};
@@ -1794,9 +1794,17 @@ fn reads_its_chain_past_a_conflict(keyed: bool) {
     assert!(
         matches!(
             Response::from_json(&submitted),
-            Ok(Response::Accepted { new: true, .. })
+            Ok(Response::Refused {
+                code: Code::Conflict {
+                    node: ALICE,
+                    seq: 3,
+                    frozen: 3,
+                    ..
+                },
+                ..
+            })
         ),
-        "{case}: the relay holds it as proof: {submitted}"
+        "{case}: the relay holds it as proof, and answers that it conflicts: {submitted}"
     );
     let held_before = network.operations_held();
 

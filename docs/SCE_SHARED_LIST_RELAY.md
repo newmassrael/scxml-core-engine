@@ -150,7 +150,7 @@ in process, a host's own through the peer core's C ABI, or the deployment transp
 |---|---|
 | `entries from` | the log's entries from a position, and how long the relay's log is |
 | `append entry` | an entry, taken when it verifies |
-| `submit event data` | an operation, taken when it verifies; `new: false` when the relay held it already |
+| `submit event data` | an operation, taken when it verifies; `new: false` when the relay held it already; `conflict` when it conflicts with what the relay holds of its author, which the relay keeps (below) |
 | `checkpoint` | a checkpoint, as above |
 | `feed cursor limit` | the records after the first `cursor`, in arrival order, bounded by the relay |
 | `operations node from to` | a range of one device's chain |
@@ -167,8 +167,37 @@ refuses `create` `invalid` with a reason that names it, and a relay that offers 
 
 A refusal says why: `unauthorized`, `forbidden`, `rate_limited` (with when to ask again),
 `too_large`, `invalid`, `behind` (it names an entry of the log the relay has not been given yet: send
-the log first) and `unavailable`. A relay that cannot write a record down takes nothing more until its
-operator has looked, rather than hold in memory what it did not keep.
+the log first), `unavailable` and `conflict` (below). A relay that cannot write a record down takes
+nothing more until its operator has looked, rather than hold in memory what it did not keep.
+
+**An operation that conflicts is kept and answered `conflict`** (ADR 0083 section 4). An operation of
+one author at a number where the relay holds another with other bytes, or one that otherwise
+conflicts with what the relay holds of its author (a chain that does not follow itself, a write whose
+stamp goes back along the chain or that another write has), verifies as any operation does and is
+kept: it is the proof every member is to hold (ADR 0034), the freeze of a device is a function of the
+set of operations every host holds, and a relay that dropped one of two would be choosing which
+history is the device's, which it never does. It is no part of the device's chain, and the relay's
+heads of the device stop below it. Where it used to be answered `accepted` and its submitter learned
+nothing until a later round showed the chain frozen, it is answered `conflict` with, beside the
+reason, `node` and `seq` (the operation's author and number), `frozen` (the number the author's chain
+is frozen from now, as every host that holds both freezes it), `cursor` (the records the relay holds
+now) and `held` (what the relay held that it conflicts with, each `[event, data]` as it travels).
+The same is answered whoever gives it, the author's own session or a member's courier carrying it as
+proof; what a client does with it is section 6's. The relay logs each at `info`, one record
+`conflict_kept` with the list's digest, the author, the number, the lowest number of the conflict,
+the frozen number, whether this operation froze it, the submitting node, the cursor, the version
+asked in and the answer. A second note of one author naming one write is no conflict: it is a link
+of the author's chain whose effect is held once, and it is kept and answered `accepted`.
+
+**The protocol is version 2.** Every request and response carries `"v"`. A client of this crate
+writes version 2; a relay speaks versions 1 and 2 and answers a request in the version its text
+names, and in version 1, which every client reads, a text that names no version it speaks (one that
+is no JSON or names another version) or that is larger than it reads. Version 2 differs
+from version 1 in the answer `conflict` alone, so a relay of version 2 answers a version-1 request as
+a relay of version 1 did: an operation that conflicts is kept as proof and answered `accepted` with
+`new: true`, and its `conflict_kept` record says `version=1 answer=accepted`. So a relay of version 2
+deploys before any client moves, for as long as a deployment keeps clients of version 1; a client of
+version 2 is not answered by a relay of version 1, which refuses a version it does not speak.
 
 ## 4. Limits
 

@@ -1,0 +1,42 @@
+# Mutation cases for what a relay of a shared list does with an operation that conflicts with what it
+# holds of its author (ADR 0083 section 4): it keeps it as proof whoever gives it, and answers
+# `conflict` with what it held to a client of protocol 2 and `accepted` to one of protocol 1, in the
+# version it was asked in.
+#
+# Each case takes one of those away or weakens it, and the tests under study must turn red. A check
+# no test notices is a check nothing holds in place.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_relay_answers_a_conflict_and_keeps_it_as_proof_rust.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-relay --lib --test a_relay_answers_an_operation_that_conflicts_and_keeps_it_as_proof
+mutation_targets backends/rust/relay/src/relay.rs
+mutation_oracles backends/rust/relay/tests/a_relay_answers_an_operation_that_conflicts_and_keeps_it_as_proof.rs
+
+# ── What the relay answers ─────────────────────────────────────────────────────────────────────
+
+mutation_case "A relay answers accepted to an operation that conflicts with what it holds" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "    let told = version >= CONFLICT_SINCE;",
+     "    let told = false;")
+PY
+
+mutation_case "A relay answers conflict to a client of the version before it" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "    let told = version >= CONFLICT_SINCE;",
+     "    let told = true;")
+PY
+
+mutation_case "A relay answers conflict without what it held" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "            held: conflict.with,",
+     "            held: Vec::new(),")
+PY
+
+mutation_case "A relay answers a request it read in the oldest version and not in the request's" <<'PY'
+edit("backends/rust/relay/src/relay.rs",
+     "                            (self.call(&session, asked, version, now_ms), version)",
+     "                            (self.call(&session, asked, version, now_ms), OLDEST_VERSION)")
+PY

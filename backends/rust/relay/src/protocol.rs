@@ -15,8 +15,45 @@ use sce_rust_trust::encoding;
 use sce_rust_trust::invitation::{Invitation, Proof};
 use sce_rust_trust::{Head, PublicKey};
 
-/// The version of this protocol, written into every request and response.
-pub const VERSION: u64 = 1;
+/// The version of this protocol a client of this crate writes into every request, and the newest a
+/// relay of it speaks. Version 2 (ADR 0083 section 4) answers an operation that conflicts with what
+/// the relay holds of its author `conflict` ([`Code::Conflict`]), where version 1 answered it
+/// `accepted`.
+pub const VERSION: u64 = 2;
+
+/// The oldest version a relay of this crate speaks: a request of it is answered as a relay of that
+/// version answered it, for as long as a deployment keeps clients of it.
+pub const OLDEST_VERSION: u64 = 1;
+
+/// The first version whose clients are answered [`Code::Conflict`].
+pub const CONFLICT_SINCE: u64 = 2;
+
+/// Whether a relay of this crate speaks `version`.
+pub fn speaks(version: u64) -> bool {
+    (OLDEST_VERSION..=VERSION).contains(&version)
+}
+
+/// The version a relay answers the text `request` in: the one it names, when the relay speaks it,
+/// and the oldest otherwise (a text that is no request of the protocol, or that names a version
+/// the relay does not speak), which every client reads.
+pub fn version_of(request: &str) -> u64 {
+    serde_json::from_str::<Value>(request)
+        .ok()
+        .and_then(|value| value.get("v")?.as_u64())
+        .filter(|version| speaks(*version))
+        .unwrap_or(OLDEST_VERSION)
+}
+
+/// The version the text `value` names, when it is one this crate speaks.
+fn version_in(value: &Value) -> Result<u64, String> {
+    value
+        .get("v")
+        .and_then(Value::as_u64)
+        .filter(|version| speaks(*version))
+        .ok_or_else(|| {
+            format!("it is not a version of the protocol this side speaks ({OLDEST_VERSION} to {VERSION})")
+        })
+}
 
 /// One thing a relay holds, in the order it arrived.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -321,7 +358,14 @@ impl Request {
         )
     }
 
+    /// The request as a client of this crate writes it, in [`VERSION`].
     pub fn to_json(&self) -> String {
+        self.to_json_in(VERSION)
+    }
+
+    /// The request as a client of `version` writes it: the same members in every version this
+    /// crate speaks, under its number.
+    pub fn to_json_in(&self, version: u64) -> String {
         let mut value = match self {
             Request::Entries { from } => json!({"op": "entries", "from": from.to_string()}),
             Request::Append { entry } => json!({"op": "append", "entry": entry}),
@@ -378,15 +422,23 @@ impl Request {
                 value
             }
         };
-        value["v"] = json!(VERSION);
+        value["v"] = json!(version);
         value.to_string()
     }
 
+    /// The request a text of any version this crate speaks writes.
     pub fn from_json(text: &str) -> Result<Self, String> {
+        Self::read(text).map(|(request, _)| request)
+    }
+
+    /// The request a text writes, and the version it was written in: what a relay answers it in.
+    pub fn read(text: &str) -> Result<(Self, u64), String> {
         let value: Value = serde_json::from_str(text).map_err(|_| "it is not JSON".to_string())?;
-        if value.get("v").and_then(Value::as_u64) != Some(VERSION) {
-            return Err(format!("it is not version {VERSION} of the protocol"));
-        }
+        let version = version_in(&value)?;
+        Self::from_value(&value).map(|request| (request, version))
+    }
+
+    fn from_value(value: &Value) -> Result<Self, String> {
         let text_of = |name: &str| -> Result<String, String> {
             value
                 .get(name)
@@ -501,6 +553,21 @@ pub enum Code {
     Behind,
     /// The relay cannot keep what it was given, and takes nothing until its operator has looked.
     Unavailable,
+    /// The operation `seq` of the device of `node` conflicts with what the relay holds of that
+    /// device (another operation at that number, or one its chain does not follow): the relay kept
+    /// it, as the proof every member is to hold (ADR 0034), takes it as no part of the device's
+    /// chain, and holds the chain frozen from `frozen`, as every host that holds both does. `held`
+    /// is what the relay held that it conflicts with, each operation as the event and the data it
+    /// travels with, and `cursor` the number of records the relay holds now. The same is answered
+    /// whoever gives it, the device's own session or a member's courier (ADR 0083 section 4); a
+    /// client of a version before [`CONFLICT_SINCE`] is answered `accepted` for it instead.
+    Conflict {
+        node: u64,
+        seq: u64,
+        frozen: u64,
+        cursor: u64,
+        held: Vec<(String, String)>,
+    },
 }
 
 impl Code {
@@ -514,8 +581,28 @@ impl Code {
             Code::Invalid => "invalid",
             Code::Behind => "behind",
             Code::Unavailable => "unavailable",
+            Code::Conflict { .. } => "conflict",
         }
     }
+}
+
+/// Operations as a response writes them: each `[event, data]`.
+fn pairs_value(pairs: &[(String, String)]) -> Value {
+    json!(pairs.iter().map(|(e, d)| json!([e, d])).collect::<Vec<_>>())
+}
+
+/// The operations [`pairs_value`] wrote, when `value` is that.
+fn pairs_of(value: &Value) -> Option<Vec<(String, String)>> {
+    value
+        .as_array()?
+        .iter()
+        .map(|row| {
+            Some((
+                row.get(0)?.as_str()?.to_string(),
+                row.get(1)?.as_str()?.to_string(),
+            ))
+        })
+        .collect()
 }
 
 /// What a relay says back.
@@ -599,7 +686,15 @@ impl Response {
         }
     }
 
+    /// The response as a relay of this crate writes it to a client of [`VERSION`].
     pub fn to_json(&self) -> String {
+        self.to_json_in(VERSION)
+    }
+
+    /// The response as a relay writes it to a client of `version`, under that number. A relay
+    /// gives a client only what its version knows: no [`Code::Conflict`] before
+    /// [`CONFLICT_SINCE`] (`Relay::call`).
+    pub fn to_json_in(&self, version: u64) -> String {
         let mut value = match self {
             Response::Entries { entries, len } => {
                 json!({"ok": "entries", "entries": entries, "len": len.to_string()})
@@ -622,7 +717,7 @@ impl Response {
             }),
             Response::Operations { operations } => json!({
                 "ok": "operations",
-                "operations": operations.iter().map(|(e, d)| json!([e, d])).collect::<Vec<_>>(),
+                "operations": pairs_value(operations),
             }),
             Response::Heads {
                 heads,
@@ -672,21 +767,36 @@ impl Response {
             }),
             Response::Refused { code, reason } => {
                 let mut value = json!({"refused": code.tag(), "reason": reason});
-                if let Code::RateLimited { retry_after_ms } = code {
-                    value["retry_after_ms"] = json!(retry_after_ms.to_string());
+                match code {
+                    Code::RateLimited { retry_after_ms } => {
+                        value["retry_after_ms"] = json!(retry_after_ms.to_string());
+                    }
+                    Code::Conflict {
+                        node,
+                        seq,
+                        frozen,
+                        cursor,
+                        held,
+                    } => {
+                        value["node"] = json!(node.to_string());
+                        value["seq"] = json!(seq.to_string());
+                        value["frozen"] = json!(frozen.to_string());
+                        value["cursor"] = json!(cursor.to_string());
+                        value["held"] = pairs_value(held);
+                    }
+                    _ => {}
                 }
                 value
             }
         };
-        value["v"] = json!(VERSION);
+        value["v"] = json!(version);
         value.to_string()
     }
 
+    /// The response a text of any version this crate speaks writes.
     pub fn from_json(text: &str) -> Result<Self, String> {
         let value: Value = serde_json::from_str(text).map_err(|_| "it is not JSON".to_string())?;
-        if value.get("v").and_then(Value::as_u64) != Some(VERSION) {
-            return Err(format!("it is not version {VERSION} of the protocol"));
-        }
+        version_in(&value)?;
         let text_of = |name: &str| -> Result<String, String> {
             value
                 .get(name)
@@ -722,6 +832,16 @@ impl Response {
                 "invalid" => Code::Invalid,
                 "behind" => Code::Behind,
                 "unavailable" => Code::Unavailable,
+                "conflict" => Code::Conflict {
+                    node: number("node")?,
+                    seq: number("seq")?,
+                    frozen: number("frozen")?,
+                    cursor: number("cursor")?,
+                    held: value
+                        .get("held")
+                        .and_then(pairs_of)
+                        .ok_or("its `held` is not a list of operations")?,
+                },
                 other => return Err(format!("`{other}` is not a refusal the relay gives")),
             };
             return Ok(Response::Refused {
@@ -756,16 +876,12 @@ impl Response {
                 more: flag("more")?,
             }),
             Some("operations") => Ok(Response::Operations {
-                operations: list("operations")?
-                    .iter()
-                    .map(|row| {
-                        Some((
-                            row.get(0)?.as_str()?.to_string(),
-                            row.get(1)?.as_str()?.to_string(),
-                        ))
-                    })
-                    .collect::<Option<_>>()
-                    .ok_or("an operation is not an event and its data")?,
+                operations: value
+                    .get("operations")
+                    .ok_or("it has no `operations` list")
+                    .and_then(|list| {
+                        pairs_of(list).ok_or("an operation is not an event and its data")
+                    })?,
             }),
             Some("heads") => Ok(Response::Heads {
                 heads: list("heads")?
@@ -1005,7 +1121,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             token,
-            json!({"v": 1, "ok": "token", "token": "t", "expires_at_ms": "9"})
+            json!({"v": VERSION, "ok": "token", "token": "t", "expires_at_ms": "9"})
         );
         assert!(
             Request::from_json(
@@ -1099,6 +1215,19 @@ mod tests {
             },
             Response::refused(Code::RateLimited { retry_after_ms: 40 }, "slow down"),
             Response::refused(Code::Behind, "send the log"),
+            Response::refused(
+                Code::Conflict {
+                    node: u64::MAX,
+                    seq: 7,
+                    frozen: 6,
+                    cursor: 12,
+                    held: vec![
+                        ("record_list.write".to_string(), "a".to_string()),
+                        ("record_list.supersede".to_string(), "b".to_string()),
+                    ],
+                },
+                "kept as proof",
+            ),
         ] {
             // The word a record names a response by is its `ok`, or `refused`, and a refusal's
             // code is the word its text carries.
@@ -1119,7 +1248,9 @@ mod tests {
         for text in [
             "not json",
             "{}",
-            r#"{"v":2,"op":"heads"}"#,
+            r#"{"v":0,"op":"heads"}"#,
+            r#"{"v":3,"op":"heads"}"#,
+            r#"{"v":"2","op":"heads"}"#,
             r#"{"v":1,"op":"fly"}"#,
             r#"{"v":1,"op":"entries","from":"x"}"#,
             r#"{"v":1,"op":"feed","cursor":"0","limit":-1}"#,
@@ -1127,5 +1258,70 @@ mod tests {
         ] {
             assert!(Request::from_json(text).is_err(), "{text}");
         }
+    }
+
+    /// Every version this crate speaks, and one either side of them: a request and a response are
+    /// written under the version asked and read back with it; a client of this crate writes the
+    /// newest; a text of a version not spoken is read as nothing, and is answered in the oldest,
+    /// which every client reads, as a text that is no request is.
+    #[test]
+    fn a_text_is_written_and_read_in_each_version_spoken_and_no_other() {
+        assert_eq!((OLDEST_VERSION, CONFLICT_SINCE, VERSION), (1, 2, 2));
+        let request = Request::Feed {
+            cursor: 3,
+            limit: 9,
+        };
+        let response = Response::Accepted {
+            new: true,
+            cursor: 4,
+        };
+        let version_written =
+            |text: &str| serde_json::from_str::<Value>(text).unwrap()["v"].clone();
+        assert_eq!(version_written(&request.to_json()), json!(VERSION));
+        assert_eq!(version_written(&response.to_json()), json!(VERSION));
+        for version in 0..=VERSION + 1 {
+            let asked = request.to_json_in(version);
+            let answered = response.to_json_in(version);
+            assert_eq!(version_written(&asked), json!(version));
+            assert_eq!(version_written(&answered), json!(version));
+            if speaks(version) {
+                assert_eq!(Request::read(&asked), Ok((request.clone(), version)));
+                assert_eq!(Response::from_json(&answered), Ok(response.clone()));
+                assert_eq!(version_of(&asked), version);
+            } else {
+                assert!(Request::read(&asked).is_err(), "{asked}");
+                assert!(Response::from_json(&answered).is_err(), "{answered}");
+                assert_eq!(version_of(&asked), OLDEST_VERSION, "{asked}");
+            }
+        }
+        for unread in ["not json", "{}", r#"{"v":"2","op":"heads"}"#] {
+            assert_eq!(version_of(unread), OLDEST_VERSION, "{unread}");
+        }
+    }
+
+    /// The refusal `conflict` as a client in another language reads it: its numbers as text, and
+    /// what the relay held as `[event, data]` pairs; one that leaves out what it held is not one.
+    #[test]
+    fn a_conflict_is_the_text_the_decision_gives() {
+        let text = Response::refused(
+            Code::Conflict {
+                node: 1,
+                seq: 3,
+                frozen: 3,
+                cursor: 8,
+                held: vec![("record_list.write".to_string(), "{}".to_string())],
+            },
+            "why",
+        )
+        .to_json();
+        let value: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            value,
+            json!({"v": 2, "refused": "conflict", "reason": "why", "node": "1", "seq": "3",
+                   "frozen": "3", "cursor": "8", "held": [["record_list.write", "{}"]]})
+        );
+        let mut without = value.clone();
+        without.as_object_mut().unwrap().remove("held");
+        assert!(Response::from_json(&without.to_string()).is_err());
     }
 }

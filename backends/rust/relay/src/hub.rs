@@ -22,7 +22,7 @@ use std::sync::{Mutex, MutexGuard};
 use crate::limits::Limits;
 use crate::login::{self, Asked, Doorway, Opened};
 use crate::logs::refused;
-use crate::protocol::{Code, Request};
+use crate::protocol::{version_of, Code, Request, OLDEST_VERSION};
 use crate::relay::{token_reason, Lapsed, Relay};
 use crate::store::Store;
 use crate::token::{Authority, Session, TokenError};
@@ -49,7 +49,7 @@ pub trait Hub: Send + Sync + 'static {
     /// login, and a refusal of everything else.
     fn handle_anonymous(&self, source: Option<IpAddr>, request: &str, now_ms: u64) -> String {
         let _ = (source, now_ms);
-        login::not_offered(request).to_json()
+        login::not_offered(request).to_json_in(version_of(request))
     }
 
     /// The response text to the request text `request`, made at `now_ms` on a connection from
@@ -183,28 +183,32 @@ impl<S: Store + Send + 'static> Hub for Shards<S> {
     }
 
     /// The token, the size and the shape of the request are judged before any lock is taken, so
-    /// that a request that is refused, or one that waits for its list, holds up no other list.
+    /// that a request that is refused, or one that waits for its list, holds up no other list. The
+    /// answer is written in the version `Relay::handle` writes it in.
     fn handle(&self, token: &str, request: &str, now_ms: u64) -> String {
         let session = match self.authority.verify(token, now_ms) {
             Ok(session) => session,
-            Err(error) => return refused!(Code::Unauthorized, token_reason(error)).to_json(),
+            Err(error) => {
+                return refused!(Code::Unauthorized, token_reason(error))
+                    .to_json_in(version_of(request))
+            }
         };
         if request.len() > self.max_request_bytes {
             return refused!(
                 Code::TooLarge,
                 format!("a request is at most {} bytes", self.max_request_bytes),
             )
-            .to_json();
+            .to_json_in(OLDEST_VERSION);
         }
-        let request = match Request::from_json(request) {
-            Ok(request) => request,
-            Err(reason) => return refused!(Code::Invalid, reason).to_json(),
+        let (asked, version) = match Request::read(request) {
+            Ok(read) => read,
+            Err(reason) => return refused!(Code::Invalid, reason).to_json_in(version_of(request)),
         };
         let slot = &self.slots[slot_of(&session.list, self.slots.len())];
         slot.lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .call(&session, request, now_ms)
-            .to_json()
+            .call(&session, asked, version, now_ms)
+            .to_json_in(version)
     }
 
     fn open_anonymous(&self, source: Option<IpAddr>, now_ms: u64) -> Opened {
@@ -218,8 +222,9 @@ impl<S: Store + Send + 'static> Hub for Shards<S> {
     /// the request and to redeem a login, the slot to read its log, so that a login waits for no
     /// other list and no other login waits on a list.
     fn handle_anonymous(&self, source: Option<IpAddr>, request: &str, now_ms: u64) -> String {
+        let version = version_of(request);
         let Some(doorway) = &self.doorway else {
-            return login::not_offered(request).to_json();
+            return login::not_offered(request).to_json_in(version);
         };
         let asked = held(doorway).ask(source, request, self.max_request_bytes, now_ms);
         let response = match asked {
@@ -285,7 +290,7 @@ impl<S: Store + Send + 'static> Hub for Shards<S> {
                 }
             }
         };
-        response.to_json()
+        response.to_json_in(version)
     }
 }
 

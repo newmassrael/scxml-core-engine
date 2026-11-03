@@ -584,9 +584,11 @@ fn unexpected(asked: &str, response: Response) -> Failure {
                 Code::Unauthorized => Outcome::TokenRefused,
                 Code::Unavailable => Outcome::StoreFailed,
                 Code::RateLimited { .. } => Outcome::Busy,
-                Code::Forbidden | Code::TooLarge | Code::Invalid | Code::Behind => {
-                    Outcome::ProtocolError
-                }
+                Code::Forbidden
+                | Code::TooLarge
+                | Code::Invalid
+                | Code::Behind
+                | Code::Conflict { .. } => Outcome::ProtocolError,
             };
             (
                 outcome,
