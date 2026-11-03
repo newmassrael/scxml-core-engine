@@ -23,10 +23,15 @@
 //!
 //! A field may be of any type of the language (docs/adr/0086): a list of any
 //! type, an optional value, a record, nested to any depth. Each is read by
-//! [`PayloadValue`], one value at the path that names it, and three
-//! combinators walk the constructors that hold other values, each calling the
-//! reader of its part: [`PayloadValue::list`], [`PayloadValue::optional`] and
-//! [`PayloadValue::record`]. A value outside its type is refused before
+//! [`PayloadValue`](crate::event_payload::PayloadValue), one value at the path
+//! that names it, and three combinators walk the constructors that hold other
+//! values, each calling the reader of its part:
+//! [`PayloadValue::list`](crate::event_payload::PayloadValue::list),
+//! [`PayloadValue::optional`](crate::event_payload::PayloadValue::optional) and
+//! [`PayloadValue::record`](crate::event_payload::PayloadValue::record). The
+//! links name the whole path because these lines are merged with the module's
+//! outer docs in `lib.rs`, and rustdoc resolves the merged text from the crate
+//! root. A value outside its type is refused before
 //! anything of it is kept, and the refusal names the path through every depth
 //! as a JSON Pointer (RFC 6901): `'items/2/tags/0' is 9 bytes, past the 8 its
 //! type declares`. A key a record's schema does not declare is stepped over.
