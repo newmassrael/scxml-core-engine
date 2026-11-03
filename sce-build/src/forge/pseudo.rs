@@ -1038,13 +1038,15 @@ fn render_algorithm(m: &AlgorithmModel) -> Vec<Node> {
     ];
     if let Some(ret) = &m.signature.return_type {
         head.push(Part::Word(Word::Arrow));
-        head.push(Part::Text(ret.as_attr().to_string()));
-        if let Some(max) = m.signature.returns_max_size {
+        // The page writes the return's shape and its bound as two clauses, as
+        // it always has; the reader folds the bound back into the type.
+        head.push(Part::Text(ret.without_outer_bound().as_attr()));
+        if let Some(max) = m.signature.returns_max_size() {
             head.push(Part::Word(Word::ReturnsMax));
             head.push(Part::Text(max.to_string()));
             // The name a build gives another number for, as `cap` is written in a
             // `var`: plain text, spelt the same on every page.
-            if let Some(name) = &m.signature.returns_limit {
+            if let Some(name) = m.signature.returns_limit() {
                 head.push(Part::Text(format!("limit {}", text(name))));
             }
         }
@@ -1141,14 +1143,17 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             name,
             sce_type,
             init,
-            capacity,
-            limit,
             ..
         } => {
-            let cap = match (capacity, limit) {
-                (Some(n), Some(name)) => format!(" cap {n} limit {}", text(name)),
-                (Some(n), None) => format!(" cap {n}"),
-                (None, _) => String::new(),
+            // The shape and the bound are two clauses of the page, as a return's
+            // are; the reader folds the bound back into the type.
+            let cap = match sce_type.stated_outer_bound() {
+                Some(crate::forge::value_type::Bound {
+                    max,
+                    limit: Some(name),
+                }) => format!(" cap {max} limit {}", text(name)),
+                Some(bound) => format!(" cap {}", bound.max),
+                None => String::new(),
             };
             // A bytes buffer starts empty: there is no initializer to
             // show, so the line ends at its declaration rather than at a
@@ -1162,7 +1167,7 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
                 Part::Text(format!(
                     "{}: {}{}{}",
                     text(name),
-                    sce_type.as_attr(),
+                    sce_type.without_outer_bound().as_attr(),
                     cap,
                     init
                 )),
@@ -2514,9 +2519,13 @@ fn render_variable_body(v: &crate::model::Variable, out: &mut Out<'_>) {
     // own, apart from the classified `: <type>` above: one is what the
     // author wrote, the other what the analyzer inferred.
     if let Some(t) = &v.value_type {
-        let _ = write!(line, " sce-type {}", text(&t.as_attr()));
+        let _ = write!(
+            line,
+            " sce-type {}",
+            text(&t.without_outer_bound().as_attr())
+        );
     }
-    if let Some(n) = v.capacity {
+    if let Some(n) = v.capacity() {
         let _ = write!(line, " capacity {n}");
     }
     if let Some(d) = v.direction {

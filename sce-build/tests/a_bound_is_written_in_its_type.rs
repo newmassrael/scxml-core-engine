@@ -424,10 +424,12 @@ fn algorithm_bounds(document: &str) -> (Option<u32>, Option<u32>) {
     match parse_forge(document, label()) {
         Ok(Some(ForgeDocument::Algorithm(model))) => {
             let local = model.body.iter().find_map(|stmt| match stmt {
-                AlgorithmStmt::Var { capacity, .. } => Some(*capacity),
+                AlgorithmStmt::Var { sce_type, .. } => {
+                    Some(sce_type.stated_outer_bound().map(|bound| bound.max))
+                }
                 _ => None,
             });
-            (model.signature.returns_max_size, local.flatten())
+            (model.signature.returns_max_size(), local.flatten())
         }
         other => panic!("not an algorithm: {other:?}"),
     }
@@ -521,10 +523,12 @@ fn held_bounds(document: &str) -> Result<(Option<u32>, Option<u32>), (String, St
     match parse_forge(document, label()) {
         Ok(Some(ForgeDocument::Algorithm(model))) => {
             let local = model.body.iter().find_map(|stmt| match stmt {
-                AlgorithmStmt::Var { capacity, .. } => Some(*capacity),
+                AlgorithmStmt::Var { sce_type, .. } => {
+                    Some(sce_type.stated_outer_bound().map(|bound| bound.max))
+                }
                 _ => None,
             });
-            Ok((local.flatten(), model.signature.returns_max_size))
+            Ok((local.flatten(), model.signature.returns_max_size()))
         }
         Ok(other) => panic!("not an algorithm: {other:?}"),
         Err(refusal) => Err((code_of(&refusal), refusal.to_string())),

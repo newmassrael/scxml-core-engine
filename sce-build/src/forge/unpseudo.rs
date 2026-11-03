@@ -70,6 +70,28 @@ pub struct ParseError {
     pub why: String,
 }
 
+/// `ty` with the bound a page writes as its own clause (`cap <n>`,
+/// `returns-max <n>`, with `limit <name>`) folded back into it as the bracket
+/// on its outermost text, byte string or list (docs/adr/0086, section 1.2):
+/// the inverse of the renderer, which writes a slot's shape and its bound
+/// apart.
+fn with_page_bound(
+    ty: AlgorithmValueType,
+    max: Option<u32>,
+    limit: Option<String>,
+    line: usize,
+) -> Result<AlgorithmValueType, ParseError> {
+    let Some(max) = max else {
+        return Ok(ty);
+    };
+    let shape = ty.as_attr();
+    ty.with_outer_bound(crate::forge::value_type::Bound { max, limit })
+        .map_err(|_| ParseError {
+            line,
+            why: format!("`{shape}` has no length for a bound of {max} to bound"),
+        })
+}
+
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "line {}: {}", self.line, self.why)
@@ -1504,8 +1526,8 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
     }
 
     let tail: Vec<&str> = tail.split_whitespace().collect();
-    let (return_type, returns_max_size, returns_limit, may_fail) = match tail.first().copied() {
-        None => (None, None, None, false),
+    let (return_type, may_fail) = match tail.first().copied() {
+        None => (None, false),
         Some("->") => {
             let t = tail.get(1).copied().unwrap_or("");
             let rt = AlgorithmValueType::from_attr(t).ok_or_else(|| ParseError {
@@ -1536,7 +1558,10 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
                     why: format!("`{other}` is not a signature clause"),
                 });
             }
-            (Some(rt), max, limit, may_fail)
+            (
+                Some(with_page_bound(rt, max, limit, head.number)?),
+                may_fail,
+            )
         }
         Some(other) => {
             return Err(ParseError {
@@ -1551,8 +1576,6 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
         signature: AlgorithmSignature {
             params,
             return_type,
-            returns_max_size,
-            returns_limit,
             may_fail,
         },
         consts: Vec::new(),
@@ -1832,12 +1855,10 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
         return Ok(AlgorithmStmt::Var {
             name: undo(name, line.number)?,
             name_spelling: None,
-            sce_type,
+            sce_type: with_page_bound(sce_type, capacity, limit, line.number)?,
             init,
             init_spelling: None,
-            capacity,
             capacity_spelling: None,
-            limit,
         });
     }
     if let Some(rest) = t.strip_prefix("append ") {
@@ -3103,8 +3124,6 @@ fn parse_variable(
         value_type: None,
         value_type_spelling: None,
         record_fields: Vec::new(),
-        capacity: None,
-        limit: None,
         direction: None,
         // Named by the analyzer, which a rendering has not been through.
         reader: None,
@@ -3151,10 +3170,21 @@ fn parse_variable(
             Some((n, m)) => (n, m),
             None => (after, ""),
         };
-        v.capacity = Some(n.parse().map_err(|_| ParseError {
+        let capacity: u32 = n.parse().map_err(|_| ParseError {
             line: line.number,
             why: format!("`{n}` is not a list capacity"),
-        })?);
+        })?;
+        // The capacity is the bound of the declared type, folded back into it.
+        let declared = v.value_type.take().ok_or_else(|| ParseError {
+            line: line.number,
+            why: "a capacity bounds the sce-type before it, and none is written".to_string(),
+        })?;
+        v.value_type = Some(with_page_bound(
+            declared,
+            Some(capacity),
+            None,
+            line.number,
+        )?);
         tail = more;
     }
     if let Some(after) = tail.strip_prefix("direction ") {

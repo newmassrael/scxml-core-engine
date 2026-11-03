@@ -525,7 +525,7 @@ impl<'m> Analysis<'m> {
                     Some(crate::forge::model::AlgorithmValueType::List { .. })
                 )
             })
-            .and_then(|v| v.capacity)
+            .and_then(|v| v.capacity())
             .and_then(|n| usize::try_from(n).ok())
     }
 
@@ -999,9 +999,8 @@ mod tests {
             id: id.to_string(),
             value_type: Some(AlgorithmValueType::List {
                 elem: Box::new(AlgorithmValueType::Scalar(SceType::Uint8)),
-                max: None,
+                max: Some(crate::forge::value_type::Bound::of(capacity)),
             }),
-            capacity: Some(capacity),
             ..Variable::default()
         }
     }
@@ -1331,7 +1330,7 @@ mod tests {
         let mut scalar = bounded_list("count", 4);
         scalar.value_type = Some(AlgorithmValueType::Scalar(SceType::Uint8));
         let mut unbounded = bounded_list("open", 4);
-        unbounded.capacity = None;
+        unbounded.value_type = unbounded.value_type.map(|ty| ty.split_outer_bound().0);
         for array in ["count", "open", "missing"] {
             let mut doc = Doc::new().state("a", None);
             doc.model.variables.push(scalar.clone());

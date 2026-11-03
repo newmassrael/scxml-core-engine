@@ -316,6 +316,7 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
         AlgorithmModel, AlgorithmParam, AlgorithmSignature, AlgorithmStmt, AlgorithmValueType,
         ForgeDocument, SceType,
     };
+    use sce_build::forge::value_type::Bound;
 
     let document = ForgeDocument::Algorithm(AlgorithmModel {
         name: "pack".to_string(),
@@ -325,9 +326,9 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
                 sce_type: AlgorithmValueType::Scalar(SceType::Uint8),
                 type_spelling: None,
             }],
-            return_type: Some(AlgorithmValueType::Bytes { max: None }),
-            returns_max_size: Some(4),
-            returns_limit: None,
+            return_type: Some(AlgorithmValueType::Bytes {
+                max: Some(Bound::of(4)),
+            }),
             may_fail: false,
         },
         consts: Vec::new(),
@@ -335,12 +336,12 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
             AlgorithmStmt::Var {
                 name: "out".to_string(),
                 name_spelling: None,
-                sce_type: AlgorithmValueType::Bytes { max: None },
+                sce_type: AlgorithmValueType::Bytes {
+                    max: Some(Bound::of(4)),
+                },
                 init: None,
                 init_spelling: None,
-                capacity: Some(4),
                 capacity_spelling: None,
-                limit: None,
             },
             AlgorithmStmt::Var {
                 name: "n".to_string(),
@@ -348,9 +349,7 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
                 sce_type: AlgorithmValueType::Scalar(SceType::Uint8),
                 init: Some("b".to_string()),
                 init_spelling: None,
-                capacity: None,
                 capacity_spelling: None,
-                limit: None,
             },
             AlgorithmStmt::Append {
                 target: "out".to_string(),

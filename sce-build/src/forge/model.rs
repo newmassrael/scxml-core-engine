@@ -4826,20 +4826,11 @@ pub struct AlgorithmParam {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct AlgorithmSignature {
     pub params: Vec<AlgorithmParam>,
+    /// The return's type, its bound inside it (docs/adr/0086, section 1.2): a
+    /// return holds its value, so a text, byte string or list it returns states
+    /// the most it holds ([`Self::returns_max_size`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub return_type: Option<AlgorithmValueType>,
-    /// Cap on the bytes a `return_type = bytes` algorithm may produce,
-    /// declared via `sce:returns-max-size="N"` on the `<sce:signature>`.
-    /// Required when `return_type` is `bytes` (the output buffer's fixed
-    /// capacity on the no-alloc profile); ignored otherwise. Mirrors
-    /// [`ProcedureHelper::returns_max_size`]. `None` ⇒ non-bytes return.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub returns_max_size: Option<u32>,
-    /// The name a build gives another number for (`sce:limit` on the `<sce:return>`,
-    /// [`crate::limits`]): `returns_max_size` is already the number the build gave it,
-    /// when it gave one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub returns_limit: Option<String>,
     /// `<sce:return may-fail="true">`: the algorithm's integer arithmetic can
     /// fail — an overflow, a division by zero, a signed `MIN / -1` — and its
     /// callers receive the failure (SCE_FORGE.md §3.4.1, the integer
@@ -4847,6 +4838,25 @@ pub struct AlgorithmSignature {
     /// operation is proven safe ([`crate::forge::int_ranges`]).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub may_fail: bool,
+}
+
+impl AlgorithmSignature {
+    /// The most bytes or elements the return holds: the bound of its
+    /// outermost text, byte string or list, at the number the build gave its
+    /// limit name. `None` for a return of no length, and for none.
+    pub fn returns_max_size(&self) -> Option<u32> {
+        self.return_bound().map(|bound| bound.max)
+    }
+
+    /// The name a build gives the return's bound another number by
+    /// (`[name=N]`, docs/adr/0050), if it names one.
+    pub fn returns_limit(&self) -> Option<&str> {
+        self.return_bound()?.limit.as_deref()
+    }
+
+    fn return_bound(&self) -> Option<&crate::forge::value_type::Bound> {
+        self.return_type.as_ref()?.stated_outer_bound()
+    }
 }
 
 /// Type carried by an `<sce:const>` declaration. Scalar form is the
@@ -5010,12 +5020,12 @@ fn is_false(b: &bool) -> bool {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "stmt", rename_all = "snake_case")]
 pub enum AlgorithmStmt {
-    /// `<sce:var name=... type=... init=... capacity=.../>` — local mutable
-    /// binding. `capacity` is the fixed buffer bound, in bytes, and is
-    /// required for — and only meaningful on — `type="bytes"` locals: the
-    /// growable byte buffer that `<sce:append>` ([`AlgorithmStmt::Append`])
-    /// fills (SCE byte-buffer-build, SCE_FORGE.md §4.12). It is `None` for
-    /// scalar locals.
+    /// `<sce:var name=... type=... init=.../>` — local mutable binding. A
+    /// buffer local (`bytes[N]`, `list<T>[N]`) that `<sce:append>`
+    /// ([`AlgorithmStmt::Append`]) fills (SCE byte-buffer-build, SCE_FORGE.md
+    /// §4.12), and a text, state their bound in `sce_type`
+    /// (docs/adr/0086, section 1.2), the legacy `capacity=` read as that
+    /// bracket ([`crate::forge::value_type::WrittenType::stated_outer_bound`]).
     ///
     /// `init` is the other half of the same split, the other way round: a
     /// scalar local starts at its initializer, so the parser requires one,
@@ -5042,14 +5052,10 @@ pub enum AlgorithmStmt {
         init: Option<String>,
         #[serde(skip)]
         init_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        capacity: Option<u32>,
+        /// The legacy `capacity` attribute as written, where one states the
+        /// local's bound: what a refusal of that bound is placed at.
         #[serde(skip)]
         capacity_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
-        /// The name a build gives another number for (`sce:limit`, [`crate::limits`]):
-        /// `capacity` is already the number the build gave it, when it gave one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        limit: Option<String>,
     },
     /// `<sce:var name=... type="record:<alias>">` with one
     /// `<sce:set name=... expr=.../>` per field of the schema — a record

@@ -1442,7 +1442,7 @@ impl<'a> Judge<'a> {
     /// to end yet), so a value that could fail to fit is refused where it is
     /// written, not carried over from another variable at run time.
     fn string_start(&self, var: &Variable) -> Result<(), Located<ForgeError>> {
-        let Some(capacity) = var.capacity else {
+        let Some(capacity) = var.capacity() else {
             return Ok(());
         };
         let Some(value_type) = var.value_type.as_ref() else {
@@ -1644,7 +1644,7 @@ impl<'a> Judge<'a> {
                 held.as_attr()
             )));
         }
-        let capacity = list.capacity.unwrap_or(0);
+        let capacity = list.capacity().unwrap_or(0);
         if returned.max_size > capacity {
             return Err(place(format!(
                 "`{}` may return at most {} of {}, and `{}` holds at most {} (its \
@@ -1768,7 +1768,7 @@ impl<'a> Judge<'a> {
         // A machine holds the same list wherever it runs: a bound it could pass is
         // refused when the document is built and not by an overflow later.
         if let Some(max) = value.max_size {
-            let capacity = target.capacity.unwrap_or(0);
+            let capacity = target.capacity().unwrap_or(0);
             if max > capacity {
                 return Err(place(format!(
                     "`{}` may return at most {max}, and `{}` holds at most {capacity} (its \
@@ -2470,7 +2470,7 @@ impl<'a> Judge<'a> {
         let Some(variable) = self.idlocation_variable(&action.idlocation) else {
             return Err(refuse(IDLOCATION_NAMES_A_STRING_VARIABLE));
         };
-        match variable.capacity {
+        match variable.capacity() {
             Some(capacity) if capacity <= AUTO_SEND_ID_MAX_BYTES => Err(refuse(&format!(
                 "the id a machine generates is up to {AUTO_SEND_ID_MAX_BYTES} UTF-8 bytes, \
                  and the variable it is written to declares an sce:capacity of {capacity}: \
@@ -2544,7 +2544,7 @@ impl<'a> Judge<'a> {
             return Err(refuse(IDLOCATION_NAMES_A_STRING_VARIABLE));
         };
         let longest = invoke_id_max_bytes(state, &base.invoke_id);
-        match variable.capacity {
+        match variable.capacity() {
             Some(capacity) if capacity <= longest => Err(refuse(&format!(
                 "the id a start of this invoke is started under is up to {longest} UTF-8 \
                  bytes (`{state}.<start>.{}`, the start a count of up to twenty digits), \
@@ -2864,7 +2864,7 @@ impl<'a> Judge<'a> {
                     .scalar()
                     .or_else(|| value_type.optional_elem().and_then(|elem| elem.scalar()));
                 match present? {
-                    SceType::String | SceType::Bytes => var.capacity,
+                    SceType::String | SceType::Bytes => var.capacity(),
                     _ => None,
                 }
             }
@@ -3199,7 +3199,7 @@ impl<'a> Judge<'a> {
             .variables
             .iter()
             .find(|v| v.id == name)
-            .and_then(|v| v.capacity);
+            .and_then(|v| v.capacity());
         match held {
             Some(capacity) if capacity <= max => Ok(()),
             Some(capacity) => Err(format!(

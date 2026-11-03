@@ -531,7 +531,7 @@ fn value_signature(
                             list that cannot be built"
                     .to_string());
             }
-            Some(signature.returns_max_size.ok_or_else(|| {
+            Some(signature.returns_max_size().ok_or_else(|| {
                 "it returns a list and declares no returns-max-size, and the list variable \
                  it is assigned to must be able to hold all the algorithm may return"
                     .to_string()

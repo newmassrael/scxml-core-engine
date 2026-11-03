@@ -1309,6 +1309,10 @@ pub struct Variable {
     /// (docs/SCE_ACCEPTED_SUBSET.md §2.15). Under any other data model an
     /// `sce:type` is the authoring tool's typed I/O declaration and is not
     /// carried here.
+    ///
+    /// A list, text or byte string variable states its bound in the type
+    /// (docs/adr/0086, section 1.2), the legacy `sce:capacity` read as that
+    /// bracket: [`Self::capacity`] and [`Self::limit`] read it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_type: Option<crate::forge::model::AlgorithmValueType>,
     /// The `sce:type` attribute as written and where, so a rule that
@@ -1321,17 +1325,6 @@ pub struct Variable {
     /// record local is (SCE_FORGE.md §4.12). Empty for any other variable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub record_fields: Vec<crate::forge::model::RecordFieldInit>,
-    /// A `list<T>` or `string` variable's declared bound, `sce:capacity`: the
-    /// most elements, or UTF-8 bytes, it ever holds, on every backend. An append
-    /// or an assignment past it is an execution error, not growth. `None` for
-    /// any other variable, serialised as `null`: a template probes `capacity`
-    /// with `is not none` (the module's `Option<T>` convention).
-    #[serde(default)]
-    pub capacity: Option<u32>,
-    /// The name a build gives another number for (`sce:limit`, [`crate::limits`]):
-    /// `capacity` is already the number the build gave it, when it gave one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<String>,
     /// `sce:direction` under `datamodel="sce-static"`: `out` publishes the
     /// variable — the host reads it and the snapshot carries it — and
     /// `internal`, the default, keeps it the machine's own. `None` under any
@@ -1364,6 +1357,26 @@ pub struct Variable {
     /// (measured 2026-09-28: two of seven markers one document wrote).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unresolved: Vec<UnresolvedMarker>,
+}
+
+impl Variable {
+    /// A list, text or byte string variable's bound: the most elements, or
+    /// UTF-8 bytes, it ever holds, on every backend, at the number the build
+    /// gave its limit name. An append or an assignment past it is an execution
+    /// error, not growth. `None` for a variable of no length.
+    pub fn capacity(&self) -> Option<u32> {
+        self.bound().map(|bound| bound.max)
+    }
+
+    /// The name a build gives the variable's bound another number by
+    /// (`[name=N]`, [`crate::limits`]), if it names one.
+    pub fn limit(&self) -> Option<&str> {
+        self.bound()?.limit.as_deref()
+    }
+
+    fn bound(&self) -> Option<&crate::forge::value_type::Bound> {
+        self.value_type.as_ref()?.stated_outer_bound()
+    }
 }
 
 /// §scxml-3.11: History state information

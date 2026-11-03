@@ -8397,8 +8397,6 @@ fn parse_algorithm_signature(
 ) -> Result<AlgorithmSignature, Located<ForgeError>> {
     let mut params = Vec::new();
     let mut return_type: Option<AlgorithmValueType> = None;
-    let mut returns_max_size: Option<u32> = None;
-    let mut returns_limit: Option<String> = None;
     let mut may_fail = false;
     let mut seen_return = false;
 
@@ -8544,11 +8542,9 @@ fn parse_algorithm_signature(
                         ));
                     }
                     // A buffer's bound, or a text's (docs/adr/0086, section 1.4),
-                    // which the reader has already required of a held text.
-                    (_, Some(bound)) => {
-                        returns_max_size = Some(bound.max);
-                        returns_limit = bound.limit;
-                    }
+                    // which the reader has already required of a held text: it
+                    // is the return type's own.
+                    (_, Some(_)) => {}
                     (None, None) if child.attribute("returns-max-size").is_none() => {}
                     // A bound beside a return with no length: nothing holds it.
                     (None, None) => {
@@ -8578,8 +8574,6 @@ fn parse_algorithm_signature(
     Ok(AlgorithmSignature {
         params,
         return_type,
-        returns_max_size,
-        returns_limit,
         may_fail,
     })
 }
@@ -9107,8 +9101,9 @@ fn parse_algorithm_stmt(
             // ⚠ The `capacity` rules ran there too, and placed every refusal
             // at `<sce:body>` — a row the attribute is not on — with a scalar's
             // capacity reported as the text `(present)` (measured 2026-09-23).
-            let (init, capacity) = if sce_type.is_append_buffer() {
-                let buffer_attr = sce_type.as_attr();
+            let init = if sce_type.is_append_buffer() {
+                // Named by its shape, as every buffer refusal names it.
+                let buffer_attr = sce_type.without_outer_bound().as_attr();
                 if let Some(stray) = node.attribute("init") {
                     return Err(located(
                         node,
@@ -9125,7 +9120,7 @@ fn parse_algorithm_stmt(
                     ));
                 }
                 let element = format!("<sce:var name=\"{name}\" type=\"{buffer_attr}\">");
-                let Some(bound) = bound else {
+                if bound.is_none() {
                     return Err(located(
                         node,
                         doc_name,
@@ -9134,8 +9129,8 @@ fn parse_algorithm_stmt(
                             attr: "capacity".into(),
                         },
                     ));
-                };
-                (None, Some(bound))
+                }
+                None
             } else {
                 // A text's bound (docs/adr/0086, section 1.4), which the reader
                 // has already required of a held text; a `capacity` beside a
@@ -9154,10 +9149,7 @@ fn parse_algorithm_stmt(
                         },
                     ));
                 }
-                (
-                    Some(require_attr(node, "init", "<sce:var>", doc_name)?),
-                    bound,
-                )
+                Some(require_attr(node, "init", "<sce:var>", doc_name)?)
             };
             Ok(AlgorithmStmt::Var {
                 name,
@@ -9165,11 +9157,9 @@ fn parse_algorithm_stmt(
                 sce_type,
                 init,
                 init_spelling: AttributeSpelling::of(node, None, "init"),
-                capacity: capacity.as_ref().map(|bound| bound.max),
+                // The bound is the type's; a refusal of it is placed on the legacy
+                // `capacity` where one states it.
                 capacity_spelling: AttributeSpelling::of(node, None, "capacity"),
-                // Named only beside a bound: the type's reader took the number the
-                // build gave the name, and the name is kept for whoever reads the model.
-                limit: capacity.and_then(|bound| bound.limit),
             })
         }
         "assign" => {
@@ -9353,8 +9343,8 @@ fn call_arguments(
 struct AppendBuffer<'a> {
     name: &'a str,
     name_spelling: Option<&'a AttributeSpelling>,
+    /// The buffer's type, its bound inside it.
     ty: &'a AlgorithmValueType,
-    capacity: Option<u32>,
     capacity_spelling: Option<&'a AttributeSpelling>,
 }
 
@@ -9368,14 +9358,12 @@ fn collect_append_buffers<'a>(stmts: &'a [AlgorithmStmt], buffers: &mut Vec<Appe
                 name,
                 name_spelling,
                 sce_type,
-                capacity,
                 capacity_spelling,
                 ..
             } if sce_type.is_append_buffer() => buffers.push(AppendBuffer {
                 name,
                 name_spelling: name_spelling.as_ref(),
                 ty: sce_type,
-                capacity: *capacity,
                 capacity_spelling: capacity_spelling.as_ref(),
             }),
             AlgorithmStmt::If {
@@ -9428,7 +9416,10 @@ fn validate_byte_buffer_build(
     let Some(buffer) = buffers.first() else {
         return Ok(());
     };
-    let buffer_attr = buffer.ty.as_attr();
+    // The buffer's type as its shape, its bound left out: the bound is judged on
+    // its own below, so every message names the buffer as it always has.
+    let shape = buffer.ty.without_outer_bound();
+    let buffer_attr = shape.as_attr();
     let place = |at: WrittenAt<'_>, refusal: ValidationError| {
         Located::in_file(at.place_reporting(refusal.into()), doc_name)
     };
@@ -9452,7 +9443,12 @@ fn validate_byte_buffer_build(
     // The buffer is the algorithm's output — the signature must return
     // exactly the buffer's type: a `list<int64>` buffer is not a `list<int32>`
     // return, nor a `bytes` one.
-    if sig.return_type.as_ref() != Some(buffer.ty) {
+    if sig
+        .return_type
+        .as_ref()
+        .map(AlgorithmValueType::without_outer_bound)
+        != Some(shape)
+    {
         return Err(place(
             WrittenAt::attribute(buffer.name_spelling),
             ValidationError::IncompatibleAttributes {
@@ -9471,10 +9467,12 @@ fn validate_byte_buffer_build(
     // (the `<sce:var>` bound and the function contract); the Rust `SceBytes<N>`
     // type and the C11 result struct's `bytes[N]` array must agree.
     let rms = sig
-        .returns_max_size
+        .returns_max_size()
         .expect("a buffer return without returns-max-size is refused when it is read");
     let capacity = buffer
-        .capacity
+        .ty
+        .stated_outer_bound()
+        .map(|bound| bound.max)
         .expect("a buffer <sce:var> without capacity is refused when it is read");
     if capacity != rms {
         return Err(place(
@@ -12446,18 +12444,18 @@ fn read_schema_value_type(
 }
 
 /// Read a `sce-static` statechart variable's `sce:type` through the one type
-/// grammar (docs/adr/0086, section 1): its type and its outermost bound, the
-/// bracket or its legacy synonym `sce:capacity` with the `sce:limit` beside
-/// it. Every bound inside the type is stated; whether the outermost one is, is
-/// judged where the variable's other rules are (`enforce_static_datamodel`),
-/// and is checked again here. A composition no variable lowers yet is refused
-/// by name.
+/// grammar (docs/adr/0086, section 1): its type, its outermost bound inside
+/// it, the bracket or its legacy synonym `sce:capacity` with the `sce:limit`
+/// beside it. Every bound inside the type is stated; whether the outermost one
+/// is, is judged where the variable's other rules are
+/// (`enforce_static_datamodel`), and is checked again here. A composition no
+/// variable lowers yet is refused by name.
 pub(crate) fn read_static_variable_type(
     data: &roxmltree::Node,
     doc_name: &str,
     element: &str,
     text: &str,
-) -> Result<(AlgorithmValueType, Option<Bound>), Located<ForgeError>> {
+) -> Result<AlgorithmValueType, Located<ForgeError>> {
     let written = read_written_type(
         data,
         doc_name,
@@ -12495,7 +12493,7 @@ pub(crate) fn read_static_variable_type(
             &composition,
         )
     })?;
-    Ok(written.split_outer_bound())
+    Ok(written)
 }
 
 /// Which of an algorithm's slots a type is read for (docs/adr/0086, section 1).
@@ -12563,12 +12561,15 @@ fn read_algorithm_slot_type(
     written.slot_view().map_err(|composition| {
         composition_refusal(node, doc_name, element, "an algorithm", &composition)
     })?;
-    let (sce_type, bound) = written.clone().split_outer_bound();
+    // The bound stays in the type (docs/adr/0086, section 1.2); it is handed
+    // back beside it for the position's own rules of where one stands.
+    let bound = written.stated_outer_bound().cloned();
+    let sce_type = written;
     // A held text or byte string has a length, and the build sizes the value
     // held by it: one that states no bound is no type of the language. A buffer
     // (`bytes`, `list<T>`) is the exception only in the code its refusal carries.
     if let (AlgorithmSlot::Held { .. }, None, false) = (slot, &bound, sce_type.is_append_buffer()) {
-        if let Some(outer) = written.outermost_bounded() {
+        if let Some(outer) = sce_type.outermost_bounded() {
             return Err(type_rule_refusal(
                 node,
                 doc_name,

@@ -1419,9 +1419,7 @@ mod tests {
             sce_type: ty,
             init: Some(init.into()),
             init_spelling: None,
-            capacity: None,
             capacity_spelling: None,
-            limit: None,
         }
     }
 

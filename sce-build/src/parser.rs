@@ -3648,16 +3648,20 @@ impl SCXMLParser {
         // outermost bound is its bracket, or `sce:capacity` beside it, the
         // attribute that stated it before the type held bounds.
         let element = format!("<data id=\"{id}\">");
-        let declared = crate::sce_attr::read(data, "type")
+        //
+        // A list's, a text's or a byte string's bound is in the type;
+        // `enforce_static_datamodel` has already required it on each and refused
+        // `sce:capacity` anywhere else. A named bound (`[name=N]`, or `sce:limit`
+        // beside `sce:capacity`) is the number the build gave the name
+        // (`crate::limits`), here and in every document that names the same bound,
+        // so a list the machine holds and the algorithm that returns it grow
+        // together.
+        let value_type = crate::sce_attr::read(data, "type")
             .filter(|_| model.datamodel == Datamodel::SceStatic)
             .map(|text| {
                 crate::forge::parser::read_static_variable_type(data, source_name, &element, text)
             })
             .transpose()?;
-        let (value_type, bound) = match declared {
-            Some((value_type, bound)) => (Some(value_type), bound),
-            None => (None, None),
-        };
         let record_fields = if value_type
             .as_ref()
             .and_then(crate::forge::model::AlgorithmValueType::record_alias)
@@ -3667,15 +3671,6 @@ impl SCXMLParser {
         } else {
             Vec::new()
         };
-        // A list's, a text's or a byte string's declared bound; `enforce_static_datamodel`
-        // has already required it on each and refused `sce:capacity` anywhere else.
-        //
-        // A named bound (`[name=N]`, or `sce:limit` beside `sce:capacity`) is the
-        // number the build gave the name (`crate::limits`), here and in every document
-        // that names the same bound, so a list the machine holds and the algorithm that
-        // returns it grow together.
-        let capacity = bound.as_ref().map(|bound| bound.max);
-        let limit = bound.and_then(|bound| bound.limit);
         // The bound is carried where the type is: under any data model but sce-static
         // the `sce:capacity` an authoring tool writes is carried by nothing, and so is
         // the `sce:limit` that names it. A document lowered for the Interpreter keeps
@@ -3733,8 +3728,6 @@ impl SCXMLParser {
             value_type,
             value_type_spelling: AttributeSpelling::of(data, Some(SCE_NAMESPACE), "type"),
             record_fields,
-            capacity,
-            limit,
             direction,
             // The analyzer names readers, once it knows which variables
             // have one (`reader_names::assign`).

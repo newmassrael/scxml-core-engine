@@ -884,7 +884,7 @@ fn bounded_namelist_name<'a>(namelist: &'a str, declared: &[Variable]) -> Option
                 t.scalar()
                     .or_else(|| t.optional_elem().and_then(|elem| elem.scalar()))
             });
-            v.capacity.is_some() && matches!(held, Some(SceType::String))
+            v.capacity().is_some() && matches!(held, Some(SceType::String))
         })
     })
 }

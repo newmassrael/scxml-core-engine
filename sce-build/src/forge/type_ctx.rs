@@ -1122,7 +1122,7 @@ impl StaticScope {
         let limits = named_limits(
             variables
                 .iter()
-                .filter_map(|v| Some((v.limit.as_deref()?, v.capacity?)))
+                .filter_map(|v| Some((v.limit()?, v.capacity()?)))
                 .chain(model.imported_records.values().flat_map(|schema| {
                     schema
                         .fields
@@ -1784,7 +1784,7 @@ fn static_statechart<'a>(
         ctx.insert_var(var.id.as_str(), ty);
         // The bound a string is held to is what a value that joins it is sized
         // from, on a target that stores a string in a buffer of its own.
-        if let (InferredType::Str, Some(capacity)) = (ty, var.capacity) {
+        if let (InferredType::Str, Some(capacity)) = (ty, var.capacity()) {
             ctx.insert_string_capacity(var.id.as_str(), capacity as usize);
         }
     }

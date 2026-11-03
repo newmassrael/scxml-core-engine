@@ -72,9 +72,9 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                     type_spelling: None,
                 },
             ],
-            return_type: Some(AlgorithmValueType::Bytes { max: None }),
-            returns_max_size: Some(64),
-            returns_limit: None,
+            return_type: Some(AlgorithmValueType::Bytes {
+                max: Some(Bound::of(64)),
+            }),
             may_fail: false,
         },
         consts: vec![
@@ -106,9 +106,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                         sce_type: AlgorithmValueType::Scalar(SceType::Uint16),
                         init: Some("i".to_string()),
                         init_spelling: None,
-                        capacity: None,
                         capacity_spelling: None,
-                        limit: None,
                     }],
                     yield_expr: "acc".to_string(),
                     yield_spelling: None,
@@ -121,12 +119,12 @@ fn an_algorithm_renders_every_form_it_can_carry() {
             AlgorithmStmt::Var {
                 name: "out".to_string(),
                 name_spelling: None,
-                sce_type: AlgorithmValueType::Bytes { max: None },
+                sce_type: AlgorithmValueType::Bytes {
+                    max: Some(Bound::of(32)),
+                },
                 init: None,
                 init_spelling: None,
-                capacity: Some(32),
                 capacity_spelling: None,
-                limit: None,
             },
             AlgorithmStmt::Assign {
                 target: "crc".to_string(),
@@ -335,8 +333,6 @@ fn a_newline_in_an_expression_does_not_become_a_line() {
         signature: AlgorithmSignature {
             params: Vec::new(),
             return_type: None,
-            returns_max_size: None,
-            returns_limit: None,
             may_fail: false,
         },
         consts: Vec::new(),
@@ -654,8 +650,6 @@ fn two_renderings_of_one_model_agree() {
                 type_spelling: None,
             }],
             return_type: Some(AlgorithmValueType::Scalar(SceType::Uint8)),
-            returns_max_size: None,
-            returns_limit: None,
             may_fail: false,
         },
         consts: Vec::new(),

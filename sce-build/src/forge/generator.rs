@@ -35018,18 +35018,13 @@ fn collect_append_buffers(
 ) {
     for s in stmts {
         match s {
-            AlgorithmStmt::Var {
-                name,
-                sce_type,
-                capacity,
-                ..
-            } => {
+            AlgorithmStmt::Var { name, sce_type, .. } => {
                 if sce_type.is_append_buffer() {
-                    if let Some(cap) = capacity {
+                    if let Some(bound) = sce_type.stated_outer_bound() {
                         out.insert(
                             name.clone(),
                             AppendBufferDecl {
-                                cap: *cap,
+                                cap: bound.max,
                                 ty: sce_type.clone(),
                             },
                         );
@@ -35697,7 +35692,6 @@ fn lower_algorithm_stmt(
             sce_type,
             init,
             init_spelling,
-            capacity,
             ..
         } => {
             // SCE byte-buffer-build (§4.12): a `type="bytes"` local is a
@@ -35720,13 +35714,16 @@ fn lower_algorithm_stmt(
             // which is the §4.12 backend table's documented behaviour.
             if sce_type.is_append_buffer() {
                 let local = l.local_id(name);
-                let cap = capacity.ok_or_else(|| {
-                    GenerateError::InvalidConfig(format!(
-                        "algorithm {} buffer '{name}' has no `capacity` — the \
+                let cap = sce_type
+                    .stated_outer_bound()
+                    .map(|bound| bound.max)
+                    .ok_or_else(|| {
+                        GenerateError::InvalidConfig(format!(
+                            "algorithm {} buffer '{name}' has no `capacity` — the \
                          byte-buffer-build validator must reject this before codegen",
-                        sce_type.as_attr()
-                    ))
-                })?;
+                            sce_type.as_attr()
+                        ))
+                    })?;
                 // A `list<T>` takes the list spelling; a `bytes` buffer keeps
                 // the byte containers below, byte-for-byte as before.
                 if let Some(elem) = sce_type.list_elem() {
@@ -38934,11 +38931,15 @@ fn body_limits(body: &[AlgorithmStmt]) -> Vec<(&str, u32)> {
     fn walk<'b>(stmts: &'b [AlgorithmStmt], out: &mut Vec<(&'b str, u32)>) {
         for s in stmts {
             match s {
-                AlgorithmStmt::Var {
-                    capacity: Some(capacity),
-                    limit: Some(name),
-                    ..
-                } => out.push((name.as_str(), *capacity)),
+                AlgorithmStmt::Var { sce_type, .. } => {
+                    if let Some(crate::forge::value_type::Bound {
+                        max,
+                        limit: Some(name),
+                    }) = sce_type.stated_outer_bound()
+                    {
+                        out.push((name.as_str(), *max));
+                    }
+                }
                 AlgorithmStmt::If {
                     then_body,
                     else_body,
@@ -39237,9 +39238,8 @@ impl<'a> AlgorithmTypes<'a> {
                     .into_iter()
                     .chain(
                         m.signature
-                            .returns_limit
-                            .as_deref()
-                            .zip(m.signature.returns_max_size),
+                            .returns_limit()
+                            .zip(m.signature.returns_max_size()),
                     )
                     .chain(records.iter().chain(optional_records.iter()).flat_map(
                         |(_, _, record)| {
@@ -39763,7 +39763,7 @@ fn render_algorithm(
     // native owned byte type. C/Cpp use literal `void` for no return; Rust
     // `()`.
     let primary_symbol = forge_algorithm_symbol(&m.name, lang);
-    let bytes_return_cap = m.signature.returns_max_size;
+    let bytes_return_cap = m.signature.returns_max_size();
     let declared_return = m.signature.return_type.as_ref();
     let return_scalar = declared_return.and_then(|t| t.scalar());
     // A `list<T>` return (SCE_FORGE.md §4.12, generalised from `bytes`):

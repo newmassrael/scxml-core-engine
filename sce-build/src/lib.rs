@@ -9148,7 +9148,7 @@ pub(crate) fn discover_stateless_signature(
                         Some(ListReturn {
                             params,
                             elem,
-                            max_size: m.signature.returns_max_size?,
+                            max_size: m.signature.returns_max_size()?,
                         })
                     });
                 // Said once, here, where every condition is known: a statechart that

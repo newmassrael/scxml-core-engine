@@ -3738,7 +3738,7 @@ fn variable_bounds(
                 .and_then(crate::forge::model::AlgorithmValueType::scalar)
                 .is_some_and(kind)
         })
-        .filter_map(|v| Some((v.id.clone(), v.capacity?)))
+        .filter_map(|v| Some((v.id.clone(), v.capacity()?)))
 }
 
 /// The fields of the record variables whose type `kind` holds, each under the
@@ -4012,7 +4012,7 @@ fn optional_places(
             continue;
         };
         if let Some(elem) = value_type.optional_elem().and_then(|e| e.scalar()) {
-            places.insert(var.id.clone(), place(elem, var.capacity));
+            places.insert(var.id.clone(), place(elem, var.capacity()));
         }
         // An optional field of a record variable is written as `<id>.<field>`, and
         // one of the present value of an optional record variable as
@@ -4409,7 +4409,7 @@ pub fn lower(
         .iter()
         .filter_map(|v| {
             let elem = v.value_type.as_ref()?.list_elem()?.clone();
-            Some((v.id.clone(), (elem, v.capacity?)))
+            Some((v.id.clone(), (elem, v.capacity()?)))
         })
         .collect();
     // The string variables, each with its bound — what an `<assign>` to one is
@@ -4579,7 +4579,7 @@ pub fn lower(
                 use crate::forge::model::AlgorithmValueType;
                 let (ty, view, saved_kind, saved_type, empty, holds) = match elem {
                     AlgorithmValueType::Scalar(elem) => {
-                        let list = declarations.scalar_list(elem, var.capacity);
+                        let list = declarations.scalar_list(elem, var.capacity());
                         (
                             list.ty,
                             target.list_view(elem),
@@ -4598,7 +4598,7 @@ pub fn lower(
                             ))
                         })?;
                         let record_ty = declarations.record(alias, schema)?;
-                        let list = declarations.record_list(&record_ty, var.capacity);
+                        let list = declarations.record_list(&record_ty, var.capacity());
                         (
                             list.ty,
                             target.record_list_view(&record_ty),
@@ -4633,7 +4633,7 @@ pub fn lower(
                     published,
                     view,
                     read: None,
-                    bound: var.capacity,
+                    bound: var.capacity(),
                     saved_kind,
                     saved_type,
                     saved_elem: None,
@@ -4802,7 +4802,7 @@ pub fn lower(
             rewrites.note(&var.expr, var.expr_spelling.as_ref(), &init);
             // A string a target holds in a buffer of its bound is declared once
             // however many variables share the bound, and read through the buffer.
-            let storage = match (ty, var.capacity) {
+            let storage = match (ty, var.capacity()) {
                 (SceType::String, Some(capacity)) => target.string_storage(capacity, &init),
                 (SceType::Bytes, Some(capacity)) => target.bytes_storage(capacity, &init),
                 _ => None,
@@ -4829,7 +4829,7 @@ pub fn lower(
                     .map_or_else(|| target.scalar_view(ty), |s| Some(s.view.clone())),
                 read,
                 bound: matches!(ty, SceType::Bytes | SceType::String)
-                    .then_some(var.capacity)
+                    .then_some(var.capacity())
                     .flatten(),
                 saved_kind: "scalar",
                 saved_type: ty.as_attr(),
@@ -10533,10 +10533,11 @@ impl StaticTarget for CTarget {
             if let Some(elem) = value_type.optional_elem().and_then(|e| e.scalar()) {
                 return !(held_scalar(elem)
                     || matches!(elem, SceType::Enum(_) | SceType::Float32 | SceType::Float64)
-                    || (matches!(elem, SceType::String | SceType::Bytes) && v.capacity.is_some()));
+                    || (matches!(elem, SceType::String | SceType::Bytes)
+                        && v.capacity().is_some()));
             }
             if let Some(elem) = value_type.list_elem() {
-                return !(v.capacity.is_some()
+                return !(v.capacity().is_some()
                     && match elem {
                         crate::forge::model::AlgorithmValueType::Scalar(ty) => {
                             held_scalar(ty) || matches!(ty, SceType::Float32 | SceType::Float64)
@@ -10549,7 +10550,7 @@ impl StaticTarget for CTarget {
                 value_type.scalar(),
                 Some(ty) if held_scalar(ty)
                     || matches!(ty, SceType::Enum(_) | SceType::Float32 | SceType::Float64)
-                    || (matches!(ty, SceType::String | SceType::Bytes) && v.capacity.is_some())
+                    || (matches!(ty, SceType::String | SceType::Bytes) && v.capacity().is_some())
             )
         }) {
             let ty = match &var.value_type {
@@ -14774,7 +14775,7 @@ fn lower_child_argument(
         .filter(|v| crate::forge::static_datamodel::seed_slot(v).is_some())
         .and_then(|v| {
             let elem = v.value_type.as_ref()?.optional_elem()?.scalar()?;
-            Some((elem, v.capacity))
+            Some((elem, v.capacity()))
         });
     if let Some((elem, capacity)) = optional {
         let bound = matches!(elem, SceType::String)
@@ -14813,7 +14814,7 @@ fn lower_child_argument(
     // declared for it, whatever the value came from, as an `<assign>` to it
     // would be (§scxml-4.9): past it the value fails as any other does, is
     // left out, and the child starts with the one its `<data>` gave it.
-    let (seed, fails) = match (held, variable.and_then(|v| v.capacity)) {
+    let (seed, fails) = match (held, variable.and_then(|v| v.capacity())) {
         (SceType::String, Some(capacity)) => (target.bounded_string(&value.text, capacity), true),
         _ => (value.text, value.can_fail),
     };

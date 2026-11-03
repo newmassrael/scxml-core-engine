@@ -226,9 +226,23 @@ fn an_algorithms_slot_reads_every_optional_element_a_statechart_holds() {
             algorithm.signature.params[0].sce_type, optional,
             "{written}"
         );
+        // The return holds its value, and its text or byte string the bound
+        // `held` wrote, inside the type (docs/adr/0086, section 1.2).
+        let returned = match optional.outermost_bounded() {
+            Some(_) => optional
+                .clone()
+                .with_outer_bound(sce_build::forge::value_type::Bound::of(16))
+                .expect("a text or byte string takes a bound"),
+            None => optional.clone(),
+        };
         assert_eq!(
             algorithm.signature.return_type.as_ref(),
-            Some(&optional),
+            Some(&returned),
+            "{written}"
+        );
+        assert_eq!(
+            algorithm.signature.returns_max_size(),
+            optional.outermost_bounded().map(|_| 16),
             "{written}"
         );
     }

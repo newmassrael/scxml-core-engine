@@ -1057,10 +1057,25 @@ impl WrittenType {
         }
     }
 
+    /// The bound stated on the outermost text, byte string or list of the
+    /// type, seen through every `optional<…>`: what a held slot (a return, a
+    /// local, a statechart's variable) holds at most, and `None` for a
+    /// parameter, whose outermost bound is its argument's, and for a type with
+    /// no length.
+    pub fn stated_outer_bound(&self) -> Option<&Bound> {
+        self.outer_bound().and_then(Option::as_ref)
+    }
+
+    /// The same type with its outermost bound left out: the shape two slots
+    /// are compared by where each states its own bound (a buffer local and
+    /// the return it is).
+    pub fn without_outer_bound(&self) -> Self {
+        self.clone().split_outer_bound().0
+    }
+
     /// The same type with the bound of its outermost text, byte string or
     /// list, seen through every `optional<…>`, taken out of it, and that
-    /// bound: a slot's type as a model that keeps the outermost bound beside
-    /// the type holds it.
+    /// bound.
     pub fn split_outer_bound(self) -> (Self, Option<Bound>) {
         match self {
             Self::Text { max } => (Self::Text { max: None }, max),
@@ -2113,6 +2128,8 @@ mod tests {
             let outer = ty.outer_bound().cloned().flatten();
             let (bare, bound) = ty.clone().split_outer_bound();
             assert_eq!(bound, outer, "{}", case.text);
+            assert_eq!(ty.stated_outer_bound(), outer.as_ref(), "{}", case.text);
+            assert_eq!(ty.without_outer_bound(), bare, "{}", case.text);
             assert_eq!(bare.outer_bound().cloned().flatten(), None, "{}", case.text);
             match bound {
                 Some(bound) => assert_eq!(bare.with_outer_bound(bound), Ok(ty), "{}", case.text),

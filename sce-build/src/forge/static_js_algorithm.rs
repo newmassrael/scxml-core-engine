@@ -389,12 +389,11 @@ struct Buffer<'a> {
 fn collect_buffers<'a>(stmts: &'a [AlgorithmStmt], out: &mut HashMap<&'a str, Buffer<'a>>) {
     for stmt in stmts {
         match stmt {
-            AlgorithmStmt::Var {
-                name,
-                sce_type,
-                capacity: Some(capacity),
-                ..
-            } => {
+            AlgorithmStmt::Var { name, sce_type, .. } => {
+                // A buffer states its bound in its type (docs/adr/0086).
+                let Some(capacity) = sce_type.stated_outer_bound().map(|bound| bound.max) else {
+                    continue;
+                };
                 let element = match sce_type {
                     AlgorithmValueType::Bytes { .. } => Some(BufferElement::Byte),
                     AlgorithmValueType::List { elem, .. } => match &**elem {
@@ -405,13 +404,7 @@ fn collect_buffers<'a>(stmts: &'a [AlgorithmStmt], out: &mut HashMap<&'a str, Bu
                     _ => None,
                 };
                 if let Some(element) = element {
-                    out.insert(
-                        name,
-                        Buffer {
-                            capacity: *capacity,
-                            element,
-                        },
-                    );
+                    out.insert(name, Buffer { capacity, element });
                 }
             }
             AlgorithmStmt::If {
