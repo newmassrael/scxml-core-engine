@@ -3137,11 +3137,7 @@ impl crate::forge::generator::RustHeldCodecs for HeldFrom<'_> {
     fn read(
         &mut self,
         alias: &str,
-        read: &mut dyn FnMut(
-            &crate::forge::encode_plan::EncodePlan<'_>,
-            &crate::forge::generator::RustCodecPath,
-            &mut dyn crate::forge::generator::RustHeldCodecs,
-        ) -> Result<String, String>,
+        read: &mut crate::forge::generator::RustReadHeld<'_>,
     ) -> Result<String, String> {
         let from = self
             .imported

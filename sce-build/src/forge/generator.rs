@@ -31,6 +31,7 @@ mod swift_codec;
 /// codec's ready-made source (docs/adr/0081 §5). See [`rust_source::source_case`].
 pub(crate) use rust_source::{
     source_case as rust_source_case, CodecPath as RustCodecPath, HeldCodecs as RustHeldCodecs,
+    ReadHeld as RustReadHeld,
 };
 
 /// Whether a codec has a source interface (ADR 0058), given whether each codec

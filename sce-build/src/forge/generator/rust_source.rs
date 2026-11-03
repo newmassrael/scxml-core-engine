@@ -152,20 +152,17 @@ impl CodecPath {
     }
 }
 
+/// What a held codec is read with: its plan, its path and the codecs it holds in
+/// turn, answered with the text of its case or why there is none.
+pub(crate) type ReadHeld<'r> =
+    dyn FnMut(&EncodePlan<'_>, &CodecPath, &mut dyn HeldCodecs) -> Result<String, String> + 'r;
+
 /// What a byte case needs of the codecs a codec holds: each read as its holder
 /// was, with the names the harness gives it.
 pub(crate) trait HeldCodecs {
     /// Answers `read` of the plan of the codec imported as `alias`, its path,
     /// and the codecs it holds in turn.
-    fn read(
-        &mut self,
-        alias: &str,
-        read: &mut dyn FnMut(
-            &EncodePlan<'_>,
-            &CodecPath,
-            &mut dyn HeldCodecs,
-        ) -> Result<String, String>,
-    ) -> Result<String, String>;
+    fn read(&mut self, alias: &str, read: &mut ReadHeld<'_>) -> Result<String, String>;
 }
 
 /// A byte case of a Rust harness (docs/adr/0081 §5): the value a case states as
