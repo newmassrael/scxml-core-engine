@@ -2542,18 +2542,6 @@ impl ScxmlInvokeInfo {
         (self.inline_child.is_none() && !self.common.child_name.is_empty())
             .then(|| format!("{}.scxml", self.common.child_name))
     }
-
-    /// This invoke, followed — when the document of its child is carried on it
-    /// ([`Self::inline_child`]) — by every invoke below that child whose child
-    /// is carried as well, in the order [`SCXMLModel::inline_child_invokes`]
-    /// gives them.
-    pub fn with_inline_descendants(&self) -> Vec<&ScxmlInvokeInfo> {
-        let mut invokes = vec![self];
-        if let Some(child) = self.inline_child.as_deref() {
-            invokes.extend(child.inline_child_invokes());
-        }
-        invokes
-    }
 }
 
 impl HybridInvokeInfo {
@@ -5142,10 +5130,74 @@ impl SCXMLModel {
     /// child is `<parent>__sce_synth_invoke__<id>__sce_synth_invoke__<id>` and
     /// the names of one document's children differ at every depth.
     pub fn inline_child_invokes(&self) -> Vec<&ScxmlInvokeInfo> {
-        self.iter_scxml_invokes()
-            .filter(|invoke| invoke.inline_child.is_some())
-            .flat_map(ScxmlInvokeInfo::with_inline_descendants)
+        self.inline_child_invoke_paths()
+            .into_iter()
+            .filter_map(|path| path.last().copied())
             .collect()
+    }
+    /// [`Self::inline_child_invokes`], each as the path of invokes that reaches
+    /// it from this document: the invoke this document holds, then the invoke
+    /// each child below it holds, down to the one whose child it carries.
+    ///
+    /// What a refusal raised against a child at any depth is moved along to
+    /// stand where its author wrote it ([`Self::authored_from_descendant`]):
+    /// each child is parsed from its own text, so a record against it is in
+    /// that text's coordinates, which map into the document one level up and
+    /// no further.
+    pub fn inline_child_invoke_paths(&self) -> Vec<Vec<&ScxmlInvokeInfo>> {
+        let mut paths = Vec::new();
+        for invoke in self.iter_scxml_invokes() {
+            let Some(child) = invoke.inline_child.as_deref() else {
+                continue;
+            };
+            paths.push(vec![invoke]);
+            for below in child.inline_child_invoke_paths() {
+                paths.push(std::iter::once(invoke).chain(below).collect());
+            }
+        }
+        paths
+    }
+    /// Move `refused`, raised against the child `invoke` carries in the child's
+    /// own coordinates (under the label the child was parsed under), to where
+    /// its author wrote it: through the child's positions in the text this
+    /// document was parsed from ([`ScxmlInvokeInfo::inline_child_positions`]),
+    /// then through this document's own positions to the files its author
+    /// wrote ([`Self::authored_positions`]).
+    ///
+    /// A child with no place in this document's text (a standard statechart,
+    /// named by its library name) has no positions here, and its record stays
+    /// in its own coordinates, under its own name.
+    pub fn authored_from_child(
+        &self,
+        invoke: &ScxmlInvokeInfo,
+        refused: crate::forge::error::Located<crate::forge::error::ForgeError>,
+    ) -> crate::forge::error::Located<crate::forge::error::ForgeError> {
+        let refused = match invoke.inline_child_positions.as_ref() {
+            Some(positions) => positions.authored(refused),
+            None => refused,
+        };
+        match self.authored_positions.as_ref() {
+            Some(positions) => positions.authored(refused),
+            None => refused,
+        }
+    }
+    /// [`Self::authored_from_child`] for a child at any depth. `path` is one of
+    /// [`Self::inline_child_invoke_paths`], ending at the invoke that carries
+    /// the child `refused` was raised against; each level moves the record
+    /// into the text of the document one level up, the innermost first.
+    pub fn authored_from_descendant(
+        &self,
+        path: &[&ScxmlInvokeInfo],
+        refused: crate::forge::error::Located<crate::forge::error::ForgeError>,
+    ) -> crate::forge::error::Located<crate::forge::error::ForgeError> {
+        let Some((&invoke, below)) = path.split_first() else {
+            return refused;
+        };
+        let refused = match invoke.inline_child.as_deref() {
+            Some(child) => child.authored_from_descendant(below, refused),
+            None => refused,
+        };
+        self.authored_from_child(invoke, refused)
     }
     /// This document's model, followed by the model of each child
     /// [`Self::inline_child_invokes`] gives, in that order: every machine a run

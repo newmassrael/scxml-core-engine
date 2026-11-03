@@ -888,8 +888,10 @@ pub fn transition_function_findings(model: &model::SCXMLModel, source: &str) -> 
 ///
 /// A child is judged as the routes that generate it read it: analysed under
 /// its own label, and past [`analyzer::can_generate_static`], since a child
-/// that gate refuses is not generated at all. A child that declares nothing
-/// is not analysed; its own children are still asked.
+/// that gate refuses refuses the document through the document's own gate,
+/// which every route asks first ([`analyzer::can_generate_carried_children`]).
+/// A child that declares nothing is not analysed; its own children are still
+/// asked.
 fn inline_child_transition_function_findings(model: &model::SCXMLModel) -> Vec<CompileError> {
     let mut findings = Vec::new();
     for invoke in model.iter_scxml_invokes() {
@@ -913,13 +915,11 @@ fn inline_child_transition_function_findings(model: &model::SCXMLModel) -> Vec<C
         // The child's text maps into the text this document was parsed
         // from; that text maps to what its author wrote when a preprocessor
         // expanded it.
-        findings.extend(refused.into_iter().map(|err| {
-            let err = positions.authored(err);
-            match model.authored_positions.as_ref() {
-                Some(document) => document.authored(err),
-                None => err,
-            }
-        }));
+        findings.extend(
+            refused
+                .into_iter()
+                .map(|err| model.authored_from_child(invoke, err)),
+        );
     }
     findings
 }
@@ -2155,12 +2155,15 @@ pub struct EmittedChild {
 ///   backend but C11, whose child templates detect communication with the
 ///   parent from the document and break under the override;
 /// - analysed under its label, and given the host's declaration;
-/// - left out when [`analyzer::can_generate_static`] refuses it, as the
-///   judgement of its declaration leaves it out
-///   ([`transition_function_findings`]);
+/// - one the generator can generate: a child it cannot generate refuses the
+///   document, on the row its author wrote
+///   ([`analyzer::can_generate_carried_children`], which the document's own
+///   gate asks as well), since a run that left the child out wrote a machine
+///   naming a file nobody wrote and exited 0;
 /// - bound to the run's digest ([`RunDigest::bind`]), after its declaration was
 ///   judged with the document's: its transition table and function are
-///   written beside its machine, named after its stem;
+///   written beside its machine, named after its stem, and a refusal of the
+///   declaration is placed where its author wrote it, at any depth;
 /// - given the place its author wrote it ([`CarriedOrigin`]). A child written
 ///   in-line is named by the document whose text holds it and its invoke path
 ///   ([`inline_child_provenance`], `// From:`), and its positions lead into
@@ -2183,6 +2186,7 @@ pub fn carried_children(
             .to_string_lossy()
             .into_owned()
     };
+    analyzer::can_generate_carried_children(document)?;
     let mut carried_invokes = Vec::new();
     CarriedOrigin::of_document(document).trace(document, &mut carried_invokes);
     let mut children = Vec::new();
@@ -2213,9 +2217,6 @@ pub fn carried_children(
                 None,
             )
         })?;
-        if analyzer::can_generate_static(&model, &label).is_err() {
-            continue;
-        }
         // A refusal of the child's declaration is raised under the label the
         // child was parsed under and moved to the row its author wrote, as its
         // judgement is (`inline_child_transition_function_findings`): through

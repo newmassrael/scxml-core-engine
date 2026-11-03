@@ -1,0 +1,42 @@
+# Mutation cases for "a child a document carries that the generator cannot
+# generate refuses the document, with the child's own record, on the row its
+# author wrote".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_carried_child_the_generator_refuses_refuses_its_parent.cases`.
+#
+# The first case puts the defect back where every route reads it, the gate no
+# longer asking the children; the second keeps the refusal and leaves a refusal
+# of the whole child in a file named after the child, which nobody wrote; the
+# third moves the refusal of a grandchild's declaration one level up and no
+# further, so it stays in the coordinates of the child that carries it.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_carried_child_the_generator_refuses_refuses_its_parent
+mutation_targets sce-build/src/analyzer.rs sce-build/src/model.rs
+
+mutation_case "the gate does not ask the children a document carries" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     r'''    // A child's records were anchored by the child's own call to this gate,
+    // in the child's coordinates, before they were moved.
+    can_generate_carried_children(model)''',
+     r'''    let _ = can_generate_carried_children;
+    Ok(())''')
+PY
+
+mutation_case "a refusal of the whole child names no row of the document" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     r'''                    refused.location.line = root.line;
+                    refused.location.col = root.col;''',
+     r'''                    refused.location.col = root.col.filter(|_| false);''')
+PY
+
+mutation_case "a record is moved one level up and no further" <<'PY'
+edit("sce-build/src/model.rs",
+     r'''            Some(child) => child.authored_from_descendant(below, refused),''',
+     r'''            Some(_child) => {
+                let _ = below;
+                refused
+            }''')
+PY

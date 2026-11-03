@@ -1133,6 +1133,12 @@ fn compute_scxml_base_path(scxml_path: &str) -> String {
 ///   names nothing produces target code the consumer's compiler
 ///   rejects.
 ///
+/// - **A child the document carries that cannot be generated** → the
+///   child's own refusal, as one of the above, placed where its author
+///   wrote it ([`can_generate_carried_children`]). The child's machine is
+///   a file of the run that generates the document, which the document's
+///   machine names.
+///
 /// [`ForgeError`]: crate::forge::error::ForgeError
 /// [`ScxmlSemanticError::TopLevelScriptUnloaded`]: crate::scxml_semantic::ScxmlSemanticError::TopLevelScriptUnloaded
 /// [`ScxmlSemanticError::InitialStateUnknown`]: crate::scxml_semantic::ScxmlSemanticError::InitialStateUnknown
@@ -1151,7 +1157,67 @@ pub fn can_generate_static(
     // it holds the parsed model, which is what the lookup needs.
     // `scxml_references::validate` is reached only from here, so its
     // rejections are covered by the same call without a second.
-    can_generate_static_impl(model, diag_label).map_err(|err| model.with_enclosing_anchor(err))
+    can_generate_static_impl(model, diag_label).map_err(|err| model.with_enclosing_anchor(err))?;
+    // A child's records were anchored by the child's own call to this gate,
+    // in the child's coordinates, before they were moved.
+    can_generate_carried_children(model)
+}
+
+/// Whether the generator can generate every child `model` carries
+/// ([`crate::model::ScxmlInvokeInfo::inline_child`]: one written in
+/// `<content>`, or a standard statechart named by `src`), at any depth.
+///
+/// A carried child is a machine of the run that generates `model`, written
+/// beside it, and `model`'s machine names it. One the generator cannot
+/// generate is therefore a document the generator cannot generate: left out,
+/// the run wrote a machine naming a file nobody wrote, exited 0, and the
+/// output failed to build far from the cause. So it is asked here, in the gate
+/// every route asks of a document before it writes or judges it (`generate`,
+/// `check` on one document and on a set, `orchestrate`, `generate-w3c`, the
+/// library's file and in-memory entry points), and the routes that read the
+/// children (`crate::carried_children`) ask it again of the document they are
+/// handed.
+///
+/// Each child is analysed and asked under the label it was parsed under, and
+/// its refusal is the one it earns as a document of its own, with its code and
+/// its fix, moved to where its author wrote it
+/// ([`SCXMLModel::authored_from_child`]): in the enclosing document's file, on
+/// the row of what it names, as a child that does not parse and a child's
+/// transition-function refusals are placed. A refusal of the whole child,
+/// which names no row of it (it holds no state, or a top-level script that
+/// cannot be loaded), is placed on the child's root element, which is where
+/// the child stands in the enclosing document. A standard statechart has no
+/// place in the document's text, so its refusal stays in its own coordinates,
+/// under its library name.
+pub fn can_generate_carried_children(
+    model: &SCXMLModel,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    for invoke in model.iter_scxml_invokes() {
+        let Some(carried) = invoke.inline_child.as_deref() else {
+            continue;
+        };
+        let label = invoke
+            .inline_child_positions
+            .as_ref()
+            .or(carried.authored_positions.as_ref())
+            .map_or_else(
+                || format!("{}.scxml", invoke.child_name),
+                |positions| positions.document.clone(),
+            );
+        let mut child = carried.clone();
+        analyze(&mut child, &label);
+        can_generate_static(&child, &label).map_err(|mut refused| {
+            let unplaced = refused.location.line.is_none() && refused.location.file == label;
+            if unplaced && invoke.inline_child_positions.is_some() {
+                if let Some(root) = child.source_location.as_ref() {
+                    refused.location.line = root.line;
+                    refused.location.col = root.col;
+                }
+            }
+            model.authored_from_child(invoke, refused)
+        })?;
+    }
+    Ok(())
 }
 
 fn can_generate_static_impl(

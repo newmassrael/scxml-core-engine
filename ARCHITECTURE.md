@@ -463,7 +463,12 @@ package): `generate`, `check` (which renders and writes nothing), the library en
 the document-set compile `orchestrate` calls all go through it, so a child is one machine
 whichever route wrote it. `generate-w3c` takes the same prepared child and renders it through its
 own backend, as it renders each fixture, because the suite packages every machine of a test
-itself.
+itself. A child the generator cannot generate is never left out, since its parent would name a
+file nobody wrote: `analyzer::can_generate_static`, the gate every route asks of a document, asks
+it of every child the document carries (`analyzer::can_generate_carried_children`), and refuses
+the document with the child's own record, placed on the row its author wrote. `generate-w3c`
+skips such a fixture as it skips one whose own document cannot be generated, and stands no stub
+in for any child of a fixture.
 
 **Hybrid Invoke** (`contentExpr`):
 - AOT parent evaluates expression via JSEngine/LuaEngine

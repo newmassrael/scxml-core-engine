@@ -8615,16 +8615,6 @@ trait W3cBackend {
     ) {
     }
 
-    /// Handle a child that failed codegen (Kotlin generates stubs, others skip).
-    fn process_child_failure(
-        &self,
-        _test_id: &str,
-        _child_name: &str,
-        _test_mod_dir: &Path,
-        _drift_ctx: &DriftContext,
-    ) {
-    }
-
     /// Generate test file content. Default returns empty (C++ uses CMake-managed test headers).
     // Trait method shared by every backend; the per-test codegen surface
     // is grouped into `TestFileSpec`. Default is a no-op — backends that
@@ -8757,14 +8747,21 @@ trait W3cBackend {
 ///
 /// A child declaring its transition function or table is generated as a
 /// fixture is: judged, bound to this run's digest, and written with its
-/// function beside its machine. Returns the refusals that fail the fixture:
-/// what a child declaring the function holds that the declaration does not
-/// admit, and a function the backend could not render.
+/// function beside its machine.
+///
+/// Returns what became of the children ([`ChildrenOutcome`]), each judged by
+/// the rule the fixture's own document is: the fixture is skipped at the
+/// first child that is not found, that the generator cannot generate
+/// statically, or that the backend names as not lowered yet, and fails on
+/// every refusal of the children otherwise (a parse, a declaration the child
+/// does not keep, a machine or a function the backend could not render).
 ///
 /// What is shared with `generate`, and what is this route's alone:
 /// - A carried child is prepared by `sce_build::carried_children`, the
 ///   preparation `generate`, `check` and `orchestrate` use: one child, one
-///   machine, whichever route writes it.
+///   machine, whichever route writes it. A fixture whose carried child the
+///   generator cannot generate never reaches here: the fixture's own gate
+///   asks the child (`analyzer::can_generate_carried_children`).
 /// - A `src` child and a hybrid invoke's stub are not carried children: each
 ///   is a document of the suite read from disk (the stub one this route wrote
 ///   beside the test), so each is parsed, judged and bound here as the fixture
@@ -8772,9 +8769,8 @@ trait W3cBackend {
 /// - The machine is rendered by the backend's own `W3cBackend::generate_sm`,
 ///   not by `sce_build::emit_carried_children`, for the reason the fixture's
 ///   is: the suite places every machine of a test in one package of its own
-///   (`test<id>`), names it in the backend's module index, and stands a stub
-///   in for a child no backend can generate (`process_child_failure`), none
-///   of which a run of `generate` does.
+///   (`test<id>`) and names it in the backend's module index, neither of which
+///   a run of `generate` does.
 fn generate_child_sms(
     backend: &dyn W3cBackend,
     test_id: &str,
@@ -8783,7 +8779,7 @@ fn generate_child_sms(
     test_mod_dir: &Path,
     drift_ctx: &DriftContext,
     sourcemap_acc: &mut SymbolAccumulator,
-) -> Vec<sce_build::CompileError> {
+) -> ChildrenOutcome {
     let mut refused = Vec::new();
     let resource_dir = scxml_path.parent().unwrap_or(Path::new("."));
     let mut seen = BTreeSet::new();
@@ -8874,10 +8870,7 @@ fn generate_child_sms(
                 .into_iter()
                 .map(|child| (child.stem.clone(), child))
                 .collect(),
-            Err(e) => {
-                refused.push(e);
-                return refused;
-            }
+            Err(e) => return ChildrenOutcome::Refused(vec![e]),
         };
 
     let stub_dir = backend.emits_hybrid_child_stub().then_some(test_mod_dir);
@@ -8898,61 +8891,70 @@ fn generate_child_sms(
         // `generate_hybrid_child_scxmls` wrote its stubs.
         let (mut child_model, label) = match child_source {
             // Prepared with its document, above or when the child read from
-            // disk that carries it was read: analysed under a label beside
-            // that document, past `can_generate_static`, its declaration
-            // judged with the document's and bound to this run's digest. A
-            // child the preparation leaves out is one `can_generate_static`
-            // refuses.
+            // disk that carries it was judged: analysed under a label beside
+            // that document, its declaration judged with the document's and
+            // bound to this run's digest. The preparation leaves no child out
+            // (one the generator cannot generate refuses its document, through
+            // the document's own gate), and a document's children are queued
+            // only once they were prepared.
             ChildSource::Inline(carried) => {
+                let child = prepared.remove(child_name).expect(
+                    "a carried child is queued only by a document whose carried children \
+                     were prepared",
+                );
                 queue_next(
                     &mut pending,
                     started(&carried, true, resource_dir, stub_dir),
                 );
-                match prepared.remove(child_name) {
-                    Some(child) => (child.model, child.label),
-                    None => {
-                        backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
-                        continue;
-                    }
-                }
+                (child.model, child.label)
             }
             // Not a carried child, so not the shared preparation's: a `src`
             // child is a document of the suite read from the fixture's
             // directory, and a hybrid invoke's stub one this route wrote
-            // (`generate_hybrid_child_scxmls`), and each is judged here as
-            // the fixture is. What it carries is prepared beside it.
+            // (`generate_hybrid_child_scxmls`), and each is judged here by the
+            // rule the fixture is (`generate_w3c_unified`). What it carries is
+            // prepared beside it.
             ChildSource::Disk(source_dir) => {
                 let child_path = source_dir.join(format!("{child_name}.scxml"));
                 if !sce_build::confine::exists(&child_path) {
-                    backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
-                    continue;
+                    return ChildrenOutcome::Skipped(format!(
+                        "its child {} is not found",
+                        child_path.display()
+                    ));
                 }
                 let child_str = child_path.to_string_lossy().into_owned();
-                let Ok(mut parsed) = SCXMLParser::new().parse_file(&child_str) else {
-                    backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
-                    continue;
+                let mut parsed = match SCXMLParser::new().parse_file(&child_str) {
+                    Ok(parsed) => parsed,
+                    Err(e) => {
+                        refused.push(e);
+                        continue;
+                    }
                 };
-                queue_next(
-                    &mut pending,
-                    started(&parsed, false, resource_dir, stub_dir),
-                );
                 analyzer::analyze(&mut parsed, &child_str);
-                if analyzer::can_generate_static(&parsed, &child_str).is_err() {
-                    backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
-                    continue;
+                // §scxml-5.8: a rejected document is generated, as a rejected
+                // fixture is.
+                if let Err(gate) = analyzer::can_generate_static(&parsed, &child_str) {
+                    if !parsed.document_rejected {
+                        return ChildrenOutcome::Skipped(format!(
+                            "its child {child_name} is {}",
+                            not_generated_statically(&gate)
+                        ));
+                    }
                 }
                 // The declaration means on a child what it means on a root,
                 // and the children it carries are judged with it.
-                let findings = sce_build::transition_function_findings(&parsed, &child_str);
-                if !findings.is_empty() {
-                    backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
-                    refused.extend(findings);
-                    continue;
+                if !parsed.document_rejected {
+                    let findings = sce_build::transition_function_findings(&parsed, &child_str);
+                    if !findings.is_empty() {
+                        refused.extend(findings);
+                        continue;
+                    }
                 }
                 sce_build::bind_run_digest(&mut parsed, &source_hex);
                 resolve_source_path(&mut parsed, &child_path);
                 // Only a child that is generated starts the children it
-                // carries; each is prepared beside it, once it was judged.
+                // carries; each is prepared beside it, once it was judged, and
+                // queued once it was prepared.
                 match carried_by(&parsed, &child_str) {
                     Ok(children) => prepared.extend(
                         children
@@ -8960,11 +8962,14 @@ fn generate_child_sms(
                             .map(|child| (child.stem.clone(), child)),
                     ),
                     Err(e) => {
-                        backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
                         refused.push(e);
                         continue;
                     }
                 }
+                queue_next(
+                    &mut pending,
+                    started(&parsed, false, resource_dir, stub_dir),
+                );
                 (parsed, child_str)
             }
         };
@@ -9010,12 +9015,58 @@ fn generate_child_sms(
                     }
                 }
             }
-            Err(_) => {
-                backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
+            // A backend that names what it does not lower yet skips the
+            // fixture, as it skips one whose own document it does not lower.
+            Err(e) if backend.is_a_named_refusal(&e) => {
+                return ChildrenOutcome::Skipped(format!(
+                    "its child {child_name} is not lowered yet: {e}"
+                ));
+            }
+            Err(e) => {
+                refused.push(sce_build::forge::error::Located::new(e, label, None, None));
             }
         }
     }
-    refused
+    if refused.is_empty() {
+        ChildrenOutcome::Written
+    } else {
+        ChildrenOutcome::Refused(refused)
+    }
+}
+
+/// What became of the children a fixture's machines start
+/// ([`generate_child_sms`]), held to the rule the suite holds the fixture's
+/// own document to (`generate_w3c_unified`).
+///
+/// A child is a machine of the test: the machine that starts it names it, so
+/// the test builds only with the child's machine beside it. A child this suite
+/// cannot write is therefore an outcome of the fixture, as its own document's
+/// is: skipped and named when the child is not found, the generator cannot
+/// generate it statically, or the backend names it as not lowered yet; failed,
+/// with every record, when it is refused (its parse, its declaration, its
+/// rendering). No stub stands in for such a child: a stub that builds is a
+/// child that does nothing, so the test would run, and its verdict would be
+/// about a machine the document does not describe.
+enum ChildrenOutcome {
+    /// Every child the fixture's machines start was written.
+    Written,
+    /// The fixture is skipped, for the reason given.
+    Skipped(String),
+    /// The fixture fails, on these records, none of them empty.
+    Refused(Vec<sce_build::CompileError>),
+}
+
+/// How a skipped document is named: why the generator cannot generate it
+/// statically ([`analyzer::can_generate_static`]), and where.
+fn not_generated_statically(refused: &sce_build::CompileError) -> String {
+    let at = match refused.location.line {
+        Some(line) => format!("{}:{line}", refused.location.file),
+        None => refused.location.file.clone(),
+    };
+    format!(
+        "not generated statically, refused at {at}: {}",
+        refused.error
+    )
 }
 
 /// The single unified W3C test generation loop shared by all backends.
@@ -9101,13 +9152,19 @@ fn generate_w3c_unified(
                 analyzer::analyze(&mut model, scxml_str);
 
                 // §scxml-5.8: document_rejected models have initial->pass already
-                // redirected by the parser, so they CAN be generated. Only skip
-                // truly dynamic models.
-                if analyzer::can_generate_static(&model, scxml_str).is_err()
-                    && !model.document_rejected
-                {
-                    skipped.push((test_id.clone(), "dynamic features".to_string()));
-                    continue;
+                // redirected by the parser, so they CAN be generated. Any other
+                // document the generator cannot generate statically is skipped
+                // and named, before a file of it is written. A child the
+                // fixture carries is asked by the same gate
+                // (`analyzer::can_generate_carried_children`), so a fixture
+                // whose carried child cannot be generated is skipped by this
+                // rule, named by the child's refusal, and no stub stands in
+                // for the child (`ChildrenOutcome` says why).
+                if let Err(refused) = analyzer::can_generate_static(&model, scxml_str) {
+                    if !model.document_rejected {
+                        skipped.push((test_id.clone(), not_generated_statically(&refused)));
+                        continue;
+                    }
                 }
 
                 // Not a lint: a fixture declaring `sce:transition-function`
@@ -9200,7 +9257,11 @@ fn generate_w3c_unified(
                         // (only for backends that use per-test subdirs; C++ handles children via CMake)
                         if backend.uses_per_test_subdirs() {
                             generate_hybrid_child_scxmls(&model, &test_mod_dir);
-                            let refused_children = generate_child_sms(
+                            // A child the suite cannot write is the fixture's
+                            // outcome, as its own document's would be, and
+                            // nothing of the fixture stays: its machine names
+                            // the child, so what was written would not build.
+                            match generate_child_sms(
                                 backend,
                                 test_id,
                                 &model,
@@ -9208,23 +9269,30 @@ fn generate_w3c_unified(
                                 &test_mod_dir,
                                 &drift_ctx,
                                 &mut sourcemap_acc,
-                            );
-                            // A child refused for its declaration fails the
-                            // fixture as the fixture's own refusal would.
-                            if let Some(first) = refused_children.first() {
-                                for err in &refused_children {
-                                    emit_batch_failure_ndjson(err);
+                            ) {
+                                ChildrenOutcome::Written => {}
+                                ChildrenOutcome::Skipped(reason) => {
+                                    remove_generated(&test_mod_dir);
+                                    skipped.push((test_id.clone(), reason));
+                                    continue;
                                 }
-                                failed.push((
-                                    test_id.clone(),
-                                    format!(
-                                        "{} refusal(s) of a child's sce:transition-function, \
-                                         the first: {}",
-                                        refused_children.len(),
-                                        first.error
-                                    ),
-                                ));
-                                continue;
+                                ChildrenOutcome::Refused(records) => {
+                                    for err in &records {
+                                        emit_batch_failure_ndjson(err);
+                                    }
+                                    remove_generated(&test_mod_dir);
+                                    let first = records
+                                        .first()
+                                        .map_or_else(String::new, |err| err.error.to_string());
+                                    failed.push((
+                                        test_id.clone(),
+                                        format!(
+                                            "{} refusal(s) of a child, the first: {first}",
+                                            records.len()
+                                        ),
+                                    ));
+                                    continue;
+                                }
                             }
                         }
 
@@ -10458,41 +10526,6 @@ impl W3cBackend for KotlinBackend {
         );
         let child_sm_file = test_mod_dir.join(format!("{child_name}Sm.kt"));
         write_if_changed_drift_aware(&child_sm_file, &fixed_code, drift_ctx);
-    }
-
-    fn process_child_failure(
-        &self,
-        test_id: &str,
-        child_name: &str,
-        test_mod_dir: &Path,
-        drift_ctx: &DriftContext,
-    ) {
-        let root = self.suite.kotlin_package_root();
-        let parent_package = format!("test{test_id}");
-        let child_class = to_pascal_case(child_name);
-        let marker =
-            sce_build::forge::sourcemap::marker_payload(&format!("{child_name}.scxml"), 1, &[]);
-        let stub = format!(
-            "// GENERATED STUB -- child codegen failed (no-op)\n\
-             // {marker}\n\
-             package {root}.generated.{parent_package}\n\n\
-             import com.sce.runtime.*\n\n\
-             sealed interface {child_class}State : State {{\n\
-             \x20   data object Initial : {child_class}State\n\
-             }}\n\
-             sealed interface {child_class}Event : Event\n\n\
-             class {child_class}StateMachine(\n\
-             \x20   scriptEngine: ScxmlScriptEngine? = null\n\
-             ) : StateMachineEngine<{child_class}State, {child_class}Event>(scriptEngine) {{\n\
-             \x20   override val initialState = {child_class}State.Initial\n\
-             \x20   override fun processEvent(state: {child_class}State, event: {child_class}Event) = TransitionResult.Ignored as TransitionResult<{child_class}State>\n\
-             \x20   override fun onEntry(state: {child_class}State) {{}}\n\
-             \x20   override fun onExit(state: {child_class}State) {{}}\n\
-             \x20   override fun executeTransitionActions(source: {child_class}State, event: {child_class}Event?) {{}}\n\
-             }}\n"
-        );
-        let child_sm_file = test_mod_dir.join(format!("{child_name}Sm.kt"));
-        write_if_changed_drift_aware(&child_sm_file, &stub, drift_ctx);
     }
 
     fn generate_test_file(&self, spec: &TestFileSpec) -> String {
