@@ -119,6 +119,8 @@ edit("sce/include/static/StaticExecutionEngine.h",
      """            if (!macrostepTruncated_ && internalQueue_.hasEvents()) {
                 continue;
             }
+
+            // docs/adr/0083: the macrostep is complete, and this is the point
 """,
      """            if (!macrostepTruncated_ && internalQueue_.hasEvents()) {
                 continue;
@@ -126,5 +128,7 @@ edit("sce/include/static/StaticExecutionEngine.h",
             if (macrostepTruncated_) {
                 break;
             }
+
+            // docs/adr/0083: the macrostep is complete, and this is the point
 """)
 PY

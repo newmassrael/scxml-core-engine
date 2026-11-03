@@ -28,6 +28,8 @@
 #include "core/AOTEventQueue.h"
 #include "core/ConfigurationHelper.h"
 #include "core/ConflictResolutionHelper.h"
+// docs/adr/0083: what another thread has for this engine, applied by its owner.
+#include "core/EngineInbox.h"
 #include "core/EntrySetHelper.h"
 #include "core/EventMatchingHelper.h"
 #include "core/EventMetadata.h"
@@ -67,6 +69,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace SCE::Saved {
@@ -195,6 +198,13 @@ using ScxmlInvokeCancelCallback = std::function<bool(const std::string &target, 
  * its zero mesh includes, as `MeshSendCallback` does. A child's
  * `<invoke type="sce:mesh-rpc">` is not served through it: the request has no
  * invoker in a child session and raises `error.execution` there.
+ *
+ * Threading (ARCHITECTURE.md "Engine Threading"): every member is called on the
+ * thread that owns the session's tree, which is the thread its parent is driven
+ * on. `takeCalls` is therefore the tree's own pull of what the router holds, an
+ * inbox of the router's making: a router whose transport receives on a thread of
+ * its own guards what it holds against that thread itself, and hands it over
+ * only when asked.
  */
 class IChildMeshRouter {
 public:
@@ -259,6 +269,20 @@ using ChildMeshRouters =
  * - Internal event queue with FIFO ordering (§scxml-3.13)
  * - Entry/exit action execution (§scxml-3.8, 3.9)
  * - Event processing loop (§scxml-D-mainEventLoop)
+ *
+ * Threading: the rule is ARCHITECTURE.md "Engine Threading" (docs/adr/0083).
+ * This engine runs no loop of its own; its owner is the thread that drives it.
+ * A run is entered (`initialize`, `enterAt`, a restore) on any thread, and the
+ * first macrostep a host drives after that (`step`, `tick`, `processEvent`,
+ * `pumpScheduledEvents`, `advanceTimeMs`) makes the driving thread the owner,
+ * until `stop` or the next run. The owner-thread operations are those, raising
+ * an external event (`raiseExternal`), ending or cancelling a host-run
+ * invocation (`completeHostInvoke`, `failHostInvoke`, `completeHostInvokeIn`,
+ * `failHostInvokeIn`, `endHostInvokeIn`, `cancelHostInvoke`), applying a Mesh
+ * delivery (`applyMeshCalls`) and `stop`. Another thread uses `inbox()`
+ * instead, the one thread-safe handle. A debug build checks each owner-thread
+ * operation and throws `std::logic_error` naming the inbox when it is called
+ * off the owner.
  *
  * @tparam StatePolicy Policy class providing state-specific implementations.
  *         Must satisfy SCE::Core::EventNamingPolicyTrait, which the class body asserts.
@@ -381,6 +405,44 @@ public:
                           const std::string &tgt = "")
             : event(e), data(d), origin(o), sendId(s), type(t), originType(ot), invokeId(i), target(tgt) {}
     };
+
+    // ── What another thread may post (docs/adr/0083) ─────────────────────
+    //
+    // The set is closed: it is the inputs that have a caller on another thread,
+    // each carrying exactly what the owner-thread operation that applies it
+    // takes, because the owner applies a posted input by calling that operation
+    // (`applyInboxInput`). A posted input and a direct call cannot differ.
+
+    /// An external event, applied with `raiseExternal(const EventWithMetadata &)`.
+    struct InboxExternalEvent {
+        EventWithMetadata event;
+    };
+
+    /// An external event named by text, applied with
+    /// `raiseExternal(const ForwardedEvent &)`: resolved against the document's
+    /// names when it is applied, and dropped then if no event of the document
+    /// could take it.
+    struct InboxExternalEventByName {
+        ::SCE::Common::ForwardedEvent event;
+    };
+
+    /// The end of a host-run invocation's start. An empty `sessionId` ends one of
+    /// this machine, applied with `completeHostInvoke` or `failHostInvoke`; a
+    /// session id ends one of that session of the tree, applied with
+    /// `endHostInvokeIn`. The token check those make is made when the input is
+    /// applied, so an ending posted for a start that was cancelled or started
+    /// again by then raises nothing, as a direct one would (see
+    /// `completeHostInvoke`).
+    struct InboxHostInvokeEnding {
+        std::string sessionId;
+        ::SCE::HostInvokeEnding ending;
+    };
+
+    /// One input of this engine's inbox.
+    using InboxInput = std::variant<InboxExternalEvent, InboxExternalEventByName, InboxHostInvokeEnding>;
+
+    /// The handle another thread posts to this engine through (`inbox()`).
+    using Inbox = ::SCE::Core::EngineInbox<InboxInput>;
 
 private:
     // ── Appendix D over the generated policy ─────────────────────────────
@@ -773,6 +835,10 @@ private:
     SCE::Core::EventQueueManager<EventWithMetadata>
         internalQueue_;  // §scxml-3.13: Internal event queue (high priority)
     SCE::Core::EventQueueManager<EventWithMetadata> externalQueue_;  // §scxml-3.13: External event queue (low priority)
+    // docs/adr/0083: what other threads posted, which the owner applies at each
+    // macrostep boundary (`drainInbox`), and the record of who the owner is. Open
+    // from construction, so what is posted before the first run is kept for it.
+    ::SCE::Core::EngineInboxOwner<InboxInput> inbox_;
     bool isRunning_ = false;
     // Whether `tick()` has ever run. A machine whose policy declares
     // NEEDS_EVENT_SCHEDULER has delayed events only `tick()` can deliver, so a
@@ -1047,10 +1113,131 @@ private:
     std::string pendingDonedataAtFinal_;
     std::optional<ScriptValue> pendingTypedDonedataAtFinal_;
 
+    // ── The owner and the inbox (ARCHITECTURE.md "Engine Threading") ─────
+
+    /**
+     * @brief Refuse @p operation, an owner-thread operation, on a thread that
+     *        does not own this engine (debug builds)
+     *
+     * Checked before the operation changes anything, so a refused call leaves
+     * the engine as it was. A release build does not check: the rule holds
+     * there by the host keeping it, as it does for any other C++ object
+     * confined to one thread.
+     */
+    void requireOwner(const char *operation) const {
+#ifndef NDEBUG
+        if (!inbox_.state().isOwnerHere()) {
+            refuseOffOwner(operation);
+        }
+#else
+        (void)operation;
+#endif
+    }
+
+    /**
+     * @brief The calling thread drives a macrostep of @p operation: it becomes
+     *        the owner when the engine has none, and is refused when another
+     *        thread owns it (debug builds)
+     */
+    void driveOnThisThread(const char *operation) {
+#ifndef NDEBUG
+        if (!inbox_.state().claimOwner()) {
+            refuseOffOwner(operation);
+        }
+#else
+        (void)operation;
+#endif
+    }
+
+    [[noreturn]] static void refuseOffOwner(const char *operation) {
+        throw std::logic_error(std::string(operation) +
+                               " is an owner-thread operation of this engine and was called from a thread that does "
+                               "not own it (ARCHITECTURE.md \"Engine Threading\"): call it from the thread driving "
+                               "the engine, or post the input from this thread through the engine's inbox "
+                               "(`inbox().post`)");
+    }
+
+    /**
+     * @brief The macrostep boundary's half of the inbox (docs/adr/0083)
+     *
+     * Applies, on the owner, what other threads posted, in the order the inbox
+     * took it, each by the owner-thread operation of the same name
+     * (`applyInboxInput`). At most `ENGINE_INBOX_CAPACITY` inputs per boundary,
+     * so posters that never stop cannot hold the owner here; what is left is
+     * applied at the next one.
+     */
+    void drainInbox() {
+        inbox_.state().drain(::SCE::Core::ENGINE_INBOX_CAPACITY,
+                             [this](InboxInput &&input) { applyInboxInput(std::move(input)); });
+    }
+
+    /**
+     * @brief Close the inbox and apply what it still holds
+     *
+     * A run that ended, or was stopped, takes no more posts. What was posted
+     * before is applied as a direct call would be now: an event joins the
+     * external queue of a machine that will not dequeue it, and an ending finds
+     * its invocation over.
+     */
+    void closeInbox() {
+        inbox_.state().close();
+        drainInbox();
+    }
+
+    /// Apply one posted @p input by the operation a direct call on the owner makes.
+    void applyInboxInput(InboxInput &&input) {
+        if (const auto *external = std::get_if<InboxExternalEvent>(&input)) {
+            raiseExternal(external->event);
+            return;
+        }
+        if (const auto *named = std::get_if<InboxExternalEventByName>(&input)) {
+            raiseExternal(named->event);
+            return;
+        }
+        if (const auto *ended = std::get_if<InboxHostInvokeEnding>(&input)) {
+            const ::SCE::HostInvokeEnding &ending = ended->ending;
+            if (!ended->sessionId.empty()) {
+                (void)endHostInvokeIn(ended->sessionId, ending);
+            } else if (ending.done) {
+                (void)completeHostInvoke(ending.processorType, ending.invokeId, ending.token, ending.data,
+                                         ending.origin, ending.originType);
+            } else {
+                (void)failHostInvoke(ending.processorType, ending.invokeId, ending.token, ending.data, ending.origin,
+                                     ending.originType);
+            }
+        }
+    }
+
 protected:
     StatePolicy policy_;  // Policy instance for stateful policies
 
 public:
+    /**
+     * @brief This engine's inbox: the handle a thread that does not own the
+     *        engine posts external events and host-run invocations' endings
+     *        through (docs/adr/0083)
+     *
+     * Thread-safe, as is every copy of it; everything else of the engine that
+     * changes its state is an owner-thread operation (ARCHITECTURE.md "Engine
+     * Threading"). What is posted is applied by the owner at its next macrostep
+     * boundary, before the external queue is consulted, in the order the inbox
+     * took it. `post` answers whether the inbox took the input: it refuses one
+     * once the run has ended or been stopped (until the next `initialize` or
+     * `enterAt`), and when it holds `SCE::Core::ENGINE_INBOX_CAPACITY` inputs the
+     * owner has not applied. A post taken before the first run is applied at that
+     * run's first boundary. `wakeWith` installs what each post calls, so a host
+     * that drives the engine itself knows when to drive it.
+     */
+    Inbox inbox() const {
+        return inbox_.handle();
+    }
+
+    /// How many posts this engine's inbox refused: closed, or full. A post that
+    /// returned `false` to a caller who could not act on it is still counted here.
+    uint64_t refusedInboxPosts() const {
+        return inbox_.state().refusedPosts();
+    }
+
     /**
      * @brief Raise an internal event with metadata (§scxml-3.13)
      *
@@ -1106,6 +1293,7 @@ public:
      */
     void raiseExternal(Event event, const std::string &eventData = "", const std::string &origin = "",
                        const std::string &target = "") {
+        requireOwner("raiseExternal");
         // §scxml-3.13: Enqueue event with metadata (origin, data, sendid, type, originType, target)
         // Delegates to the full-metadata overload so that SCE Mesh target
         // routing and §scxml-6.4 autoforward both see the event. Prior
@@ -1130,6 +1318,7 @@ public:
      * @param eventData Optional event data
      */
     void raiseExternal(const std::string &eventName, const std::string &eventData = "") {
+        requireOwner("raiseExternal");
         if (auto event = resolveEventByName(eventName)) {
             EventWithMetadata meta(*event, eventData, "", "", "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
             meta.name = arrivalNameOf(*event, eventName);
@@ -1177,6 +1366,7 @@ public:
      * @param forwarded Source event's name and `_event` fields
      */
     void raiseExternal(const ::SCE::Common::ForwardedEvent &forwarded) {
+        requireOwner("raiseExternal");
         auto event = resolveEventByName(forwarded.name);
         if (!event) {
             SCE_LOG_DEBUG("AOT raiseExternal: Forwarded event '{}' matches no event of the document, ignoring",
@@ -1200,6 +1390,7 @@ public:
      * @param eventWithMetadata Event with metadata (including invokeid)
      */
     void raiseExternal(const EventWithMetadata &eventWithMetadata) {
+        requireOwner("raiseExternal");
         // SCE Mesh: route cross-machine targets through the mesh callback before
         // they reach the external queue. Matches the §scxml-C-2 BasicHTTP
         // split — HTTP targets are dispatched via performHttpSend(), mesh
@@ -1643,6 +1834,8 @@ public:
      * did not choose.
      */
     void advanceTimeMs(uint64_t ms) {
+        // Before the clock moves: a refused call must leave the engine's time as it was.
+        driveOnThisThread("advanceTimeMs");
         auto manual = std::dynamic_pointer_cast<SCE::ManualClock>(clock_);
         if (!manual) {
             throw std::logic_error("StaticExecutionEngine::advanceTimeMs needs a ManualClock; this machine's "
@@ -2223,7 +2416,14 @@ protected:
                 // on the external queue ends with it. That is the clause: a
                 // machine that reached a top-level final state has exited the
                 // interpreter. Saying nothing about it is not the clause —
-                // see `unseenExternalEvents()`.
+                // see `unseenExternalEvents()`. The inbox closes with a run that
+                // ended, and what was posted before is applied first, so an
+                // event posted to it is counted with the rest. (A stopped run
+                // closed it in `stop()`; one never started keeps what was posted
+                // for its first boundary.)
+                if (isInFinalState()) {
+                    closeInbox();
+                }
                 recordUnseenExternalEvents();
                 // §scxml-D-exitInterpreter: the loop is over because the run
                 // entered a top-level final, so every state left is exited —
@@ -2255,6 +2455,19 @@ protected:
             // machine inside an endless chain reachable at all — the event
             // that rescues it is on that queue, and §scxml-3.13's priority
             // would otherwise hold it behind a chain that never ends.
+            if (!macrostepTruncated_ && internalQueue_.hasEvents()) {
+                continue;
+            }
+
+            // docs/adr/0083: the macrostep is complete, and this is the point
+            // before the external queue is consulted. What other threads posted
+            // since the last boundary is applied here, in the order the inbox
+            // took it, so an event it carries joins the external queue behind
+            // what this macrostep queued.
+            drainInbox();
+            // Applying an input can raise an internal event (an event whose
+            // target is refused raises error.execution), which comes before
+            // anything external, as one raised in the macrostep would.
             if (!macrostepTruncated_ && internalQueue_.hasEvents()) {
                 continue;
             }
@@ -2668,6 +2881,15 @@ public:
      * 4. Check for eventless transitions
      */
     void initialize() {
+        // ARCHITECTURE.md "Engine Threading": a run may be entered on any thread,
+        // and its owner is the thread that drives it from here (the first
+        // `step`, `tick` or `processEvent`). A run that ended or was stopped
+        // closed the inbox; this one takes posts again, and what was posted
+        // before the first run is applied at its first boundary.
+        requireOwner("initialize");
+        inbox_.state().releaseOwner();
+        inbox_.state().open();
+
         // §scxml-3.13: entering the initial configuration is one turn, and the
         // `<onentry>` handlers it runs arm their `<send delay>`s against one
         // instant — see `beginTurn()` for what reading the clock per `<send>`
@@ -2780,6 +3002,12 @@ public:
             return verdict;
         }
 
+        // The run resumed here is entered as `initialize` enters one: its owner is
+        // the thread that drives it next, and its inbox takes posts.
+        requireOwner("enterAt");
+        inbox_.state().releaseOwner();
+        inbox_.state().open();
+
         // §scxml-5.3: the datamodel is declared before anything can read it.
         // This is not a state entry action — `<datamodel>` holds `<data>`, not
         // executable content — so it runs here for the same reason it runs in
@@ -2828,7 +3056,9 @@ public:
         // §scxml-3.13: one host call, one reading. The macrostep below can
         // enter a state whose `<onentry>` arms several `<send delay>`s, and
         // they are one instant's worth of executable content however long the
-        // host takes to run them — see `beginTurn()`.
+        // host takes to run them — see `beginTurn()`. Asked of the owner first,
+        // so a refused call has not touched the turn either.
+        driveOnThisThread("step");
         TurnGuard turn(*this);
 
         // A machine with delayed sends hands `step()` a queue it cannot reach:
@@ -2887,6 +3117,7 @@ public:
      * @param event External event to process
      */
     void processEvent(Event event) {
+        driveOnThisThread("processEvent");
         if (!isRunning_) {
             // Refused rather than queued, so the drain in `runMainEventLoop`
             // never sees it — which is why the count is taken here as well as
@@ -2914,6 +3145,7 @@ public:
      * @param metadata Event metadata (originSessionId, etc.)
      */
     void processEvent(Event event, const SCE::Core::EventMetadata &metadata) {
+        driveOnThisThread("processEvent");
         if (!isRunning_) {
             // Same refusal as the overload above, same reason it is counted.
             noteUnseenEvent(event);
@@ -3104,12 +3336,19 @@ public:
      * first, and the configuration ends empty. The run has no terminal state —
      * it was stopped, not completed. A machine that already ended, or never
      * started, has nothing to exit.
+     *
+     * The inbox closes with the run, after what it holds is applied as a
+     * direct call would be now, and the engine has no owner until a thread
+     * drives the next run (ARCHITECTURE.md "Engine Threading").
      */
     void stop() {
+        requireOwner("stop");
         if (isRunning_) {
             exitInterpreter();
         }
         isRunning_ = false;
+        closeInbox();
+        inbox_.state().releaseOwner();
     }
 
     /**
@@ -3143,6 +3382,7 @@ public:
      * a time for that reason.
      */
     void pumpScheduledEvents() {
+        driveOnThisThread("pumpScheduledEvents");
         TurnGuard turn(*this);
         std::string eventData;
         std::string sendId;
@@ -3156,10 +3396,11 @@ public:
     /**
      * @brief Tick scheduler and process ready internal events (§scxml-6.2)
      *
-     * For single-threaded AOT engines with delayed send support.
      * This method polls the event scheduler and processes any ready scheduled events.
      * Should be called periodically in a polling loop to allow delayed sends to fire
-     * at the correct time.
+     * at the correct time. An owner-thread operation, and the one where what was
+     * posted to `inbox()` since the last call is applied, at the macrostep
+     * boundaries it reaches (ARCHITECTURE.md "Engine Threading").
      *
      * Implementation: Checks scheduler for ready events, raises them to external queue,
      * then processes event queues and checks for eventless transitions.
@@ -3170,6 +3411,7 @@ public:
         // below arm is measured from it — so a tick dispatches what was due
         // when the host called it, and cannot be extended by how long it takes
         // to run (see `beginTurn()`).
+        driveOnThisThread("tick");
         TurnGuard turn(*this);
 
         // Recorded before the running check: a host that calls `tick()` owns a
@@ -3511,9 +3753,10 @@ public:
      *         another child.
      */
     ::SCE::HostInvokeRoute routeHostInvokeEnd(const std::string &sessionId, const ::SCE::HostInvokeEnding &ending) {
+        requireOwner("routeHostInvokeEnd");
         if (!sessionId.empty() && sessionId == ownSessionId()) {
             return {true, endHostInvoke(ending.processorType, ending.invokeId, ending.token, !ending.done, ending.data,
-                                        "", "")};
+                                        ending.origin, ending.originType)};
         }
         if constexpr (SCE::Core::HasHostInvokerChildrenTrait<StatePolicy, ::SCE::HostInvokeEnding>::value) {
             return policy_.routeHostInvokeEnd(sessionId, ending);
@@ -3528,8 +3771,13 @@ public:
      *
      * The session's queue takes `done.invoke` or `error.invoke` as `completeHostInvoke`
      * and `failHostInvoke` raise them; a child takes it when its parent next drives it.
+     *
+     * An owner-thread operation: a host whose invocation ends on a thread of its own
+     * posts an `InboxHostInvokeEnding` naming the session to `inbox()` instead, and
+     * the owner applies it with this call at its next macrostep boundary.
      */
     ::SCE::HostInvokeEndOutcome endHostInvokeIn(const std::string &sessionId, const ::SCE::HostInvokeEnding &ending) {
+        requireOwner("endHostInvokeIn");
         const ::SCE::HostInvokeRoute route = routeHostInvokeEnd(sessionId, ending);
         if (!route.reached) {
             return ::SCE::HostInvokeEndOutcome::NoSuchSession;
@@ -3547,7 +3795,14 @@ public:
     ::SCE::HostInvokeEndOutcome completeHostInvokeIn(const std::string &sessionId, const std::string &processorType,
                                                      const std::string &invokeId, uint64_t token,
                                                      const std::string &doneData = "") {
-        return endHostInvokeIn(sessionId, ::SCE::HostInvokeEnding{processorType, invokeId, token, true, doneData});
+        requireOwner("completeHostInvokeIn");
+        return endHostInvokeIn(sessionId, ::SCE::HostInvokeEnding{/*processorType=*/processorType,
+                                                                  /*invokeId=*/invokeId,
+                                                                  /*token=*/token,
+                                                                  /*done=*/true,
+                                                                  /*data=*/doneData,
+                                                                  /*origin=*/"",
+                                                                  /*originType=*/""});
     }
 
     /**
@@ -3557,7 +3812,14 @@ public:
     ::SCE::HostInvokeEndOutcome failHostInvokeIn(const std::string &sessionId, const std::string &processorType,
                                                  const std::string &invokeId, uint64_t token,
                                                  const std::string &errorData = "") {
-        return endHostInvokeIn(sessionId, ::SCE::HostInvokeEnding{processorType, invokeId, token, false, errorData});
+        requireOwner("failHostInvokeIn");
+        return endHostInvokeIn(sessionId, ::SCE::HostInvokeEnding{/*processorType=*/processorType,
+                                                                  /*invokeId=*/invokeId,
+                                                                  /*token=*/token,
+                                                                  /*done=*/false,
+                                                                  /*data=*/errorData,
+                                                                  /*origin=*/"",
+                                                                  /*originType=*/""});
     }
 
     /**
@@ -3646,10 +3908,16 @@ public:
      * for another party it can name — as a Mesh router's `sce:mesh-rpc` stands
      * for the peer that answered (SCE_MESH.md §mesh-9.5). Empty keeps what
      * every host completion has carried.
+     *
+     * An owner-thread operation (ARCHITECTURE.md "Engine Threading"): a host
+     * whose invocation finishes on a thread of its own posts an
+     * `InboxHostInvokeEnding` to `inbox()` instead, and the owner applies it
+     * with this call at its next macrostep boundary, where the token is checked.
      */
     bool completeHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
                             const std::string &doneData, const std::string &origin = "",
                             const std::string &originType = "") {
+        requireOwner("completeHostInvoke");
         return endHostInvoke(processorType, invokeId, token, false, doneData, origin, originType);
     }
 
@@ -3662,11 +3930,13 @@ public:
      * while start `token` is still running, ending the invocation, so a run
      * ends once — by success, failure or deadline, whichever comes first.
      * Returns `false`, raising nothing, for an invocation that was cancelled,
-     * already ended, or restarted since.
+     * already ended, or restarted since. An owner-thread operation, posted
+     * from another thread as `completeHostInvoke` is.
      */
     bool failHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
                         const std::string &errorData, const std::string &origin = "",
                         const std::string &originType = "") {
+        requireOwner("failHostInvoke");
         return endHostInvoke(processorType, invokeId, token, true, errorData, origin, originType);
     }
 
@@ -3843,6 +4113,7 @@ public:
      * @return whether a cancel was delivered
      */
     bool cancelHostInvoke(const std::string &processorType, const std::string &invokeId) {
+        requireOwner("cancelHostInvoke");
         // docs/adr/0045: one a restore re-armed and has not started again was never
         // started by this engine, so there is nothing to tell the host to stop; it is
         // dropped, so it is never started.
@@ -4081,8 +4352,15 @@ public:
      * declare is dropped, as the engine drops any such event. The generated
      * parent calls it each time it drives this child, before the child's
      * macrostep. Does nothing for a machine given no router.
+     *
+     * An owner-thread operation, called by the parent that drives this child on
+     * the thread that drives it, so the router is asked for its calls only
+     * there. A router that receives on a thread of its own keeps what it
+     * received under its own lock until then: `takeCalls` and `send` are called
+     * on the owner, and only the router's own receiving side runs elsewhere.
      */
     void applyMeshCalls() {
+        requireOwner("applyMeshCalls");
         if (!installedMesh_) {
             return;
         }

@@ -348,6 +348,10 @@ struct TreeInvokers {
  * @brief How a host ends a host-run invocation of some session of a tree: the
  *        start it ends, and whether it completed (`done.invoke`) or failed
  *        (`error.invoke`), with `data` as the event's `_event.data`
+ *
+ * Everything the engine's completion and failure take, so an ending posted to an
+ * engine's inbox from another thread carries what a direct call on its owner
+ * would have passed (docs/adr/0083).
  */
 struct HostInvokeEnding {
     /// The `type` the request named.
@@ -360,6 +364,11 @@ struct HostInvokeEnding {
     bool done = true;
     /// `_event.data` of the event the ending raises.
     std::string data;
+    /// `_event.origin` of that event, for a host whose invocation stands for a
+    /// party it can name; empty for none.
+    std::string origin;
+    /// `_event.origintype` of that event; empty keeps the SCXML processor's.
+    std::string originType;
 };
 
 /**
