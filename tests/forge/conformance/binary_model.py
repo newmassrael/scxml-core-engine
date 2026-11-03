@@ -55,8 +55,12 @@ What the model reads so far, and refuses by name past it:
 * a gate group ([`Group`], docs/adr/0065 §6 R4b, R4c): two or more elements
   one flag decides, a stated length counting on the side where its content is
   not, or the fields a disjunction `c.a || c.b` of the codec's own flags
-  decides where no other gate reads them. A group of a flag input or of a
-  chain's membership, or one holding a body or a list, is not read yet.
+  decides where no other gate reads them. A group of a chain's membership, or
+  one holding a body or a list, is not read yet;
+* the flag inputs a codec declares (`<sce:flag-inputs>`, one bit each): a gate
+  on one is decided by the value the parent hands, which a case states in its
+  `inputs`, and two elements one input decides are a group keyed by its name.
+  A held codec whose inputs its parent binds is not read yet.
 
 Each fixture this module writes is listed in FIXTURES with its hand-chosen
 sources; `regenerate` writes them into `numerical_reference.json` under the
@@ -125,11 +129,19 @@ class Flag:
 
 @dataclass
 class Clause:
-    """One flag of a carrier a gate reads, `carrier.flag` or its negation."""
+    """One flag a gate reads, or its negation: a flag of a carrier
+    (`carrier.flag`), or a flag input the parent hands the codec (`flag`,
+    `carrier` empty)."""
 
     carrier: str
     flag: str
     when_clear: bool
+
+    def label(self) -> str:
+        return f"{self.carrier}.{self.flag}" if self.carrier else self.flag
+
+    def is_input(self) -> bool:
+        return not self.carrier
 
 
 @dataclass
@@ -234,6 +246,9 @@ class Field:
 class Codec:
     name: str
     fields: list[Field]
+    #: The flag inputs the codec declares (`<sce:flag-inputs>`), in order: the
+    #: values a parent hands its decode, each one bit.
+    inputs: list[str] = field(default_factory=list)
 
     def field(self, id: str) -> Field:
         return next(f for f in self.fields if f.id == id)
@@ -261,14 +276,20 @@ class Codec:
     def presented(self, f: Field) -> bool:
         return not self.is_length(f) or self.stated(f)
 
-    def gate_flags(self) -> dict[tuple[str, str], list[Field]]:
-        """Each flag a gate of one flag names, and the presented fields it gates:
-        the encoder sets it from their presence."""
+    def one_flag_gated(self) -> dict[tuple[str, str], list[Field]]:
+        """Each flag a gate of one flag names, a carrier's or a flag input
+        (carrier empty), and the presented fields it gates."""
         out: dict[tuple[str, str], list[Field]] = {}
         for f in self.fields:
             if f.gate is not None and f.gate.one() is not None and self.presented(f):
                 out.setdefault((f.gate.carrier, f.gate.flag), []).append(f)
         return out
+
+    def gate_flags(self) -> dict[tuple[str, str], list[Field]]:
+        """Each flag of a carrier a gate of one flag names, and the presented
+        fields it gates: the encoder sets it from their presence. A flag input
+        is the parent's to set, and no field of this codec holds it."""
+        return {key: gated for key, gated in self.one_flag_gated().items() if key[0]}
 
     def decided(self) -> dict[tuple[str, str], list[tuple[Field, bool]]]:
         """Each flag a gate of one flag names, and every element of the value
@@ -277,7 +298,7 @@ class Codec:
         content it gates, which the value holds on the side where the content
         is not (`SCE_FORGE.md` §4.6, docs/adr/0065 §6 R4b)."""
         out: dict[tuple[str, str], list[tuple[Field, bool]]] = {}
-        for key, gated in self.gate_flags().items():
+        for key, gated in self.one_flag_gated().items():
             out[key] = [(f, not f.gate.when_clear) for f in gated]
         for f in self.fields:
             if self.stated(f):
@@ -302,7 +323,7 @@ class Codec:
             ]
             out.append(
                 Group(
-                    label=f"{carrier}.{name}",
+                    label=Clause(carrier, name, False).label(),
                     clauses=[Clause(carrier, name, False)],
                     arms=[((side,), fields) for side, fields in sides],
                     optional=len(sides) == 1,
@@ -324,7 +345,7 @@ class Codec:
     def check(self) -> None:
         """Refuse what the model does not read among the relations of fields."""
         for (carrier, name), decided in self.decided().items():
-            if self.flag(carrier, name).width != 1:
+            if carrier and self.flag(carrier, name).width != 1:
                 raise Unread(f"{self.name}: a gate on the {name} flag, wider than one bit")
         one_flag = {(c.carrier, c.flag) for f in self.fields if f.gate for c in f.gate.clauses
                     if f.gate.one() is not None}
@@ -332,6 +353,8 @@ class Codec:
             if f.gate is None or f.gate.one() is not None:
                 continue
             for c in f.gate.clauses:
+                if c.is_input():
+                    raise Unread(f"{self.name}: the disjunction `{f.gate.text}` reads a flag input")
                 if c.when_clear or self.flag(c.carrier, c.flag).width != 1:
                     raise Unread(f"{self.name}: the disjunction `{f.gate.text}` is not of set flags")
                 if (c.carrier, c.flag) in one_flag or any(
@@ -370,25 +393,31 @@ def read_codec(stem: str) -> Codec:
     return read_document(RESOURCES / f"{stem}.scxml")
 
 
-def read_gate(stem: str, node) -> Gate | None:
+def read_gate(stem: str, node, inputs: list[str]) -> Gate | None:
     present_if = node.get(f"{SCE}present-if")
     if present_if is None:
         return None
     text = present_if.strip()
     if "&" in text or "(" in text:
-        raise Unread(f"{stem}: gate {present_if!r} is not flags of a carrier joined by ||")
+        raise Unread(f"{stem}: gate {present_if!r} is not flags joined by ||")
     clauses = []
     for part in text.split("||"):
         part = part.strip()
         when_clear = part.startswith("!")
         carrier, _, flag = part.lstrip("!").partition(".")
         if not flag:
-            raise Unread(f"{stem}: gate {present_if!r} names a flag of no carrier")
-        clauses.append(Clause(carrier.strip(), flag.strip(), when_clear))
-    return Gate(clauses, " || ".join(f"{c.carrier}.{c.flag}" for c in clauses))
+            name = carrier.strip()
+            if name not in inputs:
+                raise Unread(f"{stem}: gate {present_if!r} names `{name}`, no flag input")
+            clauses.append(Clause("", name, when_clear))
+        else:
+            clauses.append(Clause(carrier.strip(), flag.strip(), when_clear))
+    return Gate(clauses, " || ".join(c.label() for c in clauses))
 
 
-def read_held(stem: str, node, kind: str, imports: dict[str, Codec]) -> Field:
+def read_held(
+    stem: str, node, kind: str, imports: dict[str, Codec], inputs: list[str]
+) -> Field:
     """An embedded body, a `<sce:repeat>` or a `<sce:tlv-chain>`: a field
     holding the codec imported as its `type`."""
     id = node.get("id")
@@ -397,6 +426,8 @@ def read_held(stem: str, node, kind: str, imports: dict[str, Codec]) -> Field:
     child = imports.get(node.get("type"))
     if child is None:
         raise Unread(f"{stem}: `{id}` holds `{node.get('type')}`, which is not imported")
+    if child.inputs:
+        raise Unread(f"{stem}: `{id}` holds a codec that takes flag inputs, a binding not read yet")
     if kind == "embed":
         size, measured_by, most = "body", node.get(f"{SCE}length-from"), None
     elif kind == "repeat":
@@ -414,7 +445,7 @@ def read_held(stem: str, node, kind: str, imports: dict[str, Codec]) -> Field:
         byte=int(node.get(f"{SCE}byte")),
         bit_offset=None,
         endian="big",
-        gate=read_gate(stem, node),
+        gate=read_gate(stem, node, inputs),
         measured_by=measured_by,
         most=most,
         child=child,
@@ -432,9 +463,21 @@ def read_document(path: Path) -> Codec:
     if root.get(f"{SCE}kind") != "codec":
         raise Unread(f"{stem}: not a codec")
     imports: dict[str, Codec] = {}
+    inputs: list[str] = []
     for child in root:
-        if child.tag == f"{SCE}import":
-            if child.get("kind") != "codec" or set(child.attrib) - {"src", "kind", "as"}:
+        if child.tag == f"{SCE}flag-inputs":
+            for item in child:
+                if item.tag != f"{SCE}flag-input" or set(item.attrib) - {"name", "width"}:
+                    raise Unread(f"{stem}: a flag input declares what is not read yet")
+                if item.get("width", "1") != "1":
+                    raise Unread(f"{stem}: the flag input `{item.get('name')}` is wider than a bit")
+                inputs.append(item.get("name"))
+        elif child.tag == f"{SCE}import":
+            if (
+                child.get("kind") != "codec"
+                or set(child.attrib) - {"src", "kind", "as"}
+                or len(child)
+            ):
                 raise Unread(f"{stem}: an import other than of a codec by its file")
             src = child.get("src")
             if src.startswith("sce:"):
@@ -456,7 +499,7 @@ def read_document(path: Path) -> Codec:
         if extra := sorted(set(node.attrib) - READ_ATTRIBUTES[kind]):
             raise Unread(f"{stem}: `{id}` declares {', '.join(extra)}, which is not read yet")
         if kind != "field":
-            fields.append(read_held(stem, node, kind, imports))
+            fields.append(read_held(stem, node, kind, imports, inputs))
             continue
         sce_type = node.get(f"{SCE}type")
         size_text = node.get(f"{SCE}bit-size")
@@ -494,13 +537,13 @@ def read_document(path: Path) -> Codec:
                 endian=node.get(f"{SCE}endian", default_endian),
                 carrier=tag == f"{SCE}flags",
                 flags=flags,
-                gate=read_gate(stem, node),
+                gate=read_gate(stem, node, inputs),
                 measured_by=length_field,
                 arith=attribute_int(node, "length-arith") or 0,
                 most=attribute_int(node, "max-size"),
             )
         )
-    codec = Codec(root.get("name"), fields)
+    codec = Codec(root.get("name"), fields, inputs)
     codec.check()
     return codec
 
@@ -528,11 +571,15 @@ def read_vle(frame: bytes, at: int) -> tuple[int, int]:
     raise AssertionError("unreachable")
 
 
-def gate_holds(codec: Codec, gate: Gate, carriers: dict[str, int]) -> bool:
-    """Whether some clause of `gate` holds of the carriers read so far."""
+def gate_holds(codec: Codec, gate: Gate, carriers: dict[str, int], inputs: dict[str, int]) -> bool:
+    """Whether some clause of `gate` holds of the carriers read so far and the
+    flag inputs the parent hands the codec."""
     for clause in gate.clauses:
-        flag = codec.flag(clause.carrier, clause.flag)
-        set_ = (carriers[clause.carrier] >> flag.bit) & 1 == 1
+        if clause.is_input():
+            set_ = inputs[clause.flag] == 1
+        else:
+            flag = codec.flag(clause.carrier, clause.flag)
+            set_ = (carriers[clause.carrier] >> flag.bit) & 1 == 1
         if set_ != clause.when_clear:
             return True
     return False
@@ -593,12 +640,22 @@ def said_length(codec: Codec, name: str, contents: dict[str, bytes | list[bytes]
     return wire
 
 
-def encode(codec: Codec, source: dict) -> bytes:
-    """The frame of `source`: the fields in declaration order, a field gated off
-    left out, each derived element computed from what the value presents, and
-    the fields that share a byte packed into it."""
+def handed(codec: Codec, inputs: dict | None) -> dict[str, int]:
+    """The flag inputs a parent hands `codec`, each one bit, every one named."""
+    inputs = inputs or {}
+    if sorted(inputs) != sorted(codec.inputs) or any(v not in (0, 1) for v in inputs.values()):
+        raise ValueError(f"{codec.name}: the parent hands {codec.inputs} as 0 or 1, not {inputs}")
+    return inputs
+
+
+def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
+    """The frame of `source`, `inputs` the flag inputs its parent hands it: the
+    fields in declaration order, a field gated off left out, each derived
+    element computed from what the value presents, and the fields that share a
+    byte packed into it."""
     if not isinstance(source, dict):
         raise ValueError(f"{codec.name}: a source is a JSON object")
+    inputs = handed(codec, inputs)
     groups = codec.groups()
     grouped = {m.id for g in groups for m in g.members()}
     presented = [f.id for f in codec.fields if codec.presented(f) and f.id not in grouped]
@@ -659,7 +716,7 @@ def encode(codec: Codec, source: dict) -> bytes:
     packed: dict[int, int] = {}
     for f in codec.fields:
         if f.gate is not None:
-            holds = gate_holds(codec, f.gate, carriers)
+            holds = gate_holds(codec, f.gate, carriers, inputs)
             if codec.presented(f) and holds != (source[f.id] is not None):
                 raise ValueError(f"{codec.name}: `{f.id}` disagrees with its gate")
             if not holds:
@@ -700,11 +757,11 @@ def last_of_its_byte(codec: Codec, f: Field) -> bool:
     )
 
 
-def decode(codec: Codec, frame: bytes) -> dict:
+def decode(codec: Codec, frame: bytes, inputs: dict | None = None) -> dict:
     """The `source` a frame says, the inverse of [`encode`]: a derived element
     is not a member, a stated measure is a member only where its content is
     absent, and a carrier is presented as read."""
-    source, at = decode_at(codec, frame, 0, len(frame))
+    source, at = decode_at(codec, frame, 0, len(frame), handed(codec, inputs))
     if at != len(frame):
         raise ValueError(f"{codec.name}: {len(frame) - at} bytes left over")
     return source
@@ -720,10 +777,12 @@ def measure_on_wire(codec: Codec, name: str, raw: dict, carriers: dict[str, int]
     return raw[carrier]
 
 
-def decode_at(codec: Codec, frame: bytes, at: int, end: int) -> tuple[dict, int]:
+def decode_at(
+    codec: Codec, frame: bytes, at: int, end: int, inputs: dict[str, int]
+) -> tuple[dict, int]:
     """The `source` of `codec` read from `frame` at `at`, within a scope that
-    ends at `end`, where a `tail` and a list read to the end stop; and where
-    the read stopped."""
+    ends at `end`, where a `tail` and a list read to the end stop, its parent
+    handing it `inputs`; and where the read stopped."""
     raw: dict = {}
     carriers: dict[str, int] = {}
 
@@ -732,7 +791,7 @@ def decode_at(codec: Codec, frame: bytes, at: int, end: int) -> tuple[dict, int]
             raise ValueError(f"{codec.name}: the frame ends inside `{what}`")
 
     for f in codec.fields:
-        if f.gate is not None and not gate_holds(codec, f.gate, carriers):
+        if f.gate is not None and not gate_holds(codec, f.gate, carriers, inputs):
             raw[f.id] = None
             continue
         if f.sce_type in SEQUENCE:
@@ -749,11 +808,11 @@ def decode_at(codec: Codec, frame: bytes, at: int, end: int) -> tuple[dict, int]
             continue
         if f.size == "body":
             if f.measured_by is None:
-                raw[f.id], at = decode_at(f.child, frame, at, end)
+                raw[f.id], at = decode_at(f.child, frame, at, end, {})
             else:
                 n = measure_on_wire(codec, f.measured_by, raw, carriers)
                 within(n, f.id)
-                raw[f.id], stop = decode_at(f.child, frame, at, at + n)
+                raw[f.id], stop = decode_at(f.child, frame, at, at + n, {})
                 if stop != at + n:
                     raise ValueError(f"{codec.name}: `{f.id}` ends before the bytes it is given")
                 at += n
@@ -766,7 +825,7 @@ def decode_at(codec: Codec, frame: bytes, at: int, end: int) -> tuple[dict, int]
             while (len(entries) < count) if count is not None else (at < end):
                 if f.most is not None and len(entries) == f.most:
                     raise ValueError(f"{codec.name}: `{f.id}` holds more than {f.most} entries")
-                entry, stop = decode_at(f.child, frame, at, end)
+                entry, stop = decode_at(f.child, frame, at, end, {})
                 if stop == at:
                     raise ValueError(f"{codec.name}: an entry of `{f.id}` reads no byte")
                 entries.append(entry)
@@ -801,7 +860,8 @@ def decode_at(codec: Codec, frame: bytes, at: int, end: int) -> tuple[dict, int]
     # flag of an optional group says no arm.
     for group in codec.groups():
         values = tuple(
-            gate_holds(codec, Gate([clause], clause.flag), carriers) for clause in group.clauses
+            gate_holds(codec, Gate([clause], clause.label()), carriers, inputs)
+            for clause in group.clauses
         )
         read = {m.id: source.pop(m.id) for m in group.members()}
         arm = next((i for i, (v, _) in enumerate(group.arms) if v == values), None)
@@ -819,15 +879,22 @@ class Written:
     sources: list[dict]
 
 
-def write(stem: str, sources: list[tuple[dict, str]]) -> Written:
+def write(stem: str, sources: list[tuple]) -> Written:
+    """Each `(source, note)`, or `(source, note, inputs)` for a codec that
+    takes flag inputs, with its frame, held by the model. A case of such a
+    codec states the inputs its parent hands it, which its decode is given."""
     codec = read_codec(stem)
     out = []
-    for source, note in sources:
-        frame = encode(codec, source)
-        again = decode(codec, frame)
+    for source, note, *rest in sources:
+        inputs = rest[0] if rest else None
+        frame = encode(codec, source, inputs)
+        again = decode(codec, frame, inputs)
         if again != source:
             raise AssertionError(f"{stem}: {source} reads back as {again}")
-        out.append({"source": source, "encoded": list(frame), "note": note})
+        case = {"source": source}
+        if codec.inputs:
+            case["inputs"] = inputs
+        out.append(case | {"encoded": list(frame), "note": note})
     return Written(out)
 
 
@@ -1077,6 +1144,109 @@ FIXTURES = {
         ],
         "a disjunction no other gate reads is a group (R4c): an arm for each assignment of its "
         "flags that satisfies it, the first flag the lowest bit, and the flags derived from it.",
+    ),
+    "codec_zenoh_wireexpr": Fixture(
+        [
+            ({"id": 5, "suffix": None}, "N clear: the id alone", {"N": 0}),
+            ({"id": 0x80, "suffix": "a/b"}, "N set: the suffix and its length follow",
+             {"N": 1}),
+            ({"id": 1, "suffix": ""}, "an empty suffix is present", {"N": 1}),
+        ],
+        "the parent hands N, which the value says: a suffix is there exactly where N is set.",
+    ),
+    "codec_init_cookie_body": Fixture(
+        [
+            ({"version": 1, "cookie": None}, "A clear: no cookie", {"A": 0}),
+            ({"version": 1, "cookie": [1, 2, 3]}, "A set: the cookie and its length", {"A": 1}),
+            ({"version": 2, "cookie": list(range(64))}, "a cookie at its bound", {"A": 1}),
+        ],
+        "the parent hands A, which the value says by its cookie.",
+    ),
+    "codec_init_syn_body": Fixture(
+        [
+            ({"version": 1, "S": None}, "S clear: the version alone", {"S": 0}),
+            ({"version": 1, "S": {"arm": 0, "sn_res": 2, "batch_size": 0x1000}},
+             "S set: both fields it decides", {"S": 1}),
+        ],
+        "two fields one flag input decides are a group (R4b), keyed by the input.",
+    ),
+    "codec_zenoh_init_body": Fixture(
+        [
+            ({"version": 1, "cbyte": 0x01, "zid": [7], "S": None, "cookie": None},
+             "neither input: a one-byte zid", {"S": 0, "A": 0}),
+            ({"version": 1, "cbyte": 0x31, "zid": [1, 2, 3, 4],
+              "S": {"arm": 0, "sn_res": 0x0A, "batch_size": 0x0102}, "cookie": [9, 9]},
+             "both inputs: the group, little-endian, and the cookie", {"S": 1, "A": 1}),
+        ],
+        "two flag inputs the value says: one by a group, one by its cookie.",
+    ),
+    "codec_zenoh_open_body": Fixture(
+        [
+            ({"lease": 10, "initial_sn": 0, "cookie": [1, 2]}, "A clear: a cookie", {"A": 0}),
+            ({"lease": 10, "initial_sn": 0x80, "cookie": None}, "A set: no cookie", {"A": 1}),
+            ({"lease": 0, "initial_sn": 0, "cookie": []}, "an empty cookie is present", {"A": 0}),
+        ],
+        "a negated flag input: the cookie is there exactly where A is clear.",
+    ),
+    "codec_chain_flag_entry": Fixture(
+        [
+            ({"header": 0x01, "wide": {"arm": 1, "short_value": 5}}, "wide clear: one byte",
+             {"wide": 0}),
+            ({"header": 0x82, "wide": {"arm": 0, "long_value": 0x1234}}, "wide set: two bytes",
+             {"wide": 1}),
+        ],
+        "a flag input both of whose sides hold a field is a group of two arms.",
+    ),
+    "codec_chain_prev_entry": Fixture(
+        [
+            ({"header": 0x04, "after_marker": {"arm": 1, "short_value": 1}, "tag": None},
+             "neither input", {"after_marker": 0, "tagged": 0}),
+            ({"header": 0x81, "after_marker": {"arm": 0, "long_value": 2}, "tag": 7},
+             "both inputs: the long value and the tag", {"after_marker": 1, "tagged": 1}),
+        ],
+        "two flag inputs: one a group of two arms, one said by a single field.",
+    ),
+    "codec_zenoh_join": Fixture(
+        [
+            ({"version": 1, "cbyte": 0x02, "zid": [5], "S": None, "lease": 1,
+              "next_sn_reliable": 2, "next_sn_best_effort": 3},
+             "S clear: no sn_res or batch_size", {"S": 0}),
+            ({"version": 1, "cbyte": 0x12, "zid": [5, 6],
+              "S": {"arm": 0, "sn_res": 8, "batch_size": 0x0200},
+              "lease": 0x80, "next_sn_reliable": 0, "next_sn_best_effort": 0},
+             "S set: the group, little-endian", {"S": 1}),
+        ],
+        "a group of two fields one flag input decides, among VLEs.",
+    ),
+    "codec_zenoh_undecl_queryable": Fixture(
+        [
+            ({"id": 1, "ext_keyexpr": None}, "Z clear: the id alone", {"Z": 0}),
+            ({"id": 0x80, "ext_keyexpr": {"outer_header": 0x0F,
+                                          "inner": {"inner_header": 0x00, "id": 5,
+                                                    "suffix": None}}},
+             "Z set: the key expression extension", {"Z": 1}),
+        ],
+        "a body gated on a flag input, which the value says by the body.",
+    ),
+    "codec_zenoh_undecl_subscriber": Fixture(
+        [
+            ({"id": 2, "ext_keyexpr": None}, "Z clear: the id alone", {"Z": 0}),
+            ({"id": 3, "ext_keyexpr": {"outer_header": 0x0F,
+                                       "inner": {"inner_header": 0x03, "id": 1,
+                                                 "suffix": [0x61]}}},
+             "Z set: the extension with a suffix", {"Z": 1}),
+        ],
+        "a body gated on a flag input, which the value says by the body.",
+    ),
+    "codec_zenoh_undecl_token": Fixture(
+        [
+            ({"id": 0, "ext_keyexpr": None}, "Z clear: the id alone", {"Z": 0}),
+            ({"id": 9, "ext_keyexpr": {"outer_header": 0x0F,
+                                       "inner": {"inner_header": 0x00, "id": 0,
+                                                 "suffix": None}}},
+             "Z set: the key expression extension", {"Z": 1}),
+        ],
+        "a body gated on a flag input, which the value says by the body.",
     ),
     "codec_chain_depth_entry": Fixture(
         [({"header": 0x05}, "an id, Z clear"), ({"header": 0x8F}, "id 15 and Z set")],

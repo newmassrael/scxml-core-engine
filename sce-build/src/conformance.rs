@@ -3251,9 +3251,11 @@ fn fold_source_cases(
                         imported,
                         include: &include,
                     };
-                    let case =
-                        crate::forge::generator::rust_source_case(plan, &path, source, &mut held)
-                            .map_err(|e| format!("{at}: {e}"))?;
+                    let inputs = row.get("inputs").unwrap_or(&serde_json::Value::Null);
+                    let case = crate::forge::generator::rust_source_case(
+                        plan, &path, source, inputs, &mut held,
+                    )
+                    .map_err(|e| format!("{at}: {e}"))?;
                     let checks: Vec<serde_json::Value> = case
                         .checks
                         .into_iter()
@@ -3265,6 +3267,7 @@ fn fold_source_cases(
                         "bindings": case.bindings,
                         "literal": case.literal,
                         "checks": checks,
+                        "inputs": case.inputs,
                         "encoded": encoded,
                         "note": note,
                     }))
@@ -4199,6 +4202,9 @@ mod tests {
              CodecPresentIfLengthRefFlagsHasPayload::NotHasPayload { payload_size: 9 }",
             "flags_wants_a_or_wants_b: Some(fixtures::codec_present_if_disjunction::\
              CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsB { seq: 5 })",
+            // A flag input the value says: the decode is handed it, and the
+            // value is held to saying the one the case hands.
+            "fixtures::codec_zenoh_wireexpr::CodecZenohWireexprWire::input_n(&parts) == true",
         ] {
             assert!(rust.contains(literal), "the Rust harness lacks `{literal}`");
         }

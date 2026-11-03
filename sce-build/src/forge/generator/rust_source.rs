@@ -176,21 +176,30 @@ pub(crate) struct SourceCase {
     /// The `{Codec}Parts` value.
     pub literal: String,
     /// Each element by its id, with a `bool` expression over `decoded` and
-    /// `parts` that holds when the two present the same.
+    /// `parts` that holds when the two present the same; and each flag input
+    /// the value says, with one that holds when it says the input the case
+    /// is handed.
     pub checks: Vec<(String, String)>,
+    /// The flag inputs the decode is handed, in the order the codec declares
+    /// them, as arguments of its `decode`.
+    pub inputs: Vec<String>,
 }
 
-/// The byte case of `source`, a value of the codec `plan` at `path`. A shape the
-/// literal does not spell yet is refused by name, and so is a source that
-/// states an element the value does not present or leaves out one it does.
+/// The byte case of `source`, a value of the codec `plan` at `path`, its parent
+/// handing it `inputs` (`{"name": 0 | 1}`, or `null` for a codec that takes
+/// none). A shape the literal does not spell yet is refused by name, and so is
+/// a source that states an element the value does not present or leaves out
+/// one it does, and inputs that are not the codec's.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
     source: &serde_json::Value,
+    inputs: &serde_json::Value,
     held: &mut dyn HeldCodecs,
 ) -> Result<SourceCase, String> {
     let mut bindings = Vec::new();
     let literal = parts_literal(plan, path, source, held, &mut bindings)?;
+    let (inputs, said) = handed_inputs(plan, path, inputs)?;
     let mut fresh = 0;
     let mut checks: Vec<(String, String)> = plan
         .elements
@@ -206,11 +215,68 @@ pub(crate) fn source_case(
             group_equal(group, path, "&decoded", "&parts"),
         )
     }));
+    checks.extend(said);
     Ok(SourceCase {
         bindings,
         literal,
         checks,
+        inputs,
     })
+}
+
+/// The flag inputs a case hands the codec at `path`, as `decode`'s arguments in
+/// the order the codec declares them; and, for each input the value says
+/// (docs/adr/0065 §6 R4a), an expression that holds when `parts` says the one
+/// the case hands. An input the value does not say is one the encode takes as
+/// an argument, which a case does not spell yet.
+fn handed_inputs(
+    plan: &EncodePlan<'_>,
+    path: &CodecPath,
+    inputs: &serde_json::Value,
+) -> Result<(Vec<String>, Vec<(String, String)>), String> {
+    if let Some(input) = plan.given.first() {
+        return Err(format!(
+            "the value does not say the flag input `{}`, which its encode takes, and a case \
+             does not spell that yet",
+            input.name
+        ));
+    }
+    let declared = &plan.model.flag_inputs;
+    let object = match inputs {
+        serde_json::Value::Null if declared.is_empty() => return Ok((Vec::new(), Vec::new())),
+        serde_json::Value::Object(object) => object,
+        _ => return Err("a case of a codec that takes flag inputs states `inputs`".to_string()),
+    };
+    if let Some(extra) = object
+        .keys()
+        .find(|key| !declared.iter().any(|i| &i.name == *key))
+    {
+        return Err(format!("`{extra}` is no flag input of the codec"));
+    }
+    let mut args = Vec::new();
+    let mut said = Vec::new();
+    for input in declared {
+        let value = object
+            .get(&input.name)
+            .and_then(serde_json::Value::as_u64)
+            .filter(|v| *v <= 1)
+            .ok_or_else(|| format!("the case hands `{}` as 0 or 1", input.name))?;
+        args.push(value.to_string());
+        let says = format!(
+            "{}::{}Wire::input_{}(&parts)",
+            path.module,
+            path.type_name,
+            filters::to_snake_case(input.name.clone())
+        );
+        let handed = if value == 1 { "true" } else { "false" };
+        let holds = if plan.roles.says_input_partly(&input.name) {
+            format!("{says}.is_none_or(|said| said == {handed})")
+        } else {
+            format!("{says} == {handed}")
+        };
+        said.push((format!("flag input {}", input.name), holds));
+    }
+    Ok((args, said))
 }
 
 /// Refuse what a literal does not spell yet.
@@ -226,11 +292,11 @@ fn spelled(plan: &EncodePlan<'_>) -> Result<(), String> {
         if group
             .gates
             .iter()
-            .any(|g| !matches!(g, GateVar::Flag { .. }))
+            .any(|g| matches!(g, GateVar::Member { .. }))
         {
             return Err(format!(
-                "the group `{label}` is decided by a flag input or a chain's membership, which \
-                 is not spelled as a literal yet"
+                "the group `{label}` is decided by a chain's membership, which is not spelled \
+                 as a literal yet"
             ));
         }
         if let Some(field) = plan.model.fields.iter().find(|f| {

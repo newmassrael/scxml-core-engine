@@ -199,7 +199,8 @@
         );
         let mut cursor = ::sce_forge_runtime::codec::SceCursor::new(&encoded);
         {# A value of no element is compared by its decode being accepted alone. #}
-        let {% if not s.checks %}_{% endif %}decoded = {{ eager }}::decode(&mut cursor)
+        {# The flag inputs the parent hands the decode, in declaration order. #}
+        let {% if not s.checks %}_{% endif %}decoded = {{ eager }}::decode(&mut cursor{% for v in s.inputs %}, {{ v }}{% endfor %})
             .unwrap_or_else(|e| panic!("{{ f.name }} source {{ loop.index0 }}: decode refused with {e:?}"));
         assert_eq!(
             cursor.remaining(),

@@ -214,6 +214,14 @@ reads) and derives every flag of it from the arm. Three codecs gain 13 cases. Th
 group type and arm name, and the harness compares a group whole. A group of a flag input or of a chain's membership,
 one holding a body or a list, and one aligning two lists of one count are refused by name.
 
+*Landed (step 3, fifth part, 2026-11-04): flag inputs.* A case of a codec that declares `<sce:flag-inputs>` states
+`inputs`, beside `source`: the value of each input its parent hands it, `{"name": 0 | 1}`. The model reads a gate on an
+input as a clause the parent's value decides, and a group on one (R4b) as on a flag, keyed by the input's name. The
+harness hands the inputs to the decode in the order the codec declares them, and holds the value to saying each one it
+says (`{Codec}Wire::input_x`, docs/adr/0065 §6 R4a), so a case whose inputs the value would contradict fails. Eleven
+codecs gain 25 cases. An input the value does not say, which the encode takes as an argument, and a held codec whose
+inputs its parent binds are refused by name.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.
