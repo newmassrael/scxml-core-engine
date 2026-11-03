@@ -14,7 +14,10 @@ name: Swift backend (runtime, forge runtime, generated machines)
 # `scripts/test_swift_backend.sh` regenerates the machines from the templates and runs the
 # four packages (`backends/swift/runtime`, `forge-runtime`, `host-features`, `tests`), and the gate reads
 # the verdict from the output as well as the exit status, so a package whose tests were not
-# discovered is red and not a silent pass. Whether the COMMITTED machines are what the
+# discovered is red and not a silent pass. On the same toolchain it runs the Swift programs of
+# `sce-build`'s two equivalence tests, which hold the transition table a machine carries to the
+# export and the transition function to its producer, and reads both verdicts by name, so a
+# test that skipped or matched nothing is red too. Whether the COMMITTED machines are what the
 # generator writes is `regen-reproduces`' question and is kept there.
 #
 # ⚠ THE TOOLCHAIN IS PINNED, and the pin lives in `bx.toml` (`[tools.swift]`) and nowhere
@@ -32,7 +35,8 @@ name: Swift backend (runtime, forge runtime, generated machines)
 # The `paths:` filter is what `tools/git-hooks/gate_registry.py` reads to decide whether a
 # push runs the gate. It names what the packages read (the Swift tree and the shared
 # scenarios), what writes the machines they compile (the generator and its templates),
-# the gate's own files, and `bx.toml`, which holds the toolchain pin.
+# the two equivalence tests the gate runs in Swift, the gate's own files, and `bx.toml`,
+# which holds the toolchain pin.
 
 on:
   push:
@@ -41,6 +45,11 @@ on:
       - 'backends/swift/**'
       - 'sce-build/src/**'
       - 'sce-build/Cargo.toml'
+      # The two equivalence tests the gate runs in Swift (`transition-outputs` in
+      # `scripts/test_swift_backend.sh`), and the helpers they compile with.
+      - 'sce-build/tests/the_emitted_transition_table_equals_the_export.rs'
+      - 'sce-build/tests/the_emitted_transition_function_equals_the_producer.rs'
+      - 'sce-build/tests/common/**'
       - 'sce-build/tests/fixtures/static_datamodel/**'
       - 'sce-build/tests/fixtures/swift_statecharts/**'
       - 'sce-build/tests/fixtures/swift_ecmascript/**'

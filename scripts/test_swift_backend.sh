@@ -16,8 +16,15 @@
 # rewritten files stay there, and `bx --action regen` is what brings them back.
 #
 # Usage (from repo root):
-#   scripts/test_swift_backend.sh [package ...]    # runtime, forge-runtime, host-features, tests, forge,
-#                                                  # w3c, ecma262-lowered
+#   scripts/test_swift_backend.sh [package ...]    # runtime, forge-runtime, host-features, tests,
+#                                                  # transition-outputs, forge, w3c, ecma262-lowered
+#
+# `transition-outputs` is not a package: it is the two programs `sce-build`'s equivalence tests
+# build in Swift, the transition table a machine carries held to `sce-codegen transition-table`
+# and the transition function compiled alone held to its producer
+# (docs/SCE_TRANSITION_TABLE.md, docs/SCE_TRANSITION_FUNCTION.md). Those tests skip where no
+# Swift toolchain is found; here they run on the toolchain this script puts on PATH, under
+# `SCE_REQUIRE_TOOLS`, so a skip is a failure. It is among the default list.
 #
 # `forge`, `w3c` and `ecma262-lowered` are not among the default list: each is a question of its
 # own with its own gate. `forge` runs the forge runtime and the numerical conformance tests,
@@ -50,7 +57,7 @@ fi
 if [ "$#" -gt 0 ]; then
     PACKAGES=("$@")
 else
-    PACKAGES=(runtime host-features tests)
+    PACKAGES=(runtime host-features tests transition-outputs)
 fi
 
 for package in "${PACKAGES[@]}"; do
@@ -92,6 +99,19 @@ for package in "${PACKAGES[@]}"; do
             # A tree another lane left on this machine is built with the rest, and not run here;
             # the numerical conformance tests are the Forge lane's (`forge` above).
             (cd backends/swift/tests && swift test --skip W3cMachinesTests --skip Ecma262LoweredTests --skip MatchesReference)
+            ;;
+        transition-outputs)
+            # Each name is matched exactly in both test binaries, so each binary runs the one
+            # test it holds; `scripts/gates/swift-backend.sh` reads both verdicts by name, so a
+            # renamed test is a red and not a run of nothing. `cli` is the feature the two
+            # targets require (`sce-build/Cargo.toml`).
+            echo "== cargo test: the Swift transition table and transition function"
+            SCE_REQUIRE_TOOLS=1 cargo test -p sce-build --features cli \
+                --test the_emitted_transition_table_equals_the_export \
+                --test the_emitted_transition_function_equals_the_producer \
+                -- --exact \
+                the_swift_table_compiles_and_holds_the_export \
+                the_swift_function_compiles_alone_and_answers_as_the_producer
             ;;
         *)
             echo "== swift test: backends/swift/$package"

@@ -12,6 +12,10 @@
 #   tests            the machines the generator writes, replayed against the shared
 #                    scenarios of `sce-build/tests/fixtures/static_datamodel/scenarios/`
 #
+# and, on the same toolchain, the Swift transition table and transition function held to
+# `sce-codegen transition-table` and to their producer by `sce-build`'s two equivalence
+# tests (`transition-outputs`), which skip on a host with no Swift and must not skip here.
+#
 # Until this gate existed nothing a hosted runner ran compiled a line of Swift: the other
 # backends' suites are reached through their W3C and Forge lanes. Swift has both now:
 # `w3c-swift` writes and runs the W3C suite, and `forge-swift` runs the forge runtime
@@ -58,3 +62,13 @@ if grep -qE 'Test run with 0 tests ' "$LOG"; then
     sce_gate_fail "a Swift test run reported 0 tests: its test target was not discovered"
 fi
 sce_gate_step "$runs Swift test runs, each of at least one test"
+
+# The two programs `sce-build`'s equivalence tests build in Swift (the `transition-outputs` arm),
+# each read by name: a filter that matched no test runs nothing and exits 0, and a skip is refused
+# by `SCE_REQUIRE_TOOLS` before it can read as a pass.
+for held in the_swift_table_compiles_and_holds_the_export \
+    the_swift_function_compiles_alone_and_answers_as_the_producer; do
+    grep -qF "test $held ... ok" "$LOG" \
+        || sce_gate_fail "$held did not run and pass: the Swift transition table or function was not held to the export or the producer"
+done
+sce_gate_step "the Swift transition table and transition function held by their equivalence tests"
