@@ -1,0 +1,91 @@
+# Mutation cases for the deterministic CBOR a typed value is written as (docs/adr/0086, section 9;
+# RFC 8949 section 4.2.1): the order of a record's keys, and the length of every head, which is the
+# preferred serialization of an integer, of a length and of a float.
+#
+# Each case breaks one of those rules, and the tests under study must turn red: the ADR's vectors,
+# the heads at every boundary, the order of the keys, the floats of RFC 8949 Appendix A, and the
+# values of random types read back by a decoder this repository did not write. The head of an
+# integer and of a length is written by the one shortest-head writer the codecs use
+# (`sce_forge_runtime::cbor::write_head`), so its cases edit that file; a codec's own tests hold it
+# too, and these cases ask whether the signed encoding's tests notice it as well.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_signed_value_is_written_as_deterministic_cbor_rust.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-trust --test a_typed_value_is_written_as_deterministic_cbor
+mutation_targets backends/rust/trust/src/cbor.rs backends/rust/forge-runtime/src/cbor.rs
+mutation_oracles backends/rust/trust/tests/a_typed_value_is_written_as_deterministic_cbor.rs
+
+# ── The order of a record's keys ──────────────────────────────────────────────────────────────
+
+mutation_case "A record's keys are written in the order of their texts, not of their encodings" <<'PY'
+edit("backends/rust/trust/src/cbor.rs",
+     r'''        keyed.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));''',
+     r'''        keyed.sort_unstable_by(|(_, a), (_, b)| a.id.cmp(b.id));''')
+PY
+
+mutation_case "A record's keys are written in the reverse order of their encodings" <<'PY'
+edit("backends/rust/trust/src/cbor.rs",
+     r'''        keyed.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));''',
+     r'''        keyed.sort_unstable_by(|(a, _), (b, _)| b.cmp(a));''')
+PY
+
+# ── The length of a head ──────────────────────────────────────────────────────────────────────
+
+mutation_case "An argument of 24 is written in the initial byte" <<'PY'
+edit("backends/rust/forge-runtime/src/cbor.rs",
+     r'''    if value < 24 {''',
+     r'''    if value <= 24 {''')
+PY
+
+mutation_case "An argument of 255 takes a head of three bytes" <<'PY'
+edit("backends/rust/forge-runtime/src/cbor.rs",
+     r'''    } else if value <= u64::from(u8::MAX) {''',
+     r'''    } else if value < u64::from(u8::MAX) {''')
+PY
+
+mutation_case "An argument of 65535 takes a head of five bytes" <<'PY'
+edit("backends/rust/forge-runtime/src/cbor.rs",
+     r'''    } else if value <= u64::from(u16::MAX) {''',
+     r'''    } else if value < u64::from(u16::MAX) {''')
+PY
+
+mutation_case "An argument of 2^32 - 1 takes a head of nine bytes" <<'PY'
+edit("backends/rust/forge-runtime/src/cbor.rs",
+     r'''    } else if value <= u64::from(u32::MAX) {''',
+     r'''    } else if value < u64::from(u32::MAX) {''')
+PY
+
+mutation_case "A negative integer is written with -n, not -1 - n, as its argument" <<'PY'
+edit("backends/rust/trust/src/cbor.rs",
+     r'''            (MAJOR_NEGATIVE, -1 - n)''',
+     r'''            (MAJOR_NEGATIVE, -n)''')
+PY
+
+# ── The width of a float ──────────────────────────────────────────────────────────────────────
+
+mutation_case "A float a half holds is written wider" <<'PY'
+edit("backends/rust/trust/src/cbor.rs",
+     r'''        } else if let Some(half) = half_of(x) {''',
+     r'''        } else if let Some(half) = half_of(x).filter(|_| false) {''')
+PY
+
+mutation_case "A float a single holds and no half does is written as a double" <<'PY'
+edit("backends/rust/trust/src/cbor.rs",
+     r'''        } else if let Some(single) = single_of(x) {''',
+     r'''        } else if let Some(single) = single_of(x).filter(|_| false) {''')
+PY
+
+mutation_case "A half's least subnormal is not seen as a half" <<'PY'
+edit("backends/rust/trust/src/cbor.rs",
+     r'''    if (-24..=-15).contains(&power) {''',
+     r'''    if (-23..=-15).contains(&power) {''')
+PY
+
+mutation_case "A NaN is written as the double it is, not as the one NaN" <<'PY'
+edit("backends/rust/trust/src/cbor.rs",
+     "        if x.is_nan() {\n            put(self.sink.write_bytes(&NAN));",
+     "        if false {\n            put(self.sink.write_bytes(&NAN));")
+PY
