@@ -385,6 +385,39 @@ fn a_template_of_trusted_holes_needs_no_runtime() {
     }
 }
 
+/// A hole's named bound is the number the build gives its name (`--limit`,
+/// docs/adr/0050), read by the type reader every bound is read by, so `MAX_LEN`
+/// moves with it: a trusted `string[note_text=8]` hole adds 8 bytes as written
+/// and 20 under `note_text=20`.
+#[test]
+fn a_limit_on_a_holes_bound_moves_max_len() {
+    let xml = document(
+        r#"    <data id="note" sce:type="string[note_text=8]" sce:trust="trusted"/>"#,
+        "",
+        r#"Note: <sce:put hole="note"/>"#,
+    );
+    let max_len_of = |code: &str| -> String {
+        let at = code
+            .find("pub const MAX_LEN: usize = ")
+            .expect("the Rust unit declares MAX_LEN");
+        code[at..].lines().next().unwrap_or_default().to_string()
+    };
+    let written = compile_forge_from_string(&xml, LABEL, Language::Rust).expect("generates");
+    assert_eq!(
+        max_len_of(&written.files[0].1),
+        format!("pub const MAX_LEN: usize = {};", "Note: ".len() + 8)
+    );
+    let limits = sce_build::limits::Limits::none()
+        .with("note_text", 20)
+        .expect("a limit");
+    let _scope = sce_build::limits::scope(&limits);
+    let moved = compile_forge_from_string(&xml, LABEL, Language::Rust).expect("generates");
+    assert_eq!(
+        max_len_of(&moved.files[0].1),
+        format!("pub const MAX_LEN: usize = {};", "Note: ".len() + 20)
+    );
+}
+
 #[test]
 fn the_kind_is_a_generic_stateless_kind_every_backend_generates() {
     assert_eq!(
