@@ -341,6 +341,18 @@ const {{ csym_prefix }}{{ model.name }}_transition_t *{{ csym_prefix }}{{ model.
 {# emitted-transition-table:end #}
 
 {% endif %}
+{% if answer_schemas %}
+/* ── docs/adr/0087, section 4.1: the answer schemas this machine names ── */
+/* How many entries `{{ csym_prefix }}{{ model.name }}_answer_schemas()` points to. */
+#define {{ csym_prefix | upper }}{{ model.name | upper }}_ANSWER_SCHEMA_COUNT {{ answer_schemas | length }}u
+/* Each schema the machine's model generations name with `sce:answer`: its id,
+   which is the `answer_schema` its request carries, with the JSON Schema and
+   the GBNF grammar a host hands its provider. A host resolves a request's id
+   here and nowhere else. Constant storage the machine defines once and never
+   writes. */
+const sce_answer_schema_t *{{ csym_prefix }}{{ model.name }}_answer_schemas(void);
+
+{% endif %}
 {% if static_type_defs %}
 /* ── Datamodel types (SCE Accepted Subset §2.15) ──────────────────── */
 {# Before the payload channel: a payload struct holds a field of the enum the

@@ -1897,6 +1897,17 @@ pub struct UnsupportedInvokeInfo {
     /// Where `sce:result`'s value is spelled, for the same reason.
     #[serde(skip)]
     pub result_schema_at: Option<SourceLocation>,
+    /// `sce:answer` — the alias of the imported event schema an invoke of
+    /// `sce-host-model-generate` asks its answer in (docs/adr/0087, section
+    /// 4.1): the build writes the request's `answer_schema` from it, and the
+    /// machine's table of answer schemas holds its payload schema. Empty when
+    /// the invoke names none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub answer_schema: String,
+    /// Where `sce:answer`'s value is spelled, for the reason
+    /// [`Self::request_schema_at`] gives.
+    #[serde(skip)]
+    pub answer_schema_at: Option<SourceLocation>,
 }
 
 /// What an escaped [`invoke_identifier`] begins with: a digit, which no
@@ -4166,6 +4177,16 @@ pub struct SCXMLModel {
     /// without sibling files and not serialized.
     #[serde(skip)]
     pub imported_type_scope: crate::forge::value_type::TypeScope,
+    /// The table of the answer schemas this machine's invokes of
+    /// `sce-host-model-generate` name with `sce:answer` (docs/adr/0087, section
+    /// 4.1, item 2): each schema's id, its JSON Schema and its GBNF grammar,
+    /// once each, in the order the document first names them. Written where the
+    /// document is parsed ([`crate::forge::model_answer::resolve`]), the one
+    /// place a GBNF grammar is written into a machine; empty without sibling
+    /// files and not serialized, since a backend declares it from the render
+    /// context.
+    #[serde(skip)]
+    pub answer_schemas: Vec<crate::forge::payload_schema::PayloadSchema>,
     /// The enums a `sce-static` document imports, keyed by import alias — what
     /// an `enum:<alias>` variable names and an `<alias>.<variant>` expression
     /// refers to (SCE Accepted Subset §2.15). Resolved where the document is

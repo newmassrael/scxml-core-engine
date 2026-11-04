@@ -229,6 +229,26 @@ static inline bool sce_host_response_push(sce_host_send_response_list_t *out, co
 typedef void (*sce_host_send_handler_fn)(void *user_data, const sce_host_send_request_t *request,
                                          sce_host_send_response_list_t *out);
 
+/* ── The answer schemas a machine names (docs/adr/0087, section 4.1) ── */
+
+/*
+ * One schema of a machine's table of answer schemas: the schemas its invokes
+ * of `sce-host-model-generate` name with `sce:answer`, which a generated
+ * machine hands out by `<machine>_answer_schemas()`. A host resolves the
+ * `answer_schema` of a request through it, with no file and no second copy of
+ * a grammar, and hands its provider the form it takes. Every text is
+ * NUL-terminated constant storage of the machine's, alive for the program.
+ */
+typedef struct sce_answer_schema_s {
+    /* `urn:sce:schema:<document name>:<revision>`: what the request carries. */
+    const char *id;
+    /* The payload as a JSON Schema (2020-12), every bound as the build
+       resolved it. */
+    const char *json_schema;
+    /* The payload as a GBNF grammar, every text's bound counted in bytes. */
+    const char *gbnf;
+} sce_answer_schema_t;
+
 /* ── The registry ───────────────────────────────────────────────── */
 
 typedef struct sce_host_processor_entry_s {

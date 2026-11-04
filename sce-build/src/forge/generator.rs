@@ -3616,7 +3616,7 @@ fn composed_schema_field(
 /// C++, and MSVC holds none past 65535 bytes. An initializer of characters is
 /// held to no such limit, so a payload's JSON Schema compiles whatever the
 /// size of its type.
-fn c_text_initializer(text: &str) -> String {
+pub(crate) fn c_text_initializer(text: &str) -> String {
     let mut constants = filters::c_char_constants(text);
     constants.push("'\\0'".to_string());
     let lines: Vec<String> = constants

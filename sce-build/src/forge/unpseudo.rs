@@ -3522,6 +3522,7 @@ fn parse_scxml_invoke(
     let mut host_served = false;
     let mut request_schema = String::new();
     let mut result_schema = String::new();
+    let mut answer_schema = String::new();
 
     let mut traced = Traced::default();
     for (k, sub) in group(kids) {
@@ -3560,6 +3561,7 @@ fn parse_scxml_invoke(
             "content" => unsupported_content = undo(value, k.number)?,
             "request" => request_schema = undo(value, k.number)?,
             "result" => result_schema = undo(value, k.number)?,
+            "answer" => answer_schema = undo(value, k.number)?,
             "candidates" => {
                 let written = undo(value, k.number)?;
                 hybrid.candidates = Vec::new();
@@ -3663,6 +3665,8 @@ fn parse_scxml_invoke(
             // rebuilt from one names no row — as for every page-built node.
             request_schema_at: None,
             result_schema_at: None,
+            answer_schema,
+            answer_schema_at: None,
             // What lowering fills in, and no source to take a spelling from.
             ..UnsupportedInvokeInfo::default()
         }),

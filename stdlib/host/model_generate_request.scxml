@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/model_generate_request.scxml — the request of
+  `sce-host-model-generate` (docs/SCE_HOST_FEATURES.md, "Generated text";
+  docs/adr/0087, section 4).
+
+  `prompt` is the text the host's provider is given. `answer_schema` is written
+  by the build, never by the document: the `SCHEMA_ID` of the event schema the
+  invoke names with `sce:answer`, which the machine's table of answer schemas
+  resolves to its JSON Schema and its GBNF grammar; empty when the invoke names
+  none, and the provider then answers freely. `max_tokens` bounds the answer's
+  length in the provider's tokens. `temperature_milli` is the sampling
+  temperature in thousandths, 0 asking for the most likely token at each step;
+  it is required, so no setting the document does not show decides it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="model_generate_request"
+       sce:event-name="host.model.generate.request">
+  <datamodel>
+    <data id="prompt" sce:type="string[model_prompt=8192]" sce:direction="in"/>
+    <data id="answer_schema" sce:type="string[128]" sce:direction="in"/>
+    <data id="max_tokens" sce:type="uint32" sce:direction="in"/>
+    <data id="temperature_milli" sce:type="uint16" sce:direction="in"/>
+  </datamodel>
+</scxml>

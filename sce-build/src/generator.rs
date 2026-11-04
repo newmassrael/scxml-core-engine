@@ -3418,6 +3418,36 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
     out
 }
 
+/// The machine's table of answer schemas (docs/adr/0087, section 4.1, item 2)
+/// as every backend's template declares it: one row per schema the document
+/// names with `sce:answer`, its `id`, its `json_schema` and its `gbnf`, the
+/// texts [`SCXMLModel::answer_schemas`] holds, written by the payload grammar's
+/// one fold. C and C++ hold each text in a `char` array, whose initializer is
+/// `json_schema_chars` and `gbnf_chars`, since no string literal of either
+/// holds a text of any length (`forge::generator::c_text_initializer`). Empty
+/// for a machine that names none, which declares no table.
+fn answer_schemas_context(model: &SCXMLModel, lang: Language) -> minijinja::Value {
+    let chars = matches!(lang, Language::C11 | Language::Cpp);
+    let rows: Vec<serde_json::Value> = model
+        .answer_schemas
+        .iter()
+        .map(|entry| {
+            let mut row = serde_json::json!({
+                "id": entry.id,
+                "json_schema": entry.json_schema,
+                "gbnf": entry.gbnf,
+            });
+            if chars {
+                row["json_schema_chars"] =
+                    crate::forge::generator::c_text_initializer(&entry.json_schema).into();
+                row["gbnf_chars"] = crate::forge::generator::c_text_initializer(&entry.gbnf).into();
+            }
+            row
+        })
+        .collect();
+    minijinja::Value::from_serialize(&rows)
+}
+
 fn render_rust(
     env: &mut Environment,
     model: &SCXMLModel,
@@ -3594,6 +3624,7 @@ fn render_rust(
         event_payload_lift => &payload.lift,
         host_invoker_interface => &host_invoker_interface,
         host_invoke_request_checks => &host_invoke_request_checks,
+        answer_schemas => answer_schemas_context(model, Language::Rust),
         has_native_actions => native.any,
         has_native_duties => native.has_duty,
         native_actions_defs => &native.interface_def,
@@ -3794,6 +3825,7 @@ fn render_cpp(
         event_payload_inject_methods => &payload.inject_methods,
         host_invoker_defs => &host_invoker.defs,
         host_invoker_members => &host_invoker.members,
+        answer_schemas => answer_schemas_context(model, Language::Cpp),
         has_native_actions => native.any,
         has_native_duties => native.has_duty,
         native_actions_defs => &native.interface_def,
@@ -4045,6 +4077,7 @@ fn render_c11(
         base_path => &base_path,
         license_config => &license_val,
         runtime_requires => &runtime_requires,
+        answer_schemas => answer_schemas_context(model, Language::C11),
         event_payload_defs => &payload.defs,
         event_payload_type => &payload.type_name,
         event_payload_active => payload.active,
@@ -4115,6 +4148,7 @@ fn render_c11(
         // with, included whatever the data model.
         host_invoker_source_includes => &host_invoker.source_includes,
         host_invoke_request_checks => &host_invoke_request_checks,
+        answer_schemas => answer_schemas_context(model, Language::C11),
         static_done_data => static_done_data,
         static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
@@ -4327,6 +4361,7 @@ fn render_kotlin(
         host_invoker_defs => &host_invoker.defs,
         host_invoker_members => &host_invoker.members,
         host_invoke_request_checks => &host_invoke_request_checks,
+        answer_schemas => answer_schemas_context(model, Language::Kotlin),
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         // The `sce:direction="out"` variables — what the host reads and the
         // snapshot carries (SCE Accepted Subset §2.15).
@@ -5021,6 +5056,7 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
         event_payload_clear => &payload.clear,
         event_payload_raise_seams => &payload.raise_seams,
         host_invoker_defs => &host_invokers,
+        answer_schemas => answer_schemas_context(model, Language::Swift),
     };
     tmpl.render(ctx).map_err(render_error)
 }
@@ -5315,6 +5351,7 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
         event_payload_inject => &payload.inject,
         host_invoker_interface => &host_invoker_interface,
         host_invoke_request_checks => &host_invoke_request_checks,
+        answer_schemas => answer_schemas_context(model, Language::Python),
         has_native_actions => native.any,
         has_native_duties => native.has_duty,
         accepts_simulated_host => native.has_duty || model.any_child_states_duties(),
@@ -5417,6 +5454,7 @@ fn render_go(
             event_payload_clear => &payload.clear,
             host_invoker_interface => &host_invoker_interface,
             host_invoke_request_checks => &host_invoke_request_checks,
+            answer_schemas => answer_schemas_context(model, Language::Go),
             has_native_actions => native.any,
             has_native_duties => native.has_duty,
             accepts_simulated_host => native.has_duty || model.any_child_states_duties(),

@@ -21,7 +21,7 @@
     `sce_static.js`): a refusal code, a strict pointer and a bound beside each sentence, and a depth bound for a lift;
   - the standard library: `stdlib/lift/` (the refusal record and its code), `stdlib/host/` (the model operation's
     request and result), `stdlib/time/` (a date expression and its resolver);
-  - the seven reference hosts of docs/SCE_HOST_FEATURES.md section 7 (a scripted model), and
+  - the seven reference hosts of docs/SCE_HOST_FEATURES.md section 8 (a scripted model), and
     `sce-build/src/forge/standard_host.rs`;
   - new diagnostic codes (section 8) in `sce-build/src/forge/diagnostic.rs`, SCE_ERROR_CONTRACT.md and the
     acceptance-doc appendix; a payload-schema row in SCE_WIRE_CONTRACTS.md with its meta-schema;
@@ -844,7 +844,7 @@ Each test fails when the rule it pins is removed; the landing checks each once a
    `datetime` (proleptic Gregorian): every kind on each weekday of a week that crosses a month end, a year end and a
    29 February; `monthDay` for 29 February from a non-leap year; month clamps; each precondition failure; the
    `overflow` cases outside `datetime`'s years written by hand.
-7. **The model operation**: the scenario vocabulary of docs/SCE_HOST_FEATURES.md section 7 gains `host.model` (the
+7. **The model operation**: the scenario vocabulary of docs/SCE_HOST_FEATURES.md section 8 gains `host.model` (the
    answers a scripted provider gives, in order; whether it is constrained; `fail`; `hold`), and
    `tests/host_features/scenarios/static_host_model.json` holds each end (a completion with each `finish`, each failure
    code, the refusal, the deadline, a cancel by leaving the state) on the seven lanes that run host invokes, with

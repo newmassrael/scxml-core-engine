@@ -4,6 +4,20 @@
 package com.sce.runtime
 
 /**
+ * One schema of a machine's table of answer schemas (docs/adr/0087, section
+ * 4.1, item 2): the schemas its invokes of `sce-host-model-generate` name with
+ * `sce:answer`, which a generated machine declares as `<Machine>AnswerSchemas`.
+ * A host resolves the `answer_schema` of a request through it, with no file and
+ * no second copy of a grammar, and hands its provider the form it takes.
+ *
+ * [id] is `urn:sce:schema:<document name>:<revision>`, what the request
+ * carries; [jsonSchema] the payload as a JSON Schema (2020-12), every bound as
+ * the build resolved it; [gbnf] the payload as a GBNF grammar, every text's
+ * bound counted in bytes.
+ */
+data class AnswerSchema(val id: String, val jsonSchema: String, val gbnf: String)
+
+/**
  * A typed host-run request (`sce:request`, SCE Accepted Subset §2.12).
  *
  * A request crosses to the host as text, like every `<param>`. What makes it

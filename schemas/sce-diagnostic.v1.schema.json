@@ -88,6 +88,7 @@
         "validation/lift-location",
         "validation/lift-text",
         "validation/lift-path-bound",
+        "validation/model-answer-schema",
         "validation/native-action-argument",
         "validation/native-action-signature-conflict",
         "validation/native-action-release",

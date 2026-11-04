@@ -109,6 +109,22 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // (the policy-carried SSOT for the per-machine queue size).
 pub const EVENT_QUEUE_CAPACITY: usize = {{ model.event_queue_capacity }};
 {% endif %}
+{% if answer_schemas %}
+
+/// The answer schemas this machine's model generations name with `sce:answer`
+/// (docs/adr/0087, section 4.1): each schema's id, which is the `answer_schema`
+/// its request carries, with the JSON Schema and the GBNF grammar a host hands
+/// its provider. A host resolves a request's id here and nowhere else.
+pub const ANSWER_SCHEMAS: &[::sce_rust_runtime::AnswerSchema] = &[
+{% for entry in answer_schemas %}
+    ::sce_rust_runtime::AnswerSchema {
+        id: "{{ entry.id }}",
+        json_schema: "{{ entry.json_schema }}",
+        gbnf: "{{ entry.gbnf }}",
+    },
+{% endfor %}
+];
+{% endif %}
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)

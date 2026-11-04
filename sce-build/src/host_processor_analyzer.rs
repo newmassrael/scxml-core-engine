@@ -436,6 +436,10 @@ pub fn declare_host_surfaces(
                 }
             }
         }
+        // A model's generation carries the id of the answer schema it names,
+        // which the build writes and the document does not (docs/adr/0087,
+        // section 4.1, item 2); it is a field of the request from here on.
+        crate::forge::model_answer::write_requests(model);
         model.refresh_invokes_view();
         // §scxml-3.12.1: a host completion falls back to the generic
         // `done.invoke` when the document names no specific one, as an SCXML

@@ -133,6 +133,22 @@ pub struct HostSendResponse {
 pub(crate) type HostSendHandler =
     Box<dyn FnMut(HostSendRequest) -> Vec<HostSendResponse> + Send + 'static>;
 
+/// One schema of a machine's table of answer schemas (docs/adr/0087, section
+/// 4.1, item 2): the schemas its invokes of `sce-host-model-generate` name with
+/// `sce:answer`, which a generated machine declares as `ANSWER_SCHEMAS`. A host
+/// resolves the `answer_schema` of a request through it, with no file and no
+/// second copy of a grammar, and hands its provider the form it takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnswerSchema {
+    /// `urn:sce:schema:<document name>:<revision>`: what the request carries.
+    pub id: &'static str,
+    /// The payload as a JSON Schema (2020-12), every bound as the build
+    /// resolved it.
+    pub json_schema: &'static str,
+    /// The payload as a GBNF grammar, every text's bound counted in bytes.
+    pub gbnf: &'static str,
+}
+
 /// The reserved `<param>` a host-run `<invoke>` names its deadline with, in
 /// milliseconds. The engine reads it and does not hand it to the host: past
 /// the deadline, an invocation still running is cancelled and the document

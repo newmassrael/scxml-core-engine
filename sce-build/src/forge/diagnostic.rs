@@ -855,6 +855,10 @@ pub enum DiagnosticCode {
     /// is past the refusal record's `path` bound.
     #[serde(rename = "validation/lift-path-bound")]
     ValidationLiftPathBound,
+    /// `<invoke sce:answer>` (docs/adr/0087, section 4.1): an answer schema the
+    /// build cannot name for a model's generation.
+    #[serde(rename = "validation/model-answer-schema")]
+    ValidationModelAnswerSchema,
     #[serde(rename = "validation/native-action-argument")]
     ValidationNativeActionArgument,
     #[serde(rename = "validation/native-action-signature-conflict")]
@@ -3815,6 +3819,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationLiftLocation,
         ValidationLiftText,
         ValidationLiftPathBound,
+        ValidationModelAnswerSchema,
         ValidationNativeActionArgument,
         ValidationNativeActionSignatureConflict,
         ValidationNativeActionRelease,
@@ -4687,6 +4692,7 @@ impl DiagnosticCode {
             // refusal is kept in, are the ADR's own sections.
             ValidationLiftLocation | ValidationLiftText => Some("ADR 0087 §2.1"),
             ValidationLiftPathBound => Some("ADR 0087 §2.4"),
+            ValidationModelAnswerSchema => Some("ADR 0087 §4.1"),
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
@@ -5468,6 +5474,7 @@ impl DiagnosticCode {
             | ValidationLiftLocation
             | ValidationLiftText
             | ValidationLiftPathBound
+            | ValidationModelAnswerSchema
             | ValidationNativeActionArgument
             | ValidationNativeActionSignatureConflict
             | ValidationNativeActionRelease
@@ -5966,6 +5973,7 @@ impl DiagnosticCode {
             ValidationLiftLocation => "validation/lift-location",
             ValidationLiftText => "validation/lift-text",
             ValidationLiftPathBound => "validation/lift-path-bound",
+            ValidationModelAnswerSchema => "validation/model-answer-schema",
             ValidationNativeActionArgument => "validation/native-action-argument",
             ValidationNativeActionSignatureConflict => {
                 "validation/native-action-signature-conflict"
@@ -8098,6 +8106,21 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(pointer.clone()),
             fix: None,
             key_fragments: vec![schema.clone(), pointer.clone(), bound.to_string()],
+        },
+        // docs/adr/0087, section 4.1: the alias as written is `actual`; each
+        // repair (import the schema, close its enum, move the attribute) is a
+        // choice, so no fix.
+        ValidationError::ModelAnswerSchema {
+            invoke_id,
+            alias,
+            detail,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationModelAnswerSchema,
+            stage: Stage::Validation,
+            expected: None,
+            actual: (!alias.is_empty()).then(|| alias.clone()),
+            fix: None,
+            key_fragments: vec![invoke_id.clone(), alias.clone(), detail.clone()],
         },
         ValidationError::NativeActionArgument {
             name,
@@ -13328,6 +13351,18 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:8baeffd46b939664","code":"validation/lift-path-bound","stage":"validation","spec":"ADR 0087 §2.4","message":"<sce:lift schema=\"Answer\">: the longest pointer into a record of Answer is `/title_text`, 11 bytes, past the 8 bytes the refusal record's path holds (string[lift_path=8]): raise the bound with --limit lift_path=N, or shorten the names on the way to that place","actual":"/title_text"}"#,
+            ),
+            (
+                // A model's generation names an answer schema the document does
+                // not import (docs/adr/0087, section 4.1, item 2).
+                "forge/model-answer-schema",
+                ValidationError::ModelAnswerSchema {
+                    invoke_id: "gen".into(),
+                    alias: "Answr".into(),
+                    detail: "names no event schema this document imports".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:012767744d6bf3a7","code":"validation/model-answer-schema","stage":"validation","spec":"ADR 0087 §4.1","message":"<invoke id=\"gen\" sce:answer=\"Answr\">: names no event schema this document imports","actual":"Answr"}"#,
             ),
             (
                 // A code identifier in shape — but Rust reserves `override`,
@@ -19614,6 +19649,7 @@ mod tests {
             | ValidationLiftLocation
             | ValidationLiftText
             | ValidationLiftPathBound
+            | ValidationModelAnswerSchema
             | ValidationNativeActionArgument
             | ValidationNativeActionRelease
             | ValidationNativeActionSignatureConflict
@@ -20603,6 +20639,7 @@ mod tests {
                 | ValidationDynamicFeatures | ValidationNativeActionPlacement
                 | ValidationTypedInvokeSchema | ValidationTypedInvokeRequest
                 | ValidationLiftLocation | ValidationLiftText | ValidationLiftPathBound
+                | ValidationModelAnswerSchema
                 | ValidationNativeActionArgument
                 | ValidationNativeActionSignatureConflict | ValidationNativeActionRelease
                 | ValidationTextTemplateHole | ValidationTextTemplateFence
@@ -21025,9 +21062,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            501,
+            502,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 501 distinct variants to match the DiagnosticCode \
+             expected 502 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21671,6 +21708,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationLiftLocation
             | ValidationLiftText
             | ValidationLiftPathBound
+            | ValidationModelAnswerSchema
             | ValidationNativeActionArgument
             | ValidationNativeActionRelease
             | ValidationNativeActionSignatureConflict

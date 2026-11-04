@@ -1367,6 +1367,10 @@ struct TypedInvokeAttrs {
     result: String,
     request_at: Option<crate::forge::error::SourceLocation>,
     result_at: Option<crate::forge::error::SourceLocation>,
+    /// `sce:answer` (docs/adr/0087, section 4.1), judged where the imports
+    /// resolve (`crate::forge::model_answer::resolve`).
+    answer: String,
+    answer_at: Option<crate::forge::error::SourceLocation>,
 }
 
 /// Read `sce:request` / `sce:result` from `node`, refusing them where they
@@ -1390,6 +1394,39 @@ fn collect_typed_invoke_attrs(
     let mut attrs = TypedInvokeAttrs::default();
     for attribute in node.attributes() {
         if attribute.namespace() != Some(SCE_NAMESPACE) {
+            continue;
+        }
+        if attribute.name() == "answer" {
+            // An answer schema names the text a model is asked for, and only
+            // an invoke the host runs asks a host for one. Whether its type is
+            // the model's operation and its alias an import is judged where the
+            // imports resolve, under its own code.
+            crate::sce_attr::note(node, &attribute);
+            let pos = node.document().text_pos_at(attribute.range_value().start);
+            if !host_runnable {
+                return Err(Located::new(
+                    ValidationError::ModelAnswerSchema {
+                        invoke_id: node.attribute("id").unwrap_or("").to_string(),
+                        alias: attribute.value().to_string(),
+                        detail: format!(
+                            "is written on an <invoke> of type \"{invoke_type}\", which SCE runs \
+                             itself or resolves at run time, and only \
+                             {} asks for a text under an answer schema",
+                            crate::forge::model_answer::MODEL_GENERATE
+                        ),
+                    }
+                    .into(),
+                    source_name,
+                    Some(pos.row),
+                    Some(pos.col),
+                ));
+            }
+            attrs.answer = attribute.value().to_string();
+            attrs.answer_at = Some(crate::forge::error::SourceLocation {
+                file: artifact_label(source_name),
+                line: Some(pos.row),
+                col: Some(pos.col),
+            });
             continue;
         }
         let (slot, at) = match attribute.name() {
@@ -3442,6 +3479,11 @@ impl SCXMLParser {
                 &model.imported_records,
                 diag_label,
             )?;
+            // The answer schema a model's generation names (docs/adr/0087,
+            // section 4.1) is an imported schema too: judged against the same
+            // map, and folded here into the machine's table of answer schemas,
+            // before the request it writes a field of is judged.
+            model.answer_schemas = crate::forge::model_answer::resolve(&model, diag_label)?;
             // A host-run `<invoke>`'s typed interface names imported
             // schemas by alias, so it is judged against the alias map just
             // resolved — and its completion is bound to its result schema
@@ -5795,6 +5837,8 @@ impl SCXMLParser {
                 result_schema: typed.result,
                 request_schema_at: typed.request_at,
                 result_schema_at: typed.result_at,
+                answer_schema: typed.answer,
+                answer_schema_at: typed.answer_at,
                 // What lowering fills in, for a document that has it lowered.
                 ..UnsupportedInvokeInfo::default()
             })));

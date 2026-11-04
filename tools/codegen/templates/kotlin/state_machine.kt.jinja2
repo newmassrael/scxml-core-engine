@@ -38,6 +38,31 @@ import com.sce.runtime.*
 
 {% include 'events.kt.jinja2' %}
 
+{% if answer_schemas %}
+/**
+ * The answer schemas this machine's model generations name with `sce:answer`
+ * (docs/adr/0087, section 4.1): each schema's id, which is the `answer_schema`
+ * its request carries, with the JSON Schema and the GBNF grammar a host hands
+ * its provider. A host resolves a request's id here and nowhere else. A GBNF
+ * grammar is as long as its largest text bound, so each text is declared by
+ * the generator's one door for a text constant of any length.
+ */
+object {{ machine_name }}AnswerSchemas {
+{% for entry in answer_schemas %}
+    {{ kotlin_string_val("ID_" ~ loop.index0, entry.id, "    ") }}
+    {{ kotlin_string_val("JSON_SCHEMA_" ~ loop.index0, entry.json_schema, "    ") }}
+    {{ kotlin_string_val("GBNF_" ~ loop.index0, entry.gbnf, "    ") }}
+{% endfor %}
+
+    /** Every answer schema of the machine, in the order the document first names it. */
+    val all: List<AnswerSchema> = listOf(
+{% for entry in answer_schemas %}
+        AnswerSchema(ID_{{ loop.index0 }}, JSON_SCHEMA_{{ loop.index0 }}, GBNF_{{ loop.index0 }}),
+{% endfor %}
+    )
+}
+
+{% endif %}
 {% if model.emitted_transition_table %}
 {# emitted-transition-table:begin #}
 {% set _table = model.emitted_transition_table %}

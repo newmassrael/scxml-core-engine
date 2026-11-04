@@ -224,10 +224,26 @@ fn check_request(
         }
     }
     let fields: BTreeSet<&str> = schema.fields.iter().map(|f| f.id.as_str()).collect();
-    let mut supplied: BTreeSet<&str> = BTreeSet::new();
+    // A field the build writes (the answer schema of a model's generation,
+    // docs/adr/0087, section 4.1) is supplied by the build, never by a
+    // `<param>`: the schema the model is asked for is then the one the machine
+    // names, by construction.
+    let by_build = crate::forge::standard_host::written_by_build(&info.invoke_type);
+    let mut supplied: BTreeSet<&str> = by_build.iter().copied().collect();
     for param in &info.base.params {
         if param.name == HOST_INVOKE_DEADLINE_PARAM {
             continue;
+        }
+        if by_build.contains(&param.name.as_str()) {
+            return Err(refuse(
+                &param.source_location,
+                format!(
+                    "<param name=\"{}\"> is written by the build from sce:answer, so the \
+                     document does not give it",
+                    param.name
+                ),
+                &param.name,
+            ));
         }
         if !fields.contains(param.name.as_str()) {
             return Err(refuse(

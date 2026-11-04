@@ -41,7 +41,12 @@ from .host_processor import (
     TreeInvokers,
     parse_host_invoke_deadline_ms,
 )
-from .host_invoke_request import RequestFieldType, request_field, request_field_wire
+from .host_invoke_request import (
+    AnswerSchema,
+    RequestFieldType,
+    request_field,
+    request_field_wire,
+)
 from .http import HttpSendRequest, HttpSendResponse
 from .inbox import (
     EngineInbox,
@@ -126,6 +131,7 @@ __all__ = [
     "ActionRealization",
     "AddedField",
     "AddedVariant",
+    "AnswerSchema",
     "EnumHolder",
     "EnumLineage",
     "RecordHolder",

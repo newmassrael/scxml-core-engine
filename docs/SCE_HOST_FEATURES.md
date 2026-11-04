@@ -2,9 +2,9 @@
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
-notification, an HTTP exchange) it asks of its host, and the host answers. Every
-application needs these four, and an interface each application invents for them
-is an interface each host re-implements and each statechart is tied to.
+notification, an HTTP exchange, a text a model generates) it asks of its host,
+and the host answers. An interface each application invents for these is an
+interface each host re-implements and each statechart is tied to.
 
 This document defines them once. Each feature is a closed set of **host
 operations**: an `<invoke>` of a named type, with a request record and a result
@@ -231,7 +231,62 @@ is not an RFC 9110 token.
 Left to the host: the trust store and certificate policy, proxies, connection
 reuse, compression, HTTP version, and the host's own timeout.
 
-## 6. What the build does
+## 6. Generated text
+
+A host may hold a model that writes a text from a prompt. The engine calls no
+model: the host performs the generation, as it performs an HTTP exchange, and the
+statechart receives the text as data and decides from it (docs/adr/0087,
+sections 0 and 4).
+
+| Operation | `type` | Request | Result |
+|---|---|---|---|
+| Generate a text | `sce-host-model-generate` | `model_generate_request`: `prompt` (`model_prompt`=8192), `answer_schema` (128), `max_tokens` uint32, `temperature_milli` uint16 | `model_generate_result`: `text` string (`model_answer`=4096), `constrained` bool, `model` string (128), `prompt_tokens` uint32, `answer_tokens` uint32, `finish` string (16) |
+
+Failure codes: `unavailable` (no model is loaded, or the provider cannot be
+reached), `busy` (the provider serves another caller and this host does not
+queue), `network` (a remote provider sent no response), `context_exceeded` (the
+prompt and `max_tokens` do not fit the model's context), `answer_too_large`
+(the answer is past the bound of `text`), `declined` (the provider declined to
+answer).
+
+Refusal (`invalid_argument`): an empty `prompt`, `max_tokens` zero,
+`temperature_milli` above 2000, or an `answer_schema` that is not empty and is
+not an id of the machine's table of answer schemas.
+
+- **The answer schema is named by the build.** `<invoke
+  type="sce-host-model-generate" sce:answer="Answer">` names an imported event
+  schema; the build writes the request's `answer_schema` from it, the schema's
+  id `urn:sce:schema:<document name>:<revision>`, and the document does not
+  (a `<param name="answer_schema">` is `validation/typed-invoke-request`).
+  Without `sce:answer` the field is empty and the provider answers freely.
+- **The machine carries the table of its answer schemas.** For each schema its
+  invokes name, the generated machine declares the id, the schema's JSON Schema
+  (2020-12) and its GBNF grammar, which counts every text's bound in bytes: Rust
+  `ANSWER_SCHEMAS`, Go `AnswerSchemas`, Kotlin `<Machine>AnswerSchemas.all`,
+  Python `ANSWER_SCHEMAS`, C++ `ANSWER_SCHEMAS`, C11 `<machine>_answer_schemas()`
+  with `<MACHINE>_ANSWER_SCHEMA_COUNT`, Swift `<Machine>AnswerSchemas.all`, each
+  entry the runtime's `AnswerSchema`. A host resolves a request's id there, with
+  no file and no second copy of a grammar, and gives its provider the form it
+  takes. The table's JSON Schema is the schema unit's, without its
+  `x-sce-source-hash`: the machine's own header names the source set the table
+  was written from. A machine that names no answer schema declares no table.
+- **A provider that decodes under a grammar** is given the form it takes, and
+  the result says `constrained` true; one that cannot ignores the schema and says
+  false. `model` names what answered, as the host spells it (the model, its
+  variant and its runtime). `temperature_milli` is the sampling temperature in
+  thousandths; 0 asks for the most likely token at each step.
+- **`finish`** is `stop` when the provider ended its answer and `length` when it
+  reached `max_tokens`. An answer cut by `length` is still a completion; the
+  statechart's lift of the text (`<sce:lift>`) is what refuses it. A host never
+  cuts `text`: an answer past its bound fails `answer_too_large`.
+- The operation changes nothing; repeated, it may answer differently. Starts of
+  one host are served in the order started.
+
+Left to the host: the provider (on the device or remote), its model, its
+decoding engine, its own timeouts, and whether a cancelled generation stops at
+once. Not provided here: any binding to a real provider.
+
+## 7. What the build does
 
 - **The types are served without a declaration.** A document that runs an
   `<invoke>` of a standard type needs no `--host-invoker`; every host serves the
@@ -260,24 +315,47 @@ reuse, compression, HTTP version, and the host's own timeout.
 - **The table is one list** (`sce-build/src/forge/standard_host.rs`), held to the
   library by `the_standard_host_features_are_one_set`.
 
-## 7. Conformance and reference hosts
+## 8. Conformance and reference hosts
 
-`tests/host_features/scenarios/` holds one scenario for each feature, and the four
+`tests/host_features/scenarios/` holds one scenario for each feature, and the five
 machines that ask for it are
-`sce-build/tests/fixtures/static_datamodel/static_host_{kv,clock,notify,http}.scxml`.
+`sce-build/tests/fixtures/static_datamodel/static_host_{kv,clock,notify,http,model}.scxml`.
 A scenario is a list of steps. A step may set what the reference host is like
 (`host`), send an event, and state what the machine published and what the host
 was asked:
 
 | Member | What it says |
 |---|---|
-| `host` | directives applied before the step: `clock` (`utc_ms`, `monotonic_ms`, `zone_id`, `utc_offset_s`, each optional), `permission` (what the platform says), `user_decision` (what the user would choose if asked: `granted`, `denied`, `none`), `fail` (operation type to the failure code it fails with; an empty object ends them), `quota` (the most keys the store holds), `http` (what the transport answers: `status`, `headers` as name and value pairs, and `body` as text, `body_hex` as bytes or `body_repeat` as a text and a count; or `fail`, a transport failure; or `hold`, which does not answer) |
+| `host` | directives applied before the step: `clock` (`utc_ms`, `monotonic_ms`, `zone_id`, `utc_offset_s`, each optional), `permission` (what the platform says), `user_decision` (what the user would choose if asked: `granted`, `denied`, `none`), `fail` (operation type to the failure code it fails with; an empty object ends them), `quota` (the most keys the store holds), `http` (what the transport answers: `status`, `headers` as name and value pairs, and `body` as text, `body_hex` as bytes or `body_repeat` as a text and a count; or `fail`, a transport failure; or `hold`, which does not answer), `model` (what the scripted provider is like, each member optional: `answers`, the answers it gives, one a start, in order, each `text` or `text_repeat` (a text and a count) with `finish` (`stop` when not written), replacing those not given yet; `constrained`, whether it decodes under a grammar; `name`, what it says answered; `context`, the most tokens a prompt and `max_tokens` may take together; `hold`, true for a provider that does not answer) |
 | `advance_ms` | moves the engine's manual clock on, which is how a deadline passes |
 | `event`, `data` | an external event and its payload |
 | `expect.state` | the atomic state the machine is in |
 | `expect.variables` | what the machine published |
 | `expect.host_invokes` | the operations the host was started with in this step, refused ones included, oldest first: `{"type", "id", "request"}`, the request as the record |
 | `expect.host_state` | what the host holds afterwards, for the members named: `store` (key to value), `waiting` and `shown` (the notification ids, in the order posted), `http` (what the transport was given in all: method, URL, request header lines as name and value, body), `cancelled` (the invocations the host was told to stop) |
+
+**The scripted provider.** A reference host answers a generation from a
+provider the embedding supplies, and every lane has a scripted one: it gives the
+answers it was told, in order, and counts a token as one byte of UTF-8 (a
+prompt's `prompt_tokens` is its length in bytes, an answer's `answer_tokens`
+the length of its text). With no answer left it fails `unavailable`, as a host
+with no model loaded does; an answer past the bound of `text` fails
+`answer_too_large`; a prompt whose length and `max_tokens` pass its `context`
+fails `context_exceeded`; it is `constrained` only when the request names an
+answer schema. The other failures are the `fail` directive's.
+
+**The exhaustive provider** (docs/adr/0087, section 9.4). The second provider
+every lane has stands for a model that may give any outcome at any call: driven
+by the test, each start takes the next outcome class of a sequence the test
+names, and answers what the class says. The classes are one table every lane
+reads, `tests/host_features/model_outcome_classes.json`: a record read, a text
+for each refusal code of `sce:std/lift/refusal_code.scxml` that a schema of
+fields reaches, an answer cut by `length`, each failure code, the refusal, a
+deadline that passes and a cancel by leaving the state. Each lane runs
+`static_host_model` against every sequence of classes up to the table's
+`bound`, and holds what the machine publishes after each call to what the class
+says it publishes. The host still judges the request first: a request it
+refuses is refused whatever the class.
 
 A reference host is the whole of a feature's semantics, as one object that is told
 a start (the type and the request's text parameters) and answers a completion, a
@@ -326,7 +404,7 @@ Three things differ by lane and are not hidden:
   (`SCE_HF_MIN_DATA_LEN`) and `SCE_MAX_HOST_INVOKERS` to at least 11. A result that
   does not fit the slot is refused as `error.execution`, not cut.
 
-## 8. Not provided
+## 9. Not provided
 
 These are not built, and nothing here stands in for them:
 

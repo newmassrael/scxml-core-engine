@@ -23,6 +23,25 @@ from .scripting.i_script_engine import ScriptValue, ScriptValueKind
 
 
 @dataclass(frozen=True)
+class AnswerSchema:
+    """One schema of a machine's table of answer schemas (docs/adr/0087,
+    section 4.1, item 2): the schemas its invokes of ``sce-host-model-generate``
+    name with ``sce:answer``, which a generated machine declares as
+    ``ANSWER_SCHEMAS``. A host resolves the ``answer_schema`` of a request
+    through it, with no file and no second copy of a grammar, and hands its
+    provider the form it takes.
+
+    `id` is ``urn:sce:schema:<document name>:<revision>``, what the request
+    carries; `json_schema` the payload as a JSON Schema (2020-12), every bound
+    as the build resolved it; `gbnf` the payload as a GBNF grammar, every
+    text's bound counted in bytes."""
+
+    id: str
+    json_schema: str
+    gbnf: str
+
+
+@dataclass(frozen=True)
 class RequestFieldType:
     """The type one field of a typed request declares, as the generated start
     site names it: ``uint8`` … ``int64``, ``float32``, ``float64``, ``bool``,

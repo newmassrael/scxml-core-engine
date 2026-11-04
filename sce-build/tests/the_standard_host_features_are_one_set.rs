@@ -255,3 +255,242 @@ fn a_value_the_machine_computes_is_held_to_the_field_it_supplies() {
     );
     assert!(text.contains("scxml/static-datamodel-rule"), "{text}");
 }
+
+// ── A model's generation and its answer schema (docs/adr/0087, section 4) ──
+
+/// The answer schema the probes below name: a title and a slot.
+const ANSWER: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="answer" sce:event-name="probe.answer">
+  <datamodel>
+    <data id="title" sce:type="string[16]" sce:direction="in"/>
+    <data id="slot" sce:type="uint16" sce:direction="in"/>
+  </datamodel>
+</scxml>"#;
+
+/// An open enum, which has no grammar: a value of it may be a number no name
+/// spells.
+const OPEN_KIND: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="open_kind" sce:underlying-type="uint8"
+       sce:strict-variants="false">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="meeting" value="0"/>
+    </data>
+  </datamodel>
+</scxml>"#;
+
+/// An answer schema holding the open enum.
+const OPEN_ANSWER: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="open_answer" sce:event-name="probe.open">
+  <sce:import kind="enum" src="open_kind.scxml" as="OpenKind"/>
+  <datamodel>
+    <data id="kind" sce:type="enum:OpenKind" sce:direction="in"/>
+  </datamodel>
+</scxml>"#;
+
+/// The siblings every model probe is read beside.
+const MODEL_SIBLINGS: [(&str, &str); 3] = [
+    ("answer.scxml", ANSWER),
+    ("open_kind.scxml", OPEN_KIND),
+    ("open_answer.scxml", OPEN_ANSWER),
+];
+
+/// A `sce-static` statechart that asks `invoke_type` for a text, the invoke
+/// carrying `attrs` (an `sce:answer`, say) and the extra `<param>`s `extra`.
+fn model_generate(invoke_type: &str, attrs: &str, extra: &str) -> String {
+    format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="probe">
+  <sce:import kind="event-schema" src="sce:std/host/model_generate_request.scxml" as="GenerateRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/model_generate_result.scxml" as="GenerateResult"/>
+  <sce:import kind="event-schema" src="answer.scxml" as="Answer"/>
+  <datamodel>
+    <data id="prompt" sce:type="string[64]" expr="'Name a day'"/>
+    <data id="said" sce:type="string[4096]" expr="''" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" target="asking"/>
+  </state>
+  <state id="asking">
+    <invoke type="{invoke_type}" id="gen"{attrs} sce:request="GenerateRequest" sce:result="GenerateResult">
+      <param name="prompt" expr="prompt"/>
+      <param name="max_tokens" expr="64"/>
+      <param name="temperature_milli" expr="0"/>{extra}
+    </invoke>
+    <transition event="done.invoke.gen" target="idle">
+      <assign location="said" expr="_event.data.text"/>
+    </transition>
+  </state>
+</scxml>
+"#
+    )
+}
+
+const MODEL_GENERATE: &str = "sce-host-model-generate";
+
+/// The id of `answer.scxml`'s payload schema, which the build writes into the
+/// request.
+const ANSWER_ID: &str = "urn:sce:schema:answer:1";
+
+/// `sce-codegen generate -l <language>` of `doc` beside the model siblings:
+/// whether it succeeded, what it said, and the text of every file of the
+/// machine it wrote (named after the machine, `probe`), so that a schema unit
+/// written beside it, which declares its own id and JSON Schema, is not read as
+/// the machine's.
+fn generate(language: &str, doc: &str) -> (bool, String, String) {
+    let dir = tempdir().expect("tempdir");
+    for (name, text) in MODEL_SIBLINGS {
+        std::fs::write(dir.path().join(name), text).expect("write sibling");
+    }
+    let path = dir.path().join("probe.scxml");
+    std::fs::write(&path, doc).expect("write probe");
+    let out_dir = tempdir().expect("tempdir");
+    let mut command = Command::new(sce_codegen_bin());
+    command
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("--error-format=json")
+        .args(["generate", "-l", language]);
+    if language == "go" {
+        command.args(["--go-module-prefix", "example.test/generated"]);
+    }
+    let out = command
+        .arg(&path)
+        .arg("-o")
+        .arg(out_dir.path())
+        .output()
+        .expect("invoke sce-codegen");
+    let mut written = String::new();
+    let mut machine_files = 0;
+    for entry in std::fs::read_dir(out_dir.path()).expect("the output directory") {
+        let path = entry.expect("an entry").path();
+        let of_machine = path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().to_lowercase().contains("probe"));
+        if path.is_file() && of_machine {
+            machine_files += 1;
+            written.push_str(&std::fs::read_to_string(&path).unwrap_or_default());
+            written.push('\n');
+        }
+    }
+    assert!(
+        !out.status.success() || machine_files > 0,
+        "{language} wrote no file named after the machine: a test that read none would pass"
+    );
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout),
+        written,
+    )
+}
+
+#[test]
+fn a_model_generation_is_served_on_every_backend_with_its_answer_schema() {
+    let doc = model_generate(MODEL_GENERATE, r#" sce:answer="Answer""#, "");
+    for language in languages() {
+        let (ok, text) = run(&["check", "-l", language], &doc, &MODEL_SIBLINGS);
+        assert!(ok, "{language} refused a model's generation: {text}");
+        assert!(
+            text.contains(&format!(r#""host_invoker_types":["{MODEL_GENERATE}"]"#)),
+            "{language}: the type was not served: {text}"
+        );
+    }
+}
+
+/// The build writes the answer schema's id into the request, and declares the
+/// machine's table of answer schemas, the id beside both of its grammars. C and
+/// C++ hold each grammar as characters, so only the id is read as text there.
+#[test]
+fn the_build_writes_the_answer_schema_and_the_table_of_its_grammars() {
+    let doc = model_generate(MODEL_GENERATE, r#" sce:answer="Answer""#, "");
+    for language in languages() {
+        let (ok, text, written) = generate(language, &doc);
+        assert!(ok, "{language} did not generate: {text}");
+        assert!(
+            written.contains(ANSWER_ID),
+            "{language}: neither the request nor the table names {ANSWER_ID}:\n{written}"
+        );
+        if !matches!(language, "c11" | "cpp") {
+            assert!(
+                written.contains("root ::="),
+                "{language}: the table holds no GBNF grammar:\n{written}"
+            );
+            assert!(
+                written.contains("json-schema.org/draft/2020-12/schema"),
+                "{language}: the table holds no JSON Schema:\n{written}"
+            );
+        }
+    }
+}
+
+/// An invoke that names no answer schema asks for a free text: its request's
+/// `answer_schema` is empty and the machine declares no table.
+#[test]
+fn a_generation_that_names_no_answer_schema_declares_no_table() {
+    let doc = model_generate(MODEL_GENERATE, "", "");
+    let (ok, text, written) = generate("rust", &doc);
+    assert!(ok, "a free generation was refused: {text}");
+    assert!(
+        !written.contains("ANSWER_SCHEMAS") && !written.contains("urn:sce:schema:"),
+        "a machine that names no answer schema declared one:\n{written}"
+    );
+}
+
+/// The document does not write the field the build writes.
+#[test]
+fn a_document_does_not_write_the_answer_schema_of_a_request() {
+    let doc = model_generate(
+        MODEL_GENERATE,
+        r#" sce:answer="Answer""#,
+        "\n      <param name=\"answer_schema\" expr=\"'urn:sce:schema:other:1'\"/>",
+    );
+    let (ok, text) = run(&["check"], &doc, &MODEL_SIBLINGS);
+    assert!(!ok, "a document wrote the answer schema itself: {text}");
+    assert!(
+        text.contains("validation/typed-invoke-request") && text.contains("sce:answer"),
+        "{text}"
+    );
+}
+
+#[test]
+fn an_answer_schema_is_refused_on_another_type() {
+    let doc = kv_get("256", REQUEST, RESULT, "key").replace(
+        r#"<invoke type="sce-host-kv-get" id="get""#,
+        r#"<invoke type="sce-host-kv-get" id="get" sce:answer="KvGetResult""#,
+    );
+    let (ok, text) = run(&["check"], &doc, &[]);
+    assert!(!ok, "an answer schema on a key read was accepted: {text}");
+    assert!(
+        text.contains("validation/model-answer-schema") && text.contains(MODEL_GENERATE),
+        "{text}"
+    );
+}
+
+#[test]
+fn an_answer_schema_the_document_does_not_import_is_refused() {
+    let doc = model_generate(MODEL_GENERATE, r#" sce:answer="Answr""#, "");
+    let (ok, text) = run(&["check"], &doc, &MODEL_SIBLINGS);
+    assert!(!ok, "an alias no import names was accepted: {text}");
+    assert!(
+        text.contains("validation/model-answer-schema") && text.contains("Answr"),
+        "{text}"
+    );
+}
+
+#[test]
+fn an_answer_schema_with_no_grammar_is_refused() {
+    let doc = model_generate(MODEL_GENERATE, r#" sce:answer="OpenAnswer""#, "").replace(
+        r#"<sce:import kind="event-schema" src="answer.scxml" as="Answer"/>"#,
+        r#"<sce:import kind="event-schema" src="open_answer.scxml" as="OpenAnswer"/>"#,
+    );
+    let (ok, text) = run(&["check"], &doc, &MODEL_SIBLINGS);
+    assert!(
+        !ok,
+        "an answer schema holding an open enum was accepted: {text}"
+    );
+    assert!(
+        text.contains("validation/model-answer-schema") && text.contains("grammar"),
+        "{text}"
+    );
+}

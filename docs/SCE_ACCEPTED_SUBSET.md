@@ -4602,6 +4602,23 @@ template and the variable it wrote, never the text, and so do Go and Swift, thro
 their machine runtime's helper (`sce.LogRender`, `SceRuntime.logRender`); Kotlin and
 Python have no log facility in their runtime, so they log nothing.
 
+**The answer schema of a model's generation: `sce:answer`** (docs/adr/0087, section
+4.1; docs/SCE_HOST_FEATURES.md, "Generated text"). `<invoke
+type="sce-host-model-generate" sce:answer="Answer">` names the imported event schema
+the host's model is asked to answer in, the one a `<sce:lift schema="Answer">` of the
+completion's `text` holds the answer to. The build writes the request's
+`answer_schema` from it, the schema's id `urn:sce:schema:<document name>:<revision>`
+(empty without `sce:answer`), and the document does not: a `<param
+name="answer_schema">` is `validation/typed-invoke-request`. Each machine declares
+the table of the answer schemas its invokes name, each schema's id with its JSON
+Schema and its GBNF grammar, the one place a GBNF grammar is written into a machine.
+`validation/model-answer-schema` refuses the attribute on an invoke of another type,
+an empty one, one naming no event schema the document imports, one naming a schema
+whose payload has no grammar (an open enum among them) or whose id is past the 128
+bytes of `answer_schema`, and two answer schemas of one machine under one id. Rust,
+Go, Kotlin, Python, C++, Swift and C11 declare the table; the Interpreter's lowering
+declares none (docs/adr/0087, section 7.1).
+
 **Enum variables.** `sce:type="enum:<alias>"` holds a variable in a variant of
 the enum the document imports as `<alias>` (`<sce:import kind="enum">`). It
 starts at one of the variants, written as the expression `<alias>.<variant>`
@@ -9137,7 +9154,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (501 codes)
+## Appendix — `DiagnosticCode` index (502 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -9220,6 +9237,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/lift-location` | Validation |
 | `validation/lift-text` | Validation |
 | `validation/lift-path-bound` | Validation |
+| `validation/model-answer-schema` | Validation |
 | `validation/native-action-argument` | Validation |
 | `validation/native-action-signature-conflict` | Validation |
 | `validation/native-action-release` | Validation |

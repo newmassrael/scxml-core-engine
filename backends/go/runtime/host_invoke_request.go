@@ -19,6 +19,24 @@ import (
 // field's type parses. The Go port of `sce_rust_runtime::host_processor`'s
 // typed-request half; the rule is the same in every runtime.
 
+// AnswerSchema is one schema of a machine's table of answer schemas
+// (docs/adr/0087, section 4.1, item 2): the schemas its invokes of
+// `sce-host-model-generate` name with `sce:answer`, which a generated machine
+// declares as AnswerSchemas. A host resolves the `answer_schema` of a request
+// through it, with no file and no second copy of a grammar, and hands its
+// provider the form it takes.
+type AnswerSchema struct {
+	// ID is `urn:sce:schema:<document name>:<revision>`: what the request
+	// carries.
+	ID string
+	// JSONSchema is the payload as a JSON Schema (2020-12), every bound as
+	// the build resolved it.
+	JSONSchema string
+	// GBNF is the payload as a GBNF grammar, every text's bound counted in
+	// bytes.
+	GBNF string
+}
+
 // RequestFieldType is the type one field of a typed request declares, as the
 // generated start site names it.
 type RequestFieldType struct {

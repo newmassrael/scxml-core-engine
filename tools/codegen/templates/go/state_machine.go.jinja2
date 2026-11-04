@@ -46,6 +46,19 @@ var (
 	_ scealgorithm.Failure
 {% endif %}
 )
+{% if answer_schemas %}
+
+// AnswerSchemas are the answer schemas this machine's model generations name
+// with `sce:answer` (docs/adr/0087, section 4.1): each schema's id, which is
+// the `answer_schema` its request carries, with the JSON Schema and the GBNF
+// grammar a host hands its provider. A host resolves a request's id here and
+// nowhere else.
+var AnswerSchemas = []sce.AnswerSchema{
+{% for entry in answer_schemas %}
+	{ID: "{{ entry.id }}", JSONSchema: "{{ entry.json_schema }}", GBNF: "{{ entry.gbnf }}"},
+{% endfor %}
+}
+{% endif %}
 
 // ======================================================================
 // State type (W3C SCXML 3.3)

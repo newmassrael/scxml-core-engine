@@ -529,11 +529,11 @@ pub use helpers::tables::{
 #[cfg(feature = "std")]
 pub use host_processor::{
     is_reserved_type, mesh_event_metadata, parse_host_invoke_deadline_ms, request_bytes_field,
-    request_field, request_field_wire, ChildMeshRouter, ChildMeshRouters, HostInvokeCancel,
-    HostInvokeEndRefusal, HostInvokeEnding, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse,
-    HostSendRequest, HostSendResponse, MeshCall, RequestFieldType, TreeInvokers,
-    HOST_INVOKE_DEADLINE_PARAM, MESH_ORIGIN_SCHEME, MESH_PROCESSOR_TYPE, MESH_RPC_INVOKE_TYPE,
-    RESERVED_TYPE_PREFIX,
+    request_field, request_field_wire, AnswerSchema, ChildMeshRouter, ChildMeshRouters,
+    HostInvokeCancel, HostInvokeEndRefusal, HostInvokeEnding, HostInvokeEvent, HostInvokeRequest,
+    HostInvokeResponse, HostSendRequest, HostSendResponse, MeshCall, RequestFieldType,
+    TreeInvokers, HOST_INVOKE_DEADLINE_PARAM, MESH_ORIGIN_SCHEME, MESH_PROCESSOR_TYPE,
+    MESH_RPC_INVOKE_TYPE, RESERVED_TYPE_PREFIX,
 };
 #[cfg(feature = "http-send")]
 pub use http::{HttpSendRequest, HttpSendResponse};

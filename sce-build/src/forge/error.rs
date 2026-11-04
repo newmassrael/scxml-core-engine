@@ -1272,6 +1272,20 @@ pub enum ValidationError {
         max_len: u64,
     },
 
+    /// docs/adr/0087, section 4.1, item 2: an `sce:answer` that names no answer
+    /// schema the build can write: on an `<invoke>` of a type other than
+    /// `sce-host-model-generate`, empty, naming no event schema the document
+    /// imports, naming one whose payload has no grammar (an open enum among
+    /// them) or whose id does not fit the request's `answer_schema`, or two
+    /// answer schemas of one machine under one id. `alias` is the attribute as
+    /// written, the record's `actual` when it is not empty.
+    #[error("<invoke id=\"{invoke_id}\" sce:answer=\"{alias}\">: {detail}")]
+    ModelAnswerSchema {
+        invoke_id: String,
+        alias: String,
+        detail: String,
+    },
+
     /// §scxml-G-7 — a `<sce:action>` `<sce:arg>` cannot be lowered to
     /// a typed native value: it is not a bare `_event.data.<field>`
     /// reference, the triggering event imports no EventSchema, or the

@@ -1011,6 +1011,7 @@ references against a real document and drift silently.
 | `validation/missing-attribute` | `validation` | `add_attribute` |  |
 | `validation/missing-context` | `validation` | no |  |
 | `validation/missing-element` | `validation` | no |  |
+| `validation/model-answer-schema` | `validation` | no | ADR 0087 §4.1 |
 | `validation/native-action-argument` | `validation` | no |  |
 | `validation/native-action-placement` | `validation` | no |  |
 | `validation/native-action-release` | `validation` | no |  |

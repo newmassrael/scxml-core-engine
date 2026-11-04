@@ -117,6 +117,25 @@ private let historyDefaultTargetsOf{{ machine_name }}: [[{{ machine_name }}Targe
 // Event type (W3C SCXML 3.12)
 // ======================================================================
 
+{% if answer_schemas %}
+/// The answer schemas this machine's model generations name with `sce:answer`
+/// (docs/adr/0087, section 4.1): each schema's id, which is the `answer_schema`
+/// its request carries, with the JSON Schema and the GBNF grammar a host hands
+/// its provider. A host resolves a request's id here and nowhere else.
+public enum {{ machine_name }}AnswerSchemas {
+    /// Every answer schema of the machine, in the order the document first names it.
+    public static let all: [AnswerSchema] = [
+{% for entry in answer_schemas %}
+        AnswerSchema(
+            id: "{{ entry.id }}",
+            jsonSchema: "{{ entry.json_schema }}",
+            gbnf: "{{ entry.gbnf }}"
+        ),
+{% endfor %}
+    ]
+}
+
+{% endif %}
 /// The events of `{{ model.name }}`, and the null event eventless transitions
 /// are selected under (§scxml-3.13).
 public enum {{ machine_name }}Event: Int, Hashable, Sendable {

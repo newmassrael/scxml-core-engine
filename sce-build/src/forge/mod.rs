@@ -50,6 +50,7 @@ pub mod lift;
 pub mod limits;
 pub mod manifest;
 pub mod model;
+pub mod model_answer;
 pub mod namespace;
 pub mod narrowing;
 pub mod native_action;

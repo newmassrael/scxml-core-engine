@@ -103,11 +103,28 @@ pub const TYPES: &[StandardHostType] = &[
         request: Some("http_fetch_request"),
         result: "http_fetch_result",
     },
+    StandardHostType {
+        invoke_type: crate::forge::model_answer::MODEL_GENERATE,
+        request: Some("model_generate_request"),
+        result: "model_generate_result",
+    },
 ];
 
 /// The standard operation `invoke_type` names, if it names one.
 pub fn lookup(invoke_type: &str) -> Option<&'static StandardHostType> {
     TYPES.iter().find(|t| t.invoke_type == invoke_type)
+}
+
+/// The fields of `invoke_type`'s request that the build writes and a document
+/// does not: the answer schema of a model's generation, written from
+/// `sce:answer` (docs/adr/0087, section 4.1, item 2). Empty for every other
+/// type, standard or not.
+pub fn written_by_build(invoke_type: &str) -> &'static [&'static str] {
+    if invoke_type == crate::forge::model_answer::MODEL_GENERATE {
+        &[crate::forge::model_answer::ANSWER_SCHEMA_FIELD]
+    } else {
+        &[]
+    }
 }
 
 /// The path of the library document `name` — `sce:std/host/<name>.scxml`.

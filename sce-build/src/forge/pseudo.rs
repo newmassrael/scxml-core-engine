@@ -2538,6 +2538,9 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
                 if !i.result_schema.is_empty() {
                     out.line(&format!("result {}", text(&i.result_schema)));
                 }
+                if !i.answer_schema.is_empty() {
+                    out.line(&format!("answer {}", text(&i.answer_schema)));
+                }
             }
         }
     });

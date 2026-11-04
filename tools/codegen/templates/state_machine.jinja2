@@ -495,6 +495,23 @@ inline const ::SCE::Saved::SavedShape &savedShape() {
 // ── SCE Accepted Subset 2.12: typed host-run invoke interface ─────────
 {{ host_invoker_defs }}
 {% endif %}
+{% if answer_schemas %}
+// ── docs/adr/0087, section 4.1: the answer schemas this machine names ──
+// Each schema its model generations name with `sce:answer`: its id, which is
+// the `answer_schema` its request carries, with the JSON Schema and the GBNF
+// grammar a host hands its provider. A host resolves a request's id here and
+// nowhere else. Each text is a `char` array, since no string literal holds a
+// text of any length.
+{% for entry in answer_schemas %}
+inline constexpr char ANSWER_SCHEMA_JSON_{{ loop.index0 }}[] = {{ entry.json_schema_chars }};
+inline constexpr char ANSWER_SCHEMA_GBNF_{{ loop.index0 }}[] = {{ entry.gbnf_chars }};
+{% endfor %}
+inline constexpr ::SCE::AnswerSchema ANSWER_SCHEMAS[] = {
+{% for entry in answer_schemas %}
+    {"{{ entry.id }}", ANSWER_SCHEMA_JSON_{{ loop.index0 }}, ANSWER_SCHEMA_GBNF_{{ loop.index0 }}},
+{% endfor %}
+};
+{% endif %}
 {# Policy class #}
 // State policy for {{ model.name }}
 {% if _has_tpl %}

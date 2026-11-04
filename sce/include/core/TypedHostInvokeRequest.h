@@ -61,6 +61,22 @@ struct RequestFieldType {
     std::size_t cap = 0;
 };
 
+/// One schema of a machine's table of answer schemas (docs/adr/0087, section
+/// 4.1, item 2): the schemas its invokes of `sce-host-model-generate` name with
+/// `sce:answer`, which a generated machine declares as `ANSWER_SCHEMAS`. A host
+/// resolves the `answer_schema` of a request through it, with no file and no
+/// second copy of a grammar, and hands its provider the form it takes. Each
+/// text is a NUL-terminated array of the machine's, alive for the program.
+struct AnswerSchema {
+    /// `urn:sce:schema:<document name>:<revision>`: what the request carries.
+    const char *id;
+    /// The payload as a JSON Schema (2020-12), every bound as the build
+    /// resolved it.
+    const char *jsonSchema;
+    /// The payload as a GBNF grammar, every text's bound counted in bytes.
+    const char *gbnf;
+};
+
 namespace TypedHostInvokeRequestDetail {
 
 /// A whole number as a sign and a magnitude, so every 64-bit width — signed

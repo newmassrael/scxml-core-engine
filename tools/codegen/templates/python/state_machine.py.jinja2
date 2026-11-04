@@ -82,6 +82,9 @@ from sce_runtime import request_field as _request_field
 from sce_runtime import request_field_wire as _request_field_wire
 from sce_runtime.event_payload import TypedPayloadError as _RequestRefusal
 {% endif %}
+{% if answer_schemas %}
+from sce_runtime import AnswerSchema as _AnswerSchema
+{% endif %}
 # W3C SCXML 5.10 + B-2-9: the text an event's data is on the wire, which the
 # script engine's `set_current_event` takes and a saved state holds.
 from sce_runtime.event import event_data_text as _coerce_event_data_str
@@ -121,6 +124,23 @@ import sce_runtime.saved_engine as sce_saved_engine
 {% for line in static_imports %}
 {{ line }}
 {% endfor %}
+{% endif %}
+{% if answer_schemas %}
+
+
+# The answer schemas this machine's model generations name with `sce:answer`
+# (docs/adr/0087, section 4.1): each schema's id, which is the `answer_schema`
+# its request carries, with the JSON Schema and the GBNF grammar a host hands
+# its provider. A host resolves a request's id here and nowhere else.
+ANSWER_SCHEMAS: Tuple[_AnswerSchema, ...] = (
+{% for entry in answer_schemas %}
+    _AnswerSchema(
+        id="{{ entry.id }}",
+        json_schema="{{ entry.json_schema }}",
+        gbnf="{{ entry.gbnf }}",
+    ),
+{% endfor %}
+)
 {% endif %}
 
 

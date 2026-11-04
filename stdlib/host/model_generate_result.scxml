@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/model_generate_result.scxml — the answer of
+  `sce-host-model-generate` (docs/SCE_HOST_FEATURES.md, "Generated text";
+  docs/adr/0087, section 4).
+
+  `text` is the answer as the provider wrote it, never cut by the host: an
+  answer past the bound fails `answer_too_large`. `constrained` says whether
+  the provider decoded under the answer schema's grammar. `model` names what
+  answered, as the host spells it. `prompt_tokens` and `answer_tokens` are the
+  provider's counts. `finish` is `stop` when the provider ended its answer and
+  `length` when it reached `max_tokens`; an answer cut by `length` is still a
+  completion, and a lift of its text is what refuses it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="model_generate_result"
+       sce:event-name="host.model.generate.result">
+  <datamodel>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
+    <data id="text" sce:type="string[model_answer=4096]" sce:direction="in"/>
+    <data id="constrained" sce:type="bool" sce:direction="in"/>
+    <data id="model" sce:type="string[128]" sce:direction="in"/>
+    <data id="prompt_tokens" sce:type="uint32" sce:direction="in"/>
+    <data id="answer_tokens" sce:type="uint32" sce:direction="in"/>
+    <data id="finish" sce:type="string[16]" sce:direction="in"/>
+  </datamodel>
+</scxml>
