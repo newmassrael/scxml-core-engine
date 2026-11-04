@@ -10732,10 +10732,17 @@ fn render_codec(
                         .then(|| rust_law_start(&roles, f, &entry_thread.inputs))
                         .flatten();
                     let is_rust = matches!(lang, crate::generator::Language::Rust);
-                    // A Rust decode notes the kinds the gates ask for of every
-                    // entry it reads, held or not (docs/adr/0077 §7).
+                    let is_c11 = matches!(lang, crate::generator::Language::C11);
+                    // A Rust or C11 decode, which reads past what it holds,
+                    // notes the kinds the gates ask for of every entry it
+                    // reads, held or not (docs/adr/0077 §7).
                     let kinds = if is_rust {
                         rust_chain_kinds(f, &m.fields, &chain_masks)
+                    } else {
+                        Vec::new()
+                    };
+                    let c11_kinds = if is_c11 {
+                        c11_chain_kinds(f, &m.fields, &chain_masks)
                     } else {
                         Vec::new()
                     };
@@ -10752,6 +10759,7 @@ fn render_codec(
                             law_start: law_start.as_deref(),
                             c11_over,
                             kinds: &kinds,
+                            c11_kinds: &c11_kinds,
                             lang,
                         })
                     } else {
@@ -10766,16 +10774,19 @@ fn render_codec(
                             law_start: law_start.as_deref(),
                             c11_over,
                             kinds: &kinds,
+                            c11_kinds: &c11_kinds,
                             lang,
                         })
                     };
                     // A later field gated on `<chain>.has(…)` reads a boolean
-                    // local that follows the chain: on Rust, the kind noted of
-                    // every entry read, held or not; elsewhere
-                    // (`with_chain_has_decls`) the entries held. Nothing is
-                    // added when no predicate asks.
+                    // local that follows the chain: on Rust and C11, the kind
+                    // noted of every entry read, held or not; elsewhere, where
+                    // every entry read is held (`with_chain_has_decls`), the
+                    // entries held. Nothing is added when no predicate asks.
                     let decode_stmt = if is_rust {
                         rust_with_chain_kinds(decode_stmt, &kinds)
+                    } else if is_c11 {
+                        c11_with_chain_kinds(decode_stmt, &c11_kinds)
                     } else {
                         with_chain_has_decls(
                             decode_stmt,
@@ -16802,6 +16813,9 @@ struct TlvChainDecode<'a> {
     /// decode notes of every entry it reads ([`rust_chain_kinds`]); empty on
     /// any other backend.
     kinds: &'a [RustChainKind],
+    /// The same kinds as a C11 decode notes them of every entry it reads
+    /// ([`c11_chain_kinds`]); empty on any other backend.
+    c11_kinds: &'a [C11ChainKind],
     lang: crate::generator::Language,
 }
 
@@ -16908,6 +16922,66 @@ fn rust_chain_kinds(
             }
         })
         .collect()
+}
+
+/// A kind of entry the gates on a chain ask for, as a C11 decode notes it of
+/// each entry it reads, held or not (docs/adr/0077 §7): a chain the deployment
+/// holds fewer entries of than its walk reads the rest into its last row, so
+/// its array alone cannot say which kinds the frame held. `has` is the local a
+/// later gate reads ([`chain_has_local`]), and `of_read` its test of the entry
+/// the loop has just read (`_just`).
+struct C11ChainKind {
+    has: String,
+    of_read: String,
+}
+
+/// The kinds of entry later fields' gates ask of the C11 chain `chain`, one per
+/// identifier ([`chain_has_values`]), each tested on the row the loop has just
+/// read: the chain's array, or the array of its optional value when it is gated.
+fn c11_chain_kinds(
+    chain: &CodecField,
+    fields: &[CodecField],
+    masks: &ChainIdentifierMasks,
+) -> Vec<C11ChainKind> {
+    use crate::generator::Language;
+    let mask = masks.get(&chain.id).copied();
+    let id = codec_field_local_name(&chain.id, Language::C11);
+    let read = if chain.present_if.is_some() {
+        format!("out->{id}.value.data[_just]")
+    } else {
+        format!("out->{id}[_just]")
+    };
+    chain_has_values(fields, &chain.id)
+        .into_iter()
+        .map(|value| C11ChainKind {
+            has: chain_has_local(&chain.id, value, Language::C11),
+            of_read: format!(
+                "{} == {}",
+                chain_entry_identifier(chain, &read, mask, Language::C11),
+                chain_identifier_literal(value, Language::C11)
+            ),
+        })
+        .collect()
+}
+
+/// The lines a C11 chain loop notes the kinds `kinds` of the entry it has just
+/// read by, after the entry is decoded and before the next is.
+fn c11_chain_kind_lines(kinds: &[C11ChainKind]) -> Vec<String> {
+    kinds
+        .iter()
+        .map(|kind| format!("if ({}) {} = true;", kind.of_read, kind.has))
+        .collect()
+}
+
+/// `stmt`, a C11 chain decode, with each later gate's local
+/// ([`chain_has_local`]) declared before it, clear: the loop sets it for every
+/// entry it reads, and an absent chain notes no kind.
+fn c11_with_chain_kinds(stmt: String, kinds: &[C11ChainKind]) -> String {
+    let before: String = kinds
+        .iter()
+        .map(|kind| format!("bool {} = false;\n    ", kind.has))
+        .collect();
+    format!("{before}{stmt}")
 }
 
 /// The local a Rust chain decode notes in whether an entry it read, held or
@@ -17228,6 +17302,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         law_start,
         c11_over,
         kinds,
+        c11_kinds,
         lang,
     } = ctx;
     let refill = rust_refill(law_start);
@@ -17287,7 +17362,8 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             let entry_struct_snake = body_decoder.strip_suffix("_decode").unwrap_or(body_decoder);
             let data = format!("out->{id_snake}");
             let len = format!("out->{id_snake}_len");
-            let body = match (&entry_flag_acc, entry_binds.is_empty(), field.capacity) {
+            let reads_nothing_off = entry_binds.is_empty() && c11_kinds.is_empty();
+            let body = match (&entry_flag_acc, reads_nothing_off, field.capacity) {
                 (None, true, None) => format!(
                     "            if (sce_forge_cursor_remaining(cursor) == 0) break;\n            \
                      {call}\n            \
@@ -17302,9 +17378,10 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                 ),
                 // The entry is read through the slot it was just decoded into
                 // when the loop reads something off it: the flag that ends the
-                // chain, the identifier a per-entry flag-input waits for; and
-                // a chain the deployment holds fewer entries of than its walk
-                // reads past them into its last row (docs/adr/0077 §7).
+                // chain, the identifier a per-entry flag-input waits for, the
+                // kinds a later gate asks for; and a chain the deployment holds
+                // fewer entries of than its walk reads past them into its last
+                // row (docs/adr/0077 §7).
                 (acc, _, capacity) => {
                     let indent = "            ";
                     let entry = format!("out->{id_snake}[_just]");
@@ -17324,6 +17401,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
                         lines.push(format!("_more = {entry_struct_snake}_{acc}(&{entry});"));
                     }
                     lines.extend(entry_binds.update_lines(field, &entry, lang, indent));
+                    lines.extend(c11_chain_kind_lines(c11_kinds));
                     if acc.is_some() {
                         lines.push("if (!_more) break;".to_string());
                     }
@@ -17677,6 +17755,8 @@ struct TlvChainDecodeGated<'a> {
     c11_over: bool,
     /// See [`TlvChainDecode::kinds`].
     kinds: &'a [RustChainKind],
+    /// See [`TlvChainDecode::c11_kinds`].
+    c11_kinds: &'a [C11ChainKind],
     lang: crate::generator::Language,
 }
 
@@ -17713,6 +17793,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         law_start,
         c11_over,
         kinds,
+        c11_kinds,
         lang,
     } = ctx;
     let refill = rust_refill(law_start);
@@ -17912,7 +17993,8 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             // The array holds the deployment's capacity, which may be fewer
             // entries than the walk reads, as the ungated chain's does
             // (docs/adr/0077 §7): past it an entry is read into the last row.
-            let body = match (&entry_flag_acc, entry_binds.is_empty(), field.capacity) {
+            let reads_nothing_off = entry_binds.is_empty() && c11_kinds.is_empty();
+            let body = match (&entry_flag_acc, reads_nothing_off, field.capacity) {
                 (None, true, None) => format!(
                     "                if (sce_forge_cursor_remaining(cursor) == 0) break;\n                \
                      {call}\n                \
@@ -17942,6 +18024,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                         lines.push(format!("_more = {entry_struct_snake}_{acc}(&{entry});"));
                     }
                     lines.extend(entry_binds.update_lines(field, &entry, lang, indent));
+                    lines.extend(c11_chain_kind_lines(c11_kinds));
                     if acc.is_some() {
                         lines.push("if (!_more) break;".to_string());
                     }

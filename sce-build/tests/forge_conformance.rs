@@ -6999,6 +6999,111 @@ fn c11_reads_a_positional_frame_past_a_capacity_whole() {
     );
 }
 
+/// A driver of the C11 form of `codec_chain_has_tagged` held at one entry of its
+/// chain of three: an entry past the one held is read into the last row, and the
+/// gates after the chain are decided by the kinds of every entry read, so a frame
+/// cut after the chain is refused for that and `CAPACITY_EXCEEDED` is said only of
+/// a frame read whole (docs/adr/0077 §7).
+const CHAIN_KINDS_C_DRIVER: &str = r#"#include <stdio.h>
+#include <string.h>
+
+#include "codec_chain_has_tagged.h"
+
+static int failures = 0;
+#define CHECK(cond, what)                                                              \
+    do {                                                                               \
+        if (!(cond)) {                                                                 \
+            fprintf(stderr, "FAIL: %s\n", what);                                       \
+            ++failures;                                                                \
+        }                                                                              \
+    } while (0)
+
+static codec_chain_has_tagged_t v;
+
+static sce_forge_codec_status_t decode(const uint8_t *frame, size_t len) {
+    sce_forge_cursor_t c = sce_forge_cursor_init(frame, len);
+    return codec_chain_has_tagged_decode(&c, &v);
+}
+
+int main(void) {
+    /* A header, then entries {type, ctl, body} while ctl's bit 0 says another
+     * follows; `priority` follows where a type-7 entry is, `checksum` where no
+     * type-9 entry is. */
+    static const uint8_t one[] = {0x80, 0x07, 0x00, 0x11, 0x42, 0x12, 0x34};
+    /* Types 0x89, 7 and 9: the 7 is read into the row the 9 then takes. */
+    static const uint8_t seven_between[] = {0x80, 0x89, 0x89, 0x81, 0x07, 0x05, 0x80, 0x09, 0x00, 0x09};
+    static const uint8_t seven_between_whole[] = {0x80, 0x89, 0x89, 0x81, 0x07, 0x05,
+                                                  0x80, 0x09, 0x00, 0x09, 0x42};
+    /* Types 9 and 1: the 9 is read into the row the 1 then takes. */
+    static const uint8_t nine_first[] = {0x80, 0x09, 0x01, 0x00, 0x01, 0x00, 0x00};
+    CHECK(decode(one, sizeof one) == SCE_FORGE_CODEC_OK && v.entries_len == 1U && v.priority.present &&
+              v.priority.value == 0x42 && v.checksum.present && v.checksum.value == 0x1234,
+          "a chain that fills its capacity");
+    CHECK(decode(seven_between, sizeof seven_between) == SCE_FORGE_CODEC_NEED_MORE_BYTES,
+          "a frame cut before the field a type-7 entry past the capacity gates");
+    CHECK(decode(seven_between_whole, sizeof seven_between_whole) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED,
+          "a frame read whole past the capacity, its type-7 entry not held");
+    CHECK(decode(nine_first, sizeof nine_first) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED,
+          "a frame read whole past the capacity, its type-9 entry not held");
+    return failures == 0 ? 0 : 1;
+}
+"#;
+
+/// A C11 chain held at fewer entries than its walk reads notes the kinds its
+/// gates ask for of every entry it reads, held or not, as the Rust decode does
+/// (docs/adr/0077 §7): the fields after it are read as the frame says, not as
+/// the entries its array kept say.
+#[test]
+fn c11_reads_the_kinds_of_a_chain_past_its_capacity() {
+    use sce_build::generator::Language;
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let set = [
+        "codec_chain_has_tagged_entry.scxml",
+        "codec_chain_has_tagged.scxml",
+    ];
+    for document in set {
+        std::fs::copy(resource_dir().join(document), dir.path().join(document))
+            .expect("copy a document");
+    }
+    let mut opts = golden_options(Language::C11);
+    opts.codec_capacities = [(
+        "codec_chain_has_tagged".to_string(),
+        [("entries".to_string(), 1)].into(),
+    )]
+    .into();
+    let files = generate_files_for_codec_set_with(dir.path(), &set, Language::C11, opts)
+        .expect("C11 holds the chain at the capacity it is given");
+    for (name, text) in &files {
+        std::fs::write(dir.path().join(name), text).expect("write a header");
+    }
+    let header = files
+        .iter()
+        .find(|(file, _)| file == "codec_chain_has_tagged.h")
+        .map(|(_, text)| text.clone())
+        .unwrap_or_else(|| {
+            panic!(
+                "no codec_chain_has_tagged.h among {:?}",
+                files.iter().map(|f| &f.0).collect::<Vec<_>>()
+            )
+        });
+    assert!(
+        header.contains(
+            "if ((uint64_t)(out->entries[_just].entry_type) == 7ULL) _has_entries_7 = true;"
+        ),
+        "{header}"
+    );
+    assert!(
+        !header.contains("_i < out->entries_len"),
+        "the decode reads the kinds off the entries it held:\n{header}"
+    );
+    run_c_driver(
+        dir.path(),
+        "codec_chain_has_tagged.h",
+        &header,
+        CHAIN_KINDS_C_DRIVER,
+    );
+}
+
 /// Write `header` as `header_name` into `dir` beside the C program `driver`,
 /// compile them as C11 with the strictest warnings and the address and
 /// undefined-behaviour sanitizers, and run it: every check the driver makes

@@ -86,6 +86,7 @@ static inline sce_forge_codec_status_t codec_chain_has_marker_decode(sce_forge_c
         out->header = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
+    bool _has_extensions_18 = false;
     memset(&out->extensions, 0, sizeof out->extensions);
         if ((out->header & 0x80) != 0) {
             out->extensions.present = true;
@@ -96,18 +97,12 @@ static inline sce_forge_codec_status_t codec_chain_has_marker_decode(sce_forge_c
                 size_t _just = out->extensions.value.len;
                 out->extensions.value.len++;
                 _more = codec_zenoh_ext_entry_z(&out->extensions.value.data[_just]);
+                if (((uint64_t)(out->extensions.value.data[_just].header) & 127ULL) == 18ULL) _has_extensions_18 = true;
                 if (!_more) break;
             }
             if (_more && sce_forge_cursor_remaining(cursor) == 0) { return SCE_FORGE_CODEC_NEED_MORE_BYTES; }
             if (_more) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
         }
-    bool _has_extensions_18 = false;
-    for (size_t _i = 0; _i < out->extensions.value.len; ++_i) {
-        if (((uint64_t)(out->extensions.value.data[_i].header) & 127ULL) == 18ULL) {
-            _has_extensions_18 = true;
-            break;
-        }
-    }
     if (!_has_extensions_18) {
         uint64_t _v;
     {

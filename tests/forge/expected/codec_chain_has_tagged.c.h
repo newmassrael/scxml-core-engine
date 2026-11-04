@@ -54,6 +54,8 @@ static inline sce_forge_codec_status_t codec_chain_has_tagged_decode(sce_forge_c
         out->header = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
+    bool _has_entries_7 = false;
+    bool _has_entries_9 = false;
     {
         out->entries_len = 0;
         bool _more = false;
@@ -63,24 +65,12 @@ static inline sce_forge_codec_status_t codec_chain_has_tagged_decode(sce_forge_c
             size_t _just = out->entries_len;
             out->entries_len++;
             _more = codec_chain_has_tagged_entry_more(&out->entries[_just]);
+            if ((uint64_t)(out->entries[_just].entry_type) == 7ULL) _has_entries_7 = true;
+            if ((uint64_t)(out->entries[_just].entry_type) == 9ULL) _has_entries_9 = true;
             if (!_more) break;
         }
         if (_more && sce_forge_cursor_remaining(cursor) == 0) { return SCE_FORGE_CODEC_NEED_MORE_BYTES; }
         if (_more) { return SCE_FORGE_CODEC_TOO_MANY_ELEMENTS; }
-    }
-    bool _has_entries_7 = false;
-    for (size_t _i = 0; _i < out->entries_len; ++_i) {
-        if ((uint64_t)(out->entries[_i].entry_type) == 7ULL) {
-            _has_entries_7 = true;
-            break;
-        }
-    }
-    bool _has_entries_9 = false;
-    for (size_t _i = 0; _i < out->entries_len; ++_i) {
-        if ((uint64_t)(out->entries[_i].entry_type) == 9ULL) {
-            _has_entries_9 = true;
-            break;
-        }
     }
     if (_has_entries_7 || (out->header & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
