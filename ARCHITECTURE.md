@@ -1184,7 +1184,9 @@ inbox is `Engine.Inbox`, unbounded, and its owner is the goroutine that drives
 it, which its documentation names and nothing checks
 (`backends/go/runtime/inbox.go`). So does the Python runtime: its inbox is
 `Engine.inbox`, unbounded (`sce_runtime/inbox.py`), and its engine documents
-the owner, the thread that drives it, without checking it.
+the owner, the thread that drives it, without checking it. So does Swift: the
+compiler confines the engine, and its inbox is `inbox` (`EngineInbox.swift`), a
+`Sendable` handle offered when the machine's event type is `Sendable`.
 
 **The invariant.** A macrostep runs to completion: no input is observed in the
 middle of one (§scxml-C-1). Every engine holds it by the same mechanism.
