@@ -559,6 +559,54 @@ fn generated_callee(
 /// every backend. One with a byte string field, or a string with no bound, is refused
 /// where the algorithm is imported ([`crate::forge::static_imports`]), as is one whose
 /// enum is not the document the statechart holds the field in.
+/// The parameters of the adapter of a call of the algorithm whose signature is
+/// `value`, made as `codes` ([`crate::forge::type_ctx::StateCallName::codes`]): a
+/// number, a `bool` or a value that may be absent as itself, and each state slot
+/// with the code it is held as, one code per state slot in order.
+fn adapter_params<'a>(
+    value: &'a crate::forge::type_ctx::StaticValueSignature,
+    codes: &[char],
+) -> Vec<AdapterParam<'a>> {
+    let mut codes = codes.iter();
+    value
+        .params
+        .iter()
+        .map(|slot| match slot {
+            StaticSlot::Scalar(ty) => AdapterParam::Scalar(ty),
+            StaticSlot::Optional(ty) => AdapterParam::Optional(ty),
+            state => AdapterParam::State {
+                slot: state,
+                code: *codes.next().expect("one code per state slot"),
+            },
+        })
+        .collect()
+}
+
+/// Whether a call whose adapter takes `params` hands its algorithm the payload of
+/// the event it is on (`p`) as a record, or as the present value of an optional
+/// one, whose schema in `schemas` holds a text: the text a target that keeps a
+/// payload's wire text holds to the algorithm's bound where it crosses
+/// ([`StaticTarget::holds_payload_text_where_it_crosses`]). The one judgement the
+/// call's signature and its adapter are both made by, so the two agree on
+/// whether the call can fail.
+fn hands_payload_text(
+    params: &[AdapterParam<'_>],
+    schemas: &std::collections::BTreeMap<String, EntrySchema>,
+) -> bool {
+    params.iter().any(|param| match param {
+        AdapterParam::State {
+            slot: StaticSlot::Record(alias) | StaticSlot::OptionalRecord(alias),
+            code: 'p',
+        } => schemas.get(alias).is_some_and(|schema| {
+            schema
+                .fields
+                .iter()
+                .any(|f| matches!(f.sce_type.present_type(), SceType::String))
+        }),
+        _ => false,
+    })
+}
+
 fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EntrySchema> {
     // An optional field is held in the optional type of the machine's record and the
     // algorithm's, which an adapter copies where it is present
@@ -1640,6 +1688,16 @@ pub trait StaticTarget {
     /// only to be borrowed again. `false` for a target whose place owns what
     /// it is handed.
     fn copies_bounded_text(&self) -> bool {
+        false
+    }
+    /// Whether a payload's text handed to an algorithm inside a record is held to
+    /// the bound of the algorithm's record where it crosses: a target whose
+    /// payload struct keeps the wire's text while the algorithm's record holds
+    /// its bound in its type (Rust, until docs/adr/0086 section 4.4 holds a
+    /// payload's text where it is read). Such a call can then fail as an
+    /// assignment past a bound fails, whether or not its algorithm declares
+    /// `may-fail` ([`hands_payload_text`]). `false` for every other target.
+    fn holds_payload_text_where_it_crosses(&self) -> bool {
         false
     }
     /// The value a text or byte-string place of `bound` bytes starts at, for a
@@ -3046,13 +3104,10 @@ impl StaticTarget for RustTarget {
                     let text = matches!(f.sce_type.present_type(), SceType::String);
                     // A payload keeps the wire's text until its struct is held to
                     // its bounds where it is read (docs/adr/0086, section 7.4), so
-                    // its text is held to the algorithm's bound where it crosses,
-                    // which only a call that may fail can refuse: any other has no
-                    // adapter, and the call is refused by name where the machine
-                    // is generated.
-                    if payload && text && !spec.callee.may_fail {
-                        return None;
-                    }
+                    // its text is held to the algorithm's bound where it crosses:
+                    // past it the adapter fails, which makes it one that answers a
+                    // `Result` whatever the algorithm declares
+                    // ([`hands_payload_text`]).
                     spec.record_field_crossing(self, f, &read, Crossing::ToAlgorithm, |read| {
                         let portable = crate::forge::composed_lowering::RUST_PORTABLE;
                         match (text, payload, f.max_size, &f.sce_type) {
@@ -3291,21 +3346,31 @@ impl StaticTarget for RustTarget {
         }
         let call = format!("{}({})", spec.call, arguments.join(", "));
         let prelude: String = prelude.concat();
-        Some(if spec.callee.may_fail {
-            let received = if returns_list {
-                format!("    let mut r = {RUST_LIST_DESTINATION};\n    {call}?;\n")
-            } else {
-                format!("    let r = {call}?;\n")
+        // An adapter that holds a payload's text to the algorithm's bound fails
+        // where the text is past it, whatever the algorithm declares, and the
+        // statement that calls it is received as one that can fail
+        // ([`crossing_calls`]). Both failures leave the adapter as an
+        // `AlgorithmError` (the bound's as `CapacityExceeded`), and the statement
+        // takes either as an assignment past a bound is taken: error.execution,
+        // once, and nothing written.
+        let crosses_text = hands_payload_text(&spec.params, spec.schemas);
+        // A list is taken only from an algorithm that declares `may-fail`
+        // (docs/SCE_ACCEPTED_SUBSET.md §2.15); any other such call is refused by
+        // name.
+        if returns_list && !spec.callee.may_fail {
+            return None;
+        }
+        Some(if spec.callee.may_fail || crosses_text {
+            let received = match (returns_list, spec.callee.may_fail) {
+                (true, _) => format!("    let mut r = {RUST_LIST_DESTINATION};\n    {call}?;\n"),
+                (false, true) => format!("    let r = {call}?;\n"),
+                (false, false) => format!("    let r = {call};\n"),
             };
             format!(
                 "#[allow(non_snake_case)]\nfn {}({}) -> Result<{returned_type}, sce_forge_runtime::algorithm::AlgorithmError> {{\n{prelude}{received}    Ok({converted})\n}}",
                 spec.name,
                 declarations.join(", ")
             )
-        } else if returns_list {
-            // A list is taken only from an algorithm that declares `may-fail`
-            // (docs/SCE_ACCEPTED_SUBSET.md §2.15); this call is refused by name.
-            return None;
         } else {
             format!(
                 "#[allow(non_snake_case)]\nfn {}({}) -> {returned_type} {{\n{prelude}    let r = {call};\n    {converted}\n}}",
@@ -3988,17 +4053,55 @@ fn record_field_bounds<'a>(
 }
 
 /// [`StaticScope::ctx`] as `target` lowers the machine `machine`'s calls: each call
-/// typed with the storage the target hands it ([`StaticTarget::hand_call_storage`]).
+/// typed with the storage the target hands it ([`StaticTarget::hand_call_storage`]),
+/// and each call of `crossing_calls` as one that can fail, its adapter holding a
+/// payload's text to the algorithm's bound ([`crossing_calls`]), so the statement
+/// that makes it is received as any statement that can fail is.
 fn lowering_ctx<'a>(
     scope: &'a StaticScope,
     target: &dyn StaticTarget,
     machine: &str,
     paths: &'a [(String, crate::forge::value_path::Place)],
     enums: &'a [StaticEnum],
+    crossing_calls: &BTreeSet<String>,
 ) -> crate::forge::types::TypeCtx<'a> {
     let mut ctx = scope.ctx(paths, enums);
     target.hand_call_storage(scope, machine, &mut ctx);
+    for name in crossing_calls {
+        if let Some(sig) = ctx.funcs.get_mut(name.as_str()) {
+            sig.may_fail = true;
+        }
+    }
     ctx
+}
+
+/// The names of the calls of `scope` whose adapter holds a payload's text to the
+/// algorithm's bound where it crosses, on a target that does
+/// ([`StaticTarget::holds_payload_text_where_it_crosses`], [`hands_payload_text`]):
+/// each can fail where the text is past the bound, as an assignment past a bound
+/// fails, whether or not its algorithm declares `may-fail`. Empty on every other
+/// target.
+fn crossing_calls(
+    scope: &StaticScope,
+    target: &dyn StaticTarget,
+    schemas: &std::collections::BTreeMap<String, EntrySchema>,
+) -> BTreeSet<String> {
+    if !target.holds_payload_text_where_it_crosses() {
+        return BTreeSet::new();
+    }
+    scope
+        .state_calls()
+        .iter()
+        .filter(|call| {
+            scope
+                .value_callee(&call.alias)
+                .and_then(|callee| callee.value.as_ref())
+                .is_some_and(|value| {
+                    hands_payload_text(&adapter_params(value, &call.codes), schemas)
+                })
+        })
+        .map(|call| call.name.clone())
+        .collect()
 }
 
 /// Every name a lowered `sce-static` expression spells differently on
@@ -4735,8 +4838,11 @@ pub fn lower(
     // Taken before any expression is rewritten: the shape is the document's,
     // and the same for every backend.
     let saved_shape = saved_shape(model, &scope);
+    // The calls whose adapter holds a payload's text to the algorithm's bound, which
+    // every context the walk lowers in types as calls that can fail.
+    let crossing = crossing_calls(&scope, target, &records);
     {
-        let ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums);
+        let ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums, &crossing);
         let init_names: Vec<(String, String)> = variables
             .iter()
             .map(|v| {
@@ -5144,7 +5250,7 @@ pub fn lower(
 
     let mut payload_events = BTreeSet::new();
     for state in model.states.values_mut() {
-        let plain_ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums);
+        let plain_ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums, &crossing);
         let plain_renames = renames(&names, None, target);
         for block in state
             .on_entry_blocks
@@ -5263,7 +5369,7 @@ pub fn lower(
                 .or_else(|| composed_payloads.get(&transition.event).map(String::as_str));
             rewrites.open_payload(schema);
             let paths = scope.paths(payload);
-            let ctx = lowering_ctx(&scope, target, machine, &paths, &enums);
+            let ctx = lowering_ctx(&scope, target, machine, &paths, &enums, &crossing);
             let accessor = target.payload_accessor(&transition.event);
             let payload_reads = payload_enum_reads(target, schema, &accessor, &held_enums);
             let mut renames = renames(&names, payload.map(|_| accessor.as_str()), target);
@@ -5357,7 +5463,7 @@ pub fn lower(
         rewrites.open_payload(None);
     }
     for script in &mut model.global_scripts {
-        let ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums);
+        let ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums, &crossing);
         lower_action(script, &ctx, &renames(&names, None, target), &rewrites)?;
     }
     // A payload that is read rides the typed channel, whose struct holds every
@@ -5521,19 +5627,7 @@ pub fn lower(
             .value
             .as_ref()
             .expect("value_callee answers a callee with a value signature");
-        let mut codes = call.codes.iter();
-        let params = value
-            .params
-            .iter()
-            .map(|slot| match slot {
-                StaticSlot::Scalar(ty) => AdapterParam::Scalar(ty),
-                StaticSlot::Optional(ty) => AdapterParam::Optional(ty),
-                state => AdapterParam::State {
-                    slot: state,
-                    code: *codes.next().expect("one code per state slot"),
-                },
-            })
-            .collect();
+        let params = adapter_params(value, &call.codes);
         let spec = AdapterSpec {
             name: target.state_adapter_name(machine, callee, coded),
             machine,

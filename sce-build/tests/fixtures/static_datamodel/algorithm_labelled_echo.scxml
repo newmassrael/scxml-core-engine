@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A labelled reading handed back as it came: a record in, the same record out, and
+  nothing that can fail. `static_payload_text_call.scxml` hands it the payload of the
+  event it is on, whose text the record holds within eight UTF-8 bytes.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="labelled_echo"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_labelled.scxml" as="Labelled"/>
+  <sce:signature>
+    <sce:param name="reading" type="record:Labelled"/>
+    <sce:return type="record:Labelled"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="echoed" type="record:Labelled">
+      <sce:set name="sensor" expr="reading.sensor"/>
+      <sce:set name="label" expr="reading.label"/>
+    </sce:var>
+    <sce:return expr="echoed"/>
+  </sce:body>
+</scxml>

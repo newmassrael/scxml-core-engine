@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A labelled reading with its sensor one further on: a record in, a record out, and
+  an addition that overflows past 255, so the algorithm declares `may-fail`.
+  `static_payload_text_call.scxml` hands it the payload of the event it is on.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="labelled_bump"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_labelled.scxml" as="Labelled"/>
+  <sce:signature>
+    <sce:param name="reading" type="record:Labelled"/>
+    <sce:return type="record:Labelled" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="bumped" type="record:Labelled">
+      <sce:set name="sensor" expr="reading.sensor + 1"/>
+      <sce:set name="label" expr="reading.label"/>
+    </sce:var>
+    <sce:return expr="bumped"/>
+  </sce:body>
+</scxml>

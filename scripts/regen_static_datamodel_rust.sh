@@ -87,6 +87,10 @@ ALGORITHMS+=(goal_earliest goal_until goal_undated goal_day_sum)
 # static_optional_record's: a list of records in, an optional record out
 # (docs/adr/0055, step 9).
 ALGORITHMS+=(item_pick_first)
+# static_payload_text_call's: the payload of an event, whose text the algorithm's record
+# holds within its bound, handed to one that cannot fail and to one that may
+# (docs/adr/0086, section 7.4).
+ALGORITHMS+=(labelled_echo labelled_bump)
 # The records static_state_algorithm hands those algorithms and takes back: an
 # algorithm names one as `super::schema_<name>`, so it is generated beside them.
 SCHEMAS=(schema_entry schema_total)
@@ -97,6 +101,8 @@ SCHEMAS+=(schema_item enum_item_status)
 SCHEMAS+=(schema_goal)
 # ... and static_optional_record's, the record it may hold none of.
 SCHEMAS+=(schema_item_pick)
+# ... and static_payload_text_call's, the labelled reading those two take and give back.
+SCHEMAS+=(schema_labelled)
 # The schedule todo_peer reads from the fields a to-do holds: the occurrence and schedule
 # records, the rules that order two writes, read a field, tell a conflict, select a day
 # and expand a repetition. Each is named by its file, which a machine's import names as
