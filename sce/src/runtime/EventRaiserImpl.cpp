@@ -187,6 +187,17 @@ std::optional<bool> EventRaiserImpl::postFromAnotherThread(const std::string &ev
     return entry->post(std::move(event), queue);
 }
 
+void EventRaiserImpl::applyHeldBeforeExternalEnqueue() {
+    std::shared_ptr<const ForeignEntry> entry;
+    {
+        std::lock_guard<std::mutex> lock(callbackMutex_);
+        entry = foreignEntry_;
+    }
+    if (entry && entry->beforeExternalEnqueue) {
+        entry->beforeExternalEnqueue();
+    }
+}
+
 bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string &eventData) {
     // Default to INTERNAL priority for backward compatibility (raise actions and #_internal targets)
     return raiseEventWithPriority(eventName, eventData, EventPriority::INTERNAL, "", "", "");
@@ -430,6 +441,18 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     if (const std::optional<bool> posted = postFromAnotherThread(eventName, eventData, priority, originSessionId,
                                                                  sendId, invokeId, originType, typedData)) {
         return *posted;
+    }
+
+    // docs/adr/0084, D2: the external queue takes events in the order they
+    // arrived. A post another thread made before this raise (an HTTP listener's
+    // delivery the raising thread waited on, W3C test 201) has arrived first, so
+    // the machine applies what its inbox holds before this event joins the queue,
+    // and not only at the macrostep's boundary. Done before the queue's lock is
+    // taken, since applying a post puts it on this same queue. An internal raise
+    // (`<raise>`, a platform error) does not wait for posts: the internal queue is
+    // the running macrostep's own, and arrival order is the external queue's.
+    if (priority == EventPriority::EXTERNAL) {
+        applyHeldBeforeExternalEnqueue();
     }
 
     // SCXML compliance: Use synchronous queue when immediate mode is disabled

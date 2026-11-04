@@ -84,7 +84,9 @@ struct InterpreterPolicy {
  * as it always was; as a run of the main event loop of its own when no thread
  * runs the machine, the calling thread owning it until that run ends; or, when
  * another thread runs it, posted to its inbox, which that thread applies at its
- * next macrostep boundary by the operation of the same name. No input waits for
+ * next macrostep boundary by the operation of the same name, or sooner, before
+ * it puts an event of its own on the external queue, which takes events in the
+ * order they arrived. No input waits for
  * a macrostep. `start`, `stop` and the destructor, which cannot be posted, wait
  * for one another thread is running.
  */
@@ -1060,8 +1062,14 @@ private:
     /// as unseen.
     bool post(InboxInput input);
     /// Apply, on the owner, what the inbox held when this was called, oldest
-    /// first; how many inputs were applied.
+    /// first; how many inputs were applied. Called at each macrostep boundary,
+    /// and before the owner puts an event of its own on the external queue, so
+    /// that queue takes events in the order they arrived. None while a drain is
+    /// already applying.
     std::size_t drainInbox();
+    /// Before the owner puts an event of its own on the external queue: apply
+    /// what the inbox holds, when the calling thread runs this machine.
+    void applyHeldBeforeExternalEnqueue();
     /// Close the inbox and apply what it still holds: the run has ended or was
     /// stopped, and takes no more posts.
     void closeInbox();
@@ -1079,6 +1087,8 @@ private:
     // thread runs this machine now. Open from construction, so what is posted
     // while the first run is entered is kept for it.
     Core::EngineInboxOwner<InboxInput> inbox_;
+    /// A drain of the inbox is applying what it held; the owner's only.
+    bool drainingInbox_ = false;
 
     // Thread-safe: accessed from EventRaiser callback (main thread) and from
     // scheduler threads

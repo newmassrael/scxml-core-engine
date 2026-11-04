@@ -296,7 +296,36 @@ bool StateMachine::post(InboxInput input) {
 
 std::size_t StateMachine::drainInbox() {
     requireOwnedHere("drainInbox");
+    // One drain at a time. Applying a held input can reach the raiser again (a
+    // host's cancel handler, which a deadline calls, raising an external event),
+    // and that raise asks for the held inputs first; the drain already applying
+    // them takes what it held in order, and what was posted since waits for the
+    // next one.
+    if (drainingInbox_) {
+        return 0;
+    }
+    drainingInbox_ = true;
+
+    struct Draining {
+        bool &flag;
+
+        ~Draining() {
+            flag = false;
+        }
+    } draining{drainingInbox_};
+
     return inbox_.state().drain([this](InboxInput &&input) { applyInboxInput(std::move(input)); });
+}
+
+void StateMachine::applyHeldBeforeExternalEnqueue() {
+    // docs/adr/0084, D2: the external queue takes events in the order they
+    // arrived. What another thread posted before this machine puts an event of its
+    // own on that queue arrived first, so the thread running the machine applies
+    // it now, not only at the macrostep's boundary. Inside a drain this is
+    // nothing: the drain applies what it held in order.
+    if (isRunning_ && inbox_.state().ownedHere()) {
+        (void)drainInbox();
+    }
 }
 
 void StateMachine::closeInbox() {
@@ -839,7 +868,11 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
         // event loop takes it. One handed to this machine from inside its own
         // running macrostep — by a raiser that delivers synchronously, a host
         // callback bound into the datamodel, an autoforward from a parent this
-        // macrostep called into — goes onto the queue it belongs to.
+        // macrostep called into — goes onto the queue it belongs to, and onto
+        // the external one behind what other threads posted before it.
+        if (fromExternalQueue) {
+            applyHeldBeforeExternalEnqueue();
+        }
         return holdDelivery(event, fromExternalQueue);
     case Standing::Busy:
         // Another thread runs this machine. Waiting for it would make this thread
@@ -2676,6 +2709,8 @@ void StateMachine::raiseHostInvokeEvent(const std::string &name, const std::stri
     if (!data.empty()) {
         event.typedData = EventDataHelper::jsonStringToScriptValue(data);
     }
+    // It joins the external queue behind what other threads posted before it.
+    applyHeldBeforeExternalEnqueue();
     if (!eventRaiser_ || !eventRaiser_->enqueue(event, EventQueue::External)) {
         SCE_LOG_WARN("StateMachine: '{}' of a host-run invocation has no event queue to take it", name);
         noteUnseenEvent(name);
@@ -2766,7 +2801,10 @@ void StateMachine::setEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) {
                 [this] { return !inbox_.state().isOwnerHere(); },
                 [this](Core::EventMetadata &&event, EventQueue queue) {
                     return post(InboxEvent{std::move(event), queue == EventQueue::External});
-                }});
+                },
+                // docs/adr/0084, D2: what was posted before an event this machine
+                // puts on the external queue itself is applied first.
+                [this] { applyHeldBeforeExternalEnqueue(); }});
         }
     }
 

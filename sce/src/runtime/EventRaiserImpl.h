@@ -218,6 +218,11 @@ public:
         /// Post @p event, for the queue it belongs to; whether the inbox took it.
         /// A refusal is the machine's to count: the raise is not queued either way.
         std::function<bool(Core::EventMetadata &&event, EventQueue queue)> post;
+        /// Called before a raise this raiser puts on the external queue itself:
+        /// the machine applies, when the calling thread runs it, what the inbox
+        /// holds, so the external queue takes events in the order they arrived and
+        /// a post made before the raise is not overtaken by it.
+        std::function<void()> beforeExternalEnqueue;
     };
 
     /**
@@ -461,12 +466,18 @@ private:
                                               const std::string &originType,
                                               const std::optional<ScriptValue> &typedData);
 
+    /**
+     * @brief Have the machine apply what its inbox holds before this raiser puts
+     *        an event on the external queue (`ForeignEntry::beforeExternalEnqueue`)
+     */
+    void applyHeldBeforeExternalEnqueue();
+
     // Event callback
     EventCallback eventCallback_;
 
     // docs/adr/0084, D8: the inbox a raise from another thread is posted to. Read
     // and replaced under callbackMutex_, and held by a pointer so a raise copies
-    // one reference, not the two functions.
+    // one reference, not the functions.
     std::shared_ptr<const ForeignEntry> foreignEntry_;
 
     // §scxml-5.10: Consolidated thread-local event context for callback execution

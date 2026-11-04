@@ -17,8 +17,10 @@
 //   * posts from many threads while a macrostep runs are taken once each, in the
 //     order the inbox took them, as a single-threaded replay of the same calls
 //     takes them; and threads that race an idle machine keep each one's order;
-//   * a delayed send the scheduler fires while a macrostep runs is posted, so it
-//     joins the queue behind what that macrostep queued, not in the middle of it;
+//   * the external queue takes events in the order they arrived: a post made
+//     while a macrostep runs is applied before an event that macrostep puts on
+//     the queue after it, whether a `<send>` to itself or a host-run invocation's
+//     `done.invoke`, and a delayed send the scheduler fires is one such post;
 //   * a host-run invocation's ending posted from another thread raises what a
 //     direct one raises, and is refused by the same token check;
 //   * what is held when the run ends is applied as a direct call would be then,
@@ -392,14 +394,14 @@ TEST_F(WhatAnotherThreadPostsEntersThroughTheInterpretersInbox,
 }
 
 // A delayed `<send>` comes due on the scheduler's thread while the macrostep that
-// armed it is held open on the thread that started the machine. Before this step
-// the scheduler's raise was put straight on the queue that macrostep was reading,
-// ahead of what the macrostep queued after it; now it is posted, and joins the
-// queue at the macrostep's boundary, behind the `done.invoke.hold` the macrostep
-// raised once the hold was released. Relies on timing only to let the 10 ms delay
+// armed it is held open on the thread that started the machine, and is posted.
+// The hold is released with a completion, whose `done.invoke.hold` the macrostep
+// then puts on the external queue itself. `tick` arrived first, so it is applied
+// before that event joins the queue and is taken first, not left for the
+// macrostep's boundary behind it. Relies on timing only to let the 10 ms delay
 // pass while the hold waits, up to five seconds, for the scheduler to fire it.
 TEST_F(WhatAnotherThreadPostsEntersThroughTheInterpretersInbox,
-       ADelayedSendTheSchedulerFiresDuringAMacrostepIsPostedToItsBoundary) {
+       ADelayedSendTheSchedulerFiresDuringAMacrostepIsTakenBeforeWhatTheMacrostepQueuesAfter) {
     auto sm = prepareText(R"scxml(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
        initial="holding" name="inbox_delayed_send">
@@ -434,8 +436,50 @@ TEST_F(WhatAnotherThreadPostsEntersThroughTheInterpretersInbox,
     ASSERT_TRUE(sm->start());
 
     ASSERT_TRUE(firedWhileHeld) << "the scheduler did not fire `tick` while the macrostep was held";
-    EXPECT_EQ(taken(*sm), "done;tick;")
-        << "the scheduler's event reached the queue in the middle of the macrostep instead of at its boundary";
+    EXPECT_EQ(taken(*sm), "tick;done;")
+        << "the macrostep's own done.invoke overtook the scheduler's event that arrived before it";
+    EXPECT_EQ(sm->refusedInboxPosts(), 0u);
+}
+
+// W3C test 201's shape, without the HTTP listener: inside a macrostep, an event
+// arrives from another thread while the machine's own thread waits for it (here a
+// host-served `<send>` whose processor posts from a thread it joins, as a BasicHTTP
+// send waits for the listener that raises the event), and the macrostep then sends
+// an event to itself. The posted event arrived first, so it is taken first: the
+// machine applies what its inbox holds before it puts its own event on the
+// external queue. The join is the only ordering; nothing sleeps.
+TEST_F(WhatAnotherThreadPostsEntersThroughTheInterpretersInbox, AnEventPostedBeforeTheMachinesOwnSendIsTakenFirst) {
+    auto sm = prepareText(R"scxml(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
+       initial="s" name="inbox_arrival_order">
+  <datamodel>
+    <data id="taken" expr="''"/>
+  </datamodel>
+  <state id="s">
+    <onentry>
+      <send type="x-sce-host" event="host.call" target="pane://call"/>
+      <send event="own"/>
+    </onentry>
+    <transition event="posted">
+      <assign location="taken" expr="taken + 'posted;'"/>
+    </transition>
+    <transition event="own">
+      <assign location="taken" expr="taken + 'own;'"/>
+    </transition>
+  </state>
+</scxml>)scxml");
+    std::optional<StateMachine::TransitionResult> posted;
+    sm->registerEventProcessor(TYPE, [&](const HostSendRequest &) {
+        // On the thread running the macrostep the `<onentry>` belongs to.
+        std::thread other([&] { posted = sm->processEvent("posted"); });
+        other.join();
+        return std::vector<HostSendResponse>{};
+    });
+    ASSERT_TRUE(sm->start());
+
+    ASSERT_TRUE(posted.has_value()) << "the processor was never handed the send";
+    EXPECT_FALSE(posted->success) << "an event posted during a macrostep was answered as taken by it";
+    EXPECT_EQ(taken(*sm), "posted;own;") << "the machine's own send overtook an event that arrived before it";
     EXPECT_EQ(sm->refusedInboxPosts(), 0u);
 }
 
