@@ -1529,6 +1529,36 @@ no typed interpretation or are explicitly excluded:
   `cond` on an un-schema'd event is plain ECMAScript evaluated by the
   script engine, where `==` is legal and stays legal (the W3C corpus
   depends on it).
+- A string literal escape the expression language does not read —
+  `expression/unsupported-string-escape`, placed at the escape, which
+  rides `actual`. A literal is read once, by the lexer both dialects
+  share, into the text it denotes; every backend then writes that text
+  through its own string-literal escaper, so what a literal holds does
+  not depend on what the target language makes of the author's
+  spelling. Both dialects read ECMA-262's escapes: `\\`, `\'`, `\"`,
+  `\b`, `\f`, `\n`, `\r`, `\t`, `\v`, `\0` before anything but a digit,
+  `\xHH`, `\uHHHH`, `\u{H…}` up to 10FFFF, a backslash before a line
+  break (which continues the literal and denotes nothing), and two `\u`
+  escapes that are the halves of a surrogate pair, which denote the one
+  character they make. Refused in both: a malformed `\x`, `\u` or
+  `\u{…}`, and a surrogate that is not half of a pair, which no
+  backend's string holds. A forge expression also refuses a digit after
+  a backslash (a legacy octal) and a backslash before a character that
+  has no escape meaning: ECMAScript reads `'c\d'` as `cd`, which an
+  author who wrote it almost never meant, so the document says `cd` or
+  `c\\d`. The W3C ECMAScript datamodel reads both as ECMAScript does
+  (Annex B's legacy octal, and the character itself). A string that
+  holds U+0000 is refused on C11, whose string ends at its first zero
+  byte, and is held whole everywhere else. A literal longer than one
+  string literal of the target holds is written as the characters of
+  its bytes: a compound literal on C11 past 4095 bytes, a `std::string`
+  on C++ past 65,535 bytes or wherever it holds a U+0000, and a
+  `buildString` of pieces on Kotlin past one class-file constant.
+  ⚠ Until 2026-11-04 the lexer kept the source spelling and every
+  backend pasted it between double quotes: a `'` literal holding a `"`
+  did not compile, `'$name'` was a Kotlin template expression, `'\x41'`
+  was an escape Kotlin and Swift do not have, and `'\u{e9}'` one only
+  Rust and Swift have.
 - A conditional expression whose result type Go cannot name (Go-only:
   the emitter lowers `c ? a : b` to a typed function literal and needs
   a type from the slot the value flows into or from its branches) —
@@ -1564,7 +1594,8 @@ no typed interpretation or are explicitly excluded:
 - Free-form tokens not part of the grammar —
   `expression/unsupported-construct`, `expression/unexpected-token`,
   `expression/invalid-lvalue`, `expression/type-coercion`,
-  `expression/parse-mismatch`, `expression/lex` and `expression/empty`.
+  `expression/parse-mismatch`, `expression/lex` and `expression/empty`
+  (and inside a string literal, `expression/unsupported-string-escape`).
   ⚠ This line also said an integer literal's overflow dispatches as
   `validation/numeric-parse`; no expression literal reaches that code,
   which judges attribute values — measured 2026-09-24, an expression
@@ -9030,7 +9061,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (496 codes)
+## Appendix — `DiagnosticCode` index (497 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -9335,6 +9366,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `generate/inline-child-unreturnable` | Generate |
 | `expression/empty` | Expression |
 | `expression/lex` | Expression |
+| `expression/unsupported-string-escape` | Expression |
 | `expression/unsupported-construct` | Expression |
 | `expression/unsupported-builtin` | Expression |
 | `expression/unknown-identifier` | Expression |

@@ -5284,6 +5284,23 @@ pub enum ExprError {
     #[error("at position {position}: {detail}")]
     Lex { position: usize, detail: String },
 
+    /// A string literal holds an escape the expression language does not
+    /// read (`expression/unsupported-string-escape`): a `\x`, `\u` or
+    /// `\u{…}` that is malformed or names no code point, a surrogate that is
+    /// not one half of a pair, and in a forge expression a legacy octal or a
+    /// backslash before a character that has no escape meaning. The lexer's
+    /// literal decoder raises it (`crate::forge::expr`), which reads every
+    /// literal once, so no emitter meets an escape it would have to guess at.
+    ///
+    /// `escape` is the escape as the author wrote it, which the wire reports
+    /// as `actual`; `reason` says which rule refused it.
+    #[error("at position {position}: the string escape `{escape}` is not read: {reason}")]
+    UnsupportedStringEscape {
+        position: usize,
+        escape: String,
+        reason: &'static str,
+    },
+
     /// Unsupported ECMAScript construct (arrow, nullish, spread, …).
     ///
     /// `construct` names the construct for the message; `observed` is the

@@ -64,13 +64,14 @@ use crate::forge::rust_optional;
 use crate::forge::types::{join_arith, join_int, CallReading, InferredType, OptionalElem, TypeCtx};
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::LazyLock;
 
 /// A refusal of the expression the pipeline was handed, and the range of it
 /// the refusal was raised at ([`Spanned`]) — what every entry point below
 /// answers with, so the caller holding the attribute can place it.
 pub type Refusal = Spanned<ExprError>;
 
+#[cfg(test)]
+mod string_literal_tests;
 pub(crate) mod swift;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2780,9 +2781,15 @@ impl PartialEq for TypedExpr {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ExprKind {
     NumberLit(String),
+    /// A string literal, carrying the text it denotes: its escapes were read
+    /// by the lexer ([`decode_string_literal`]), so `value` is characters and
+    /// not the author's spelling of them, and which quote the author wrote it
+    /// in is not part of what it is. Every emitter writes `value` through its
+    /// own language's escaper, and every measure of it (a byte count, a
+    /// comparison, the bytes a byte string stands for) is a measure of the
+    /// text itself.
     StringLit {
         value: String,
-        quote: char,
     },
     /// A byte-sequence literal carrying its fully decoded bytes. Not
     /// produced by the parser — [`infer_types`] rewrites a `StringLit`
@@ -3600,16 +3607,6 @@ pub fn call_sites(raw_expr: &str, wanted: &dyn Fn(&str) -> bool) -> Result<Vec<C
     Ok(found)
 }
 
-/// Replace the contents of every string literal with spaces of equal length,
-/// preserving expression length and non-string token positions.
-pub fn strip_string_literals(expr: &str) -> String {
-    static RE_STR: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r#"'[^']*'|"[^"]*""#).unwrap());
-    RE_STR
-        .replace_all(expr, |caps: &regex::Captures| " ".repeat(caps[0].len()))
-        .to_string()
-}
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Tokens
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3617,9 +3614,10 @@ pub fn strip_string_literals(expr: &str) -> String {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Token {
     Number(String),
+    /// A string literal's value, its escapes already read
+    /// ([`decode_string_literal`]).
     String {
         value: String,
-        quote: char,
     },
     Ident(String),
     Plus,
@@ -3722,7 +3720,9 @@ impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Token::Number(n) => write!(f, "{n}"),
-            Token::String { value, .. } => write!(f, "'{value}'"),
+            Token::String { value } => {
+                write!(f, "{}", crate::filters::ecmascript_string_literal(value))
+            }
             Token::Ident(s) => write!(f, "{s}"),
             Token::Plus => write!(f, "+"),
             Token::Minus => write!(f, "-"),
@@ -3802,6 +3802,194 @@ impl ArithOp {
 // Tokenizer
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+/// Why [`decode_string_literal`] refuses an escape: the reason an
+/// [`ExprError::UnsupportedStringEscape`] carries.
+const ESCAPE_HEX_DIGITS: &str = "`\\x` is followed by exactly two hexadecimal digits";
+const ESCAPE_UNIT_DIGITS: &str =
+    "`\\u` is followed by exactly four hexadecimal digits or by a code point in braces";
+const ESCAPE_CODE_POINT: &str =
+    "a code point in braces is one or more hexadecimal digits naming at most 10FFFF";
+const ESCAPE_LONE_SURROGATE: &str = "a surrogate that is not one half of a pair names no \
+     character, and no backend's string holds one";
+const ESCAPE_LEGACY_OCTAL: &str = "a digit after a backslash is a legacy octal escape, which a \
+     forge expression does not read; write `\\0` for U+0000, or `\\xHH` or `\\u{H}` for any \
+     other character";
+const ESCAPE_IDENTITY: &str = "a backslash before a character that has no escape meaning is \
+     not read in a forge expression; write the character itself, or `\\\\` for a backslash";
+const ESCAPE_TRAILING: &str = "a backslash ends the literal and escapes nothing";
+
+/// The value a string literal denotes: `raw`, the source spelling between its
+/// quotes, with every escape read once, here, by the rules of the dialect it
+/// is written in. `at` is where `raw` starts in the expression, so a refusal
+/// is placed on the escape it names.
+///
+/// Both dialects read ECMA-262's escapes (12.9.4): `\\`, `\'`, `\"`, `\b`,
+/// `\f`, `\n`, `\r`, `\t`, `\v`; `\0` before anything but a decimal digit;
+/// `\xHH`; `\uHHHH`; `\u{H…}` naming at most 10FFFF; and a backslash before a
+/// line break (LF, CR, CR LF, U+2028, U+2029), which continues the literal
+/// and denotes nothing. Two escapes that are the halves of a surrogate pair
+/// denote the one character the pair makes; a half alone is refused, since a
+/// Rust, Go, C or Swift string holds characters, not UTF-16 code units. A
+/// malformed `\x`, `\u` or `\u{…}` is refused too, as ECMA-262 refuses it.
+///
+/// The dialects part at the escapes ECMAScript keeps for compatibility. The
+/// W3C ECMAScript datamodel reads them as ECMAScript does: a backslash before
+/// any other character is that character, and a digit after one is Annex B's
+/// legacy octal (`\8` and `\9` the digits themselves). A forge expression
+/// refuses both: `'c\d'` denotes `cd` in ECMAScript, which is almost never
+/// what an author who wrote it meant, and a legacy octal is a second spelling
+/// of what `\x` already spells.
+///
+/// A line break written raw between the quotes is kept as the character it
+/// is. ECMA-262 ends the literal there; an XML attribute cannot carry one
+/// unless the author wrote a character reference for it, and the documents
+/// that do are read as holding it.
+fn decode_string_literal(raw: &str, at: usize, mode: LexMode) -> Result<String, Refusal> {
+    /// What one escape contributes to the value.
+    enum Escaped {
+        /// A character, named outright.
+        Char(char),
+        /// A code point, or one UTF-16 code unit that may be half of a pair.
+        Unit(u32),
+        /// Nothing: a line continuation.
+        Nothing,
+    }
+    /// `text`, when it is there and is hexadecimal digits only.
+    fn hex_run(text: Option<&str>) -> Option<&str> {
+        text.filter(|digits| digits.bytes().all(|b| b.is_ascii_hexdigit()))
+    }
+    let refuse = |from: usize, to: usize, reason: &'static str| -> Refusal {
+        ExprError::UnsupportedStringEscape {
+            position: at + from,
+            escape: raw[from..to].to_string(),
+            reason,
+        }
+        .at(Some(at + from..at + to))
+    };
+    let bytes = raw.as_bytes();
+    let mut out = String::with_capacity(raw.len());
+    // The high half of a surrogate pair an escape named, waiting for the low
+    // half: its code unit and where its escape was written.
+    let mut high: Option<(u32, usize, usize)> = None;
+    let mut i = 0;
+    while i < raw.len() {
+        if bytes[i] != b'\\' {
+            let ch = raw[i..]
+                .chars()
+                .next()
+                .expect("a byte other than a backslash starts a character here");
+            if let Some((_, from, to)) = high.take() {
+                return Err(refuse(from, to, ESCAPE_LONE_SURROGATE));
+            }
+            out.push(ch);
+            i += ch.len_utf8();
+            continue;
+        }
+        let from = i;
+        let Some(escape) = raw[i + 1..].chars().next() else {
+            return Err(refuse(from, raw.len(), ESCAPE_TRAILING));
+        };
+        i += 1 + escape.len_utf8();
+        let escaped = match escape {
+            '\n' | '\u{2028}' | '\u{2029}' => Escaped::Nothing,
+            '\r' => {
+                if bytes.get(i) == Some(&b'\n') {
+                    i += 1;
+                }
+                Escaped::Nothing
+            }
+            '\\' | '\'' | '"' => Escaped::Char(escape),
+            'b' => Escaped::Char('\u{8}'),
+            'f' => Escaped::Char('\u{c}'),
+            'n' => Escaped::Char('\n'),
+            'r' => Escaped::Char('\r'),
+            't' => Escaped::Char('\t'),
+            'v' => Escaped::Char('\u{b}'),
+            '0' if !bytes.get(i).is_some_and(|next| next.is_ascii_digit()) => Escaped::Char('\0'),
+            'x' => {
+                let Some(digits) = hex_run(raw.get(i..i + 2)) else {
+                    return Err(refuse(from, i, ESCAPE_HEX_DIGITS));
+                };
+                i += 2;
+                Escaped::Unit(u32::from_str_radix(digits, 16).expect("two hexadecimal digits"))
+            }
+            'u' if bytes.get(i) == Some(&b'{') => {
+                let Some(length) = raw[i + 1..].find('}') else {
+                    return Err(refuse(from, i + 1, ESCAPE_CODE_POINT));
+                };
+                let end = i + 1 + length + 1;
+                let value = hex_run(raw.get(i + 1..i + 1 + length))
+                    .filter(|digits| !digits.is_empty())
+                    .and_then(|digits| u32::from_str_radix(digits, 16).ok())
+                    .filter(|value| *value <= 0x10_FFFF);
+                let Some(value) = value else {
+                    return Err(refuse(from, end, ESCAPE_CODE_POINT));
+                };
+                i = end;
+                Escaped::Unit(value)
+            }
+            'u' => {
+                let Some(digits) = hex_run(raw.get(i..i + 4)) else {
+                    return Err(refuse(from, i, ESCAPE_UNIT_DIGITS));
+                };
+                i += 4;
+                Escaped::Unit(u32::from_str_radix(digits, 16).expect("four hexadecimal digits"))
+            }
+            '0'..='9' if mode == LexMode::Forge => {
+                return Err(refuse(from, i, ESCAPE_LEGACY_OCTAL));
+            }
+            // ECMA-262 Annex B: a NonOctalDecimalEscapeSequence is the digit,
+            // and a LegacyOctalEscapeSequence takes up to three octal digits,
+            // the first of them at most 3 when there are three.
+            '8' | '9' => Escaped::Char(escape),
+            '0'..='7' => {
+                let mut value = escape.to_digit(8).expect("an octal digit");
+                let more = if value <= 3 { 2 } else { 1 };
+                for _ in 0..more {
+                    match bytes.get(i).copied() {
+                        Some(digit @ b'0'..=b'7') => {
+                            value = value * 8 + u32::from(digit - b'0');
+                            i += 1;
+                        }
+                        _ => break,
+                    }
+                }
+                Escaped::Unit(value)
+            }
+            _ if mode == LexMode::Forge => return Err(refuse(from, i, ESCAPE_IDENTITY)),
+            other => Escaped::Char(other),
+        };
+        match escaped {
+            Escaped::Nothing => {}
+            Escaped::Char(ch) => {
+                if let Some((_, from, to)) = high.take() {
+                    return Err(refuse(from, to, ESCAPE_LONE_SURROGATE));
+                }
+                out.push(ch);
+            }
+            Escaped::Unit(unit) => match (high.take(), unit) {
+                (Some((first, ..)), 0xDC00..=0xDFFF) => {
+                    let pair = 0x1_0000 + ((first - 0xD800) << 10) + (unit - 0xDC00);
+                    out.push(char::from_u32(pair).expect("a surrogate pair names a character"));
+                }
+                (Some((_, first_from, first_to)), _) => {
+                    return Err(refuse(first_from, first_to, ESCAPE_LONE_SURROGATE));
+                }
+                (None, 0xD800..=0xDBFF) => high = Some((unit, from, i)),
+                (None, 0xDC00..=0xDFFF) => return Err(refuse(from, i, ESCAPE_LONE_SURROGATE)),
+                (None, _) => out.push(
+                    char::from_u32(unit)
+                        .expect("a code point that is no surrogate, at most 10FFFF"),
+                ),
+            },
+        }
+    }
+    if let Some((_, from, to)) = high {
+        return Err(refuse(from, to, ESCAPE_LONE_SURROGATE));
+    }
+    Ok(out)
+}
+
 fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
     tokenize_as(input, LexMode::Forge)
 }
@@ -3862,13 +4050,21 @@ pub(crate) fn tokenize_spanned(input: &str, mode: LexMode) -> Result<SpannedToke
             }
         }
 
-        // String literals
+        // String literals. The token carries the value the literal denotes,
+        // its escapes read once, here ([`decode_string_literal`]): every
+        // reader after this one sees characters, and every emitter writes them
+        // through its own language's escaper.
         if bytes[i] == b'\'' || bytes[i] == b'"' {
-            let quote = bytes[i] as char;
+            let quote = bytes[i];
             i += 1;
             let start = i;
-            while i < len && bytes[i] != quote as u8 {
+            while i < len && bytes[i] != quote {
                 if bytes[i] == b'\\' {
+                    // A backslash before CR LF continues the literal past
+                    // both, as one line break.
+                    if bytes.get(i + 1) == Some(&b'\r') && bytes.get(i + 2) == Some(&b'\n') {
+                        i += 1;
+                    }
                     i += 1;
                 }
                 i += 1;
@@ -3882,9 +4078,9 @@ pub(crate) fn tokenize_spanned(input: &str, mode: LexMode) -> Result<SpannedToke
                 }
                 .at(Some(start - 1..start)));
             }
-            let value = input[start..i].to_string();
+            let value = decode_string_literal(&input[start..i], start, mode)?;
             i += 1;
-            tokens.push(Token::String { value, quote });
+            tokens.push(Token::String { value });
             continue;
         }
 
@@ -4683,9 +4879,7 @@ impl<'a> Parser<'a> {
         let start = self.start();
         match self.advance().clone() {
             Token::Number(n) => Ok(self.node(start, ExprKind::NumberLit(n))),
-            Token::String { value, quote } => {
-                Ok(self.node(start, ExprKind::StringLit { value, quote }))
-            }
+            Token::String { value } => Ok(self.node(start, ExprKind::StringLit { value })),
             Token::Ident(s) if s == "true" => Ok(self.node(start, ExprKind::BoolLit(true))),
             Token::Ident(s) if s == "false" => Ok(self.node(start, ExprKind::BoolLit(false))),
             Token::Ident(s) if s == "null" => Ok(self.node(start, ExprKind::NullLit)),
@@ -4980,12 +5174,12 @@ fn flatten_member_path(expr: &TypedExpr) -> Option<String> {
 /// but the syntax of a coercion (e.g., `x as f64` vs `float64(x)` vs
 /// `x.toDouble()`) is language-specific. Emitters keep their knowledge
 /// localized by consulting the tree's natural types.
-/// Decode a string literal's verbatim source `value` into its byte
-/// sequence for a `Bytes`-typed comparison (RFC §bytesguard-3 B2). Conservative:
-/// only printable ASCII (no backslash escape, no non-ASCII byte) is
+/// The byte sequence a string literal's `value` stands for in a
+/// `Bytes`-typed comparison (RFC §bytesguard-3 B2). `value` is the text the
+/// literal denotes, its escapes already read by the lexer. Conservative:
+/// only printable ASCII with no backslash (and no non-ASCII character) is
 /// accepted — the byte sequence is then exactly `value.as_bytes()`,
-/// byte-identical on every backend with no target-compiler escape
-/// involvement. Anything else returns `None`; the caller then leaves the
+/// byte-identical on every backend. Anything else returns `None`; the caller then leaves the
 /// node a `StringLit`, and the receive-side validator rejects the
 /// comparison with a clear diagnostic rather than emitting an ambiguous
 /// byte constant. The `BytesLit` carrier is forward-compatible: a future
@@ -5070,6 +5264,13 @@ fn land_strings_in_bytes_slot(expr: &mut TypedExpr, source: &str) -> Result<(), 
             .map(str::to_string),
     }
     .at(expr.span.clone()))
+}
+
+/// The text of a byte string, each byte the character of that code point
+/// (docs/adr/0005, decision 2): the value a target that spells bytes as text
+/// writes through its own string-literal escaper.
+fn latin1(bytes: &[u8]) -> String {
+    bytes.iter().copied().map(char::from).collect()
 }
 
 /// Render a decoded byte sequence as the content of a double-quoted
@@ -6527,7 +6728,6 @@ fn lower_enum_variant_refs(
                     )),
                     None => ExprKind::StringLit {
                         value: property.clone(),
-                        quote: '\'',
                     },
                 };
                 return Ok(());
@@ -6822,9 +7022,8 @@ fn concat_part_bound(part: &TypedExpr, ctx: &TypeCtx<'_>) -> Option<usize> {
 /// a join. Nothing else has a size the data model declares.
 fn string_bound(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Option<usize> {
     match &expr.kind {
-        // The text between the quotes, before an escape is read: never fewer
-        // bytes than the string it spells.
-        ExprKind::StringLit { value, .. } => Some(value.len()),
+        // The UTF-8 bytes of the text the literal denotes, its escapes read.
+        ExprKind::StringLit { value } => Some(value.len()),
         ExprKind::Ident(name) => ctx.string_capacities.get(name.as_str()).copied(),
         ExprKind::Conditional {
             consequent,
@@ -6972,17 +7171,17 @@ fn lower_bytes_eq(ast: &mut TypedExpr, ctx: &TypeCtx<'_>) {
 /// A byte string is held by a statechart's data model, which holds no types, as
 /// the text of its bytes, each the character of that code point (docs/adr/0005,
 /// decision 2) — the spelling it takes on the wire. So each constant is the
-/// string literal that spells it, printable ASCII being its own text. An algorithm
-/// lowered for the Interpreter holds bytes as an array of numbers instead
-/// (`exact_integers` is how the two are told apart), and keeps refusing a constant.
+/// string literal of that text, which the emitter escapes as it does any other.
+/// An algorithm lowered for the Interpreter holds bytes as an array of numbers
+/// instead (`exact_integers` is how the two are told apart), and keeps refusing a
+/// constant.
 fn bytes_literals_as_text(expr: &mut TypedExpr) {
     for child in expr_children_mut(expr) {
         bytes_literals_as_text(child);
     }
     if let ExprKind::BytesLit { bytes } = &expr.kind {
         expr.kind = ExprKind::StringLit {
-            value: bytes_as_quoted_ascii(bytes),
-            quote: '"',
+            value: latin1(bytes),
         };
     }
 }
@@ -7260,7 +7459,10 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             )
         }
         ExprKind::NumberLit(n) => portable_number_literal(n),
-        ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        // A literal while one holds the text, a `std::string` of its bytes
+        // where it is too long for one or holds a U+0000 a literal would end
+        // at.
+        ExprKind::StringLit { value } => crate::filters::cpp_text_expression(value),
         // `std::vector<uint8_t>` has `operator==`, so the default
         // `==`/`!=` path compares length+content directly against this
         // value-constructed temporary. No byte-string literal in C++, so
@@ -7881,12 +8083,17 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             )
         }
         ExprKind::NumberLit(n) => portable_number_literal(n),
-        ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        ExprKind::StringLit { value } => crate::filters::kotlin_text_expression(value),
         // `"ack".toByteArray()` is byte-identical to the ASCII literal
         // (UTF-8 default). Used as the `contentEquals` argument in the
-        // bytes-equality Binary branch below. RFC §bytesguard-3 B5.
+        // bytes-equality Binary branch below. RFC §bytesguard-3 B5. Escaped
+        // as any Kotlin literal is, since a `$` in the bytes would otherwise
+        // open a template expression.
         ExprKind::BytesLit { bytes } => {
-            format!("\"{}\".toByteArray()", bytes_as_quoted_ascii(bytes))
+            format!(
+                "{}.toByteArray()",
+                crate::filters::kotlin_text_expression(&latin1(bytes))
+            )
         }
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "null".to_string(),
@@ -8828,8 +9035,8 @@ fn emit_c_owned_bytes(expr: &TypedExpr) -> Result<String, ExprError> {
             emit_c_owned_bytes(alternate)?,
         )),
         ExprKind::BytesLit { bytes } => Ok(format!(
-            "(sce_forge_bytes_view_t){{ (const uint8_t *)\"{}\", {} }}",
-            bytes_as_quoted_ascii(bytes),
+            "(sce_forge_bytes_view_t){{ (const uint8_t *){}, {} }}",
+            c_bytes_literal(bytes),
             bytes.len()
         )),
         _ => {
@@ -9051,7 +9258,9 @@ fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
             )
         }
         ExprKind::NumberLit(n) => portable_number_literal(n),
-        ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        ExprKind::StringLit { value } => {
+            format!("\"{}\"", crate::filters::escape_rust(value.clone()))
+        }
         // `Vec<u8> == &[u8; N]` (and `== Vec<u8>`) compare length+content,
         // so the default `==`/`!=` Binary path needs no special-casing —
         // only this constant rendering. ASCII-only by contract so `b"…"`
@@ -9602,7 +9811,9 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             )
         }
         ExprKind::NumberLit(n) => portable_number_literal(n),
-        ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        ExprKind::StringLit { value } => {
+            format!("\"{}\"", crate::filters::escape_go(value.clone()))
+        }
         // Standalone fallback only — the bytes-equality Binary branch
         // renders operands itself (as `string(x)` / a string literal) so
         // it needs no `bytes` import. RFC §bytesguard-3 B5.
@@ -10295,7 +10506,7 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             )
         }
         ExprKind::NumberLit(n) => portable_number_literal(n),
-        ExprKind::StringLit { value, .. } => format!("'{value}'"),
+        ExprKind::StringLit { value } => crate::filters::py_string_literal(value.clone()),
         // `bytes == bytes` compares content, so the default `==`/`!=`
         // path needs no special-casing — only this constant rendering.
         // A `b"…"` literal (double-quoted so a `'` byte needs no escape).
@@ -10889,9 +11100,10 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
             )
         }
         ExprKind::NumberLit(n) => js_number_literal(n)?,
-        // The author's own literal, in the quote the author chose: what the
-        // lexer keeps is ECMAScript already.
-        ExprKind::StringLit { value, quote } => format!("{quote}{value}{quote}"),
+        // The value, written as an ECMAScript literal again: the lexer read the
+        // author's escapes, so the spelling is the one escaper's, not the
+        // author's.
+        ExprKind::StringLit { value } => crate::filters::ecmascript_string_literal(value),
         // An algorithm holds bytes as an array of numbers, which no literal spells
         // ([`bytes_literals_as_text`] makes a statechart's data model's constants
         // text before they reach here).
@@ -11338,6 +11550,31 @@ fn c_length(arg: &TypedExpr) -> Result<String, ExprError> {
     })
 }
 
+/// A string literal's value as a C11 expression of type `const char *`
+/// ([`crate::filters::c_text_expression`]). A C string ends at its first zero
+/// byte, so a value holding U+0000 has no C11 string to be: it is refused by
+/// name rather than cut short where the zero stands, as a byte string holding
+/// one is where a request carries it as text.
+fn c_text_literal(value: &str) -> Result<String, ExprError> {
+    if value.contains('\0') {
+        return Err(ExprError::UnsupportedConstruct {
+            construct: "a string holding U+0000 in C11 (a C string ends at its first zero \
+                        byte, so the text after it would be lost; generate for another \
+                        backend, or hold the bytes as a byte string)"
+                .to_string(),
+            observed: Some(crate::filters::ecmascript_string_literal(value)),
+        });
+    }
+    Ok(crate::filters::c_text_expression(value))
+}
+
+/// A byte-string constant as the C string literal of its bytes, escaped as
+/// any C literal is. [`decode_bytes_literal`] holds the bytes to printable
+/// ASCII, so the literal never reaches a zero byte or a length C refuses.
+fn c_bytes_literal(bytes: &[u8]) -> String {
+    format!("\"{}\"", crate::filters::escape_c(latin1(bytes)))
+}
+
 fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
     if let Some(form) = optional_form(expr) {
         return c_optional(form, expr);
@@ -11359,11 +11596,11 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             )
         }
         ExprKind::NumberLit(n) => portable_number_literal(n),
-        ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        ExprKind::StringLit { value } => c_text_literal(value)?,
         // Standalone fallback — the bytes-equality Binary branch renders
         // the literal and its byte count itself (a `bytes` value has no
         // length without its `_len` sibling). RFC §bytesguard-3 B5.
-        ExprKind::BytesLit { bytes } => format!("\"{}\"", bytes_as_quoted_ascii(bytes)),
+        ExprKind::BytesLit { bytes } => c_bytes_literal(bytes),
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "NULL".to_string(),
         // The one spelling every C local takes, declaration and read alike
@@ -11412,7 +11649,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 let render =
                     |operand: &TypedExpr| -> Result<(String, String, Option<usize>), ExprError> {
                         if let ExprKind::BytesLit { bytes } = &operand.kind {
-                            let v = format!("\"{}\"", bytes_as_quoted_ascii(bytes));
+                            let v = c_bytes_literal(bytes);
                             Ok((v, bytes.len().to_string(), Some(bytes.len())))
                         } else if let ExprKind::BytesView {
                             source,
@@ -12187,7 +12424,7 @@ mod tests {
         let mut ctx = python_optional_ctx();
         assert_eq!(
             python_of("label ?? 'none'", &ctx, InferredType::Str),
-            "sce_algorithm.otherwise(label, lambda: 'none')"
+            "sce_algorithm.otherwise(label, lambda: \"none\")"
         );
         ctx.receives_failures = true;
         assert_eq!(

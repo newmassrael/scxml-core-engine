@@ -80,8 +80,8 @@ fn every_syntax_names_an_escaper() {
 // are private to that module. The name cannot answer it — `escape_keyword`
 // and `escape_go_keyword` share the prefix and only rename identifiers that
 // collide with a language keyword — and neither can a scan of the bodies,
-// since `escape_c` and `escape_cpp` forward to `escape_rust` and never
-// mention a quote themselves.
+// since `escape_cpp` forwards to `escape_c` and never mentions a quote
+// itself.
 
 /// A value that already carries an escaper is left exactly as written.
 #[test]

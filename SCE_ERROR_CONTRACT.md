@@ -826,6 +826,7 @@ references against a real document and drift silently.
 | `expression/unknown-member` | `expression` | `replace_one_of` / no | SCE Accepted Subset §2.2 |
 | `expression/unsupported-builtin` | `expression` | `replace_one_of` | W3C SCXML §B.2 |
 | `expression/unsupported-construct` | `expression` | no | SCE Forge §3.4 |
+| `expression/unsupported-string-escape` | `expression` | no | SCE Forge §3.4 |
 | `extern/abi-mismatch` | `validation` | `replace_with` | SCE Protocol-Synthesis RFC §5.I |
 | `extern/ordering-unspecified` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.I |
 | `extern/signature-mismatch` | `validation` | `replace_with` | SCE Protocol-Synthesis RFC §5.I |

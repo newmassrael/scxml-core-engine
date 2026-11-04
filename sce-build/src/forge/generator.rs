@@ -3609,16 +3609,8 @@ fn composed_schema_field(
 /// held to no such limit, so a payload's JSON Schema compiles whatever the
 /// size of its type.
 fn c_text_initializer(text: &str) -> String {
-    let constants: Vec<String> = text
-        .bytes()
-        .map(|byte| match byte {
-            b'\'' => "'\\''".to_string(),
-            b'\\' => "'\\\\'".to_string(),
-            0x20..=0x7e => format!("'{}'", char::from(byte)),
-            other => format!("'\\x{other:02x}'"),
-        })
-        .chain(std::iter::once("'\\0'".to_string()))
-        .collect();
+    let mut constants = filters::c_char_constants(text);
+    constants.push("'\\0'".to_string());
     let lines: Vec<String> = constants
         .chunks(16)
         .map(|line| format!("    {}", line.join(", ")))

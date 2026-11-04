@@ -332,7 +332,9 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             )
         }
         ExprKind::NumberLit(n) => portable_number_literal(n),
-        ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        ExprKind::StringLit { value } => {
+            format!("\"{}\"", crate::filters::escape_swift(value.clone()))
+        }
         ExprKind::BytesLit { bytes } => {
             format!("Array(\"{}\".utf8)", bytes_as_quoted_ascii(bytes))
         }

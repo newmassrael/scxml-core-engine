@@ -166,6 +166,7 @@
         "reassembly/per-peer-quota-build-invariant-violated",
         "expression/empty",
         "expression/lex",
+        "expression/unsupported-string-escape",
         "expression/unsupported-construct",
         "expression/unsupported-builtin",
         "expression/unknown-identifier",

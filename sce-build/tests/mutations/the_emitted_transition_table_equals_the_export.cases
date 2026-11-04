@@ -116,9 +116,9 @@ PY
 
 mutation_case "Kotlin writes a dollar sign in an annotation as it was typed" <<'PY'
 edit("sce-build/src/filters.rs",
-     r'''        .replace('\t', "\\t")
-        .replace('$', "\\$")
-}''',
-     r'''        .replace('\t', "\\t")
-}''')
+     r'''            '"' => out.push_str("\\\""),
+            '$' => out.push_str("\\$"),
+''',
+     r'''            '"' => out.push_str("\\\""),
+''')
 PY

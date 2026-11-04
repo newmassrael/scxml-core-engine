@@ -2528,9 +2528,6 @@ sce-build/src/forge/
 ```rust
 // Transpile an ECMAScript expression to the target language.
 pub fn transpile(expr: &str, target: ExprTarget) -> Result<String, String>;
-
-// Strip string literal contents (for expression analysis in generator).
-pub fn strip_string_literals_pub(expr: &str) -> String;
 ```
 
 The generator calls `expr::transpile()` for every `expr` and `cond` attribute in the SCXML source. The transpiler handles all language-specific differences (operator syntax, precedence, string quoting) so generators only deal with structural code emission.

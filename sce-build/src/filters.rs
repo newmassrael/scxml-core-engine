@@ -283,13 +283,43 @@ fn to_rust_type(var_type: String) -> String {
     }
 }
 
-/// Escape characters for Rust string literals.
+/// Escape the author's text for the body of a Rust string literal.
+///
+/// A backslash and a double quote are escaped because they end or bend the
+/// literal; a line break, a carriage return (which rustc refuses bare in a
+/// literal) and a tab take their named escapes; every other control character
+/// is written `\u{…}`, so no generated line carries a byte a reader cannot see;
+/// and so is each character that changes the direction text is shown in,
+/// which rustc's `text_direction_codepoint_in_literal` lint refuses by default.
+/// Every other character is itself.
 pub fn escape_rust(text: String) -> String {
-    text.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\0' => out.push_str("\\0"),
+            c if c.is_control() || changes_text_direction(c) => {
+                out.push_str(&format!("\\u{{{:x}}}", u32::from(c)))
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Whether `c` is one of the characters that embed, override or isolate the
+/// direction text is shown in (Unicode's bidirectional formatting characters),
+/// or a directional mark: a reader of generated source cannot see one, and it
+/// can make the code shown differ from the code compiled.
+fn changes_text_direction(c: char) -> bool {
+    matches!(
+        c,
+        '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+    )
 }
 
 /// Convert SCXML string expression to Rust string expression.
@@ -698,7 +728,13 @@ pub fn to_author_data_content(
 /// embedded in a C++ or Kotlin double-quoted literal by the escaper at
 /// the next step — a quote that does not have to be escaped twice is one
 /// fewer place the two escapings can disagree.
-fn ecmascript_string_literal(text: &str) -> String {
+///
+/// A control character, and U+2028 and U+2029 (which end a line wherever an
+/// engine older than ECMA-262 2019 reads one), are written `\uXXXX`. The
+/// forge expression emitter writes a string literal for the Interpreter
+/// through this too (`crate::forge::expr`), so the two cannot spell a value
+/// two ways.
+pub(crate) fn ecmascript_string_literal(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     out.push('\'');
     for ch in text.chars() {
@@ -708,6 +744,9 @@ fn ecmascript_string_literal(text: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
+            c if c.is_control() || c == '\u{2028}' || c == '\u{2029}' => {
+                out.push_str(&format!("\\u{:04x}", u32::from(c)))
+            }
             other => out.push(other),
         }
     }
@@ -1221,13 +1260,30 @@ fn to_go_type(var_type: String) -> String {
     }
 }
 
-/// Escape characters for Go string literals.
+/// Escape the author's text for the body of a Go interpreted string literal.
+///
+/// A backslash and a double quote are escaped, a line break, a carriage return
+/// and a tab take their named escapes, and every other control character is
+/// written `\uXXXX`: the Go compiler refuses a NUL in source, and a `\xHH`
+/// would be one byte, not the character, past 7F. A byte order mark is written
+/// `﻿` too, since the compiler refuses one anywhere but at the start of a
+/// file; and so is a character that changes the direction text is shown in.
 pub(crate) fn escape_go(text: String) -> String {
-    text.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() || c == '\u{FEFF}' || changes_text_direction(c) => {
+                out.push_str(&format!("\\u{:04x}", u32::from(c)))
+            }
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// Convert SCXML string expression to Go string expression.
@@ -1582,9 +1638,10 @@ pub fn to_cpp_event_variant(name: Cow<'_, str>) -> String {
     capitalize_state(name.into_owned())
 }
 
-/// Escape C++ string literals (identical escaping rules to Rust).
+/// Escape the author's text for the body of a C++ string literal: C's escaper,
+/// since the two languages read one grammar for everything it writes.
 pub(crate) fn escape_cpp(text: String) -> String {
-    escape_rust(text)
+    escape_c(text)
 }
 
 /// Escape the author's text for a C++ **format** string — `SCE_LOG_*`, which
@@ -1603,7 +1660,7 @@ pub(crate) fn escape_cpp(text: String) -> String {
 ///   artifact fails at the format-string check instead.
 ///
 /// So a format string needs both, and doubling has to happen AFTER the C++
-/// escaping — `escape_rust` inserts no braces, so the order is safe either way
+/// escaping — `escape_c` inserts no braces, so the order is safe either way
 /// today, and stating it keeps a future escape that does insert one from
 /// silently un-doubling.
 fn escape_cpp_format(text: String) -> String {
@@ -1615,10 +1672,9 @@ fn escape_cpp_format(text: String) -> String {
 /// Register all C11-specific filters on the minijinja environment.
 /// RFC §synth-5-J-1 (downstream consumer / MCU AOT backend).
 ///
-/// `escape_c` shares the C++/Rust escape rule set (backslash, double
-/// quote, newline, carriage return, tab); C11 string literals follow
-/// the same escape grammar so we can route the filter to `escape_rust`
-/// with no behavioural change. The Lua expression family is registered
+/// `escape_c` is the C family's one string-literal escaper, which C++'s
+/// `escape_cpp` forwards to: C11 and C++ read one escape grammar for
+/// everything it writes. The Lua expression family is registered
 /// here (not just on Rust/Go) because the C11 backend transpiles
 /// ECMAScript expressions to Lua at codegen time and embeds the result
 /// as a C string literal passed through `luaL_dostring`.
@@ -1662,9 +1718,101 @@ pub fn register_c11_filters(env: &mut minijinja::Environment, scope: &Arc<Docume
     env.add_filter("to_snake_case", to_snake_case);
 }
 
-/// Escape C string literals (identical escaping rules to Rust/C++).
+/// Escape the author's text for the body of a C or C++ string literal.
+///
+/// A backslash and a double quote are escaped, and a line break, a carriage
+/// return and a tab take their named escapes. Every other control character,
+/// and every byte of a character past ASCII, is a three-digit octal escape:
+/// unlike `\x`, which reads every hexadecimal digit after it, an octal escape
+/// ends after three digits, so the character after it is never read into it;
+/// and a byte written as a number is the byte whatever execution character set
+/// the compiler assumes, as `c_text_initializer` writes the bytes of a text
+/// constant. A `?` after a `?` is `\?`, so no pair of them begins a trigraph,
+/// which ISO C11 still reads (5.2.1.1). The value as compiled is the UTF-8
+/// bytes of `text`.
+///
+/// A U+0000 is written `\000`, and a C string stops at it: what holds the
+/// literal as a NUL-terminated string holds the text before it. The expression
+/// emitter refuses such a literal on C11, and C++ holds it in a `std::string`
+/// of its length (`crate::forge::expr`).
 pub fn escape_c(text: String) -> String {
-    escape_rust(text)
+    let mut out = String::with_capacity(text.len());
+    let mut after_question = false;
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '?' if after_question => out.push_str("\\?"),
+            ' '..='~' => out.push(ch),
+            _ => {
+                let mut utf8 = [0u8; 4];
+                for byte in ch.encode_utf8(&mut utf8).bytes() {
+                    out.push_str(&format!("\\{byte:03o}"));
+                }
+            }
+        }
+        after_question = ch == '?';
+    }
+    out
+}
+
+/// The most bytes of text one C string literal holds where this project's C11
+/// is compiled. ISO C11 (5.2.4.1) promises 4095 characters in a string literal,
+/// counted after adjacent literals are joined, and GCC's `-Woverlength-strings`,
+/// which `-Wpedantic` turns on and `-Werror` makes fatal, refuses a longer one,
+/// so splitting a literal into adjacent pieces does not help.
+pub const C_STRING_LITERAL_MAX_BYTES: usize = 4095;
+
+/// The most bytes of text one C++ string literal holds on the compilers this
+/// project's C++ meets: MSVC holds none past 65,535 bytes, and Clang's
+/// `-Woverlength-strings` refuses one past 65,536 characters.
+pub const CPP_STRING_LITERAL_MAX_BYTES: usize = 65_535;
+
+/// Each byte of `text` as a C or C++ character constant: a printable one as
+/// itself, a quote and a backslash escaped, and every other byte in hex.
+///
+/// A list of these initializes a `char` array of any length, which no string
+/// literal of either language holds; `c_text_expression`, `cpp_text_expression`
+/// and the C and C++ text constants a forge unit declares write one.
+pub fn c_char_constants(text: &str) -> Vec<String> {
+    text.bytes()
+        .map(|byte| match byte {
+            b'\'' => "'\\''".to_string(),
+            b'\\' => "'\\\\'".to_string(),
+            0x20..=0x7e => format!("'{}'", char::from(byte)),
+            other => format!("'\\x{other:02x}'"),
+        })
+        .collect()
+}
+
+/// `text` as a C11 expression of type `const char *`: a string literal while
+/// the text fits one ([`C_STRING_LITERAL_MAX_BYTES`]), and past that a compound
+/// literal of its bytes and the zero that ends them, `(const char[]){…}`, which
+/// ISO C11 (6.5.2.5) holds to no length and which decays to the same pointer.
+/// The caller refuses a text holding U+0000, which a C string cannot hold.
+pub fn c_text_expression(text: &str) -> String {
+    if text.len() <= C_STRING_LITERAL_MAX_BYTES {
+        return format!("\"{}\"", escape_c(text.to_string()));
+    }
+    let mut constants = c_char_constants(text);
+    constants.push("'\\0'".to_string());
+    format!("(const char[]){{{}}}", constants.join(", "))
+}
+
+/// `text` as a C++ expression: a string literal while the text fits one
+/// ([`CPP_STRING_LITERAL_MAX_BYTES`]) and holds no U+0000, and otherwise the
+/// `std::string` its bytes initialize, `std::string{…}`, which holds a zero
+/// byte as any other and is held to no length. A string literal is a
+/// `const char *` that a `std::string` is made from up to its first zero, so a
+/// literal holding one would lose the text after it.
+pub fn cpp_text_expression(text: &str) -> String {
+    if text.len() <= CPP_STRING_LITERAL_MAX_BYTES && !text.contains('\0') {
+        return format!("\"{}\"", escape_cpp(text.to_string()));
+    }
+    format!("std::string{{{}}}", c_char_constants(text).join(", "))
 }
 
 /// The shared §scxml-B-2 operator semantics, bound at compile time.
@@ -1783,7 +1931,7 @@ fn c_lua_dostring_chunks(text: &str) -> String {
         .map(|chunk| {
             let literal = chunk
                 .lines()
-                .map(|line| format!("\"{}\\n\"", escape_rust(line.to_string())))
+                .map(|line| format!("\"{}\\n\"", escape_c(line.to_string())))
                 .collect::<Vec<_>>()
                 .join("\n            ");
             format!("        (void)luaL_dostring(sm->L,\n            {literal});")
@@ -1993,14 +2141,30 @@ pub fn to_camel_case(name: String) -> String {
     result
 }
 
-/// Escape Kotlin string literals.
+/// Escape the author's text for the body of a Kotlin `"…"` string literal.
+///
+/// A backslash and a double quote are escaped, and so is every `$`, which
+/// would otherwise open a template expression (`$name`, `${…}`) and run the
+/// author's text as code. A line break, a carriage return and a tab take
+/// their named escapes, and every other control character, and each character
+/// that changes the direction text is shown in, is written `\uXXXX`.
 pub(crate) fn escape_kotlin(text: String) -> String {
-    text.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
-        .replace('$', "\\$")
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '$' => out.push_str("\\$"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() || changes_text_direction(c) => {
+                out.push_str(&format!("\\u{:04x}", u32::from(c)))
+            }
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// The most bytes one string constant of a JVM class file holds: a
@@ -2102,6 +2266,22 @@ pub fn kotlin_string_val(name: String, text: String, indent: Option<String>) -> 
     out.push_str(&indent);
     out.push('}');
     out
+}
+
+/// `text` as a Kotlin expression of type `String`: a literal while it fits one
+/// class-file constant, and otherwise the `buildString` of pieces that each do
+/// ([`jvm_constant_chunks`]), which kotlinc does not fold back into one
+/// constant. The expression twin of [`kotlin_string_val`].
+pub fn kotlin_text_expression(text: &str) -> String {
+    let chunks = jvm_constant_chunks(text);
+    if let [whole] = chunks.as_slice() {
+        return format!("\"{}\"", escape_kotlin(whole.to_string()));
+    }
+    let appends: Vec<String> = chunks
+        .iter()
+        .map(|chunk| format!("append(\"{}\")", escape_kotlin(chunk.to_string())))
+        .collect();
+    format!("buildString {{ {} }}", appends.join("; "))
 }
 
 /// Escape the author's text for the BODY of a Swift string literal.
@@ -2466,8 +2646,8 @@ mod literal_escaper_census {
     /// door a value had been escaped when nothing had touched it.
     ///
     /// Delegation is the second reason a source scan cannot answer it:
-    /// `escape_c` and `escape_cpp` are one line each, forwarding to
-    /// `escape_rust`, so their own bodies never mention a quote.
+    /// `escape_cpp` is one line, forwarding to `escape_c`, so its own body
+    /// never mentions a quote.
     #[test]
     fn a_filter_is_declared_fit_exactly_when_it_escapes_for_a_literal() {
         let declared: BTreeSet<&str> = ALREADY_FIT_FOR_A_LITERAL.iter().copied().collect();

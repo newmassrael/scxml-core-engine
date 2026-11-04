@@ -711,12 +711,13 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Expr::new(ExprKind::Number(n), self.since(start)))
             }
-            Token::String { value, .. } => {
+            // The lexer read the escapes, by this dialect's rules, so the token
+            // carries the characters the literal denotes, which the emitter
+            // writes for Lua from the characters rather than from a spelling
+            // in another escape grammar.
+            Token::String { value } => {
                 self.advance();
-                Ok(Expr::new(
-                    ExprKind::Str(decode_escapes(&value)),
-                    self.since(start),
-                ))
+                Ok(Expr::new(ExprKind::Str(value), self.since(start)))
             }
             Token::LParen => {
                 self.advance();
@@ -750,7 +751,7 @@ impl<'a> Parser<'a> {
                     loop {
                         let key = match self.advance() {
                             Token::Ident(name) => name,
-                            Token::String { value, .. } => decode_escapes(&value),
+                            Token::String { value } => value,
                             Token::Number(n) => n,
                             other => {
                                 return Err(self.refuse_last(ExprError::ParseMismatch {
@@ -921,58 +922,4 @@ fn map_arith(op: crate::forge::expr::ArithOp) -> BinOp {
         ArithOp::Div => BinOp::Div,
         ArithOp::Mod => BinOp::Mod,
     }
-}
-
-/// Decode ECMAScript string escapes to the characters they denote.
-///
-/// Done here, once, so the emitter re-encodes for Lua from actual
-/// characters. The alternative — passing the source spelling through and
-/// hoping the two escape grammars coincide — is what made `\uXXXX` and
-/// `\/` produce Lua that would not compile.
-fn decode_escapes(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len());
-    let mut chars = raw.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            out.push(ch);
-            continue;
-        }
-        let Some(escape) = chars.next() else {
-            out.push('\\');
-            break;
-        };
-        match escape {
-            'n' => out.push('\n'),
-            't' => out.push('\t'),
-            'r' => out.push('\r'),
-            'b' => out.push('\u{8}'),
-            'f' => out.push('\u{c}'),
-            'v' => out.push('\u{b}'),
-            '0' => out.push('\0'),
-            'x' => {
-                let hex: String = (0..2).filter_map(|_| chars.next()).collect();
-                match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
-                    Some(c) => out.push(c),
-                    None => {
-                        out.push('x');
-                        out.push_str(&hex);
-                    }
-                }
-            }
-            'u' => {
-                let hex: String = (0..4).filter_map(|_| chars.next()).collect();
-                match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
-                    Some(c) => out.push(c),
-                    None => {
-                        out.push('u');
-                        out.push_str(&hex);
-                    }
-                }
-            }
-            // `\'`, `\"`, `\\`, `\/` and any other escape denote the
-            // character itself.
-            other => out.push(other),
-        }
-    }
-    out
 }

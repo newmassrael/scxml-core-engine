@@ -1706,8 +1706,7 @@ fn reject_non_representable_bytes(
         )),
         BytesComparisonForm::NonAsciiLiteral => {
             // The classifier returns this variant only for a StringLit
-            // partner, so the literal's source text is recoverable for
-            // the message.
+            // partner, so the literal's value is there for the message.
             let ExprKind::StringLit { value, .. } = &other.kind else {
                 unreachable!("NonAsciiLiteral is produced only for a StringLit operand");
             };
@@ -1721,7 +1720,12 @@ fn reject_non_representable_bytes(
                     importing_name: statechart_name.to_string(),
                     alias: EVENT_DATA_PATH.to_string(),
                     field: field.id.clone(),
-                    found: format!("non-printable-ASCII bytes literal '{value}'"),
+                    // The value, its escapes read, spelled again as a literal so
+                    // a control character in it is visible in the message.
+                    found: format!(
+                        "non-printable-ASCII bytes literal {}",
+                        crate::filters::ecmascript_string_literal(value)
+                    ),
                     expected: field.sce_type.as_attr(),
                     observed: literal
                         .and_then(|literal| literal.on_one_row())

@@ -1243,6 +1243,13 @@ pub enum DiagnosticCode {
     ExpressionEmpty,
     #[serde(rename = "expression/lex")]
     ExpressionLex,
+    /// A string literal holds an escape the expression language does not read:
+    /// a malformed `\x`, `\u` or `\u{…}`, a lone surrogate, and in a forge
+    /// expression a legacy octal or a backslash before a character with no
+    /// escape meaning. `actual` carries the escape as written. No `Fix`: the
+    /// character the author meant is not known from the escape.
+    #[serde(rename = "expression/unsupported-string-escape")]
+    ExpressionUnsupportedStringEscape,
     #[serde(rename = "expression/unsupported-construct")]
     ExpressionUnsupportedConstruct,
     // A standard-library *name* the ECMAScript datamodel does not
@@ -3895,6 +3902,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Expression
         ExpressionEmpty,
         ExpressionLex,
+        ExpressionUnsupportedStringEscape,
         ExpressionUnsupportedConstruct,
         ExpressionUnsupportedBuiltin,
         ExpressionUnknownIdentifier,
@@ -4497,6 +4505,7 @@ impl DiagnosticCode {
             // ── Forge expression language (SCE_FORGE.md §3.4) ────
             ExpressionEmpty
             | ExpressionLex
+            | ExpressionUnsupportedStringEscape
             | ExpressionUnsupportedConstruct
             | ExpressionStrictEquality
             | ExpressionParseMismatch
@@ -5509,6 +5518,7 @@ impl DiagnosticCode {
             | ReassemblyPerPeerQuotaBuildInvariantViolated
             | ExpressionEmpty
             | ExpressionLex
+            | ExpressionUnsupportedStringEscape
             | ExpressionUnsupportedConstruct
             | ExpressionUnsupportedBuiltin
             | ExpressionUnknownIdentifier
@@ -6018,6 +6028,7 @@ impl DiagnosticCode {
             }
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
+            ExpressionUnsupportedStringEscape => "expression/unsupported-string-escape",
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
             ExpressionUnsupportedBuiltin => "expression/unsupported-builtin",
             ExpressionUnknownIdentifier => "expression/unknown-identifier",
@@ -11041,6 +11052,20 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![position.to_string(), detail.clone()],
         },
+        ExprError::UnsupportedStringEscape {
+            position,
+            escape,
+            reason: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionUnsupportedStringEscape,
+            stage: Stage::Expression,
+            expected: None,
+            // The escape as the author wrote it, which is what a consumer
+            // searches the document for; the rule that refused it is prose.
+            actual: Some(escape.clone()),
+            fix: None,
+            key_fragments: vec![position.to_string(), escape.clone()],
+        },
         ExprError::UnsupportedConstruct {
             construct,
             observed,
@@ -14785,6 +14810,19 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:317e5d0fc5f07ffe","code":"expression/lex","stage":"expression","spec":"SCE Forge §3.4","message":"at position 7: unterminated string literal"}"#,
+            ),
+            (
+                // `'c\d'` in a forge expression: the escape as written rides
+                // `actual`, and the id keys on where it stands and what it is.
+                "forge/expression-unsupported-string-escape",
+                ExprError::UnsupportedStringEscape {
+                    position: 2,
+                    escape: "\\d".into(),
+                    reason: "a backslash before a character that has no escape meaning is \
+                             not read in a forge expression",
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:fa2b147cc30345bf","code":"expression/unsupported-string-escape","stage":"expression","spec":"SCE Forge §3.4","message":"at position 2: the string escape `\\d` is not read: a backslash before a character that has no escape meaning is not read in a forge expression","actual":"\\d"}"#,
             ),
             (
                 "forge/expression-unsupported-construct",
@@ -19634,6 +19672,9 @@ mod tests {
             | ReassemblyPerPeerQuotaBuildInvariantViolated
             | ExpressionEmpty
             | ExpressionLex
+            // The escape as written rides `actual`; the character meant is
+            // not known from it, so there is no fix and no `expected`.
+            | ExpressionUnsupportedStringEscape
             | ExpressionUnsupportedConstruct
             // The callee was typed by having been written, and nothing
             // that could stand in its place follows from that — so no
@@ -20483,6 +20524,7 @@ mod tests {
                 | ScxmlAcceptSideStatesWithoutRoleDeclaration
                 | ReassemblyPerPeerQuotaBuildInvariantViolated
                 | ExpressionEmpty | ExpressionLex
+                | ExpressionUnsupportedStringEscape
                 | ExpressionUnsupportedConstruct | ExpressionUnsupportedBuiltin
                 | ExpressionUnknownIdentifier
                 | ExpressionUnknownEnumVariant
@@ -20826,9 +20868,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            496,
+            497,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 496 distinct variants to match the DiagnosticCode \
+             expected 497 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21521,6 +21563,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ReassemblyPerPeerQuotaBuildInvariantViolated
             | ExpressionEmpty
             | ExpressionLex
+            // Raised by the lexer, before any tree of the expression exists,
+            // as `expression/lex` is.
+            | ExpressionUnsupportedStringEscape
             // Forge-only: an enum alias exists in a forge kind's scope and
             // in no statechart guard, so no statechart scenario can raise it.
             | ExpressionUnknownEnumVariant
