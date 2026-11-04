@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
+#include <deque>
 #include <map>
 #include <optional>
 #include <string>
@@ -32,11 +33,13 @@
 #include <vector>
 
 #include "core/HostProcessor.h"
+#include "core/LogMacros.h"
+#include "core/TypedHostInvokeRequest.h"
 
 namespace SCE::StandardHost {
 
 /// Every operation type of the standard host features, in the order the specification lists them.
-inline constexpr std::array<const char *, 11> TYPES = {
+inline constexpr std::array<const char *, 12> TYPES = {
     "sce-host-clock-now",
     "sce-host-clock-zone",
     "sce-host-kv-get",
@@ -48,6 +51,7 @@ inline constexpr std::array<const char *, 11> TYPES = {
     "sce-host-notify-post",
     "sce-host-notify-cancel",
     "sce-host-http-fetch",
+    "sce-host-model-generate",
 };
 
 /// The request of an operation as the engine hands it to a host: each `<param>` by name, as text.
@@ -194,6 +198,159 @@ public:
     virtual Exchange exchange(const HttpRequest &request) = 0;
 };
 
+// ── Generated text (docs/SCE_HOST_FEATURES.md, section 6; docs/adr/0087, section 4) ──
+//
+// The host judges the request (an empty prompt, `max_tokens` zero, a temperature past 2000
+// thousandths, an answer schema the machine's table does not hold), then asks its ModelProvider for
+// a Generation, and never cuts the answer: one past the bound of `text` fails `answer_too_large`. No
+// provider here reaches a model. ScriptedProvider gives the answers a scenario wrote;
+// ExhaustiveProvider gives the outcome class a test names at each call (docs/adr/0087, section 9.4).
+
+/// The operation that generates a text.
+inline constexpr const char *MODEL_GENERATE = "sce-host-model-generate";
+/// The bound of a result's `text`, in bytes (`model_answer` of the result record).
+inline constexpr size_t ANSWER_MAX_BYTES = 4096;
+/// The highest sampling temperature a request may ask for, in thousandths.
+inline constexpr uint64_t TEMPERATURE_MAX_MILLI = 2000;
+
+/// A generation's request, as a provider reads it; `answerSchema` is null for a free text.
+struct GenerateRequest {
+    std::string prompt;
+    const SCE::AnswerSchema *answerSchema = nullptr;
+    uint32_t maxTokens = 0;
+    uint32_t temperatureMilli = 0;
+};
+
+/// What a provider made of one generation.
+struct Generation {
+    enum class Kind {
+        /// An answer: the completion's fields but `error`.
+        Answer,
+        /// A failure, by its `code` of the operation's closed set.
+        Failure,
+        /// The host declines to start it (`invalid_argument`).
+        Refusal,
+        /// No answer yet, or ever: a deadline or a cancel ends the call.
+        Hold,
+    };
+    Kind kind = Kind::Hold;
+    std::string text;
+    std::string finish;
+    bool constrained = false;
+    std::string model;
+    uint32_t promptTokens = 0;
+    uint32_t answerTokens = 0;
+    std::string code;
+};
+
+/// Where a host's generations come from: a model on the device, a remote one, or a script.
+class ModelProvider {
+public:
+    virtual ~ModelProvider() = default;
+    virtual Generation generate(const GenerateRequest &request) = 0;
+};
+
+/// A text's tokens as the reference providers count them: its bytes.
+inline uint32_t tokens(const std::string &text) {
+    return static_cast<uint32_t>(text.size());
+}
+
+/// One answer a scripted provider gives; `finish` is `stop` or `length`.
+struct ScriptedAnswer {
+    std::string text;
+    std::string finish = "stop";
+};
+
+/// A provider that gives the answers it was told, one a generation, in order. It is `constrained` only
+/// when the request names an answer schema; `context` is the most tokens a prompt and `max_tokens` may
+/// take together, 0 for none; `hold` holds every generation unanswered.
+class ScriptedProvider : public ModelProvider {
+public:
+    std::deque<ScriptedAnswer> answers;
+    bool constrained = false;
+    std::string name = "scripted";
+    uint64_t context = 0;
+    bool hold = false;
+
+    Generation generate(const GenerateRequest &request) override {
+        Generation out;
+        if (hold) {
+            SCE_LOG_INFO("scripted provider: holds the generation");
+            return out;
+        }
+        const uint32_t promptTokens = tokens(request.prompt);
+        if (context != 0 && uint64_t{promptTokens} + request.maxTokens > context) {
+            SCE_LOG_INFO("scripted provider: {} prompt tokens and {} more pass a context of {}", promptTokens,
+                         request.maxTokens, context);
+            out.kind = Generation::Kind::Failure;
+            out.code = "context_exceeded";
+            return out;
+        }
+        if (answers.empty()) {
+            SCE_LOG_INFO("scripted provider: no answer left to give");
+            out.kind = Generation::Kind::Failure;
+            out.code = "unavailable";
+            return out;
+        }
+        const ScriptedAnswer answer = answers.front();
+        answers.pop_front();
+        SCE_LOG_DEBUG("scripted provider: answers {} bytes, finish {}", answer.text.size(), answer.finish);
+        out.kind = Generation::Kind::Answer;
+        out.text = answer.text;
+        out.finish = answer.finish;
+        out.constrained = constrained && request.answerSchema != nullptr;
+        out.model = name;
+        out.promptTokens = promptTokens;
+        out.answerTokens = tokens(answer.text);
+        return out;
+    }
+};
+
+/// One outcome class of a generation (docs/adr/0087, section 9.4), as the table every lane reads names it
+/// (tests/host_features/model_outcome_classes.json): an answer with `text` and `finish`, a failure with
+/// `code`, a refusal, or a hold the test ends by a deadline or a cancel.
+struct OutcomeClass {
+    Generation::Kind kind = Generation::Kind::Hold;
+    std::string text;
+    std::string finish;
+    std::string code;
+};
+
+/// A provider that stands for a model that may give any outcome at any call: each generation takes the
+/// next class of the sequence the test named.
+class ExhaustiveProvider : public ModelProvider {
+public:
+    explicit ExhaustiveProvider(const std::vector<OutcomeClass> &sequence)
+        : sequence_(sequence.begin(), sequence.end()) {}
+
+    Generation generate(const GenerateRequest &request) override {
+        Generation out;
+        if (sequence_.empty()) {
+            SCE_LOG_WARN("exhaustive provider: asked past the sequence the test named");
+            out.kind = Generation::Kind::Failure;
+            out.code = "unavailable";
+            return out;
+        }
+        const OutcomeClass next = sequence_.front();
+        sequence_.pop_front();
+        SCE_LOG_DEBUG("exhaustive provider: answers class {}", static_cast<int>(next.kind));
+        out.kind = next.kind;
+        if (next.kind == Generation::Kind::Answer) {
+            out.text = next.text;
+            out.finish = next.finish;
+            out.model = "exhaustive";
+            out.promptTokens = tokens(request.prompt);
+            out.answerTokens = tokens(next.text);
+        } else if (next.kind == Generation::Kind::Failure) {
+            out.code = next.code;
+        }
+        return out;
+    }
+
+private:
+    std::deque<OutcomeClass> sequence_;
+};
+
 namespace detail {
 
 /// A JSON string: quotes, backslashes and control characters escaped, the rest as it is.
@@ -281,6 +438,9 @@ inline Outcome failure(const std::string &operation, const std::string &code) {
         zero = {text("state", "")};
     } else if (operation == "sce-host-notify-post") {
         zero = {text("status", "")};
+    } else if (operation == MODEL_GENERATE) {
+        zero = {text("text", ""),           boolean("constrained", false), text("model", ""),
+                number("prompt_tokens", 0), number("answer_tokens", 0),    text("finish", "")};
     } else {
         zero = {number("status", 0), text("headers", ""), text("body", "")};
     }
@@ -452,6 +612,22 @@ public:
         return std::exchange(starts_, {});
     }
 
+    /// Generate texts with `provider`, which outlives the host, from here on.
+    void setModelProvider(ModelProvider &provider) {
+        provider_ = &provider;
+    }
+
+    /// Resolve a generation's `answer_schema` through the `count` schemas at `schemas`, the table of the
+    /// machine this host serves (its generated `ANSWER_SCHEMAS`). A request that names an id the table
+    /// does not hold is refused.
+    void setAnswerSchemas(const SCE::AnswerSchema *schemas, size_t count) {
+        answerSchemas_.assign(schemas, schemas + count);
+    }
+
+    template <size_t N> void setAnswerSchemas(const SCE::AnswerSchema (&schemas)[N]) {
+        setAnswerSchemas(schemas, N);
+    }
+
     /// Start the operation of invocation `id` with `params`.
     ///
     /// Nothing for a type that is not one of the standard host features: the host serves none of it.
@@ -478,12 +654,22 @@ public:
             const std::string method = argument("method");
             refused = std::find(methods.begin(), methods.end(), method) == methods.end() ||
                       !detail::isHttpUrl(argument("url")) || !detail::headerLines(argument("headers")).has_value();
+        } else if (operation == MODEL_GENERATE) {
+            std::string why;
+            refused = !judgeGeneration(params, why).has_value();
+            if (refused) {
+                SCE_LOG_INFO("{} {}: refused, {}", operation, id, why);
+            }
         }
         if (refused) {
             return Outcome{Outcome::Kind::Refuse, R"({"reason":"invalid_argument"})"};
         }
         if (const auto fault = faults_.find(operation); fault != faults_.end()) {
+            SCE_LOG_INFO("{} {}: fails {}, injected", operation, id, fault->second);
             return detail::failure(operation, fault->second);
+        }
+        if (operation == MODEL_GENERATE) {
+            return modelGenerate(id, params);
         }
         if (operation == "sce-host-clock-now") {
             return clockNow();
@@ -636,8 +822,88 @@ private:
                                detail::text("body", payload)});
     }
 
+    /// The request the host accepts, or nothing with `why` it refuses it: an empty prompt, `max_tokens`
+    /// zero, a temperature past TEMPERATURE_MAX_MILLI, or an answer schema the table does not hold.
+    std::optional<GenerateRequest> judgeGeneration(const Params &params, std::string &why) const {
+        const auto argument = [&params](const char *name) {
+            const auto found = params.find(name);
+            return found == params.end() ? std::string() : found->second;
+        };
+        const auto count = [](const std::string &digits) -> std::optional<uint64_t> {
+            if (digits.empty() || digits.size() > 10 ||
+                !std::all_of(digits.begin(), digits.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) {
+                return std::nullopt;
+            }
+            return std::stoull(digits);
+        };
+        GenerateRequest request;
+        request.prompt = argument("prompt");
+        const auto maxTokens = count(argument("max_tokens"));
+        const auto temperature = count(argument("temperature_milli"));
+        if (request.prompt.empty()) {
+            why = "the prompt is empty";
+            return std::nullopt;
+        }
+        if (!maxTokens || *maxTokens == 0 || *maxTokens > UINT32_MAX) {
+            why = "max_tokens is not a count above zero";
+            return std::nullopt;
+        }
+        if (!temperature || *temperature > TEMPERATURE_MAX_MILLI) {
+            why = "the temperature is past 2000 thousandths";
+            return std::nullopt;
+        }
+        request.maxTokens = static_cast<uint32_t>(*maxTokens);
+        request.temperatureMilli = static_cast<uint32_t>(*temperature);
+        if (const std::string named = argument("answer_schema"); !named.empty()) {
+            const auto found = std::find_if(answerSchemas_.begin(), answerSchemas_.end(),
+                                            [&named](const SCE::AnswerSchema &schema) { return named == schema.id; });
+            if (found == answerSchemas_.end()) {
+                why = "the answer schema is not one of the machine's";
+                return std::nullopt;
+            }
+            request.answerSchema = &*found;
+        }
+        return request;
+    }
+
+    /// Generate a text for invocation `id`, whose request the host accepted.
+    Outcome modelGenerate(const std::string &id, const Params &params) {
+        std::string why;
+        const auto request = judgeGeneration(params, why);
+        const Generation generation = (provider_ ? *provider_ : scripted_).generate(*request);
+        switch (generation.kind) {
+        case Generation::Kind::Answer:
+            if (generation.text.size() > ANSWER_MAX_BYTES) {
+                SCE_LOG_INFO("{} {}: an answer of {} bytes is past {}", MODEL_GENERATE, id, generation.text.size(),
+                             ANSWER_MAX_BYTES);
+                return detail::failure(MODEL_GENERATE, "answer_too_large");
+            }
+            SCE_LOG_DEBUG("{} {}: answered by {}, finish {}", MODEL_GENERATE, id, generation.model, generation.finish);
+            return detail::record(
+                {detail::text("text", generation.text), detail::boolean("constrained", generation.constrained),
+                 detail::text("model", generation.model), detail::number("prompt_tokens", generation.promptTokens),
+                 detail::number("answer_tokens", generation.answerTokens), detail::text("finish", generation.finish)});
+        case Generation::Kind::Failure:
+            SCE_LOG_INFO("{} {}: fails {}", MODEL_GENERATE, id, generation.code);
+            return detail::failure(MODEL_GENERATE, generation.code);
+        case Generation::Kind::Refusal:
+            SCE_LOG_INFO("{} {}: refused by the provider", MODEL_GENERATE, id);
+            return Outcome{Outcome::Kind::Refuse, R"({"reason":"invalid_argument"})"};
+        case Generation::Kind::Hold:
+            break;
+        }
+        SCE_LOG_DEBUG("{} {}: held", MODEL_GENERATE, id);
+        held_.push_back(id);
+        return {Outcome::Kind::Hold, ""};
+    }
+
     ClockSource &clock_;
     Transport &transport_;
+    /// Where a generation's text comes from: `scripted_` until the embedding gives another.
+    ScriptedProvider scripted_;
+    ModelProvider *provider_ = nullptr;
+    /// The machine's table of answer schemas, which a generation's `answer_schema` is resolved through.
+    std::vector<SCE::AnswerSchema> answerSchemas_;
     std::map<std::string, std::string> store_;
     std::optional<size_t> quota_;
     std::string permission_ = "undetermined";

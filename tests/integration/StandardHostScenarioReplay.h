@@ -114,11 +114,48 @@ public:
     }
 };
 
-/// The reference host, over a clock and a transport a scenario sets.
+/// The text a `model` answer gives: `text`, or `text_repeat` as a text and a count.
+inline std::string answerText(const json &answer) {
+    if (answer.contains("text")) {
+        return answer.at("text").get<std::string>();
+    }
+    std::string text;
+    const json &repeat = answer.at("text_repeat");
+    for (int i = 0; i < repeat.at(1).get<int>(); ++i) {
+        text += repeat.at(0).get<std::string>();
+    }
+    return text;
+}
+
+/// The request fields a scenario writes as numbers; every other is text.
+inline bool integerField(const std::string &name) {
+    return name == "at_ms" || name == "max_tokens" || name == "temperature_milli";
+}
+
+/// The reference host, over a clock, a transport and a model provider a scenario sets.
 struct Rig {
     host::ScriptedClock clock;
     ScriptTransport transport;
     host::ReferenceHost host{clock, transport};
+    host::ScriptedProvider model;
+
+    Rig() {
+        host.setModelProvider(model);
+    }
+
+    /// Apply a `model` directive to the scripted provider: each member it names.
+    void scriptModel(const json &d) {
+        if (d.contains("answers")) {
+            model.answers.clear();
+            for (const auto &answer : d.at("answers")) {
+                model.answers.push_back({answerText(answer), answer.value("finish", std::string("stop"))});
+            }
+        }
+        model.constrained = d.value("constrained", model.constrained);
+        model.name = d.value("name", model.name);
+        model.context = d.value("context", model.context);
+        model.hold = d.value("hold", model.hold);
+    }
 
     void directives(const json &directives) {
         for (const auto &[name, value] : directives.items()) {
@@ -141,6 +178,8 @@ struct Rig {
                 host.setFaults(value.get<std::map<std::string, std::string>>());
             } else if (name == "http") {
                 transport.directive(value);
+            } else if (name == "model") {
+                scriptModel(value);
             } else {
                 ADD_FAILURE() << "`" << name << "` is not a host directive";
             }
@@ -148,13 +187,13 @@ struct Rig {
     }
 
     /// What the host was started with since the last step, as a scenario writes it: the request as its
-    /// record, `at_ms` being the one integer field.
+    /// record, the integer fields as numbers.
     json starts() {
         json out = json::array();
         for (const auto &start : host.takeStarts()) {
             json request = json::object();
             for (const auto &[name, text] : start.params) {
-                request[name] = name == "at_ms" ? json(std::stoll(text)) : json(text);
+                request[name] = integerField(name) ? json(std::stoll(text)) : json(text);
             }
             out.push_back({{"type", start.operation}, {"id", start.id}, {"request", request}});
         }

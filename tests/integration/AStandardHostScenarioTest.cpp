@@ -18,6 +18,7 @@
 #include "static_host_clock_sm.h"
 #include "static_host_http_sm.h"
 #include "static_host_kv_sm.h"
+#include "static_host_model_sm.h"
 #include "static_host_notify_sm.h"
 
 #include <cstdint>
@@ -29,8 +30,10 @@
 #include <map>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <set>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace SCE::Tests {
 
@@ -44,10 +47,12 @@ using HostScenario::ScriptTransport;
 constexpr int kSettleTicks = 5;
 
 template <typename Machine>
-void replay(const std::string &name, std::map<std::string, std::function<json(const Machine &)>> variables) {
+void replay(const std::string &name, std::map<std::string, std::function<json(Machine &)>> variables,
+            const std::vector<SCE::AnswerSchema> &schemas = {}) {
     const json scenario = HostScenario::readScenario(name);
     ASSERT_EQ(scenario.at("machine").get<std::string>(), name);
     Rig rig;
+    rig.host.setAnswerSchemas(schemas.data(), schemas.size());
     Machine machine;
     host::serve(machine, rig.host);
     machine.setClock(std::make_shared<SCE::ManualClock>(0));
@@ -133,9 +138,197 @@ TEST(AStandardHostScenario, AMachineMakesAnHttpExchangeThroughItsHost) {
                                   });
 }
 
+namespace {
+
+using ModelMachine = SCE::Generated::static_host_model::static_host_model;
+
+/// The machine's table of answer schemas, as the host is handed it.
+std::vector<SCE::AnswerSchema> modelSchemas() {
+    using namespace SCE::Generated::static_host_model;
+    return {std::begin(ANSWER_SCHEMAS), std::end(ANSWER_SCHEMAS)};
+}
+
+/// What static_host_model publishes, read from its saved state, the text every backend saves alike.
+json published(ModelMachine &machine, const std::string &variable) {
+    return json::parse(machine.saveAt(0).toJson()).at("variables").at(variable);
+}
+
+/// Whether a saved value is the scenario's: a 64-bit integer is saved as its digits.
+bool holds(const json &saved, const json &expected) {
+    if (saved.is_string() && expected.is_number_integer()) {
+        return saved.get<std::string>() == expected.dump();
+    }
+    return saved == expected;
+}
+
+/// What the exhaustive provider answers for a class of the table.
+host::OutcomeClass outcomeClass(const json &cls) {
+    const std::string end = cls.at("end").get<std::string>();
+    if (end == "answer") {
+        return {host::Generation::Kind::Answer, cls.at("text").get<std::string>(), cls.at("finish").get<std::string>(),
+                ""};
+    }
+    if (end == "failure") {
+        return {host::Generation::Kind::Failure, "", "", cls.at("error").get<std::string>()};
+    }
+    if (end == "refusal") {
+        return {host::Generation::Kind::Refusal, "", "", ""};
+    }
+    return {host::Generation::Kind::Hold, "", "", ""};
+}
+
+/// Run static_host_model against the exhaustive provider answering the classes `sequence` names, one call
+/// a class, and hold what the machine publishes after each call to what its class says.
+void runSequence(const json &table, const std::vector<size_t> &sequence) {
+    const json &classes = table.at("classes");
+    std::vector<host::OutcomeClass> provided;
+    std::string named;
+    for (const size_t i : sequence) {
+        provided.push_back(outcomeClass(classes.at(i)));
+        named += classes.at(i).at("class").get<std::string>() + " ";
+    }
+    host::ScriptedClock clock;
+    ScriptTransport transport;
+    host::ReferenceHost reference{clock, transport};
+    host::ExhaustiveProvider provider(provided);
+    const auto schemas = modelSchemas();
+    reference.setAnswerSchemas(schemas.data(), schemas.size());
+    reference.setModelProvider(provider);
+    ModelMachine machine;
+    host::serve(machine, reference);
+    machine.setClock(std::make_shared<SCE::ManualClock>(0));
+    machine.initialize();
+    const auto settle = [&machine]() {
+        for (int round = 0; round < kSettleTicks; ++round) {
+            machine.tick();
+        }
+    };
+    settle();
+    const json &ask = table.at("ask");
+    json answer = nullptr;
+    for (size_t n = 0; n < sequence.size(); ++n) {
+        const json &cls = classes.at(sequence[n]);
+        machine.raiseExternal(ask.at("event").get<std::string>(), ask.at("data").dump());
+        settle();
+        const std::string then = cls.value("then", std::string());
+        if (then == "advance") {
+            machine.advanceTimeMs(table.at("deadline_ms").get<uint64_t>());
+            settle();
+        } else if (then == "leave") {
+            machine.raiseExternal(table.at("leave").get<std::string>(), "");
+            settle();
+        }
+        const json &expect = cls.at("expect");
+        if (expect.contains("answer")) {
+            answer = expect.at("answer");
+        }
+        const std::string at = named + "call " + std::to_string(n + 1);
+        ASSERT_EQ(ModelMachine::PolicyType::getStateName(machine.getCurrentState()), std::string("idle")) << at;
+        for (const char *variable : {"outcome", "why", "finish"}) {
+            ASSERT_TRUE(holds(published(machine, variable), expect.at(variable))) << at << ": " << variable;
+        }
+        ASSERT_TRUE(holds(published(machine, "answer"), answer)) << at << ": answer";
+        ASSERT_TRUE(holds(published(machine, "calls"), json(n + 1))) << at << ": calls";
+    }
+}
+
+}  // namespace
+
+TEST(AStandardHostScenario, AMachineAsksItsHostForATextUnderAnAnswerSchema) {
+    std::map<std::string, std::function<json(ModelMachine &)>> variables;
+    for (const char *variable : {"calls", "outcome", "finish", "constrained", "answered_by", "prompt_tokens",
+                                 "answer_tokens", "answer", "why"}) {
+        variables[variable] = [variable](ModelMachine &m) { return published(m, variable); };
+    }
+    replay<ModelMachine>("static_host_model", variables, modelSchemas());
+}
+
+/// The machine around a model is tested exhaustively (docs/adr/0087, section 9.4): every sequence of
+/// outcome classes up to the table's bound, each call read as its class says, and every refusal code of
+/// the library either reached by a class or named as deferred with its reason.
+TEST(AStandardHostScenario, EverySequenceOfOutcomeClassesIsReadAsItsClassesSay) {
+    std::ifstream in(std::filesystem::path(SCE_PROJECT_ROOT) / "tests" / "host_features" /
+                     "model_outcome_classes.json");
+    ASSERT_TRUE(in.good()) << "the class table is readable";
+    const json table = json::parse(in);
+    ASSERT_EQ(table.at("machine").get<std::string>(), "static_host_model");
+    ASSERT_EQ(table.at("answer_schema").get<std::string>(), std::string(modelSchemas().at(0).id));
+    const size_t count = table.at("classes").size();
+    const size_t bound = table.at("bound").get<size_t>();
+    ASSERT_TRUE(count > 0 && bound > 0) << "a table that names nothing judges nothing";
+    size_t runs = 0;
+    size_t expected = 0;
+    size_t power = 1;
+    for (size_t length = 1; length <= bound; ++length) {
+        power *= count;
+        expected += power;
+        std::vector<size_t> sequence(length, 0);
+        while (true) {
+            runSequence(table, sequence);
+            if (::testing::Test::HasFatalFailure()) {
+                return;
+            }
+            ++runs;
+            size_t position = length;
+            while (position > 0 && sequence[position - 1] == count - 1) {
+                sequence[--position] = 0;
+            }
+            if (position == 0) {
+                break;
+            }
+            ++sequence[position - 1];
+        }
+    }
+    EXPECT_EQ(runs, expected) << "every sequence up to the bound was run";
+    std::set<std::string> codes;
+    for (const auto &cls : table.at("classes")) {
+        if (cls.at("expect").at("why").is_object()) {
+            codes.insert(cls.at("expect").at("why").at("code").get<std::string>());
+        }
+    }
+    for (const auto &deferred : table.at("deferred")) {
+        codes.insert(deferred.at("code").get<std::string>());
+    }
+    EXPECT_EQ(codes.size(), 13u) << "every refusal code is reached or deferred";
+}
+
+TEST(AStandardHostScenario, TheReferenceHostJudgesAGenerationBeforeItsProvider) {
+    host::ScriptedClock clock;
+    ScriptTransport transport;
+    host::ReferenceHost reference{clock, transport};
+    host::ScriptedProvider provider;
+    provider.constrained = true;
+    provider.context = 10;
+    provider.answers.push_back({std::string(host::ANSWER_MAX_BYTES + 1, 'a'), "stop"});
+    provider.answers.push_back({"kept", "stop"});
+    reference.setModelProvider(provider);
+    const SCE::AnswerSchema schemas[] = {{"urn:sce:schema:answer:1", "{}", "root ::= \"{}\""}};
+    reference.setAnswerSchemas(schemas);
+    const auto ask = [&reference](const std::string &prompt, const std::string &schema, const std::string &maxTokens,
+                                  const std::string &temperature) {
+        return reference.start(host::MODEL_GENERATE, "gen",
+                               {{"prompt", prompt},
+                                {"answer_schema", schema},
+                                {"max_tokens", maxTokens},
+                                {"temperature_milli", temperature}});
+    };
+    EXPECT_EQ(ask("", "", "8", "0")->kind, host::Outcome::Kind::Refuse);
+    EXPECT_EQ(ask("p", "", "0", "0")->kind, host::Outcome::Kind::Refuse);
+    EXPECT_EQ(ask("p", "", "8", "2001")->kind, host::Outcome::Kind::Refuse);
+    EXPECT_EQ(ask("p", "urn:sce:schema:other:1", "8", "0")->kind, host::Outcome::Kind::Refuse);
+    EXPECT_EQ(json::parse(ask("p", "", "8", "0")->data).at("error"), "answer_too_large");
+    EXPECT_EQ(json::parse(ask("abc", "", "8", "0")->data).at("error"), "context_exceeded");
+    const json kept = json::parse(ask("abc", "urn:sce:schema:answer:1", "7", "2000")->data);
+    EXPECT_EQ(kept.at("text"), "kept");
+    EXPECT_EQ(kept.at("constrained"), true);
+    EXPECT_EQ(kept.at("prompt_tokens"), 3);
+    EXPECT_EQ(json::parse(ask("p", "", "8", "0")->data).at("error"), "unavailable");
+}
+
 TEST(AStandardHostScenario, EveryScenarioOfTheDirectoryIsReplayedHere) {
-    EXPECT_EQ(HostScenario::scenarioNames(), (std::vector<std::string>{"static_host_clock", "static_host_http",
-                                                                       "static_host_kv", "static_host_notify"}));
+    EXPECT_EQ(HostScenario::scenarioNames(),
+              (std::vector<std::string>{"static_host_clock", "static_host_http", "static_host_kv", "static_host_model",
+                                        "static_host_notify"}));
 }
 
 TEST(AStandardHostScenario, TheSystemClockAnswersAMonotonicReadingThatDoesNotDecrease) {
