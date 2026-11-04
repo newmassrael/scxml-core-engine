@@ -263,6 +263,15 @@ and a list by its entries in order; an element and a group's member share the on
 cases: the Zenoh zbuf value, whose `after_shm` side holds its slices, the value entry whose arm holds it, and the
 interest message, whose body `CURRENT || FUTURE` decides.
 
+*Landed (step 3, eleventh part, 2026-11-04): variants a peeked byte decides.* The model reads a `<sce:peek-byte>`: the
+tag is a flag of the arm's own first byte, which the arm's value states and the variant does not write; the decode
+reads the flag there without moving past it and hands the byte to the arm. A case states each arm's header as the arm
+writes it, so a body whose header names another arm reads back as that arm, and the model refuses it; the default
+arm's tag is the one its body's header states. The literal and the comparison are a variant's, unchanged. Four codecs
+gain 18 cases: a two-arm variant, and the Zenoh request, response and network message, whose seven arms are the
+interest, final response, response, request, push, declare and OAM. A variant whose caller supplies its tag stays
+refused by name.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.

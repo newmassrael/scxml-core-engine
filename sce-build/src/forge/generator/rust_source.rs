@@ -315,10 +315,11 @@ fn spelled(plan: &EncodePlan<'_>) -> Result<(), String> {
         }
     }
     if let Some(variant) = &plan.model.variant {
-        if variant.tag_field.is_none() || variant.peek_byte.is_some() {
+        // A peeked byte's tag is the arm's own first byte, which the arm's value
+        // states: the literal is the one of a variant whose tag is derived.
+        if variant.tag_field.is_none() {
             return Err(
-                "a variant whose tag its caller supplies or a peeked byte decides is not \
-                 spelled as a literal yet"
+                "a variant whose tag its caller supplies is not spelled as a literal yet"
                     .to_string(),
             );
         }

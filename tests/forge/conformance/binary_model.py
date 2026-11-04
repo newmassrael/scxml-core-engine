@@ -68,7 +68,13 @@ What the model reads so far, and refuses by name past it:
   each as its import binds it (`<sce:flag-bind>`): the parent's own input, or
   a flag of a carrier, which is then derived from what the held codec says
   (docs/adr/0065 §6 R4a) and is the value's own where nothing held says it.
-  The entries of a list that take inputs are not read yet.
+  The entries of a list that take inputs are not read yet;
+* a variant (`<sce:variant>`), stated as its member `body`: the arm's codec
+  and its value, its tag derived from the arm where a field or a carrier's
+  flag holds it; where a peeked byte holds it (`<sce:peek-byte>`), the tag is
+  the arm's own first byte, which the arm's value states and the decode reads
+  without moving past. A variant whose caller supplies its tag is not read
+  yet.
 
 Each fixture this module writes is listed in FIXTURES with its hand-chosen
 sources; `regenerate` writes them into `numerical_reference.json` under the
@@ -265,6 +271,11 @@ class Field:
     tag_ref: str | None = None
     arms: list[Arm] = field(default_factory=list)
     default_arm: Arm | None = None
+    #: Of a variant whose tag a peeked byte holds (`<sce:peek-byte>`): that
+    #: byte's flags, `tag_ref` naming one as `peek.flag`. The byte is the arm's
+    #: own first, which the arm's value states: the variant writes no tag, and
+    #: the decode reads it without moving past it.
+    peek: list[Flag] | None = None
     #: Of a chain that ends on a flag of its entries (`terminate-on=
     #: "entry-flag"`): the entry's carrier and the flag, set on every entry
     #: but the last, which the chain derives (docs/adr/0058 §1).
@@ -464,6 +475,18 @@ def read_gate(stem: str, node, inputs: list[str]) -> Gate | None:
     return Gate(clauses, " || ".join(c.label() for c in clauses))
 
 
+def read_flags(stem: str, what: str, node) -> list[Flag]:
+    """The `<sce:flag>` children of `node`, a carrier or a peeked byte. A flag's
+    `value` is the carrier's value in the builder's default instance; it says
+    nothing of the wire."""
+    flags = []
+    for f in node:
+        if f.tag != f"{SCE}flag" or set(f.attrib) - {"name", "bit", "width", "value"}:
+            raise Unread(f"{stem}: a flag of {what} declares what is not read yet")
+        flags.append(Flag(f.get("name"), int(f.get("bit")), int(f.get("width", "1"))))
+    return flags
+
+
 def bound_inputs(
     stem: str,
     what: str,
@@ -559,6 +582,7 @@ def read_variant(
         raise Unread(f"{stem}: a variant whose caller supplies its tag is not read yet")
     arms: list[Arm] = []
     default_arm = None
+    peek: list[Flag] | None = None
 
     def arm(tag: int | None, alias: str) -> Arm:
         codec = imports.get(alias)
@@ -572,6 +596,13 @@ def read_variant(
             arms.append(arm(int(child.get("value"), 0), child.get("type")))
         elif child.tag == f"{SCE}default" and set(child.attrib) == {"type"}:
             default_arm = arm(None, child.get("type"))
+        elif (child.tag == f"{SCE}peek-byte" and set(child.attrib) == {"id", f"{SCE}type"}
+              and child.get(f"{SCE}type") == "uint8" and peek is None):
+            peek_id = child.get("id")
+            peek = read_flags(stem, f"the peeked byte `{peek_id}`", child)
+            carrier, _, flag = tag_ref.partition(".")
+            if carrier != peek_id or not any(f.name == flag for f in peek):
+                raise Unread(f"{stem}: the tag `{tag_ref}` is no flag of the peeked byte")
         else:
             raise Unread(f"{stem}: a variant's <{child.tag}> is not read yet")
     return Field(
@@ -585,6 +616,7 @@ def read_variant(
         tag_ref=tag_ref,
         arms=arms,
         default_arm=default_arm,
+        peek=peek,
     )
 
 
@@ -660,13 +692,7 @@ def read_document(path: Path) -> Codec:
                 raise Unread(f"{stem}: bit-size {size_text!r} of `{id}` is not read yet")
         else:
             raise Unread(f"{stem}: type {sce_type!r} of `{id}` is not read yet")
-        flags = []
-        for f in node:
-            # `value` is the carrier's value in the builder's default
-            # instance; it says nothing of the wire.
-            if f.tag != f"{SCE}flag" or set(f.attrib) - {"name", "bit", "width", "value"}:
-                raise Unread(f"{stem}: a flag of `{id}` declares what is not read yet")
-            flags.append(Flag(f.get("name"), int(f.get("bit")), int(f.get("width", "1"))))
+        flags = read_flags(stem, f"`{id}`", node)
         length_field = node.get(f"{SCE}length-field")
         if (size == "length-ref") != (length_field is not None):
             raise Unread(f"{stem}: `{id}` pairs length-ref and length-field otherwise")
@@ -875,9 +901,18 @@ def held(f: Field, value, handed: dict[str, int] | None = None) -> bytes | list[
     return data
 
 
+def peek_flag(variant: Field) -> Flag:
+    """The flag of the peeked byte a variant's tag is in."""
+    _, _, name = variant.tag_ref.partition(".")
+    return next(f for f in variant.peek if f.name == name)
+
+
 def tag_width(codec: Codec, variant: Field) -> int:
-    """The bits a variant's tag is written in: its field's, or its flag's."""
+    """The bits a variant's tag is written in: its field's, or its flag's,
+    of a carrier or of the peeked byte."""
     carrier, _, flag = variant.tag_ref.partition(".")
+    if variant.peek is not None:
+        return peek_flag(variant).width
     if flag:
         return codec.flag(carrier, flag).width
     tag = codec.field(carrier)
@@ -994,12 +1029,13 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
     bound = bound_flags(codec, source)
     variant = codec.variant()
     tag = None
-    # A tag in a flag of a carrier is that flag, derived from the arm.
+    # A tag in a flag of a carrier is that flag, derived from the arm. A tag in
+    # a peeked byte is written by no one but the arm, as its own first byte.
     forced_tag = None
     if variant is not None:
         tag, contents[variant.id] = chosen_arm(codec, variant, source[variant.id], source, inputs)
         carrier, _, flag_name = variant.tag_ref.partition(".")
-        if flag_name:
+        if flag_name and variant.peek is None:
             forced_tag = (carrier, flag_name)
     carriers: dict[str, int] = {}
     for f in codec.fields:
@@ -1140,7 +1176,13 @@ def decode_at(
                 at += n
             continue
         if f.size == "variant":
-            tag = measure_on_wire(codec, f.tag_ref, raw, carriers)
+            if f.peek is not None:
+                # The arm's own first byte, read here and left for the arm.
+                within(1, f.id)
+                flag = peek_flag(f)
+                tag = (frame[at] >> flag.bit) & ((1 << flag.width) - 1)
+            else:
+                tag = measure_on_wire(codec, f.tag_ref, raw, carriers)
             arm = next((a for a in f.arms if a.tag == tag), f.default_arm)
             if arm is None:
                 raise ValueError(f"{codec.name}: no arm has the tag {tag}")
@@ -1614,6 +1656,100 @@ FIXTURES = {
              "both flags and Z: the body, then one extension"),
         ],
         "a body a disjunction of two flags decides, each arm setting the flags it names.",
+    ),
+    "codec_variant_peek_basic": Fixture(
+        [
+            ({"body": {"arm": "codec_peek_arm_a", "body": {"header": 0x00, "payload": 5}}},
+             "arm a: its header's kind is clear, and the variant writes no tag"),
+            ({"body": {"arm": "codec_peek_arm_b", "body": {"header": 0x01, "payload": 0x1234}}},
+             "arm b: its header's kind is set"),
+            ({"body": {"arm": "codec_peek_arm_a", "body": {"header": 0xFE, "payload": 0}}},
+             "only the peeked flag decides: the header's other bits are arm a's own"),
+        ],
+        "the tag is a flag of the arm's own first byte, read without moving past it.",
+    ),
+    "codec_zenoh_request": Fixture(
+        [
+            ({"header": 0x1C, "rid": 1, "keyexpr": {"id": 5, "suffix": None}, "extensions": None,
+              "body": {"arm": "codec_zenoh_msg_put", "body": {
+                  "header": 0x01, "timestamp": None, "encoding": None, "extensions": None,
+                  "payload": [0xAA]}}},
+             "a put: its header's mid 1 is the tag"),
+            ({"header": 0x3C, "rid": 0x80, "keyexpr": {"id": 5, "suffix": "a"}, "extensions": None,
+              "body": {"arm": "codec_zenoh_msg_del", "body": {
+                  "header": 0x02, "timestamp": None, "extensions": None}}},
+             "a del, the key expression's suffix setting N"),
+            ({"header": 0x1C, "rid": 2, "keyexpr": {"id": 0, "suffix": None}, "extensions": None,
+              "body": {"arm": "codec_zenoh_query", "body": {
+                  "header": 0x03, "consolidation": None, "parameters": None, "extensions": None}}},
+             "a query"),
+            ({"header": 0x1C, "rid": 3, "keyexpr": {"id": 0, "suffix": None}, "extensions": None,
+              "body": {"tag": 0x07, "body": {
+                  "header": 0x07, "consolidation": None, "parameters": None, "extensions": None}}},
+             "a mid no arm names: the default query keeps it, its header stating it"),
+        ],
+        "the arm is the one its own header's mid names, peeked and left for the arm.",
+    ),
+    "codec_zenoh_response": Fixture(
+        [
+            ({"header": 0x1B, "request_id": 1, "key_id": 2, "suffix": None, "extensions": None,
+              "body": {"arm": "codec_zenoh_reply", "body": {
+                  "header": 0x04, "consolidation": None, "extensions": None,
+                  "body": {"header": 0x01,
+                           "body": {"arm": "codec_zenoh_put", "body": {"payload": 3}}}}}},
+             "a reply holding a put"),
+            ({"header": 0x3B, "request_id": 1, "key_id": 2, "suffix": "x", "extensions": None,
+              "body": {"arm": "codec_zenoh_err", "body": {
+                  "header": 0x05, "encoding": None, "extensions": None, "payload": [1]}}},
+             "an err, the suffix setting N"),
+            ({"header": 0x1B, "request_id": 0, "key_id": 0, "suffix": None, "extensions": None,
+              "body": {"tag": 0x06, "body": {
+                  "header": 0x06, "consolidation": None, "extensions": None,
+                  "body": {"header": 0x02, "body": {"arm": "codec_zenoh_del", "body": {}}}}}},
+             "a mid no arm names: the default reply keeps it"),
+        ],
+        "the arm is the one its own header's mid names.",
+    ),
+    "codec_zenoh_network_envelope": Fixture(
+        [
+            ({"body": {"arm": "codec_zenoh_interest", "body": {
+                "header": 0x19, "id": 1, "header.CURRENT || header.FUTURE": None,
+                "extensions": None}}},
+             "an interest, mid 0x19"),
+            ({"body": {"arm": "codec_zenoh_response_final", "body": {
+                "header": 0x1A, "request_id": 7, "extensions": None}}},
+             "a final response, mid 0x1a"),
+            ({"body": {"arm": "codec_zenoh_response", "body": {
+                "header": 0x1B, "request_id": 1, "key_id": 2, "suffix": None, "extensions": None,
+                "body": {"arm": "codec_zenoh_err", "body": {
+                    "header": 0x05, "encoding": None, "extensions": None, "payload": []}}}}},
+             "a response holding an err, mid 0x1b"),
+            ({"body": {"arm": "codec_zenoh_request", "body": {
+                "header": 0x1C, "rid": 1, "keyexpr": {"id": 5, "suffix": None},
+                "extensions": None,
+                "body": {"arm": "codec_zenoh_msg_del", "body": {
+                    "header": 0x02, "timestamp": None, "extensions": None}}}}},
+             "a request holding a del, mid 0x1c"),
+            ({"body": {"arm": "codec_zenoh_push", "body": {
+                "header": 0x1D, "body": {"arm": "codec_zenoh_push_body", "body": {
+                    "header": 0x01,
+                    "body": {"arm": "codec_zenoh_put", "body": {"payload": 7}}}}}}},
+             "a push, mid 0x1d"),
+            ({"body": {"arm": "codec_zenoh_declare", "body": {
+                "header": 0x1E, "interest_id": None, "extensions": None,
+                "declaration": {"header": 0x1A, "body": {
+                    "arm": "codec_zenoh_decl_final", "body": {}}}}}},
+             "a declare holding the final declaration, mid 0x1e"),
+            ({"body": {"arm": "codec_zenoh_oam", "body": {
+                "header": 0x1F, "id": 1, "extensions": None,
+                "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}}},
+             "an OAM, mid 0x1f"),
+            ({"body": {"tag": 0x10, "body": {
+                "header": 0x10, "id": 2, "extensions": None,
+                "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}}},
+             "a mid no arm names: the default OAM keeps it, its header stating it"),
+        ],
+        "a Zenoh network message: the arm is the one its own header's mid names.",
     ),
     "codec_zenoh_declaration": Fixture(
         [

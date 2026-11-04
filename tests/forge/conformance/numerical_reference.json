@@ -41618,6 +41618,48 @@
         {"source": {"header": 89, "id": 128, "header.CURRENT || header.FUTURE": {"arm": 1, "body": {"header": 63, "keyexpr": {"id": 3, "suffix": "k/*"}}}, "extensions": null}, "encoded": [89, 128, 1, 63, 3, 3, 107, 47, 42], "note": "FUTURE alone: a restricted body with its key expression"},
         {"source": {"header": 249, "id": 3, "header.CURRENT || header.FUTURE": {"arm": 2, "body": {"header": 2, "keyexpr": null}}, "extensions": [{"header": 1, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}]}, "encoded": [249, 3, 2, 1], "note": "both flags and Z: the body, then one extension"}
       ]
+    },
+    "codec_variant_peek_basic": {
+      "fixture": "CodecVariantPeekBasic",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. the tag is a flag of the arm's own first byte, read without moving past it.",
+      "sources": [
+        {"source": {"body": {"arm": "codec_peek_arm_a", "body": {"header": 0, "payload": 5}}}, "encoded": [0, 5], "note": "arm a: its header's kind is clear, and the variant writes no tag"},
+        {"source": {"body": {"arm": "codec_peek_arm_b", "body": {"header": 1, "payload": 4660}}}, "encoded": [1, 18, 52], "note": "arm b: its header's kind is set"},
+        {"source": {"body": {"arm": "codec_peek_arm_a", "body": {"header": 254, "payload": 0}}}, "encoded": [254, 0], "note": "only the peeked flag decides: the header's other bits are arm a's own"}
+      ]
+    },
+    "codec_zenoh_request": {
+      "fixture": "CodecZenohRequest",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. the arm is the one its own header's mid names, peeked and left for the arm.",
+      "sources": [
+        {"source": {"header": 28, "rid": 1, "keyexpr": {"id": 5, "suffix": null}, "extensions": null, "body": {"arm": "codec_zenoh_msg_put", "body": {"header": 1, "timestamp": null, "encoding": null, "extensions": null, "payload": [170]}}}, "encoded": [28, 1, 5, 1, 1, 170], "note": "a put: its header's mid 1 is the tag"},
+        {"source": {"header": 60, "rid": 128, "keyexpr": {"id": 5, "suffix": "a"}, "extensions": null, "body": {"arm": "codec_zenoh_msg_del", "body": {"header": 2, "timestamp": null, "extensions": null}}}, "encoded": [60, 128, 1, 5, 1, 97, 2], "note": "a del, the key expression's suffix setting N"},
+        {"source": {"header": 28, "rid": 2, "keyexpr": {"id": 0, "suffix": null}, "extensions": null, "body": {"arm": "codec_zenoh_query", "body": {"header": 3, "consolidation": null, "parameters": null, "extensions": null}}}, "encoded": [28, 2, 0, 3], "note": "a query"},
+        {"source": {"header": 28, "rid": 3, "keyexpr": {"id": 0, "suffix": null}, "extensions": null, "body": {"tag": 7, "body": {"header": 7, "consolidation": null, "parameters": null, "extensions": null}}}, "encoded": [28, 3, 0, 7], "note": "a mid no arm names: the default query keeps it, its header stating it"}
+      ]
+    },
+    "codec_zenoh_response": {
+      "fixture": "CodecZenohResponse",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. the arm is the one its own header's mid names.",
+      "sources": [
+        {"source": {"header": 27, "request_id": 1, "key_id": 2, "suffix": null, "extensions": null, "body": {"arm": "codec_zenoh_reply", "body": {"header": 4, "consolidation": null, "extensions": null, "body": {"header": 1, "body": {"arm": "codec_zenoh_put", "body": {"payload": 3}}}}}}, "encoded": [27, 1, 2, 4, 1, 3], "note": "a reply holding a put"},
+        {"source": {"header": 59, "request_id": 1, "key_id": 2, "suffix": "x", "extensions": null, "body": {"arm": "codec_zenoh_err", "body": {"header": 5, "encoding": null, "extensions": null, "payload": [1]}}}, "encoded": [59, 1, 2, 1, 120, 5, 1, 1], "note": "an err, the suffix setting N"},
+        {"source": {"header": 27, "request_id": 0, "key_id": 0, "suffix": null, "extensions": null, "body": {"tag": 6, "body": {"header": 6, "consolidation": null, "extensions": null, "body": {"header": 2, "body": {"arm": "codec_zenoh_del", "body": {}}}}}}, "encoded": [27, 0, 0, 6, 2], "note": "a mid no arm names: the default reply keeps it"}
+      ]
+    },
+    "codec_zenoh_network_envelope": {
+      "fixture": "CodecZenohNetworkEnvelope",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a Zenoh network message: the arm is the one its own header's mid names.",
+      "sources": [
+        {"source": {"body": {"arm": "codec_zenoh_interest", "body": {"header": 25, "id": 1, "header.CURRENT || header.FUTURE": null, "extensions": null}}}, "encoded": [25, 1], "note": "an interest, mid 0x19"},
+        {"source": {"body": {"arm": "codec_zenoh_response_final", "body": {"header": 26, "request_id": 7, "extensions": null}}}, "encoded": [26, 7], "note": "a final response, mid 0x1a"},
+        {"source": {"body": {"arm": "codec_zenoh_response", "body": {"header": 27, "request_id": 1, "key_id": 2, "suffix": null, "extensions": null, "body": {"arm": "codec_zenoh_err", "body": {"header": 5, "encoding": null, "extensions": null, "payload": []}}}}}, "encoded": [27, 1, 2, 5, 0], "note": "a response holding an err, mid 0x1b"},
+        {"source": {"body": {"arm": "codec_zenoh_request", "body": {"header": 28, "rid": 1, "keyexpr": {"id": 5, "suffix": null}, "extensions": null, "body": {"arm": "codec_zenoh_msg_del", "body": {"header": 2, "timestamp": null, "extensions": null}}}}}, "encoded": [28, 1, 5, 2], "note": "a request holding a del, mid 0x1c"},
+        {"source": {"body": {"arm": "codec_zenoh_push", "body": {"header": 29, "body": {"arm": "codec_zenoh_push_body", "body": {"header": 1, "body": {"arm": "codec_zenoh_put", "body": {"payload": 7}}}}}}}, "encoded": [29, 1, 7], "note": "a push, mid 0x1d"},
+        {"source": {"body": {"arm": "codec_zenoh_declare", "body": {"header": 30, "interest_id": null, "extensions": null, "declaration": {"header": 26, "body": {"arm": "codec_zenoh_decl_final", "body": {}}}}}}, "encoded": [30, 26], "note": "a declare holding the final declaration, mid 0x1e"},
+        {"source": {"body": {"arm": "codec_zenoh_oam", "body": {"header": 31, "id": 1, "extensions": null, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}}}, "encoded": [31, 1], "note": "an OAM, mid 0x1f"},
+        {"source": {"body": {"tag": 16, "body": {"header": 16, "id": 2, "extensions": null, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}}}, "encoded": [16, 2], "note": "a mid no arm names: the default OAM keeps it, its header stating it"}
+      ]
     }
   },
   "string_lookups": {
