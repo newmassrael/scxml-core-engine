@@ -65,8 +65,22 @@ fn scratch(subdir: &str) -> PathBuf {
 }
 
 fn run_generate(out_dir: &Path, fixture: &Path) {
+    run_generate_with(out_dir, fixture, &[]);
+}
+
+/// [`run_generate`] of a codec whose list states no bound: a Rust tree of it
+/// judges a frame past a profile's capacity by the codec's view, so it is
+/// generated with views (docs/adr/0077 §7). The Zenoh declare's extension
+/// chain is one.
+fn run_generate_with_views(out_dir: &Path, fixture: &Path) {
+    run_generate_with(out_dir, fixture, &["--views"]);
+}
+
+fn run_generate_with(out_dir: &Path, fixture: &Path, options: &[&str]) {
     let output = Command::new(sce_codegen_bin())
-        .args(["generate", "-l", "rust", "-o"])
+        .args(["generate", "-l", "rust"])
+        .args(options)
+        .arg("-o")
         .arg(out_dir)
         .arg(fixture)
         .output()
@@ -118,7 +132,7 @@ fn codec_no_flag_default_emits_default_plus_ssot_trio() {
 #[test]
 fn codec_with_flag_default_drops_default_keeps_ssot_trio() {
     let out = scratch("codec_with_flag_default");
-    run_generate(
+    run_generate_with_views(
         &out,
         &repo_root().join("tests/forge/resources/codec_zenoh_declare.scxml"),
     );
@@ -335,7 +349,7 @@ fn validator_result_emits_debug_only() {
 #[test]
 fn codec_storing_type_emits_ssot_trio() {
     let out = scratch("codec_owned");
-    run_generate(
+    run_generate_with_views(
         &out,
         &repo_root().join("tests/forge/resources/codec_zenoh_declare.scxml"),
     );

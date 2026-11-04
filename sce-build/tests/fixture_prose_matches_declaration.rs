@@ -35,15 +35,23 @@ use std::path::{Path, PathBuf};
 /// mismatch here mean something other than drift.
 const PROSE_PINNED_ATTRS: &[&str] = &["max-depth", "max-size"];
 
-/// Number of prose mentions the corpus is known to contain.
+/// Number of declarations of the pinned attributes the corpus is known to
+/// contain, each value once per fixture.
 ///
-/// A scanner that silently stops matching reads exactly like a clean
+/// A scanner that silently stops reading reads exactly like a clean
 /// corpus: zero violations over zero inputs. This lower bound is the
-/// measured count at the time of writing, so a regex that decays, a
-/// resource directory that moves, or a glob that stops resolving fails
-/// here instead of reporting success over nothing. Raise it when
-/// fixtures add mentions; never lower it to make a run pass.
-const MIN_PROSE_MENTIONS: usize = 6;
+/// measured count, so a resource directory that moves, a glob that stops
+/// resolving or a declaration matcher that decays fails here instead of
+/// reporting success over nothing; that the prose matcher tells prose from
+/// a declaration is the two tests below. Raise it when fixtures add
+/// declarations; never lower it to make a run pass.
+///
+/// It counts declarations and not prose: the prose the gate holds to them
+/// may be absent, and a corpus whose comments restate no bound is clean,
+/// not unread. The count was of prose mentions (six) until 2026-11-04, when
+/// the Zenoh fixtures' comments moved with their bounds to the protocol's
+/// (docs/adr/0077 §7) and stopped restating any in this form.
+const MIN_DECLARATIONS: usize = 80;
 
 fn resources_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -109,7 +117,7 @@ fn fixture_prose_never_contradicts_the_attribute_it_restates() {
     );
 
     let mut violations: Vec<String> = Vec::new();
-    let mut mentions = 0usize;
+    let mut declarations = 0usize;
 
     for path in &fixtures {
         let body = std::fs::read_to_string(path)
@@ -121,8 +129,8 @@ fn fixture_prose_never_contradicts_the_attribute_it_restates() {
 
         for attr in PROSE_PINNED_ATTRS {
             let declared = declared_values(&body, attr);
+            declarations += declared.len();
             for (line, value) in prose_mentions(&body, attr) {
-                mentions += 1;
                 if !declared.contains(&value) {
                     // Collect rather than stop: halting on the first
                     // leaves every later fixture unproven, and the whole
@@ -142,10 +150,10 @@ fn fixture_prose_never_contradicts_the_attribute_it_restates() {
     }
 
     assert!(
-        mentions >= MIN_PROSE_MENTIONS,
-        "only {mentions} prose mentions scanned across {} fixtures, expected at least \
-         {MIN_PROSE_MENTIONS} — the scan is matching less than it used to, so a clean \
-         result here proves nothing",
+        declarations >= MIN_DECLARATIONS,
+        "only {declarations} declarations scanned across {} fixtures, expected at least \
+         {MIN_DECLARATIONS} — the scan is reading less than it used to, so a clean result \
+         here proves nothing",
         fixtures.len(),
     );
 

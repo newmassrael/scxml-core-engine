@@ -211,14 +211,16 @@ fn the_fields_a_gate_decides_are_presented_by_their_group_within_their_bounds() 
         for id in ["value", "slices"] {
             assert!(group.contains(id), "the group does not hold `{id}`");
         }
+        // The bounds are the protocol's (docs/adr/0077 §7): a zbuf of a `u32`
+        // length, and slices of no count it states.
         let Value::Bytes(bound) = plan.value(field(plan, "value")) else {
             panic!("`value` is not bytes");
         };
-        assert_eq!(bound.most, Some(32));
+        assert_eq!(bound.most, Some(4_294_967_295));
         let Value::List { bound, .. } = plan.value(field(plan, "slices")) else {
             panic!("`slices` is not a list");
         };
-        assert_eq!(bound.most, Some(4));
+        assert_eq!(bound.most, None);
     });
 }
 
