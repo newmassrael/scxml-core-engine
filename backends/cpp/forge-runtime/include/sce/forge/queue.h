@@ -925,15 +925,43 @@ private:
 /// The value of a link that names no node.
 inline constexpr std::uint32_t kNil = UINT32_MAX;
 
-/// The `intrusive` storage mode (RFC §synth-5-P): Vyukov's MPSC list, in which
-/// each element carries its own link, the caller owns every element, and a push
-/// cannot fail.
+/// A node of an intrusive list: a value of the element type `T`, and the link
+/// the list keeps in it (ADR 0088). The link is the list's hook and not part of
+/// the value: the element declares no link, its codec never encodes one, and
+/// nothing but the list reads or writes `next`.
 ///
-/// **The link is an index.** `Link` names a `std::uint32_t` member of `T`, which
-/// the queue uses in place as the index of the node that follows; the nodes are
-/// an array the caller owns, and a node is named by its position in it. An index
-/// fits the member on a 64-bit target where a pointer would not, and means the
-/// same in every process that maps the array.
+/// A node is an object named by its index in the caller's array, not a value: it
+/// is neither copyable nor movable, as its atomic is not. The link is placed
+/// after the value, so for a standard-layout `T` the array is laid out the same
+/// in every process that maps it. The type depends only on `T`, so a node popped
+/// from one list may be pushed to another over the same element; it is in at
+/// most one list at a time.
+template <typename T> struct Node {
+    /// The element the node holds. The list never reads or writes it.
+    T value{};
+    /// The index of the node behind this one while the node is in a list, or
+    /// `kNil`. Only the list touches it.
+    std::atomic<std::uint32_t> next{kNil};
+
+    /// A node holding `T`'s default value.
+    constexpr Node() = default;
+
+    /// A node holding `v`.
+    constexpr explicit Node(T v) noexcept(std::is_nothrow_move_constructible_v<T>) : value(std::move(v)) {}
+
+    Node(const Node &) = delete;
+    Node &operator=(const Node &) = delete;
+};
+
+/// The `intrusive` storage mode (RFC §synth-5-P): Vyukov's MPSC list over an
+/// array of `Node<T>` the caller owns, in which a push cannot fail.
+///
+/// **The link is an index.** Each node's `next` holds the index of the node that
+/// follows; the nodes are an array the caller owns, and a node is named by its
+/// position in it. An index is 32 bits on a 64-bit target where a pointer would
+/// not be, and means the same in every process that maps the array. The link is
+/// an atomic object of the node (ADR 0088), so the list writes no field of the
+/// element and casts nothing to an atomic.
 ///
 /// **The algorithm.** `tail_` names the newest node. A push exchanges itself
 /// onto `tail_` and then stores its own index into the old tail's link; a pop
@@ -953,18 +981,15 @@ inline constexpr std::uint32_t kNil = UINT32_MAX;
 /// Memory order: a push writes its node, exchanges with acq_rel and stores the
 /// predecessor's link with release; a pop reads a link with acquire, so a node's
 /// contents written before its push happen-before the pop that returns it.
-template <typename T, std::uint32_t T::*Link, bool ManyConsumers> class IntrusiveMpsc {
+template <typename T, bool ManyConsumers> class IntrusiveMpsc {
     static_assert(std::atomic<std::uint32_t>::is_always_lock_free,
                   "the link is a 32-bit atomic, which the target must make lock-free");
-    static_assert(sizeof(std::atomic<std::uint32_t>) == sizeof(std::uint32_t) &&
-                      alignof(std::atomic<std::uint32_t>) == alignof(std::uint32_t),
-                  "an atomic<uint32_t> has the layout of the member it is used in place of");
 
 public:
     /// An empty list over `len` nodes at `nodes`, with node `stub` set aside.
     /// `nodes` must stay valid for the queue's life and a node must not be
     /// touched, but through the queue, while it is queued; `stub < len < kNil`.
-    IntrusiveMpsc(T *nodes, std::uint32_t len, std::uint32_t stub) noexcept
+    IntrusiveMpsc(Node<T> *nodes, std::uint32_t len, std::uint32_t stub) noexcept
         : tail_(stub), head_(stub), busy_(0), stub_(stub), nodes_(nodes), len_(len) {
         assert(stub < len && len < kNil);
         link(stub).store(kNil, std::memory_order_relaxed);
@@ -1008,10 +1033,10 @@ public:
     }
 
 private:
-    /// The link of node `index`, used in place.
+    /// The link of node `index`.
     std::atomic<std::uint32_t> &link(std::uint32_t index) noexcept {
         assert(index < len_);
-        return *reinterpret_cast<std::atomic<std::uint32_t> *>(&(nodes_[index].*Link));
+        return nodes_[index].next;
     }
 
     /// Link `index` behind the newest node.
@@ -1064,7 +1089,7 @@ private:
     /// The test-and-set flag that serialises many consumers. Unused with one.
     detail::Padded<std::atomic<std::uint32_t>> busy_;
     std::uint32_t stub_;
-    T *nodes_;
+    Node<T> *nodes_;
     std::uint32_t len_;
 };
 

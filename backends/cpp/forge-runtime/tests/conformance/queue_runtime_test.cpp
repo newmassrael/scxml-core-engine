@@ -354,13 +354,14 @@ void dispatch_bounded_scq(const std::string &id, std::uint64_t capacity, const j
     }
 }
 
-/// A node of the caller's array: a payload the queue must leave alone, and the
-/// link it uses in place.
-struct Node {
+/// The value a node of the caller's array holds: a payload and a tag the queue
+/// must leave alone. The node around it is the runtime's.
+struct Payload {
     std::uint64_t payload;
-    std::uint32_t link;
     std::uint32_t tag;
 };
+
+using Node = queue::Node<Payload>;
 
 constexpr std::uint32_t kNodeTag = 0xA5A5A5A5u;
 
@@ -374,9 +375,11 @@ template <bool ManyConsumers>
 void run_intrusive_scenario(const std::string &id, std::uint32_t nodes, const json &steps) {
     std::vector<Node> array(nodes + 1u);
     for (std::uint32_t i = 0; i < array.size(); ++i) {
-        array[i] = Node{node_payload(i), 0xDEADBEEFu, kNodeTag};
+        array[i].value = Payload{node_payload(i), kNodeTag};
+        // The queue sets every link it later reads; a stale one must not matter.
+        array[i].next.store(0xDEADBEEFu, std::memory_order_relaxed);
     }
-    queue::IntrusiveMpsc<Node, &Node::link, ManyConsumers> list(array.data(), nodes + 1u, nodes);
+    queue::IntrusiveMpsc<Payload, ManyConsumers> list(array.data(), nodes + 1u, nodes);
     CHECK(list.nodes() == nodes + 1u && list.stub() == nodes, "the stub is the node set aside");
     std::size_t index = 0;
     for (const json &step : steps) {
@@ -400,8 +403,8 @@ void run_intrusive_scenario(const std::string &id, std::uint32_t nodes, const js
         }
     }
     for (std::uint32_t i = 0; i < array.size(); ++i) {
-        CHECK(array[i].payload == node_payload(i) && array[i].tag == kNodeTag,
-              ("scenario " + id + ": the queue wrote outside the link of node " + std::to_string(i)).c_str());
+        CHECK(array[i].value.payload == node_payload(i) && array[i].value.tag == kNodeTag,
+              ("scenario " + id + ": the queue wrote the value of node " + std::to_string(i)).c_str());
     }
 }
 

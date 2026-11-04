@@ -20,7 +20,6 @@
 #include "queue_conformance_event.h"
 #include "queue_conformance_intrusive.h"
 #include "queue_conformance_intrusive_many.h"
-#include "queue_conformance_node.h"
 #include "queue_conformance_scq.h"
 #include "queue_conformance_segmented.h"
 #include "queue_conformance_segmented_many.h"
@@ -36,6 +35,7 @@
 #include <optional>
 #include <string_view>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -55,13 +55,10 @@ namespace queue = ::SCE::Forge::Queue;
 namespace element_ns = ::SCE::Generated::QueueConformanceEvent;
 namespace spsc = ::SCE::Generated::QueueConformanceSpsc;
 namespace scq = ::SCE::Generated::QueueConformanceScq;
-namespace node_ns = ::SCE::Generated::QueueConformanceNode;
 namespace intrusive = ::SCE::Generated::QueueConformanceIntrusive;
 namespace intrusive_many = ::SCE::Generated::QueueConformanceIntrusiveMany;
 namespace segmented = ::SCE::Generated::QueueConformanceSegmented;
 namespace segmented_many = ::SCE::Generated::QueueConformanceSegmentedMany;
-
-using Node = node_ns::QueueConformanceNode;
 
 using Event = element_ns::QueueConformanceEvent;
 
@@ -255,15 +252,28 @@ void the_intrusive_modules_state_what_the_document_required_and_what_it_gives() 
     CHECK(intrusive_many::POP_PROGRESS == "blocking", "a pop can also wait for the flag");
 }
 
-/// One queue of either shape over the caller's array of generated nodes: the
-/// nodes come back in the order pushed, the last one included and at once, and
-/// the queue leaves every field but the link alone.
-template <typename Queue> void an_intrusive_queue_hands_nodes_back_in_order() {
-    Node nodes[4];
-    for (std::uint8_t i = 0; i < 4; ++i) {
-        nodes[i] = Node{.sensor_id = static_cast<std::uint8_t>(i + 1),
-                        .value = static_cast<std::uint16_t>(i * 9),
-                        .next = 0xDEADBEEFu};
+// The node an intrusive queue names is the runtime's node over the element, and
+// depends on nothing else: two queues over one element link one node type, so a
+// node popped from one may be pushed to the other.
+static_assert(std::is_same_v<intrusive::QueueConformanceIntrusiveNode, queue::Node<Event>>,
+              "the intrusive queue links the runtime's node over its element");
+static_assert(std::is_same_v<intrusive_many::QueueConformanceIntrusiveManyNode, queue::Node<Event>>,
+              "the many-consumer intrusive queue links the same node type");
+
+/// The event node `index` of an intrusive test holds.
+Event intrusive_event(std::uint32_t index) {
+    return event(static_cast<std::uint8_t>(index + 1), static_cast<std::uint16_t>(index * 9));
+}
+
+/// One queue of either shape over the caller's array of its generated nodes:
+/// the nodes come back in the order pushed, the last one included and at once,
+/// and the queue leaves every node's value as it was.
+template <typename Queue, typename QueueNode> void an_intrusive_queue_hands_nodes_back_in_order() {
+    QueueNode nodes[4]{QueueNode{intrusive_event(0)}, QueueNode{intrusive_event(1)}, QueueNode{intrusive_event(2)},
+                       QueueNode{intrusive_event(3)}};
+    for (QueueNode &node : nodes) {
+        // The queue sets every link it later reads; a stale one must not matter.
+        node.next.store(0xDEADBEEFu, std::memory_order_relaxed);
     }
     Queue q(nodes, 4, 3);
     CHECK(!q.try_pop().has_value(), "a new queue is empty");
@@ -276,9 +286,31 @@ template <typename Queue> void an_intrusive_queue_hands_nodes_back_in_order() {
     CHECK(q.try_pop() == std::optional<std::uint32_t>(1), "first in, first out");
     CHECK(q.try_pop() == std::optional<std::uint32_t>(2), "the last node comes back at once, and can be pushed again");
     CHECK(!q.try_pop().has_value(), "drained");
-    for (std::uint8_t i = 0; i < 4; ++i) {
-        CHECK(nodes[i].sensor_id == i + 1 && nodes[i].value == i * 9, "the queue touched more than the link");
+    for (std::uint32_t i = 0; i < 4; ++i) {
+        const Event expected = intrusive_event(i);
+        CHECK(nodes[i].value.sensor_id == expected.sensor_id && nodes[i].value.value == expected.value,
+              "the queue left the node's value as it was");
     }
+}
+
+/// A node popped from one queue is pushed to the other over the same element,
+/// both queues over one array with a stub each: the node is in one queue at a
+/// time, and its value moves with it untouched.
+void a_node_moves_between_queues_over_one_element() {
+    queue::Node<Event> nodes[5]{queue::Node<Event>{intrusive_event(0)}, queue::Node<Event>{intrusive_event(1)},
+                                queue::Node<Event>{intrusive_event(2)}, queue::Node<Event>{}, queue::Node<Event>{}};
+    intrusive::QueueConformanceIntrusive work(nodes, 5, 3);
+    intrusive_many::QueueConformanceIntrusiveMany spare(nodes, 5, 4);
+    work.push(0);
+    work.push(1);
+    CHECK(work.try_pop() == std::optional<std::uint32_t>(0), "the work queue hands back its oldest node");
+    spare.push(0);
+    CHECK(spare.try_pop() == std::optional<std::uint32_t>(0), "the node popped from one queue comes off the other");
+    CHECK(work.try_pop() == std::optional<std::uint32_t>(1), "the first queue kept the node still in it");
+    CHECK(!work.try_pop().has_value() && !spare.try_pop().has_value(), "both queues drained");
+    const Event moved = intrusive_event(0);
+    CHECK(nodes[0].value.sensor_id == moved.sensor_id && nodes[0].value.value == moved.value,
+          "the node's value moved between the queues untouched");
 }
 
 // ─── The segmented queues ───
@@ -456,8 +488,11 @@ int main() {
     the_scq_queue_can_be_a_static();
     the_scq_queue_loses_nothing_between_threads();
     the_intrusive_modules_state_what_the_document_required_and_what_it_gives();
-    an_intrusive_queue_hands_nodes_back_in_order<intrusive::QueueConformanceIntrusive>();
-    an_intrusive_queue_hands_nodes_back_in_order<intrusive_many::QueueConformanceIntrusiveMany>();
+    an_intrusive_queue_hands_nodes_back_in_order<intrusive::QueueConformanceIntrusive,
+                                                 intrusive::QueueConformanceIntrusiveNode>();
+    an_intrusive_queue_hands_nodes_back_in_order<intrusive_many::QueueConformanceIntrusiveMany,
+                                                 intrusive_many::QueueConformanceIntrusiveManyNode>();
+    a_node_moves_between_queues_over_one_element();
     the_segmented_modules_state_what_the_document_required_and_what_it_gives();
     the_linked_lamport_queue_hands_events_over_in_order_across_segments();
     the_lscq_queue_hands_events_over_in_order_across_segments();

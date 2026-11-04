@@ -284,11 +284,8 @@ bool record_scq_run(const std::filesystem::path &dir, const std::string &name, s
     return write_history(dir, name, N, "while-slots-are-held", participants);
 }
 
-/// A node of the caller's array: a payload, and the link the queue uses.
-struct Node {
-    std::uint64_t payload;
-    std::uint32_t link;
-};
+/// A node of the caller's array: the runtime's node over a payload.
+using Node = queue::Node<std::uint64_t>;
 
 /// `producers` producers and `consumers` consumers on real threads through the
 /// intrusive list, over `producers * per_producer` nodes and the stub. A push
@@ -299,8 +296,8 @@ bool record_intrusive_run(const std::filesystem::path &dir, const std::string &n
                           std::size_t consumers, std::uint64_t per_producer) {
     const std::uint64_t total = producers * per_producer;
     std::vector<Node> array(total + 1);
-    queue::IntrusiveMpsc<Node, &Node::link, ManyConsumers> list(array.data(), static_cast<std::uint32_t>(total + 1),
-                                                                static_cast<std::uint32_t>(total));
+    queue::IntrusiveMpsc<std::uint64_t, ManyConsumers> list(array.data(), static_cast<std::uint32_t>(total + 1),
+                                                            static_cast<std::uint32_t>(total));
     Clock clock;
     Deadline deadline;
     std::atomic<std::uint64_t> delivered{0};
@@ -314,7 +311,7 @@ bool record_intrusive_run(const std::filesystem::path &dir, const std::string &n
             for (std::uint64_t i = 0; i < per_producer; ++i) {
                 const std::uint64_t index = static_cast<std::uint64_t>(p) * per_producer + i;
                 const std::uint64_t value = index + 1;
-                array[index].payload = value;
+                array[index].value = value;
                 const std::uint64_t invoked = clock.tick();
                 list.push(static_cast<std::uint32_t>(index));
                 const std::uint64_t returned = clock.tick();
@@ -334,7 +331,7 @@ bool record_intrusive_run(const std::filesystem::path &dir, const std::string &n
                 const std::optional<std::uint32_t> got = list.try_pop();
                 const std::uint64_t returned = clock.tick();
                 if (got) {
-                    ops.push_back({Call::Pop, Outcome::Popped, array[*got].payload, invoked, returned});
+                    ops.push_back({Call::Pop, Outcome::Popped, array[*got].value, invoked, returned});
                     delivered.fetch_add(1, std::memory_order_acq_rel);
                 } else {
                     ops.push_back({Call::Pop, Outcome::Empty, 0, invoked, returned});
