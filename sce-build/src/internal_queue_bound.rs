@@ -1396,6 +1396,7 @@ mod tests {
             "Item".to_string(),
             ScopedRecord {
                 identity: "event_batch_item".to_string(),
+                name: "event_batch_item".to_string(),
                 fields: vec![("tags".to_string(), ty("list<string[8]>[4]"))],
                 scope: TypeScope::default(),
             },
@@ -1404,6 +1405,7 @@ mod tests {
             "Batch".to_string(),
             ScopedRecord {
                 identity: "event_batch".to_string(),
+                name: "event_batch".to_string(),
                 fields: vec![("items".to_string(), ty("list<record:Item>[3]"))],
                 scope: batch_scope,
             },

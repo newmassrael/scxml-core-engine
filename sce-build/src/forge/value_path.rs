@@ -219,6 +219,7 @@ pub fn statechart_scope(model: &crate::model::SCXMLModel) -> TypeScope {
             .entry(alias.clone())
             .or_insert_with(|| ScopedRecord {
                 identity: schema.name.clone(),
+                name: schema.name.clone(),
                 fields: schema
                     .fields
                     .iter()
@@ -273,6 +274,7 @@ mod tests {
     fn scope() -> TypeScope {
         let item = ScopedRecord {
             identity: "event_batch_item".into(),
+            name: "event_batch_item".into(),
             fields: vec![
                 ("id".into(), ty("uint32")),
                 ("due".into(), ty("optional<int64>")),
@@ -284,6 +286,7 @@ mod tests {
         batch_scope.records.insert("Item".into(), item);
         let batch = ScopedRecord {
             identity: "event_batch".into(),
+            name: "event_batch".into(),
             fields: vec![
                 ("items".into(), ty("list<record:Item>[3]")),
                 ("grid".into(), ty("list<list<uint8>[2]>[2]")),

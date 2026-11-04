@@ -32,6 +32,9 @@
 //!
 //! A [`ValueType`] has a largest encoding the build computes by structural
 //! recursion ([`json_max_len`], [`cbor_max_len`]), docs/adr/0086 section 2.
+//! By the same recursion it has a grammar, in two forms: a JSON Schema
+//! ([`json_schema_of`]) and a GBNF grammar ([`gbnf_of`]), docs/adr/0087
+//! section 1.
 
 use std::fmt;
 
@@ -1143,6 +1146,13 @@ pub trait TypeEnv {
     fn record_key(&self, alias: &str) -> String {
         alias.to_string()
     }
+    /// The name of the document the record `alias` names (its `<scxml
+    /// name>`): what a grammar of a type that holds the record names it by
+    /// ([`json_schema_of`], [`gbnf_of`]). The alias itself where one set of
+    /// aliases is read.
+    fn record_name(&self, alias: &str) -> String {
+        alias.to_string()
+    }
 }
 
 /// An enum, as a size reads it: its variants, its underlying type, and whether
@@ -1168,11 +1178,14 @@ pub struct ScopedVariant {
     pub value: i128,
 }
 
-/// A record, as a size reads it: the document it is (its identity), its fields
-/// in the schema's order, and the scope its own document names types in.
+/// A record, as a size reads it: the document it is (its identity), the name
+/// that document gives itself, its fields in the schema's order, and the scope
+/// its own document names types in.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ScopedRecord {
     pub identity: String,
+    /// The document's `<scxml name>`, which a grammar of the record names it by.
+    pub name: String,
     pub fields: Vec<(String, ValueType)>,
     pub scope: TypeScope,
 }
@@ -1202,6 +1215,11 @@ impl TypeEnv for TypeScope {
         self.records
             .get(alias)
             .map_or_else(|| alias.to_string(), |r| r.identity.clone())
+    }
+    fn record_name(&self, alias: &str) -> String {
+        self.records
+            .get(alias)
+            .map_or_else(|| alias.to_string(), |r| r.name.clone())
     }
 }
 
@@ -1465,6 +1483,9 @@ pub fn payload_json_max_len(
         fn record_key(&self, alias: &str) -> String {
             self.env.record_key(alias)
         }
+        fn record_name(&self, alias: &str) -> String {
+            self.env.record_name(alias)
+        }
     }
     json_max_len(
         &ValueType::Record {
@@ -1508,6 +1529,808 @@ pub fn contains_itself(alias: &str, env: &dyn TypeEnv) -> Option<Vec<String>> {
         None
     }
     visit(alias, env, &mut Vec::new())
+}
+
+// ── The grammar of a value (docs/adr/0087, section 1) ───────────────────────
+//
+// Two folds beside the size calculus, by the same structural recursion over
+// the type and the same environment: `S(T)`, the JSON Schema (2020-12,
+// draft-bhutton-json-schema-01 and draft-bhutton-json-schema-validation-01) of
+// a value, and `G(T)`, its GBNF grammar (the grammar format of llama.cpp,
+// `grammars/README.md` of ggml-org/llama.cpp and its parser
+// `src/llama-grammar.cpp`, read at commit acecd56032dd of 2026-09-12). Each is
+// one exhaustive match with an arm per constructor. Both state one spelling of
+// each value, the one SCE's writers write: a record with every key and no
+// other, in the grammar in the canonical key order (ARCHITECTURE.md, "JSON
+// Object Key Order"), a 64-bit integer as the quoted text of its digits, no
+// whitespace outside a text. A reader accepts more; a text in the language of
+// either is one it accepts.
+
+/// Why a type has no grammar the build can write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GrammarError {
+    /// An alias no record or enum of the environment goes by.
+    Unresolved { alias: String },
+    /// A record that holds itself, directly or through other records: the
+    /// records on the way, the first repeated at the end.
+    ContainsItself { cycle: Vec<String> },
+    /// A `Scalar` built over a text or a byte string, whose bound is not part
+    /// of it: the reader of a type never builds one.
+    Unbounded { constructor: String },
+    /// An enum whose set of variants is open (`sce:strict-variants="false"`):
+    /// a value of it may be a number no declared name spells, and a grammar
+    /// spells a value of an enum by its name.
+    OpenEnum { alias: String },
+    /// Two records of different documents under one document name, which a
+    /// JSON Schema's `$defs` would name alike.
+    SharedName { name: String },
+}
+
+impl fmt::Display for GrammarError {
+    /// The reason as a refusal states it.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            // The two a size refuses for are stated as the size states them.
+            Self::Unresolved { alias } => fmt::Display::fmt(
+                &SizeError::Unresolved {
+                    alias: alias.clone(),
+                },
+                f,
+            ),
+            Self::ContainsItself { cycle } => fmt::Display::fmt(
+                &SizeError::ContainsItself {
+                    cycle: cycle.clone(),
+                },
+                f,
+            ),
+            Self::Unbounded { constructor } => write!(
+                f,
+                "a `{constructor}` with no bound has no largest value, and no grammar"
+            ),
+            Self::OpenEnum { alias } => write!(
+                f,
+                "the enum `{alias}` is open (`sce:strict-variants=\"false\"`): a value of it may \
+                 be a number no name spells, and a grammar spells a value of an enum by its name"
+            ),
+            Self::SharedName { name } => write!(
+                f,
+                "two records of different documents are named `{name}`, which the schema's \
+                 `$defs` would name alike"
+            ),
+        }
+    }
+}
+
+/// A record as a fold of a grammar meets it.
+struct GrammarRecord<'e> {
+    /// What tells it from every other record ([`TypeEnv::record_key`]).
+    key: String,
+    /// Its document's name ([`TypeEnv::record_name`]).
+    name: String,
+    fields: Vec<(String, ValueType)>,
+    /// The environment its fields are read in: its own document's.
+    scope: &'e dyn TypeEnv,
+}
+
+/// The record `alias` names, or why a fold cannot descend into it. `on_path`
+/// holds the key of each record the fold is inside, so a record met again
+/// holds itself.
+fn grammar_record<'e>(
+    alias: &str,
+    env: &'e dyn TypeEnv,
+    on_path: &[String],
+) -> Result<GrammarRecord<'e>, GrammarError> {
+    let key = env.record_key(alias);
+    if on_path.contains(&key) {
+        let mut cycle = on_path.to_vec();
+        cycle.push(key);
+        return Err(GrammarError::ContainsItself { cycle });
+    }
+    let fields = env
+        .record_fields(alias)
+        .ok_or_else(|| GrammarError::Unresolved {
+            alias: alias.to_string(),
+        })?;
+    Ok(GrammarRecord {
+        key,
+        name: env.record_name(alias),
+        fields,
+        scope: env.record_scope(alias).unwrap_or(env),
+    })
+}
+
+/// The enum `reference` names, closed and with a variant, or why a grammar
+/// cannot spell a value of it.
+fn closed_enum<'e>(
+    reference: &crate::forge::model::EnumRef,
+    env: &'e dyn TypeEnv,
+) -> Result<&'e ScopedEnum, GrammarError> {
+    let alias = reference.alias.as_str();
+    let unresolved = || GrammarError::Unresolved {
+        alias: alias.to_string(),
+    };
+    let enumeration = env.enum_type(alias).ok_or_else(unresolved)?;
+    if !enumeration.strict {
+        return Err(GrammarError::OpenEnum {
+            alias: alias.to_string(),
+        });
+    }
+    // A closed enum with no variant holds no value: it was not read from its
+    // document, which declares at least one.
+    if enumeration.variants.is_empty() {
+        return Err(unresolved());
+    }
+    Ok(enumeration)
+}
+
+/// The least and the greatest value of a fixed-width integer type.
+fn integer_bounds(t: &SceType) -> (i128, i128) {
+    t.int_value_range()
+        .expect("a fixed-width integer type has a range")
+}
+
+/// `text` as a JSON string, as every writer of SCE spells it (ARCHITECTURE.md,
+/// "JSON Text"): `"` and `\` escaped, the five short escapes, every other
+/// control character as `\u00xx` in lowercase hex, everything else as it is.
+fn json_quoted(text: &str) -> String {
+    serde_json::to_string(text).expect("a text is a JSON string")
+}
+
+/// One alternative of the decimal spelling of a range of whole numbers: the
+/// digits `prefix`, one digit from `first` to `last`, then from `free.0` to
+/// `free.1` digits of any value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DigitRun {
+    prefix: String,
+    first: u8,
+    last: u8,
+    free: (usize, usize),
+}
+
+/// The decimal spellings, with no leading zero, of exactly the numbers from 0
+/// (from 1 when `zero` is false) to `hi`, by the standard decomposition of a
+/// range into digit-prefix alternatives: `0`; every number with fewer digits
+/// than `hi`; then, for each digit of `hi`, the numbers that agree with `hi`
+/// before it and are below it there, the last digit up to `hi`'s own.
+fn digit_runs(zero: bool, hi: u128) -> Vec<DigitRun> {
+    let text = hi.to_string();
+    let digits: Vec<u8> = text.bytes().map(|b| b - b'0').collect();
+    let n = digits.len();
+    let mut runs = Vec::new();
+    if zero {
+        runs.push(DigitRun {
+            prefix: String::new(),
+            first: 0,
+            last: 0,
+            free: (0, 0),
+        });
+    }
+    if n >= 2 {
+        runs.push(DigitRun {
+            prefix: String::new(),
+            first: 1,
+            last: 9,
+            free: (0, n - 2),
+        });
+    }
+    for (at, &digit) in digits.iter().enumerate() {
+        let first = u8::from(at == 0);
+        let last = if at + 1 == n {
+            digit
+        } else {
+            match digit.checked_sub(1) {
+                Some(below) => below,
+                None => continue,
+            }
+        };
+        if first > last {
+            continue;
+        }
+        let rest = n - 1 - at;
+        runs.push(DigitRun {
+            prefix: text[..at].to_string(),
+            first,
+            last,
+            free: (rest, rest),
+        });
+    }
+    runs
+}
+
+/// From `from` to `to` digits of any value, as GBNF and a regular expression
+/// both spell the repetition; `None` for none.
+fn free_digits((from, to): (usize, usize)) -> Option<String> {
+    match (from, to) {
+        (0, 0) => None,
+        (1, 1) => Some("[0-9]".to_string()),
+        (from, to) if from == to => Some(format!("[0-9]{{{from}}}")),
+        (from, to) => Some(format!("[0-9]{{{from},{to}}}")),
+    }
+}
+
+/// A digit run as GBNF: a literal of its fixed digits, then its classes.
+fn gbnf_run(run: &DigitRun) -> String {
+    let mut literal = run.prefix.clone();
+    if run.first == run.last {
+        literal.push(char::from(b'0' + run.first));
+    }
+    let mut parts = Vec::new();
+    if !literal.is_empty() {
+        parts.push(format!("\"{literal}\""));
+    }
+    if run.first != run.last {
+        parts.push(format!("[{}-{}]", run.first, run.last));
+    }
+    parts.extend(free_digits(run.free));
+    parts.join(" ")
+}
+
+/// A digit run as a regular expression.
+fn regex_run(run: &DigitRun) -> String {
+    let mut out = run.prefix.clone();
+    if run.first == run.last {
+        out.push(char::from(b'0' + run.first));
+    } else {
+        out.push_str(&format!("[{}-{}]", run.first, run.last));
+    }
+    out.extend(free_digits(run.free));
+    out
+}
+
+/// The GBNF alternatives of exactly the integers `lo..=hi`, `lo` zero or
+/// below and `hi` zero or above: `-` before the magnitude of a negative one.
+fn gbnf_range(lo: i128, hi: i128) -> String {
+    let positive: Vec<String> = digit_runs(true, hi.unsigned_abs())
+        .iter()
+        .map(gbnf_run)
+        .collect();
+    if lo < 0 {
+        let negative: Vec<String> = digit_runs(false, lo.unsigned_abs())
+            .iter()
+            .map(gbnf_run)
+            .collect();
+        format!(
+            "\"-\" ( {} ) | {}",
+            negative.join(" | "),
+            positive.join(" | ")
+        )
+    } else {
+        positive.join(" | ")
+    }
+}
+
+/// The regular expression (ECMA-262, anchored) of exactly the integers
+/// `lo..=hi`, by the same decomposition as [`gbnf_range`].
+fn regex_range(lo: i128, hi: i128) -> String {
+    let mut alternatives = Vec::new();
+    if lo < 0 {
+        let negative: Vec<String> = digit_runs(false, lo.unsigned_abs())
+            .iter()
+            .map(regex_run)
+            .collect();
+        alternatives.push(format!("-({})", negative.join("|")));
+    }
+    alternatives.extend(digit_runs(true, hi.unsigned_abs()).iter().map(regex_run));
+    format!("^({})$", alternatives.join("|"))
+}
+
+/// A JSON object, as a JSON Schema's keywords are held.
+pub type JsonObject = serde_json::Map<String, serde_json::Value>;
+
+/// The definitions a JSON Schema of a type gathers as its fold walks it: each
+/// record the type holds, once, under its document's name.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SchemaDefs {
+    /// Each definition by its name, with the key of the record it defines.
+    defs: std::collections::BTreeMap<String, (String, serde_json::Value)>,
+}
+
+impl SchemaDefs {
+    /// The `$defs` object, or `None` when the type holds no record.
+    pub fn into_object(self) -> Option<JsonObject> {
+        if self.defs.is_empty() {
+            return None;
+        }
+        Some(
+            self.defs
+                .into_iter()
+                .map(|(name, (_, schema))| (name, schema))
+                .collect(),
+        )
+    }
+}
+
+/// The pattern of a byte string's text: every character one byte, U+0000 to
+/// U+00FF (the Latin-1 text the wire spells, docs/adr/0086 section 3.1).
+const LATIN1_PATTERN: &str = r"^[\u0000-ÿ]*$";
+
+/// `name` as a reference token of a JSON Pointer (RFC 6901, section 3): `~`
+/// written `~0`, `/` written `~1`.
+fn pointer_token(name: &str) -> String {
+    name.replace('~', "~0").replace('/', "~1")
+}
+
+/// `S(T)`: the JSON Schema (2020-12) of a value of `ty`, the records it holds
+/// gathered in `defs` (docs/adr/0087, section 1.1).
+///
+/// - a number of at most 32 bits is an `integer` between its type's ends; a
+///   64-bit one a `string` whose `pattern` is exactly its type's range;
+/// - a real is a `number`, a `float32` between its largest finite values;
+/// - a closed enum is the `enum` of its names; an open one has none;
+/// - a text's `maxLength` counts characters and admits every text of its
+///   bound in bytes, which `x-sce-max-bytes` states;
+/// - a byte string's characters are each one byte;
+/// - an optional value is `anyOf` its element and `null`, and its key stays
+///   required;
+/// - a record is a `$ref` to its definition, an object of every key and no
+///   other;
+/// - a list is an `array` of at most its bound.
+pub fn json_schema_of(
+    ty: &ValueType,
+    env: &dyn TypeEnv,
+    defs: &mut SchemaDefs,
+) -> Result<serde_json::Value, GrammarError> {
+    json_schema(ty, env, defs, &mut Vec::new())
+}
+
+/// `S` of a record of `fields`: an object of every key, each required, and no
+/// other. What a payload's schema states at its root and a record's
+/// definition states in `$defs`.
+pub fn json_schema_object(
+    fields: &[(String, ValueType)],
+    env: &dyn TypeEnv,
+    defs: &mut SchemaDefs,
+) -> Result<JsonObject, GrammarError> {
+    json_object(fields, env, defs, &mut Vec::new())
+}
+
+fn json_object(
+    fields: &[(String, ValueType)],
+    env: &dyn TypeEnv,
+    defs: &mut SchemaDefs,
+    on_path: &mut Vec<String>,
+) -> Result<JsonObject, GrammarError> {
+    let mut properties = JsonObject::new();
+    for (id, field) in fields {
+        properties.insert(id.clone(), json_schema(field, env, defs, on_path)?);
+    }
+    // Every key, in the canonical order: ascending by UTF-8 bytes, which is
+    // the order of a `str`.
+    let mut required: Vec<&str> = fields.iter().map(|(id, _)| id.as_str()).collect();
+    required.sort_unstable();
+    let mut object = JsonObject::new();
+    object.insert("type".to_string(), "object".into());
+    object.insert("properties".to_string(), properties.into());
+    object.insert("required".to_string(), required.into());
+    object.insert("additionalProperties".to_string(), false.into());
+    Ok(object)
+}
+
+fn json_schema(
+    ty: &ValueType,
+    env: &dyn TypeEnv,
+    defs: &mut SchemaDefs,
+    on_path: &mut Vec<String>,
+) -> Result<serde_json::Value, GrammarError> {
+    use serde_json::json;
+    Ok(match ty {
+        ValueType::Scalar(t) => json_scalar(t, env)?,
+        // `maxLength` counts characters (draft-bhutton-json-schema-validation-01,
+        // section 6.3.1): a text of at most B bytes has at most B of them, so it
+        // admits every value and some longer, which the reader refuses.
+        ValueType::Text { max } => json!({
+            "type": "string",
+            "maxLength": max.max,
+            "x-sce-max-bytes": max.max
+        }),
+        ValueType::Bytes { max } => json!({
+            "type": "string",
+            "maxLength": max.max,
+            "pattern": LATIN1_PATTERN
+        }),
+        // A writer writes the key of a value that is absent, as `null`.
+        ValueType::Optional { elem } => json!({
+            "anyOf": [json_schema(elem, env, defs, on_path)?, {"type": "null"}]
+        }),
+        ValueType::List { elem, max } => json!({
+            "type": "array",
+            "items": json_schema(elem, env, defs, on_path)?,
+            "maxItems": max.max
+        }),
+        ValueType::Record { alias } => {
+            let record = grammar_record(alias, env, on_path)?;
+            match defs.defs.get(&record.name) {
+                Some((key, _)) if *key == record.key => {}
+                Some(_) => {
+                    return Err(GrammarError::SharedName { name: record.name });
+                }
+                None => {
+                    on_path.push(record.key.clone());
+                    let object = json_object(&record.fields, record.scope, defs, on_path)?;
+                    on_path.pop();
+                    // A record of another document under the same name, inside
+                    // this one, took the name first.
+                    if defs.defs.contains_key(&record.name) {
+                        return Err(GrammarError::SharedName { name: record.name });
+                    }
+                    defs.defs
+                        .insert(record.name.clone(), (record.key, object.into()));
+                }
+            }
+            json!({"$ref": format!("#/$defs/{}", pointer_token(&record.name))})
+        }
+    })
+}
+
+/// `S` of a scalar.
+fn json_scalar(t: &SceType, env: &dyn TypeEnv) -> Result<serde_json::Value, GrammarError> {
+    use serde_json::json;
+    Ok(match t {
+        SceType::Uint8
+        | SceType::Uint16
+        | SceType::Uint32
+        | SceType::Int8
+        | SceType::Int16
+        | SceType::Int32 => {
+            let (lo, hi) = integer_bounds(t);
+            let narrow = |n: i128| i64::try_from(n).expect("a 32-bit end fits 64 bits");
+            json!({"type": "integer", "minimum": narrow(lo), "maximum": narrow(hi)})
+        }
+        // A 64-bit integer crosses as the quoted text of its digits
+        // (docs/adr/0086, section 3.1).
+        SceType::Uint64 | SceType::Int64 => {
+            let (lo, hi) = integer_bounds(t);
+            json!({"type": "string", "pattern": regex_range(lo, hi)})
+        }
+        SceType::Float32 => {
+            let most = f64::from(f32::MAX);
+            json!({"type": "number", "minimum": -most, "maximum": most})
+        }
+        SceType::Float64 => json!({"type": "number"}),
+        SceType::Bool => json!({"type": "boolean"}),
+        SceType::Enum(reference) => {
+            let names: Vec<&str> = closed_enum(reference, env)?
+                .variants
+                .iter()
+                .map(|v| v.name.as_str())
+                .collect();
+            json!({ "enum": names })
+        }
+        SceType::String | SceType::Bytes => {
+            return Err(GrammarError::Unbounded {
+                constructor: t.as_attr(),
+            })
+        }
+    })
+}
+
+/// What `"` is in a GBNF literal.
+const GBNF_QUOTE: &str = r#""\"""#;
+
+/// The characters of a text, by the bytes each takes (docs/adr/0087, section
+/// 1.1, item 3), as the writer spells them: `c1` a character of one byte
+/// written raw (U+0001 to U+007F save `"` and `\`) or an escape, whose value is
+/// one byte: `\"`, `\\`, the five short escapes, every other control character
+/// `\u00xx` in lowercase hex, U+0000 left out; `c2` U+0080 to U+07FF; `c3`
+/// U+0800 to U+FFFF without the surrogates; `c4` U+10000 to U+10FFFF.
+const GBNF_TEXT_CHARACTERS: [(&str, &str); 4] = [
+    (
+        "c1",
+        r#"[\x20-\x21\x23-\x5B\x5D-\x7F] | "\\" [\"\\bfnrt] | "\\u000" [1-7bef] | "\\u001" [0-9a-f]"#,
+    ),
+    ("c2", r"[\u0080-߿]"),
+    ("c3", r"[ࠀ-퟿-￿]"),
+    ("c4", r"[\U00010000-\U0010FFFF]"),
+];
+
+/// A character of a byte string's text, each one byte (U+0000 to U+00FF), as
+/// the writer spells it: raw, or the escape a text's `c1` writes, U+0000
+/// among them.
+const GBNF_BYTE: &str =
+    r#"[\x20-\x21\x23-\x5B\x5D-\xFF] | "\\" [\"\\bfnrt] | "\\u000" [0-7bef] | "\\u001" [0-9a-f]"#;
+
+/// A number as RFC 8259 section 6 writes one.
+const GBNF_NUMBER: &str = r#""-"? ( "0" | [1-9] [0-9]* ) ( "." [0-9]+ )? ( [eE] [-+]? [0-9]+ )?"#;
+
+/// A GBNF literal of `text`, a JSON text: `"` and `\` escaped and every other
+/// character as it is, a JSON text holding no raw control character.
+fn gbnf_literal(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for c in text.chars() {
+        if matches!(c, '"' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('"');
+    out
+}
+
+/// Whether `expression` is the name of a rule alone.
+fn is_rule_name(expression: &str) -> bool {
+    !expression.is_empty()
+        && expression
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// The rules a GBNF grammar of a type gathers as its fold walks it
+/// ([`gbnf_of`]): a rule for each record and each list element, the rule of
+/// each integer type and of a number, and the chains that count a text's
+/// bytes, a byte string's bytes and a list's elements.
+///
+/// Every bound is a chain of rules, never a repetition `{0,N}`: llama.cpp's
+/// parser makes a repetition past 2000 unbounded (`MAX_REPETITION_THRESHOLD`,
+/// `src/llama-grammar.cpp:655` at acecd56032dd), so a chain is how a bound
+/// holds there at any size, and it is the rules that parser writes for a
+/// repetition. A repetition stands only in an integer's digits, at most 19.
+///
+/// A rule's name is a word of lowercase letters, digits and `-`, the one
+/// alphabet the parser reads in a name (`is_word_char`): a record's rule and a
+/// list element's are numbered in the order the walk meets them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GbnfRules {
+    /// Each rule the walk named, a record's or a list element's, in the order
+    /// it named them.
+    named: Vec<(String, String)>,
+    /// The rule of each record, by its key ([`TypeEnv::record_key`]).
+    records: std::collections::BTreeMap<String, String>,
+    /// The rule of each list element's expression that is no rule alone.
+    items: std::collections::BTreeMap<String, String>,
+    /// The most elements after the first a list of each element rule holds.
+    tails: std::collections::BTreeMap<String, u32>,
+    /// The rule of each integer type the grammar holds, by its name.
+    integers: std::collections::BTreeMap<String, String>,
+    /// Whether the grammar holds a real.
+    number: bool,
+    /// The largest bound of a text the grammar holds.
+    text: Option<u32>,
+    /// The largest bound of a byte string the grammar holds.
+    bytes: Option<u32>,
+}
+
+/// `name ::= body` on a line of its own.
+fn push_rule(out: &mut String, name: &str, body: &str) {
+    out.push_str(name);
+    out.push_str(" ::= ");
+    out.push_str(body);
+    out.push('\n');
+}
+
+impl GbnfRules {
+    /// The rule of a list element `expression` is: itself when it is a rule's
+    /// name, else a rule of its own, one for each distinct expression.
+    fn item_rule(&mut self, expression: String) -> String {
+        if is_rule_name(&expression) {
+            return expression;
+        }
+        if let Some(rule) = self.items.get(&expression) {
+            return rule.clone();
+        }
+        let rule = format!("item-{}", self.items.len() + 1);
+        self.items.insert(expression.clone(), rule.clone());
+        self.named.push((rule.clone(), expression));
+        rule
+    }
+
+    /// The grammar whose `root` rule is `root`, one rule a line: `root`, each
+    /// rule the walk named in the order it named it, the chain of each list's
+    /// element, each integer's rule, a number's, then the characters and the
+    /// chain of the byte strings and of the texts.
+    ///
+    /// A text of at most `k` bytes is `tk ::= "" | c1 t(k-1) | c2 t(k-2) | c3
+    /// t(k-3) | c4 t(k-4)`, the terms of a negative index left out: one chain,
+    /// up to the largest bound, serves every text (docs/adr/0087, section 1.1,
+    /// item 3). A byte string's is `bk ::= "" | byte b(k-1)`, and the elements
+    /// after a list's first `X-tail-k ::= "" | "," X X-tail-(k-1)`.
+    pub fn grammar(&self, root: &str) -> String {
+        let mut out = String::new();
+        push_rule(&mut out, "root", root);
+        for (name, body) in &self.named {
+            push_rule(&mut out, name, body);
+        }
+        for (item, most) in &self.tails {
+            push_rule(&mut out, &format!("{item}-tail-0"), "\"\"");
+            for k in 1..=*most {
+                push_rule(
+                    &mut out,
+                    &format!("{item}-tail-{k}"),
+                    &format!("\"\" | \",\" {item} {item}-tail-{}", k - 1),
+                );
+            }
+        }
+        for (name, body) in &self.integers {
+            push_rule(&mut out, name, body);
+        }
+        if self.number {
+            push_rule(&mut out, "number", GBNF_NUMBER);
+        }
+        if let Some(most) = self.bytes {
+            push_rule(&mut out, "byte", GBNF_BYTE);
+            push_rule(&mut out, "b0", "\"\"");
+            for k in 1..=most {
+                push_rule(
+                    &mut out,
+                    &format!("b{k}"),
+                    &format!("\"\" | byte b{}", k - 1),
+                );
+            }
+        }
+        if let Some(most) = self.text {
+            for (name, body) in GBNF_TEXT_CHARACTERS {
+                push_rule(&mut out, name, body);
+            }
+            push_rule(&mut out, "t0", "\"\"");
+            for k in 1..=most {
+                let mut body = "\"\"".to_string();
+                for width in 1..=k.min(4) {
+                    body.push_str(&format!(" | c{width} t{}", k - width));
+                }
+                push_rule(&mut out, &format!("t{k}"), &body);
+            }
+        }
+        out
+    }
+}
+
+/// `G(T)`: the GBNF expression of a value of `ty`, the rules it names gathered
+/// in `rules` (docs/adr/0087, section 1.1).
+///
+/// - a number of at most 32 bits is the decimal spelling of exactly its
+///   type's range, by digit-prefix alternatives; a 64-bit one the same
+///   between quotes;
+/// - a real is RFC 8259's number: a `float32`'s magnitude is the one bound
+///   the grammar does not hold, and the reader does;
+/// - `bool` is `true` or `false`; a closed enum one quoted name of its own;
+/// - a text and a byte string are quoted, their bytes counted exactly;
+/// - an optional value is `null` or its element's;
+/// - a record is its rule: `{`, each key in the canonical order with its
+///   value, `,` between two, `}`;
+/// - a list is `[`, at most its bound of its element's, `,` between two, `]`.
+pub fn gbnf_of(
+    ty: &ValueType,
+    env: &dyn TypeEnv,
+    rules: &mut GbnfRules,
+) -> Result<String, GrammarError> {
+    gbnf(ty, env, rules, &mut Vec::new())
+}
+
+/// `G` of a record of `fields`: what a payload's `root` is and a record's rule
+/// holds.
+pub fn gbnf_object(
+    fields: &[(String, ValueType)],
+    env: &dyn TypeEnv,
+    rules: &mut GbnfRules,
+) -> Result<String, GrammarError> {
+    gbnf_record(fields, env, rules, &mut Vec::new())
+}
+
+fn gbnf_record(
+    fields: &[(String, ValueType)],
+    env: &dyn TypeEnv,
+    rules: &mut GbnfRules,
+    on_path: &mut Vec<String>,
+) -> Result<String, GrammarError> {
+    // The keys in the canonical order: ascending by UTF-8 bytes, which is the
+    // order of a `str`.
+    let sorted: std::collections::BTreeMap<&str, &ValueType> =
+        fields.iter().map(|(id, ty)| (id.as_str(), ty)).collect();
+    let mut parts = Vec::new();
+    let mut literal = String::from("{");
+    for (at, (id, field)) in sorted.into_iter().enumerate() {
+        if at > 0 {
+            literal.push(',');
+        }
+        literal.push_str(&json_quoted(id));
+        literal.push(':');
+        parts.push(gbnf_literal(&literal));
+        literal.clear();
+        parts.push(gbnf(field, env, rules, on_path)?);
+    }
+    literal.push('}');
+    parts.push(gbnf_literal(&literal));
+    Ok(parts.join(" "))
+}
+
+fn gbnf(
+    ty: &ValueType,
+    env: &dyn TypeEnv,
+    rules: &mut GbnfRules,
+    on_path: &mut Vec<String>,
+) -> Result<String, GrammarError> {
+    Ok(match ty {
+        ValueType::Scalar(t) => gbnf_scalar(t, env, rules)?,
+        ValueType::Text { max } => {
+            rules.text = rules.text.max(Some(max.max));
+            format!("{GBNF_QUOTE} t{} {GBNF_QUOTE}", max.max)
+        }
+        ValueType::Bytes { max } => {
+            rules.bytes = rules.bytes.max(Some(max.max));
+            format!("{GBNF_QUOTE} b{} {GBNF_QUOTE}", max.max)
+        }
+        ValueType::Optional { elem } => {
+            format!("( \"null\" | {} )", gbnf(elem, env, rules, on_path)?)
+        }
+        ValueType::List { elem, max } => match max.max.checked_sub(1) {
+            // A list of at most no element is the empty list.
+            None => "\"[]\"".to_string(),
+            Some(more) => {
+                let element = gbnf(elem, env, rules, on_path)?;
+                let item = rules.item_rule(element);
+                let most = rules.tails.entry(item.clone()).or_insert(0);
+                *most = (*most).max(more);
+                format!("\"[\" ( {item} {item}-tail-{more} )? \"]\"")
+            }
+        },
+        ValueType::Record { alias } => {
+            let record = grammar_record(alias, env, on_path)?;
+            if let Some(rule) = rules.records.get(&record.key) {
+                return Ok(rule.clone());
+            }
+            let rule = format!("record-{}", rules.records.len() + 1);
+            rules.records.insert(record.key.clone(), rule.clone());
+            let slot = rules.named.len();
+            rules.named.push((rule.clone(), String::new()));
+            on_path.push(record.key);
+            let body = gbnf_record(&record.fields, record.scope, rules, on_path)?;
+            on_path.pop();
+            rules.named[slot].1 = body;
+            rule
+        }
+    })
+}
+
+/// `G` of a scalar.
+fn gbnf_scalar(
+    t: &SceType,
+    env: &dyn TypeEnv,
+    rules: &mut GbnfRules,
+) -> Result<String, GrammarError> {
+    Ok(match t {
+        SceType::Uint8
+        | SceType::Uint16
+        | SceType::Uint32
+        | SceType::Int8
+        | SceType::Int16
+        | SceType::Int32 => {
+            let name = t.as_attr();
+            let (lo, hi) = integer_bounds(t);
+            rules
+                .integers
+                .entry(name.clone())
+                .or_insert_with(|| gbnf_range(lo, hi));
+            name
+        }
+        // The quoted text of its digits (docs/adr/0086, section 3.1).
+        SceType::Uint64 | SceType::Int64 => {
+            let name = t.as_attr();
+            let (lo, hi) = integer_bounds(t);
+            rules
+                .integers
+                .entry(name.clone())
+                .or_insert_with(|| format!("{GBNF_QUOTE} ( {} ) {GBNF_QUOTE}", gbnf_range(lo, hi)));
+            name
+        }
+        SceType::Float32 | SceType::Float64 => {
+            rules.number = true;
+            "number".to_string()
+        }
+        SceType::Bool => "( \"true\" | \"false\" )".to_string(),
+        SceType::Enum(reference) => {
+            let names: Vec<String> = closed_enum(reference, env)?
+                .variants
+                .iter()
+                .map(|v| gbnf_literal(&json_quoted(&v.name)))
+                .collect();
+            format!("( {} )", names.join(" | "))
+        }
+        SceType::String | SceType::Bytes => {
+            return Err(GrammarError::Unbounded {
+                constructor: t.as_attr(),
+            })
+        }
+    })
 }
 
 // ── The relation "fits" (docs/adr/0086, section 5.1) ────────────────────────
@@ -2108,6 +2931,7 @@ mod tests {
             "Item".into(),
             ScopedRecord {
                 identity: "item.scxml".into(),
+                name: "item".into(),
                 fields: vec![("level".into(), ValueType::Scalar(enum_ty("Level")))],
                 scope: item_scope,
             },
@@ -2940,5 +3764,591 @@ mod tests {
         assert_eq!(json_escaped_len("\n"), 2);
         assert_eq!(json_escaped_len("\u{1}"), 6);
         assert_eq!(json_escaped_len("\u{e9}"), 2);
+    }
+
+    // ── The grammar of a value (docs/adr/0087, section 1) ────────────────
+
+    /// The environment the grammar's goldens read: a closed enum `Kind`, an
+    /// open enum `Code`, a closed enum with no variant, the record `Item`
+    /// (document `item`) whose enum `Mood` only its own document names, a
+    /// record of another document also named `item`, and a record that holds
+    /// itself.
+    fn grammar_scope() -> TypeScope {
+        let mut item_scope = TypeScope::default();
+        item_scope.enums.insert(
+            "Mood".into(),
+            closed_enum(SceType::Uint8, &[("calm", 0), ("tense", 1)]),
+        );
+        let mut scope = TypeScope::default();
+        scope.enums.insert(
+            "Kind".into(),
+            closed_enum(SceType::Uint8, &[("meeting", 0), ("task", 1)]),
+        );
+        scope
+            .enums
+            .insert("Code".into(), open_enum(SceType::Uint8, &[("ok", 0)]));
+        scope
+            .enums
+            .insert("Empty".into(), closed_enum(SceType::Uint8, &[]));
+        scope.records.insert(
+            "Item".into(),
+            ScopedRecord {
+                identity: "here/item.scxml".into(),
+                name: "item".into(),
+                fields: vec![("mood".into(), ty("enum:Mood")), ("id".into(), ty("uint8"))],
+                scope: item_scope,
+            },
+        );
+        scope.records.insert(
+            "Other".into(),
+            ScopedRecord {
+                identity: "there/item.scxml".into(),
+                name: "item".into(),
+                fields: vec![("x".into(), ty("bool"))],
+                scope: TypeScope::default(),
+            },
+        );
+        let mut loop_scope = TypeScope::default();
+        let looping = ScopedRecord {
+            identity: "loop.scxml".into(),
+            name: "loop".into(),
+            fields: vec![("next".into(), ty("optional<record:Loop>"))],
+            scope: TypeScope::default(),
+        };
+        loop_scope.records.insert("Loop".into(), looping.clone());
+        scope.records.insert(
+            "Loop".into(),
+            ScopedRecord {
+                scope: loop_scope,
+                ..looping
+            },
+        );
+        scope
+    }
+
+    /// `S` of `ty` in [`grammar_scope`], and the `$defs` it gathered.
+    fn schema_of(ty: &ValueType) -> Result<(serde_json::Value, Option<JsonObject>), GrammarError> {
+        let mut defs = SchemaDefs::default();
+        let schema = json_schema_of(ty, &grammar_scope(), &mut defs)?;
+        Ok((schema, defs.into_object()))
+    }
+
+    /// The whole GBNF grammar whose root is `G` of `ty` in [`grammar_scope`].
+    fn grammar_of(ty: &ValueType) -> Result<String, GrammarError> {
+        let mut rules = GbnfRules::default();
+        let root = gbnf_of(ty, &grammar_scope(), &mut rules)?;
+        Ok(rules.grammar(&root))
+    }
+
+    fn json_of(text: &str) -> serde_json::Value {
+        let (schema, defs) = schema_of(&ty(text)).expect("a grammar");
+        assert_eq!(defs, None, "{text} holds no record");
+        schema
+    }
+
+    fn gbnf_text(text: &str) -> String {
+        grammar_of(&ty(text)).expect("a grammar")
+    }
+
+    /// The rule of `uint8`: 0, 1 to 99, 100 to 199, 200 to 249, 250 to 255.
+    const UINT8_RULE: &str =
+        r#"uint8 ::= "0" | [1-9] [0-9]{0,1} | "1" [0-9]{2} | "2" [0-4] [0-9] | "25" [0-5]"#;
+
+    /// The characters of a text and the chain of a text of at most five bytes.
+    const TEXT_TO_FIVE: &str = r##"c1 ::= [\x20-\x21\x23-\x5B\x5D-\x7F] | "\\" [\"\\bfnrt] | "\\u000" [1-7bef] | "\\u001" [0-9a-f]
+c2 ::= [\u0080-\u07FF]
+c3 ::= [\u0800-\uD7FF\uE000-\uFFFF]
+c4 ::= [\U00010000-\U0010FFFF]
+t0 ::= ""
+t1 ::= "" | c1 t0
+t2 ::= "" | c1 t1 | c2 t0
+t3 ::= "" | c1 t2 | c2 t1 | c3 t0
+t4 ::= "" | c1 t3 | c2 t2 | c3 t1 | c4 t0
+t5 ::= "" | c1 t4 | c2 t3 | c3 t2 | c4 t1
+"##;
+
+    #[test]
+    fn a_number_of_at_most_32_bits_is_an_integer_between_its_ends() {
+        for (text, lo, hi) in [
+            ("uint8", 0i64, 255i64),
+            ("uint16", 0, 65_535),
+            ("uint32", 0, 4_294_967_295),
+            ("int8", -128, 127),
+            ("int16", -32_768, 32_767),
+            ("int32", -2_147_483_648, 2_147_483_647),
+        ] {
+            assert_eq!(
+                json_of(text),
+                serde_json::json!({"type": "integer", "minimum": lo, "maximum": hi}),
+                "{text}"
+            );
+        }
+        assert_eq!(
+            gbnf_text("uint8"),
+            format!("root ::= uint8\n{UINT8_RULE}\n")
+        );
+        assert_eq!(
+            gbnf_text("int8"),
+            "root ::= int8\nint8 ::= \"-\" ( [1-9] [0-9]{0,1} | \"1\" [0-1] [0-9] | \"12\" [0-8] ) \
+             | \"0\" | [1-9] [0-9]{0,1} | \"1\" [0-1] [0-9] | \"12\" [0-7]\n"
+        );
+        // The decomposition docs/adr/0087 section 1.1 writes out.
+        assert_eq!(
+            gbnf_text("uint16"),
+            "root ::= uint16\nuint16 ::= \"0\" | [1-9] [0-9]{0,3} | [1-5] [0-9]{4} | \"6\" [0-4] \
+             [0-9]{3} | \"65\" [0-4] [0-9]{2} | \"655\" [0-2] [0-9] | \"6553\" [0-5]\n"
+        );
+    }
+
+    #[test]
+    fn a_64_bit_integer_is_the_quoted_text_of_its_digits() {
+        for text in ["uint64", "int64"] {
+            let schema = json_of(text);
+            assert_eq!(schema["type"], "string", "{text}");
+            let pattern = schema["pattern"].as_str().expect("a pattern");
+            assert_eq!(schema.as_object().map(|o| o.len()), Some(2), "{schema}");
+            assert!(
+                pattern.starts_with("^(") && pattern.ends_with(")$"),
+                "{pattern}"
+            );
+            let grammar = gbnf_text(text);
+            assert!(
+                grammar.starts_with(&format!("root ::= {text}\n{text} ::= \"\\\"\" ( ")),
+                "{grammar}"
+            );
+            assert!(grammar.ends_with(" ) \"\\\"\"\n"), "{grammar}");
+        }
+        assert!(json_of("uint64")["pattern"]
+            .as_str()
+            .unwrap()
+            .ends_with("|1844674407370955161[0-5])$"));
+        assert!(json_of("int64")["pattern"]
+            .as_str()
+            .unwrap()
+            .starts_with("^(-([1-9][0-9]{0,17}|[1-8][0-9]{18}|"));
+    }
+
+    /// The decomposition of a range spells exactly the integers in it, checked
+    /// by a regular-expression engine that is not the generator, on every
+    /// integer near each end and each power of ten.
+    #[test]
+    fn a_range_spells_exactly_the_integers_in_it() {
+        for t in [
+            SceType::Uint8,
+            SceType::Uint16,
+            SceType::Uint32,
+            SceType::Uint64,
+            SceType::Int8,
+            SceType::Int16,
+            SceType::Int32,
+            SceType::Int64,
+        ] {
+            let (lo, hi) = integer_bounds(&t);
+            let pattern = regex::Regex::new(&regex_range(lo, hi)).expect("a regular expression");
+            let mut probes: Vec<i128> = vec![lo - 1, lo, lo + 1, -1, 0, 1, hi - 1, hi, hi + 1];
+            let mut power: i128 = 1;
+            while power <= hi.saturating_mul(10) && power < i128::MAX / 10 {
+                for n in [power - 1, power, power + 1] {
+                    probes.extend([n, -n]);
+                }
+                power *= 10;
+            }
+            for n in probes {
+                assert_eq!(
+                    pattern.is_match(&n.to_string()),
+                    (lo..=hi).contains(&n),
+                    "{} and {n}",
+                    t.as_attr()
+                );
+            }
+            for unwritten in ["", "-", "-0", "00", "01", "+1", " 1", "1 ", "1.0"] {
+                assert!(
+                    !pattern.is_match(unwritten),
+                    "{} admits {unwritten:?}",
+                    t.as_attr()
+                );
+            }
+        }
+        // Every value of the narrowest types, and one past each end.
+        for t in [SceType::Uint8, SceType::Int8] {
+            let (lo, hi) = integer_bounds(&t);
+            let pattern = regex::Regex::new(&regex_range(lo, hi)).unwrap();
+            for n in lo - 1000..=hi + 1000 {
+                assert_eq!(pattern.is_match(&n.to_string()), (lo..=hi).contains(&n));
+            }
+        }
+    }
+
+    #[test]
+    fn a_real_a_truth_value_and_an_enum_have_their_spelling() {
+        let most = f64::from(f32::MAX);
+        assert_eq!(
+            json_of("float32"),
+            serde_json::json!({"type": "number", "minimum": -most, "maximum": most})
+        );
+        assert_eq!(json_of("float64"), serde_json::json!({"type": "number"}));
+        let number = "number ::= \"-\"? ( \"0\" | [1-9] [0-9]* ) ( \".\" [0-9]+ )? ( [eE] [-+]? \
+                      [0-9]+ )?\n";
+        for text in ["float32", "float64"] {
+            assert_eq!(gbnf_text(text), format!("root ::= number\n{number}"));
+        }
+        assert_eq!(json_of("bool"), serde_json::json!({"type": "boolean"}));
+        assert_eq!(gbnf_text("bool"), "root ::= ( \"true\" | \"false\" )\n");
+        assert_eq!(
+            json_of("enum:Kind"),
+            serde_json::json!({"enum": ["meeting", "task"]})
+        );
+        assert_eq!(
+            gbnf_text("enum:Kind"),
+            "root ::= ( \"\\\"meeting\\\"\" | \"\\\"task\\\"\" )\n"
+        );
+    }
+
+    #[test]
+    fn a_text_counts_its_bound_in_bytes() {
+        assert_eq!(
+            json_of("string[16]"),
+            serde_json::json!({"type": "string", "maxLength": 16, "x-sce-max-bytes": 16})
+        );
+        assert_eq!(
+            gbnf_text("string[5]"),
+            format!("root ::= \"\\\"\" t5 \"\\\"\"\n{TEXT_TO_FIVE}")
+        );
+        // Two texts share one chain, up to the larger bound.
+        let mut rules = GbnfRules::default();
+        let root = gbnf_object(
+            &[("a".into(), ty("string[2]")), ("b".into(), ty("string[5]"))],
+            &grammar_scope(),
+            &mut rules,
+        )
+        .unwrap();
+        assert_eq!(
+            rules.grammar(&root),
+            format!(
+                "root ::= \"{{\\\"a\\\":\" \"\\\"\" t2 \"\\\"\" \",\\\"b\\\":\" \"\\\"\" t5 \
+                 \"\\\"\" \"}}\"\n{TEXT_TO_FIVE}"
+            )
+        );
+    }
+
+    #[test]
+    fn a_byte_string_is_a_text_of_one_byte_characters() {
+        assert_eq!(
+            json_of("bytes[4]"),
+            serde_json::json!({"type": "string", "maxLength": 4, "pattern": "^[\\u0000-\\u00ff]*$"})
+        );
+        assert_eq!(
+            gbnf_text("bytes[3]"),
+            "root ::= \"\\\"\" b3 \"\\\"\"\n\
+             byte ::= [\\x20-\\x21\\x23-\\x5B\\x5D-\\xFF] | \"\\\\\" [\\\"\\\\bfnrt] | \"\\\\u000\" \
+             [0-7bef] | \"\\\\u001\" [0-9a-f]\n\
+             b0 ::= \"\"\n\
+             b1 ::= \"\" | byte b0\n\
+             b2 ::= \"\" | byte b1\n\
+             b3 ::= \"\" | byte b2\n"
+        );
+    }
+
+    #[test]
+    fn an_optional_value_is_null_or_its_element() {
+        assert_eq!(
+            json_of("optional<string[8]>"),
+            serde_json::json!({"anyOf": [
+                {"type": "string", "maxLength": 8, "x-sce-max-bytes": 8},
+                {"type": "null"}
+            ]})
+        );
+        assert_eq!(
+            gbnf_text("optional<bool>"),
+            "root ::= ( \"null\" | ( \"true\" | \"false\" ) )\n"
+        );
+    }
+
+    #[test]
+    fn a_list_holds_at_most_its_bound() {
+        assert_eq!(
+            json_of("list<uint8>[3]"),
+            serde_json::json!({
+                "type": "array",
+                "items": {"type": "integer", "minimum": 0, "maximum": 255},
+                "maxItems": 3
+            })
+        );
+        assert_eq!(
+            gbnf_text("list<uint8>[3]"),
+            format!(
+                "root ::= \"[\" ( uint8 uint8-tail-2 )? \"]\"\n\
+                 uint8-tail-0 ::= \"\"\n\
+                 uint8-tail-1 ::= \"\" | \",\" uint8 uint8-tail-0\n\
+                 uint8-tail-2 ::= \"\" | \",\" uint8 uint8-tail-1\n\
+                 {UINT8_RULE}\n"
+            )
+        );
+        assert_eq!(
+            gbnf_text("list<uint8>[1]"),
+            format!("root ::= \"[\" ( uint8 uint8-tail-0 )? \"]\"\nuint8-tail-0 ::= \"\"\n{UINT8_RULE}\n")
+        );
+        // An element that is no rule alone is given one.
+        assert_eq!(
+            gbnf_text("list<bool>[2]"),
+            "root ::= \"[\" ( item-1 item-1-tail-1 )? \"]\"\n\
+             item-1 ::= ( \"true\" | \"false\" )\n\
+             item-1-tail-0 ::= \"\"\n\
+             item-1-tail-1 ::= \"\" | \",\" item-1 item-1-tail-0\n"
+        );
+        // Two lists of one element share one chain, up to the larger bound,
+        // and one rule for the element.
+        let mut rules = GbnfRules::default();
+        let root = gbnf_object(
+            &[
+                ("a".into(), ty("list<bool>[2]")),
+                ("b".into(), ty("list<bool>[3]")),
+            ],
+            &grammar_scope(),
+            &mut rules,
+        )
+        .unwrap();
+        assert_eq!(
+            rules.grammar(&root),
+            "root ::= \"{\\\"a\\\":\" \"[\" ( item-1 item-1-tail-1 )? \"]\" \",\\\"b\\\":\" \"[\" \
+             ( item-1 item-1-tail-2 )? \"]\" \"}\"\n\
+             item-1 ::= ( \"true\" | \"false\" )\n\
+             item-1-tail-0 ::= \"\"\n\
+             item-1-tail-1 ::= \"\" | \",\" item-1 item-1-tail-0\n\
+             item-1-tail-2 ::= \"\" | \",\" item-1 item-1-tail-1\n"
+        );
+        // A list of at most no element, which no reader of a type builds, is
+        // the empty list and names no rule of its element.
+        let none = ValueType::List {
+            elem: Box::new(ty("uint8")),
+            max: Bound::of(0),
+        };
+        assert_eq!(grammar_of(&none), Ok("root ::= \"[]\"\n".to_string()));
+    }
+
+    #[test]
+    fn a_record_is_defined_once_with_every_key_and_no_other() {
+        let (schema, defs) = schema_of(&ty("record:Item")).unwrap();
+        assert_eq!(schema, serde_json::json!({"$ref": "#/$defs/item"}));
+        // Its enum is read in the record's own document.
+        let item = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer", "minimum": 0, "maximum": 255},
+                "mood": {"enum": ["calm", "tense"]}
+            },
+            "required": ["id", "mood"],
+            "additionalProperties": false
+        });
+        assert_eq!(
+            defs.map(serde_json::Value::Object),
+            Some(serde_json::json!({ "item": item }))
+        );
+        assert_eq!(
+            gbnf_text("record:Item"),
+            format!(
+                "root ::= record-1\n\
+                 record-1 ::= \"{{\\\"id\\\":\" uint8 \",\\\"mood\\\":\" ( \"\\\"calm\\\"\" | \
+                 \"\\\"tense\\\"\" ) \"}}\"\n\
+                 {UINT8_RULE}\n"
+            )
+        );
+        // Met twice, it is defined once.
+        let twice = [
+            ("b".to_string(), ty("record:Item")),
+            ("a".to_string(), ty("list<optional<record:Item>>[2]")),
+        ];
+        let mut defs = SchemaDefs::default();
+        let object = json_schema_object(&twice, &grammar_scope(), &mut defs).unwrap();
+        assert_eq!(
+            serde_json::Value::Object(object),
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "a": {
+                        "type": "array",
+                        "items": {"anyOf": [{"$ref": "#/$defs/item"}, {"type": "null"}]},
+                        "maxItems": 2
+                    },
+                    "b": {"$ref": "#/$defs/item"}
+                },
+                "required": ["a", "b"],
+                "additionalProperties": false
+            })
+        );
+        assert_eq!(
+            defs.into_object().map(|d| d.len()),
+            Some(1),
+            "one definition"
+        );
+        let mut rules = GbnfRules::default();
+        let root = gbnf_object(&twice, &grammar_scope(), &mut rules).unwrap();
+        assert_eq!(
+            rules.grammar(&root),
+            format!(
+                "root ::= \"{{\\\"a\\\":\" \"[\" ( item-1 item-1-tail-1 )? \"]\" \",\\\"b\\\":\" \
+                 record-1 \"}}\"\n\
+                 record-1 ::= \"{{\\\"id\\\":\" uint8 \",\\\"mood\\\":\" ( \"\\\"calm\\\"\" | \
+                 \"\\\"tense\\\"\" ) \"}}\"\n\
+                 item-1 ::= ( \"null\" | record-1 )\n\
+                 item-1-tail-0 ::= \"\"\n\
+                 item-1-tail-1 ::= \"\" | \",\" item-1 item-1-tail-0\n\
+                 {UINT8_RULE}\n"
+            )
+        );
+        // A record of no field is the empty object.
+        let mut defs = SchemaDefs::default();
+        assert_eq!(
+            serde_json::Value::Object(
+                json_schema_object(&[], &grammar_scope(), &mut defs).unwrap()
+            ),
+            serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+            })
+        );
+        let mut rules = GbnfRules::default();
+        assert_eq!(
+            gbnf_object(&[], &grammar_scope(), &mut rules),
+            Ok("\"{}\"".to_string())
+        );
+    }
+
+    #[test]
+    fn a_type_with_no_grammar_is_refused_by_name() {
+        let both = |ty: ValueType| -> (GrammarError, GrammarError) {
+            (
+                schema_of(&ty).expect_err("no JSON Schema"),
+                grammar_of(&ty).expect_err("no GBNF grammar"),
+            )
+        };
+        let open = GrammarError::OpenEnum {
+            alias: "Code".into(),
+        };
+        assert_eq!(both(ty("enum:Code")), (open.clone(), open.clone()));
+        assert_eq!(both(ty("list<enum:Code>[2]")), (open.clone(), open));
+        for alias in ["Nope", "Empty"] {
+            let unresolved = GrammarError::Unresolved {
+                alias: alias.into(),
+            };
+            assert_eq!(
+                both(ty(&format!("enum:{alias}"))),
+                (unresolved.clone(), unresolved)
+            );
+        }
+        let unresolved = GrammarError::Unresolved {
+            alias: "Nope".into(),
+        };
+        assert_eq!(both(ty("record:Nope")), (unresolved.clone(), unresolved));
+        let cycle = GrammarError::ContainsItself {
+            cycle: vec!["loop.scxml".into(), "loop.scxml".into()],
+        };
+        assert_eq!(both(ty("record:Loop")), (cycle.clone(), cycle));
+        let unbounded = GrammarError::Unbounded {
+            constructor: "string".into(),
+        };
+        assert_eq!(
+            both(ValueType::Scalar(SceType::String)),
+            (unbounded.clone(), unbounded)
+        );
+        // Two records of different documents under one name: the schema's
+        // `$defs` would name them alike, whichever is met first.
+        let shared = GrammarError::SharedName {
+            name: "item".into(),
+        };
+        for fields in [
+            [
+                ("a".to_string(), ty("record:Item")),
+                ("b".to_string(), ty("record:Other")),
+            ],
+            [
+                ("a".to_string(), ty("record:Other")),
+                ("b".to_string(), ty("record:Item")),
+            ],
+        ] {
+            let mut defs = SchemaDefs::default();
+            assert_eq!(
+                json_schema_object(&fields, &grammar_scope(), &mut defs),
+                Err(shared.clone())
+            );
+        }
+        // ... and when the one inside the other takes the name first.
+        let mut wrapper_scope = TypeScope::default();
+        wrapper_scope.records.insert(
+            "Inner".into(),
+            ScopedRecord {
+                identity: "inner/item.scxml".into(),
+                name: "item".into(),
+                fields: vec![("x".into(), ty("bool"))],
+                scope: TypeScope::default(),
+            },
+        );
+        let mut outer = TypeScope::default();
+        outer.records.insert(
+            "Wrapper".into(),
+            ScopedRecord {
+                identity: "outer/item.scxml".into(),
+                name: "item".into(),
+                fields: vec![("inner".into(), ty("record:Inner"))],
+                scope: wrapper_scope,
+            },
+        );
+        let mut defs = SchemaDefs::default();
+        assert_eq!(
+            json_schema_of(&ty("record:Wrapper"), &outer, &mut defs),
+            Err(shared)
+        );
+    }
+
+    #[test]
+    fn a_refusal_of_a_grammar_says_why() {
+        for (refusal, sentence) in [
+            (
+                GrammarError::Unresolved {
+                    alias: "Nope".into(),
+                },
+                "`Nope` names no record or enum the document imports",
+            ),
+            (
+                GrammarError::ContainsItself {
+                    cycle: vec!["Loop".into(), "Loop".into()],
+                },
+                "the record `Loop` holds itself (Loop -> Loop), and has no largest value",
+            ),
+            (
+                GrammarError::Unbounded {
+                    constructor: "bytes".into(),
+                },
+                "a `bytes` with no bound has no largest value, and no grammar",
+            ),
+            (
+                GrammarError::OpenEnum {
+                    alias: "Code".into(),
+                },
+                "the enum `Code` is open (`sce:strict-variants=\"false\"`): a value of it may be a \
+                 number no name spells, and a grammar spells a value of an enum by its name",
+            ),
+            (
+                GrammarError::SharedName {
+                    name: "item".into(),
+                },
+                "two records of different documents are named `item`, which the schema's \
+                 `$defs` would name alike",
+            ),
+        ] {
+            assert_eq!(refusal.to_string(), sentence);
+        }
+    }
+
+    #[test]
+    fn a_name_is_written_as_each_form_reads_it() {
+        assert_eq!(pointer_token("a~b/c"), "a~0b~1c");
+        assert_eq!(gbnf_literal(r#"{"a\b":"#), r#""{\"a\\b\":""#);
+        assert_eq!(json_quoted("a\"\u{1}\u{7f}é"), "\"a\\\"\\u0001\u{7f}é\"");
+        assert!(is_rule_name("item-12"));
+        assert!(!is_rule_name(""));
+        assert!(!is_rule_name("( a )"));
     }
 }

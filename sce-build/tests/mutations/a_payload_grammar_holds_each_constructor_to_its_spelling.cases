@@ -1,0 +1,133 @@
+# Mutation cases for "the grammar of a schema states one spelling of each value,
+# its bounds held exactly" (docs/adr/0087, section 1).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_payload_grammar_holds_each_constructor_to_its_spelling.cases`.
+#
+# Two folds over the one value type write a payload's JSON Schema and its GBNF
+# grammar, one arm per constructor. The goldens of each constructor and the
+# range check hold them. The mutants take one decision away each:
+#
+#   JSON Schema: a text's byte bound, a byte string's one-byte characters, an
+#   optional value's `null`, a list's bound, a record's closed set of keys, an
+#   integer's upper end, a 64-bit integer's quoted digits, a single's range,
+#   and the refusal of an open enum;
+#   GBNF: a character's weight in bytes in the chain, the characters of more
+#   than one byte, a byte string's one byte a character, a list's bound, an
+#   optional value's `null`, the comma between two keys, a 64-bit integer's
+#   quotes, a text's bound, and the last digit of a range up to its end.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib forge::value_type
+mutation_targets sce-build/src/forge/value_type.rs
+mutation_oracles sce-build/src/forge/value_type.rs
+
+mutation_case "a text's byte bound is stated one past" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            \"x-sce-max-bytes\": max.max\n",
+     "            \"x-sce-max-bytes\": max.max + 1\n")
+PY
+
+mutation_case "a byte string's characters are any character" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            \"pattern\": LATIN1_PATTERN\n",
+     "            \"pattern\": \"^.*$\"\n")
+PY
+
+mutation_case "an optional value is never null in the JSON Schema" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            \"anyOf\": [json_schema(elem, env, defs, on_path)?, {\"type\": \"null\"}]\n",
+     "            \"anyOf\": [json_schema(elem, env, defs, on_path)?]\n")
+PY
+
+mutation_case "a list holds one past its bound in the JSON Schema" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            \"maxItems\": max.max\n",
+     "            \"maxItems\": max.max + 1\n")
+PY
+
+mutation_case "a record admits a key it does not declare" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "    object.insert(\"additionalProperties\".to_string(), false.into());",
+     "    object.insert(\"additionalProperties\".to_string(), true.into());")
+PY
+
+mutation_case "an integer's upper end is one past its type's" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "\"minimum\": narrow(lo), \"maximum\": narrow(hi)})",
+     "\"minimum\": narrow(lo), \"maximum\": narrow(hi) + 1})")
+PY
+
+mutation_case "a 64-bit integer is a JSON number" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            json!({\"type\": \"string\", \"pattern\": regex_range(lo, hi)})",
+     "            json!({\"type\": \"integer\", \"pattern\": regex_range(lo, hi)})")
+PY
+
+mutation_case "a single's range is twice its largest value" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            json!({\"type\": \"number\", \"minimum\": -most, \"maximum\": most})",
+     "            json!({\"type\": \"number\", \"minimum\": -most, \"maximum\": most * 2.0})")
+PY
+
+mutation_case "an open enum is spelled by its names" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "    if !enumeration.strict {\n        return Err(GrammarError::OpenEnum {",
+     "    if !enumeration.strict && false {\n        return Err(GrammarError::OpenEnum {")
+PY
+
+mutation_case "every character of a text weighs one byte" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "                    body.push_str(&format!(\" | c{width} t{}\", k - width));",
+     "                    body.push_str(&format!(\" | c{width} t{}\", k - 1));")
+PY
+
+mutation_case "a text holds no character of more than one byte" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "                for width in 1..=k.min(4) {",
+     "                for width in 1..=k.min(1) {")
+PY
+
+mutation_case "a byte string's character weighs two" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "                    &format!(\"\\\"\\\" | byte b{}\", k - 1),",
+     "                    &format!(\"\\\"\\\" | byte byte b{}\", k - 1),")
+PY
+
+mutation_case "a list holds one past its bound in the GBNF grammar" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "                *most = (*most).max(more);",
+     "                *most = (*most).max(more + 1);")
+PY
+
+mutation_case "an optional value is never null in the GBNF grammar" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            format!(\"( \\\"null\\\" | {} )\", gbnf(elem, env, rules, on_path)?)",
+     "            format!(\"( {} )\", gbnf(elem, env, rules, on_path)?)")
+PY
+
+mutation_case "two keys of a record stand with no comma between" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            literal.push(',');",
+     "            literal.push(' ');")
+PY
+
+mutation_case "a 64-bit integer is unquoted in the GBNF grammar" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     ".or_insert_with(|| format!(\"{GBNF_QUOTE} ( {} ) {GBNF_QUOTE}\", gbnf_range(lo, hi)));",
+     ".or_insert_with(|| format!(\"( {} )\", gbnf_range(lo, hi)));")
+PY
+
+mutation_case "a text holds one byte past its bound in the GBNF grammar" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            format!(\"{GBNF_QUOTE} t{} {GBNF_QUOTE}\", max.max)",
+     "            format!(\"{GBNF_QUOTE} t{} {GBNF_QUOTE}\", max.max + 1)")
+PY
+
+mutation_case "a range's last digit stops below its end" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "        let last = if at + 1 == n {\n            digit\n",
+     "        let last = if at + 1 == n {\n            digit.saturating_sub(1)\n")
+PY

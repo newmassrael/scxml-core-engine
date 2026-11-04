@@ -1688,6 +1688,17 @@ impl EventSchemaModel {
     pub fn holds_optional(&self) -> bool {
         self.fields.iter().any(|f| f.sce_type.holds_optional())
     }
+
+    /// Each field by its id, with its type of the one type grammar, in
+    /// declaration order: the record the sizes of the payload
+    /// (docs/adr/0086, section 2) and its grammar (docs/adr/0087, section 1)
+    /// are computed over.
+    pub fn typed_fields(&self) -> Vec<(String, crate::forge::value_type::ValueType)> {
+        self.fields
+            .iter()
+            .map(|f| (f.id.clone(), f.sce_type.clone()))
+            .collect()
+    }
 }
 
 impl<T> EventSchemaModel<T> {

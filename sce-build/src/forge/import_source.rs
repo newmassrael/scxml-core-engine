@@ -176,6 +176,7 @@ fn scoped_record_at(
 ) -> ScopedRecord {
     ScopedRecord {
         identity: crate::forge::stdlib::identity(path),
+        name: schema.name.clone(),
         fields: schema
             .fields
             .iter()

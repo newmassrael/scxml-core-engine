@@ -184,6 +184,7 @@ fn scope() -> TypeScope {
         "Item".to_string(),
         ScopedRecord {
             identity: "event_batch_item".to_string(),
+            name: "event_batch_item".to_string(),
             fields: fields(&ITEM_FIELDS),
             scope: item_scope,
         },
@@ -193,6 +194,7 @@ fn scope() -> TypeScope {
         "Batch".to_string(),
         ScopedRecord {
             identity: "event_batch".to_string(),
+            name: "event_batch".to_string(),
             fields: fields(&BATCH_FIELDS),
             scope: batch_scope,
         },
