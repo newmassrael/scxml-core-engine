@@ -346,7 +346,7 @@ pub fn push_keeping<L: HeldList>(
     let held = SceList::as_slice(list);
     let new_kind = kinds
         .iter()
-        .any(|kind| kind(&entry) && !held.iter().any(|h| kind(h)));
+        .any(|kind| kind(&entry) && !held.iter().any(kind));
     if !new_kind {
         return;
     }
