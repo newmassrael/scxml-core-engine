@@ -43,6 +43,15 @@ from .host_processor import (
 )
 from .host_invoke_request import RequestFieldType, request_field, request_field_wire
 from .http import HttpSendRequest, HttpSendResponse
+from .inbox import (
+    EngineInbox,
+    InboxExternalEvent,
+    InboxExternalEventByName,
+    InboxHostInvokeEnding,
+    InboxInput,
+    InboxMeshDelivery,
+    InboxWaker,
+)
 from .io_processors import published_origin, session_id_from_scxml_location
 from .invoke import (
     ChildSession,
@@ -137,6 +146,7 @@ __all__ = [
     "ConfigurationRejection",
     "EnabledTransition",
     "Engine",
+    "EngineInbox",
     "EntryTarget",
     "Event",
     "EventMetadata",
@@ -155,6 +165,12 @@ __all__ = [
     "HttpSendRequest",
     "HttpSendResponse",
     "IScriptEngine",
+    "InboxExternalEvent",
+    "InboxExternalEventByName",
+    "InboxHostInvokeEnding",
+    "InboxInput",
+    "InboxMeshDelivery",
+    "InboxWaker",
     "Invoke",
     "JsonError",
     "JsonNumber",

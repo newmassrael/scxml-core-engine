@@ -352,6 +352,11 @@ class HostInvokeEnding:
     done: bool
     #: ``_event.data`` of the event the ending raises.
     data: str = ""
+    #: ``_event.origin`` of that event, for a host whose invocation stands for a
+    #: party it can name; empty for none.
+    origin: str = ""
+    #: ``_event.origintype`` of that event; empty for none.
+    origin_type: str = ""
 
 
 @dataclass

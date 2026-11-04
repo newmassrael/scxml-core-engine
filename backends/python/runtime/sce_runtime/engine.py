@@ -73,6 +73,15 @@ from .child_mesh import (
     MeshRaise,
 )
 from .http import HttpSendRequest, HttpSendResponse
+from .inbox import (
+    EngineInbox,
+    EngineInboxState,
+    InboxExternalEvent,
+    InboxExternalEventByName,
+    InboxHostInvokeEnding,
+    InboxInput,
+    InboxMeshDelivery,
+)
 from . import io_processors
 from . import send as send_module
 from .invoke import (
@@ -240,7 +249,18 @@ class _RestoredHostInvoke:
 class Engine(Generic[S, E]):
     """Generic SCXML engine bound to a concrete StatePolicy.
 
-    Single-threaded; callers needing concurrency must guard with a lock.
+    Threading: the rule is ARCHITECTURE.md "Engine Threading" (docs/adr/0084).
+    This engine runs no loop of its own; its owner is the thread that drives
+    it, and the children it starts are driven by that same thread. Its
+    owner-thread operations are the calls that drive it (`initialize`,
+    `initialize_as_root`, `enter_at`, `send_event`, `advance_time`, `stop`),
+    raising an external event (`send_event`, `send_external`,
+    `send_external_by_name`), ending or cancelling a host-run invocation
+    (`complete_host_invoke`, `fail_host_invoke`, `complete_host_invoke_in`,
+    `fail_host_invoke_in`, `end_host_invoke_in`, `cancel_host_invoke`) and
+    applying a Mesh delivery (`apply_mesh_calls`, `apply_mesh_call`). Another
+    thread uses `inbox` instead, the one thread-safe handle, and posts to the
+    root of a tree, naming the session. The caller's thread is not checked.
     """
 
     def __init__(
@@ -306,6 +326,12 @@ class Engine(Generic[S, E]):
         self._observer: Optional[Callable[[str, Dict[str, Any]], None]] = None
         self._internal_queue: "deque[EventWithMetadata[E]]" = deque()
         self._external_queue: "deque[EventWithMetadata[E]]" = deque()
+        # docs/adr/0084 — what other threads post, held until the owner's next
+        # macrostep boundary (`_drain_inbox`). Open from construction, so what
+        # is posted before the first run is applied at that run's first
+        # boundary; closed with a run that ended or was stopped.
+        self._inbox_state: EngineInboxState[E] = EngineInboxState()
+        self._inbox: EngineInbox[E] = EngineInbox(self._inbox_state)
         self._is_running: bool = False
         # §scxml-D-enterStates — the top-level `<final>` the run ended in, set
         # on entering it. See `terminal_state`.
@@ -375,7 +401,8 @@ class Engine(Generic[S, E]):
         self._history: Dict[str, List[S]] = {}
         # §scxml-6.2 — delayed-event scheduler + virtual clock.
         # Callers advance time via `advance_time(ms)`; the scheduler is
-        # pull-based so the engine remains single-threaded.
+        # pull-based, so the clock is pulled on the owner thread and needs no
+        # inbox (ARCHITECTURE.md "Engine Threading").
         self._scheduler: Scheduler[E] = Scheduler()
         self._now_ms: int = 0
         # Auto-generated sendid counter for `<send>` actions without an
@@ -494,6 +521,9 @@ class Engine(Generic[S, E]):
         if self._is_running:
             return
         self._is_running = True
+        # docs/adr/0084: a run that follows one that ended or was stopped takes
+        # posts again; what was posted before the first run is still held.
+        self._inbox_state.open()
         # §scxml-C-1-1 / §scxml-C-2-3 — bind `_sessionid` / `_name` /
         # `_ioprocessors` into the script-engine session before any datamodel
         # `<data>` is registered. The entries come from the same helper every
@@ -620,6 +650,9 @@ class Engine(Generic[S, E]):
         )
 
         self._is_running = True
+        # docs/adr/0084: the run entered here takes posts, as one `initialize`
+        # starts does.
+        self._inbox_state.open()
         return ConfigurationRejection.NONE
 
     def stop(self) -> None:
@@ -629,6 +662,10 @@ class Engine(Generic[S, E]):
         if self._is_running:
             self._exit_interpreter()
         self._is_running = False
+        # docs/adr/0084: the inbox closes with the run, after what it holds is
+        # applied as a direct call would be now: an event is counted with the
+        # unseen ones, and an ending finds its invocation already cancelled.
+        self._close_inbox()
         # §scxml-6.4 — engine shutdown cancels every active invoke
         # so child schedulers stop driving and external resources are
         # released. Mirrors Go's `Engine.Stop` cancelling all children.
@@ -1067,17 +1104,119 @@ class Engine(Generic[S, E]):
     # ── Event injection ────────────────────────────────────────────
 
     def send_event(self, event: E, metadata: Optional[EventMetadata] = None) -> None:
-        """W3C SCXML 5.10.1 — enqueue an external event and process to stability."""
+        """W3C SCXML 5.10.1 — enqueue an external event and process to stability.
+
+        An owner-thread operation; another thread posts an
+        `InboxExternalEvent` to `inbox` instead."""
+        if self._raise_external(event, metadata):
+            self._run_main_event_loop()
+
+    def _raise_external(self, event: E, metadata: Optional[EventMetadata]) -> bool:
+        """The one body of raising an external event the host hands this
+        machine, directly (`send_event`) or through the inbox: onto the external
+        queue, and `True`, while the run goes on; counted unseen, and `False`,
+        once it is over."""
         if not self._is_running:
             # Refused rather than queued, so the drain in
             # `_run_main_event_loop` never sees it — which is why the count is
             # taken here as well as there. See `unseen_external_events`.
             self._note_unseen_event(event)
-            return
+            return False
         self._external_queue.append(
             EventWithMetadata(event=event, metadata=metadata or EventMetadata())
         )
-        self._run_main_event_loop()
+        return True
+
+    # ── The inbox (ARCHITECTURE.md "Engine Threading") ─────────────
+
+    @property
+    def inbox(self) -> EngineInbox[E]:
+        """This engine's inbox: the handle a thread that does not own the engine
+        posts external events, host-run invocations' endings and Mesh
+        deliveries through (docs/adr/0084). Thread-safe; everything else of the
+        engine that changes its state is an owner-thread operation.
+
+        What is posted is applied by the owner at its next macrostep boundary,
+        before the external queue is consulted, in the order the inbox took it,
+        each input by the owner-thread operation of the same name. A host that
+        drives the engine installs a waker (`EngineInbox.wake_with`) to learn
+        when to drive it; ``advance_time(0)`` applies what was posted and moves
+        no clock. An input for a child session is posted here, at the root of
+        the tree, naming the session."""
+        return self._inbox
+
+    def _drain_inbox(self) -> None:
+        """The macrostep boundary's half of the inbox (docs/adr/0084): apply what
+        the inbox held when the boundary was reached, in the order it was taken,
+        each by the owner-thread operation of the same name. What is posted
+        meanwhile waits for the next boundary."""
+        for posted in self._inbox_state.take():
+            self._apply_inbox_input(posted)
+
+    def _close_inbox(self) -> None:
+        """Refuse every post from now on, and apply what the inbox still holds as
+        a direct call would be applied now."""
+        self._inbox_state.close()
+        self._drain_inbox()
+
+    def _apply_inbox_input(self, posted: InboxInput[E]) -> None:
+        """Apply one posted input by the operation a direct call on the owner
+        makes, so a posted input and a direct call cannot differ."""
+        if isinstance(posted, InboxExternalEvent):
+            self._raise_external(posted.event, posted.metadata)
+        elif isinstance(posted, InboxExternalEventByName):
+            self.send_external_by_name(
+                posted.name,
+                data=posted.data,
+                sendid=posted.send_id,
+                invoke_id=posted.invoke_id,
+                origin=posted.origin,
+                origin_type=posted.origin_type,
+            )
+        elif isinstance(posted, InboxHostInvokeEnding):
+            self._apply_host_invoke_ending(posted)
+        else:
+            self._apply_mesh_delivery(posted)
+
+    def _apply_host_invoke_ending(self, posted: InboxHostInvokeEnding) -> None:
+        """A posted ending, applied by the call the host would have made on the
+        owner. One addressed to a session is applied with the body of
+        `end_host_invoke_in`, whose refusal has nobody to reach here: an ending
+        the session does not run is ignored, as §scxml-6.4 ignores what a
+        cancelled process sends, and as `complete_host_invoke` answers
+        `False`."""
+        ending = posted.ending
+        if posted.session_id is not None:
+            self.route_host_invoke_end(posted.session_id, ending)
+        elif ending.done:
+            self.complete_host_invoke(
+                ending.processor_type,
+                ending.invoke_id,
+                ending.token,
+                ending.data,
+                ending.origin,
+                ending.origin_type,
+            )
+        else:
+            self.fail_host_invoke(
+                ending.processor_type,
+                ending.invoke_id,
+                ending.token,
+                ending.data,
+                ending.origin,
+                ending.origin_type,
+            )
+
+    def _apply_mesh_delivery(self, posted: InboxMeshDelivery) -> None:
+        """A posted Mesh delivery, applied with `apply_mesh_call` on the session
+        it names: this machine, or a session of the tree below it. A session the
+        tree no longer holds takes nothing."""
+        if posted.session_id is None:
+            self.apply_mesh_call(posted.call)
+            return
+        holder = self._session_in_tree(posted.session_id)
+        if holder is not None:
+            holder.apply_mesh_call(posted.call)
 
     def raise_internal(
         self,
@@ -1314,7 +1453,11 @@ class Engine(Generic[S, E]):
         any such event; an end the engine no longer waits for is refused by the
         token check. An answer carries ``_event.origin`` ``mesh://<source>`` and
         origin type ``sce:mesh-rpc`` (SCE_MESH.md §mesh-9.5); a deadline the
-        requester reached itself has no peer to name, and carries neither."""
+        requester reached itself has no peer to name, and carries neither.
+
+        An owner-thread operation; an endpoint that receives on a thread of its
+        own posts an `InboxMeshDelivery` to `inbox` instead, naming the session
+        when it is not the root."""
         if isinstance(call, MeshRaise):
             metadata = call.metadata
             self.send_external_by_name(
@@ -1460,33 +1603,42 @@ class Engine(Generic[S, E]):
         reason it was refused when it is and does not run that start: ``(False,
         None)`` when it is neither, so the parent that asked can try another
         child."""
+        holder = self._session_in_tree(session_id)
+        if holder is None:
+            return False, None
+        if holder._end_host_invoke(
+            ending.processor_type,
+            ending.invoke_id,
+            ending.token,
+            create_done_invoke_event_name(ending.invoke_id)
+            if ending.done
+            else f"{ERROR_INVOKE_PREFIX}{ending.invoke_id}",
+            ending.data,
+            ending.origin,
+            ending.origin_type,
+        ):
+            return True, None
+        return True, (
+            f"session '{session_id}' is not running start {ending.token} of the "
+            f"'{ending.processor_type}' invocation '{ending.invoke_id}': it was cancelled, "
+            "has ended, or was started again since"
+        )
+
+    def _session_in_tree(self, session_id: str) -> Optional["Engine[Any, Any]"]:
+        """The running session `session_id` names in the tree this machine is
+        the root of: this machine, or a child session at any depth below it.
+        ``None`` when the tree holds none: never started, or ended. The one walk
+        an ending and a Mesh delivery addressed to a session are routed by."""
         if session_id == self._session_id:
-            if self._end_host_invoke(
-                ending.processor_type,
-                ending.invoke_id,
-                ending.token,
-                create_done_invoke_event_name(ending.invoke_id)
-                if ending.done
-                else f"{ERROR_INVOKE_PREFIX}{ending.invoke_id}",
-                ending.data,
-                "",
-                "",
-            ):
-                return True, None
-            return True, (
-                f"session '{session_id}' is not running start {ending.token} of the "
-                f"'{ending.processor_type}' invocation '{ending.invoke_id}': it was cancelled, "
-                "has ended, or was started again since"
-            )
+            return self
         for invoke in self._active_invokes.values():
             child = getattr(invoke, "child", None)
-            route = getattr(child, "route_host_invoke_end", None)
-            if route is None:
+            if not isinstance(child, Engine):
                 continue
-            routed, refusal = route(session_id, ending)
-            if routed:
-                return True, refusal
-        return False, None
+            found = child._session_in_tree(session_id)
+            if found is not None:
+                return found
+        return None
 
     def end_host_invoke_in(self, session_id: str, ending: HostInvokeEnding) -> None:
         """End a host-run invocation of the session `session_id`, this one or one
@@ -1497,7 +1649,10 @@ class Engine(Generic[S, E]):
 
         Raises `StateRefusal` saying which when no session of that id runs in the
         tree, or that session is not running that start of the invocation
-        (cancelled, ended, or started again since). Nothing is raised then."""
+        (cancelled, ended, or started again since). Nothing is raised then.
+
+        An owner-thread operation; another thread posts an
+        `InboxHostInvokeEnding` naming the session to `inbox` instead."""
         routed, refusal = self.route_host_invoke_end(session_id, ending)
         if not routed:
             raise StateRefusal(
@@ -1507,23 +1662,48 @@ class Engine(Generic[S, E]):
             raise StateRefusal(refusal)
 
     def complete_host_invoke_in(
-        self, session_id: str, processor_type: str, invoke_id: str, token: int, done_data: str = ""
+        self,
+        session_id: str,
+        processor_type: str,
+        invoke_id: str,
+        token: int,
+        done_data: str = "",
+        origin: str = "",
+        origin_type: str = "",
     ) -> None:
         """`end_host_invoke_in` for a completion: ``done.invoke.<invoke_id>`` with
         `done_data` as ``_event.data``, in the session `session_id` names. What a
         host that serves the whole tree calls with the session id and token the
-        request carried."""
+        request carried. `origin` and `origin_type` are what
+        `complete_host_invoke` takes.
+
+        An owner-thread operation; another thread posts an
+        `InboxHostInvokeEnding` naming the session to `inbox` instead."""
         self.end_host_invoke_in(
-            session_id, HostInvokeEnding(processor_type, invoke_id, token, True, done_data)
+            session_id,
+            HostInvokeEnding(
+                processor_type, invoke_id, token, True, done_data, origin, origin_type
+            ),
         )
 
     def fail_host_invoke_in(
-        self, session_id: str, processor_type: str, invoke_id: str, token: int, error_data: str = ""
+        self,
+        session_id: str,
+        processor_type: str,
+        invoke_id: str,
+        token: int,
+        error_data: str = "",
+        origin: str = "",
+        origin_type: str = "",
     ) -> None:
         """`end_host_invoke_in` for a failure: ``error.invoke.<invoke_id>`` with
-        `error_data` as ``_event.data``."""
+        `error_data` as ``_event.data``. An owner-thread operation, posted from
+        another thread as `complete_host_invoke_in` is."""
         self.end_host_invoke_in(
-            session_id, HostInvokeEnding(processor_type, invoke_id, token, False, error_data)
+            session_id,
+            HostInvokeEnding(
+                processor_type, invoke_id, token, False, error_data, origin, origin_type
+            ),
         )
 
     def perform_host_invoke(self, request: HostInvokeRequest) -> bool:
@@ -1739,7 +1919,11 @@ class Engine(Generic[S, E]):
         ``_event.origintype`` (W3C SCXML 5.10.1), for a host whose invocation
         stands for another party it can name — as a Mesh router's
         ``sce:mesh-rpc`` stands for the peer that answered (``mesh://<peer>``).
-        Empty keeps what every host completion has carried."""
+        Empty keeps what every host completion has carried.
+
+        An owner-thread operation: a host whose invocation finishes on a thread
+        of its own posts an `InboxHostInvokeEnding` to `inbox` instead, and the
+        owner applies it with this call at its next macrostep boundary."""
         return self._end_host_invoke(
             processor_type,
             invoke_id,
@@ -1767,7 +1951,8 @@ class Engine(Generic[S, E]):
         only while start `token` is still running, ending the invocation, so
         a run ends once — by success, failure or deadline, whichever comes
         first. Returns `False`, raising nothing, for an invocation that was
-        cancelled, already ended, or restarted since."""
+        cancelled, already ended, or restarted since. An owner-thread operation,
+        posted from another thread as `complete_host_invoke` is."""
         return self._end_host_invoke(
             processor_type,
             invoke_id,
@@ -2455,8 +2640,14 @@ class Engine(Generic[S, E]):
         before any clock does: the invocation starts at the top of the first
         macrostep and the deadline it keeps is armed there, so until that tick the
         scheduler holds nothing to wait for and a host asleep on this answer would
-        never drive the machine at all. That is now."""
+        never drive the machine at all. That is now.
+
+        So is a post the inbox holds (docs/adr/0084): it is applied at the next
+        macrostep boundary the host drives, and a host that sleeps on this answer
+        without a waker would otherwise sleep past it."""
         if self._restored_host_invokes:
+            return 0
+        if self._inbox_state.holds_posts():
             return 0
         soonest: Optional[int] = None
         next_due = self._scheduler.peek_next_due_ms()
@@ -2531,7 +2722,11 @@ class Engine(Generic[S, E]):
                 # §scxml-D-mainEventLoop ends here, and whatever the host put
                 # on the external queue ends with it. That is the clause; being
                 # unable to say it happened is not. See
-                # `unseen_external_events`.
+                # `unseen_external_events`. The inbox closes with a run that
+                # ended, and what was posted before is applied first, so an
+                # event posted to it is counted with the rest (docs/adr/0084).
+                if self._reached_final:
+                    self._close_inbox()
                 self._record_unseen_external_events()
                 # §scxml-D-exitInterpreter: the loop is over because the run
                 # entered a top-level final, so every state still active is
@@ -2569,6 +2764,13 @@ class Engine(Generic[S, E]):
             # priority would otherwise hold it behind a chain that never ends.
             if self._internal_queue and not self._macrostep_truncated:
                 continue
+            # docs/adr/0084: the macrostep is complete, and this is the point
+            # before the external queue is consulted. What other threads posted
+            # since the last boundary is applied here, in the order the inbox
+            # took it, so an event it carries joins the external queue behind
+            # what this macrostep queued. Applying an input queues external
+            # events only, so it leaves the internal queue as it found it.
+            self._drain_inbox()
             if not self._external_queue:
                 return
             if taken >= self._max_external_events_per_call:
