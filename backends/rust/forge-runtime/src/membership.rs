@@ -27,11 +27,12 @@
 //! mutable access, so it stays what it was checked to be. The encode of a bare
 //! entry's chain walks either as [`Slots`].
 //!
-//! A decode builds the chain in the arm that will hold it ([`decode_chain_in`],
-//! [`decode_placed_in`]), since a list moved into an arm copies its whole
+//! A decode builds the chain in the arm that will hold it (`decode_chain_in`,
+//! `decode_placed_in`), since a list moved into an arm copies its whole
 //! capacity. Those two are the only places a chain is filled after it is made,
 //! and each checks it before it returns, so no value outside them holds a chain
-//! that is not what its type says.
+//! that is not what its type says. They are a generated decode's, and hidden
+//! from the documentation (docs/adr/0065 §6 R6, amendment of 2026-11-05).
 
 use core::marker::PhantomData;
 
@@ -550,10 +551,18 @@ impl<I: Iterator> ExactSizeIterator for Slots<I> {}
 ///
 /// Unless the chain is what the arm says, `group` is left at its default, so
 /// it holds no chain that its type does not describe, whatever `fill` did.
-pub fn decode_chain_in<G, L, H, A, const MAX: usize, const MIN: usize>(
+///
+/// The chain `install` is handed has not been read yet, and is checked before
+/// this returns. It is the one place a chain is made unchecked, so it is a
+/// decode's alone (docs/adr/0065 §6 R6, amendment of 2026-11-05): hidden from
+/// the documentation, and `install` and `held` capture nothing, which the build
+/// asserts (each is zero-sized), so they hold no state the chain could be kept
+/// in. They are called directly, never through a pointer.
+#[doc(hidden)]
+pub fn decode_chain_in<G, L, H, A, I, F, const MAX: usize, const MIN: usize>(
     group: &mut G,
-    install: impl FnOnce(Chain<L, H, A, MAX, MIN>) -> G,
-    held: impl FnOnce(&mut G) -> Option<&mut Chain<L, H, A, MAX, MIN>>,
+    install: I,
+    held: F,
     fill: impl FnOnce(&mut L) -> Result<(), CodecError>,
 ) -> Result<bool, CodecError>
 where
@@ -561,22 +570,50 @@ where
     L: HeldList,
     H: for<'s> Kinds<&'s [L::Entry]>,
     A: for<'s> Kinds<&'s [L::Entry]>,
+    I: FnOnce(Chain<L, H, A, MAX, MIN>) -> G,
+    F: FnOnce(&mut G) -> Option<&mut Chain<L, H, A, MAX, MIN>>,
 {
+    const {
+        assert!(
+            stateless::<I>() && stateless::<F>(),
+            "a decode door's install and held capture nothing"
+        )
+    };
     *group = install(Chain {
         list: <L as SceList<L::Entry>>::empty(),
         kinds: PhantomData,
     });
-    let settled = match held(group) {
-        Some(chain) => fill(&mut chain.list).and_then(|()| {
+    let read = held(group).map(|chain| {
+        fill(&mut chain.list).and_then(|()| {
             let entries = SceList::as_slice(&chain.list);
             match entries.len() {
                 n if n < MIN => Err(CodecError::NeedMoreBytes),
                 n if n > MAX => Err(CodecError::TooManyElements),
                 _ => Ok(H::each_in(&entries) && A::none_in(&entries)),
             }
-        }),
-        None => unreachable!("the arm `install` makes holds the chain `held` finds"),
-    };
+        })
+    });
+    settle(group, read)
+}
+
+/// Whether a closure captures nothing: a zero-sized one holds no value, so no
+/// chain a decode door hands it can be kept in it.
+const fn stateless<T>() -> bool {
+    core::mem::size_of::<T>() == 0
+}
+
+/// What a decode door returns, `group` left at its default unless the chain it
+/// read is the arm's. `None` is an arm `install` made that `held` does not find
+/// the chain in: a caller's defect, refused after the value is put back to its
+/// default, so that it holds no unread chain.
+fn settle<G: Default>(
+    group: &mut G,
+    read: Option<Result<bool, CodecError>>,
+) -> Result<bool, CodecError> {
+    let settled = read.unwrap_or_else(|| {
+        *group = G::default();
+        unreachable!("the arm `install` makes holds the chain `held` finds")
+    });
     if !matches!(settled, Ok(true)) {
         *group = G::default();
     }
@@ -592,25 +629,35 @@ where
 ///
 /// The arm `install` makes holds the named entry alone, which a chain of the
 /// kind is, so `group` holds what its type describes throughout; it is left at
-/// its default unless the chain is the arm's.
-pub fn decode_placed_in<G, L, K, const MAX: usize>(
+/// its default unless the chain is the arm's. A decode's alone, as
+/// `decode_chain_in` is.
+#[doc(hidden)]
+pub fn decode_placed_in<G, L, K, I, F, const MAX: usize>(
     group: &mut G,
-    install: impl FnOnce(Placed<L, K, MAX>) -> G,
-    held: impl FnOnce(&mut G) -> Option<&mut Placed<L, K, MAX>>,
+    install: I,
+    held: F,
     fill: impl FnOnce(&mut L) -> Result<(), CodecError>,
 ) -> Result<bool, CodecError>
 where
     G: Default,
     L: HeldList,
     K: Key<L::Entry>,
+    I: FnOnce(Placed<L, K, MAX>) -> G,
+    F: FnOnce(&mut G) -> Option<&mut Placed<L, K, MAX>>,
 {
+    const {
+        assert!(
+            stateless::<I>() && stateless::<F>(),
+            "a decode door's install and held capture nothing"
+        )
+    };
     *group = install(Placed {
         rest: <L as SceList<L::Entry>>::empty(),
         place: 0,
         kind: PhantomData,
     });
-    let settled = match held(group) {
-        Some(placed) => fill(&mut placed.rest).and_then(|()| {
+    let read = held(group).map(|placed| {
+        fill(&mut placed.rest).and_then(|()| {
             let entries = SceList::as_slice(&placed.rest);
             if entries.len() > MAX {
                 return Err(CodecError::TooManyElements);
@@ -623,13 +670,9 @@ where
                 }
                 None => Ok(false),
             }
-        }),
-        None => unreachable!("the arm `install` makes holds the chain `held` finds"),
-    };
-    if !matches!(settled, Ok(true)) {
-        *group = G::default();
-    }
-    settled
+        })
+    });
+    settle(group, read)
 }
 
 /// A decoded chain that holds an entry of the kind `K` as the others and the

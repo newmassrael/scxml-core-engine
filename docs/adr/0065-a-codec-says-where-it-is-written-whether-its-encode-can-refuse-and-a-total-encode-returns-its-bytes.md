@@ -203,7 +203,8 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   declared capacity by design, for text and bytes as for lists.
   - `Bounded<L, MAX>` holds a list `L` (a slice, a `heapless::Vec`, a profile's list, a view's list over bytes), and
     `new` checks it once. Arrays within the bound and `heapless::Vec<_, N>` with `N <= MAX` convert without a check,
-    which the build asserts. It reads as its list through `Deref` and has no mutable access.
+    which the build asserts. It reads as its list through `Deref` and has no mutable access but `refill`, the
+    decode's fill in place, which leaves it inside its bounds (R7).
   - The source trait returns `BoundedIter<I, MAX>`. It carries the entries and their count, and it is an
     `ExactSizeIterator` whose walk panics when the entries differ from the count. Its `map` keeps the count, so a
     foreign source writes `self.list.iter().map(Entry)`.
@@ -336,9 +337,10 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   a second item and others none, which the wire cannot carry: one refusal would have left for another. The gate
   decides the second list whole, so it is a sum (`options.H`): the arm where it holds holds both lists as one value,
   and the other holds the first list alone.
-  - That value is `Aligned<A, B>`, two lists its constructor holds to one count, with no mutable access, as `Bounded`
-    is. `Σ n. Vec n A × Vec n B` and `Vec n (A × B)` are the same type, and the first is the one the wire has: two
-    runs of entries, which a view holds as two spans of bytes with nothing copied to pair them.
+  - That value is `Aligned<A, B>`, two lists its constructor holds to one count, with no mutable access but a
+    decode's (amendment of 2026-11-05, below), as `Bounded` is. `Σ n. Vec n A × Vec n B` and `Vec n (A × B)` are the
+    same type, and the first is the one the wire has: two runs of entries, which a view holds as two spans of bytes
+    with nothing copied to pair them.
   - `gate_groups` puts the list that is always present on both sides of the gate, and the group says the two are
     aligned. The second list is then no second source of the number (`counted_with_another`): the count is the first
     list's, and the encode has nothing to compare.
@@ -451,6 +453,35 @@ tree, and the declarations it makes untrue are removed in the same commit, as §
   - The gates stay checks where a gate reads two chains' entries, an input or a flag something else derives, or
     where the atoms number more than eight (256 arms). No document in the tree is one, and each stays correct as a
     check. `chain_has_tagged` became total and lost its declaration, the last chain gate in the tree to do so.
+
+  *Amendment of 2026-11-05: R5's and R6's values are filled in place by a decode.* A Rust decode that read a
+  group's lists and chain into locals and built the arm from them by value carried a copy of each inline list in
+  its frame, and one more for each move (measured on an MCU client: a put's `decode_into` frame of 1,416 bytes, its
+  decode chain 77% of the worst stack chain; docs/adr/0077 §7). The eager decode now installs the arm the gates name
+  before it reads the first element it builds, and reads each element into the arm's field. Two of R5's and R6's
+  types are filled that way, through one door each, and each door keeps the type's invariant after every call:
+  - `Aligned::refill_first` fills the first list where the arm holds it and gives the second as many default
+    entries, so the two are of one count until `Aligned::refill_second` reads the second and holds it to the
+    first's count. A first list past the second's bound, or past what the second's profile holds, is refused there;
+    on any `Err` both lists are empty. So an `Aligned` is of one count after every call, whoever calls it.
+  - `decode_chain_in` (and `decode_placed_in` for a bare entry's place, R6a) installs the arm a function makes of
+    a chain not yet read, fills the chain where the arm holds it, and checks its bounds and kinds there.
+    When they are not the arm's, or the fill fails, the value is put back to its default, so it holds no chain its
+    type does not describe once the door returns. A chain's kinds name its arm only after it is read, so the decode
+    expects the arm where it holds no gated kind and, when the chain holds one, reads it again from where it began
+    into the arm its kinds name; the second reading holds the kinds of the first. `Placed`'s arm is installed
+    holding the named entry alone, which is a value of its type.
+  - The doors are a generated decode's. They cannot be private to the runtime, since the decode that calls them is
+    generated into the consumer's crate, nor sealed, since a key the generated code can name any crate can name.
+    They are hidden from the documentation (`#[doc(hidden)]`), and the functions the chain door is handed for the
+    arm it installs and finds capture nothing, which the build asserts (each is zero-sized), so nothing it is
+    handed holds state an unread chain could be kept in; only a static the caller writes on purpose could. They are
+    called directly, so the door costs no indirect call. The guarantee the types state is therefore exact for every
+    caller of `Aligned`'s doors, and for every caller of the chain doors that does not keep the chain `install` is
+    handed.
+  - A view's group keeps its locals: a view's list is a span of the frame, a few words whatever its bound.
+  - A group whose gates are not all read before its first built element (a flag carried after it) is still built
+    by value, with the old copies; no document in the tree is one.
 - **R7, a chain closed by an entry flag holds at least one entry.** A chain that ends at the entry whose flag is
   clear (`terminate-on="entry-flag"`) is one entry or more: every entry but the last has the flag set, so the
   grammar has no word for none. Two places disagree with it. The encode accepts a list with none, writing no byte

@@ -753,9 +753,10 @@ impl<L: Entries> Counted for L {
 /// The two lists stay what the wire makes them, two runs of entries, so a view
 /// holds two spans of bytes and nothing is copied to pair them. The value is made
 /// by a constructor that compares them once, as [`Bounded`] is. Its only mutable
-/// access is the decode's, which fills each list where the value holds it
-/// ([`Aligned::refill_first`], [`Aligned::refill_second`]) and leaves the two of
-/// one count after every call, so it stays what it was checked to be.
+/// access is a generated decode's, which fills each list where the value holds
+/// it (`refill_first`, `refill_second`, hidden from the documentation) and leaves
+/// the two of one count after every call, so it stays what it was checked to be
+/// (docs/adr/0065 §6 R5, amendment of 2026-11-05).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Aligned<A, B> {
     first: A,
@@ -822,6 +823,7 @@ where
     /// whose bound is below the first's count is refused as past its bound, and
     /// one whose profile holds fewer entries as past its capacity, which is
     /// what reading it would have answered. On `Err` both lists are empty.
+    #[doc(hidden)]
     pub fn refill_first(
         &mut self,
         fill: impl FnOnce(&mut LA) -> Result<(), crate::codec::CodecError>,
@@ -848,6 +850,7 @@ where
     /// short (`NeedMoreBytes`), more is past the count (`TooManyElements`).
     /// The decode reads both by the one count, so neither is reached from a
     /// frame. On `Err` both lists are empty.
+    #[doc(hidden)]
     pub fn refill_second(
         &mut self,
         fill: impl FnOnce(&mut LB) -> Result<(), crate::codec::CodecError>,

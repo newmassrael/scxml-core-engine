@@ -275,9 +275,12 @@ pub use crate::bounded::{
     try_collect_bounded, Aligned, Bounded, BoundedIter, Bytes, Counted, Entries, Fewest, Text,
 };
 pub use crate::membership::{
-    decode_chain_in, decode_placed_in, place_first, place_first_in, Chain, Key, Kinds, OfKind,
-    Placed, SkipAt, Slot, Slots, Without,
+    place_first, place_first_in, Chain, Key, Kinds, OfKind, Placed, SkipAt, Slot, Slots, Without,
 };
+// The doors a generated decode reads a chain into its arm through, a decode's
+// alone (docs/adr/0065 §6 R6, amendment of 2026-11-05).
+#[doc(hidden)]
+pub use crate::membership::{decode_chain_in, decode_placed_in};
 // A list whose entries say their inputs by a law (docs/adr/0065 §6 R8).
 pub use crate::law::{
     try_collect_lawful, AfterKey, Follows, Law, LawOver, Lawful, LawfulWalk, Says, Uniform,
