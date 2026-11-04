@@ -254,6 +254,13 @@ scripts/regen_external_chain_is_bounded_kotlin.sh
 stage "External-event budget document Python tree"
 scripts/regen_external_chain_is_bounded_python.sh
 
+# The two documents whose texts are past one JVM class-file constant sit outside
+# `integration_resources/` for the arity reason, with their own cause: the limit
+# they reach is the class file's, so only the Kotlin channel has a question to
+# ask of them. The `generate-integration` fan-out never sees them.
+stage "Long-text documents Kotlin trees"
+scripts/regen_jvm_long_text_kotlin.sh
+
 # The Mesh trees are generated from the standard library's stdlib/mesh by
 # their own scripts, and this script did not know about them — so a change
 # to what a source-hash covers left all three stale with nothing here to

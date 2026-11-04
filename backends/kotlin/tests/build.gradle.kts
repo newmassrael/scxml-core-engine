@@ -240,6 +240,13 @@ tasks.test {
         .withPropertyName("savedStateSchema")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
+    // Same reason, same failure mode. `JvmLongTextTest` reads the two documents
+    // its machines were generated from, at RUN time, as the texts each machine must
+    // hand back; a document edited with its machine left stale must turn it red.
+    inputs.dir(File(rootDir, "backends/kotlin/tests/fixtures/jvm_long_text"))
+        .withPropertyName("jvmLongTextDocuments")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     // Native library paths (Lua + QuickJS JNI)
     val luaLibDir = project(":sce-kotlin-lua").layout.buildDirectory.dir("native/lib")
     val quickjsLibDir = project(":sce-kotlin-quickjs").layout.buildDirectory.dir("native/lib")
