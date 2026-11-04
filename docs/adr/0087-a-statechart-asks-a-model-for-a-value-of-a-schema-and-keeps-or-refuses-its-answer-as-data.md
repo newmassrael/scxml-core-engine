@@ -913,7 +913,7 @@ bound. A scenario that compares the record across eight lanes is the only place 
 
 ## Owner's answers
 
-The owner accepted this ADR on 2026-11-04 ("수락"), with each open question answered as its recommendation:
+The owner accepted this ADR on 2026-11-04 ("accept"), with each open question answered as its recommendation:
 
 1. The GBNF counts bytes exactly (open question 1).
 2. The kind is named `text-template` (open question 2).
