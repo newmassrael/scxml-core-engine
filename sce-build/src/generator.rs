@@ -48,6 +48,11 @@ pub(crate) fn new_env<'a>() -> Environment<'a> {
     env.add_filter("kotlin_forge_package", |snake: String| {
         crate::forge::generator::kotlin_forge_package(&snake)
     });
+    // The declaration of a Kotlin text constant, which holds a text of any
+    // length (`filters::kotlin_string_val`): a template writes
+    // `{{ kotlin_string_val("NAME", text) }}`, never `const val NAME: String =
+    // "{{ text }}"`, wherever the text is one no generator bounds.
+    env.add_function("kotlin_string_val", crate::filters::kotlin_string_val);
     // Whether an `<assign>` names a location it may not write, decided once
     // for every backend that refuses it at build time
     // (`filters::READ_ONLY_LOCATIONS`): `{% if loc is read_only_location %}`.

@@ -2003,6 +2003,76 @@ pub(crate) fn escape_kotlin(text: String) -> String {
         .replace('$', "\\$")
 }
 
+/// The most bytes one string constant of a JVM class file holds: a
+/// `CONSTANT_Utf8_info` counts its bytes, in modified UTF-8, in a `u2` (The
+/// Java Virtual Machine Specification, section 4.4.7).
+pub const JVM_CONSTANT_MAX_BYTES: usize = 65_535;
+
+/// The bytes `c` takes in modified UTF-8 (JVM Specification, section 4.4.7):
+/// U+0000 two, U+0001 to U+007F one, to U+07FF two, to U+FFFF three, and a
+/// character past it six, the two surrogates of its UTF-16 pair three each.
+pub fn modified_utf8_len(c: char) -> usize {
+    match u32::from(c) {
+        0 => 2,
+        0x01..=0x7f => 1,
+        0x80..=0x7ff => 2,
+        0x800..=0xffff => 3,
+        _ => 6,
+    }
+}
+
+/// `text` cut into pieces each of at most [`JVM_CONSTANT_MAX_BYTES`] bytes of
+/// modified UTF-8, at character boundaries, so a character is never split;
+/// one piece, the text itself, when it fits.
+pub fn jvm_constant_chunks(text: &str) -> Vec<&str> {
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    let mut bytes = 0;
+    for (at, c) in text.char_indices() {
+        let width = modified_utf8_len(c);
+        if bytes + width > JVM_CONSTANT_MAX_BYTES {
+            chunks.push(&text[start..at]);
+            start = at;
+            bytes = 0;
+        }
+        bytes += width;
+    }
+    chunks.push(&text[start..]);
+    chunks
+}
+
+/// The Kotlin declaration of the text constant `name`, `text` its value:
+/// `const val NAME: String = "…"` while the text fits one class-file constant,
+/// and otherwise a `val` built when the file's class is initialized from pieces
+/// that each fit ([`jvm_constant_chunks`]), since kotlinc cannot write a
+/// constant past [`JVM_CONSTANT_MAX_BYTES`]. `indent` is the indentation the
+/// declaration stands at, which the lines of the pieces take too.
+///
+/// The one door a Kotlin template writes a generated text constant through,
+/// whatever its length, so a text no generator bounds (a payload's JSON
+/// Schema, an event name) compiles at every length. A constant of a fixed
+/// vocabulary (a hash, a progress word) needs none.
+pub fn kotlin_string_val(name: String, text: String, indent: Option<String>) -> String {
+    let chunks = jvm_constant_chunks(&text);
+    if let [whole] = chunks.as_slice() {
+        return format!(
+            "const val {name}: String = \"{}\"",
+            escape_kotlin(whole.to_string())
+        );
+    }
+    let indent = indent.unwrap_or_default();
+    let mut out = format!("val {name}: String = buildString {{\n");
+    for chunk in chunks {
+        out.push_str(&format!(
+            "{indent}    append(\"{}\")\n",
+            escape_kotlin(chunk.to_string())
+        ));
+    }
+    out.push_str(&indent);
+    out.push('}');
+    out
+}
+
 /// Escape the author's text for the BODY of a Swift string literal.
 ///
 /// Both forms Swift writes with escapes — `"…"` and `"""…"""` — read the same
@@ -2214,6 +2284,83 @@ pub fn py_string_literal(text: String) -> String {
     }
     out.push('"');
     out
+}
+
+/// A Kotlin text constant past one class-file constant is built at class init
+/// from pieces that each fit, counted in modified UTF-8.
+#[cfg(test)]
+mod kotlin_text_constants {
+    use super::*;
+
+    /// The bytes of modified UTF-8 `text` takes.
+    fn modified(text: &str) -> usize {
+        text.chars().map(modified_utf8_len).sum()
+    }
+
+    #[test]
+    fn a_character_takes_its_bytes_of_modified_utf8() {
+        assert_eq!(modified_utf8_len('\u{0}'), 2);
+        assert_eq!(modified_utf8_len('a'), 1);
+        assert_eq!(modified_utf8_len('\u{e9}'), 2);
+        assert_eq!(modified_utf8_len('\u{20ac}'), 3);
+        assert_eq!(modified_utf8_len('\u{1f600}'), 6);
+    }
+
+    /// At 65,535 bytes the text is one constant; at 65,536 it is two pieces,
+    /// the first full, whatever the widths of its characters, and a character
+    /// that would cross the limit opens the next piece whole.
+    #[test]
+    fn a_text_past_one_constant_is_cut_at_the_limit() {
+        let euro = "\u{20ac}";
+        for (fits, past) in [
+            ("a".repeat(65_535), "a".repeat(65_536)),
+            (euro.repeat(21_845), format!("{}a", euro.repeat(21_845))),
+            ("\u{0}".repeat(32_767) + "a", "\u{0}".repeat(32_768)),
+        ] {
+            assert_eq!(modified(&fits), JVM_CONSTANT_MAX_BYTES);
+            assert_eq!(jvm_constant_chunks(&fits), [fits.as_str()]);
+            assert_eq!(modified(&past), JVM_CONSTANT_MAX_BYTES + 1);
+            let chunks = jvm_constant_chunks(&past);
+            assert_eq!(chunks.len(), 2);
+            assert_eq!(chunks.concat(), past);
+            assert!(chunks.iter().all(|c| modified(c) <= JVM_CONSTANT_MAX_BYTES));
+        }
+        // Six bytes that would cross the limit start the second piece.
+        let crossing = format!("{}\u{1f600}", "a".repeat(65_530));
+        let chunks = jvm_constant_chunks(&crossing);
+        let ascii = "a".repeat(65_530);
+        assert_eq!(chunks, [ascii.as_str(), "\u{1f600}"]);
+        assert_eq!(jvm_constant_chunks(""), [""]);
+    }
+
+    #[test]
+    fn a_kotlin_constant_past_the_limit_is_built_at_class_init() {
+        assert_eq!(
+            kotlin_string_val("NAME".into(), "a$\"b".into(), None),
+            "const val NAME: String = \"a\\$\\\"b\""
+        );
+        let fits = kotlin_string_val("NAME".into(), "a".repeat(65_535), None);
+        assert!(
+            fits.starts_with("const val NAME: String = \"aaa"),
+            "{}",
+            &fits[..40]
+        );
+        assert_eq!(fits.lines().count(), 1);
+        let past = kotlin_string_val(
+            "NAME".into(),
+            format!("{}$", "a".repeat(65_535)),
+            Some("    ".into()),
+        );
+        let lines: Vec<&str> = past.lines().collect();
+        assert_eq!(lines.len(), 4, "a head, two pieces and the close");
+        assert_eq!(lines[0], "val NAME: String = buildString {");
+        assert_eq!(
+            lines[1],
+            format!("        append(\"{}\")", "a".repeat(65_535))
+        );
+        assert_eq!(lines[2], "        append(\"\\$\")");
+        assert_eq!(lines[3], "    }");
+    }
 }
 
 #[cfg(test)]

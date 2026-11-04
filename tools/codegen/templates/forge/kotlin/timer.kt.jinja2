@@ -22,10 +22,10 @@ import com.sce.forge.runtime.Timer
 const val PERIOD_US: Long = {{ period_us }}L
 const val PERIOD_MS: Long = {{ period_ms }}L
 {% if reset_on_event %}
-const val RESET_ON_EVENT: String = "{{ reset_on_event }}"
+{{ kotlin_string_val("RESET_ON_EVENT", reset_on_event) }}
 {% endif %}
 {% if cancel_on_state_exit %}
-const val CANCEL_ON_STATE_EXIT: String = "{{ cancel_on_state_exit }}"
+{{ kotlin_string_val("CANCEL_ON_STATE_EXIT", cancel_on_state_exit) }}
 {% endif %}
 
 /**
