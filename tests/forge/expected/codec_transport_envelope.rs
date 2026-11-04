@@ -196,36 +196,17 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeIn<S> {
     /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
-    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    ///
+    /// A field past what the profile holds is read on and not held, and the
+    /// frame is refused with `CapacityExceeded` only once it is read whole and
+    /// every refusal of its own has had its turn (docs/adr/0077 §7), so this
+    /// node and one that holds more refuse a malformed frame alike. On `Err`,
+    /// `_out` holds the fields decoded so far and is not to be read; each of
+    /// them holds what its type says.
     pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecTransportEnvelopeFrom<'f> {
-        // A form past its capacity stopped where it could not store, so the
-        // frame is judged by what cannot run out, and only a frame that parses
-        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
-        // less than a bound, so this stands on every codec that takes one.
-        let _frame = *cursor;
-        match Self::store_into(cursor, _out) {
-            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame)),
-            stored => stored,
-        }
-    }
-
-    /// What a frame is that stopped the decode past a capacity (docs/adr/0077
-    /// §7): past the capacity when a form that cannot run out reads it, and
-    /// what that form refuses it as when it does not. Kept out of the decode
-    /// and never inlined into it, so the value the form reads takes no room in
-    /// the decode's frame; it runs only after the decode has stopped.
-    #[cold]
-    #[inline(never)]
-    fn past_capacity<'f>(mut _frame: SceCursor<'f>) -> CodecError where S: CodecTransportEnvelopeFrom<'f> {
-        match CodecTransportEnvelope::store_into(&mut _frame, &mut CodecTransportEnvelope::default()) {
-            Ok(_) => CodecError::CapacityExceeded,
-            Err(refused) => refused,
-        }
-    }
-
-    /// The reading of [`Self::decode_into`], which stops where a field is past
-    /// its capacity.
-    fn store_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecTransportEnvelopeFrom<'f> {
+        // A field past what the profile holds is read on and not held; the
+        // frame says so once it is read whole (docs/adr/0077 §7).
+        let mut _over = false;
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice(1)?;
@@ -242,43 +223,43 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeIn<S> {
             1u8 => {
                 _out.body = CodecTransportEnvelopeVariantIn::CodecZenohInitBody(CodecZenohInitBodyOwned::<S>::default());
                 if let CodecTransportEnvelopeVariantIn::CodecZenohInitBody(_b) = &mut _out.body {
-                    CodecZenohInitBodyOwned::<S>::decode_into(cursor, _b, (header >> 6) & 0x1, (header >> 5) & 0x1)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohInitBodyOwned::<S>::decode_into(cursor, _b, (header >> 6) & 0x1, (header >> 5) & 0x1), &mut _over)?;
                 }
             }
             2u8 => {
                 _out.body = CodecTransportEnvelopeVariantIn::CodecZenohOpenBody(CodecZenohOpenBodyOwned::<S>::default());
                 if let CodecTransportEnvelopeVariantIn::CodecZenohOpenBody(_b) = &mut _out.body {
-                    CodecZenohOpenBodyOwned::<S>::decode_into(cursor, _b, (header >> 5) & 0x1)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohOpenBodyOwned::<S>::decode_into(cursor, _b, (header >> 5) & 0x1), &mut _over)?;
                 }
             }
             3u8 => {
                 _out.body = CodecTransportEnvelopeVariantIn::CodecZenohClose(CodecZenohClose::default());
                 if let CodecTransportEnvelopeVariantIn::CodecZenohClose(_b) = &mut _out.body {
-                    CodecZenohClose::decode_into(cursor, _b)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohClose::decode_into(cursor, _b), &mut _over)?;
                 }
             }
             4u8 => {
                 _out.body = CodecTransportEnvelopeVariantIn::CodecZenohKeepAlive(CodecZenohKeepAlive::default());
                 if let CodecTransportEnvelopeVariantIn::CodecZenohKeepAlive(_b) = &mut _out.body {
-                    CodecZenohKeepAlive::decode_into(cursor, _b)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohKeepAlive::decode_into(cursor, _b), &mut _over)?;
                 }
             }
             5u8 => {
                 _out.body = CodecTransportEnvelopeVariantIn::CodecZenohFrame(CodecZenohFrameOwned::<S>::default());
                 if let CodecTransportEnvelopeVariantIn::CodecZenohFrame(_b) = &mut _out.body {
-                    CodecZenohFrameOwned::<S>::decode_into(cursor, _b)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohFrameOwned::<S>::decode_into(cursor, _b), &mut _over)?;
                 }
             }
             6u8 => {
                 _out.body = CodecTransportEnvelopeVariantIn::CodecZenohFragment(CodecZenohFragmentOwned::<S>::default());
                 if let CodecTransportEnvelopeVariantIn::CodecZenohFragment(_b) = &mut _out.body {
-                    CodecZenohFragmentOwned::<S>::decode_into(cursor, _b)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohFragmentOwned::<S>::decode_into(cursor, _b), &mut _over)?;
                 }
             }
             7u8 => {
                 _out.body = CodecTransportEnvelopeVariantIn::CodecZenohJoin(CodecZenohJoinOwned::<S>::default());
                 if let CodecTransportEnvelopeVariantIn::CodecZenohJoin(_b) = &mut _out.body {
-                    CodecZenohJoinOwned::<S>::decode_into(cursor, _b, (header >> 6) & 0x1)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohJoinOwned::<S>::decode_into(cursor, _b, (header >> 6) & 0x1), &mut _over)?;
                 }
             }
             other => {
@@ -287,11 +268,14 @@ impl<S: CodecTransportEnvelopeStorage> CodecTransportEnvelopeIn<S> {
                     body: CodecZenohClose::default(),
                 };
                 if let CodecTransportEnvelopeVariantIn::Default { body: _b, .. } = &mut _out.body {
-                    CodecZenohClose::decode_into(cursor, _b)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohClose::decode_into(cursor, _b), &mut _over)?;
                 }
             }
         }
         _out.header = header;
+        if _over {
+            return Err(CodecError::CapacityExceeded);
+        }
         Ok(())
     }
 

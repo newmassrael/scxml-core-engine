@@ -130,8 +130,17 @@ impl CodecVariantDispatch {
     /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
-    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    ///
+    /// A field past what the profile holds is read on and not held, and the
+    /// frame is refused with `CapacityExceeded` only once it is read whole and
+    /// every refusal of its own has had its turn (docs/adr/0077 §7), so this
+    /// node and one that holds more refuse a malformed frame alike. On `Err`,
+    /// `_out` holds the fields decoded so far and is not to be read; each of
+    /// them holds what its type says.
     pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self) -> Result<(), CodecError> {
+        // A field past what the profile holds is read on and not held; the
+        // frame says so once it is read whole (docs/adr/0077 §7).
+        let mut _over = false;
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice(1)?;
@@ -148,13 +157,13 @@ impl CodecVariantDispatch {
             1u8 => {
                 _out.body = CodecVariantDispatchVariant::CodecVariantSessionOpen(CodecVariantSessionOpen::default());
                 if let CodecVariantDispatchVariant::CodecVariantSessionOpen(_b) = &mut _out.body {
-                    CodecVariantSessionOpen::decode_into(cursor, _b)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecVariantSessionOpen::decode_into(cursor, _b), &mut _over)?;
                 }
             }
             2u8 => {
                 _out.body = CodecVariantDispatchVariant::CodecVariantSessionClose(CodecVariantSessionClose::default());
                 if let CodecVariantDispatchVariant::CodecVariantSessionClose(_b) = &mut _out.body {
-                    CodecVariantSessionClose::decode_into(cursor, _b)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecVariantSessionClose::decode_into(cursor, _b), &mut _over)?;
                 }
             }
             other => {
@@ -163,11 +172,14 @@ impl CodecVariantDispatch {
                     body: CodecVariantSessionClose::default(),
                 };
                 if let CodecVariantDispatchVariant::Default { body: _b, .. } = &mut _out.body {
-                    CodecVariantSessionClose::decode_into(cursor, _b)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecVariantSessionClose::decode_into(cursor, _b), &mut _over)?;
                 }
             }
         }
         _out.msg_id = msg_id;
+        if _over {
+            return Err(CodecError::CapacityExceeded);
+        }
         Ok(())
     }
 

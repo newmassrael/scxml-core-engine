@@ -97,30 +97,9 @@ impl<S: CodecExtAttachmentStorage> CodecExtAttachmentIn<S> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecExtAttachmentFrom<'f> {
-        // Judged as [`Self::decode_into`] judges a frame past a capacity
-        // (docs/adr/0077 §7).
-        let _frame = *cursor;
-        match Self::stored(cursor) {
-            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame)),
-            stored => stored,
-        }
-    }
-
-    /// What a frame is that stopped [`Self::decode`] past a capacity, judged
-    /// out of the decode's frame as [`Self::decode_into`] judges one
-    /// (docs/adr/0077 §7).
-    #[cold]
-    #[inline(never)]
-    fn past_capacity<'f>(mut _frame: SceCursor<'f>) -> CodecError where S: CodecExtAttachmentFrom<'f> {
-        match CodecExtAttachment::stored(&mut _frame) {
-            Ok(_) => CodecError::CapacityExceeded,
-            Err(refused) => refused,
-        }
-    }
-
-    /// The reading of [`Self::decode`], which stops where a field is past its
-    /// capacity.
-    fn stored<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecExtAttachmentFrom<'f> {
+        // A field past what the profile holds is read on and not held; the
+        // frame says so once it is read whole (docs/adr/0077 §7).
+        let mut _over = false;
         // Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
         // a codec without `<sce:field sce:bit-size="tail">` consumes
         // only `min_bytes + length_value` rather than the entire
@@ -142,7 +121,8 @@ impl<S: CodecExtAttachmentStorage> CodecExtAttachmentIn<S> {
         }
         let body = raw.get(1..1 + length as usize).ok_or(CodecError::NeedMoreBytes)?;
         let body = ::sce_forge_runtime::codec::Bounded::new(body).ok_or(CodecError::LengthOutOfRange)?;
-        let body = body.store::<S, CodecExtAttachmentBodyField>()?;
+        let _body_read = body.len();
+        let body = ::sce_forge_runtime::codec::note_held(body.store::<S, CodecExtAttachmentBodyField>(), &mut _over)?;
         let value = Self {
             length,
             body,
@@ -154,13 +134,18 @@ impl<S: CodecExtAttachmentStorage> CodecExtAttachmentIn<S> {
         // lower bound.
         let mut _consumed: usize = 1;
         {
-            let _end = 1usize + value.body.as_bytes().len();
+            // The bytes read, which a field past what the profile holds does
+            // not keep (docs/adr/0077 §7).
+            let _end = 1usize + _body_read;
             if _end > _consumed { _consumed = _end; }
         }
         if _consumed > _frame_len {
             return Err(CodecError::NeedMoreBytes);
         }
         cursor.advance(_consumed)?;
+        if _over {
+            return Err(CodecError::CapacityExceeded);
+        }
         Ok(value)
     }
 

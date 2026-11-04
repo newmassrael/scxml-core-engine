@@ -87,8 +87,17 @@ impl CodecVariantPeekBasic {
     /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
-    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    ///
+    /// A field past what the profile holds is read on and not held, and the
+    /// frame is refused with `CapacityExceeded` only once it is read whole and
+    /// every refusal of its own has had its turn (docs/adr/0077 §7), so this
+    /// node and one that holds more refuse a malformed frame alike. On `Err`,
+    /// `_out` holds the fields decoded so far and is not to be read; each of
+    /// them holds what its type says.
     pub fn decode_into(cursor: &mut SceCursor<'_>, _out: &mut Self) -> Result<(), CodecError> {
+        // A field past what the profile holds is read on and not held; the
+        // frame says so once it is read whole (docs/adr/0077 §7).
+        let mut _over = false;
         // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -108,18 +117,21 @@ impl CodecVariantPeekBasic {
             0u8 => {
                 _out.body = CodecVariantPeekBasicVariant::CodecPeekArmA(CodecPeekArmA::default());
                 if let CodecVariantPeekBasicVariant::CodecPeekArmA(_b) = &mut _out.body {
-                    CodecPeekArmA::decode_into(cursor, _b)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecPeekArmA::decode_into(cursor, _b), &mut _over)?;
                 }
             }
             1u8 => {
                 _out.body = CodecVariantPeekBasicVariant::CodecPeekArmB(CodecPeekArmB::default());
                 if let CodecVariantPeekBasicVariant::CodecPeekArmB(_b) = &mut _out.body {
-                    CodecPeekArmB::decode_into(cursor, _b)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecPeekArmB::decode_into(cursor, _b), &mut _over)?;
                 }
             }
             // Build-time `codec/variant-arm-unreachable` proves the
             // arm set covers the tag domain without a default.
             _ => unreachable!("variant exhaustiveness gated by codec/variant-arm-unreachable at parse time"),
+        }
+        if _over {
+            return Err(CodecError::CapacityExceeded);
         }
         Ok(())
     }

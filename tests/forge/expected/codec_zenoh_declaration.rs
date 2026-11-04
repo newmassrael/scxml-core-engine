@@ -208,36 +208,17 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationIn<S> {
     /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
-    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    ///
+    /// A field past what the profile holds is read on and not held, and the
+    /// frame is refused with `CapacityExceeded` only once it is read whole and
+    /// every refusal of its own has had its turn (docs/adr/0077 §7), so this
+    /// node and one that holds more refuse a malformed frame alike. On `Err`,
+    /// `_out` holds the fields decoded so far and is not to be read; each of
+    /// them holds what its type says.
     pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecZenohDeclarationFrom<'f> {
-        // A form past its capacity stopped where it could not store, so the
-        // frame is judged by what cannot run out, and only a frame that parses
-        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
-        // less than a bound, so this stands on every codec that takes one.
-        let _frame = *cursor;
-        match Self::store_into(cursor, _out) {
-            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame)),
-            stored => stored,
-        }
-    }
-
-    /// What a frame is that stopped the decode past a capacity (docs/adr/0077
-    /// §7): past the capacity when a form that cannot run out reads it, and
-    /// what that form refuses it as when it does not. Kept out of the decode
-    /// and never inlined into it, so the value the form reads takes no room in
-    /// the decode's frame; it runs only after the decode has stopped.
-    #[cold]
-    #[inline(never)]
-    fn past_capacity<'f>(mut _frame: SceCursor<'f>) -> CodecError where S: CodecZenohDeclarationFrom<'f> {
-        match CodecZenohDeclarationView::decode(&mut _frame) {
-            Ok(_) => CodecError::CapacityExceeded,
-            Err(refused) => refused,
-        }
-    }
-
-    /// The reading of [`Self::decode_into`], which stops where a field is past
-    /// its capacity.
-    fn store_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecZenohDeclarationFrom<'f> {
+        // A field past what the profile holds is read on and not held; the
+        // frame says so once it is read whole (docs/adr/0077 §7).
+        let mut _over = false;
         // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice(1)?;
@@ -254,55 +235,55 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationIn<S> {
             0u8 => {
                 _out.body = CodecZenohDeclarationVariantIn::CodecZenohDeclKexpr(CodecZenohDeclKexprOwned::<S>::default());
                 if let CodecZenohDeclarationVariantIn::CodecZenohDeclKexpr(_b) = &mut _out.body {
-                    CodecZenohDeclKexprOwned::<S>::decode_into(cursor, _b, (header >> 5) & 0x1)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohDeclKexprOwned::<S>::decode_into(cursor, _b, (header >> 5) & 0x1), &mut _over)?;
                 }
             }
             1u8 => {
                 _out.body = CodecZenohDeclarationVariantIn::CodecZenohUndeclKexpr(CodecZenohUndeclKexpr::default());
                 if let CodecZenohDeclarationVariantIn::CodecZenohUndeclKexpr(_b) = &mut _out.body {
-                    CodecZenohUndeclKexpr::decode_into(cursor, _b)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohUndeclKexpr::decode_into(cursor, _b), &mut _over)?;
                 }
             }
             2u8 => {
                 _out.body = CodecZenohDeclarationVariantIn::CodecZenohDeclSubscriber(CodecZenohDeclSubscriberOwned::<S>::default());
                 if let CodecZenohDeclarationVariantIn::CodecZenohDeclSubscriber(_b) = &mut _out.body {
-                    CodecZenohDeclSubscriberOwned::<S>::decode_into(cursor, _b, (header >> 5) & 0x1)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohDeclSubscriberOwned::<S>::decode_into(cursor, _b, (header >> 5) & 0x1), &mut _over)?;
                 }
             }
             3u8 => {
                 _out.body = CodecZenohDeclarationVariantIn::CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriberOwned::<S>::default());
                 if let CodecZenohDeclarationVariantIn::CodecZenohUndeclSubscriber(_b) = &mut _out.body {
-                    CodecZenohUndeclSubscriberOwned::<S>::decode_into(cursor, _b, (header >> 7) & 0x1)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohUndeclSubscriberOwned::<S>::decode_into(cursor, _b, (header >> 7) & 0x1), &mut _over)?;
                 }
             }
             4u8 => {
                 _out.body = CodecZenohDeclarationVariantIn::CodecZenohDeclQueryable(CodecZenohDeclQueryableOwned::<S>::default());
                 if let CodecZenohDeclarationVariantIn::CodecZenohDeclQueryable(_b) = &mut _out.body {
-                    CodecZenohDeclQueryableOwned::<S>::decode_into(cursor, _b, (header >> 5) & 0x1, (header >> 7) & 0x1)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohDeclQueryableOwned::<S>::decode_into(cursor, _b, (header >> 5) & 0x1, (header >> 7) & 0x1), &mut _over)?;
                 }
             }
             5u8 => {
                 _out.body = CodecZenohDeclarationVariantIn::CodecZenohUndeclQueryable(CodecZenohUndeclQueryableOwned::<S>::default());
                 if let CodecZenohDeclarationVariantIn::CodecZenohUndeclQueryable(_b) = &mut _out.body {
-                    CodecZenohUndeclQueryableOwned::<S>::decode_into(cursor, _b, (header >> 7) & 0x1)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohUndeclQueryableOwned::<S>::decode_into(cursor, _b, (header >> 7) & 0x1), &mut _over)?;
                 }
             }
             6u8 => {
                 _out.body = CodecZenohDeclarationVariantIn::CodecZenohDeclToken(CodecZenohDeclTokenOwned::<S>::default());
                 if let CodecZenohDeclarationVariantIn::CodecZenohDeclToken(_b) = &mut _out.body {
-                    CodecZenohDeclTokenOwned::<S>::decode_into(cursor, _b, (header >> 5) & 0x1)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohDeclTokenOwned::<S>::decode_into(cursor, _b, (header >> 5) & 0x1), &mut _over)?;
                 }
             }
             7u8 => {
                 _out.body = CodecZenohDeclarationVariantIn::CodecZenohUndeclToken(CodecZenohUndeclTokenOwned::<S>::default());
                 if let CodecZenohDeclarationVariantIn::CodecZenohUndeclToken(_b) = &mut _out.body {
-                    CodecZenohUndeclTokenOwned::<S>::decode_into(cursor, _b, (header >> 7) & 0x1)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohUndeclTokenOwned::<S>::decode_into(cursor, _b, (header >> 7) & 0x1), &mut _over)?;
                 }
             }
             26u8 => {
                 _out.body = CodecZenohDeclarationVariantIn::CodecZenohDeclFinal(CodecZenohDeclFinal::default());
                 if let CodecZenohDeclarationVariantIn::CodecZenohDeclFinal(_b) = &mut _out.body {
-                    CodecZenohDeclFinal::decode_into(cursor, _b)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohDeclFinal::decode_into(cursor, _b), &mut _over)?;
                 }
             }
             other => {
@@ -311,11 +292,14 @@ impl<S: CodecZenohDeclarationStorage> CodecZenohDeclarationIn<S> {
                     body: CodecZenohDeclFinal::default(),
                 };
                 if let CodecZenohDeclarationVariantIn::Default { body: _b, .. } = &mut _out.body {
-                    CodecZenohDeclFinal::decode_into(cursor, _b)?;
+                    ::sce_forge_runtime::codec::note_capacity(CodecZenohDeclFinal::decode_into(cursor, _b), &mut _over)?;
                 }
             }
         }
         _out.header = header;
+        if _over {
+            return Err(CodecError::CapacityExceeded);
+        }
         Ok(())
     }
 

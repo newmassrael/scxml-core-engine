@@ -115,36 +115,17 @@ impl<S: CodecRepeatFlagGatedStorage> CodecRepeatFlagGatedIn<S> {
     /// up (the struct literal, `Ok(..)`, a variant wrapper, the caller's own
     /// binding) copies the declared maximum however few entries the wire held.
     /// A caller on a path where that shows decodes into a destination it owns.
-    /// On `Err`, `_out` holds the fields decoded so far and is not to be read.
+    ///
+    /// A field past what the profile holds is read on and not held, and the
+    /// frame is refused with `CapacityExceeded` only once it is read whole and
+    /// every refusal of its own has had its turn (docs/adr/0077 §7), so this
+    /// node and one that holds more refuse a malformed frame alike. On `Err`,
+    /// `_out` holds the fields decoded so far and is not to be read; each of
+    /// them holds what its type says.
     pub fn decode_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecRepeatFlagGatedFrom<'f> {
-        // A form past its capacity stopped where it could not store, so the
-        // frame is judged by what cannot run out, and only a frame that parses
-        // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
-        // less than a bound, so this stands on every codec that takes one.
-        let _frame = *cursor;
-        match Self::store_into(cursor, _out) {
-            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame)),
-            stored => stored,
-        }
-    }
-
-    /// What a frame is that stopped the decode past a capacity (docs/adr/0077
-    /// §7): past the capacity when a form that cannot run out reads it, and
-    /// what that form refuses it as when it does not. Kept out of the decode
-    /// and never inlined into it, so the value the form reads takes no room in
-    /// the decode's frame; it runs only after the decode has stopped.
-    #[cold]
-    #[inline(never)]
-    fn past_capacity<'f>(mut _frame: SceCursor<'f>) -> CodecError where S: CodecRepeatFlagGatedFrom<'f> {
-        match CodecRepeatFlagGated::store_into(&mut _frame, &mut CodecRepeatFlagGated::default()) {
-            Ok(_) => CodecError::CapacityExceeded,
-            Err(refused) => refused,
-        }
-    }
-
-    /// The reading of [`Self::decode_into`], which stops where a field is past
-    /// its capacity.
-    fn store_into<'f>(cursor: &mut SceCursor<'f>, _out: &mut Self) -> Result<(), CodecError> where S: CodecRepeatFlagGatedFrom<'f> {
+        // A field past what the profile holds is read on and not held; the
+        // frame says so once it is read whole (docs/adr/0077 §7).
+        let mut _over = false;
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -176,17 +157,26 @@ impl<S: CodecRepeatFlagGatedStorage> CodecRepeatFlagGatedIn<S> {
             if _n > 4 {
                 return Err(CodecError::TooManyElements);
             }
-            _out.entries.insert(Default::default()).refill_from((head & 0x1) != 0, |_vec| {
+            ::sce_forge_runtime::codec::note_capacity(_out.entries.insert(Default::default()).refill_from((head & 0x1) != 0, |_vec| {
+                let mut _full = false;
                 for _ in 0.._n {
-                    ::sce_forge_runtime::codec::SceList::try_push(_vec, CodecChainFlagEntry::decode(cursor, head & 0x1)?)?;
+                    let mut _entry = CodecChainFlagEntry::default();
+                    ::sce_forge_runtime::codec::note_capacity(CodecChainFlagEntry::decode_into(cursor, &mut _entry, head & 0x1), &mut _full)?;
+                    ::sce_forge_runtime::codec::push_keeping(_vec, _entry, &[], &mut _full);
+                }
+                if _full {
+                    return Err(CodecError::CapacityExceeded);
                 }
                 Ok(())
-            })?;
+            }), &mut _over)?;
         } else {
             _out.entries = None;
         }
         _out.head = head;
         _out.count = count;
+        if _over {
+            return Err(CodecError::CapacityExceeded);
+        }
         Ok(())
     }
 

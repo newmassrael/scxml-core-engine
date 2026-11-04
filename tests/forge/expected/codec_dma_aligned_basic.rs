@@ -115,30 +115,9 @@ impl<S: CodecDmaAlignedBasicStorage> CodecDmaAlignedBasicIn<S> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecDmaAlignedBasicFrom<'f> {
-        // Judged as [`Self::decode_into`] judges a frame past a capacity
-        // (docs/adr/0077 §7).
-        let _frame = *cursor;
-        match Self::stored(cursor) {
-            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame)),
-            stored => stored,
-        }
-    }
-
-    /// What a frame is that stopped [`Self::decode`] past a capacity, judged
-    /// out of the decode's frame as [`Self::decode_into`] judges one
-    /// (docs/adr/0077 §7).
-    #[cold]
-    #[inline(never)]
-    fn past_capacity<'f>(mut _frame: SceCursor<'f>) -> CodecError where S: CodecDmaAlignedBasicFrom<'f> {
-        match CodecDmaAlignedBasic::stored(&mut _frame) {
-            Ok(_) => CodecError::CapacityExceeded,
-            Err(refused) => refused,
-        }
-    }
-
-    /// The reading of [`Self::decode`], which stops where a field is past its
-    /// capacity.
-    fn stored<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecDmaAlignedBasicFrom<'f> {
+        // A field past what the profile holds is read on and not held; the
+        // frame says so once it is read whole (docs/adr/0077 §7).
+        let mut _over = false;
         // Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
         // a codec without `<sce:field sce:bit-size="tail">` consumes
         // only `min_bytes + length_value` rather than the entire
@@ -161,13 +140,16 @@ impl<S: CodecDmaAlignedBasicStorage> CodecDmaAlignedBasicIn<S> {
         }
         let aligned_payload = &raw[32..];
         let aligned_payload = ::sce_forge_runtime::codec::Bounded::new(aligned_payload).ok_or(CodecError::LengthOutOfRange)?;
-        let aligned_payload = aligned_payload.store::<S, CodecDmaAlignedBasicAlignedPayloadField>()?;
+        let aligned_payload = ::sce_forge_runtime::codec::note_held(aligned_payload.store::<S, CodecDmaAlignedBasicAlignedPayloadField>(), &mut _over)?;
         let value = Self {
             msg_id,
             reserved,
             aligned_payload,
         };
         cursor.advance(_frame_len)?;
+        if _over {
+            return Err(CodecError::CapacityExceeded);
+        }
         Ok(value)
     }
 
