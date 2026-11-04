@@ -243,6 +243,8 @@ mod tests {
                     line: None,
                     embed_dispatch: None,
                     flag_binds: Vec::new(),
+                    presence: None,
+                    requires: None,
                 }],
             },
         ];
@@ -265,6 +267,8 @@ mod tests {
                     line: None,
                     embed_dispatch: None,
                     flag_binds: Vec::new(),
+                    presence: None,
+                    requires: None,
                 }],
             },
             ManifestEntry {
@@ -279,6 +283,8 @@ mod tests {
                     line: None,
                     embed_dispatch: None,
                     flag_binds: Vec::new(),
+                    presence: None,
+                    requires: None,
                 }],
             },
         ];

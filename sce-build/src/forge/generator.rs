@@ -42654,6 +42654,8 @@ mod tests {
             line: None,
             embed_dispatch: None,
             flag_binds: Vec::new(),
+            presence: None,
+            requires: None,
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: None,
@@ -42672,6 +42674,8 @@ mod tests {
             line: None,
             embed_dispatch: None,
             flag_binds: Vec::new(),
+            presence: None,
+            requires: None,
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("".to_string()),
@@ -42690,6 +42694,8 @@ mod tests {
             line: None,
             embed_dispatch: None,
             flag_binds: Vec::new(),
+            presence: None,
+            requires: None,
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme /gen".to_string()),
@@ -42708,6 +42714,8 @@ mod tests {
             line: None,
             embed_dispatch: None,
             flag_binds: Vec::new(),
+            presence: None,
+            requires: None,
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme/gen".to_string()),
@@ -42736,6 +42744,8 @@ mod tests {
             line: None,
             embed_dispatch: None,
             flag_binds: Vec::new(),
+            presence: None,
+            requires: None,
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: None,
@@ -42755,6 +42765,8 @@ mod tests {
             line: None,
             embed_dispatch: None,
             flag_binds: Vec::new(),
+            presence: None,
+            requires: None,
         }
     }
 
@@ -42766,6 +42778,8 @@ mod tests {
             line: None,
             embed_dispatch: None,
             flag_binds: Vec::new(),
+            presence: None,
+            requires: None,
         }
     }
 

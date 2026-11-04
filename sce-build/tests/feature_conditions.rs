@@ -402,18 +402,23 @@ fn a_variant_refused_by_a_rule_the_document_passes_is_named_by_its_least_configu
     );
 }
 
-/// Each element of the model carries the selector its items are emitted under
-/// (ADR 0057 §9): its effective condition, and nothing where it is present in
-/// every variant.
+/// Each element of the model carries, in canonical form (ADR 0057 §7), the
+/// condition it is present under, its own and those around it, and the one it
+/// writes itself; nothing where it is present in every variant or writes none.
 #[test]
-fn each_element_of_the_model_carries_the_condition_it_is_present_under() {
+fn each_element_of_the_model_carries_its_effective_and_its_own_condition() {
     let model = parse(&machine(ACCEPT_PATH)).expect("the document parses");
-    let spelled = |p: &Option<sce_build::feature_selector::Selector>| p.as_ref().map(|s| s.rust());
-    let accept = Some(r#"feature = "session-unicast-accept""#.to_string());
-    let unicast = Some(r#"feature = "session-unicast""#.to_string());
-    assert_eq!(spelled(&model.states["idle"].presence), None);
-    assert_eq!(spelled(&model.states["accepting"].presence), accept);
-    assert_eq!(spelled(&model.states["open"].presence), unicast);
+    let terms = |c: &Option<sce_build::presence_condition::CanonicalCondition>| {
+        c.as_ref().map(|c| c.terms().to_vec())
+    };
+    let one = |feature: &str| Some(vec![vec![feature.to_string()]]);
+    let accept = one("session-unicast-accept");
+    let unicast = one("session-unicast");
+    assert_eq!(terms(&model.states["idle"].presence), None);
+    assert_eq!(terms(&model.states["idle"].requires), None);
+    assert_eq!(terms(&model.states["accepting"].presence), accept);
+    assert_eq!(terms(&model.states["accepting"].requires), accept);
+    assert_eq!(terms(&model.states["open"].presence), unicast);
     let idle = &model.states["idle"];
     let by_event = |event: &str| {
         idle.transitions
@@ -421,16 +426,15 @@ fn each_element_of_the_model_carries_the_condition_it_is_present_under() {
             .find(|t| t.event == event)
             .unwrap_or_else(|| panic!("a transition on {event}"))
     };
-    assert_eq!(spelled(&by_event("inbound.start").presence), accept);
-    assert_eq!(spelled(&by_event("connect").presence), unicast);
-    // A transition inside a gated state takes its state's condition.
-    assert_eq!(
-        spelled(&model.states["accepting"].transitions[0].presence),
-        accept
-    );
+    assert_eq!(terms(&by_event("inbound.start").presence), accept);
+    assert_eq!(terms(&by_event("inbound.start").requires), accept);
+    assert_eq!(terms(&by_event("connect").presence), unicast);
+    // A transition inside a gated state takes its state's condition and writes
+    // none of its own.
+    let inside = &model.states["accepting"].transitions[0];
+    assert_eq!(terms(&inside.presence), accept);
+    assert_eq!(terms(&inside.requires), None);
     let announce = &idle.on_entry_blocks[0][0];
-    assert_eq!(
-        spelled(&announce.presence),
-        Some(r#"feature = "session-auth""#.to_string())
-    );
+    assert_eq!(terms(&announce.presence), one("session-auth"));
+    assert_eq!(terms(&announce.requires), one("session-auth"));
 }

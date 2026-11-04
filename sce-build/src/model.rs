@@ -49,10 +49,13 @@ pub const SCXML_NAMESPACE: &str = "http://www.w3.org/2005/07/scxml";
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Transition {
     pub event: String,
-    /// The condition under which this transition is present (ADR 0057 §9);
+    /// The condition under which this transition is present (ADR 0057 §7);
     /// see [`State::presence`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub presence: Option<crate::feature_selector::Selector>,
+    pub presence: Option<crate::presence_condition::CanonicalCondition>,
+    /// The condition this transition carries itself; see [`State::requires`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<crate::presence_condition::CanonicalCondition>,
     /// The `target` attribute as the analyzer leaves it: as written, except
     /// that a value naming exactly one `<history>` is rewritten by
     /// `parser::resolve_history_targets` to that history's default target
@@ -262,10 +265,14 @@ pub struct Action {
     #[serde(rename = "type")]
     pub action_type: String,
 
-    /// The condition under which this action is present (ADR 0057 §9); see
-    /// [`State::presence`].
+    /// The condition under which this action is present (ADR 0057 §7); see
+    /// [`State::presence`]. An action in a gated `<onentry>` or `<onexit>`
+    /// takes the block's condition here: a block is no node of the model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub presence: Option<crate::feature_selector::Selector>,
+    pub presence: Option<crate::presence_condition::CanonicalCondition>,
+    /// The condition this action carries itself; see [`State::requires`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<crate::presence_condition::CanonicalCondition>,
 
     pub event: String,
 
@@ -1284,10 +1291,14 @@ pub struct Param {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Variable {
     pub id: String,
-    /// The condition under which this variable is present (ADR 0057 §9); see
+    /// The condition under which this variable is present (ADR 0057 §7); see
     /// [`State::presence`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub presence: Option<crate::feature_selector::Selector>,
+    pub presence: Option<crate::presence_condition::CanonicalCondition>,
+    /// The condition this variable's `<data>` carries itself; see
+    /// [`State::requires`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<crate::presence_condition::CanonicalCondition>,
     pub expr: String,
     /// The `expr` attribute as written and where, for the reason
     /// [`Transition::cond_spelling`] gives. `None` for a variable no
@@ -1384,10 +1395,10 @@ impl Variable {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct HistoryInfo {
     pub parent: String,
-    /// The condition under which this history is present (ADR 0057 §9): that
+    /// The condition under which this history is present (ADR 0057 §7): that
     /// of the state it is declared in, since a history takes none of its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub presence: Option<crate::feature_selector::Selector>,
+    pub presence: Option<crate::presence_condition::CanonicalCondition>,
     #[serde(rename = "type")]
     pub history_type: String,
     /// The default transition's `target` attribute text, as written — what
@@ -1947,10 +1958,13 @@ pub fn invoke_candidate_identifier(invoke_suffix: &str, candidate_stem: &str) ->
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InvokeBase {
     pub invoke_id: String,
-    /// The condition under which this invoke is present (ADR 0057 §9); see
+    /// The condition under which this invoke is present (ADR 0057 §7); see
     /// [`State::presence`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub presence: Option<crate::feature_selector::Selector>,
+    pub presence: Option<crate::presence_condition::CanonicalCondition>,
+    /// The condition this `<invoke>` carries itself; see [`State::requires`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<crate::presence_condition::CanonicalCondition>,
     /// Whether [`Self::invoke_id`] was generated because the document wrote
     /// no `id` (§scxml-6.4.1), rather than written by the author.
     ///
@@ -3071,11 +3085,16 @@ pub struct OnSampleNode {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct State {
     pub id: String,
-    /// The condition under which this state is present (ADR 0057 §9): its own
-    /// `sce:requires` and those of the elements around it. `None` in every
-    /// variant, and in a document that carries no condition.
+    /// The condition under which this state is present (ADR 0057 §7): its own
+    /// `sce:requires` and those of the elements around it, in canonical form.
+    /// `None` where it is present in every variant: in every variant, and in a
+    /// document that carries no condition.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub presence: Option<crate::feature_selector::Selector>,
+    pub presence: Option<crate::presence_condition::CanonicalCondition>,
+    /// The condition this state's element carries itself (ADR 0057 §7), its
+    /// `sce:requires` in canonical form; `None` for one that writes none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<crate::presence_condition::CanonicalCondition>,
     /// The `initial` value as the parser leaves it — which several passes
     /// rewrite: a multi-target initial elsewhere in the document can
     /// override it, and a value naming a `<history>` is replaced by that

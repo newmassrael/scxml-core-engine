@@ -4638,6 +4638,16 @@ pub struct ForgeImport {
     /// the binding-completeness invariant).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub flag_binds: Vec<FlagBind>,
+    /// The condition under which this import is present, in a statechart
+    /// written against a feature model (ADR 0057 §7); see
+    /// [`crate::model::State::presence`]. `None` in a forge document, which is
+    /// written against none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence: Option<crate::presence_condition::CanonicalCondition>,
+    /// The condition this `<sce:import>` carries itself; see
+    /// [`crate::model::State::requires`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<crate::presence_condition::CanonicalCondition>,
 }
 
 /// RFC §synth-5-B variant-dispatch — parent-side declaration
@@ -6996,6 +7006,8 @@ mod tests {
             line: Some(42),
             embed_dispatch: None,
             flag_binds: Vec::new(),
+            presence: None,
+            requires: None,
         };
         let json = serde_json::to_value(&imp).expect("serialize ForgeImport");
         assert!(

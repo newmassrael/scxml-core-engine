@@ -3114,6 +3114,7 @@ fn parse_variable(
         id: undo(id, line.number)?,
         // A rendering is of a document as written; a condition is not rendered.
         presence: None,
+        requires: None,
         expr: String::new(),
         // A rendering holds no attribute, so nothing places a refusal here.
         expr_spelling: None,

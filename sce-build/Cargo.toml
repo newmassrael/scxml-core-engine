@@ -1676,6 +1676,14 @@ required-features = ["cli"]
 # The featured transition table (ADR 0057 §7): each variant's own table is the
 # featured rows its configuration keeps. It runs `sce-codegen transition-table`,
 # so it carries the `cli` gate.
+# The forge AST and the sourcemap carry each element's own and effective
+# condition (ADR 0057 §7). It runs `sce-codegen generate`, so it carries the
+# `cli` gate.
+[[test]]
+name = "the_ast_and_the_sourcemap_carry_each_elements_conditions"
+path = "tests/the_ast_and_the_sourcemap_carry_each_elements_conditions.rs"
+required-features = ["cli"]
+
 # A variant names each node as the document does (ADR 0057 §2): its sidecar
 # and the markers of the output for every build cite the document's symbols. It
 # runs `sce-codegen generate`, so it carries the `cli` gate.

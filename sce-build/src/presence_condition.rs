@@ -349,6 +349,39 @@ impl fmt::Display for CanonicalForm<'_> {
     }
 }
 
+/// A condition in canonical form as the wire surfaces carry it (ADR 0057 §7):
+/// any of its terms, each all of its features, each term a least configuration
+/// written by its features that no other feature of it requires, its features
+/// in byte order and the terms in the order of their features. Two conditions
+/// are equal exactly when they hold in the same configurations, whatever their
+/// authors wrote. It holds in a configuration where every feature of one term
+/// is on. A condition that always holds has no canonical form: a surface
+/// leaves the field out.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(transparent)]
+pub struct CanonicalCondition(Vec<Vec<String>>);
+
+impl CanonicalCondition {
+    /// The canonical form of `condition`, `None` for one that always holds.
+    pub fn of(condition: &PresenceCondition, model: &FeatureModel) -> Option<Self> {
+        condition.canonical_form(model).map(|form| {
+            Self(
+                form.terms()
+                    .iter()
+                    .map(|term| term.iter().map(|name| name.to_string()).collect())
+                    .collect(),
+            )
+        })
+    }
+
+    pub fn terms(&self) -> &[Vec<String>] {
+        &self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

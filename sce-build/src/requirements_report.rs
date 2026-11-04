@@ -245,10 +245,10 @@ impl<'a> NodeSubject<'a> {
         }
     }
 
-    /// The condition under which the node is present (ADR 0057 §9): its own
-    /// and those of the elements around it. `None` for a node present in
-    /// every variant, and for every node of a variant.
-    pub(crate) fn presence(&self) -> Option<&'a crate::feature_selector::Selector> {
+    /// The condition under which the node is present (ADR 0057 §7): its own
+    /// and those of the elements around it, in canonical form. `None` for a
+    /// node present in every variant, and for every node of a variant.
+    pub(crate) fn presence(&self) -> Option<&'a crate::presence_condition::CanonicalCondition> {
         match self {
             NodeSubject::State(state) => state.presence.as_ref(),
             NodeSubject::Transition { transition, .. } => transition.presence.as_ref(),

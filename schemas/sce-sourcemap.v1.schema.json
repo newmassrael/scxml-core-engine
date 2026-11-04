@@ -67,7 +67,27 @@
           "description": "Worst-case execution-time hint in microseconds. Optional; absent unless a profiler consumer injects it.",
           "type": "integer",
           "minimum": 0
+        },
+        "presence": {
+          "description": "In the map of a document written against a feature model (docs/adr/0057 §7), the condition under which the symbol's node is present: its effective condition (its own `sce:requires` and those of the elements around it) in canonical form, the value the forge AST and the transition table carry as `presence` for the same node. It holds in a configuration where every feature of one of its terms is on. Absent on a node in every variant, on the machine and forge-body symbols, and on every symbol of a variant's own map (`generate --features`), which names each node by its position in the document, so each of its symbols is the document map's symbol of the same node.",
+          "$ref": "#/definitions/condition"
+        },
+        "requires": {
+          "description": "The condition the symbol's element carries itself, its `sce:requires`, in canonical form. Absent on an element that writes none; an action in a gated `<onentry>` or `<onexit>` has the block's in `presence` and none here.",
+          "$ref": "#/definitions/condition"
         }
+      }
+    },
+    "condition": {
+      "description": "A condition in canonical form (docs/adr/0057 §7): any of its terms, each all of its features, each term a least configuration written by its features that no other feature of it requires, its features in byte order and the terms in the order of their features.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": true,
+        "items": { "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" }
       }
     }
   }

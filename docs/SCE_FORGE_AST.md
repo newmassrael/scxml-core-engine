@@ -377,6 +377,40 @@ parent + child) should emit AST for each document separately
 (orchestrate's per-doc fanout handles this) and join on
 `invokes[].src`.
 
+### `presence` and `requires` — a document written against a feature model
+
+A statechart that gates its elements with `sce:requires` (ADR 0057,
+SCE Accepted Subset §2.22) is exported as written: every element of
+every variant. An element that takes a condition carries two fields
+when it has one: `requires`, the condition it writes itself, and
+`presence`, the one it is present under (its own and those of the
+elements around it). They are on a state, a transition, an action, an
+invoke's base, a `<data>` and an `<sce:import>` (in `forge_imports`);
+a history carries `presence` only, since it writes none. An
+`<onentry>` or `<onexit>` is no node of the export, so an action in a
+gated block has the block's condition in `presence`.
+
+Both are in canonical form (ADR 0057 §7): an array of terms, each an
+array of feature names, the condition holding where every feature of
+one term is on, each term written by its features that no other
+feature of it requires, its features in byte order and the terms in
+the order of their features. `presence` is the value the transition
+table and the sourcemap carry under the same name for the same node.
+Neither field is present where its condition always holds, which is
+every element of a document of no feature model.
+
+```json
+"busy": {
+  "id": "busy",
+  "presence": [["session-unicast-accept"]],
+  "requires": [["session-unicast-accept"]],
+  "transitions": [
+    { "event": "stop", "presence": [["session-unicast-accept"]], ... }
+  ],
+  ...
+}
+```
+
 ### `external_ingress_events` — the event-injection contract
 
 Two top-level event sets serve different consumers:

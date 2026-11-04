@@ -359,7 +359,8 @@ cannot leave out: the header of C11 and C++, the source of Swift. For each edge 
 **The sourcemap is the document's.** `sce_sourcemap.json` maps a generated symbol to the SCXML element and lines it
 was written from; it names no generated line. `generate` writes it from the document as written, so the map of the
 output for every build holds every symbol of every variant, each where a variant's own map puts it (a variant's
-positions are the document's, §2). The condition under which a symbol is present is a field of §7 still to add.
+positions are the document's, §2). The condition under which a symbol is present is its `presence`, and the one its element writes its `requires`
+(§7).
 (Corrected 2026-11-03 while building C11: this paragraph had the maps differ in every row after the first gated
 element, which is true of no backend. Corrected again 2026-11-04: a symbol names a transition, an `<onentry>` or
 `<onexit>` block and a block's action by its position among its siblings, and a variant counted only the siblings
@@ -514,8 +515,8 @@ that backend gap to be closed, as its own change, rather than holding to a weake
   text and refusals (2026-11-04); the C++ and C11 lanes hold their machine for every build to each build's own on
   it as the Rust crate does.
 - **The featured transition table** (§7, 2026-11-04). `sce-codegen transition-table` of a gated document gives a
-  row whose node is not in every variant `requires`: the node's effective condition in canonical form, any of the
-  terms, each all of its features (`Selector::condition_terms` reads it back from the presence the parser stamps).
+  row whose node is not in every variant `presence` (named `requires` until the forge AST took both names, below):
+  the node's effective condition in canonical form, any of the terms, each all of its features.
   The rows of a variant are the rows its configuration satisfies, in order, and keep every column a node states of
   itself. What a row counts or summarises from other nodes is the variant's own: a transition's `index` (its
   position among its state's kept transitions), `node_path`, a state's `to` and `action` (its initial child, the
@@ -523,9 +524,23 @@ that backend gap to be closed, as its own change, rather than holding to a weake
   `transition-table --features` writes a variant's own table, with the document's hash. The §7 bullet's "a
   consumer derives a variant by the same rule" holds for the rows and for the columns a node states of itself, and
   the test holds every configuration's derived rows to `--features`, the counted `index` included, and finds a
-  position, a default initial child and a transition's summary each moved by some variant. A declared table in the machine for every build needed nothing: each build's is its own variant's,
-  selected as the rest of the output is.
-- Still to do: Swift; conditions in the forge AST and the sourcemap.
+  position, a default initial child and a transition's summary each moved by some variant. A declared table in the
+  machine for every build needed nothing: each build's is its own variant's, selected as the rest of the output is.
+- **A variant names each node as the document does** (§2, §10, 2026-11-04). A symbol names a transition, an
+  `<onentry>` or `<onexit>` block and a block's action by its position among its siblings, and a variant counted
+  only the siblings it keeps: after a gated sibling, the markers of the output for every build cited the document
+  map's symbol of another node. A selected parse now records where each such node stands in the document
+  (`SCXMLModel::document_positions`, found by the row and column the derivation keeps), and the symbol table and
+  the markers name it so; the C11 and C++ lanes and the Rust crate held.
+- **Conditions in the forge AST and the sourcemap** (§7, 2026-11-04). The model carries each element's two
+  conditions in canonical form (`CanonicalCondition`): `presence`, the one it is present under, and `requires`,
+  the one it writes itself, on a state, transition, action, invoke, `<data>` and `<sce:import>`; a history carries
+  `presence` only. Until then the model's `presence` was the generator's `Selector`, and the AST exported its
+  shape, `not` and the constants included; no generator read it, since the lifted output is merged text. The
+  sourcemap carries both on each symbol of a state, transition and entry or exit action; a variant's own map
+  carries neither. An `<onentry>` or `<onexit>` is no node of either surface: its condition is in the `presence` of
+  its actions.
+- Still to do: Swift.
 
 ## Questions left open
 

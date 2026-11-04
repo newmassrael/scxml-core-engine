@@ -11691,7 +11691,7 @@ fn find_sce_child<'a>(node: &'a roxmltree::Node, local: &str) -> Option<roxmltre
 
 /// Every SCE child of `node` named `local`, in document order, each put on
 /// the parse's read ledger as it is handed out.
-fn sce_children<'a, 'input>(
+pub(crate) fn sce_children<'a, 'input>(
     node: &roxmltree::Node<'a, 'input>,
     local: &'static str,
 ) -> impl Iterator<Item = roxmltree::Node<'a, 'input>> {
@@ -11913,6 +11913,10 @@ pub fn parse_imports(
             line,
             embed_dispatch,
             flag_binds,
+            // A statechart's reader stamps these against its feature model
+            // (ADR 0057 §7); a forge document is written against none.
+            presence: None,
+            requires: None,
         });
     }
 

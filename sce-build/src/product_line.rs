@@ -43,7 +43,7 @@ use crate::forge::error::{
 };
 use crate::forge::model::SCE_NAMESPACE;
 use crate::model::SCXML_NAMESPACE;
-use crate::presence_condition::{self, PresenceCondition, PresenceExpr};
+use crate::presence_condition::{self, CanonicalCondition, PresenceCondition, PresenceExpr};
 
 /// The name of the attribute a condition is written in: `sce:requires` on an
 /// SCXML element, `requires` on an SCE element.
@@ -213,13 +213,20 @@ impl ProductLine {
             .map(|gate| &gate.effective)
     }
 
-    /// The selector of the element at `range`, [`Selector::True`] where no gate
-    /// encloses it.
-    pub fn selector_at(&self, range: &Range<usize>) -> Selector {
+    /// The effective condition of the element at `range` in canonical form
+    /// (ADR 0057 §7), `None` where it is present in every variant.
+    pub fn presence_at(&self, range: &Range<usize>) -> Option<CanonicalCondition> {
         self.condition_at(range)
-            .map_or(Selector::True, |condition| {
-                Selector::of_condition(condition, &self.model)
-            })
+            .and_then(|condition| CanonicalCondition::of(condition, &self.model))
+    }
+
+    /// The condition the element at `range` carries itself, in canonical form
+    /// (ADR 0057 §7): its gate's own, `None` for an element that writes none.
+    pub fn requires_at(&self, range: &Range<usize>) -> Option<CanonicalCondition> {
+        self.gates
+            .iter()
+            .find(|gate| gate.element == *range)
+            .and_then(|gate| CanonicalCondition::of(&gate.own, &self.model))
     }
 
     /// The distinct effective conditions of the document's gates, which every

@@ -1990,9 +1990,16 @@ pub(crate) fn collect_sce_provenance(
 fn presence_of(
     model: &SCXMLModel,
     node: &roxmltree::Node,
-) -> Option<crate::feature_selector::Selector> {
-    let selector = model.product_line.as_ref()?.selector_at(&node.range());
-    (!selector.is_true()).then_some(selector)
+) -> Option<crate::presence_condition::CanonicalCondition> {
+    model.product_line.as_ref()?.presence_at(&node.range())
+}
+
+/// The condition `node` carries itself (ADR 0057 §7), in canonical form.
+fn requires_of(
+    model: &SCXMLModel,
+    node: &roxmltree::Node,
+) -> Option<crate::presence_condition::CanonicalCondition> {
+    model.product_line.as_ref()?.requires_at(&node.range())
 }
 
 fn stamped_action(
@@ -2004,6 +2011,7 @@ fn stamped_action(
     let mut action = Action {
         action_type: tag.to_string(),
         presence: presence_of(model, node),
+        requires: requires_of(model, node),
         source_location: source_location_of(node, source_name),
         spellings: crate::attribute_spelling::AttributeSpellings::of(node),
         ..Default::default()
@@ -3223,6 +3231,17 @@ impl SCXMLParser {
             Self::read_product_line(&doc, &model, import_dir.as_deref(), diag_label)?;
         if let Some(product_line) = &model.product_line {
             product_line.check_references(diag_label)?;
+            // An `<sce:import>` is read above, before the conditions were, so
+            // its own are stamped here: one import for each element
+            // `parse_imports` read, in its order (ADR 0057 §7).
+            for (import, element) in model
+                .forge_imports
+                .iter_mut()
+                .zip(crate::forge::parser::sce_children(&root, "import"))
+            {
+                import.presence = product_line.presence_at(&element.range());
+                import.requires = product_line.requires_at(&element.range());
+            }
         }
 
         // §scxml-B-1: refuse constructs the declared data model has no
@@ -3732,6 +3751,7 @@ impl SCXMLParser {
         Ok(Some(Variable {
             id,
             presence: presence_of(model, data),
+            requires: requires_of(model, data),
             expr: data.attribute("expr").unwrap_or("").to_string(),
             expr_spelling: AttributeSpelling::of(data, None, "expr"),
             src,
@@ -4061,6 +4081,7 @@ impl SCXMLParser {
             let mut state = State {
                 id: state_id.clone(),
                 presence: presence_of(model, &child),
+                requires: requires_of(model, &child),
                 initial: child.attribute("initial").unwrap_or("").to_string(),
                 parent: parent_id.map(|s| s.to_string()),
                 document_order: self.document_order_of(&child),
@@ -4143,6 +4164,7 @@ impl SCXMLParser {
                     // ADR 0057 §9: stamped here, the one site every kind of
                     // invoke passes, rather than in each of their builders.
                     invoke.base_mut().presence = presence_of(model, &invoke_elem);
+                    invoke.base_mut().requires = requires_of(model, &invoke_elem);
                     state.invokes.push(invoke);
                 }
             }
@@ -4199,6 +4221,7 @@ impl SCXMLParser {
             let mut state = State {
                 id: final_id.clone(),
                 presence: presence_of(model, &child),
+                requires: requires_of(model, &child),
                 is_final: true,
                 parent: parent_id.map(|s| s.to_string()),
                 document_order: self.document_order_of(&child),
@@ -4253,6 +4276,7 @@ impl SCXMLParser {
             let mut state = State {
                 id: parallel_id.clone(),
                 presence: presence_of(model, &child),
+                requires: requires_of(model, &child),
                 is_parallel: true,
                 parent: parent_id.map(|s| s.to_string()),
                 document_order: self.document_order_of(&child),
@@ -4411,6 +4435,7 @@ impl SCXMLParser {
         let mut transition = Transition {
             event: elem.attribute("event").unwrap_or("").to_string(),
             presence: presence_of(model, elem),
+            requires: requires_of(model, elem),
             target: target.to_string(),
             // §scxml-3.13: the target set, one id per token, as written.
             targets: target.split_whitespace().map(str::to_string).collect(),
@@ -5385,6 +5410,7 @@ impl SCXMLParser {
                     base: InvokeBase {
                         // Stamped by the caller (ADR 0057 §9).
                         presence: None,
+                        requires: None,
                         source_location: source_location_of(elem, source_name),
                         invoke_id,
                         id_generated,
@@ -5545,6 +5571,7 @@ impl SCXMLParser {
                     base: InvokeBase {
                         // Stamped by the caller (ADR 0057 §9).
                         presence: None,
+                        requires: None,
                         source_location: source_location_of(elem, source_name),
                         invoke_id,
                         id_generated,
@@ -5645,6 +5672,7 @@ impl SCXMLParser {
                 base: InvokeBase {
                     // Stamped by the caller (ADR 0057 §9).
                     presence: None,
+                    requires: None,
                     source_location: source_location_of(elem, source_name),
                     invoke_id,
                     id_generated,
@@ -5873,6 +5901,7 @@ impl SCXMLParser {
             base: InvokeBase {
                 // Stamped by the caller (ADR 0057 §9).
                 presence: None,
+                requires: None,
                 source_location: source_location_of(elem, source_name),
                 invoke_id,
                 id_generated,
@@ -7205,6 +7234,21 @@ fn document_positions(
     Some(positions)
 }
 
+/// The SCE elements the reader of executable content takes as actions, beside
+/// every element of the SCXML namespace.
+const SCE_EXECUTABLE_CONTENT: [&str; 3] = ["action", "append", "clear"];
+
+/// Whether `node` is one of the actions of the executable content it sits in:
+/// an element `parse_executable_content_single` reads into an action (or
+/// refuses), rather than skips. Held to that reader by
+/// `the_actions_of_a_block_are_its_executable_content`.
+fn is_executable_content(node: &roxmltree::Node) -> bool {
+    node.is_element()
+        && (is_scxml_ns(node)
+            || (node.tag_name().namespace() == Some(crate::forge::model::SCE_NAMESPACE)
+                && SCE_EXECUTABLE_CONTENT.contains(&node.tag_name().name())))
+}
+
 /// Find first SCXML-namespaced child with a given local name. See
 /// [`scxml_children`] for the namespace-filter contract.
 fn scxml_child<'a>(
@@ -7234,21 +7278,6 @@ fn collect_on_sample_blocks(parent: &roxmltree::Node, out: &mut Vec<crate::model
     for child in parent.children() {
         if !child.is_element() {
             continue;
-/// The SCE elements the reader of executable content takes as actions, beside
-/// every element of the SCXML namespace.
-const SCE_EXECUTABLE_CONTENT: [&str; 3] = ["action", "append", "clear"];
-
-/// Whether `node` is one of the actions of the executable content it sits in:
-/// an element `parse_executable_content_single` reads into an action (or
-/// refuses), rather than skips. Held to that reader by
-/// `the_actions_of_a_block_are_its_executable_content`.
-fn is_executable_content(node: &roxmltree::Node) -> bool {
-    node.is_element()
-        && (is_scxml_ns(node)
-            || (node.tag_name().namespace() == Some(crate::forge::model::SCE_NAMESPACE)
-                && SCE_EXECUTABLE_CONTENT.contains(&node.tag_name().name())))
-}
-
         }
         if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
             continue;
@@ -9644,35 +9673,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_transitions() {
-        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1">
-            <state id="s1">
-                <transition event="go" target="s2"/>
-            </state>
-            <final id="s2"/>
-        </scxml>"#;
-        let mut parser = SCXMLParser::new();
-        let model = parser.parse_string(scxml, "test").unwrap();
-        let s1 = &model.states["s1"];
-        assert_eq!(s1.transitions.len(), 1);
-        assert_eq!(s1.transitions[0].event, "go");
-        assert_eq!(s1.transitions[0].target, "s2");
-    }
-
-    #[test]
-    fn parse_parallel_states() {
-        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="p">
-            <parallel id="p">
-                <state id="r1"><state id="r1a"/></state>
-                <state id="r2"><state id="r2a"/></state>
-            </parallel>
-        </scxml>"#;
-        let mut parser = SCXMLParser::new();
-        let model = parser.parse_string(scxml, "test").unwrap();
-        assert!(model.states["p"].is_parallel);
-        assert!(model.has_parallel_states);
-    }
-    #[test]
     fn the_actions_of_a_block_are_its_executable_content() {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
                               xmlns:other="urn:other" version="1.0" initial="s1" datamodel="sce-static">
@@ -9716,6 +9716,35 @@ mod tests {
         assert_eq!(read.len(), 3);
     }
 
+    #[test]
+    fn parse_transitions() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1">
+            <state id="s1">
+                <transition event="go" target="s2"/>
+            </state>
+            <final id="s2"/>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let model = parser.parse_string(scxml, "test").unwrap();
+        let s1 = &model.states["s1"];
+        assert_eq!(s1.transitions.len(), 1);
+        assert_eq!(s1.transitions[0].event, "go");
+        assert_eq!(s1.transitions[0].target, "s2");
+    }
+
+    #[test]
+    fn parse_parallel_states() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="p">
+            <parallel id="p">
+                <state id="r1"><state id="r1a"/></state>
+                <state id="r2"><state id="r2a"/></state>
+            </parallel>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let model = parser.parse_string(scxml, "test").unwrap();
+        assert!(model.states["p"].is_parallel);
+        assert!(model.has_parallel_states);
+    }
 
     /// §scxml-3.14: a state element that names no id is given one, and is parsed and descended
     /// into like any other. It used to be skipped with everything inside it, so a `<parallel>`

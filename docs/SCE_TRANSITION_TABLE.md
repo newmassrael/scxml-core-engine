@@ -148,22 +148,23 @@ takes `--input-root` and `--deploy` and they mean what they mean to `generate`: 
 A document that gates its elements with `sce:requires` (ADR 0057, SCE Accepted Subset §2.22)
 denotes one machine for each configuration of its feature model. Its export is the featured
 transition table of ADR 0057 §7: every node of every variant, in document order, and each row of
-a node that is not present in every variant carries `requires`, the node's effective condition
-(its own and those of the elements around it) in canonical form:
+a node that is not present in every variant carries `presence`, the node's effective condition
+(its own and those of the elements around it) in canonical form, the value the forge AST and the
+sourcemap carry under the same name for the same node:
 
 ```
-{"source":"(none)","from":"idle","event":"secure","guard":"-","after":"-","to":"open","action":"-","node_path":"states.idle.transitions[2]","kind":"transition","index":2,"targets":["open"],"requires":[["session-tls"],["session-unicast-accept"]]}
+{"source":"(none)","from":"idle","event":"secure","guard":"-","after":"-","to":"open","action":"-","node_path":"states.idle.transitions[2]","kind":"transition","index":2,"targets":["open"],"presence":[["session-tls"],["session-unicast-accept"]]}
 ```
 
-`requires` is any of its terms, each all of its features: the row is present in a configuration
+`presence` is any of its terms, each all of its features: the row is present in a configuration
 where every feature of one term is on. A term is a least configuration of the condition, written
 by its features that no other feature of it requires (`session-unicast-accept` stands for itself
 and the `session-unicast` it requires); its features are in byte order, the terms in the order of
-their features, and no term contains another, so two rows carry the same `requires` exactly when
-their nodes are present in the same variants, whatever the author wrote. A row with no `requires`
+their features, and no term contains another, so two rows carry the same `presence` exactly when
+their nodes are present in the same variants, whatever the author wrote. A row with no `presence`
 is in every variant, which is every row of a document of no feature model.
 
-**The rows of a variant** are the rows with no `requires` and those whose `requires` holds in its
+**The rows of a variant** are the rows with no `presence` and those whose `presence` holds in its
 configuration, in the order the export lists them. Each keeps what its node states of itself:
 `source`, `from`, `event`, `guard`, `after`, `kind` and `targets`, and `to` and `action` except
 on the two kinds below. What a row counts or summarises from other nodes is the variant's own:
@@ -177,7 +178,7 @@ on the two kinds below. What a row counts or summarises from other nodes is the 
 
 `sce-codegen transition-table --features a,b` writes the table of the variant those features
 denote, as `generate --features` generates it, and those columns with it; its rows carry no
-`requires`. Its header names the same `source_hash`: the hash covers the source set, not the
+`presence`. Its header names the same `source_hash`: the hash covers the source set, not the
 selection, so every build of the document carries it.
 
 **The table a machine emits** (`sce:transition-table="emit"`) is always one variant's. The Rust,

@@ -4,7 +4,7 @@
 //! The featured transition table (ADR 0057 §7, `docs/SCE_TRANSITION_TABLE.md`):
 //! `transition-table` of a document written against a feature model lists every
 //! node of every variant, a node not in every variant with its condition in
-//! `requires`, and the rows of each variant are the featured rows its
+//! `presence`, and the rows of each variant are the featured rows its
 //! configuration keeps. `transition-table --features` writes a variant's own
 //! table, which is what each derived table is held to here, for every
 //! configuration of the model.
@@ -115,10 +115,10 @@ fn table(machine: &Path, features: Option<&[&str]>, header: bool) -> Vec<Value> 
 }
 
 /// Whether the condition of a row holds where exactly `on` is on: a row with
-/// none is in every variant, and one with `requires` where every feature of
+/// none is in every variant, and one with `presence` where every feature of
 /// one of its terms is on.
 fn holds(row: &Value, on: &[&str]) -> bool {
-    match row.get("requires") {
+    match row.get("presence") {
         None => true,
         Some(terms) => terms.as_array().unwrap().iter().any(|term| {
             term.as_array()
@@ -139,7 +139,7 @@ fn the_rows_of_each_variant_are_the_featured_rows_its_configuration_keeps() {
     for on in CONFIGURATIONS {
         let variant = table(&machine, Some(on), false);
         assert!(
-            variant.iter().all(|row| row.get("requires").is_none()),
+            variant.iter().all(|row| row.get("presence").is_none()),
             "a variant's own rows carry no condition: {on:?}"
         );
         let kept: Vec<&Value> = featured.iter().filter(|row| holds(row, on)).collect();
@@ -194,35 +194,35 @@ fn the_rows_of_each_variant_are_the_featured_rows_its_configuration_keeps() {
 fn a_featured_row_names_its_effective_condition_in_canonical_form() {
     let (_dir, machine) = product_line();
     let featured = table(&machine, None, false);
-    let requires = |from: &str, event: &str| -> Value {
+    let presence = |from: &str, event: &str| -> Value {
         let row = featured
             .iter()
             .find(|row| row["from"] == from && row["event"] == event)
             .unwrap_or_else(|| panic!("no row {from} {event}"));
-        row.get("requires").cloned().unwrap_or(Value::Null)
+        row.get("presence").cloned().unwrap_or(Value::Null)
     };
     assert_eq!(
-        requires("probe", "(state)"),
+        presence("probe", "(state)"),
         serde_json::json!([["session-unicast"]])
     );
     assert_eq!(
-        requires("probe", "ready"),
+        presence("probe", "ready"),
         serde_json::json!([["session-unicast"]]),
         "a node takes the condition of the gate around it"
     );
-    assert_eq!(requires("idle", "(state)"), Value::Null);
+    assert_eq!(presence("idle", "(state)"), Value::Null);
     assert_eq!(
-        requires("idle", "(entry)"),
+        presence("idle", "(entry)"),
         serde_json::json!([["session-unicast"]]),
         "an action takes the condition of its gated block"
     );
     assert_eq!(
-        requires("idle", "secure"),
+        presence("idle", "secure"),
         serde_json::json!([["session-tls"], ["session-unicast-accept"]]),
         "two terms, in the order of their features"
     );
     assert_eq!(
-        requires("accepting", "secure"),
+        presence("accepting", "secure"),
         serde_json::json!([["session-tls", "session-unicast-accept"]]),
         "one term, the feature that `session-unicast-accept` implies left out"
     );

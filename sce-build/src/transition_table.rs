@@ -56,7 +56,7 @@
 //!
 //! The table of a gated document is the featured transition table of ADR
 //! 0057 §7: a row of a node that is not present in every variant carries
-//! `requires`, the node's effective condition in canonical form, and the
+//! `presence`, the node's effective condition in canonical form, and the
 //! rows of a variant are the rows whose condition its configuration
 //! satisfies, in order. Columns the node states of itself carry over to the
 //! variant; those that count or summarise other nodes are the variant's own
@@ -112,13 +112,11 @@ pub struct TransitionRow {
     pub targets: Option<Vec<String>>,
     /// The condition under which the node is present, when the document is
     /// written against a feature model and the node is not in every variant
-    /// (ADR 0057 §7): its effective condition in canonical form, any of the
-    /// terms, each all of its features ([`Selector::condition_terms`]).
-    /// Absent on a node present in every variant.
-    ///
-    /// [`Selector::condition_terms`]: crate::feature_selector::Selector::condition_terms
+    /// (ADR 0057 §7): its effective condition in canonical form, as the forge
+    /// AST and the sourcemap name it. Absent on a node present in every
+    /// variant.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub requires: Option<Vec<Vec<String>>>,
+    pub presence: Option<crate::presence_condition::CanonicalCondition>,
 }
 
 /// The kind of node a [`TransitionRow`] describes.
@@ -216,19 +214,13 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                 node.record.requirement_ids.join(" ")
             };
             let node_path = node.record.node_path.clone();
-            // A presence is only ever the selector of a condition (the
-            // parser stamps `Selector::of_condition`), which never negates.
-            let requires = node.subject.presence().map(|presence| {
-                presence
-                    .condition_terms()
-                    .expect("a node's presence is the selector of a condition")
-            });
+            let presence = node.subject.presence().cloned();
             match node.subject {
                 NodeSubject::State(state) => TransitionRow {
                     kind: RowKind::State,
                     index: None,
                     targets: None,
-                    requires,
+                    presence,
                     source,
                     from: state.id.clone(),
                     event: "(state)".to_string(),
@@ -247,7 +239,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     kind: RowKind::Transition,
                     index: Some(records[&node_path].index),
                     targets: Some(records[&node_path].targets.clone()),
-                    requires,
+                    presence,
                     source,
                     from: state.id.clone(),
                     // An eventless transition is the SCXML spelling for
@@ -287,7 +279,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     },
                     index: None,
                     targets: None,
-                    requires,
+                    presence,
                     source,
                     from: state.id.clone(),
                     // Five sites, five pseudo-events. `(transition)`
@@ -317,7 +309,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     kind: RowKind::Invoke,
                     index: None,
                     targets: None,
-                    requires,
+                    presence,
                     source,
                     from: state.id.clone(),
                     event: "(invoke)".to_string(),
@@ -339,7 +331,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     kind: RowKind::Script,
                     index: None,
                     targets: None,
-                    requires,
+                    presence,
                     source,
                     from: "<scxml>".to_string(),
                     event: "(global script)".to_string(),
@@ -360,7 +352,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     kind: RowKind::Data,
                     index: None,
                     targets: None,
-                    requires,
+                    presence,
                     source,
                     from: state.map_or_else(|| "<scxml>".to_string(), |s| s.id.clone()),
                     event: "(data)".to_string(),
@@ -786,20 +778,20 @@ mod tests {
 
     #[test]
     fn a_row_of_a_gated_node_carries_its_condition_and_no_other_row_does() {
-        let requires: Vec<(String, serde_json::Value)> = featured_stream()
+        let presence: Vec<(String, serde_json::Value)> = featured_stream()
             .into_iter()
             .map(|row| {
                 (
                     row["node_path"].as_str().unwrap().to_string(),
-                    row.get("requires").cloned().unwrap_or_default(),
+                    row.get("presence").cloned().unwrap_or_default(),
                 )
             })
             .collect();
         let of = |path: &str| {
-            requires
+            presence
                 .iter()
                 .find(|(p, _)| p == path)
-                .unwrap_or_else(|| panic!("no row {path}: {requires:?}"))
+                .unwrap_or_else(|| panic!("no row {path}: {presence:?}"))
                 .1
                 .clone()
         };
@@ -818,7 +810,7 @@ mod tests {
             assert_eq!(violations(&row), Vec::<String>::new(), "{row}");
         }
         for row in stream_of(EVERY_KIND, None) {
-            assert!(row.get("requires").is_none(), "{row}");
+            assert!(row.get("presence").is_none(), "{row}");
         }
     }
 
@@ -903,7 +895,7 @@ mod tests {
         let header = serde_json::to_value(a_header()).unwrap();
         let gated_row = featured_stream()
             .into_iter()
-            .find(|row| row.get("requires").is_some())
+            .find(|row| row.get("presence").is_some())
             .expect("a row of a gated node");
         for valid in [&transition_row, &state_row, &header, &gated_row] {
             assert_eq!(violations(valid), Vec::<String>::new(), "{valid}");
@@ -912,17 +904,17 @@ mod tests {
         let changes: [(&str, serde_json::Value); 11] = [
             ("a condition of no term, which holds nowhere", {
                 let mut r = gated_row.clone();
-                r["requires"] = serde_json::json!([]);
+                r["presence"] = serde_json::json!([]);
                 r
             }),
             ("a term of no feature, which holds everywhere", {
                 let mut r = gated_row.clone();
-                r["requires"] = serde_json::json!([[]]);
+                r["presence"] = serde_json::json!([[]]);
                 r
             }),
             ("a term naming what is no feature name", {
                 let mut r = gated_row.clone();
-                r["requires"] = serde_json::json!([["Session_Unicast"]]);
+                r["presence"] = serde_json::json!([["Session_Unicast"]]);
                 r
             }),
             ("a transition row without its index", {

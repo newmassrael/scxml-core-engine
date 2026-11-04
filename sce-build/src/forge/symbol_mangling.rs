@@ -210,6 +210,12 @@ pub struct SymbolEntry {
     /// for a machine whose document is a file of its own, and for a forge
     /// body.
     pub invoke_path: Option<String>,
+    /// The condition under which the symbol's node is present, and the one
+    /// its element carries itself, in a document written against a feature
+    /// model (ADR 0057 §7): the node's own `presence` and `requires`. `None`
+    /// for a node in every variant, for the machine and for a forge body.
+    pub presence: Option<crate::presence_condition::CanonicalCondition>,
+    pub requires: Option<crate::presence_condition::CanonicalCondition>,
 }
 
 /// Result of a cross-IR collision scan. Holds the offending symbol
@@ -278,16 +284,18 @@ pub fn build_symbol_table(
 }
 
 /// Insert a single mangled symbol into the table, detecting collisions
-/// against any prior entry. Internal helper — every push goes through
-/// here so the dual-location collision payload is built consistently.
-fn push_entry(
-    table: &mut BTreeMap<String, SymbolEntry>,
+/// against any prior entry, and hand back the entry so a node's walk can
+/// stamp what the node holds of itself. Internal helper — every push goes
+/// through here so the dual-location collision payload is built
+/// consistently.
+fn push_entry<'t>(
+    table: &'t mut BTreeMap<String, SymbolEntry>,
     machine: &str,
     state_path: &str,
     artifact: &str,
     location: &SourceLocation,
     event: Option<&str>,
-) -> Result<(), Box<Collision>> {
+) -> Result<&'t mut SymbolEntry, Box<Collision>> {
     let mangled = mangle(machine, state_path, artifact);
     let entry = SymbolEntry {
         mangled: mangled.clone(),
@@ -301,6 +309,9 @@ fn push_entry(
         // Stamped by `build_symbol_table` on the statechart's entries, which
         // are the machine's; a forge body is no machine's.
         invoke_path: None,
+        // Stamped by the walk of a node that carries them.
+        presence: None,
+        requires: None,
     };
     if let Some(prior) = table.get(&mangled) {
         return Err(Box::new(Collision {
@@ -309,8 +320,7 @@ fn push_entry(
             second: entry,
         }));
     }
-    table.insert(mangled, entry);
-    Ok(())
+    Ok(table.entry(mangled).or_insert(entry))
 }
 
 /// Recursively emit per-state symbol entries: the state body plus its
@@ -326,13 +336,17 @@ fn walk_state(
     state: &State,
 ) -> Result<(), Box<Collision>> {
     if let Some(ref loc) = state.source_location {
-        push_entry(table, machine, state_id, ARTIFACT_STATE_BODY, loc, None)?;
+        let entry = push_entry(table, machine, state_id, ARTIFACT_STATE_BODY, loc, None)?;
+        entry.presence.clone_from(&state.presence);
+        entry.requires.clone_from(&state.requires);
     }
 
     for (idx, trans) in state.transitions.iter().enumerate() {
         if let Some(ref loc) = trans.source_location {
             let artifact = transition_artifact(model.transition_position(state_id, idx));
-            push_entry(table, machine, state_id, &artifact, loc, Some(&trans.event))?;
+            let entry = push_entry(table, machine, state_id, &artifact, loc, Some(&trans.event))?;
+            entry.presence.clone_from(&trans.presence);
+            entry.requires.clone_from(&trans.requires);
         }
     }
 
@@ -361,10 +375,11 @@ fn walk_action_block(
     let kind = if exit { "_on_exit" } else { "_on_entry" };
     for (action_idx, action) in actions.iter().enumerate() {
         if let Some(ref loc) = action.source_location {
-            let (block, action) =
-                model.block_action_position(exit, state_id, block_idx, action_idx);
-            let artifact = action_artifact(kind, block, action);
-            push_entry(table, machine, state_id, &artifact, loc, None)?;
+            let (block, at) = model.block_action_position(exit, state_id, block_idx, action_idx);
+            let artifact = action_artifact(kind, block, at);
+            let entry = push_entry(table, machine, state_id, &artifact, loc, None)?;
+            entry.presence.clone_from(&action.presence);
+            entry.requires.clone_from(&action.requires);
         }
     }
     Ok(())

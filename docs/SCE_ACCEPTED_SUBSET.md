@@ -8960,10 +8960,20 @@ completed), and a selection for a document that imports no model is
 `sce-codegen transition-table` of a document that carries conditions is the featured
 transition table (ADR 0057 §7): every node of every variant, a row whose node is not
 present in every variant carrying its effective condition in canonical form as
-`requires`, so the rows of a variant are the rows its configuration satisfies, in order;
+`presence`, so the rows of a variant are the rows its configuration satisfies, in order;
 `transition-table --features` writes one variant's own (`docs/SCE_TRANSITION_TABLE.md`,
 "A document written against a feature model"). A declared table (§2.20) in the one
 output of the Rust, C11 and C++ backends is each build's own variant's.
+
+The forge AST (`--emit-ast`) and the sourcemap carry each element's two conditions in
+the same canonical form: `presence`, the one it is present under, and `requires`, the
+one it writes itself. A state, transition, action, `<invoke>`, `<data>` and
+`<sce:import>` of the AST carries them, and so does each sourcemap symbol of a state,
+a transition and an entry or exit action. An `<onentry>` or `<onexit>` is no node of
+either: an action in a gated block has the block's condition in `presence`. A variant
+names each transition, block and action by its position in the document, so a symbol
+of `generate --features`'s map, and a marker of the output for every build, is the
+document map's symbol of the same node; that map carries no condition.
 
 ---
 

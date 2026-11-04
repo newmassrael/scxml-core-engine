@@ -119,6 +119,8 @@ fn write_sourcemap(dir: &Path, symbols: &[(&str, &str, u32)]) {
                 kind: "state".to_string(),
                 event: None,
                 wcet_us: None,
+                presence: None,
+                requires: None,
             },
         );
     }

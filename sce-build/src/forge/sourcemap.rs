@@ -134,6 +134,17 @@ pub struct SourceSymbol {
     /// JSON to inject WCET data without a schema bump.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wcet_us: Option<u32>,
+    /// The condition under which the symbol's node is present, in the map of
+    /// a document written against a feature model (ADR 0057 §7): its effective
+    /// condition in canonical form, as the forge AST and the transition table
+    /// name it. Absent on a node in every variant, which is every node of a
+    /// variant's own map.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence: Option<crate::presence_condition::CanonicalCondition>,
+    /// The condition the symbol's element carries itself (its `sce:requires`),
+    /// in canonical form. Absent on an element that writes none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<crate::presence_condition::CanonicalCondition>,
 }
 
 /// Build a [`Sourcemap`] from a symbol table and the `source-hash`. The
@@ -164,6 +175,8 @@ pub fn build(symbols: &BTreeMap<String, SymbolEntry>, source_hash_hex: String) -
                 // struct so consumers can read it without a schema
                 // bump.
                 wcet_us: None,
+                presence: entry.presence.clone(),
+                requires: entry.requires.clone(),
             },
         );
     }
@@ -665,6 +678,8 @@ pub(crate) fn synth_symbol(loc: &SourceLocation, state_path: &str, kind: &str) -
         kind: kind.to_string(),
         event: None,
         wcet_us: None,
+        presence: None,
+        requires: None,
     }
 }
 
