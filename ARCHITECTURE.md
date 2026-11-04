@@ -1279,7 +1279,12 @@ middle of one (§scxml-C-1). Every engine holds it by the same mechanism.
    applies each input by the owner-thread operation of the same name, so a
    posted input and a direct call cannot differ. An ending for an invocation
    that was cancelled or started again is refused by the token check either way
-   (§scxml-6.4).
+   (§scxml-6.4). The external queue takes events in the order they arrived, so
+   the owner also drains before it puts an event of its own on that queue (a
+   `<send>` to itself, a `done.invoke`), and its event joins behind what was
+   posted before it; an internal raise does not drain. The Interpreter does
+   both; the generated runtimes drain at the boundary only, which ADR 0084's
+   order of work owes (step 9).
 5. **Waking.** A post wakes the owner through a waker the host installs, or
    through the runtime's own loop where it has one.
 6. **Timers.** A clock pulled on the owner thread needs no inbox. A timer that
