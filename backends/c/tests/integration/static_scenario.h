@@ -232,6 +232,9 @@ static size_t sce_scenario_utf8(unsigned long code, char out[4]) {
 }
 
 // A string, into `out` when there is one (`cap` bytes, terminator included).
+// Every escape RFC 8259 section 7 defines is read, and no other: a scenario
+// states a text with a carriage return, a backspace or a form feed as JSON spells
+// them, and a reader that refused one would call the whole step ill-formed.
 // A `\uXXXX` escape is the UTF-8 of the character it names, a surrogate pair
 // the one character the two name together: a value a scenario states is spelled
 // with them, a byte above 0x7F as its character.
@@ -249,8 +252,17 @@ static bool sce_scenario_string(sce_scenario_cursor_t *c, char *out, size_t cap)
         if (piece[0] == '\\') {
             const char escape = *c->at++;
             switch (escape) {
+            case 'b':
+                piece[0] = '\b';
+                break;
+            case 'f':
+                piece[0] = '\f';
+                break;
             case 'n':
                 piece[0] = '\n';
+                break;
+            case 'r':
+                piece[0] = '\r';
                 break;
             case 't':
                 piece[0] = '\t';
