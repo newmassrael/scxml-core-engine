@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "102dafe",
+  "embed_version": "643bc58",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 497,
+  "symbol_count": 498,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3542,6 +3542,12 @@
       "kind": "typedef",
       "name": "SCE::Forge::Detail::SizeType",
       "type": "decltype(std::declval<C>().size())"
+    },
+    {
+      "header": "sce/forge/text_template.h",
+      "kind": "function",
+      "name": "SCE::Forge::removeMarkers",
+      "signature": "std::string SCE::Forge::removeMarkers(std::string_view, std::string_view, std::string_view)"
     },
     {
       "header": "sce/forge/timer.h",

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e939b2700c7d391ee77811c0c5056f1bd75fa31a962245a8882cc047f3a138a0
+// source-hash: ea85fee4970d20335e2c3e2f4a0cd89a9f4f0a21d54f6dae4cb7a7218e2be4b5
 #![doc = "SCE-MAP: schema_total.scxml:7 :: _forge_body"]
 // SCE-MAP: schema_total.scxml:7 :: _forge_body
 
@@ -25,7 +25,7 @@ pub const SCHEMA_ID: &str = "urn:sce:schema:schema_total:1";
 /// The payload as a JSON Schema (2020-12): one spelling of each value, every
 /// bound as this build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
 #[allow(dead_code)]
-pub const JSON_SCHEMA: &str = "{\"$id\":\"urn:sce:schema:schema_total:1\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"properties\":{\"count\":{\"maximum\":4294967295,\"minimum\":0,\"type\":\"integer\"},\"sum\":{\"maximum\":2147483647,\"minimum\":-2147483648,\"type\":\"integer\"}},\"required\":[\"count\",\"sum\"],\"type\":\"object\",\"x-sce-source-hash\":\"e939b2700c7d391ee77811c0c5056f1bd75fa31a962245a8882cc047f3a138a0\"}";
+pub const JSON_SCHEMA: &str = "{\"$id\":\"urn:sce:schema:schema_total:1\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"properties\":{\"count\":{\"maximum\":4294967295,\"minimum\":0,\"type\":\"integer\"},\"sum\":{\"maximum\":2147483647,\"minimum\":-2147483648,\"type\":\"integer\"}},\"required\":[\"count\",\"sum\"],\"type\":\"object\",\"x-sce-source-hash\":\"ea85fee4970d20335e2c3e2f4a0cd89a9f4f0a21d54f6dae4cb7a7218e2be4b5\"}";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SchemaTotalPayload {

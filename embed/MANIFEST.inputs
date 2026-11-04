@@ -19,6 +19,7 @@ e4c2a5b0612b72e59d9f168cb7d309d91a1d9ac9 backends/cpp/forge-runtime/include/sce/
 61c8ecb463ff46cfaf4f5874aaa7360649753fc9 backends/cpp/forge-runtime/include/sce/forge/queue.h
 b669d4a070430e7ffd23d267704ee38a552175c5 backends/cpp/forge-runtime/include/sce/forge/queue_segmented.h
 02129593f17d8da7da6346e951ebee09a0c698ce backends/cpp/forge-runtime/include/sce/forge/span.h
+18e27b56c93b98bdc0a87905a8defc585dbd60f5 backends/cpp/forge-runtime/include/sce/forge/text_template.h
 ea84f9aa320aee04c3054bdcf2707fccf251b75e backends/cpp/forge-runtime/include/sce/forge/timer.h
 f5c8a2e631754ba6b86133d8682d88ccf895d3f5 sce/include/GuardUtils.h
 96542cb73135aa1378d64160b8ea38df96746f14 sce/include/ReadySCXMLEngine.h
