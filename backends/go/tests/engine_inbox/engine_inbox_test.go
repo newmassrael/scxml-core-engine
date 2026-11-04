@@ -21,7 +21,10 @@
 //     session named by its id;
 //   - a Mesh delivery is posted and applied as ApplyMeshCall applies it;
 //   - a post is taken before the run starts, and refused once the run is
-//     stopped or has ended, after what the inbox still held is applied.
+//     stopped or has ended, after what the inbox still held is applied;
+//   - the external queue takes events in the order they arrived: a post made
+//     during a macrostep is applied before an event that macrostep sends to its
+//     own session after it (W3C test 201's shape).
 //
 // The machine is written by hand, as the Kotlin one is: the smallest one with a
 // host-run invocation. `working` (initial) starts `job` when the macrostep that
@@ -29,7 +32,9 @@
 // which starts `job` again under a new token; `finish` goes to the top-level
 // <final> `over`. `ping`, `done.invoke.job` and `error.invoke.job` are taken in
 // `working` and `idle` and recorded as `ping:<data>`, `done:<data>` and
-// `failed:<data>`, with the `_event.origin` of each beside it.
+// `failed:<data>`, with the `_event.origin` of each beside it. `call` is taken
+// there too: it calls the host's callback, and then sends `ping` with the data
+// `own` to the machine's own session, as a `<send>` with no target does.
 //
 // This package is deliberately NOT a fixture stem: the claim is about a runtime
 // door and not about a topology. See `docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md` for
@@ -69,6 +74,7 @@ const (
 	probePing
 	probeJobDone
 	probeJobFailed
+	probeCall
 )
 
 const (
@@ -90,6 +96,7 @@ const (
 	transitionPing
 	transitionDone
 	transitionFailed
+	transitionCall
 )
 
 var probeEventNames = map[probeEvent]string{
@@ -99,6 +106,7 @@ var probeEventNames = map[probeEvent]string{
 	probePing:      "ping",
 	probeJobDone:   sce.CreateDoneInvokeEventName(probeJob),
 	probeJobFailed: sce.ErrorInvokePrefix + probeJob,
+	probeCall:      "call",
 }
 
 var probeStateNames = map[probeState]string{
@@ -127,6 +135,9 @@ type probePolicy struct {
 	// of each. Written by the owner.
 	taken   []string
 	origins []string
+	// duringCall, when set, is the host's callback `call` makes inside its
+	// macrostep, before it sends `ping` to its own session.
+	duringCall func()
 }
 
 var _ sce.StatePolicy[probeState, probeEvent] = (*probePolicy)(nil)
@@ -241,13 +252,26 @@ func (p *probePolicy) FirstEnabledTransition(state probeState, event probeEvent,
 		return recorded(transitionDone)
 	case probeJobFailed:
 		return recorded(transitionFailed)
+	case probeCall:
+		return recorded(transitionCall)
 	}
 	return probeTransition{}, false
 }
 
-func (p *probePolicy) ExecuteTransitionContent(_ probeState, transitionIndex int, _ *probeEngine) {
+func (p *probePolicy) ExecuteTransitionContent(_ probeState, transitionIndex int, engine *probeEngine) {
 	var kind string
 	switch transitionIndex {
+	case transitionCall:
+		if p.duringCall != nil {
+			p.duringCall()
+		}
+		// What the generated `<send event="ping"/>` raises: an external event
+		// whose origin is this session.
+		own := sce.NewEventWithMetadata(probePing)
+		own.Metadata = sce.ExternalMetadata("", p.sessionID)
+		own.Metadata.Data = "own"
+		engine.RaiseExternalWithMeta(own)
+		return
 	case transitionPing:
 		kind = "ping"
 	case transitionDone:
@@ -807,5 +831,36 @@ func TestAPostHeldWhenTheRunEndsIsAppliedAndOneAfterIsRefused(t *testing.T) {
 	}
 	if inbox.RaiseExternal(probePing, "after", "") {
 		t.Fatalf("the inbox of a run that ended took a post")
+	}
+}
+
+// W3C test 201's shape, without the HTTP listener: inside a macrostep, an event
+// arrives from another goroutine while the owner waits for it (the host's
+// callback posts from a goroutine it waits for, as a BasicHTTP send waits for the
+// listener that posts the event), and the macrostep then sends an event to its
+// own session. The posted event arrived first, so it is taken first: the owner
+// applies what its inbox holds before it puts its own event on the external
+// queue. Waiting for the posting goroutine's answer is the only ordering;
+// nothing sleeps.
+func TestAnEventPostedBeforeTheMachinesOwnSendIsTakenFirst(t *testing.T) {
+	pr := newProbe()
+	inbox := pr.engine.Inbox()
+	postedTaken := false
+	pr.policy.duringCall = func() {
+		postedTaken = postFromAnotherGoroutine(t, inbox, func(in sce.Inbox[probeEvent]) bool {
+			return in.RaiseExternal(probePing, "posted", "")
+		})
+	}
+	pr.engine.Initialize()
+
+	pr.engine.RaiseExternal(probeCall, "", "")
+	pr.engine.Tick()
+
+	if !postedTaken {
+		t.Fatalf("the inbox refused the post the callback made")
+	}
+	if want := []string{"ping:posted", "ping:own"}; !slices.Equal(pr.policy.taken, want) {
+		t.Fatalf("the machine's own send overtook an event that arrived before it: took %v, want %v",
+			pr.policy.taken, want)
 	}
 }

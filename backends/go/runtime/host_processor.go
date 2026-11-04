@@ -254,7 +254,7 @@ func (e *Engine[S, E]) PerformHostSend(request HostSendRequest) ([]HostSendRespo
 		metadata := ExternalMetadata("", "")
 		metadata.Data = reply.EventData
 		if meta, known := e.arrivingEvent(reply.EventName, metadata); known {
-			e.externalQueue.Raise(meta)
+			e.enqueueExternal(meta)
 		}
 	}
 	return replies, true
@@ -640,7 +640,7 @@ func (e *Engine[S, E]) endHostInvoke(processorType, invokeID string, token uint6
 	// §scxml-5.10: `_event.name` is the specific name, whichever descriptor of the
 	// document (`done.invoke.<id>`, `done.invoke`, `done`) it was matched through.
 	if meta, ok := e.arrivingEvent(name, metadata); ok {
-		e.externalQueue.Raise(meta)
+		e.enqueueExternal(meta)
 	}
 	return true
 }
@@ -711,7 +711,7 @@ func (e *Engine[S, E]) expireHostInvoke(deadline HostInvokeDeadline) {
 	metadata.Data = `"deadline"`
 	metadata.InvokeID = deadline.InvokeID
 	if meta, ok := e.arrivingEvent(ErrorInvokePrefix+deadline.InvokeID, metadata); ok {
-		e.externalQueue.Raise(meta)
+		e.enqueueExternal(meta)
 	}
 }
 

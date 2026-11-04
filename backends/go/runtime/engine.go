@@ -66,10 +66,15 @@ type Engine[S comparable, E comparable] struct {
 	externalQueue *EventQueueManager[EventWithMetadata[E]]
 
 	// inbox is what other goroutines post to this engine (docs/adr/0084),
-	// applied at each macrostep boundary before externalQueue is consulted.
-	// Made with the engine and never replaced, so Inbox may read it from any
-	// goroutine. See inbox.go.
+	// applied at each macrostep boundary before externalQueue is consulted, and
+	// before the owner puts an event of its own on externalQueue
+	// (enqueueExternal). Made with the engine and never replaced, so Inbox may
+	// read it from any goroutine. See inbox.go.
 	inbox *inboxState[E]
+
+	// drainingInbox is set while drainInbox applies what the inbox held; the
+	// owner's only.
+	drainingInbox bool
 
 	// isRunning tracks whether the engine is currently running.
 	isRunning bool
@@ -607,7 +612,7 @@ func (e *Engine[S, E]) Tick() {
 				"", // target
 			)
 			due.Metadata.Name = act.Name
-			e.externalQueue.Raise(due)
+			e.enqueueExternal(due)
 		}
 		// The macrostep this act drives may <cancel> a later one, so the
 		// queue is re-consulted after it rather than before.
@@ -896,7 +901,7 @@ func (e *Engine[S, E]) RaiseExternal(event E, eventData, origin string) {
 		"",                      // invokeID
 		"",                      // target
 	)
-	e.externalQueue.Raise(meta)
+	e.enqueueExternal(meta)
 }
 
 // ResolveEventByName is the event an event that arrives BY NAME is delivered as
@@ -948,7 +953,7 @@ func (e *Engine[S, E]) RaiseExternalByName(eventName, eventData string) {
 	// here, where it enters that queue; and `_event.name` is the name it gave.
 	meta := NewEventWithFields(event, eventData, "", "", EventTypeExternal, SCXMLEventProcessorType, "", "")
 	meta.Metadata.Name = e.arrivalNameOf(event, eventName)
-	e.externalQueue.Raise(meta)
+	e.enqueueExternal(meta)
 }
 
 // arrivalNameOf is what EventMetadata.Name is for an event that arrived as `name`
@@ -1011,7 +1016,7 @@ func (e *Engine[S, E]) RaiseExternalByNameWithMeta(eventName string, metadata Ev
 func (e *Engine[S, E]) RaiseExternalWithMeta(event EventWithMetadata[E]) {
 	log.Printf("[sce] Engine::RaiseExternalWithMeta: enqueuing external event with metadata")
 
-	e.externalQueue.Raise(event)
+	e.enqueueExternal(event)
 }
 
 // ProcessEvent processes an external event (convenience API, runs one macrostep)
@@ -1042,7 +1047,7 @@ func (e *Engine[S, E]) ProcessEventWithMeta(event E, metadata EventMetadata) {
 		Event:    event,
 		Metadata: metadata,
 	}
-	e.externalQueue.Raise(meta)
+	e.enqueueExternal(meta)
 	e.Step()
 }
 
@@ -1930,7 +1935,7 @@ func (e *Engine[S, E]) PerformHTTPSend(target, eventName, content string, params
 		metadata := ExternalMetadata("", "")
 		metadata.Data = resp.EventData
 		if meta, ok := e.arrivingEvent(resp.EventName, metadata); ok {
-			e.externalQueue.Raise(meta)
+			e.enqueueExternal(meta)
 		}
 	}
 }

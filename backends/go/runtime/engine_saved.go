@@ -179,7 +179,7 @@ func (e *Engine[S, E]) raiseHostInvokeFailure(invokeID, reason string) {
 	metadata.Data = `"` + reason + `"`
 	metadata.InvokeID = invokeID
 	if meta, ok := e.arrivingEvent(ErrorInvokePrefix+invokeID, metadata); ok {
-		e.externalQueue.Raise(meta)
+		e.enqueueExternal(meta)
 	}
 }
 

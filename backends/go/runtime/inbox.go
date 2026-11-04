@@ -9,8 +9,9 @@ import "sync"
 // engine may use (docs/adr/0084, ARCHITECTURE.md "Engine Threading").
 //
 // A multi-producer, single-consumer queue of what other goroutines have for an
-// engine, which the engine's owner applies at its next macrostep boundary, each
-// input by the owner-goroutine operation of the same name. A slice behind a
+// engine, which the engine's owner applies at its next macrostep boundary, or
+// sooner, before it puts an event of its own on the external queue, each input
+// by the owner-goroutine operation of the same name. A slice behind a
 // mutex, as ParentEventQueue is: a hosted inbox is unbounded (docs/adr/0084, D2),
 // and a buffered channel is a bounded queue that would refuse, or block, a post
 // when full. A post never waits for a macrostep: the lock is held for an append
@@ -25,7 +26,10 @@ import "sync"
 // posted input by calling that operation. The owner applies what was posted at
 // its next macrostep boundary, before the external queue is consulted, in the
 // order the inbox took the posts, so a posted input and a direct call cannot
-// differ.
+// differ. A running engine applies it sooner when it puts an event of its own
+// on the external queue (a <send> to itself, a host-run invocation's
+// `done.invoke`): that queue takes events in the order they arrived, so the
+// posts go ahead of the owner's event.
 //
 // Each post answers whether the inbox took the input. The inbox takes every post
 // from the moment the engine is made until its run ends in a top-level <final> or
@@ -184,13 +188,47 @@ func (e *Engine[S, E]) Inbox() Inbox[E] {
 	return Inbox[E]{state: e.inbox}
 }
 
-// drainInbox is the macrostep boundary's half of the inbox (docs/adr/0084): it
-// applies, on the owner, what other goroutines posted, in the order the inbox
-// took it, each by the owner-goroutine operation of the same name.
+// drainInbox is the owner's half of the inbox (docs/adr/0084): it applies, on
+// the owner, what other goroutines posted, in the order the inbox took it, each
+// by the owner-goroutine operation of the same name. Called at each macrostep
+// boundary, before the external queue is consulted, and by enqueueExternal,
+// before the owner puts an event of its own on that queue.
+//
+// One drain at a time. Applying an input reaches enqueueExternal again: a posted
+// event is raised by Engine.RaiseExternal's own body, and a posted ending raises
+// its `done.invoke`. That call must not drain in turn, or the inputs posted
+// after the one being applied would join the queue ahead of what it raises.
+// Inside a drain it is a plain push, and this drain applies the rest in order.
 func (e *Engine[S, E]) drainInbox() {
+	if e.drainingInbox {
+		return
+	}
+	e.drainingInbox = true
+	defer func() { e.drainingInbox = false }()
 	for _, input := range e.inbox.take() {
 		e.applyInboxInput(input)
 	}
+}
+
+// enqueueExternal is the one door onto the external queue for what the owner
+// puts on it: a <send> to this session, an event the host raises on the owner,
+// a host-run invocation's ending or a host processor's reply, what a child
+// driven by this owner sends its parent, a delayed send come due.
+// docs/adr/0084, D2: that queue takes events in the order they arrived, and
+// what another goroutine posted before this call arrived first (W3C test 201:
+// the BasicHTTP listener posts `event1` while the send waits for it, and the
+// `timeout` sent next must come second), so a running engine applies its inbox
+// before event joins the queue. One not running yet keeps what was posted for
+// its first boundary, as Inbox documents.
+//
+// The internal queue has no such door: it is the running macrostep's own, and
+// arrival order is a property of the external queue, so a <raise> or a platform
+// error waits for no post (Engine.Raise).
+func (e *Engine[S, E]) enqueueExternal(event EventWithMetadata[E]) {
+	if e.isRunning {
+		e.drainInbox()
+	}
+	e.externalQueue.Raise(event)
 }
 
 // closeInbox closes the inbox and applies what it still holds. A run that ended,
