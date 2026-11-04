@@ -138,6 +138,7 @@ pub mod static_invoke_string__sce_synth_invoke__wide_sm;
 pub mod static_invoke_string_sm;
 pub mod static_invoke_tree__sce_synth_invoke__worker_sm;
 pub mod static_invoke_tree_sm;
+pub mod static_lift_sm;
 pub mod static_list_assign_sm;
 pub mod static_list_call_sm;
 pub mod static_list_index_sm;

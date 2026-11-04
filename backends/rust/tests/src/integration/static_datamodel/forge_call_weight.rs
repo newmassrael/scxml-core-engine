@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
+// source-hash: a959df7d40a6301aa78e8501513db4064b02c0155bca6d82b638d4f2f72d3815
 #![doc = "SCE-MAP: forge_call_weight.scxml:8 :: _forge_body"]
 // SCE-MAP: forge_call_weight.scxml:8 :: _forge_body
 

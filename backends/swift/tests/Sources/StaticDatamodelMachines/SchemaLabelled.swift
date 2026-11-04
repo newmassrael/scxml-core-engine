@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c
+// source-hash: a959df7d40a6301aa78e8501513db4064b02c0155bca6d82b638d4f2f72d3815
 // SCE-MAP: schema_labelled.scxml:8 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -31,7 +31,7 @@ public enum SchemaLabelled {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$id\":\"urn:sce:schema:schema_labelled:1\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"properties\":{\"label\":{\"maxLength\":8,\"type\":\"string\",\"x-sce-max-bytes\":8},\"sensor\":{\"maximum\":255,\"minimum\":0,\"type\":\"integer\"}},\"required\":[\"label\",\"sensor\"],\"type\":\"object\",\"x-sce-source-hash\":\"c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c\"}"
+    public static let jsonSchema: String = "{\"$id\":\"urn:sce:schema:schema_labelled:1\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"properties\":{\"label\":{\"maxLength\":8,\"type\":\"string\",\"x-sce-max-bytes\":8},\"sensor\":{\"maximum\":255,\"minimum\":0,\"type\":\"integer\"}},\"required\":[\"label\",\"sensor\"],\"type\":\"object\",\"x-sce-source-hash\":\"a959df7d40a6301aa78e8501513db4064b02c0155bca6d82b638d4f2f72d3815\"}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order,
