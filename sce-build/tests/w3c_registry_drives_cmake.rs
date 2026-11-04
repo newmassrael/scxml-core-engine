@@ -304,15 +304,22 @@ fn c11_link_violations(cmake: &str) -> Vec<String> {
         return found;
     };
     if !(body.contains("sce_c_runtime_libraries(")
-        && body.contains("W3C_C_AOT_TEST_${TEST_NUM}_REQUIRES"))
+        && body.contains("W3C_C_AOT_TEST_${TEST_NUM}_REQUIRES")
+        && body.contains("sce_c_link_runtime(${_target}"))
     {
         found.push(
-            "the runner loop does not link what `W3C_C_AOT_TEST_<id>_REQUIRES` states through \
-             `sce_c_runtime_libraries`"
+            "the runner loop does not leave out what `W3C_C_AOT_TEST_<id>_REQUIRES` cannot be \
+             linked here (`sce_c_runtime_libraries`), or does not link each runner through \
+             `sce_c_link_runtime`"
                 .to_string(),
         );
     }
-    for library in ["lua54", "sce_c_scripting", "sce_c_base"] {
+    for library in [
+        "lua54",
+        "sce_c_scripting",
+        "sce_c_base",
+        "sce_c_runtime_posix",
+    ] {
         if body
             .split(|c: char| !(c.is_alphanumeric() || c == '_'))
             .any(|w| w == library)
@@ -356,7 +363,7 @@ fn a_link_stated_by_hand_is_refused() {
     );
 
     let hand_linked = tree.replace(
-        "target_link_libraries(${_target} PRIVATE sce_c_runtime sce_c_runtime_posix ${_libraries})",
+        "sce_c_link_runtime(${_target} REQUIRES clock)",
         "target_link_libraries(${_target} PRIVATE sce_c_runtime sce_c_runtime_posix lua54)",
     );
     assert_ne!(
@@ -365,7 +372,8 @@ fn a_link_stated_by_hand_is_refused() {
     );
     let found = c11_link_violations(&hand_linked);
     assert!(
-        found.iter().any(|v| v.contains("names `lua54`")),
+        found.iter().any(|v| v.contains("names `lua54`"))
+            && found.iter().any(|v| v.contains("`sce_c_link_runtime`")),
         "a runner loop that links Lua by hand was accepted: {found:?}"
     );
 }

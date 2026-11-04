@@ -72,10 +72,10 @@ sce-codegen generate resources/XXX/testXXX.scxml -o /tmp/test_verify/ -l cpp
    used to carry its own 202 calls, each flagged `NEEDS_LUA`, `NEEDS_DOM` or
    `NEEDS_HTTP` by hand. What a machine links is the generator's decision:
    each generated C11 machine states what it requires beyond the header-only
-   runtime (`lua`, `dom`, `http`) in the plan the route asks for
+   runtime (`lua`, `dom`, `http`, `clock`) in the plan the route asks for
    (`--plan-requires`), includes each requirement's header exactly when it
-   states it, and the route links the library `backends/c/runtime` registers
-   for each. How a fixture is run is its `harness`: an `http` fixture's ctest
+   states it, and the runner is linked by `sce_c_link_runtime`, which links
+   the library `backends/c/runtime` registers for each. How a fixture is run is its `harness`: an `http` fixture's ctest
    requires the BasicHTTP server fixture, on both routes.
 
    Nor is there a list of the files a fixture's generation writes. The route

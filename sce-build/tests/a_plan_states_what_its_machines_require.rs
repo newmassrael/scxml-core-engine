@@ -17,6 +17,9 @@
 //! * a line that begins with a tab names no file, so the run's own lines are
 //!   the plan's without the flag, and a reader of the plain answer reads the
 //!   same answer;
+//! * a requirement is stated for what the machine does: the engine and the
+//!   DOM binding for a script, the client for a BasicHTTP send, the clock
+//!   for a delayed one, and nothing for a machine that does none of these;
 //! * nothing is stated without the flag, the flag is refused without
 //!   `--plan`, and a backend that states nothing (C++) states nothing.
 //!
@@ -62,6 +65,17 @@ const POSTER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// A machine with no data model that schedules an event: it reads the time.
+const TIMED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0" name="timed">
+    <state id="s0">
+        <onentry><send event="later" delay="10ms"/></onentry>
+        <transition event="later" target="done"/>
+    </state>
+    <final id="done"/>
+</scxml>
+"#;
+
 /// A machine with no data model that starts the scripted one by `src`.
 const PARENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="running" name="parent">
@@ -82,6 +96,7 @@ fn authored() -> (tempfile::TempDir, PathBuf) {
         ("plain.scxml", PLAIN),
         ("poster.scxml", POSTER),
         ("parent.scxml", PARENT),
+        ("timed.scxml", TIMED),
     ] {
         std::fs::write(root.join(name), text).expect("write a document");
     }
@@ -170,6 +185,10 @@ fn a_scripted_c11_machine_states_the_engine_and_the_dom_binding() {
         !own.contains(&"http"),
         "the scripted machine states an HTTP client it never sends with: {own:?}"
     );
+    assert!(
+        !own.contains(&"clock"),
+        "the scripted machine states a clock it schedules nothing with: {own:?}"
+    );
 
     // The statements come after every file, and the files are the plain
     // answer's.
@@ -217,6 +236,28 @@ fn a_machine_with_no_data_model_states_nothing() {
         "a machine with no data model states {stated:?}"
     );
     assert!(!rest.is_empty(), "the plan names no file");
+}
+
+#[test]
+fn a_machine_that_schedules_states_the_clock_and_nothing_else() {
+    let (dir, root) = authored();
+    let out = dir.path().join("out");
+    let lines = succeeded(
+        &run(
+            &["--plan", "--plan-requires"],
+            &root,
+            "timed.scxml",
+            "c11",
+            &out,
+        ),
+        "the plan of the timed machine",
+    );
+    let (stated, _) = split(&lines);
+    assert_eq!(
+        stated_for(&stated, ""),
+        vec!["clock"],
+        "a machine with no data model that schedules an event states {stated:?}"
+    );
 }
 
 #[test]

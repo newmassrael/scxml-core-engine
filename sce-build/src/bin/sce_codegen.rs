@@ -1809,7 +1809,8 @@ struct Cli {
     /// generation need linked beside them that the header-only contracts of
     /// their runtime do not provide, as the backend decided while rendering
     /// them: `lua` (the Lua 5.4 engine a data model is evaluated in), `dom`
-    /// (the Lua binding of the XML DOM) and `http` (the BasicHTTP client).
+    /// (the Lua binding of the XML DOM), `http` (the BasicHTTP client) and
+    /// `clock` (the link-time clock a scheduling machine reads by default).
     /// After every other line, each is printed as
     /// `\trequires\t<generation>\t<requirement>`, where `<generation>` is
     /// empty for the run's own machines and, with `--plan-children`, the

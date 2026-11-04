@@ -797,12 +797,13 @@ pub struct GeneratedOutput {
 ///
 /// Which of them a machine needs is the generator's decision, made where the
 /// machine is rendered, and nowhere else: the C11 templates include `lua.h`,
-/// the DOM binding's header and the HTTP client's header exactly when the
-/// machine's set names the requirement ([`c11_runtime_requirements`]), so the
-/// set is the reason for each include rather than a second account of it. A
-/// build reads the set (`sce-codegen --plan --plan-requires`) and links each
-/// requirement with the library of its runtime that implements it
-/// (`backends/c/runtime/CMakeLists.txt`, `SCE_C_RUNTIME_REQUIREMENTS`). A
+/// the DOM binding's header, the HTTP client's header and the clock's
+/// exactly when the machine's set names the requirement
+/// ([`c11_runtime_requirements`]), so the set is the reason for each include
+/// rather than a second account of it. A build reads the set (`sce-codegen
+/// --plan --plan-requires`) and links each requirement with the library of its runtime that
+/// implements it (`backends/c/runtime/CMakeLists.txt`,
+/// `SCE_C_RUNTIME_REQUIREMENTS`, `sce_c_link_runtime`). A
 /// list of the machines that need a library, kept in the build, is a second
 /// copy of this decision: the C11 conformance suite kept one as flags on 202
 /// hand-written registrations until 2026-11.
@@ -824,11 +825,17 @@ pub enum RuntimeRequirement {
     /// the runtime implements: the machine sends over the BasicHTTP Event
     /// I/O Processor ([`SCXMLModel::needs_http_send`]).
     Http,
+    /// The link-time clock (`sce/clock.h`'s `_sce_clock_now_ms`), which a
+    /// platform tier of the runtime implements: the machine schedules
+    /// delayed events and reads the time through `sce_clock_read`, whose
+    /// default is that clock ([`SCXMLModel::needs_event_scheduler`]). A host
+    /// that hands every instance a clock of its own may implement it itself.
+    Clock,
 }
 
 impl RuntimeRequirement {
     /// Every requirement a backend can state, in the order a set lists them.
-    pub const ALL: [Self; 3] = [Self::Lua, Self::Dom, Self::Http];
+    pub const ALL: [Self; 4] = [Self::Lua, Self::Dom, Self::Http, Self::Clock];
 
     /// The name a plan states the requirement by
     /// (`\trequires\t<generation>\t<name>`), and a build maps to a library.
@@ -837,6 +844,7 @@ impl RuntimeRequirement {
             Self::Lua => "lua",
             Self::Dom => "dom",
             Self::Http => "http",
+            Self::Clock => "clock",
         }
     }
 
@@ -848,6 +856,7 @@ impl RuntimeRequirement {
             Self::Lua => "#include \"lua.h\"",
             Self::Dom => "#include <sce/lua_dom_binding.h>",
             Self::Http => "#include <sce/http_client.h>",
+            Self::Clock => "#include <sce/clock.h>",
         }
     }
 }
@@ -866,6 +875,9 @@ pub fn c11_runtime_requirements(model: &SCXMLModel) -> BTreeSet<RuntimeRequireme
     }
     if model.needs_http_send {
         requires.insert(RuntimeRequirement::Http);
+    }
+    if model.needs_event_scheduler == Some(true) {
+        requires.insert(RuntimeRequirement::Clock);
     }
     requires
 }

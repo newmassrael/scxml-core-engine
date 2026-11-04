@@ -471,7 +471,10 @@
    the same symbols. */
 #include <sce/http_client.h>
 {% endif %}
-{% if model.needs_event_scheduler %}
+{# Included because the set of what this machine requires names `clock`:
+   the machine reads the time through `sce_clock_read`, whose default is the
+   link-time clock, exactly when it schedules (`RuntimeRequirement::Clock`). #}
+{% if "clock" in runtime_requires %}
 
 /* W3C SCXML 6.2: Monotonic clock binding for delayed `<send>` scheduling.
    The interface lives in `backends/c/runtime/include/sce/clock.h` (sce-c-core
@@ -482,6 +485,8 @@
    no weak-symbol fallback (silent zero clock would freeze the schedule
    and silently mis-fire timeouts). */
 #include <sce/clock.h>
+{% endif %}
+{% if model.needs_event_scheduler %}
 
 
 /* Forward declarations — `scheduled_push_routed` is invoked from inside

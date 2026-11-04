@@ -64,24 +64,27 @@ sce_declare_registered_static_w3c_c_tests()
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
 # `SCE_STATIC_ASSERT`'s C11 lowering and stdint/stdbool are first-class
 # regardless of the compiler's default standard. A binary links what its
-# fixture's machines require and nothing else, so a machine with no data
-# model keeps the MCU-relevant zero-deps profile: it links neither Lua nor the
-# DOM binding.
-# The runners link the SCE-shipped POSIX platform impl for clock.h and
-# http_client.h, so they exist only when it is built. A bare-metal
-# consumer opting out still gets the freestanding forge and EventSchema
-# fixtures below, which link neither it nor a script engine.
+# fixture's machines require and nothing else (`sce_c_link_runtime`), so a
+# machine with no data model keeps the MCU-relevant zero-deps profile: it
+# links neither Lua nor the DOM binding.
+#
+# Every runner is a host program that may time its own run (the scheduled
+# ones poll `_sce_clock_now_ms` against a deadline), so each requires the
+# platform clock beside what its machines require. A configuration that
+# builds no platform tier, or no script engine, leaves out every runner that
+# requires what it does not build; a bare-metal consumer opting out still
+# gets the freestanding forge and EventSchema fixtures below.
 set(W3C_C_AOT_HTTP_TESTS "")
-if(SCE_C_RUNTIME_POSIX)
-    set(_sce_c_w3c_unlinkable "")
-    foreach(TEST_NUM ${W3C_C_AOT_TESTS})
-        # The libraries that implement what the fixture's machines require,
-        # as the generator stated it. A requirement whose tier this
+set(_sce_c_w3c_unlinkable "")
+foreach(TEST_NUM ${W3C_C_AOT_TESTS})
+        # What the fixture's machines require, as the generator stated it, and
+        # what the runner itself requires. A requirement whose tier this
         # configuration does not build (`lua` and `dom` without
-        # SCE_ENABLE_LUA) leaves the fixture out, since its machine cannot be
-        # linked here, and the datamodel-less fixtures still run without a
-        # script engine.
-        sce_c_runtime_libraries(_libraries _unmet ${W3C_C_AOT_TEST_${TEST_NUM}_REQUIRES})
+        # SCE_ENABLE_LUA, `clock` without SCE_C_RUNTIME_POSIX) leaves the
+        # fixture out, since it cannot be linked here, and the datamodel-less
+        # fixtures still run without a script engine.
+        sce_c_runtime_libraries(_libraries _unmet
+            ${W3C_C_AOT_TEST_${TEST_NUM}_REQUIRES} clock)
         if(NOT "${_unmet}" STREQUAL "")
             string(REPLACE ";" " " _unmet_text "${_unmet}")
             list(APPEND _sce_c_w3c_unlinkable "${TEST_NUM} (${_unmet_text})")
@@ -106,7 +109,7 @@ if(SCE_C_RUNTIME_POSIX)
         # The list is the generator's answer (`sce_generate_static_w3c_c_test`),
         # so no file of it is named here.
         add_executable(${_target} ${_runner} ${W3C_C_AOT_TEST_${TEST_NUM}_SOURCES})
-        target_link_libraries(${_target} PRIVATE sce_c_runtime sce_c_runtime_posix ${_libraries})
+        sce_c_link_runtime(${_target} REQUIRES clock)
         # `tests/w3c` carries the ONE owner of the BasicHTTP fixture endpoint
         # (`basic_http_test_endpoint.h`, a C11 header for exactly this reason).
         # Without it in reach each BasicHTTP runner writes the address again,
@@ -137,24 +140,20 @@ if(SCE_C_RUNTIME_POSIX)
             )
             list(APPEND W3C_C_AOT_HTTP_TESTS ${TEST_NUM})
         endif()
-    endforeach()
-    if(NOT "${_sce_c_w3c_unlinkable}" STREQUAL "")
-        list(LENGTH _sce_c_w3c_unlinkable _sce_c_w3c_skipped)
-        string(REPLACE ";" ", " _sce_c_w3c_unlinkable_text "${_sce_c_w3c_unlinkable}")
-        message(STATUS
-            "Skipping ${_sce_c_w3c_skipped} W3C C11 conformance runner(s) whose machines "
-            "require what this configuration does not build: ${_sce_c_w3c_unlinkable_text}")
-    endif()
-else()
-    list(LENGTH W3C_C_AOT_TESTS _sce_c_w3c_skipped)
+endforeach()
+if(NOT "${_sce_c_w3c_unlinkable}" STREQUAL "")
+    list(LENGTH _sce_c_w3c_unlinkable _sce_c_w3c_skipped)
+    string(REPLACE ";" ", " _sce_c_w3c_unlinkable_text "${_sce_c_w3c_unlinkable}")
     message(STATUS
-        "SCE_C_RUNTIME_POSIX=OFF — skipping ${_sce_c_w3c_skipped} W3C "
-        "C11 conformance runner(s); they link sce_c_runtime_posix for "
-        "clock + http_client.")
+        "Skipping ${_sce_c_w3c_skipped} W3C C11 conformance runner(s) that require "
+        "what this configuration does not build: ${_sce_c_w3c_unlinkable_text}")
 endif()
 
-# Every fixture below links sce_c_runtime_posix and lua54, so the whole
-# block is bounded by the two options that build them.
+# Each program below links what the machines it compiles require
+# (`sce_c_link_runtime`), and most of those machines embed the Lua engine or
+# schedule on the platform clock: the block is bounded by the two options
+# that build those tiers, since `sce_c_link_runtime` refuses a program whose
+# machines require a tier this configuration does not build.
 if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # ─── Integration fixtures ────────────────────────────────────────────
     #
@@ -169,9 +168,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_donedata_local_invoke.c
         ${INTEGRATION_C_TEST_donedata_local_invoke_SOURCES}
     )
-    target_link_libraries(sce_c_integration_donedata_local_invoke PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_donedata_local_invoke)
     target_include_directories(sce_c_integration_donedata_local_invoke PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -198,9 +195,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_autoforward_event_fields.c
         ${INTEGRATION_C_TEST_autoforward_event_fields_SOURCES}
     )
-    target_link_libraries(sce_c_integration_autoforward_event_fields PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_autoforward_event_fields)
     target_include_directories(sce_c_integration_autoforward_event_fields PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -231,9 +226,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_autoforward_keeps_the_arrival_name.c
         ${INTEGRATION_C_TEST_autoforward_keeps_the_arrival_name_SOURCES}
     )
-    target_link_libraries(sce_c_integration_autoforward_keeps_the_arrival_name PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_autoforward_keeps_the_arrival_name)
     target_include_directories(sce_c_integration_autoforward_keeps_the_arrival_name PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -260,9 +253,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_an_event_keeps_the_name_it_was_sent_under.c
         ${INTEGRATION_C_TEST_an_event_keeps_the_name_it_was_sent_under_SOURCES}
     )
-    target_link_libraries(sce_c_integration_an_event_keeps_the_name_it_was_sent_under PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_an_event_keeps_the_name_it_was_sent_under)
     target_include_directories(sce_c_integration_an_event_keeps_the_name_it_was_sent_under PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -294,9 +285,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_computed_event_name_is_matched_like_any_other.c
         ${INTEGRATION_C_TEST_a_computed_event_name_is_matched_like_any_other_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_computed_event_name_is_matched_like_any_other PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_computed_event_name_is_matched_like_any_other)
     target_include_directories(sce_c_integration_a_computed_event_name_is_matched_like_any_other PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -326,9 +315,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_flat_lifecycle.c
         ${INTEGRATION_C_TEST_flat_lifecycle_SOURCES}
     )
-    target_link_libraries(sce_c_integration_flat_lifecycle PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_flat_lifecycle)
     target_include_directories(sce_c_integration_flat_lifecycle PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -351,9 +338,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_nested_lifecycle.c
         ${INTEGRATION_C_TEST_nested_lifecycle_SOURCES}
     )
-    target_link_libraries(sce_c_integration_nested_lifecycle PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_nested_lifecycle)
     target_include_directories(sce_c_integration_nested_lifecycle PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -381,9 +366,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_autoforward_done_invoke.c
         ${INTEGRATION_C_TEST_autoforward_done_invoke_SOURCES}
     )
-    target_link_libraries(sce_c_integration_autoforward_done_invoke PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_autoforward_done_invoke)
     target_include_directories(sce_c_integration_autoforward_done_invoke PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -410,9 +393,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_autoforward_internal_queue.c
         ${INTEGRATION_C_TEST_autoforward_internal_queue_SOURCES}
     )
-    target_link_libraries(sce_c_integration_autoforward_internal_queue PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_autoforward_internal_queue)
     target_include_directories(sce_c_integration_autoforward_internal_queue PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -441,9 +422,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_autoforward_dequeue_point.c
         ${INTEGRATION_C_TEST_autoforward_dequeue_point_SOURCES}
     )
-    target_link_libraries(sce_c_integration_autoforward_dequeue_point PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_autoforward_dequeue_point)
     target_include_directories(sce_c_integration_autoforward_dequeue_point PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -472,9 +451,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_invoke_precedes_external_dequeue.c
         ${INTEGRATION_C_TEST_invoke_precedes_external_dequeue_SOURCES}
     )
-    target_link_libraries(sce_c_integration_invoke_precedes_external_dequeue PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_invoke_precedes_external_dequeue)
     target_include_directories(sce_c_integration_invoke_precedes_external_dequeue PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -502,9 +479,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_invoke_precedes_dequeue_midrun.c
         ${INTEGRATION_C_TEST_invoke_precedes_dequeue_midrun_SOURCES}
     )
-    target_link_libraries(sce_c_integration_invoke_precedes_dequeue_midrun PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_invoke_precedes_dequeue_midrun)
     target_include_directories(sce_c_integration_invoke_precedes_dequeue_midrun PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -533,9 +508,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_late_tick_honours_cancel.c
         ${INTEGRATION_C_TEST_late_tick_honours_cancel_SOURCES}
     )
-    target_link_libraries(sce_c_integration_late_tick_honours_cancel PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_late_tick_honours_cancel)
     target_include_directories(sce_c_integration_late_tick_honours_cancel PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -563,9 +536,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_discarded_event_is_observable.c
         ${INTEGRATION_C_TEST_discarded_event_is_observable_SOURCES}
     )
-    target_link_libraries(sce_c_integration_discarded_event_is_observable PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_discarded_event_is_observable)
     target_include_directories(sce_c_integration_discarded_event_is_observable PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -595,9 +566,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_undecodable_payload_is_reported.c
         ${INTEGRATION_C_TEST_undecodable_payload_is_reported_SOURCES}
     )
-    target_link_libraries(sce_c_integration_undecodable_payload_is_reported PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_undecodable_payload_is_reported)
     target_include_directories(sce_c_integration_undecodable_payload_is_reported PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -625,9 +594,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_unseen_event_is_reported.c
         ${INTEGRATION_C_TEST_unseen_event_is_reported_SOURCES}
     )
-    target_link_libraries(sce_c_integration_unseen_event_is_reported PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_unseen_event_is_reported)
     target_include_directories(sce_c_integration_unseen_event_is_reported PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -655,9 +622,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_typed_reader_names.c
         ${INTEGRATION_C_TEST_typed_reader_names_SOURCES}
     )
-    target_link_libraries(sce_c_integration_typed_reader_names PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_typed_reader_names)
     target_include_directories(sce_c_integration_typed_reader_names PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -690,9 +655,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_send_namelist_over_http.c
         ${INTEGRATION_C_TEST_send_namelist_over_http_SOURCES}
     )
-    target_link_libraries(sce_c_integration_send_namelist_over_http PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_send_namelist_over_http)
     # `tests/w3c` carries the ONE owner of the BasicHTTP fixture endpoint
     # (`basic_http_test_endpoint.h`), the same reason the W3C C arm above
     # names it: this test publishes that address and must not spell it again.
@@ -732,9 +695,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_unhandled_error_is_observable.c
         ${INTEGRATION_C_TEST_unhandled_error_is_observable_SOURCES}
     )
-    target_link_libraries(sce_c_integration_unhandled_error_is_observable PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_unhandled_error_is_observable)
     target_include_directories(sce_c_integration_unhandled_error_is_observable PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -767,9 +728,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_eventless_macrostep_is_bounded.c
         ${INTEGRATION_C_TEST_eventless_macrostep_is_bounded_SOURCES}
     )
-    target_link_libraries(sce_c_integration_eventless_macrostep_is_bounded PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_eventless_macrostep_is_bounded)
     target_include_directories(sce_c_integration_eventless_macrostep_is_bounded PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -798,9 +757,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_targetless_transition_completes_macrostep.c
         ${INTEGRATION_C_TEST_targetless_transition_completes_macrostep_SOURCES}
     )
-    target_link_libraries(sce_c_integration_targetless_transition_completes_macrostep PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_targetless_transition_completes_macrostep)
     target_include_directories(sce_c_integration_targetless_transition_completes_macrostep PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -828,9 +785,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_internal_chain_is_bounded.c
         ${INTEGRATION_C_TEST_internal_chain_is_bounded_SOURCES}
     )
-    target_link_libraries(sce_c_integration_internal_chain_is_bounded PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_internal_chain_is_bounded)
     target_include_directories(sce_c_integration_internal_chain_is_bounded PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -853,9 +808,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_error_cascade_is_bounded.c
         ${INTEGRATION_C_TEST_error_cascade_is_bounded_SOURCES}
     )
-    target_link_libraries(sce_c_integration_error_cascade_is_bounded PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_error_cascade_is_bounded)
     target_include_directories(sce_c_integration_error_cascade_is_bounded PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -883,9 +836,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_event_descriptor_spellings_agree.c
         ${INTEGRATION_C_TEST_event_descriptor_spellings_agree_SOURCES}
     )
-    target_link_libraries(sce_c_integration_event_descriptor_spellings_agree PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_event_descriptor_spellings_agree)
     target_include_directories(sce_c_integration_event_descriptor_spellings_agree PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -912,9 +863,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_wildcard_in_document_order.c
         ${INTEGRATION_C_TEST_wildcard_in_document_order_SOURCES}
     )
-    target_link_libraries(sce_c_integration_wildcard_in_document_order PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_wildcard_in_document_order)
     target_include_directories(sce_c_integration_wildcard_in_document_order PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -941,9 +890,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_nested_final_not_terminal.c
         ${INTEGRATION_C_TEST_nested_final_not_terminal_SOURCES}
     )
-    target_link_libraries(sce_c_integration_nested_final_not_terminal PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_nested_final_not_terminal)
     target_include_directories(sce_c_integration_nested_final_not_terminal PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -972,9 +919,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_parallel_completion_raises_done_state.c
         ${INTEGRATION_C_TEST_parallel_completion_raises_done_state_SOURCES}
     )
-    target_link_libraries(sce_c_integration_parallel_completion_raises_done_state PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_parallel_completion_raises_done_state)
     target_include_directories(sce_c_integration_parallel_completion_raises_done_state PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1003,9 +948,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_parallel_done_state_is_delivered.c
         ${INTEGRATION_C_TEST_parallel_done_state_is_delivered_SOURCES}
     )
-    target_link_libraries(sce_c_integration_parallel_done_state_is_delivered PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_parallel_done_state_is_delivered)
     target_include_directories(sce_c_integration_parallel_done_state_is_delivered PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1034,9 +977,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_parallel_regions_take_own_transitions.c
         ${INTEGRATION_C_TEST_parallel_regions_take_own_transitions_SOURCES}
     )
-    target_link_libraries(sce_c_integration_parallel_regions_take_own_transitions PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_parallel_regions_take_own_transitions)
     target_include_directories(sce_c_integration_parallel_regions_take_own_transitions PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1068,9 +1009,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_parallel_self_transition_keeps_its_leaf.c
         ${INTEGRATION_C_TEST_parallel_self_transition_keeps_its_leaf_SOURCES}
     )
-    target_link_libraries(sce_c_integration_parallel_self_transition_keeps_its_leaf PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_parallel_self_transition_keeps_its_leaf)
     target_include_directories(sce_c_integration_parallel_self_transition_keeps_its_leaf PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1108,9 +1047,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_parallel_region_root_external_domain.c
         ${INTEGRATION_C_TEST_parallel_region_root_external_domain_SOURCES}
     )
-    target_link_libraries(sce_c_integration_parallel_region_root_external_domain PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_parallel_region_root_external_domain)
     target_include_directories(sce_c_integration_parallel_region_root_external_domain PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1160,9 +1097,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCE_MAX_SCHEDULED=${_SCE_TIMED_PULSES}
         SCE_EXTERNAL_EVENT_BUDGET_TABLE="${CMAKE_SOURCE_DIR}/tests/external_event_budget/budget_outcomes.json"
     )
-    target_link_libraries(sce_c_integration_external_chain_is_bounded PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_external_chain_is_bounded)
     target_include_directories(sce_c_integration_external_chain_is_bounded PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1193,9 +1128,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCE_ECMA262_SEMANTICS_TABLE="${CMAKE_SOURCE_DIR}/tests/ecmascript/ecma262_semantics.json"
         SCE_ECMA262_EMITTED_LUA_TABLE="${CMAKE_SOURCE_DIR}/tests/ecmascript/ecma262_emitted_lua.json"
     )
-    target_link_libraries(sce_c_integration_ecma262_semantics PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_ecma262_semantics)
     target_include_directories(sce_c_integration_ecma262_semantics PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1227,9 +1160,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_ancestor_entry_is_not_default_entry.c
         ${INTEGRATION_C_TEST_ancestor_entry_is_not_default_entry_SOURCES}
     )
-    target_link_libraries(sce_c_integration_ancestor_entry_is_not_default_entry PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_ancestor_entry_is_not_default_entry)
     target_include_directories(sce_c_integration_ancestor_entry_is_not_default_entry PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1256,9 +1187,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_onexit_runs_before_the_state_leaves.c
         ${INTEGRATION_C_TEST_onexit_runs_before_the_state_leaves_SOURCES}
     )
-    target_link_libraries(sce_c_integration_onexit_runs_before_the_state_leaves PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_onexit_runs_before_the_state_leaves)
     target_include_directories(sce_c_integration_onexit_runs_before_the_state_leaves PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1284,9 +1213,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_the_run_ends_by_exiting_every_state.c
         ${INTEGRATION_C_TEST_the_run_ends_by_exiting_every_state_SOURCES}
     )
-    target_link_libraries(sce_c_integration_the_run_ends_by_exiting_every_state PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_the_run_ends_by_exiting_every_state)
     target_include_directories(sce_c_integration_the_run_ends_by_exiting_every_state PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1311,9 +1238,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_late_data_binds_on_first_entry.c
         ${INTEGRATION_C_TEST_late_data_binds_on_first_entry_SOURCES}
     )
-    target_link_libraries(sce_c_integration_late_data_binds_on_first_entry PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_late_data_binds_on_first_entry)
     target_include_directories(sce_c_integration_late_data_binds_on_first_entry PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1337,9 +1262,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_event_type_names_its_queue.c
         ${INTEGRATION_C_TEST_event_type_names_its_queue_SOURCES}
     )
-    target_link_libraries(sce_c_integration_event_type_names_its_queue PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_event_type_names_its_queue)
     target_include_directories(sce_c_integration_event_type_names_its_queue PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1363,9 +1286,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_cancelling_an_invoke_raises_nothing.c
         ${INTEGRATION_C_TEST_cancelling_an_invoke_raises_nothing_SOURCES}
     )
-    target_link_libraries(sce_c_integration_cancelling_an_invoke_raises_nothing PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_cancelling_an_invoke_raises_nothing)
     target_include_directories(sce_c_integration_cancelling_an_invoke_raises_nothing PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1389,9 +1310,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_an_invoke_left_before_it_starts_raises_nothing.c
         ${INTEGRATION_C_TEST_an_invoke_left_before_it_starts_raises_nothing_SOURCES}
     )
-    target_link_libraries(sce_c_integration_an_invoke_left_before_it_starts_raises_nothing PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_an_invoke_left_before_it_starts_raises_nothing)
     target_include_directories(sce_c_integration_an_invoke_left_before_it_starts_raises_nothing PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1415,9 +1334,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_bad_donedata_pair_is_ignored.c
         ${INTEGRATION_C_TEST_a_bad_donedata_pair_is_ignored_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_bad_donedata_pair_is_ignored PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_bad_donedata_pair_is_ignored)
     target_include_directories(sce_c_integration_a_bad_donedata_pair_is_ignored PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1441,9 +1358,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_bad_send_param_ends_its_block.c
         ${INTEGRATION_C_TEST_a_bad_send_param_ends_its_block_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_bad_send_param_ends_its_block PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_bad_send_param_ends_its_block)
     target_include_directories(sce_c_integration_a_bad_send_param_ends_its_block PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1467,9 +1382,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_payload_rides_on_its_own_event.c
         ${INTEGRATION_C_TEST_a_payload_rides_on_its_own_event_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_payload_rides_on_its_own_event PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_payload_rides_on_its_own_event)
     target_include_directories(sce_c_integration_a_payload_rides_on_its_own_event PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1493,9 +1406,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_child_reply_arrives_without_a_tick.c
         ${INTEGRATION_C_TEST_a_child_reply_arrives_without_a_tick_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_child_reply_arrives_without_a_tick PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_child_reply_arrives_without_a_tick)
     target_include_directories(sce_c_integration_a_child_reply_arrives_without_a_tick PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1527,9 +1438,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     target_compile_definitions(sce_c_integration_a_child_may_send_many_events_in_one_tick PRIVATE
         SCE_MAX_EVENTS=256
     )
-    target_link_libraries(sce_c_integration_a_child_may_send_many_events_in_one_tick PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_child_may_send_many_events_in_one_tick)
     target_include_directories(sce_c_integration_a_child_may_send_many_events_in_one_tick PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1554,9 +1463,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_an_error_inside_a_foreach_ends_its_block.c
         ${INTEGRATION_C_TEST_an_error_inside_a_foreach_ends_its_block_SOURCES}
     )
-    target_link_libraries(sce_c_integration_an_error_inside_a_foreach_ends_its_block PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_an_error_inside_a_foreach_ends_its_block)
     target_include_directories(sce_c_integration_an_error_inside_a_foreach_ends_its_block PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1581,9 +1488,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_an_error_ends_the_block_it_was_raised_in.c
         ${INTEGRATION_C_TEST_an_error_ends_the_block_it_was_raised_in_SOURCES}
     )
-    target_link_libraries(sce_c_integration_an_error_ends_the_block_it_was_raised_in PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_an_error_ends_the_block_it_was_raised_in)
     target_include_directories(sce_c_integration_an_error_ends_the_block_it_was_raised_in PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1609,9 +1514,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_bad_invoke_argument_is_reported_once.c
         ${INTEGRATION_C_TEST_a_bad_invoke_argument_is_reported_once_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_bad_invoke_argument_is_reported_once PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_bad_invoke_argument_is_reported_once)
     target_include_directories(sce_c_integration_a_bad_invoke_argument_is_reported_once PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1636,9 +1539,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_bad_send_argument_discards_its_message.c
         ${INTEGRATION_C_TEST_a_bad_send_argument_discards_its_message_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_bad_send_argument_discards_its_message PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_bad_send_argument_discards_its_message)
     target_include_directories(sce_c_integration_a_bad_send_argument_discards_its_message PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1664,9 +1565,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_delay_is_a_css2_time.c
         ${INTEGRATION_C_TEST_a_delay_is_a_css2_time_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_delay_is_a_css2_time PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_delay_is_a_css2_time)
     target_include_directories(sce_c_integration_a_delay_is_a_css2_time PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1692,9 +1591,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_self_sent_event_names_its_origin.c
         ${INTEGRATION_C_TEST_a_self_sent_event_names_its_origin_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_self_sent_event_names_its_origin PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_self_sent_event_names_its_origin)
     target_include_directories(sce_c_integration_a_self_sent_event_names_its_origin PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1721,9 +1618,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_peer_named_at_run_time_reaches_the_router.c
         ${INTEGRATION_C_TEST_a_peer_named_at_run_time_reaches_the_router_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_peer_named_at_run_time_reaches_the_router PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_peer_named_at_run_time_reaches_the_router)
     target_include_directories(sce_c_integration_a_peer_named_at_run_time_reaches_the_router PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1750,9 +1645,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_mesh_request_reaches_the_router.c
         ${INTEGRATION_C_TEST_a_mesh_request_reaches_the_router_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_mesh_request_reaches_the_router PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_mesh_request_reaches_the_router)
     target_include_directories(sce_c_integration_a_mesh_request_reaches_the_router PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1777,9 +1670,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_send_content_expr_is_the_payload.c
         ${INTEGRATION_C_TEST_a_send_content_expr_is_the_payload_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_send_content_expr_is_the_payload PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_send_content_expr_is_the_payload)
     target_include_directories(sce_c_integration_a_send_content_expr_is_the_payload PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1804,9 +1695,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_send_reaches_only_what_its_target_names.c
         ${INTEGRATION_C_TEST_a_send_reaches_only_what_its_target_names_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_send_reaches_only_what_its_target_names PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_send_reaches_only_what_its_target_names)
     target_include_directories(sce_c_integration_a_send_reaches_only_what_its_target_names PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1832,9 +1721,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_delayed_send_reaches_what_its_target_names.c
         ${INTEGRATION_C_TEST_a_delayed_send_reaches_what_its_target_names_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_delayed_send_reaches_what_its_target_names PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_delayed_send_reaches_what_its_target_names)
     target_include_directories(sce_c_integration_a_delayed_send_reaches_what_its_target_names PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1859,9 +1746,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_target_expression_is_routed_as_its_literal_is.c
         ${INTEGRATION_C_TEST_a_target_expression_is_routed_as_its_literal_is_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_target_expression_is_routed_as_its_literal_is PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_target_expression_is_routed_as_its_literal_is)
     target_include_directories(sce_c_integration_a_target_expression_is_routed_as_its_literal_is PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1890,9 +1775,10 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_delayed_http_send_is_posted_when_due.c
         ${INTEGRATION_C_TEST_a_delayed_http_send_is_posted_when_due_SOURCES}
     )
+    sce_c_link_runtime(sce_c_integration_a_delayed_http_send_is_posted_when_due)
+    # The runner's own listener thread.
     target_link_libraries(sce_c_integration_a_delayed_http_send_is_posted_when_due PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54 Threads::Threads
-    )
+        Threads::Threads)
     target_include_directories(sce_c_integration_a_delayed_http_send_is_posted_when_due PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1921,9 +1807,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_event_data_arrives_as_sent.c
         ${INTEGRATION_C_TEST_event_data_arrives_as_sent_SOURCES}
     )
-    target_link_libraries(sce_c_integration_event_data_arrives_as_sent PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_event_data_arrives_as_sent)
     target_include_directories(sce_c_integration_event_data_arrives_as_sent PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1957,9 +1841,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # Lua binding — named here because this is the one integration fixture
     # whose `<data>` content is XML, which is what makes the generated
     # initializer call `sce_lua_dom_push_object` at all.
-    target_link_libraries(sce_c_integration_xml_data_is_a_dom_tree PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_xml_data_is_a_dom_tree)
     target_include_directories(sce_c_integration_xml_data_is_a_dom_tree PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -1996,9 +1878,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_invoke_candidate_selects_the_child.c
         ${INTEGRATION_C_TEST_invoke_candidate_selects_the_child_SOURCES}
     )
-    target_link_libraries(sce_c_integration_invoke_candidate_selects_the_child PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_invoke_candidate_selects_the_child)
     target_include_directories(sce_c_integration_invoke_candidate_selects_the_child PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -2025,9 +1905,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_a_hybrid_invoke_carries_its_arguments.c
         ${INTEGRATION_C_TEST_a_hybrid_invoke_carries_its_arguments_SOURCES}
     )
-    target_link_libraries(sce_c_integration_a_hybrid_invoke_carries_its_arguments PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_a_hybrid_invoke_carries_its_arguments)
     target_include_directories(sce_c_integration_a_hybrid_invoke_carries_its_arguments PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -2051,9 +1929,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_invoke_expression_failure_is_reported.c
         ${INTEGRATION_C_TEST_invoke_expression_failure_is_reported_SOURCES}
     )
-    target_link_libraries(sce_c_integration_invoke_expression_failure_is_reported PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_invoke_expression_failure_is_reported)
     target_include_directories(sce_c_integration_invoke_expression_failure_is_reported PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -2076,9 +1952,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_invoke_unsupported_type.c
         ${INTEGRATION_C_TEST_invoke_unsupported_type_SOURCES}
     )
-    target_link_libraries(sce_c_integration_invoke_unsupported_type PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_invoke_unsupported_type)
     target_include_directories(sce_c_integration_invoke_unsupported_type PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -2106,9 +1980,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_donedata_late_completion.c
         ${INTEGRATION_C_TEST_donedata_late_completion_SOURCES}
     )
-    target_link_libraries(sce_c_integration_donedata_late_completion PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_donedata_late_completion)
     target_include_directories(sce_c_integration_donedata_late_completion PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -2136,9 +2008,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_send_param_payload.c
         ${INTEGRATION_C_TEST_send_param_payload_SOURCES}
     )
-    target_link_libraries(sce_c_integration_send_param_payload PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_send_param_payload)
     target_include_directories(sce_c_integration_send_param_payload PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -2182,10 +2052,11 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # reads it from the element and emits the function-pointer vtable a host
     # must fill for `_init_with_actions` to accept it at all.
     #
-    # Linked WITHOUT `sce_c_scripting` and `lua54` on purpose: this document's
-    # every effect is a native action, so the machine has no `lua_State` and
-    # the link is the proof. If the emit ever reached for the script engine,
-    # this target would stop linking — which is a better gate than a comment.
+    # Its machine must not require the script engine: this document's every
+    # effect is a native action, so the machine has no `lua_State`. The link
+    # excludes `lua` and `dom`, so the configure refuses the target the day the
+    # generator states either — a better gate than a comment — and without them
+    # the link is the proof.
     sce_generate_static_integration_c_test(statechart_native_action
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/event_schema/statechart_native_action.scxml"
@@ -2200,9 +2071,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_native_action.c
         ${INTEGRATION_C_TEST_statechart_native_action_SOURCES}
     )
-    target_link_libraries(sce_c_integration_native_action PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_native_action EXCLUDES lua dom)
     target_include_directories(sce_c_integration_native_action PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -2221,8 +2090,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
 
     # SCE Accepted Subset §2.15: `datamodel="sce-static"` under generated C —
     # the scalar variables of the fixtures every engine replays the shared
-    # scenarios against. Linked without `sce_c_scripting` and `lua54`: the
-    # machines have no script engine, and the link is the proof. The checked
+    # scenarios against. Their link excludes `lua` and `dom`: the machines have
+    # no script engine, and the link is the proof. The checked
     # integer operations their statements call are the forge runtime's
     # header-only half, reached by its include directory.
     foreach(_STATIC_SCALAR_MACHINE static_counter static_event_arrival static_event_wildcard static_overflow
@@ -2990,9 +2859,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_text_record_SOURCES}
         ${_STATIC_TEXT_HEADERS}
     )
-    target_link_libraries(sce_c_integration_static_scalars PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_static_scalars EXCLUDES lua dom)
     target_include_directories(sce_c_integration_static_scalars PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3043,9 +2910,12 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_static_large.c
         "${_LARGE_DIR}/todo_peer_sm.c"
     )
-    target_link_libraries(sce_c_integration_static_large PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    # This machine is generated by the command above rather than from a plan,
+    # so no file of it carries what it requires. It is the document the
+    # `todo_peer` fixture's plan generates, with wider limits, which move its
+    # bounds and not what it links: that plan's statement stands for it.
+    sce_c_link_runtime(sce_c_integration_static_large
+        SAME_AS ${INTEGRATION_C_TEST_todo_peer_SOURCES})
     target_include_directories(sce_c_integration_static_large PRIVATE
         "${_LARGE_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3084,9 +2954,10 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         cmake_parse_arguments(PARSE_ARGV 1 _saved "" "FIXTURES_DEFINE;FIXTURES_DIR" "SOURCES")
         set(_target sce_c_integration_${name})
         add_executable(${_target} ${_saved_SOURCES})
-        target_link_libraries(${_target} PRIVATE
-            sce_c_runtime sce_c_test_no_wall_clock sce_c_base
-        )
+        # The manual clock implements `clock` for every machine the test
+        # compiles; anything else they require is linked from the runtime.
+        target_link_libraries(${_target} PRIVATE sce_c_test_no_wall_clock)
+        sce_c_link_runtime(${_target} PROVIDES clock)
         target_include_directories(${_target} PRIVATE
             "${SCE_C_INTEGRATION_GENERATED_DIR}"
             "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3146,9 +3017,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_host_call_SOURCES}
         ${INTEGRATION_C_TEST_static_host_call_arguments_SOURCES}
     )
-    target_link_libraries(sce_c_integration_static_host_call PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_static_host_call)
     target_include_directories(sce_c_integration_static_host_call PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3176,9 +3045,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_host_duty_child_SOURCES}
         ${INTEGRATION_C_TEST_static_host_call_SOURCES}
     )
-    target_link_libraries(sce_c_integration_static_host_duty PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_static_host_duty)
     target_include_directories(sce_c_integration_static_host_duty PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3219,9 +3086,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_host_notify_SOURCES}
         ${INTEGRATION_C_TEST_static_host_http_SOURCES}
     )
-    target_link_libraries(sce_c_integration_host_features PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_host_features)
     target_include_directories(sce_c_integration_host_features PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3248,8 +3113,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # The `<param>`s of a BasicHTTP `<send>` (docs/adr/0005, decision 4): the
     # machine makes its POST through the HTTP client a platform supplies
     # (`sce/http_client.h`), and this test is that platform -- it keeps the
-    # request. It is linked WITHOUT `sce_c_runtime_posix`, so the test's own
-    # client is the only definition of those symbols and the link is the proof.
+    # request. It provides the machine's `http` itself and excludes `clock`, so
+    # nothing of the platform tier is linked: the test's own client is the only
+    # definition of those symbols and the link is the proof.
     sce_generate_static_integration_c_test(static_send_http
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_send_http.scxml"
@@ -3258,9 +3124,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_static_send_http.c
         ${INTEGRATION_C_TEST_static_send_http_SOURCES}
     )
-    target_link_libraries(sce_c_integration_static_send_http PRIVATE
-        sce_c_runtime sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_static_send_http
+        PROVIDES http EXCLUDES lua dom clock)
     target_include_directories(sce_c_integration_static_send_http PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3288,9 +3153,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_static_timers.c
         ${INTEGRATION_C_TEST_static_timers_SOURCES}
     )
-    target_link_libraries(sce_c_integration_static_timers PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_static_timers)
     target_include_directories(sce_c_integration_static_timers PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3335,9 +3198,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_invoke_string_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_entry_SOURCES}
     )
-    target_link_libraries(sce_c_integration_static_invoke PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_static_invoke)
     target_include_directories(sce_c_integration_static_invoke PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3363,9 +3224,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_child_host_SOURCES}
         ${INTEGRATION_C_TEST_static_child_host_hybrid_SOURCES}
     )
-    target_link_libraries(sce_c_integration_static_child_host PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_static_child_host)
     target_include_directories(sce_c_integration_static_child_host PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3390,9 +3249,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_static_child_mesh.c
         ${INTEGRATION_C_TEST_static_child_mesh_SOURCES}
     )
-    target_link_libraries(sce_c_integration_static_child_mesh PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_static_child_mesh)
     target_include_directories(sce_c_integration_static_child_mesh PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3428,9 +3285,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_parallel_regions_take_own_transitions_SOURCES}
         ${INTEGRATION_C_TEST_statechart_native_action_SOURCES}
     )
-    target_link_libraries(sce_c_integration_configuration_entry PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_configuration_entry)
     target_include_directories(sce_c_integration_configuration_entry PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -3451,9 +3306,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_host_processor.c
         ${INTEGRATION_C_TEST_statechart_host_processor_SOURCES}
     )
-    target_link_libraries(sce_c_integration_host_processor PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_host_processor)
     target_include_directories(sce_c_integration_host_processor PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -3493,9 +3346,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_host_invoker.c
         ${INTEGRATION_C_TEST_statechart_host_invoker_SOURCES}
     )
-    target_link_libraries(sce_c_integration_host_invoker PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_host_invoker)
     target_include_directories(sce_c_integration_host_invoker PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -3576,8 +3427,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # `datamodel="sce-static"` machine — typed `<param>`s read from the machine's
     # own fields when the send is made, and carried by the wait. The document the
     # Rust, Kotlin and Go channels save and restore, generated with the processor
-    # declaration they pass. Linked WITHOUT `sce_c_scripting` and `lua54`: the
-    # machine has no script engine, so the link is the proof.
+    # declaration they pass. Its link excludes `lua` and `dom`: the machine has
+    # no script engine, so the link is the proof.
     sce_generate_static_integration_c_test(statechart_static_delayed_host_send
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_static_delayed_host_send.scxml"
@@ -3595,9 +3446,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_statechart_static_delayed_host_send_SOURCES}
         ${INTEGRATION_C_TEST_static_host_send_content_SOURCES}
     )
-    target_link_libraries(sce_c_integration_static_host_send PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_static_host_send EXCLUDES lua dom)
     target_include_directories(sce_c_integration_static_host_send PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3639,9 +3488,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_statechart_static_host_invoke_SOURCES}
         ${INTEGRATION_C_TEST_static_host_invoke_overflow_SOURCES}
     )
-    target_link_libraries(sce_c_integration_static_host_invoke PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_static_host_invoke)
     target_include_directories(sce_c_integration_static_host_invoke PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3708,9 +3555,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # SCE Accepted Subset §2.15: the one document every channel drives for what a
     # typed `<param>` of a host-served `<send>` and `<invoke>` puts on the wire,
     # a real among them (ARCHITECTURE.md, "JSON Number Text"). Generated with both
-    # host declarations, as the Rust, Kotlin and Go channels pass them. Linked
-    # WITHOUT `sce_c_scripting` and `lua54`: the machine has no script engine, so
-    # the link is the proof.
+    # host declarations, as the Rust, Kotlin and Go channels pass them. Its link
+    # excludes `lua` and `dom`: the machine has no script engine, so the link is
+    # the proof.
     sce_generate_static_integration_c_test(statechart_static_host_params
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml"
@@ -3721,9 +3568,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_static_host_params.c
         ${INTEGRATION_C_TEST_statechart_static_host_params_SOURCES}
     )
-    target_link_libraries(sce_c_integration_static_host_params PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_static_host_params EXCLUDES lua dom)
     target_include_directories(sce_c_integration_static_host_params PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3758,9 +3603,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_host_invoker_optional.c
         ${INTEGRATION_C_TEST_statechart_host_invoker_optional_SOURCES}
     )
-    target_link_libraries(sce_c_integration_host_invoker_optional PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_host_invoker_optional)
     target_include_directories(sce_c_integration_host_invoker_optional PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3782,8 +3625,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # 7): a Mesh request whose peer and `<param>`s are typed expressions over the
     # machine's own fields reaches the router the host registers through the
     # mesh-rpc door. Generated with NO host declaration, because the build names the
-    # request's type itself, and linked WITHOUT `sce_c_scripting` and `lua54`: the
-    # machine has no script engine, so the link is the proof.
+    # request's type itself, and its link excludes `lua` and `dom`: the machine
+    # has no script engine, so the link is the proof.
     sce_generate_static_integration_c_test(statechart_static_mesh_request
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml"
@@ -3792,9 +3635,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_static_mesh_request.c
         ${INTEGRATION_C_TEST_statechart_static_mesh_request_SOURCES}
     )
-    target_link_libraries(sce_c_integration_static_mesh_request PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_static_mesh_request EXCLUDES lua dom)
     target_include_directories(sce_c_integration_static_mesh_request PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3827,8 +3668,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # event's data, in document order, in a send the host serves, in an invoke the
     # host serves and in a final's `<donedata>`. A document of this channel alone,
     # beside the C tests; the other engines are held to the case by
-    # tests/json_text/object_key_order.json. Linked WITHOUT `sce_c_scripting` and
-    # `lua54`: the machine has no script engine, so the link is the proof.
+    # tests/json_text/object_key_order.json. Its link excludes `lua` and `dom`:
+    # the machine has no script engine, so the link is the proof.
     sce_generate_static_integration_c_test(static_param_repeat
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/static_param_repeat/static_param_repeat.scxml"
@@ -3839,9 +3680,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_static_param_repeat.c
         ${INTEGRATION_C_TEST_static_param_repeat_SOURCES}
     )
-    target_link_libraries(sce_c_integration_static_param_repeat PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_static_param_repeat EXCLUDES lua dom)
     target_include_directories(sce_c_integration_static_param_repeat PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
@@ -3874,9 +3713,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_delayed_host_send.c
         ${INTEGRATION_C_TEST_statechart_delayed_host_send_SOURCES}
     )
-    target_link_libraries(sce_c_integration_delayed_host_send PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
+    sce_c_link_runtime(sce_c_integration_delayed_host_send)
     target_include_directories(sce_c_integration_delayed_host_send PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -3923,9 +3760,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # rules are datamodel values and its guards read them, so the machine owns
     # a lua_State — unlike `sce_c_integration_native_action`, whose every
     # effect is native and whose link is the proof it needs none.
-    target_link_libraries(sce_c_integration_ai_loop PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_ai_loop)
     target_include_directories(sce_c_integration_ai_loop PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -3954,9 +3789,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_invoke_param_seeds_declared_child_data.c
         ${INTEGRATION_C_TEST_invoke_param_seeds_declared_child_data_SOURCES}
     )
-    target_link_libraries(sce_c_integration_invoke_param_seeds_declared_child_data PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_invoke_param_seeds_declared_child_data)
     target_include_directories(sce_c_integration_invoke_param_seeds_declared_child_data PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -3986,9 +3819,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_invoke_param_error_starts_the_child.c
         ${INTEGRATION_C_TEST_invoke_param_error_starts_the_child_SOURCES}
     )
-    target_link_libraries(sce_c_integration_invoke_param_error_starts_the_child PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_invoke_param_error_starts_the_child)
     target_include_directories(sce_c_integration_invoke_param_error_starts_the_child PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -4019,9 +3850,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_empty_finalize_updates_the_location.c
         ${INTEGRATION_C_TEST_empty_finalize_updates_the_location_SOURCES}
     )
-    target_link_libraries(sce_c_integration_empty_finalize_updates_the_location PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_empty_finalize_updates_the_location)
     target_include_directories(sce_c_integration_empty_finalize_updates_the_location PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -4050,9 +3879,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_host_event_reaches_the_child.c
         ${INTEGRATION_C_TEST_host_event_reaches_the_child_SOURCES}
     )
-    target_link_libraries(sce_c_integration_host_event_reaches_the_child PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_host_event_reaches_the_child)
     target_include_directories(sce_c_integration_host_event_reaches_the_child PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -4080,9 +3907,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_event_origin_is_a_location.c
         ${INTEGRATION_C_TEST_event_origin_is_a_location_SOURCES}
     )
-    target_link_libraries(sce_c_integration_event_origin_is_a_location PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_event_origin_is_a_location)
     target_include_directories(sce_c_integration_event_origin_is_a_location PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -4110,9 +3935,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_session_ids_are_distinct.c
         ${INTEGRATION_C_TEST_session_ids_are_distinct_SOURCES}
     )
-    target_link_libraries(sce_c_integration_session_ids_are_distinct PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
-    )
+    sce_c_link_runtime(sce_c_integration_session_ids_are_distinct)
     target_include_directories(sce_c_integration_session_ids_are_distinct PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
     )
@@ -4130,8 +3953,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
 else()
     message(STATUS
-        "skipping the c11 integration fixtures — they link "
-        "sce_c_runtime_posix and lua54, which SCE_C_RUNTIME_POSIX / "
+        "skipping the c11 integration fixtures — their machines require the "
+        "Lua engine and the platform clock, which SCE_C_RUNTIME_POSIX / "
         "SCE_ENABLE_LUA do not build in this configuration.")
 endif()
 
@@ -4484,7 +4307,7 @@ set_tests_properties(c11_integration_event_schema_lifted PROPERTIES
 # one whose script engine those machines need is not built) registers no server
 # fixture that no test can require: inert, since ctest starts a fixture only on
 # demand, but it reads in `ctest -N` as coverage that is not there.
-if(SCE_C_RUNTIME_POSIX AND W3C_C_AOT_HTTP_TESTS)
+if(W3C_C_AOT_HTTP_TESTS)
     find_program(SCE_TEST_NODE_EXECUTABLE node)
     if(SCE_TEST_NODE_EXECUTABLE)
         set(_http_fixture_pid "${CMAKE_CURRENT_BINARY_DIR}/w3c_http_server.pid")
@@ -4963,9 +4786,7 @@ if(SCE_C_RUNTIME_POSIX)
             "${_SCE_FEATURE_DIR}" "${_SCE_FEATURE_DIR}/${_SET}"
             "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
         )
-        target_link_libraries(sce_c_feature_conformance_${_SET} PRIVATE
-            sce_c_runtime sce_c_runtime_posix sce_c_base
-        )
+        sce_c_link_runtime(sce_c_feature_conformance_${_SET})
         set_target_properties(sce_c_feature_conformance_${_SET} PROPERTIES
             C_STANDARD 11
             C_STANDARD_REQUIRED ON

@@ -675,14 +675,17 @@ endfunction()
 #     <PREFIX>_SOURCES        the paths of every C translation unit it writes
 #     <PREFIX>_REQUIRES       what the machines the run writes need linked
 #                             beside them, as the generator states it
-#                             (`--plan-requires`): each of `lua`, `dom` and
-#                             `http` the backend decided while rendering them,
-#                             or for a plan FROM another, what that plan
+#                             (`--plan-requires`): each of `lua`, `dom`, `http`
+#                             and `clock` the backend decided while rendering
+#                             them, or for a plan FROM another, what that plan
 #                             states for the child's generation. Empty for a
-#                             backend that states none. A C11 build links each
-#                             with the library its runtime names for it
-#                             (`sce_c_runtime_libraries`,
-#                             backends/c/runtime/CMakeLists.txt)
+#                             backend that states none. The plan also records
+#                             it against every file the run writes (the GLOBAL
+#                             property `SCE_GENERATED_REQUIRES:<path>`), so a
+#                             target that compiles a generated file links what
+#                             its generation requires (`sce_c_link_runtime`,
+#                             backends/c/runtime/CMakeLists.txt) whichever
+#                             route declared it
 #     <PREFIX>_DECLARED_ELSEWHERE
 #                             TRUE when a plan of CLAIM declared this machine
 #                             before, so its command is that plan's
@@ -1044,6 +1047,15 @@ function(sce_codegen_plan PREFIX)
             set_property(GLOBAL APPEND PROPERTY "${_CLAIM}" ${_OUTPUTS} ${_BYPRODUCTS})
         endif()
     endif()
+
+    # What the machines of this run need linked, kept against every file the
+    # run writes: a target that compiles one of them links what its generation
+    # requires, whichever route declared the generation and however the target
+    # names the file (a path, or the generator expression a deferred route
+    # hands its caller). A file has one producer, so one answer.
+    foreach(_FILE ${_HEADERS} ${_SOURCES})
+        set_property(GLOBAL PROPERTY "SCE_GENERATED_REQUIRES:${_FILE}" "${_REQUIRES}")
+    endforeach()
 
     # The keyword only when there is something to name: most documents start no
     # child and declare nothing beside their machine.

@@ -1,0 +1,247 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+//! Every C11 program of the test tree that compiles a generated machine links
+//! what that machine requires through `sce_c_link_runtime`
+//! (backends/c/runtime/CMakeLists.txt), and none names a library of the
+//! runtime by hand.
+//!
+//! A generated C11 machine states what it needs linked beside it (`lua`, `dom`,
+//! `http`, `clock`; `a_c11_machine_includes_what_it_states_it_requires`), its
+//! plan records the statement against every file it writes, and
+//! `sce_c_link_runtime` reads it from the files a program compiles. Before
+//! that, 96 programs of `backends/c/tests/CMakeLists.txt` named `lua54`,
+//! `sce_c_scripting`, `sce_c_base` and `sce_c_runtime_posix` by hand: one list
+//! per program of what its machine needed, written when the program was, and
+//! kept true by nothing. A machine that stopped needing Lua kept linking it,
+//! and the programs whose point is a machine without one could only say so in
+//! a comment.
+//!
+//! What this holds, read from the CMake text, since CMake is not run here:
+//!
+//! * no `target_link_libraries` names a library that implements a
+//!   requirement, except on a program that tests that library itself and
+//!   compiles no generated machine;
+//! * every program that compiles the sources a plan route hands its caller is
+//!   linked by `sce_c_link_runtime`.
+
+use std::path::{Path, PathBuf};
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("sce-build has a parent")
+        .to_path_buf()
+}
+
+fn c11_tests() -> String {
+    std::fs::read_to_string(repo_root().join("backends/c/tests/CMakeLists.txt"))
+        .expect("read backends/c/tests/CMakeLists.txt")
+}
+
+/// The libraries of the runtime that implement a requirement a machine states.
+const REQUIREMENT_LIBRARIES: [&str; 4] = [
+    "lua54",
+    "sce_c_scripting",
+    "sce_c_base",
+    "sce_c_runtime_posix",
+];
+
+/// Programs that test a library of the runtime itself, and so name it: each
+/// compiles no generated machine.
+const LIBRARY_TESTS: [&str; 2] = ["sce_c_dom_unit_test", "sce_c_http_client_unit_test"];
+
+/// The spellings by which a program's sources name what a plan route
+/// generated: the variables the W3C, integration and generation routes hand
+/// their callers, and a saved-state test's sources.
+const GENERATED_SOURCES: [&str; 4] = [
+    "W3C_C_AOT_TEST_${",
+    "INTEGRATION_C_TEST_",
+    "_SCE_FEATURE_",
+    "${_saved_SOURCES}",
+];
+
+/// The text without its comments: a `#` outside a quoted string ends a line.
+fn code(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            let mut quoted = false;
+            let mut kept = String::new();
+            for c in line.chars() {
+                match c {
+                    '"' => {
+                        quoted = !quoted;
+                        kept.push(c);
+                    }
+                    '#' if !quoted => break,
+                    _ => kept.push(c),
+                }
+            }
+            kept
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Every call of `name`, as the text between its parentheses.
+fn calls(code: &str, name: &str) -> Vec<String> {
+    let opening = format!("{name}(");
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(at) = code[from..].find(&opening) {
+        let start = from + at;
+        let preceded_by_name_char = code[..start]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_');
+        let body_start = start + opening.len();
+        let mut depth = 1;
+        let mut end = body_start;
+        for (offset, c) in code[body_start..].char_indices() {
+            match c {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = body_start + offset;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if !preceded_by_name_char {
+            found.push(code[body_start..end].to_string());
+        }
+        from = end.max(body_start);
+    }
+    found
+}
+
+/// The first word of a call's arguments: the target it is about.
+fn target_of(arguments: &str) -> &str {
+    arguments.split_whitespace().next().unwrap_or_default()
+}
+
+fn words(text: &str) -> impl Iterator<Item = &str> {
+    text.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == ':'))
+        .filter(|w| !w.is_empty())
+}
+
+/// Every way the C11 tests link a library of the runtime by hand, or compile
+/// a generated machine without linking what it requires.
+fn violations(text: &str) -> Vec<String> {
+    let code = code(text);
+    let mut found = Vec::new();
+    let executables = calls(&code, "add_executable");
+    let linked: Vec<String> = calls(&code, "sce_c_link_runtime")
+        .iter()
+        .map(|arguments| target_of(arguments).to_string())
+        .collect();
+
+    for arguments in calls(&code, "target_link_libraries") {
+        let target = target_of(&arguments);
+        let named: Vec<&str> = words(&arguments)
+            .filter(|w| REQUIREMENT_LIBRARIES.contains(w))
+            .collect();
+        if named.is_empty() {
+            continue;
+        }
+        let compiles_a_machine = executables.iter().any(|executable| {
+            target_of(executable) == target
+                && GENERATED_SOURCES.iter().any(|s| executable.contains(s))
+        });
+        if !LIBRARY_TESTS.contains(&target) || compiles_a_machine {
+            found.push(format!(
+                "`{target}` names {named:?} by hand; a program links what the machines it \
+                 compiles require through `sce_c_link_runtime`"
+            ));
+        }
+    }
+
+    for executable in &executables {
+        let target = target_of(executable);
+        if GENERATED_SOURCES.iter().any(|s| executable.contains(s))
+            && !linked.iter().any(|t| t == target)
+        {
+            found.push(format!(
+                "`{target}` compiles a generated machine and is not linked by \
+                 `sce_c_link_runtime`, so nothing links what its machine requires"
+            ));
+        }
+    }
+    found
+}
+
+#[test]
+fn every_c11_program_links_what_its_machines_require() {
+    let text = c11_tests();
+    let linked = calls(&code(&text), "sce_c_link_runtime").len();
+    assert!(
+        linked >= 90,
+        "only {linked} `sce_c_link_runtime` call(s) found; the reader is broken, not the \
+         build file, and a clean result would prove nothing"
+    );
+    let found = violations(&text);
+    assert!(
+        found.is_empty(),
+        "backends/c/tests/CMakeLists.txt links a generated machine's runtime by hand:\n  {}",
+        found.join("\n  ")
+    );
+}
+
+/// The shapes this replaced are refused: a library named for a program that
+/// compiles a generated machine, and such a program left unlinked.
+#[test]
+fn a_runtime_library_named_by_hand_is_refused() {
+    let text = c11_tests();
+    let call = "sce_c_link_runtime(sce_c_integration_flat_lifecycle)";
+    assert!(
+        text.contains(call),
+        "flat_lifecycle is no longer linked as this case expects"
+    );
+
+    let hand = text.replace(
+        call,
+        "target_link_libraries(sce_c_integration_flat_lifecycle PRIVATE\n        \
+         sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54\n    )",
+    );
+    let found = violations(&hand);
+    assert!(
+        found
+            .iter()
+            .any(|v| v.contains("`sce_c_integration_flat_lifecycle` names")),
+        "a program that names lua54 by hand was accepted: {found:?}"
+    );
+    assert!(
+        found
+            .iter()
+            .any(|v| v.contains("`sce_c_integration_flat_lifecycle` compiles a generated machine")),
+        "a program compiling a generated machine with no `sce_c_link_runtime` was accepted: \
+         {found:?}"
+    );
+
+    // A library test may name its library; one that compiled a generated
+    // machine as well may not.
+    let library_test = "add_executable(sce_c_dom_unit_test unit/dom_test.c)";
+    assert!(
+        text.contains(library_test),
+        "the DOM unit test is no longer declared as this case expects"
+    );
+    let machine_in_library_test = text.replace(
+        library_test,
+        "add_executable(sce_c_dom_unit_test unit/dom_test.c \
+         ${INTEGRATION_C_TEST_flat_lifecycle_SOURCES})",
+    );
+    let found = violations(&machine_in_library_test);
+    assert!(
+        found
+            .iter()
+            .any(|v| v.contains("`sce_c_dom_unit_test` names")),
+        "a library test that compiles a generated machine was allowed to name the library: \
+         {found:?}"
+    );
+
+    // A comment that names a library is not a link.
+    assert!(violations("# target_link_libraries(x PRIVATE lua54)\n").is_empty());
+}
