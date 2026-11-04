@@ -3968,6 +3968,30 @@ pub struct TransitionFunctionCell {
     pub to: Option<String>,
 }
 
+/// Where the nodes of a variant stand in the document it was derived from
+/// (ADR 0057 §2): for each, its position among its siblings of its kind in the
+/// document as written. A variant keeps the document's order, so the positions
+/// of one list rise; where a variant leaves out a sibling, they skip it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DocumentPositions {
+    /// For each state by id, the position of each of its transitions among
+    /// the `<transition>` children of the state's element.
+    pub transitions: BTreeMap<String, Vec<usize>>,
+    /// For each state by id, each `<onentry>` block's position and its actions'.
+    pub on_entry: BTreeMap<String, Vec<BlockPositions>>,
+    /// For each state by id, each `<onexit>` block's position and its actions'.
+    pub on_exit: BTreeMap<String, Vec<BlockPositions>>,
+}
+
+/// The document position of one `<onentry>` or `<onexit>` block of a variant,
+/// among its state's blocks of that kind, and of each of its actions, among the
+/// block's actions.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BlockPositions {
+    pub block: usize,
+    pub actions: Vec<usize>,
+}
+
 /// W3C SCXML: Complete state machine model
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -4013,6 +4037,15 @@ pub struct SCXMLModel {
     /// refused. Not serialized, as [`Self::product_line`] is not.
     #[serde(skip)]
     pub configuration: Option<Vec<String>>,
+    /// Where this variant's transitions, `<onentry>` and `<onexit>` blocks and
+    /// their actions stand in the document as written (ADR 0057 §2): a node
+    /// is named by its position in the document in every variant, so a symbol
+    /// of a variant's sourcemap and of its markers is the document's symbol of
+    /// the same node. `None` for a parse of the document itself, whose
+    /// positions are its own. Not serialized: it is how a variant names its
+    /// nodes, not part of any.
+    #[serde(skip)]
+    pub document_positions: Option<DocumentPositions>,
     /// `<sce:kind-basis>` on the root — why the document is a statechart
     /// ([`crate::forge::kind_basis`]). `None` when it states none. Moved
     /// to [`crate::forge::model::ParsedForge::kind_basis`] on the AST
@@ -5221,6 +5254,54 @@ impl SCXMLModel {
         match &self.authored_positions {
             Some(positions) => positions.authored_location(location),
             None => location.clone(),
+        }
+    }
+
+    /// The position of the `index`-th transition of `state` in the document
+    /// as written ([`Self::document_positions`]): its own in a parse of the
+    /// document, and in a variant of a state the document does not write.
+    pub fn transition_position(&self, state: &str, index: usize) -> usize {
+        match self
+            .document_positions
+            .as_ref()
+            .and_then(|positions| positions.transitions.get(state))
+        {
+            Some(list) => *list
+                .get(index)
+                .expect("a variant's positions list every transition of a state it lists"),
+            None => index,
+        }
+    }
+
+    /// The position in the document as written of the `index`-th block of
+    /// `state`'s `<onentry>` blocks (`<onexit>` when `exit`) and of its
+    /// `action`-th action, as [`Self::transition_position`] answers for a
+    /// transition.
+    pub fn block_action_position(
+        &self,
+        exit: bool,
+        state: &str,
+        block: usize,
+        action: usize,
+    ) -> (usize, usize) {
+        match self.document_positions.as_ref().and_then(|positions| {
+            if exit {
+                positions.on_exit.get(state)
+            } else {
+                positions.on_entry.get(state)
+            }
+        }) {
+            Some(blocks) => {
+                let at = blocks
+                    .get(block)
+                    .expect("a variant's positions list every block of a state it lists");
+                let action = *at
+                    .actions
+                    .get(action)
+                    .expect("a variant's positions list every action of a block");
+                (at.block, action)
+            }
+            None => (block, action),
         }
     }
 

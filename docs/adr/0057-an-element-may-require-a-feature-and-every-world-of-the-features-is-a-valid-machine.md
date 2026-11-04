@@ -361,7 +361,11 @@ was written from; it names no generated line. `generate` writes it from the docu
 output for every build holds every symbol of every variant, each where a variant's own map puts it (a variant's
 positions are the document's, §2). The condition under which a symbol is present is a field of §7 still to add.
 (Corrected 2026-11-03 while building C11: this paragraph had the maps differ in every row after the first gated
-element, which is true of no backend.)
+element, which is true of no backend. Corrected again 2026-11-04: a symbol names a transition, an `<onentry>` or
+`<onexit>` block and a block's action by its position among its siblings, and a variant counted only the siblings
+it keeps, so after a gated sibling a variant's map, and the markers of the output for every build, named the
+document's symbol of another node; a variant now names each by its position in the document
+(`SCXMLModel::document_positions`), which is what made the sentence above true.)
 
 **A `#line` stays with its line.** A `#line` directive names the line after it, so the C reader makes the two one
 member and no selector comes between them. A selector's lines move the lines after them within a `#line` scope, as

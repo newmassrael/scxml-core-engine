@@ -2870,6 +2870,12 @@ impl SCXMLParser {
                 configuration.sort();
                 configuration.dedup();
                 model.configuration = Some(configuration);
+                // Each node is named by where it stands in the document (§2),
+                // so a variant's symbols are the document's.
+                model.document_positions = self
+                    .variant
+                    .as_deref()
+                    .and_then(|variant| document_positions(content, variant, &model));
                 model
             });
             self.features = Some(features);
@@ -7060,6 +7066,149 @@ fn scxml_children_any_of<'a>(
     parent
         .children()
         .filter(move |c| c.is_element() && is_scxml_ns(c) && tags.contains(&c.tag_name().name()))
+}
+
+/// Where the transitions, `<onentry>` and `<onexit>` blocks and block actions
+/// of `model`, the parse of `variant`, stand in `source`, the document it was
+/// derived from (ADR 0057 §2). `None` when either text does not read, which a
+/// parse has already refused.
+///
+/// The derivation writes a removed element as spaces and keeps every line
+/// break, and a column counts characters, so a node of the variant starts at
+/// the row and column where it starts in the document: that position is the
+/// node's identity across the two. A transition's and a block's position is
+/// then the index of the document's element at that position among its
+/// siblings of the same name. An action's is the number of the block's children
+/// before it that are actions of the document: those the variant keeps as
+/// actions, and those it removed, each of which is executable content, the one
+/// thing a condition inside a block may be written on (§3).
+fn document_positions(
+    source: &str,
+    variant: &str,
+    model: &SCXMLModel,
+) -> Option<crate::model::DocumentPositions> {
+    type Position = (u32, u32);
+    let start = |node: &roxmltree::Node| -> Position {
+        let pos = node.document().text_pos_at(node.range().start);
+        (pos.row, pos.col)
+    };
+    let written = roxmltree::Document::parse(source).ok()?;
+    let derived = roxmltree::Document::parse(variant).ok()?;
+    let kept: BTreeSet<Position> = derived
+        .descendants()
+        .filter(|node| node.is_element())
+        .map(|node| start(&node))
+        .collect();
+    let elements_at = |doc: &'_ roxmltree::Document<'_>| -> BTreeMap<Position, roxmltree::NodeId> {
+        doc.descendants()
+            .filter(|node| {
+                node.is_element()
+                    && is_scxml_ns(node)
+                    && matches!(node.tag_name().name(), "state" | "parallel" | "final")
+            })
+            .map(|node| (start(&node), node.id()))
+            .collect()
+    };
+    let written_states = elements_at(&written);
+    let derived_states = elements_at(&derived);
+    let index_among = |siblings: &[Position], at: Position| -> usize {
+        siblings
+            .iter()
+            .position(|sibling| *sibling == at)
+            .expect("a node of the variant starts where a sibling of the document does")
+    };
+    let mut positions = crate::model::DocumentPositions::default();
+    for (id, state) in &model.states {
+        let Some(at) = state
+            .source_location
+            .as_ref()
+            .and_then(|loc| Some((loc.line?, loc.col?)))
+        else {
+            continue;
+        };
+        let (Some(&in_document), Some(&in_variant)) =
+            (written_states.get(&at), derived_states.get(&at))
+        else {
+            continue;
+        };
+        let in_document = written
+            .get_node(in_document)
+            .expect("an id of the document's own tree");
+        let in_variant = derived
+            .get_node(in_variant)
+            .expect("an id of the variant's own tree");
+        let of = |parent: &roxmltree::Node, tag: &str| -> Vec<Position> {
+            scxml_children(parent, tag)
+                .map(|node| start(&node))
+                .collect()
+        };
+        let transitions = of(&in_document, "transition");
+        positions.transitions.insert(
+            id.clone(),
+            state
+                .transitions
+                .iter()
+                .map(|transition| {
+                    let loc = transition
+                        .source_location
+                        .as_ref()
+                        .expect("a parsed transition has its position");
+                    index_among(&transitions, (loc.line.unwrap_or(0), loc.col.unwrap_or(0)))
+                })
+                .collect(),
+        );
+        for (tag, blocks, into) in [
+            ("onentry", &state.on_entry_blocks, &mut positions.on_entry),
+            ("onexit", &state.on_exit_blocks, &mut positions.on_exit),
+        ] {
+            let written_blocks: Vec<roxmltree::Node> = scxml_children(&in_document, tag).collect();
+            let written_starts: Vec<Position> = written_blocks.iter().map(start).collect();
+            let derived_blocks: Vec<Position> = of(&in_variant, tag);
+            assert_eq!(
+                derived_blocks.len(),
+                blocks.len(),
+                "a state's blocks are the `<{tag}>` children of its element"
+            );
+            let block_positions = derived_blocks
+                .iter()
+                .zip(blocks)
+                .map(|(&block_at, actions)| {
+                    let block = index_among(&written_starts, block_at);
+                    let ours: BTreeSet<Position> = actions
+                        .iter()
+                        .filter_map(|action| {
+                            let loc = action.source_location.as_ref()?;
+                            Some((loc.line?, loc.col?))
+                        })
+                        .collect();
+                    let of_the_document: Vec<Position> = written_blocks[block]
+                        .children()
+                        .filter(|child| child.is_element())
+                        .map(|child| start(&child))
+                        .filter(|at| ours.contains(at) || !kept.contains(at))
+                        .collect();
+                    crate::model::BlockPositions {
+                        block,
+                        actions: actions
+                            .iter()
+                            .map(|action| {
+                                let loc = action
+                                    .source_location
+                                    .as_ref()
+                                    .expect("a parsed action has its position");
+                                index_among(
+                                    &of_the_document,
+                                    (loc.line.unwrap_or(0), loc.col.unwrap_or(0)),
+                                )
+                            })
+                            .collect(),
+                    }
+                })
+                .collect();
+            into.insert(id.clone(), block_positions);
+        }
+    }
+    Some(positions)
 }
 
 /// Find first SCXML-namespaced child with a given local name. See

@@ -1676,6 +1676,14 @@ required-features = ["cli"]
 # The featured transition table (ADR 0057 §7): each variant's own table is the
 # featured rows its configuration keeps. It runs `sce-codegen transition-table`,
 # so it carries the `cli` gate.
+# A variant names each node as the document does (ADR 0057 §2): its sidecar
+# and the markers of the output for every build cite the document's symbols. It
+# runs `sce-codegen generate`, so it carries the `cli` gate.
+[[test]]
+name = "a_variant_names_each_node_as_the_document_does"
+path = "tests/a_variant_names_each_node_as_the_document_does.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "the_featured_transition_table_derives_each_variant"
 path = "tests/the_featured_transition_table_derives_each_variant.rs"

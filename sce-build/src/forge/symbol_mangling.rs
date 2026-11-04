@@ -69,15 +69,20 @@ pub const ARTIFACT_FORGE_BODY: &str = "_forge_body";
 pub const ARTIFACT_TRANSITION_PREFIX: &str = "_transition_";
 
 /// Artifact label for the `idx`-th transition of a state, where `idx`
-/// indexes the state's own `transitions` list. The index is per-state,
-/// never machine-wide — the owning state path is the other half of the
-/// identity.
+/// is the transition's position among the state's transitions in the
+/// document as written ([`SCXMLModel::transition_position`]): in a variant
+/// of a product line, a transition after one the variant leaves out keeps
+/// the document's number, so its symbol is the document's (ADR 0057 §2).
+/// The index is per-state, never machine-wide — the owning state path is
+/// the other half of the identity.
 pub fn transition_artifact(idx: usize) -> String {
     format!("{ARTIFACT_TRANSITION_PREFIX}{idx}")
 }
 
 /// Artifact label for the `action_idx`-th action of the `block_idx`-th
-/// `<onentry>` / `<onexit>` block. `kind` is `_on_entry` or `_on_exit`.
+/// `<onentry>` / `<onexit>` block, both positions in the document as
+/// written ([`SCXMLModel::block_action_position`]). `kind` is `_on_entry`
+/// or `_on_exit`.
 fn action_artifact(kind: &str, block_idx: usize, action_idx: usize) -> String {
     format!("{kind}_{block_idx}_{action_idx}")
 }
@@ -244,7 +249,7 @@ pub fn build_symbol_table(
     // 2. Per-state walk — emits a SymbolEntry for the state's body
     //    function plus per-onentry / per-onexit / per-transition.
     for (state_id, state) in &model.states {
-        walk_state(&mut table, &machine_name, state_id, state)?;
+        walk_state(&mut table, model, &machine_name, state_id, state)?;
     }
 
     // Every statechart entry so far carries a position the model recorded
@@ -315,6 +320,7 @@ fn push_entry(
 /// this walker stays one level deep.
 fn walk_state(
     table: &mut BTreeMap<String, SymbolEntry>,
+    model: &SCXMLModel,
     machine: &str,
     state_id: &str,
     state: &State,
@@ -325,35 +331,39 @@ fn walk_state(
 
     for (idx, trans) in state.transitions.iter().enumerate() {
         if let Some(ref loc) = trans.source_location {
-            let artifact = transition_artifact(idx);
+            let artifact = transition_artifact(model.transition_position(state_id, idx));
             push_entry(table, machine, state_id, &artifact, loc, Some(&trans.event))?;
         }
     }
 
     for (i, block) in state.on_entry_blocks.iter().enumerate() {
-        walk_action_block(table, machine, state_id, "_on_entry", i, block)?;
+        walk_action_block(table, model, machine, state_id, false, i, block)?;
     }
     for (i, block) in state.on_exit_blocks.iter().enumerate() {
-        walk_action_block(table, machine, state_id, "_on_exit", i, block)?;
+        walk_action_block(table, model, machine, state_id, true, i, block)?;
     }
 
     Ok(())
 }
 
-/// Walk a single `<onentry>` / `<onexit>` block, emitting one symbol
-/// entry per direct child action. `block_idx` distinguishes multiple
-/// `<onentry>` siblings on the same state.
+/// Walk a single `<onentry>` / `<onexit>` (`exit`) block, emitting one
+/// symbol entry per direct child action. `block_idx` distinguishes
+/// multiple `<onentry>` siblings on the same state.
 fn walk_action_block(
     table: &mut BTreeMap<String, SymbolEntry>,
+    model: &SCXMLModel,
     machine: &str,
     state_id: &str,
-    kind: &str,
+    exit: bool,
     block_idx: usize,
     actions: &[Action],
 ) -> Result<(), Box<Collision>> {
+    let kind = if exit { "_on_exit" } else { "_on_entry" };
     for (action_idx, action) in actions.iter().enumerate() {
         if let Some(ref loc) = action.source_location {
-            let artifact = action_artifact(kind, block_idx, action_idx);
+            let (block, action) =
+                model.block_action_position(exit, state_id, block_idx, action_idx);
+            let artifact = action_artifact(kind, block, action);
             push_entry(table, machine, state_id, &artifact, loc, None)?;
         }
     }
@@ -384,10 +394,19 @@ fn walk_action_block(
 /// serialization when empty: the `--emit-ast` export is the
 /// language-agnostic IR and gains no codegen-derived field.
 pub fn stamp_symbol_attribution(model: &mut SCXMLModel) {
-    for (state_id, state) in model.states.iter_mut() {
-        for (idx, trans) in state.transitions.iter_mut().enumerate() {
+    let artifacts: Vec<Vec<String>> = model
+        .states
+        .iter()
+        .map(|(state_id, state)| {
+            (0..state.transitions.len())
+                .map(|idx| transition_artifact(model.transition_position(state_id, idx)))
+                .collect()
+        })
+        .collect();
+    for ((state_id, state), artifacts) in model.states.iter_mut().zip(artifacts) {
+        for (trans, artifact) in state.transitions.iter_mut().zip(artifacts) {
             trans.symbol_state_path = state_id.clone();
-            trans.symbol_artifact = transition_artifact(idx);
+            trans.symbol_artifact = artifact;
         }
     }
 }
