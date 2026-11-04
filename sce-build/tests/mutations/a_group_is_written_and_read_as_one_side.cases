@@ -21,8 +21,8 @@ mutation_oracles backends/rust/forge-conformance/tests/forge_source_round_trip.r
 
 mutation_case "a decode builds the arm of the other value of its gate" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''            format!("if {test} {{ {} }} else {{ {} }}", value(on), value(off))''',
-     r'''            format!("if {test} {{ {} }} else {{ {} }}", value(off), value(on))''')
+     r'''        format!("if {test} {{ {} }} else {{ {} }}", side(true), side(false))''',
+     r'''        format!("if {test} {{ {} }} else {{ {} }}", side(false), side(true))''')
 PY
 
 mutation_case "a gate is read as its opposite" <<'PY'
@@ -41,9 +41,9 @@ PY
 
 mutation_case "a disjunction's arms are built under the wrong assignment" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''                        .map(bool::to_string)''',
-     r'''                        .rev()
-                        .map(bool::to_string)''')
+     r'''                    .map(bool::to_string)''',
+     r'''                    .rev()
+                    .map(bool::to_string)''')
 PY
 
 # No case writes the elements of a side the value does not hold: an arm has no

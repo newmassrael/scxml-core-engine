@@ -178,8 +178,15 @@
             _ => unreachable!("variant exhaustiveness gated by codec/variant-arm-unreachable at parse time"),
 {% endif %}
         }
+{# A group the eager decode builds in place has its arm installed already and
+   stores in it what it did not build (`assign_stmt`, empty when that is
+   nothing); any other group is built from its elements' locals. #}
 {% for field in fields %}
-{% if not (field.is_repeat or field.is_tlv_chain or field.is_embed) %}
+{% if field.assign_stmt is defined and not view_decode %}
+{% if field.assign_stmt %}
+        {{ field.assign_stmt }}
+{% endif %}
+{% elif not (field.is_repeat or field.is_tlv_chain or field.is_embed) %}
         _out.{{ field.id }} = {{ field.view_assign_expr if (view_decode and field.view_assign_expr is defined) else (field.assign_expr if field.assign_expr is defined else field.id) }};
 {% endif %}
 {% endfor %}
@@ -218,7 +225,11 @@
 {% endif %}
 {% endfor %}
 {% for field in fields %}
-{% if not (field.is_repeat or field.is_tlv_chain or field.is_embed) %}
+{% if field.assign_stmt is defined and not view_decode %}
+{% if field.assign_stmt %}
+        {{ field.assign_stmt }}
+{% endif %}
+{% elif not (field.is_repeat or field.is_tlv_chain or field.is_embed) %}
 {# A view builds the chain of a membership over its bytes (docs/adr/0065 §6 R6a). #}
         _out.{{ field.id }} = {{ field.view_assign_expr if (view_decode and field.view_assign_expr is defined) else (field.assign_expr if field.assign_expr is defined else field.id) }};
 {% endif %}

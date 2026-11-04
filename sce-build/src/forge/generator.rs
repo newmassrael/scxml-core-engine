@@ -8424,9 +8424,16 @@ fn rust_owned_field_keys(
 /// A Rust codec's fields as each form holds them, and as the wire reads them
 /// (docs/adr/0065 §6 R4b). The elements of a group, which one gate decides, are
 /// held as one entry of the group's type, where the first of them stood; the
-/// wire's fields stay as they are, for the decode to read one by one. An
-/// element the decode builds in its field (a list, an embedded body) is built
-/// in a local of its own instead, which the group then takes.
+/// wire's fields stay as they are, for the decode to read one by one.
+///
+/// The eager decode installs the arm the gates name before it reads the first
+/// element it builds (a list, an embedded body, the chain of the memberships),
+/// and builds each such element where that arm holds it: a list moved into an
+/// arm copies its whole capacity, so a decode that built it in a local first
+/// carried a copy of each list in its frame ([`rust_group_in_place`]). A group
+/// whose gates are not all read before its first built element, and every
+/// group of a view, whose lists are spans of the frame, builds each element in
+/// a local of its own instead, which the group then takes.
 fn rust_group_storage(
     m: &CodecModel,
     imports: &[ImportContext],
@@ -8458,57 +8465,11 @@ fn rust_group_storage(
             .to_string()
     };
 
-    // An element the decode builds in its field is built in its local.
-    for group in &roles.groups {
-        for id in group.fields() {
-            let (Some(f), Some(index)) = (field_of(id), index_of(id)) else {
-                continue;
-            };
-            let local = codec_field_decode_local(&f.id, l.lang);
-            let place = format!("_out.{}", l.codec_field_id(&f.id));
-            let obj = wire[index]
-                .as_object_mut()
-                .expect("a field's context is an object");
-            for (key, ty_key) in [
-                ("repeat_decode_stmt", "rs_owned_type"),
-                ("tlv_chain_decode_stmt", "rs_owned_type"),
-                ("embed_decode_stmt", "rs_owned_type"),
-                ("view_repeat_decode_stmt", "view_rs_type"),
-                ("view_tlv_chain_decode_stmt", "view_rs_type"),
-                ("view_embed_decode_stmt", "view_rs_type"),
-            ] {
-                let Some(stmt) = obj.get(key).and_then(|v| v.as_str()) else {
-                    continue;
-                };
-                let ty = obj
-                    .get(ty_key)
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string();
-                let built = replace_place(stmt, &place, &local);
-                // A decode that builds a gated element in place starts from
-                // none, and one that fills an ungated list in place (its
-                // `refill`, docs/adr/0065 §6 R7, or a borrow of it) from the
-                // list's default; one that assigns it on every path declares it
-                // unassigned. The statement is the one an element outside a
-                // group is decoded by, which assigns its field on every path;
-                // the local it assigns here is declared first, as that field
-                // was.
-                let declared = if stmt.contains(&format!("{place}.insert(")) {
-                    format!("let mut {local}: {ty} = None;\n        {built}")
-                } else if stmt.contains(&format!("{place}.refill("))
-                    || stmt.contains(&format!("&mut {place}"))
-                {
-                    format!("let mut {local}: {ty} = Default::default();\n        {built}")
-                } else {
-                    format!(
-                        "#[allow(clippy::needless_late_init)]\n        let {local}: {ty};\n        {built}"
-                    )
-                };
-                obj.insert(key.into(), declared.into());
-            }
-        }
-    }
+    // The eager decode of each group built in place, by the group's accessor
+    // ([`rust_group_in_place`]); the statements are rewritten once every
+    // group is read, below.
+    let mut in_place_of: std::collections::BTreeMap<String, GroupInPlace> =
+        std::collections::BTreeMap::new();
 
     let mut stored: Vec<serde_json::Value> = Vec::new();
     for (index, f) in m.fields.iter().enumerate() {
@@ -8724,37 +8685,15 @@ fn rust_group_storage(
         let built = |arm: &(&GroupArm, Vec<&CodecField>, String), view: bool| {
             held(format!("{} {{ {} }}", arm.2, build(arm, view)))
         };
+        // One gate: the arm it holds in, and the other arm or none. A
+        // disjunction: each arm under the values it names, and none under the
+        // one assignment that does not satisfy it. A chain's memberships have
+        // an arm under every assignment.
+        let arm_refs: Vec<&ArmOfGroup<'_>> = arms.iter().collect();
         let assign_in = |view: bool| -> String {
-            if let [test] = tests.as_slice() {
-                // One gate: the arm it holds in, and the other arm or none.
-                let on = arms.iter().find(|a| a.0.values == [true]);
-                let off = arms.iter().find(|a| a.0.values == [false]);
-                let value = |arm: Option<&(&GroupArm, Vec<&CodecField>, String)>| {
-                    arm.map_or_else(|| "None".to_string(), |arm| built(arm, view))
-                };
-                format!("if {test} {{ {} }} else {{ {} }}", value(on), value(off))
-            } else {
-                // A disjunction: each arm under the values it names, and none
-                // under the one assignment that does not satisfy it. A chain's
-                // memberships have an arm under every assignment.
-                let mut cases: Vec<String> = arms
-                    .iter()
-                    .map(|arm| {
-                        let values = arm
-                            .0
-                            .values
-                            .iter()
-                            .map(bool::to_string)
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        format!("({values}) => {},", built(arm, view))
-                    })
-                    .collect();
-                if optional {
-                    cases.push("_ => None,".to_string());
-                }
-                format!("match ({}) {{ {} }}", tests.join(", "), cases.join(" "))
-            }
+            arm_by_gates(&tests, &arm_refs, optional.then_some("None"), &|arm| {
+                built(arm, view)
+            })
         };
         entry.insert("assign_expr".into(), assign_in(false).into());
         // A view builds the chain of the memberships over its bytes, which the
@@ -8762,6 +8701,18 @@ fn rust_group_storage(
         if emit_views && group.chain().is_some() {
             entry.insert("view_assign_expr".into(), assign_in(true).into());
         }
+        // The eager decode installs the arm before it builds an element, where
+        // the gates are read by then; it then stores what it does not build in
+        // the arm (`assign_stmt`) rather than assembling the arm by value.
+        let in_place = rust_group_in_place(&GroupDecode {
+            m,
+            wire: &wire,
+            l,
+            group,
+            arms: &arms,
+            tests: &tests,
+            accessor: &accessor,
+        });
 
         // The owned form: each element projected as its field is.
         let owned_conv = |origin: bool| -> Result<String, ForgeError> {
@@ -9057,9 +9008,664 @@ fn rust_group_storage(
             )?;
             entry.insert("view_into_builder_stmt".into(), into_builder.into());
         }
+        if let Some(in_place) = in_place {
+            entry.insert("assign_stmt".into(), in_place.assign_stmt.clone().into());
+            in_place_of.insert(accessor.clone(), in_place);
+        }
         stored.push(serde_json::Value::Object(entry));
     }
+
+    // Each element a decode builds: where its arm holds it, in a group built in
+    // place, and otherwise in a local of its own, which the group then takes
+    // (a view's always: its lists are spans of the frame).
+    for group in &roles.groups {
+        let in_place = in_place_of.get(&group_accessor(group));
+        for id in group.fields() {
+            let (Some(f), Some(index)) = (field_of(id), index_of(id)) else {
+                continue;
+            };
+            let local = codec_field_decode_local(&f.id, l.lang);
+            let place = format!("_out.{}", l.codec_field_id(&f.id));
+            let obj = wire[index]
+                .as_object_mut()
+                .expect("a field's context is an object");
+            for (key, ty_key) in RUST_BUILT_DECODE_KEYS {
+                let Some(stmt) = obj.get(key).and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                let rewritten = match in_place.and_then(|g| g.stmts.get(&f.id)) {
+                    Some(built) if !key.starts_with("view_") => built.clone(),
+                    _ => {
+                        let ty = obj
+                            .get(ty_key)
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        decode_into_local(stmt, &place, &local, &ty)
+                    }
+                };
+                obj.insert(key.into(), rewritten.into());
+            }
+        }
+    }
     Ok((stored, wire))
+}
+
+/// The statements a Rust decode builds an element by, and the type of what it
+/// builds: the eager form's (`rs_owned_type`) and the view's.
+const RUST_BUILT_DECODE_KEYS: [(&str, &str); 6] = [
+    ("repeat_decode_stmt", "rs_owned_type"),
+    ("tlv_chain_decode_stmt", "rs_owned_type"),
+    ("embed_decode_stmt", "rs_owned_type"),
+    ("view_repeat_decode_stmt", "view_rs_type"),
+    ("view_tlv_chain_decode_stmt", "view_rs_type"),
+    ("view_embed_decode_stmt", "view_rs_type"),
+];
+
+/// `stmt`, which builds an element in its field `place` (`_out.<id>`), as it
+/// builds it in the local `local` of the type `ty` instead.
+///
+/// A decode that builds a gated element in place starts from none, and one that
+/// fills an ungated list in place (its `refill`, docs/adr/0065 §6 R7, or a
+/// borrow of it) from the list's default; one that assigns it on every path
+/// declares it unassigned. The statement is the one an element outside a group
+/// is decoded by, which assigns its field on every path; the local it assigns
+/// here is declared first, as that field was.
+fn decode_into_local(stmt: &str, place: &str, local: &str, ty: &str) -> String {
+    let built = replace_place(stmt, place, local);
+    if stmt.contains(&format!("{place}.insert(")) {
+        format!("let mut {local}: {ty} = None;\n        {built}")
+    } else if stmt.contains(&format!("{place}.refill(")) || stmt.contains(&format!("&mut {place}"))
+    {
+        format!("let mut {local}: {ty} = Default::default();\n        {built}")
+    } else {
+        format!("#[allow(clippy::needless_late_init)]\n        let {local}: {ty};\n        {built}")
+    }
+}
+
+/// The eager decode of a group built in place ([`rust_group_in_place`]): the
+/// statement each element it builds is decoded by, by the element's id, and the
+/// statement that stores the elements it does not build (scalars, bytes, text)
+/// in the arm installed, empty when there is none.
+struct GroupInPlace {
+    stmts: std::collections::BTreeMap<String, String>,
+    assign_stmt: String,
+}
+
+/// The expression whose value is `value` of the arm of `arms` the gates name,
+/// each gate tested as `tests` says in the order of the group's gates
+/// (docs/adr/0065 §6 R4b): one gate is an `if` on its test, more a `match` on
+/// their values. `otherwise` is the value under the values no arm of `arms` is
+/// named by (none, where the value may hold no arm), and the other side of one
+/// gate with one arm in `arms`; a side with no arm and no `otherwise` is none.
+/// The decode of a group by value, the arm a decode installs before it builds
+/// an element in place, and the door a chain is read through are each chosen
+/// by this one expression.
+fn arm_by_gates<'a>(
+    tests: &[String],
+    arms: &[&ArmOfGroup<'a>],
+    otherwise: Option<&str>,
+    value: &dyn Fn(&ArmOfGroup<'a>) -> String,
+) -> String {
+    if let [test] = tests {
+        let side = |holds: bool| {
+            arms.iter()
+                .copied()
+                .find(|a| a.0.values == [holds])
+                .map_or_else(|| otherwise.unwrap_or("None").to_string(), value)
+        };
+        format!("if {test} {{ {} }} else {{ {} }}", side(true), side(false))
+    } else {
+        let mut cases: Vec<String> = arms
+            .iter()
+            .copied()
+            .map(|arm| {
+                let values = arm
+                    .0
+                    .values
+                    .iter()
+                    .map(bool::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("({values}) => {},", value(arm))
+            })
+            .collect();
+        if let Some(otherwise) = otherwise {
+            cases.push(format!("_ => {otherwise},"));
+        }
+        format!("match ({}) {{ {} }}", tests.join(", "), cases.join(" "))
+    }
+}
+
+/// One arm of a group as [`rust_group_storage`] reads it: the arm, the elements
+/// it holds (the second of two lists of one count held with the first), and the
+/// path it is built and matched by.
+type ArmOfGroup<'a> = (
+    &'a crate::forge::codec_roles::GroupArm,
+    Vec<&'a CodecField>,
+    String,
+);
+
+/// What [`rust_group_in_place`] reads of a group: the codec, its wire fields'
+/// contexts, the arms, the test of each gate in the order of the group's gates,
+/// and the group's field name in the value.
+struct GroupDecode<'a> {
+    m: &'a CodecModel,
+    wire: &'a [serde_json::Value],
+    l: &'a LangCtx,
+    group: &'a crate::forge::codec_roles::GateGroup,
+    arms: &'a [ArmOfGroup<'a>],
+    tests: &'a [String],
+    accessor: &'a str,
+}
+
+/// The eager decode of a group that builds each of its lists, embedded bodies
+/// and chain where the arm holds it (docs/adr/0065 §6 R4b, R5, R6; docs/adr/0077
+/// §7), or `None` where the group is decoded into locals and assembled by value.
+///
+/// A list held inline moves by copying its whole capacity, so a decode that
+/// builds an element in a local and then moves it into an arm carries a copy of
+/// the element in its frame, and a value built by value carries more. Here the
+/// arm the gates name is installed in the destination, its fields at their
+/// defaults, before the first element the decode builds, and each built element
+/// is read into the arm's field:
+///
+/// - a list or an embedded body is read by the statement it is read by outside
+///   a group, the field it fills being the arm's ([`in_arms_of`] the arms
+///   holding it). There the gate holds, since the arm the gates installed holds
+///   the field, so the statement's other branch cannot run;
+/// - two lists of one count are filled in their pair where the arm holds both
+///   (`Aligned::refill_first`, `Aligned::refill_second`);
+/// - the chain whose memberships are gates is read into the arm the decode
+///   expects, the one where it holds no kind of entry, through
+///   `decode_chain_in` (`decode_placed_in` for a bare entry's place), which
+///   checks it; a chain of other kinds is read again into the arm those kinds
+///   name, from where it began. The second reading holds the kinds of the
+///   first, the bytes being the same.
+///
+/// What the decode does not build (a scalar, bytes, text) is read into its local
+/// as it is outside a group and stored in the installed arm after the last
+/// element (`assign_stmt`).
+///
+/// The arm can be installed before the first built element only where every
+/// gate is read before it: a flag's carrier precedes it, and a chain's
+/// memberships are the chain itself, which is then the first built element. A
+/// group whose gates are read later, or whose statements take another shape
+/// than these, is decoded by value, as it was before (`None`).
+fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
+    use crate::forge::codec_roles::GateVar;
+    use crate::forge::generator::rust_source::{aligned_name, chain_optional_in, key_type};
+    let GroupDecode {
+        m,
+        wire,
+        l,
+        group,
+        arms,
+        tests,
+        accessor,
+    } = *ctx;
+    let struct_name = filters::to_pascal_case(m.name.clone());
+    let field_of = |id: &str| m.fields.iter().find(|f| f.id == id);
+    let index_of = |id: &str| m.fields.iter().position(|f| f.id == id);
+    let acc = |f: &CodecField| l.codec_field_id(&f.id);
+    let place = |f: &CodecField| format!("{RUST_DECODE_OUT}.{}", acc(f));
+    let optional = group.absent.is_some();
+    let held = |pattern: String| {
+        if optional {
+            format!("Some({pattern})")
+        } else {
+            pattern
+        }
+    };
+    let stmt_of = |f: &CodecField| -> Option<String> {
+        let obj = &wire[index_of(&f.id)?];
+        [
+            "repeat_decode_stmt",
+            "tlv_chain_decode_stmt",
+            "embed_decode_stmt",
+        ]
+        .into_iter()
+        .find_map(|key| obj.get(key).and_then(|v| v.as_str()).map(str::to_string))
+    };
+    let second_in = |arm: &crate::forge::codec_roles::GroupArm, f: &CodecField| {
+        group.second_of(arm, &f.id).and_then(field_of)
+    };
+    let held_name =
+        |arm: &crate::forge::codec_roles::GroupArm, f: &CodecField| match second_in(arm, f) {
+            Some(second) => aligned_name(&acc(f), &acc(second)),
+            None => acc(f),
+        };
+    let holds = |arm: &ArmOfGroup<'_>, f: &CodecField| arm.1.iter().any(|g| g.id == f.id);
+
+    let built: Vec<&CodecField> = group
+        .fields()
+        .into_iter()
+        .filter_map(field_of)
+        .filter(|f| stmt_of(f).is_some())
+        .collect();
+    let first_built = built.iter().filter_map(|f| index_of(&f.id)).min()?;
+    let chain = group.chain().and_then(field_of);
+    // Every gate is read before the arm is installed: a flag's carrier earlier
+    // on the wire, an input from the start, a membership of the group's own
+    // chain where that chain is the first built element.
+    let read_before = group.gates.iter().all(|gate| match gate {
+        GateVar::Input(_) => true,
+        GateVar::Flag { carrier, .. } => index_of(carrier).is_some_and(|at| at < first_built),
+        GateVar::Member { chain: of, .. } => {
+            chain.is_some_and(|c| &c.id == of && index_of(&c.id) == Some(first_built))
+        }
+    });
+    if !read_before {
+        return None;
+    }
+
+    // The value each arm is installed as: each field at its default, or the
+    // chain a door hands the arm.
+    let arm_refs: Vec<&ArmOfGroup<'_>> = arms.iter().collect();
+    let defaults_but = |arm: &ArmOfGroup<'_>, chain_slot: Option<&str>| -> String {
+        let fields = arm
+            .1
+            .iter()
+            .map(|f| match (chain, chain_slot) {
+                (Some(c), Some(slot)) if c.id == f.id => format!("{}: {slot}", acc(f)),
+                _ => format!("{}: Default::default()", held_name(arm.0, f)),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        held(format!("{} {{ {fields} }}", arm.2))
+    };
+
+    // Each built element other than the chain, read where the arm holds it.
+    let in_arm = |f: &CodecField, stmt: &str| -> Option<String> {
+        let place = place(f);
+        let mut cases: Vec<(Vec<String>, String)> = Vec::new();
+        let mut covered = 0usize;
+        let pattern =
+            |arm: &ArmOfGroup<'_>, name: &str| held(format!("{} {{ {name}: _p, .. }}", arm.2));
+        let aligned = group.aligned.as_ref();
+        if let Some(first) = aligned
+            .filter(|(_, second)| second == &f.id)
+            .and_then(|(first, _)| field_of(first))
+        {
+            // The second of two lists of one count, in the pair of each arm that
+            // holds it.
+            let refill = format!("{place}.insert(Default::default()).refill(");
+            if !stmt.contains(&refill) {
+                return None;
+            }
+            let pairs: Vec<&ArmOfGroup<'_>> = arms
+                .iter()
+                .filter(|a| second_in(a.0, first).is_some())
+                .collect();
+            covered += pairs.len();
+            cases.push((
+                pairs
+                    .iter()
+                    .map(|a| pattern(a, &aligned_name(&acc(first), &acc(f))))
+                    .collect(),
+                place_in_arm(&stmt.replace(&refill, "_p.refill_second("), &place),
+            ));
+        } else {
+            let alone: Vec<&ArmOfGroup<'_>> = arms
+                .iter()
+                .filter(|a| holds(a, f) && second_in(a.0, f).is_none())
+                .collect();
+            if !alone.is_empty() {
+                covered += alone.len();
+                cases.push((
+                    alone.iter().map(|a| pattern(a, &acc(f))).collect(),
+                    place_in_arm(stmt, &place),
+                ));
+            }
+            // The first of two lists of one count, where the arm holds the pair.
+            let paired: Vec<&ArmOfGroup<'_>> = arms
+                .iter()
+                .filter(|a| holds(a, f) && second_in(a.0, f).is_some())
+                .collect();
+            if !paired.is_empty() {
+                let refill = format!("{place}.refill(");
+                if !stmt.contains(&refill) {
+                    return None;
+                }
+                covered += paired.len();
+                cases.push((
+                    paired
+                        .iter()
+                        .map(|a| pattern(a, &held_name(a.0, f)))
+                        .collect(),
+                    place_in_arm(&stmt.replace(&refill, "_p.refill_first("), &place),
+                ));
+            }
+        }
+        let cases: Vec<(String, String)> = cases
+            .into_iter()
+            .map(|(patterns, body)| (patterns.join(" | "), body))
+            .collect();
+        Some(in_arms_of(
+            &format!("{RUST_DECODE_OUT}.{accessor}"),
+            &cases,
+            optional || covered < arms.len(),
+        ))
+    };
+
+    let mut stmts: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for f in &built {
+        let stmt = stmt_of(f)?;
+        // A statement that declares what a later field reads (a chain's
+        // memberships) would declare it inside the arm's `match`.
+        if chain.is_some_and(|c| c.id == f.id) {
+            continue;
+        }
+        if stmt.contains("let _has_") {
+            return None;
+        }
+        stmts.insert(f.id.clone(), in_arm(f, &stmt)?);
+    }
+
+    match chain {
+        Some(chain) => {
+            // The memberships the decode reads are the group's gates, so each
+            // has a kind type and an arm.
+            let values: Vec<u64> = group.members().map(|(_, key)| key).collect();
+            if !chain_has_values(&m.fields, &chain.id)
+                .iter()
+                .all(|v| values.contains(v))
+            {
+                return None;
+            }
+            let stmt = stmt_of(chain)?;
+            let mut fill = chain_fill_block(&stmt)?;
+            let name = codec_field_local_name(&chain.id, l.lang);
+            let has = |v: u64| chain_has_local(&chain.id, v, l.lang);
+            let found = |v: u64| format!("_found_{name}_{v}");
+            let (at, first, fill_fn, settled) = (
+                format!("_{name}_at"),
+                format!("_{name}_first"),
+                format!("_{name}_fill"),
+                format!("_{name}_settled"),
+            );
+            let found_writes: String = values
+                .iter()
+                .map(|v| {
+                    format!(
+                        "{} = {RUNTIME_CODEC}::OfKind::<{}>::first_of_kind(&*_vec).is_some();\n            ",
+                        found(*v),
+                        key_type(&struct_name, &chain.id, *v)
+                    )
+                })
+                .collect();
+            let ok_at = fill.rfind("Ok(())")?;
+            fill.insert_str(ok_at, &found_writes);
+            let owned_ty = wire[index_of(&chain.id)?]
+                .get("rs_owned_type")
+                .and_then(|v| v.as_str())?;
+            let present = owned_ty
+                .strip_prefix("Option<")
+                .and_then(|t| t.strip_suffix('>'))
+                .unwrap_or(owned_ty);
+            let list_ty = bounded_list(present);
+            // Each arm read through the door its chain is held by: the chain
+            // whole, possibly absent, or a bare entry's place.
+            let read_into = |arm: &ArmOfGroup<'_>| -> String {
+                let slot = if chain_optional_in(group, chain, arm.0) {
+                    "Some(_c)"
+                } else {
+                    "_c"
+                };
+                let door = if group.member_is_bare() && !group.kinds_in(arm.0).0.is_empty() {
+                    "decode_placed_in"
+                } else {
+                    "decode_chain_in"
+                };
+                format!(
+                    "{RUNTIME_CODEC}::{door}(&mut {RUST_DECODE_OUT}.{accessor}, |_c| {}, |_g| match _g {{ {} => Some(_c), _ => None }}, &mut {fill_fn})?",
+                    defaults_but(arm, Some(slot)),
+                    held(format!("{} {{ {}: {slot}, .. }}", arm.2, acc(chain))),
+                )
+            };
+            // A chain's memberships name an arm under every assignment of the
+            // gates; no other case is written where they do.
+            let every_assignment = arms.len() == 1usize << tests.len();
+            let present_select = arm_by_gates(
+                tests,
+                &arm_refs,
+                (!every_assignment).then_some(
+                    "unreachable!(\"a chain's memberships name an arm under every assignment\")",
+                ),
+                &read_into,
+            );
+            // An absent chain holds no entry of any kind, so its arm is one
+            // where every membership is clear.
+            let select_read = match chain.present_if.as_ref() {
+                None => present_select,
+                Some(pred) => {
+                    let absent: Vec<&ArmOfGroup<'_>> = arms
+                        .iter()
+                        .filter(|a| chain_optional_in(group, chain, a.0))
+                        .collect();
+                    let absent_value = arm_by_gates(
+                        tests,
+                        &absent,
+                        Some("unreachable!(\"an absent chain holds no entry of any kind\")"),
+                        &|arm| defaults_but(arm, Some("None")),
+                    );
+                    format!(
+                        "if {} {{\n                {present_select}\n            }} else {{\n                {RUST_DECODE_OUT}.{accessor} = {absent_value};\n                true\n            }}",
+                        present_if_test_literal(&m.fields, pred, l.lang)
+                    )
+                }
+            };
+            let lines = |each: &dyn Fn(u64) -> String, indent: &str| -> String {
+                values
+                    .iter()
+                    .map(|v| format!("{}\n{indent}", each(*v)))
+                    .collect()
+            };
+            stmts.insert(
+                chain.id.clone(),
+                format!(
+                    "// The arm is installed before its chain is read, and the chain read\n        \
+                     // where the arm holds it; a chain of other kinds is read again into\n        \
+                     // the arm they name.\n        \
+                     let {at} = *cursor;\n        \
+                     {}let mut {first} = true;\n        \
+                     loop {{\n            \
+                         {}let mut {fill_fn} = |_vec: &mut {list_ty}| -> Result<(), CodecError> {fill};\n            \
+                         let {settled} = {select_read};\n            \
+                         {}if {settled} {{\n                \
+                             break;\n            \
+                         }}\n            \
+                         if !{first} {{\n                \
+                             unreachable!(\"a chain read again holds the kinds it was first read with\");\n            \
+                         }}\n            \
+                         {first} = false;\n            \
+                         *cursor = {at};\n        \
+                     }}",
+                    lines(&|v| format!("let mut {} = false;", has(v)), "        "),
+                    lines(&|v| format!("let mut {} = false;", found(v)), "            "),
+                    lines(&|v| format!("{} = {};", has(v), found(v)), "            "),
+                ),
+            );
+        }
+        None => {
+            // The arm the gates name, installed before the first element the
+            // decode builds.
+            let first = built
+                .iter()
+                .find(|f| index_of(&f.id) == Some(first_built))?;
+            let installed = arm_by_gates(tests, &arm_refs, optional.then_some("None"), &|arm| {
+                defaults_but(arm, None)
+            });
+            let stmt = stmts.get_mut(&first.id)?;
+            *stmt = format!("{RUST_DECODE_OUT}.{accessor} = {installed};\n        {stmt}");
+        }
+    }
+
+    // What the decode does not build, stored in the arm it installed.
+    let mut cases: Vec<(String, String)> = Vec::new();
+    for arm in arms {
+        let stored: Vec<&CodecField> = arm
+            .1
+            .iter()
+            .copied()
+            .filter(|f| !built.iter().any(|b| b.id == f.id))
+            .collect();
+        if stored.is_empty() {
+            continue;
+        }
+        let binds = stored
+            .iter()
+            .map(|f| format!("{}: _p_{}", acc(f), acc(f)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let writes = stored
+            .iter()
+            .map(|f| {
+                let local = codec_field_decode_local(&f.id, l.lang);
+                let value = if f.present_if.is_some() {
+                    format!("{local}.unwrap_or_default()")
+                } else {
+                    local
+                };
+                format!("*_p_{} = {value};", acc(f))
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        cases.push((held(format!("{} {{ {binds}, .. }}", arm.2)), writes));
+    }
+    let assign_stmt = if cases.is_empty() {
+        String::new()
+    } else {
+        in_arms_of(
+            &format!("{RUST_DECODE_OUT}.{accessor}"),
+            &cases,
+            optional || cases.len() < arms.len(),
+        )
+    };
+    Some(GroupInPlace { stmts, assign_stmt })
+}
+
+/// The statement that runs, for the arm `group` (a place, `_out.<group>`)
+/// holds, the body of the case whose pattern matches it: each case a pattern
+/// (alternatives joined by ` | `) binding the arm's fields and the statements
+/// that use them, and `others` whether some arm, or none, matches no case.
+///
+/// One case with others is an `if let`, and one case that every value matches
+/// a `let` in a block of its own, since clippy asks for those forms where a
+/// `match` would say no more (`single_match`, `match_single_binding`). Any
+/// other is a `match`, with an arm that does nothing for the others.
+fn in_arms_of(group: &str, cases: &[(String, String)], others: bool) -> String {
+    match (cases, others) {
+        ([(pattern, body)], true) => {
+            format!("if let {pattern} = &mut {group} {{\n            {body}\n        }}")
+        }
+        ([(pattern, body)], false) => {
+            // A top-level alternative of a `let` stands in parentheses.
+            let pattern = if pattern.contains(" | ") {
+                format!("({pattern})")
+            } else {
+                pattern.clone()
+            };
+            format!("{{\n            let {pattern} = &mut {group};\n            {body}\n        }}")
+        }
+        _ => {
+            let mut out = format!("match &mut {group} {{\n");
+            for (pattern, body) in cases {
+                out.push_str(&format!(
+                    "            {pattern} => {{\n            {body}\n            }}\n"
+                ));
+            }
+            if others {
+                out.push_str("            _ => {}\n");
+            }
+            out.push_str("        }");
+            out
+        }
+    }
+}
+
+/// `stmt`, which reads an element into its field `place` (`_out.<id>`) as an
+/// element outside a group is read, as it reads it into `_p`, the field of the
+/// arm that holds it (`&mut` the field's present type): `place.insert(..)` is
+/// `_p`, `&mut place` is `&mut *_p`, a call or field through `place` is through
+/// `_p`, and the branch that would leave a gated field absent cannot run, since
+/// the arm the gates installed holds it ([`rust_group_in_place`]).
+fn place_in_arm(stmt: &str, place: &str) -> String {
+    let inserted = replace_call(stmt, &format!("{place}.insert("), "_p");
+    let present = inserted.replace(
+        &format!("{place} = None;"),
+        "unreachable!(\"the arm its gates installed holds the field they read\");",
+    );
+    let borrowed = replace_place(&present, &format!("&mut {place}"), "&mut *_p");
+    let called = borrowed.replace(&format!("{place}."), "_p.");
+    replace_place(&called, place, "*_p")
+}
+
+/// `text` with each call that starts with `head` (a callee and its opening
+/// parenthesis, `_out.x.insert(`) replaced, arguments and closing parenthesis
+/// with it, by `with`. A call whose parenthesis does not close is left as it is.
+fn replace_call(text: &str, head: &str, with: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(head) {
+        let open = at + head.len() - 1;
+        let Some(close) = closing_bracket(rest, open) else {
+            break;
+        };
+        out.push_str(&rest[..at]);
+        out.push_str(with);
+        rest = &rest[close + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The index in `text` of the bracket that closes the one at `open` (`(` or
+/// `{`), counting brackets of that kind and passing over string literals, or
+/// `None` where it does not close.
+fn closing_bracket(text: &str, open: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let (opening, closing) = match bytes.get(open)? {
+        b'(' => (b'(', b')'),
+        b'{' => (b'{', b'}'),
+        _ => return None,
+    };
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (at, &byte) in bytes.iter().enumerate().skip(open) {
+        if in_string {
+            match (escaped, byte) {
+                (true, _) => escaped = false,
+                (false, b'\\') => escaped = true,
+                (false, b'"') => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        if byte == b'"' {
+            in_string = true;
+        } else if byte == opening {
+            depth += 1;
+        } else if byte == closing {
+            depth -= 1;
+            if depth == 0 {
+                return Some(at);
+            }
+        }
+    }
+    None
+}
+
+/// The block a Rust chain's decode fills its list by, `{ .. Ok(()) }`: the
+/// body of the closure its `refill` is handed (`|_vec| { .. }`), which reads
+/// each entry into `_vec`. `None` for a chain filled another way (a chain held
+/// to its law, `refill_from`).
+fn chain_fill_block(stmt: &str) -> Option<String> {
+    let head = ".refill(|_vec| ";
+    let open = stmt.find(head)? + head.len();
+    let close = closing_bracket(stmt, open)?;
+    Some(stmt[open..=close].to_string())
 }
 
 /// The field type `ty`, spelled at the storage parameter ([`STORAGE_PARAM`]),
