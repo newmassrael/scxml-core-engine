@@ -3,6 +3,9 @@
 - Status: Accepted (2026-11-03). The owner asked for the most long-term correct, textbook structure with cost ignored,
   took the recommendation of that day (one processor door shared by both engines, the Mesh request as one row of it,
   one threading rule for every engine) and ordered the work started.
+  Step 7 done (2026-11-04): `sce-codegen lower` lowers a host-run `<invoke>` and a Mesh request, and the four
+  `static_host_*` scenarios replay on the Interpreter with the standard host registered through the door. The
+  replay found two gaps in the door, both closed in step 7 (see D7).
 - Date: 2026-11-03
 - Number: written as 0083 on its branch, and given 0084 when ADR 0083 (a host records what a change made) reached
   `main` first.
@@ -11,6 +14,8 @@
     under `SendHelper::MESH_TARGET_SCHEME`, and `IChildMeshRouter` for a child) and gains one for a request.
   - ARCHITECTURE.md, which gains a single-source section "Engine Threading" (§D1-§D3 below) that every runtime's
     thread contract points to instead of stating its own.
+  - ADR 0005, decision 5, which keeps the Interpreter refused by name for a Mesh request: from step 7 it is
+    lowered and served by the router the host registers (D6, D7).
 - Scope:
   - `sce/include/core/` (the shared layer): a host-invoke ledger lifted out of `StaticExecutionEngine.h`, and the
     inbox contract;
@@ -200,6 +205,18 @@ expressions as it lowers a `<send>`'s. The `sce-static` scenarios that use a hos
 (`tests/host_features/scenarios/static_host_{clock,http,kv,notify}.json`) join the Interpreter replay, with the
 standard host (`StandardHost.h`) registered on the Interpreter as it is on the generated engine. The bounded-string
 `namelist` refusal stays, since it is about what the Interpreter cannot carry, not about the door.
+
+Amended at step 7. The lowering also rewrites a host-run invoke's `srcexpr` and `<content expr>` and a Mesh
+request's `srcexpr` in place, to the strings they compute, because the Interpreter evaluates each of them itself.
+The replay found two places where the step-6 door did not yet match the generated engine, and both are fixed in the
+engine, not in the scenarios:
+- A request typed by `sce:request` promised its host the whole record, so on the generated engine a field whose
+  value cannot be made starts nothing. The Interpreter did not keep `sce:request`, so it reported the failed field,
+  left it out and still started the invocation. Its parser now keeps the attribute, and both engines refuse at the
+  same `<param>`s, which one shared predicate names (`typedRequestRequiresParam`, `core/TypedHostInvokeRequest.h`).
+- The Interpreter's deadline adapter read the ledger's moment off the steady clock and turned it into a delay with
+  a second read of that clock, while the scheduler in MANUAL mode fires by its logical clock. A deadline is now a
+  moment of the scheduler's own clock (`IEventScheduler::now`), which the ledger and the adapter both read.
 
 ### D8. The Interpreter's own threading becomes the rule's
 

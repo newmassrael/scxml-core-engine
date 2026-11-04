@@ -1327,6 +1327,14 @@ A `<send>`'s event data is that text as the data model reads inline content
 written, otherwise the expression's value or the space-normalized string, and
 under the null data model the text itself.
 
+A `datamodel="sce-static"` document reaches the Interpreter through `sce-codegen
+lower` (`docs/SCE_ACCEPTED_SUBSET.md` §2.15), which keeps a host-run `<invoke>`
+and a Mesh request as written and lowers their `<param>`s and `namelist` as a
+`<send>`'s, and their `srcexpr` and `<content expr>` to the strings they compute
+(ADR 0084, D7). The lowering refuses, of an `<invoke>`, only what the Interpreter
+cannot carry: a `namelist` name that hands a child a string it bounds, and a
+`src` that names a Mesh peer rather than a document.
+
 ### Event Names at the Door (Single Source of Truth)
 
 An event that arrives BY NAME — a child's `<send target="#_parent">` or autoforward,
