@@ -39,6 +39,7 @@
 #include "core/ExternalEventBudget.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/HistoryHelper.h"
+#include "core/HostInvokeLedger.h"
 #include "core/MacrostepCeilings.h"
 #include "core/MicrostepAlgorithms.h"
 #include "core/ParallelTransitionHelper.h"
@@ -960,49 +961,16 @@ private:
     // serves the child too, since it is the tree's own registry the child holds.
     std::shared_ptr<::SCE::TreeInvokers> invokers_ = std::make_shared<::SCE::TreeInvokers>();
 
-    /// A host-run invocation that was started and has neither completed nor been
-    /// cancelled: its start's token and the request the host was handed, which a
-    /// save writes.
-    struct StartedHostInvoke {
-        uint64_t token = 0;
-        ::SCE::HostInvokeRequest request;
-    };
-
-    // §scxml-6.4: every host-run invocation started and neither completed nor
-    // cancelled, with its start's token and the request, so the emitted exit chain
-    // can be an unconditional call and a completion can be judged against the run it
-    // names. Held here rather than in the generated machine because "is this
-    // one still running?" is the question both paths have to answer, and
-    // answering it in each backend's template would be the same bookkeeping
-    // written once per language. One entry per key: an `<invoke>` belongs to
-    // one state and a state is in the configuration at most once, so the same
-    // id is never running twice; a restart replaces the entry, and its new
-    // token is what makes the first run's reply stale.
-    std::map<std::pair<std::string, std::string>, StartedHostInvoke> startedHostInvokes_;
-    // The token the next host-run start receives.
-    uint64_t nextHostInvokeToken_ = 0;
-    /// What a restored host-run invocation has left of its deadline.
-    enum class RestoredDeadline {
-        None,    ///< it had none
-        At,      ///< it comes due at `atMs` of this engine's clock
-        Passed,  ///< it came due while the machine was away
-    };
-
-    /// A host-run invocation a saved state listed, waiting for the first macrostep the
-    /// host drives to start it again. `request` is what the saved machine started it
-    /// with, marked `restarted`; `atMs` is the moment of this engine's clock a deadline
-    /// in `RestoredDeadline::At` comes due, worked out from the wall-clock moment the
-    /// saved state holds.
-    struct RestoredHostInvoke {
-        ::SCE::HostInvokeRequest request;
-        RestoredDeadline deadline = RestoredDeadline::None;
-        uint64_t atMs = 0;
-    };
-
-    // docs/adr/0045: the host-run invocations a restore re-armed, which start at the
-    // top of the first macrostep the host drives (`startRestoredHostInvokes`), and
-    // until then are neither running nor gone.
-    std::vector<RestoredHostInvoke> restoredHostInvokes_;
+    // Every host-run invocation of this session that was started and has neither
+    // ended nor been cancelled, and every one a restore re-armed and has yet to
+    // start (docs/adr/0045), with the token of each start. Held by the engine rather
+    // than by the generated machine because "is this one still running?" is the
+    // question every ending and the exit chain (`cancelHostInvoke`) have to answer,
+    // and answering it in each backend's template would be the same bookkeeping
+    // written once per language. The bookkeeping itself is the shared layer's
+    // (docs/adr/0084, D5): this engine hands it its scheduler to arm and drop
+    // deadlines, and raises what each operation leaves it to raise.
+    Core::HostInvokeLedger hostInvokes_;
     // docs/adr/0045: the children a restore resumed, whose routers are asked of the
     // factory once the host has registered it (`oweChildMesh`), each as the call that
     // asks.
@@ -1826,7 +1794,7 @@ public:
         // macrostep and the deadline it kept is armed there, so until that tick the
         // scheduler holds nothing to wait for, and a host asleep on this answer would
         // never drive the machine at all. That is now.
-        if (!restoredHostInvokes_.empty()) {
+        if (hostInvokes_.hasRestored()) {
             return std::chrono::milliseconds::zero();
         }
         std::optional<std::chrono::milliseconds> soonest;
@@ -3891,10 +3859,10 @@ public:
      * into `error.execution` — an invoke nobody ran is the same fact whether
      * the type was undeclared or the handler was never wired up.
      *
-     * A started invocation is RECORDED here; see `startedHostInvokes_` for why
-     * that bookkeeping is the engine's. The token is assigned and recorded
-     * BEFORE the handler runs, so a handler that completes synchronously
-     * completes an invocation the engine already knows is running.
+     * A started invocation is RECORDED here, in the ledger (`hostInvokes_`, which
+     * says why that bookkeeping is the engine's). The token is assigned and
+     * recorded BEFORE the handler runs, so a handler that completes
+     * synchronously completes an invocation the engine already knows is running.
      *
      * §scxml-6.4: a completion the host reports NOW takes the same door as one
      * it reports later, completeHostInvoke(), so the two cannot disagree about
@@ -3909,41 +3877,12 @@ public:
      * kept for "no invoker ran it", asked first because it is the prior fact.
      */
     bool performHostInvoke(const ::SCE::HostInvokeRequest &request) {
-        const auto it = invokers_->handlers.find(request.processorType);
-        if (it == invokers_->handlers.end()) {
+        const auto report =
+            hostInvokes_.start(*invokers_, request, ownSessionId(), scheduler_, [this] { return schedNowMs(); });
+        if (!report.has_value()) {
             return false;
         }
-        ::SCE::HostInvokeRequest started = request;
-        std::optional<uint64_t> deadlineMs;
-        const auto deadlineParam = started.params.find(std::string(::SCE::HOST_INVOKE_DEADLINE_PARAM));
-        if (deadlineParam != started.params.end()) {
-            const std::vector<std::string> written = deadlineParam->second;
-            started.params.erase(deadlineParam);
-            if (written.size() == 1) {
-                deadlineMs = ::SCE::parseHostInvokeDeadlineMs(written.front());
-            }
-            if (!deadlineMs.has_value()) {
-                if (auto error = policy_.getEventFromName("error.execution")) {
-                    std::string joined;
-                    for (const auto &value : written) {
-                        joined += (joined.empty() ? "" : ",") + value;
-                    }
-                    raise(EventWithMetadata(*error, "<invoke type='" + request.processorType + "' id='" +
-                                                        request.invokeId +
-                                                        "'>: " + std::string(::SCE::HOST_INVOKE_DEADLINE_PARAM) + "='" +
-                                                        joined + "' is not a whole number of milliseconds"));
-                }
-                return true;
-            }
-        }
-        std::optional<uint64_t> deadlineAtMs;
-        if (deadlineMs.has_value()) {
-            // Held at the clock's maximum: the largest deadline the grammar
-            // admits would otherwise wrap into the past and fire at once.
-            const uint64_t now = schedNowMs();
-            deadlineAtMs = *deadlineMs > UINT64_MAX - now ? UINT64_MAX : now + *deadlineMs;
-        }
-        startHostInvoke(it->second, std::move(started), deadlineAtMs);
+        raiseHostInvokeReport(*report);
         return true;
     }
 
@@ -4013,133 +3952,92 @@ private:
     }
 
     /**
-     * @brief The start itself, once the invoker is known and the deadline, if there is
-     *        one, is the moment of this engine's clock it comes due
-     *
-     * The token is assigned and the run recorded before the handler is asked, so a
-     * handler that completes at once completes a run the engine already knows. A restore
-     * starts an invocation again through here, with the deadline it had left (SCE
-     * Accepted Subset §2.15).
-     */
-    void startHostInvoke(const ::SCE::HostInvokeHandler &handler, ::SCE::HostInvokeRequest request,
-                         std::optional<uint64_t> deadlineAtMs) {
-        const uint64_t token = nextHostInvokeToken_++;
-        request.token = token;
-        // docs/adr/0045: the session that starts it, which the host may serve or refuse
-        // it by, and names again to end it.
-        request.sessionId = ownSessionId();
-        const auto key = std::make_pair(request.processorType, request.invokeId);
-        // What a save writes is the request as the host was handed it, so the run keeps
-        // its own copy of what the host may go on to read.
-        startedHostInvokes_[key] = StartedHostInvoke{token, request};
-        if (deadlineAtMs.has_value()) {
-            scheduler_.scheduleHostInvokeDeadlineAt(
-                token,
-                std::make_shared<const ::SCE::HostInvokeDeadline>(
-                    ::SCE::HostInvokeDeadline{request.processorType, request.invokeId, token}),
-                *deadlineAtMs);
-        }
-        ::SCE::HostInvokeEvent event;
-        event.start = std::move(request);
-        const auto response = handler(event);
-        if (response.has_value() && response->refusal.has_value()) {
-            // §scxml-6.4.1: the host could not start it, so it never
-            // started — taken back out of the running set with its deadline
-            // dropped, and the element's error raised with what the host said.
-            startedHostInvokes_.erase(key);
-            scheduler_.dropHostInvokeDeadline(token);
-            if (auto error = policy_.getEventFromName("error.execution")) {
-                raise(EventWithMetadata(*error, *response->refusal));
-            }
-            return;
-        }
-        if (response.has_value() && response->doneData.has_value()) {
-            completeHostInvoke(key.first, key.second, token, *response->doneData);
-        }
-    }
-
-    /**
      * @brief Start the invocations a restore re-armed, as the macrostep's start would
      *        start ones the document had just entered (§scxml-6.4)
      *
      * A deadline that came due while the machine was away ends the invocation without a
      * start: the host is not asked to begin what it would be told to stop at once, and the
      * document receives the `error.invoke` the deadline raises. An invoker that is not
-     * registered by now is the same error a document's own start gets.
+     * registered by now is the same error a document's own start gets. What each one
+     * leaves to raise is raised before the next one starts.
      */
     void startRestoredHostInvokes() {
-        if (restoredHostInvokes_.empty()) {
+        if (!hostInvokes_.hasRestored()) {
             return;
         }
-        std::vector<RestoredHostInvoke> restored;
-        restored.swap(restoredHostInvokes_);
-        for (RestoredHostInvoke &host : restored) {
-            const std::string invokeId = host.request.invokeId;
-            if (host.deadline == RestoredDeadline::Passed) {
-                raiseHostInvokeFailure(invokeId, "deadline");
-                continue;
+        hostInvokes_.startRestored(*invokers_, ownSessionId(), scheduler_,
+                                   [this](const Core::HostInvokeReport &report) { raiseHostInvokeReport(report); });
+    }
+
+    /**
+     * @brief Do what a start or a deadline of the ledger left this engine to do
+     *
+     * A start that did not happen is an error of the element (see
+     * `performHostInvoke`), raised as `error.execution` on the internal queue with
+     * what the host said or the engine found. A completion the host returned with the
+     * start ends the run through the door a later completion takes. A deadline is an
+     * event of the invocation, from outside the machine, and takes the external queue.
+     */
+    void raiseHostInvokeReport(const Core::HostInvokeReport &report) {
+        if (const auto *notStarted = std::get_if<Core::HostInvokeNotStarted>(&report)) {
+            if (auto error = policy_.getEventFromName("error.execution")) {
+                raise(EventWithMetadata(*error, notStarted->reason));
             }
-            const auto handler = invokers_->handlers.find(host.request.processorType);
-            if (handler == invokers_->handlers.end()) {
-                if (auto error = policy_.getEventFromName("error.execution")) {
-                    raise(
-                        EventWithMetadata(*error, "<invoke> names an invoker the host declared but never registered"));
-                }
-                continue;
-            }
-            startHostInvoke(handler->second, std::move(host.request),
-                            host.deadline == RestoredDeadline::At ? std::optional<uint64_t>(host.atMs) : std::nullopt);
+        } else if (const auto *completed = std::get_if<Core::HostInvokeCompletedAtOnce>(&report)) {
+            (void)endHostInvoke(completed->processorType, completed->invokeId, completed->token, false,
+                                completed->doneData, "", "");
+        } else if (const auto *timedOut = std::get_if<Core::HostInvokeTimedOut>(&report)) {
+            raiseHostInvokeFailure(*timedOut);
         }
     }
 
     /**
-     * @brief Tell the document a host-run invocation failed, as `error.invoke.<id>` with
-     *        the reason as its data
+     * @brief Tell the document a host-run invocation's deadline passed, as
+     *        `error.invoke.<id>` with the reason as its data
      *
-     * `"deadline"` for a deadline that passed. The JSON spelling of the string, as every
-     * other backend carries it: §scxml-B-2-8-1 reads data as JSON first, so a bare word
-     * would reach `_event.data` only through the fallback rung.
+     * The reason is the JSON spelling of the string `"deadline"`, as every other backend
+     * carries it: §scxml-B-2-8-1 reads data as JSON first, so a bare word would reach
+     * `_event.data` only through the fallback rung.
      */
-    void raiseHostInvokeFailure(const std::string &invokeId, const std::string &reason) {
+    void raiseHostInvokeFailure(const Core::HostInvokeTimedOut &timedOut) {
         // §scxml-5.10: `_event.name` is the specific name, whichever descriptor of the
         // document (`error.invoke.<id>`, `error.invoke`, `error`) it was matched through.
-        const std::string name = std::string(::SCE::Core::InvokeHelper::ERROR_INVOKE_PREFIX) + invokeId;
+        const std::string name = timedOut.eventName();
         const auto failure = resolveEventByName(name);
         if (failure) {
-            EventWithMetadata raised(*failure, "\"" + reason + "\"", "", "", "external", "", invokeId);
+            EventWithMetadata raised(*failure, Core::HostInvokeTimedOut::data(), "", "", "external", "",
+                                     timedOut.invokeId);
             raised.name = arrivalNameOf(*failure, name);
             raiseExternal(raised);
         }
     }
 
     /// The one body behind a host-run invocation's completion and failure: the
-    /// token check, the deadline drop, and the event.
+    /// ledger's token check and deadline drop, and the event.
     bool endHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token, bool failed,
                        const std::string &data, const std::string &origin, const std::string &originType) {
-        const auto key = std::make_pair(processorType, invokeId);
-        const auto running = startedHostInvokes_.find(key);
-        if (running == startedHostInvokes_.end() || running->second.token != token) {
+        const auto ending =
+            hostInvokes_.endRun(processorType, invokeId, token, failed, data, origin, originType, scheduler_);
+        if (!ending.has_value()) {
             return false;
         }
-        startedHostInvokes_.erase(running);
-        scheduler_.dropHostInvokeDeadline(token);
         // §scxml-5.10.1: the completion is an event of the invocation, so its
         // `_event.invokeid` is the invocation's id — the one the event names and
         // the host was handed.
         // §scxml-3.12.1: the specific `done.invoke.<id>` / `error.invoke.<id>`
         // when the document names it, and otherwise the generic event its
         // descriptor matches — as an SCXML child's completion does.
-        const std::string name = failed ? std::string(::SCE::Core::InvokeHelper::ERROR_INVOKE_PREFIX) + invokeId
-                                        : ::SCE::Core::InvokeHelper::createDoneInvokeEventName(invokeId);
+        const std::string name = ending->eventName();
         // §scxml-5.10: `_event.name` is the specific name, whichever descriptor of the
         // document (`done.invoke.<id>`, `done.invoke`, `done`) it was matched through.
         const auto ended = resolveEventByName(name);
         if (ended) {
-            EventWithMetadata completion(*ended, data, origin, "", "external",
-                                         originType.empty() ? SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE : originType,
-                                         invokeId);
+            EventWithMetadata completion(*ended, ending->data, ending->origin, "", "external",
+                                         ending->originType.empty() ? SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE
+                                                                    : ending->originType,
+                                         ending->invokeId);
             completion.name = arrivalNameOf(*ended, name);
-            completion.hostInvokeToken = token;
+            completion.hostInvokeToken = ending->token;
             raiseExternal(completion);
         } else {
             // The degradation raiseExternal(name) has: a document that wrote
@@ -4176,39 +4074,12 @@ public:
     bool cancelHostInvoke(const std::string &processorType, const std::string &invokeId) {
         requireOwner("cancelHostInvoke");
         // docs/adr/0045: one a restore re-armed and has not started again was never
-        // started by this engine, so there is nothing to tell the host to stop; it is
-        // dropped, so it is never started.
-        restoredHostInvokes_.erase(std::remove_if(restoredHostInvokes_.begin(), restoredHostInvokes_.end(),
-                                                  [&](const RestoredHostInvoke &restored) {
-                                                      return restored.request.processorType == processorType &&
-                                                             restored.request.invokeId == invokeId;
-                                                  }),
-                                   restoredHostInvokes_.end());
-        const auto running = startedHostInvokes_.find(std::make_pair(processorType, invokeId));
-        if (running == startedHostInvokes_.end()) {
-            return false;
-        }
-        const uint64_t token = running->second.token;
-        startedHostInvokes_.erase(running);
-        scheduler_.dropHostInvokeDeadline(token);
-        return deliverHostInvokeCancel(processorType, invokeId, token);
+        // started by this engine, so there is nothing to tell the host to stop; the
+        // ledger drops it, so it is never started.
+        return hostInvokes_.cancel(*invokers_, processorType, invokeId, scheduler_);
     }
 
 private:
-    /**
-     * @brief Tell the host to stop start `token` of `invokeId`
-     */
-    bool deliverHostInvokeCancel(const std::string &processorType, const std::string &invokeId, uint64_t token) {
-        const auto it = invokers_->handlers.find(processorType);
-        if (it == invokers_->handlers.end()) {
-            return false;
-        }
-        ::SCE::HostInvokeEvent event;
-        event.cancel = ::SCE::HostInvokeCancel{processorType, invokeId, token};
-        (void)it->second(event);
-        return true;
-    }
-
     /**
      * @brief The deadline of a host-run invocation start came due
      *
@@ -4219,15 +4090,7 @@ private:
      * completion takes, so exactly one of the two happens.
      */
     void expireHostInvoke(const ::SCE::HostInvokeDeadline &deadline) {
-        const auto running = startedHostInvokes_.find(std::make_pair(deadline.processorType, deadline.invokeId));
-        if (running == startedHostInvokes_.end() || running->second.token != deadline.token) {
-            return;
-        }
-        startedHostInvokes_.erase(running);
-        if (!deliverHostInvokeCancel(deadline.processorType, deadline.invokeId, deadline.token)) {
-            return;
-        }
-        raiseHostInvokeFailure(deadline.invokeId, "deadline");
+        raiseHostInvokeReport(hostInvokes_.expire(*invokers_, deadline));
     }
 
 public:

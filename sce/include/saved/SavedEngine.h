@@ -43,6 +43,7 @@
 
 #include "core/ConfigurationHelper.h"
 #include "core/EventNameResolver.h"
+#include "core/HostInvokeLedger.h"
 #include "core/HostProcessor.h"
 #include "saved/SavedState.h"
 #include "static/StaticExecutionEngine.h"
@@ -305,7 +306,7 @@ struct EngineAccess {
         state.sessionId = sessionId;
         state.invokeStarts = policy.invokeStarts();
         state.hostInvokes = saveHostInvokes(engine, wallNowMs);
-        state.hostInvokeToken = static_cast<std::int64_t>(engine.nextHostInvokeToken_);
+        state.hostInvokeToken = static_cast<std::int64_t>(engine.hostInvokes_.nextToken());
         state.autoSendSeq = static_cast<std::int64_t>(engine.autoSendSeq_);
         for (const auto &queued : engine.externalQueue_.snapshot()) {
             // §scxml-5.10: a queued event is saved under the name it ARRIVED under, so a restore
@@ -370,7 +371,7 @@ struct EngineAccess {
         }
         armPending(engine, judged.pending, wallNowMs);
         rearmHostInvokes(engine, saved.hostInvokes, wallNowMs);
-        engine.nextHostInvokeToken_ = static_cast<std::uint64_t>(saved.hostInvokeToken);
+        engine.hostInvokes_.continueTokensFrom(static_cast<std::uint64_t>(saved.hostInvokeToken));
         engine.autoSendSeq_ = static_cast<std::uint64_t>(saved.autoSendSeq);
         if (saved.invokes.resumed) {
             engine.policy_.resumeChildren(engine, saved.invokes.children, wallNowMs);
@@ -390,49 +391,16 @@ private:
         return out + "]";
     }
 
-    /// The host-run invocations that are running, or re-armed and waiting to start, for a save:
-    /// each with the request it was started with and the moment of the engine's clock its deadline
-    /// comes due, if it has one. Ordered by `(type, id)`, so every backend writes them in the same
-    /// order.
-    template <typename Engine>
-    static std::vector<std::pair<const ::SCE::HostInvokeRequest *, std::optional<std::uint64_t>>>
-    runningHostInvokes(const Engine &engine) {
-        const auto pending = engine.scheduler_.pending();
-        std::vector<std::pair<const ::SCE::HostInvokeRequest *, std::optional<std::uint64_t>>> running;
-        for (const auto &[key, started] : engine.startedHostInvokes_) {
-            std::optional<std::uint64_t> dueAt;
-            for (const auto &entry : pending) {
-                if (entry.hostInvokeDeadline && entry.hostInvokeDeadlineToken == started.token) {
-                    dueAt = entry.fireTime;
-                    break;
-                }
-            }
-            running.emplace_back(&started.request, dueAt);
-        }
-        for (const auto &restored : engine.restoredHostInvokes_) {
-            std::optional<std::uint64_t> dueAt;
-            if (restored.deadline == Engine::RestoredDeadline::At) {
-                dueAt = restored.atMs;
-            } else if (restored.deadline == Engine::RestoredDeadline::Passed) {
-                dueAt = engine.nowMs();
-            }
-            running.emplace_back(&restored.request, dueAt);
-        }
-        std::stable_sort(running.begin(), running.end(), [](const auto &a, const auto &b) {
-            return std::tie(a.first->processorType, a.first->invokeId) <
-                   std::tie(b.first->processorType, b.first->invokeId);
-        });
-        return running;
-    }
-
     /// Every host-run invocation of `engine` that is running, or was re-armed by a restore and
     /// has yet to start, as a saved state holds it: the request it was started with and the
-    /// wall-clock moment its deadline comes due.
+    /// wall-clock moment its deadline comes due. Which they are, in which order, and when each
+    /// comes due on the engine's clock is the ledger's answer (`HostInvokeLedger::running`).
     template <typename Engine>
     static std::vector<SavedHostInvoke> saveHostInvokes(const Engine &engine, std::int64_t wallNowMs) {
         const std::uint64_t now = engine.nowMs();
         std::vector<SavedHostInvoke> hosts;
-        for (const auto &[request, dueAt] : runningHostInvokes(engine)) {
+        for (const auto &[request, dueAt] :
+             engine.hostInvokes_.running(engine.scheduler_, [&engine] { return engine.nowMs(); })) {
             SavedHostInvoke host;
             host.processorType = request->processorType;
             host.invokeId = request->invokeId;
@@ -474,9 +442,7 @@ private:
         for (const auto &entry : engine.scheduler_.pending()) {
             if (entry.hostInvokeDeadline) {
                 const auto &deadline = *entry.hostInvokeDeadline;
-                const auto started =
-                    engine.startedHostInvokes_.find(std::make_pair(deadline.processorType, deadline.invokeId));
-                if (started != engine.startedHostInvokes_.end() && started->second.token == deadline.token) {
+                if (engine.hostInvokes_.holds(deadline)) {
                     continue;
                 }
                 throw StateRefusal("the deadline of the invocation '" + deadline.invokeId +
@@ -713,9 +679,10 @@ private:
     /// start.
     template <typename Engine>
     static void rearmHostInvokes(Engine &engine, const std::vector<SavedHostInvoke> &hosts, std::int64_t wallNowMs) {
+        using Ledger = ::SCE::Core::HostInvokeLedger;
         const std::uint64_t now = engine.nowMs();
         for (const SavedHostInvoke &host : hosts) {
-            typename Engine::RestoredHostInvoke restored;
+            Ledger::RestoredHostInvoke restored;
             restored.request.processorType = host.processorType;
             restored.request.invokeId = host.invokeId;
             restored.request.src = host.src;
@@ -726,13 +693,13 @@ private:
             restored.request.restarted = true;
             if (host.due.has_value()) {
                 if (*host.due <= wallNowMs) {
-                    restored.deadline = Engine::RestoredDeadline::Passed;
+                    restored.deadline = Ledger::RestoredDeadline::Passed;
                 } else {
-                    restored.deadline = Engine::RestoredDeadline::At;
+                    restored.deadline = Ledger::RestoredDeadline::At;
                     restored.atMs = detail::readyAt(now, *host.due, wallNowMs);
                 }
             }
-            engine.restoredHostInvokes_.push_back(std::move(restored));
+            engine.hostInvokes_.rearm(std::move(restored));
         }
     }
 

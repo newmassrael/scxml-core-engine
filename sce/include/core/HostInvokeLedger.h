@@ -13,8 +13,8 @@
 //
 // The ledger owns no clock and raises no event. It arms and drops a deadline through
 // the scheduler of the engine that holds it (`HostInvokeDeadlineSchedulerTrait`), and
-// it answers each operation with a report (`HostInvokeReport`) the engine raises in
-// its own spelling of an event.
+// it answers each operation with what the engine is left to do (`HostInvokeReport`,
+// `HostInvokeEnded`), which the engine does in its own spelling of an event.
 
 #pragma once
 
@@ -81,11 +81,30 @@ struct HostInvokeNotStarted {
 };
 
 /**
+ * @brief A host answered a start with its completion: the engine ends start `token`
+ *        through the door a later completion takes (`HostInvokeLedger::endRun`)
+ *
+ * The ledger does not end the run itself, so a completion the host reports now and
+ * one it reports later are one operation of the engine, and cannot disagree about
+ * whether the invocation is over. No completion the host did not report is made up.
+ */
+struct HostInvokeCompletedAtOnce {
+    /// The `type` the request named.
+    std::string processorType;
+    /// The invocation's id.
+    std::string invokeId;
+    /// The start the host completed.
+    uint64_t token = 0;
+    /// `_event.data` of the completion (`HostInvokeResponse::doneData`).
+    std::string doneData;
+};
+
+/**
  * @brief The one ending of a start: the engine raises `done.invoke.<invokeId>` for a
  *        completion and `error.invoke.<invokeId>` for a failure, carrying `token`
  *
- * Reported only for a start that was still running, so a start ends once, by
- * whichever of completion, failure and deadline comes first.
+ * Answered by `HostInvokeLedger::endRun` only for a start that was still running, so
+ * a start ends once, by whichever of completion, failure and deadline comes first.
  */
 struct HostInvokeEnded {
     /// The invocation's id: the event's `_event.invokeid`, and the end of its name.
@@ -131,11 +150,12 @@ struct HostInvokeTimedOut {
 };
 
 /**
- * @brief What an operation of the ledger leaves the engine to raise
+ * @brief What a start or a deadline of the ledger leaves the engine to do
  *
- * `std::monostate` when there is nothing to raise: the start runs, or nothing ended.
+ * `std::monostate` when there is nothing to do: the start runs, or nothing ended.
  */
-using HostInvokeReport = std::variant<std::monostate, HostInvokeNotStarted, HostInvokeEnded, HostInvokeTimedOut>;
+using HostInvokeReport =
+    std::variant<std::monostate, HostInvokeNotStarted, HostInvokeCompletedAtOnce, HostInvokeTimedOut>;
 
 /**
  * @brief The host-run invocations of one session: running, or re-armed by a restore
@@ -175,11 +195,12 @@ public:
     };
 
     /**
-     * @brief Start a host-run invocation, reporting what the engine raises
+     * @brief Start a host-run invocation, reporting what the engine is left to do
      *
      * `std::nullopt` when no invoker is registered for the request's type, which the
      * engine reports as its own (a generated site raises `error.execution`). Otherwise
-     * the start is recorded and the invoker asked, and the report says what to raise.
+     * the start is recorded and the invoker asked, and the report says what is left: an
+     * error to raise, a completion to end the run with, or nothing.
      *
      * A `_sce_deadline_ms` param is the engine's, not the host's: it is taken out of
      * the request and armed with the start, to come due that many milliseconds after
@@ -424,10 +445,9 @@ private:
      * The token is assigned and the run recorded before the handler is asked, so a
      * handler that completes at once, whether by returning `doneData` or by ending it
      * through the engine before it returns, completes a run the ledger already knows.
-     * A completion the host reports now takes the same door as one it reports later
-     * (`endRun`), so the two cannot disagree about whether the invocation is over, and no
-     * completion the host did not report is made up. A restore starts an invocation
-     * again through here, with the deadline it had left.
+     * A completion the host reports now is handed back (`HostInvokeCompletedAtOnce`) for
+     * the engine to end through the door a later one takes. A restore starts an
+     * invocation again through here, with the deadline it had left.
      */
     template <typename Deadlines>
     HostInvokeReport startRun(const ::SCE::HostInvokeHandler &handler, ::SCE::HostInvokeRequest request,
@@ -462,9 +482,7 @@ private:
             return HostInvokeNotStarted{*response->refusal};
         }
         if (response.has_value() && response->doneData.has_value()) {
-            if (auto ended = endRun(key.first, key.second, token, false, *response->doneData, "", "", deadlines)) {
-                return *std::move(ended);
-            }
+            return HostInvokeCompletedAtOnce{key.first, key.second, token, *response->doneData};
         }
         return std::monostate{};
     }

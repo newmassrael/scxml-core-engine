@@ -69,8 +69,8 @@ PY
 
 mutation_case "a restore does not carry the next token of the host invocations on" <<'PY'
 edit("sce/include/saved/SavedEngine.h",
-     "        engine.nextHostInvokeToken_ = static_cast<std::uint64_t>(saved.hostInvokeToken);",
-     "        engine.nextHostInvokeToken_ = 0;")
+     "        engine.hostInvokes_.continueTokensFrom(static_cast<std::uint64_t>(saved.hostInvokeToken));",
+     "        engine.hostInvokes_.continueTokensFrom(0);")
 PY
 
 mutation_case "a restore does not carry the count of generated send ids on" <<'PY'

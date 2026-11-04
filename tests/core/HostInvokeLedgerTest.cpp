@@ -121,9 +121,10 @@ TEST(HostInvokeLedger, AStartIsRecordedBeforeItsHandlerIsAsked) {
     EXPECT_EQ(endedInside->eventName(), "done.invoke.job");
 }
 
-// A completion the host returns with the start takes the door a later one takes: it
-// ends the run once, and the same token is refused afterwards.
-TEST(HostInvokeLedger, AnImmediateCompletionIsTheOneEnding) {
+// A completion the host returns with the start is handed back for the door a later
+// one takes, with the run still recorded: that door ends it once, and the same token
+// is refused afterwards.
+TEST(HostInvokeLedger, AnImmediateCompletionEndsTheRunThroughTheOneDoor) {
     HostInvokeLedger ledger;
     RecordingDeadlines deadlines;
     ::SCE::TreeInvokers invokers;
@@ -136,13 +137,21 @@ TEST(HostInvokeLedger, AnImmediateCompletionIsTheOneEnding) {
     const auto report = ledger.start(invokers, request("svc", "job"), "root.child", deadlines, now);
 
     ASSERT_TRUE(report.has_value());
-    const auto *ended = std::get_if<HostInvokeEnded>(&*report);
-    ASSERT_NE(ended, nullptr) << "the completion returned with the start was not reported";
-    EXPECT_FALSE(ended->failed);
-    EXPECT_EQ(ended->data, "{\"ok\":true}");
-    EXPECT_EQ(ended->token, 0u);
+    const auto *completed = std::get_if<::SCE::Core::HostInvokeCompletedAtOnce>(&*report);
+    ASSERT_NE(completed, nullptr) << "the completion returned with the start was not reported";
+    EXPECT_EQ(completed->processorType, "svc");
+    EXPECT_EQ(completed->invokeId, "job");
+    EXPECT_EQ(completed->token, 0u);
+    EXPECT_EQ(completed->doneData, "{\"ok\":true}");
     ASSERT_EQ(handed.starts.size(), 1u);
     EXPECT_EQ(handed.starts[0].sessionId, "root.child") << "the request does not name the session that started it";
+
+    const auto ended = ledger.endRun(completed->processorType, completed->invokeId, completed->token, false,
+                                     completed->doneData, "", "", deadlines);
+    ASSERT_TRUE(ended.has_value()) << "the run the host completed at once was not running for its door";
+    EXPECT_FALSE(ended->failed);
+    EXPECT_EQ(ended->data, "{\"ok\":true}");
+    EXPECT_EQ(ended->eventName(), "done.invoke.job");
     EXPECT_FALSE(ledger.endRun("svc", "job", 0, false, "{}", "", "", deadlines).has_value()) << "a start ended twice";
     EXPECT_FALSE(ledger.cancel(invokers, "svc", "job", deadlines)) << "an ended start was cancelled";
     EXPECT_TRUE(handed.cancels.empty());
