@@ -3572,6 +3572,35 @@ enum Commands {
         /// The document to rewrite.
         scxml: String,
     },
+    /// Print the payload schema of an event schema (docs/adr/0087, section 1):
+    /// the JSON Schema (2020-12) of a value of its payload, or its GBNF grammar,
+    /// as the schema's unit declares them (`JSON_SCHEMA`, `GBNF`), byte for
+    /// byte, every bound as this build resolves it (`--limit`).
+    ///
+    /// For a host that is not generated, or a tool. The JSON Schema names the
+    /// `source-hash` `generate` writes for the same document, computed over the
+    /// same source set: pass the `--input-root` and `--deploy` `generate` was
+    /// given. A schema whose type has no grammar (an open enum, two records of
+    /// different documents under one name) is refused by name.
+    PayloadSchema {
+        /// The event-schema document.
+        scxml: String,
+        /// Which spelling to print.
+        #[arg(long, value_enum, default_value_t = PayloadSchemaFormat::JsonSchema)]
+        format: PayloadSchemaFormat,
+        /// Directory the `source-hash` is computed over. Defaults to the
+        /// document's parent directory, as in `generate`.
+        #[arg(long)]
+        input_root: Option<String>,
+        /// The `deploy.yaml` `generate` was given, when it was given one: it is
+        /// part of the source set the hash covers.
+        #[arg(long, value_name = "PATH")]
+        deploy: Option<String>,
+        /// Additional directories searched to resolve `<xi:include>` and
+        /// `<sce:use template>` fragments, as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
     /// Write the file of a Rust deployment (docs/adr/0077 §7): a storage
     /// profile that holds each field of each codec of a set at the capacity a
     /// deploy input's `codecs:` block gives it, or at its bound.
@@ -4482,6 +4511,20 @@ fn main() {
         }
         Commands::CodecFormat { scxml } => cmd_codec_format(&scxml, error_format),
         Commands::BoundSpelling { scxml } => cmd_bound_spelling(&scxml, error_format),
+        Commands::PayloadSchema {
+            scxml,
+            format,
+            input_root,
+            deploy,
+            include_dir,
+        } => cmd_payload_schema(
+            &scxml,
+            format,
+            input_root.as_deref(),
+            deploy.as_deref(),
+            &include_dir,
+            error_format,
+        ),
         Commands::Deployment {
             scxml,
             deploy,
@@ -4642,6 +4685,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::CodecRoles { .. }
         | Commands::CodecFormat { .. }
         | Commands::BoundSpelling { .. }
+        | Commands::PayloadSchema { .. }
         | Commands::Lower { .. }
         | Commands::LowerAlgorithm { .. }
         | Commands::Verify { .. }
@@ -7056,6 +7100,9 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 owned_origin,
                 views,
                 inline_encode,
+                // The digest every file of this run is headed by, which a schema
+                // unit's payload schema names (docs/adr/0087, section 1.1).
+                source_hash: Some(drift_ctx.header.source_hex()),
                 ..Default::default()
             };
 
@@ -7873,6 +7920,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
             owned_origin,
             views,
             inline_encode,
+            // The digest the files of this run are headed by, which the unit of
+            // a schema the document declares in place names in its payload
+            // schema, as a schema document's does (docs/adr/0087, section 1.1).
+            source_hash: Some(drift_ctx.header.source_hex()),
             ..Default::default()
         };
         let codegen_options = sce_build::generator::StatechartCodegenOptions {
@@ -14046,6 +14097,120 @@ fn cmd_bound_spelling(scxml_path: &str, error_format: ErrorFormat) {
     let rewritten = sce_build::forge::bound_spelling::rewritten_document(&content, scxml_path)
         .unwrap_or_else(|err| error_format.emit_forge_and_exit(&err));
     out_bytes(rewritten.as_bytes());
+}
+
+// ── Subcommand: payload-schema ─────────────────────────────────
+//
+// The text a schema unit declares, for a host that has no unit: read as
+// `generate` reads the document (expanded, parsed, its import graph
+// checked), its scope the one the unit's sizes are read in, its hash the one
+// `generate` stamps for the same source set.
+
+/// Which spelling of a payload schema `payload-schema` prints (`--format`).
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum PayloadSchemaFormat {
+    JsonSchema,
+    Gbnf,
+}
+
+fn cmd_payload_schema(
+    scxml_path: &str,
+    format: PayloadSchemaFormat,
+    input_root: Option<&str>,
+    deploy: Option<&str>,
+    include_dirs: &[String],
+    error_format: ErrorFormat,
+) {
+    let content = read_named_document(scxml_path).unwrap_or_else(|e| {
+        cli_exit(CliError::ReadInput {
+            path: scxml_path.to_string(),
+            source: e,
+        })
+    });
+    // The source set `generate` hashes for the same document.
+    let named_input = [Path::new(scxml_path)];
+    let root = input_root
+        .map(PathBuf::from)
+        .unwrap_or_else(|| containing_dir(Path::new(scxml_path)));
+    let drift_ctx = DriftContext::compute(
+        &root,
+        deploy.map(Path::new),
+        if input_root.is_none() {
+            &named_input
+        } else {
+            &[]
+        },
+    );
+    let doc_label = sce_build::DocumentLabel::for_input_path(scxml_path);
+    let base_dir = Path::new(scxml_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let (positions, _) = sce_build::parser::expand_preprocessors(
+        &content,
+        scxml_path,
+        Some(base_dir),
+        &include_dirs.iter().map(PathBuf::from).collect::<Vec<_>>(),
+    )
+    .map(|(expanded, map, deps)| {
+        (
+            sce_build::model::AuthoredPositions::new(scxml_path, expanded, map),
+            deps,
+        )
+    })
+    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
+    let parsed =
+        match sce_build::forge::parser::parse_forge_with_imports(&positions.expanded, doc_label) {
+            Ok(Some(parsed)) => parsed,
+            Ok(None) => cli_exit(CliError::Usage {
+                detail: format!(
+                    "payload-schema reads an event schema (sce:kind=\"event-schema\"); \
+                     {scxml_path} is a statechart"
+                ),
+            }),
+            Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+        };
+    let sce_build::forge::model::ForgeDocument::EventSchema(schema) = &parsed.document else {
+        cli_exit(CliError::Usage {
+            detail: format!(
+                "payload-schema reads an event schema (sce:kind=\"event-schema\"); {scxml_path} \
+                 is a document of sce:kind=\"{}\"",
+                parsed.document.kind()
+            ),
+        })
+    };
+    // The import graph is held to what `generate` holds it to before anything
+    // reads an import.
+    if let Err(e) =
+        sce_build::forge::cross_kind_check::check(&parsed, base_dir, doc_label.diagnostic_label)
+    {
+        error_format.emit_forge_and_exit(&positions.authored(e));
+    }
+    let payload = sce_build::forge::payload_schema::PayloadSchema::of_event_schema(
+        schema,
+        &parsed.imports,
+        base_dir,
+        Some(&drift_ctx.header.source_hex()),
+    )
+    .unwrap_or_else(|why| {
+        error_format.emit_forge_and_exit(&sce_build::forge::error::Located::in_file(
+            sce_build::forge::error::GenerateError::unsupported(format!(
+                "the payload of `{}` has no grammar: {why}",
+                schema.name
+            ))
+            .into(),
+            doc_label.diagnostic_label,
+        ))
+    });
+    out_bytes(
+        payload
+            .text(match format {
+                PayloadSchemaFormat::JsonSchema => {
+                    sce_build::forge::payload_schema::PayloadFormat::JsonSchema
+                }
+                PayloadSchemaFormat::Gbnf => sce_build::forge::payload_schema::PayloadFormat::Gbnf,
+            })
+            .as_bytes(),
+    );
 }
 
 /// Report every bound `content` writes as an attribute

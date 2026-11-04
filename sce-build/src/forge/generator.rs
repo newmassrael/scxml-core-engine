@@ -1953,7 +1953,7 @@ pub fn generate_cpp_with_imports_and_externs(
         // emit qualified names without re-emitting variants (single
         // source of truth on the Enum kind itself).
         ForgeDocument::EventSchema(m) => {
-            render_event_schema(&env, m, imports, crate::generator::Language::Cpp)?
+            render_event_schema(&env, m, imports, crate::generator::Language::Cpp, options)?
         }
         // RFC §synth-5-P: a Queue is lowered on a language once that
         // language's forge runtime has the algorithms. C++'s has the Lamport
@@ -3599,19 +3599,44 @@ fn composed_schema_field(
     }))
 }
 
+/// `text` as the brace-enclosed initializer of a C or C++ `char` array: one
+/// character constant a byte, sixteen a line, and the terminating zero.
+///
+/// A string literal cannot hold a text of any length on either: ISO C11
+/// (5.2.4.1) promises 4095 characters in one, `-Woverlength-strings`, on under
+/// `-Wpedantic`, refuses a longer one in C and Clang refuses one past 65536 in
+/// C++, and MSVC holds none past 65535 bytes. An initializer of characters is
+/// held to no such limit, so a payload's grammar, as long as its largest text
+/// bound, compiles at every bound.
+fn c_text_initializer(text: &str) -> String {
+    let constants: Vec<String> = text
+        .bytes()
+        .map(|byte| match byte {
+            b'\'' => "'\\''".to_string(),
+            b'\\' => "'\\\\'".to_string(),
+            0x20..=0x7e => format!("'{}'", char::from(byte)),
+            other => format!("'\\x{other:02x}'"),
+        })
+        .chain(std::iter::once("'\\0'".to_string()))
+        .collect();
+    let lines: Vec<String> = constants
+        .chunks(16)
+        .map(|line| format!("    {}", line.join(", ")))
+        .collect();
+    format!("{{\n{}\n}}", lines.join(",\n"))
+}
+
 fn render_event_schema(
     env: &minijinja::Environment,
     m: &EventSchemaModel,
     imports: &[ImportContext],
     _lang: crate::generator::Language,
+    options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     // Each field's type as the one type grammar reads it (docs/adr/0086,
-    // section 1): what the unit's sizes are computed from.
-    let typed: Vec<(String, crate::forge::value_type::ValueType)> = m
-        .fields
-        .iter()
-        .map(|f| (f.id.clone(), f.sce_type.clone()))
-        .collect();
+    // section 1): what the unit's sizes and its payload's grammar are
+    // computed from.
+    let typed = m.typed_fields();
     // Each field seen as one entry where it is one, spelled as the unit has
     // always spelled an entry; a field that is a list, a record or an optional
     // over either is `None` here, and is spelled by its constructors
@@ -3875,16 +3900,59 @@ fn render_event_schema(
     // longest escape, every number at its longest spelling (docs/adr/0086,
     // section 2.2). What a host sizes a buffer the event's data is written into
     // by, and a C11 machine its slot.
+    let scope = import_type_scope(imports);
     let data_max_len =
-        crate::forge::value_type::payload_json_max_len(&typed, &import_type_scope(imports))
-            .map_err(|refusal| {
-                ForgeError::from(GenerateError::unsupported(format!(
-                    "{}: the largest payload of the event has no size the build can compute: \
-                     {refusal}",
-                    m.name
-                )))
-            })?;
+        crate::forge::value_type::payload_json_max_len(&typed, &scope).map_err(|refusal| {
+            ForgeError::from(GenerateError::unsupported(format!(
+                "{}: the largest payload of the event has no size the build can compute: \
+                 {refusal}",
+                m.name
+            )))
+        })?;
     ctx.insert("data_max_len".into(), data_max_len.into());
+    // The payload's grammar in its two spellings, a JSON Schema and a GBNF
+    // grammar, every bound as this build resolved it, and the id a host names
+    // them by (docs/adr/0087, section 1.1, item 5). The JSON Schema names the
+    // source hash of the files this run writes, which a run that writes none
+    // has not. A schema whose type has no grammar (an open enum, two records
+    // under one name) declares neither text, and says why where they would
+    // stand.
+    ctx.insert(
+        "schema_id".into(),
+        crate::forge::payload_schema::schema_id(&m.name, m.revision()).into(),
+    );
+    match crate::forge::payload_schema::PayloadSchema::of(
+        &m.name,
+        m.revision(),
+        &typed,
+        &scope,
+        options.source_hash.as_deref(),
+    ) {
+        Ok(grammar) => {
+            ctx.insert("payload_grammar".into(), true.into());
+            // C and C++ hold each text in a `char` array, since no string
+            // literal of either holds a text of any length.
+            if matches!(
+                l.lang,
+                crate::generator::Language::C11 | crate::generator::Language::Cpp
+            ) {
+                ctx.insert(
+                    "json_schema_chars".into(),
+                    c_text_initializer(&grammar.json_schema).into(),
+                );
+                ctx.insert(
+                    "gbnf_chars".into(),
+                    c_text_initializer(&grammar.gbnf).into(),
+                );
+            }
+            ctx.insert("json_schema".into(), grammar.json_schema.into());
+            ctx.insert("gbnf".into(), grammar.gbnf.into());
+        }
+        Err(why) => {
+            ctx.insert("payload_grammar".into(), false.into());
+            ctx.insert("payload_grammar_absent".into(), why.to_string().into());
+        }
+    }
     ctx.insert("fields".into(), serde_json::json!(fields));
     // A field that may be absent, at any depth of its type, is held in a type
     // C++'s `<optional>`, C11's `sce/forge/optional.h` and Python's `typing`
@@ -23249,9 +23317,13 @@ pub fn generate_kotlin_with_imports(
             render_enum(&env, m, imports, crate::generator::Language::Kotlin)?
         }
         // EventSchema kind: see cpp dispatch.
-        ForgeDocument::EventSchema(m) => {
-            render_event_schema(&env, m, imports, crate::generator::Language::Kotlin)?
-        }
+        ForgeDocument::EventSchema(m) => render_event_schema(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Kotlin,
+            options,
+        )?,
         // Queue kind: see cpp dispatch.
         ForgeDocument::Queue(m) => render_queue_kotlin(&env, m, imports, options)?,
         // Broadcast log: see cpp dispatch. Kotlin's forge runtime has the row
@@ -23464,7 +23536,7 @@ pub fn generate_rust_with_imports_and_externs(
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Rust)?,
         // EventSchema kind: see cpp dispatch.
         ForgeDocument::EventSchema(m) => {
-            render_event_schema(&env, m, imports, crate::generator::Language::Rust)?
+            render_event_schema(&env, m, imports, crate::generator::Language::Rust, options)?
         }
         // RFC §synth-5-P: the generated type names a queue of
         // `sce_forge_runtime::queue`, which has the bounded storage mode.
@@ -27726,7 +27798,7 @@ pub fn generate_go_with_imports(
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Go)?,
         // EventSchema kind: see cpp dispatch.
         ForgeDocument::EventSchema(m) => {
-            render_event_schema(&env, m, imports, crate::generator::Language::Go)?
+            render_event_schema(&env, m, imports, crate::generator::Language::Go, options)?
         }
         // Queue kind: see cpp dispatch. Go's runtime has the same two rows
         // (`sce-forge-runtime/queue`).
@@ -27965,9 +28037,13 @@ pub fn generate_python_with_imports(
             render_enum(&env, m, imports, crate::generator::Language::Python)?
         }
         // EventSchema kind: see cpp dispatch.
-        ForgeDocument::EventSchema(m) => {
-            render_event_schema(&env, m, imports, crate::generator::Language::Python)?
-        }
+        ForgeDocument::EventSchema(m) => render_event_schema(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Python,
+            options,
+        )?,
         // Queue kind: see cpp dispatch.
         ForgeDocument::Queue(m) => render_queue_python(&env, m, imports, options)?,
         // Broadcast log: see cpp dispatch. Python's forge runtime has the row
@@ -28197,7 +28273,9 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Algorithm(m) => {
             render_algorithm(&env, m, imports, Language::Swift, options)?
         }
-        ForgeDocument::EventSchema(m) => render_event_schema(&env, m, imports, Language::Swift)?,
+        ForgeDocument::EventSchema(m) => {
+            render_event_schema(&env, m, imports, Language::Swift, options)?
+        }
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, Language::Swift)?,
         ForgeDocument::Condition(m) => render_condition(&env, m, imports, Language::Swift)?,
         ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, Language::Swift)?,
@@ -29045,7 +29123,7 @@ pub fn generate_c11_with_imports_and_externs(
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::C11)?,
         // EventSchema kind: see cpp dispatch.
         ForgeDocument::EventSchema(m) => {
-            render_event_schema(&env, m, imports, crate::generator::Language::C11)?
+            render_event_schema(&env, m, imports, crate::generator::Language::C11, options)?
         }
         // Queue kind: see cpp dispatch.
         ForgeDocument::Queue(m) => render_queue_c(&env, m, imports, options)?,
@@ -41576,6 +41654,22 @@ fn to_rust_variant(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::forge::model::{ForgeKind, SceType};
+
+    /// A C or C++ unit holds a text constant as its bytes, each one character
+    /// constant: a printable one as itself, a quote and a backslash escaped,
+    /// every other byte in hex, then the zero that ends it, sixteen a line.
+    #[test]
+    fn a_text_constant_of_c_is_its_bytes_and_a_zero() {
+        assert_eq!(
+            c_text_initializer("a'\\\n\u{e9}"),
+            "{\n    'a', '\\'', '\\\\', '\\x0a', '\\xc3', '\\xa9', '\\0'\n}"
+        );
+        let long = c_text_initializer(&"x".repeat(16));
+        assert_eq!(
+            long,
+            format!("{{\n    {},\n    '\\0'\n}}", ["'x'"; 16].join(", "))
+        );
+    }
 
     /// Each backend spells an optional value by one type over its present
     /// value's (docs/adr/0055, section 5), `T?` in Kotlin and Swift; C11 is the one

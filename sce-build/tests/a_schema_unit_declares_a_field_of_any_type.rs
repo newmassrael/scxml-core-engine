@@ -93,7 +93,7 @@ fn run(
                 .expect("under the output")
                 .to_string_lossy()
                 .into_owned();
-            files.push((relative, without_hashes(&text)));
+            files.push((relative, without_hashes(&with_char_arrays_read(&text))));
         }
     }
     files.sort();
@@ -109,6 +109,63 @@ fn run(
         String::from_utf8_lossy(&output.stderr)
     );
     (output.status.success(), files, records)
+}
+
+/// The character constant at `at` (`'a'`, `'\''`, `'\x7b'`, `'\0'`): the
+/// character it is, and where the text after it begins.
+fn char_constant(chars: &[char], at: usize) -> Option<(char, usize)> {
+    if chars.get(at) != Some(&'\'') {
+        return None;
+    }
+    match chars.get(at + 1..)? {
+        ['\\', 'x', high, low, '\'', ..] => {
+            let byte = u8::from_str_radix(&format!("{high}{low}"), 16).ok()?;
+            Some((char::from(byte), at + 6))
+        }
+        ['\\', '0', '\'', ..] => Some(('\0', at + 4)),
+        ['\\', escaped, '\'', ..] => Some((*escaped, at + 4)),
+        [c, '\'', ..] if *c != '\\' => Some((*c, at + 3)),
+        _ => None,
+    }
+}
+
+/// `text` with each run of two or more character constants, which a C or C++
+/// unit spells a text constant in (`'a', 'b', ...`, docs/adr/0087 section
+/// 1.1), written as the one string they spell: a source hash inside the
+/// payload schema is then a run of hexadecimal characters as anywhere else.
+fn with_char_arrays_read(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::new();
+    let mut at = 0;
+    while at < chars.len() {
+        let mut spelled = String::new();
+        let mut end = at;
+        while let Some((c, after)) = char_constant(&chars, end) {
+            spelled.push(c);
+            end = after;
+            let mut next = after;
+            while chars
+                .get(next)
+                .is_some_and(|c| *c == ',' || c.is_whitespace())
+            {
+                next += 1;
+            }
+            if char_constant(&chars, next).is_none() {
+                break;
+            }
+            end = next;
+        }
+        if spelled.chars().count() >= 2 {
+            out.push('"');
+            out.push_str(&spelled);
+            out.push('"');
+            at = end;
+        } else {
+            out.push(chars[at]);
+            at += 1;
+        }
+    }
+    out
 }
 
 /// `text` with every run of 64 lowercase hexadecimal characters, a source hash,

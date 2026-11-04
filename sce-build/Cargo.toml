@@ -1742,5 +1742,13 @@ name = "a_rust_machine_reads_a_composed_payload_at_any_depth"
 path = "tests/a_rust_machine_reads_a_composed_payload_at_any_depth.rs"
 required-features = ["cli"]
 
+# A schema unit declares its payload's JSON Schema and GBNF grammar on every backend, as
+# `payload-schema` prints them (docs/adr/0087, section 1). It runs `sce-codegen`, so it
+# carries the `cli` gate.
+[[test]]
+name = "a_schema_unit_declares_the_grammar_of_its_payload"
+path = "tests/a_schema_unit_declares_the_grammar_of_its_payload.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
