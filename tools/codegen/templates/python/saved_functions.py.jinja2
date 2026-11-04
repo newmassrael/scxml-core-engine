@@ -110,6 +110,11 @@ SAVED_SHAPE = sce_saved_state.SavedShape(
         ),
 {% endfor %}
     ],
+{% if static_saved_shape.features is not none %}
+    # The configuration of the product line this machine was built for: a state
+    # taken in another is refused by the features that differ.
+    features=[{% for feature in static_saved_shape.features %}{{ feature | py_string_literal }}{{ ", " if not loop.last }}{% endfor %}],
+{% endif %}
 )
 
 # The document's `<history>` pseudo-states, by the id a saved state keys them by:

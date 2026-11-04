@@ -9,6 +9,7 @@ record schema or an enum was revised (docs/adr/0044). Cross-language sibling:
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Dict
 
@@ -30,6 +31,7 @@ from sce_runtime.saved_state import (
     SavedState,
     StateRefusal,
     WidenedField,
+    check_saved_features,
     refusal_within,
     saved_state_from_json,
     upgrade_saved_state,
@@ -167,6 +169,113 @@ def test_a_child_that_states_a_format_is_refused() -> None:
     with pytest.raises(StateRefusal) as refused:
         saved_state_from_json(text)
     assert str(refused.value) == "'invokes[0].session' states a format, which only the root of a tree does"
+
+
+def test_a_saved_state_is_read_back_as_it_was_written() -> None:
+    # The configuration a session was taken in (docs/adr/0057, section 7) is the
+    # last member of the session, after `revisions`, in the root and in each child.
+    child_session = _MINIMAL.replace('"root"', '"root.w"', 1) + ',"features":[]'
+    child = '{"id":"w","start":"1","invokeid":"w","document":"w","session":{' + child_session + "}}"
+    revisions = '"revisions":{"reading.taken":{"revision":3,"fields":"' + "0" * 64 + '"}}'
+    text = (
+        '{"format":2,'
+        + _MINIMAL.replace('"invokes":[]', '"invokes":[' + child + "]", 1)
+        + ","
+        + revisions
+        + ',"features":["session-unicast","tls"]}'
+    )
+    saved = saved_state_from_json(text)
+    assert saved.features == ["session-unicast", "tls"]
+    # The empty configuration is one, and no configuration is another.
+    assert saved.invokes.children[0].session.features == []
+    assert saved.to_json() == text
+    # A machine of no product line records no configuration, and its text is the
+    # one it was before configurations were recorded.
+    plain = replace(saved, features=None)
+    assert plain.to_json() == text.replace(',"features":["session-unicast","tls"]', "", 1)
+    assert saved_state_from_json(plain.to_json()).features is None
+    # Format 1 records it too, after `external` when no revision is past its first.
+    format1 = (
+        '{"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},'
+        '"pending":[],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[],'
+        '"features":["tls"]}'
+    )
+    taken = saved_state_from_json(format1)
+    assert taken.format() == SAVED_FORMAT_1
+    assert taken.features == ["tls"]
+    assert taken.to_json() == format1
+
+
+def test_a_state_of_another_configuration_is_refused_by_the_features_that_differ() -> None:
+    # A restore judges the configuration a state was taken in before its shape,
+    # and names the features that differ (docs/adr/0057, section 7).
+    def taken(features):
+        return SavedState(shape="a" * 64, features=None if features is None else list(features))
+
+    def refused(saved: SavedState, built) -> str:
+        with pytest.raises(StateRefusal) as refusal:
+            check_saved_features(saved, built)
+        return str(refusal.value)
+
+    check_saved_features(taken(None), None)
+    check_saved_features(taken([]), [])
+    check_saved_features(taken(["a", "b"]), ["a", "b"])
+    assert refused(taken(["a", "b"]), ["a", "c"]) == (
+        "the saved state was taken with the features [a, b] on, and this machine is built "
+        "with [a, c]: [b] on only where it was saved, [c] on only in this build"
+    )
+    assert refused(taken(["a"]), []) == (
+        "the saved state was taken with the features [a] on, and this machine is built "
+        "with []: [a] on only where it was saved"
+    )
+    assert refused(taken(None), ["a"]) == (
+        "the saved state records no features, and this machine is built with the features [a] on"
+    )
+    assert refused(taken([]), None) == (
+        "the saved state was taken with the features [] on, and this machine is built "
+        "from a document of no feature model"
+    )
+    # Judged before the shape: a state of another build is refused for its
+    # features even where its shape differs too.
+    shape = SavedShape(
+        first="first",
+        revised="revised",
+        format2_first="first2",
+        format2_revised="revised2",
+        features=["a"],
+    )
+    with pytest.raises(StateRefusal) as other_build:
+        upgrade_saved_state(taken(["b"]), shape)
+    assert str(other_build.value).startswith("the saved state was taken with the features [b] on")
+    # Of the same configuration, the shape is judged next.
+    with pytest.raises(StateRefusal) as other_shape:
+        upgrade_saved_state(taken(["a"]), shape)
+    assert str(other_shape.value) == (
+        f"the saved state is of a document of shape {'a' * 64}, and this machine's is first"
+    )
+
+
+def _format1_with_features(features: str) -> str:
+    return (
+        '{"format":1,"shape":"s","configuration":["s"],"current":"s","variables":{},"history":{},'
+        '"pending":[],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[],'
+        '"features":' + features + "}"
+    )
+
+
+def test_the_features_of_a_saved_state_are_a_sorted_set() -> None:
+    # `features` is a set, written sorted: a text that repeats a feature or names
+    # them out of order is refused as it is read.
+    assert saved_state_from_json(_format1_with_features('["a","b"]')).features == ["a", "b"]
+    for written, reason in [
+        ('["b","a"]', "'features' is not in order or names a feature twice; it is a set, sorted"),
+        ('["a","a"]', "'features' is not in order or names a feature twice; it is a set, sorted"),
+        ('"a"', "'features' is not an array"),
+        ('["a",1]', "'features' is not a text"),
+    ]:
+        with pytest.raises(StateRefusal) as refused:
+            saved_state_from_json(_format1_with_features(written))
+        assert str(refused.value) == reason, written
 
 
 def test_a_json_number_keeps_the_spelling_it_was_written_in() -> None:

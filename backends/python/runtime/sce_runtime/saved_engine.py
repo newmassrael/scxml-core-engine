@@ -156,7 +156,9 @@ def save_session(
 
     A machine any of whose record schemas or enums is past its first revision names
     each such revision in ``revisions`` and writes the revised shape; any other
-    writes the first shape and no ``revisions``. The state is format 2: the
+    writes the first shape and no ``revisions``. A machine of a product line
+    writes the features its build turns on in ``features``; any other writes no
+    ``features``. The state is format 2: the
     machine's own id, how many times each ``<invoke>`` has started, and children,
     each running child with its whole state, which the generated machine saved
     through the child's own document, in document order.
@@ -209,6 +211,9 @@ def save_session(
     state = SavedState(
         shape=shape.format2_revised if revisions else shape.format2_first,
         revisions=revisions,
+        # The configuration of a product line the machine was built for, which a
+        # restore judges before the shape (docs/adr/0057, section 7).
+        features=None if shape.features is None else list(shape.features),
         configuration=configuration,
         current=policy.get_state_name(engine.current_state),
         variables=variables,

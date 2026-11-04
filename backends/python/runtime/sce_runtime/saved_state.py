@@ -63,6 +63,7 @@ __all__ = [
     "SavedState",
     "StateRefusal",
     "WidenedField",
+    "check_saved_features",
     "check_saved_shape",
     "refusal_within",
     "saved_state_from_json",
@@ -288,7 +289,11 @@ class SavedState:
     ``<send idlocation>``; ``external`` the external queue, front first;
     ``revisions`` the revision each record schema and enum past its first was
     saved at, ordered by key (empty when every one is in its first revision);
-    ``session_id`` the session's own id (``_sessionid``), an XML Nmtoken in format
+    ``features`` the configuration of a product line the machine was built for
+    (docs/adr/0057, section 7): the features it turns on, sorted, each once, and
+    ``None`` for a machine of no product line, which is every machine of a
+    document that imports no feature model; a restore judges it before the shape
+    (:func:`check_saved_features`); ``session_id`` the session's own id (``_sessionid``), an XML Nmtoken in format
     2 and empty in a format-1 state, which holds none; ``invoke_starts`` how many
     times each ``<invoke>`` of the document has started in this session, for each
     started at least once, in document order (empty in a format-1 state)."""
@@ -305,6 +310,7 @@ class SavedState:
     auto_send_seq: int = 0
     external: List[SavedEvent] = field(default_factory=list)
     revisions: List[SavedRevision] = field(default_factory=list)
+    features: Optional[List[str]] = None
     session_id: str = ""
     invoke_starts: List[SavedInvokeStart] = field(default_factory=list)
 
@@ -378,6 +384,10 @@ class SavedState:
                 saved.key: {"revision": JsonNumber(str(saved.revision)), "fields": saved.fields}
                 for saved in self.revisions
             }
+        # Absent for a machine of no product line, so the text of every other
+        # machine is the text it was before configurations were recorded.
+        if self.features is not None:
+            members["features"] = list(self.features)
 
 
 def _optional_count(count: Optional[int]) -> Optional[str]:
@@ -573,6 +583,15 @@ def _saved_session_from_json(members: Dict[str, Any], form: int) -> SavedState:
             )
         for key, value in named.items():
             state.revisions.append(_saved_revision_from_json(key, value, "revisions." + key))
+
+    # Optional too: only a machine of a product line records the features it was
+    # built with, as a set, so each is named once and in order. A text compares by
+    # its code points, which orders it as its UTF-8 bytes do.
+    if "features" in members:
+        features = [text_of(item, "features") for item in field_array("features")]
+        if any(earlier >= later for earlier, later in zip(features, features[1:])):
+            raise StateRefusal("'features' is not in order or names a feature twice; it is a set, sorted")
+        state.features = features
 
     state.shape = field_text("shape")
     state.current = field_text("current")
@@ -908,7 +927,10 @@ class SavedShape:
     its enum's document rather than by the alias it is imported under, and
     ``format2_revised`` is ``revised`` as a format-2 state names it. ``records`` is
     each record schema a variable is of, by the event it declares, ordered by it,
-    and ``enums`` each enum a value of the state is of, by its key, ordered by it."""
+    and ``enums`` each enum a value of the state is of, by its key, ordered by it.
+    ``features`` is the configuration of a product line the machine was built for,
+    sorted (:attr:`SavedState.features`), and ``None`` for a machine of no product
+    line."""
 
     first: str
     revised: str
@@ -916,6 +938,49 @@ class SavedShape:
     format2_revised: str
     records: List[RecordLineage] = field(default_factory=list)
     enums: List[EnumLineage] = field(default_factory=list)
+    features: Optional[List[str]] = None
+
+
+def _feature_list(features: List[str]) -> str:
+    """``features`` as a refusal names them: ``[a, b]``."""
+    return "[" + ", ".join(features) + "]"
+
+
+def check_saved_features(saved: SavedState, features: Optional[List[str]]) -> None:
+    """Refuses ``saved`` unless it was taken in the configuration ``features`` of a
+    product line, or both are of none (docs/adr/0057, section 7), judged before the
+    shape, which differs too between builds that differ in states or variables, so
+    a state of another build is refused by the features that differ and not by a
+    digest. A build with fewer features lacks states or data the state may hold,
+    and one with more has data and invocations the saved run never initialised or
+    started: either is refused. Carrying a state across configurations is a
+    migration, which a restore does not do."""
+    taken = saved.features
+    if taken is None:
+        if features is None:
+            return
+        raise StateRefusal(
+            f"the saved state records no features, and this machine is built with the features "
+            f"{_feature_list(features)} on"
+        )
+    if features is None:
+        raise StateRefusal(
+            f"the saved state was taken with the features {_feature_list(taken)} on, and this "
+            "machine is built from a document of no feature model"
+        )
+    if taken == features:
+        return
+    only_saved = [feature for feature in taken if feature not in features]
+    only_built = [feature for feature in features if feature not in taken]
+    differ: List[str] = []
+    if only_saved:
+        differ.append(f"{_feature_list(only_saved)} on only where it was saved")
+    if only_built:
+        differ.append(f"{_feature_list(only_built)} on only in this build")
+    raise StateRefusal(
+        f"the saved state was taken with the features {_feature_list(taken)} on, and this "
+        f"machine is built with {_feature_list(features)}: {', '.join(differ)}"
+    )
 
 
 def check_saved_shape(saved: SavedState, shape: str) -> None:
@@ -941,7 +1006,12 @@ def upgrade_saved_state(saved: SavedState, shape: SavedShape) -> SavedState:
     declare it, and so is one that holds ``null`` in a field a later revision
     widened to optional, since at the revision it was saved at the field was a
     value of its present type and no build wrote it absent (docs/adr/0055,
-    section 6)."""
+    section 6).
+
+    The configuration the state was taken in is judged first
+    (:func:`check_saved_features`), so a state of another build is refused for the
+    features that differ and not for its shape, which differs too."""
+    check_saved_features(saved, shape.features)
     # A format-2 state names an enum by its document and a format-1 state by the
     # alias it is imported under, so each is judged against its own shape
     # (docs/adr/0045, section 2).
