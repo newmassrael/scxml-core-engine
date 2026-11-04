@@ -1190,7 +1190,16 @@ compiler confines the engine, and its inbox is `inbox` (`EngineInbox.swift`), a
 the generated C11 machine: its inbox is `_inbox_post`, bounded on the forge SCQ
 (`sce/inbox.h`), with the capacity its deployment declares (`SCE_MAX_INBOX`); a
 machine driven from a superloop is owned by the superloop, and an interrupt
-handler posts.
+handler posts. So does Rust, whose
+confinement is the type system's (`Engine<P>` is `Send`, not `Sync`, and
+changed only through `&mut self`): the `std` profile's inbox is
+`Engine::inbox`, unbounded on the standard library's channel, and the
+bare-metal profile's is a `BoundedInbox` the deployment declares in a `static`
+and hands to `Engine::attach_inbox`, which refuses a post when full
+(`backends/rust/runtime/src/inbox.rs`). Neither closes when a run ends: a post
+taken after it is applied where the owner next reaches the end of its loop, as
+the direct call would be, since a bare-metal owner sharing a core with its
+posters cannot wait for a closing gate.
 
 **The invariant.** A macrostep runs to completion: no input is observed in the
 middle of one (§scxml-C-1). Every engine holds it by the same mechanism.

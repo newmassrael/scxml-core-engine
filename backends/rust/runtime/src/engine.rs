@@ -11,9 +11,17 @@
 //!
 //! ## Threading model
 //!
-//! Single-threaded. `Engine<P>` is `Send` but **not** `Sync`. The microstep
-//! loop assumes exclusive mutable access. Users needing multi-threaded access
-//! wrap in `Arc<Mutex<Engine<P>>>`.
+//! The rule is ARCHITECTURE.md "Engine Threading". `Engine<P>` is `Send` and
+//! not `Sync`, and every call that changes it takes `&mut self`, so the type
+//! system confines it to the thread that holds it, its owner. Its owner-thread
+//! operations are the external-event raises (`raise_external` and its
+//! spellings), the ends of a host-run invocation (`complete_host_invoke`,
+//! `fail_host_invoke`, `end_host_invoke_in` and theirs), the Mesh deliveries
+//! (`apply_mesh_call`, `apply_mesh_calls`), and the calls that drive it
+//! (`initialize`, `step`, `tick`, `process_event`, `stop`). Another thread
+//! reaches it through its inbox (`crate::inbox`): `inbox()` in the `std`
+//! profile, and the `BoundedInbox` a bare-metal deployment declares and hands
+//! to `attach_inbox`.
 //!
 //! ## Safety invariants
 //!
@@ -982,6 +990,14 @@ pub(crate) struct RunningHostInvoke {
 /// Generic over a [`StatePolicy`] `P` that encodes the state machine structure
 /// at compile time. Matches C++ `StaticExecutionEngine<StatePolicy>`.
 ///
+/// ## Threading (ARCHITECTURE.md "Engine Threading")
+///
+/// Confined to its owner by the type system: `Send`, not `Sync`, and changed
+/// only through `&mut self`. Its owner-thread operations are the ones the
+/// module documentation lists. Its inbox handle is `inbox()` (`EngineInbox`)
+/// in the `std` profile; a bare-metal deployment declares a `BoundedInbox` and
+/// hands it to `attach_inbox`.
+///
 /// ## HAL routing (SCE Protocol-Synthesis RFC §synth-5-J-2)
 ///
 /// The std-touching surface (ticks / wake / irq-save) is reachable through
@@ -1116,6 +1132,16 @@ pub struct Engine<P: StatePolicy> {
     /// through a saved state, so a restored machine never hands the document an
     /// id an earlier run already did — the document may still hold it.
     pub(crate) auto_send_seq: u64,
+    /// This engine's own inbox in the `std` profile (docs/adr/0084), made by
+    /// the first `inbox()` call, so an engine nobody posts to
+    /// keeps no channel. Dropped with the engine, which refuses every post
+    /// made after it.
+    #[cfg(feature = "std")]
+    pub(crate) inbox: core::cell::OnceCell<crate::inbox::OwnedInbox<crate::inbox::InboxInputOf<P>>>,
+    /// The inbox a deployment declared and handed over with `attach_inbox`
+    /// (docs/adr/0084), drained at each macrostep boundary after the engine's
+    /// own. `None` until one is attached.
+    pub(crate) attached_inbox: Option<crate::inbox::AttachedInbox<P>>,
 }
 
 /// Every field of a new [`Engine`] and the value it starts at, handed to
@@ -1160,6 +1186,9 @@ macro_rules! engine_initial_fields {
             scheduler: <P::Scheduler as SchedulerOps>::EMPTY,
             donedata_at_final: <P::DoneData as DoneDataStorage>::EMPTY,
             auto_send_seq: 0,
+            #[cfg(feature = "std")]
+            inbox: core::cell::OnceCell::new(),
+            attached_inbox: None,
         }
     };
 }
@@ -1380,6 +1409,154 @@ impl<P: StatePolicy> Engine<P> {
     /// consumer's executor waker (e.g. embassy `Signal::signal()`).
     pub fn hal_wake(&self) {
         <P::Hal as Hal>::wake();
+    }
+
+    // ════════════════════════════════════════
+    // The inbox (docs/adr/0084, ARCHITECTURE.md "Engine Threading")
+    // ════════════════════════════════════════
+
+    /// This engine's inbox: the handle a thread that does not own the engine
+    /// posts external events and host-run invocations' endings through.
+    ///
+    /// Thread-safe, as is every clone of it; everything else of the engine
+    /// that changes it is an owner-thread operation. What is posted is applied
+    /// by the owner at its next macrostep boundary, before the external queue
+    /// is consulted, in the order the inbox took it, each input by the
+    /// owner-thread operation of the same name. Unbounded, so `post` is
+    /// refused only once this engine is gone. A post taken before the first
+    /// run is applied at that run's first boundary.
+    #[cfg(feature = "std")]
+    pub fn inbox(&self) -> crate::inbox::EngineInbox<P> {
+        crate::inbox::EngineInbox::of(self.inbox.get_or_init(crate::inbox::OwnedInbox::new))
+    }
+
+    /// Drain `inbox`, which the deployment declared in a `static`, at each
+    /// macrostep boundary of this engine, after the engine's own inbox: the
+    /// bare-metal profile's inbox, whose capacity the deployment names
+    /// (`BoundedInbox`). Replaces one attached before; what that one still
+    /// holds stays in it.
+    #[cfg(all(target_has_atomic = "8", target_has_atomic = "ptr"))]
+    pub fn attach_inbox<W: Hal + 'static, const N: usize>(
+        &mut self,
+        inbox: &'static crate::inbox::BoundedInbox<P, N, W>,
+    ) where
+        crate::inbox::InboxInputOf<P>: Send,
+    {
+        let source: crate::inbox::AttachedInbox<P> = inbox;
+        self.attached_inbox = Some(source);
+    }
+
+    /// The macrostep boundary's half of the inbox: apply, on the owner, what
+    /// other threads posted, oldest first, each by the owner-thread operation
+    /// of the same name ([`apply_inbox_input`](Self::apply_inbox_input)). What
+    /// an inbox held when the boundary was reached, so posters that never stop
+    /// cannot hold the owner here; what they post meanwhile waits for the next.
+    fn drain_inbox(&mut self) {
+        // Named by path: the calls on the attached inbox are calls on a trait
+        // object, which need no import, and the profile without `std` makes no
+        // other.
+        #[cfg(feature = "std")]
+        {
+            let due = self
+                .inbox
+                .get()
+                .map_or(0, crate::inbox::InboxSource::per_boundary);
+            for _ in 0..due {
+                let Some(input) = self.inbox.get().and_then(crate::inbox::InboxSource::take) else {
+                    break;
+                };
+                self.apply_inbox_input(input);
+            }
+        }
+        if let Some(attached) = self.attached_inbox {
+            for _ in 0..crate::inbox::InboxSource::per_boundary(attached) {
+                let Some(input) = crate::inbox::InboxSource::take(attached) else {
+                    break;
+                };
+                self.apply_inbox_input(input);
+            }
+        }
+    }
+
+    /// Apply one posted `input` by the call a direct caller on the owner
+    /// makes, so a posted input and a direct one cannot differ.
+    fn apply_inbox_input(&mut self, input: crate::inbox::InboxInputOf<P>) {
+        use crate::inbox::InboxInput;
+        match input {
+            InboxInput::ExternalEvent(event) => self.raise_external_with_meta(event),
+            #[cfg(feature = "std")]
+            InboxInput::ExternalEventByName { name, metadata } => {
+                self.raise_external_by_name_with_meta(&name, &metadata);
+            }
+            #[cfg(feature = "std")]
+            InboxInput::HostInvokeEnding {
+                session_id,
+                processor_type,
+                invoke_id,
+                token,
+                done,
+                data,
+            } => self.apply_posted_host_invoke_ending(
+                session_id.as_deref(),
+                crate::host_processor::HostInvokeEnding {
+                    processor_type: &processor_type,
+                    invoke_id: &invoke_id,
+                    token,
+                    done,
+                    data: &data,
+                },
+            ),
+        }
+    }
+
+    /// A posted host-run invocation's `ending`, applied as the host's own call
+    /// on the owner would be: [`complete_host_invoke`](Self::complete_host_invoke)
+    /// or [`fail_host_invoke`](Self::fail_host_invoke) for this machine when
+    /// `session_id` is `None`, [`end_host_invoke_in`](Self::end_host_invoke_in)
+    /// for that session of the tree otherwise. The token check is theirs, so a
+    /// stale ending is refused here as a direct one is (§scxml-6.4); the poster
+    /// was answered when the inbox took it, so the refusal is logged.
+    #[cfg(feature = "std")]
+    fn apply_posted_host_invoke_ending(
+        &mut self,
+        session_id: Option<&str>,
+        ending: crate::host_processor::HostInvokeEnding<'_>,
+    ) {
+        let Some(session_id) = session_id else {
+            let ended = if ending.done {
+                self.complete_host_invoke(
+                    ending.processor_type,
+                    ending.invoke_id,
+                    ending.token,
+                    ending.data,
+                )
+            } else {
+                self.fail_host_invoke(
+                    ending.processor_type,
+                    ending.invoke_id,
+                    ending.token,
+                    ending.data,
+                    "",
+                    "",
+                )
+            };
+            if !ended {
+                sce_log_debug!(
+                    "Engine: a posted ending of start {} of the '{}' invocation '{}' was refused: \
+                     it was cancelled, has ended, or was started again since",
+                    ending.token,
+                    ending.processor_type,
+                    ending.invoke_id
+                );
+            }
+            return;
+        };
+        if let Err(refusal) = self.end_host_invoke_in(session_id, ending) {
+            sce_log_debug!(
+                "Engine: a posted host-run invocation's ending was refused: {}",
+                refusal.reason()
+            );
+        }
     }
 
     // ════════════════════════════════════════
@@ -5355,6 +5532,8 @@ trait MainLoop {
     fn drop_external_payloads(&mut self);
     /// Start the invocations of the states this macrostep entered.
     fn start_pending_invokes(&mut self);
+    /// Apply what other threads posted to the engine's inbox (docs/adr/0084).
+    fn drain_inbox(&mut self);
 }
 
 impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
@@ -5409,6 +5588,10 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
         // external queue is touched (SCE Accepted Subset §2.15).
         #[cfg(feature = "std")]
         self.engine.start_restored_host_invokes();
+    }
+
+    fn drain_inbox(&mut self) {
+        self.engine.drain_inbox();
     }
 }
 
@@ -5523,6 +5706,15 @@ impl Turn<'_> {
             if !self.loop_state().macrostep_truncated && self.host.queue(false).has_events() {
                 continue;
             }
+
+            // docs/adr/0084: the macrostep is complete, and this is the point
+            // before the external queue is consulted. What other threads
+            // posted since the last boundary is applied here, in the order the
+            // inbox took it, so an event it carries joins the external queue
+            // behind what this macrostep queued. Every input is applied by a
+            // call that queues on the external queue alone, so nothing it does
+            // comes before the internal queue checked above.
+            self.host.drain_inbox();
 
             if !self.host.queue(true).has_events() {
                 break;
@@ -5822,7 +6014,13 @@ impl Turn<'_> {
     /// a host that keeps calling `step()` on a halted machine would otherwise
     /// re-count the same queue on every call, and a count that grows while
     /// nothing arrives is a count nobody can use.
+    ///
+    /// The inbox is drained first (docs/adr/0084): this is the boundary the
+    /// owner reached, and what another thread posted is applied here as the
+    /// direct call made now would be, so an event posted to a machine whose run
+    /// is over is counted with the rest and not held unseen.
     fn end_run(&mut self) {
+        self.host.drain_inbox();
         while let Some(queued) = self.host.queue(true).pop() {
             self.host.core().note_unseen_event(queued.event);
         }

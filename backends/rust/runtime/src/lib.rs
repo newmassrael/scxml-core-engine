@@ -35,10 +35,12 @@
 //!
 //! ## Threading Model
 //!
-//! [`Engine<P>`] is **single-threaded**. It is `Send` but **not** `Sync`.
-//! Callers that need multi-threaded access must wrap in `Arc<Mutex<Engine<P>>>`.
-//! This matches the C++ `StaticExecutionEngine` model — the microstep loop is
-//! single-threaded by design ("you don't pay for what you don't use").
+//! ARCHITECTURE.md "Engine Threading" holds the rule. [`Engine<P>`] is `Send`
+//! and not `Sync`, and is changed only through `&mut self`, so it is confined
+//! to its owner thread by the type system; its owner-thread operations are
+//! listed on [`engine`]. Another thread posts to its inbox ([`inbox`]):
+//! `Engine::inbox` in the `std` profile, and a `BoundedInbox` the deployment
+//! declares and attaches in the bare-metal one.
 //!
 //! ## Script Engine Access
 //!
@@ -433,6 +435,8 @@ pub mod host_processor;
 /// one (docs/adr/0053).
 #[cfg(feature = "http-send")]
 pub mod http;
+// Documented by the module's own `//!`; see `payload_reading` below for why no `///` here.
+pub mod inbox;
 /// §scxml-6.4 invoke lifecycle helpers.
 ///
 /// SCE Protocol-Synthesis RFC §synth-5-J-2: whole-module gated to `!no_std`. `<invoke>` is
@@ -518,6 +522,17 @@ pub use host_processor::{
 };
 #[cfg(feature = "http-send")]
 pub use http::{HttpSendRequest, HttpSendResponse};
+/// docs/adr/0084: the bare-metal profile's inbox, which a deployment declares
+/// in a `static` and hands to [`Engine::attach_inbox`].
+#[cfg(all(target_has_atomic = "8", target_has_atomic = "ptr"))]
+pub use inbox::BoundedInbox;
+/// docs/adr/0084: the `std` profile's inbox handle (`Engine::inbox`) and the
+/// waker a host installs on it.
+#[cfg(feature = "std")]
+pub use inbox::{EngineInbox, InboxWaker};
+/// docs/adr/0084: what a thread that does not own an engine may post to its
+/// inbox, and why a post was refused.
+pub use inbox::{InboxInput, InboxInputOf, InboxRefusal};
 /// The [`log`] facade crate, re-exported so generated code can reach it
 /// without the consumer declaring it.
 ///

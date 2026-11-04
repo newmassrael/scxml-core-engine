@@ -86,9 +86,13 @@ pub trait Hal {
 
     /// Signal the runtime's external-event waiter that work is available.
     ///
-    /// On single-threaded std builds this is a no-op (the macrostep loop
-    /// is driven explicitly by [`crate::Engine::tick`] /
-    /// [`crate::Engine::step`]). No_std consumers wire this to their
+    /// Called on the posting thread after each post an engine's inbox took
+    /// (docs/adr/0084, [`crate::inbox`]): the policy's HAL by the `std`
+    /// profile's inbox handle, and the HAL a `BoundedInbox` names by its post.
+    /// The owner then drives the engine ([`crate::Engine::tick`] /
+    /// [`crate::Engine::step`]), which applies what was posted. [`StdHal`]
+    /// does nothing here, and a `std` host whose machine names it installs a
+    /// waker on the inbox instead. No_std consumers wire this to their
     /// executor's task waker (e.g. embassy's `signal::Signal::signal()`
     /// or an RTOS event-flag set).
     fn wake();
@@ -118,8 +122,9 @@ pub trait Hal {
 /// - `now_ticks_ms` uses `std::time::Instant`'s monotonic-since-process-
 ///   start clock, milliseconds. Process-lifetime monotonicity is guaranteed
 ///   by the platform clock.
-/// - `wake` is a no-op (single-threaded by design — see [`crate::Engine`]
-///   threading-model doc).
+/// - `wake` is a no-op: a `std` host that drives its engine itself learns of
+///   a post through the waker it installs on the engine's inbox
+///   ([`crate::inbox`]).
 /// - `irq_save` direct-passes `f()` — no critical section is needed because
 ///   `Engine` is `!Sync`.
 #[derive(Debug, Clone, Copy, Default)]
@@ -174,9 +179,9 @@ impl Hal for StdHal {
     }
 
     fn wake() {
-        // Single-threaded std build: the macrostep loop is driven by
-        // explicit Engine::tick() / Engine::step() calls. No waker to
-        // notify.
+        // Nothing this type could reach: the waker a std host installs on the
+        // engine's inbox is called beside this, and the macrostep loop is
+        // driven by the host's explicit Engine::tick() / Engine::step() calls.
     }
 
     fn irq_save<F, R>(f: F) -> R
