@@ -212,7 +212,7 @@ protected:
 
 /// One invocation that the host may complete, fail or leave running; `leave` and
 /// `back` exit its state and enter it again.
-const char *const LIFECYCLE = R"(<?xml version="1.0" encoding="UTF-8"?>
+const char *const LIFECYCLE = R"scxml(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
        initial="running" name="host_door_lifecycle">
   <datamodel>
@@ -233,7 +233,7 @@ const char *const LIFECYCLE = R"(<?xml version="1.0" encoding="UTF-8"?>
   </state>
   <final id="completed"/>
   <final id="failed"/>
-</scxml>)";
+</scxml>)scxml";
 
 }  // namespace
 
@@ -283,7 +283,7 @@ TEST_F(HostDoorTest, RegistrationRefusesTheReservedTypesTheSharedTableNames) {
 // was before the door, and a processor or invoker registered for another type
 // does not serve it.
 TEST_F(HostDoorTest, ATypeNobodyServesRaisesErrorExecution) {
-    auto sm = prepare(R"(<?xml version="1.0" encoding="UTF-8"?>
+    auto sm = prepare(R"scxml(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
        initial="s" name="host_door_unserved">
   <datamodel>
@@ -300,7 +300,7 @@ TEST_F(HostDoorTest, ATypeNobodyServesRaisesErrorExecution) {
       <assign location="seen" expr="seen + _event.data + ';'"/>
     </transition>
   </state>
-</scxml>)");
+</scxml>)scxml");
     sm->registerEventProcessor("x-some-other-host", recordingProcessor([](const HostSendRequest &) {
                                    return std::vector<HostSendResponse>{};
                                }));
@@ -318,7 +318,7 @@ TEST_F(HostDoorTest, ATypeNobodyServesRaisesErrorExecution) {
 // The host's processor takes the whole send: it is handed the request and the
 // events it answers arrive on the external queue in the order it wrote them.
 TEST_F(HostDoorTest, AServedSendHandsTheHostItsRequestAndItsRepliesArriveInOrder) {
-    auto sm = prepare(R"(<?xml version="1.0" encoding="UTF-8"?>
+    auto sm = prepare(R"scxml(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
        initial="s" name="host_door_send">
   <datamodel>
@@ -339,7 +339,7 @@ TEST_F(HostDoorTest, AServedSendHandsTheHostItsRequestAndItsRepliesArriveInOrder
     </transition>
   </state>
   <final id="done"/>
-</scxml>)");
+</scxml>)scxml");
     sm->registerEventProcessor(DECLARED_TYPE, recordingProcessor([](const HostSendRequest &) {
                                    return std::vector<HostSendResponse>{{"reply.one", ""}, {"reply.two", ""}};
                                }));
@@ -362,7 +362,7 @@ TEST_F(HostDoorTest, AServedSendHandsTheHostItsRequestAndItsRepliesArriveInOrder
 // A delay is the send's: the processor is handed the send when it elapses, and
 // a <cancel> of its id reaches it while it waits, so the processor never sees it.
 TEST_F(HostDoorTest, ADelayedHostSendIsPerformedWhenDueAndACancelReachesIt) {
-    auto sm = prepare(R"(<?xml version="1.0" encoding="UTF-8"?>
+    auto sm = prepare(R"scxml(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
        initial="s" name="host_door_delayed_send">
   <state id="s">
@@ -374,7 +374,7 @@ TEST_F(HostDoorTest, ADelayedHostSendIsPerformedWhenDueAndACancelReachesIt) {
     <transition event="reply.later" target="done"/>
   </state>
   <final id="done"/>
-</scxml>)");
+</scxml>)scxml");
     sm->registerEventProcessor(DECLARED_TYPE, recordingProcessor([](const HostSendRequest &request) {
                                    // `host.<x>` is answered with `reply.<x>`.
                                    return std::vector<HostSendResponse>{{"reply." + request.eventName.substr(5), ""}};
@@ -488,7 +488,7 @@ TEST_F(HostDoorTest, TheStateExitCancelsTheRunAndAStaleTokenIsRefused) {
 // error.invoke.<id> with the data "deadline". A reply afterwards is refused. A
 // deadline that is not a whole number of milliseconds starts nothing.
 TEST_F(HostDoorTest, ADeadlinePassedEndsTheRunAndAReplyAfterwardsIsRefused) {
-    auto sm = prepare(R"(<?xml version="1.0" encoding="UTF-8"?>
+    auto sm = prepare(R"scxml(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
        initial="timed" name="host_door_deadline">
   <datamodel>
@@ -508,7 +508,7 @@ TEST_F(HostDoorTest, ADeadlinePassedEndsTheRunAndAReplyAfterwardsIsRefused) {
                 target="expired"/>
   </state>
   <final id="expired"/>
-</scxml>)");
+</scxml>)scxml");
     sm->registerInvoker(DECLARED_TYPE, recordingInvoker(invoker_));
     ASSERT_TRUE(sm->start());
     const auto request = invoker_.latest("slow");
@@ -529,7 +529,7 @@ TEST_F(HostDoorTest, ADeadlinePassedEndsTheRunAndAReplyAfterwardsIsRefused) {
 // with the request SCE_MESH.md section 19 gives it, and ended by it. With no
 // router it is a type nobody serves.
 TEST_F(HostDoorTest, AMeshRequestReachesTheRouterAndWithoutOneRaisesErrorExecution) {
-    const char *const document = R"(<?xml version="1.0" encoding="UTF-8"?>
+    const char *const document = R"scxml(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
        initial="asking" name="host_door_mesh">
   <datamodel>
@@ -546,7 +546,7 @@ TEST_F(HostDoorTest, AMeshRequestReachesTheRouterAndWithoutOneRaisesErrorExecuti
   </state>
   <final id="answered"/>
   <final id="refused"/>
-</scxml>)";
+</scxml>)scxml";
 
     {
         auto sm = prepare(document);
@@ -576,7 +576,7 @@ TEST_F(HostDoorTest, AMeshRequestReachesTheRouterAndWithoutOneRaisesErrorExecuti
 // delivered to the session it names, here a child the root started, which holds
 // the run in its own ledger.
 TEST_F(HostDoorTest, AnEndingNamedByItsSessionReachesTheChildThatStartedIt) {
-    auto sm = prepare(R"(<?xml version="1.0" encoding="UTF-8"?>
+    auto sm = prepare(R"scxml(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
        initial="parent" name="host_door_tree">
   <state id="parent">
@@ -594,7 +594,7 @@ TEST_F(HostDoorTest, AnEndingNamedByItsSessionReachesTheChildThatStartedIt) {
     <transition event="done.invoke.child" target="done"/>
   </state>
   <final id="done"/>
-</scxml>)");
+</scxml>)scxml");
     sm->registerInvoker(DECLARED_TYPE, recordingInvoker(invoker_));
     ASSERT_TRUE(sm->start());
 
