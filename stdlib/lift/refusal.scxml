@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/lift/refusal.scxml — why a text is not a value of a schema, as data
+  (docs/adr/0087, section 2.4): a record type (`record:LiftRefusal`, SCE_FORGE.md
+  section 4.12) that no machine sends.
+
+  - `code`: the class of the refusal (refusal_code.scxml);
+  - `path`: the place, as a strict RFC 6901 pointer: empty for the whole text,
+    otherwise `/` before each reference token, `~` written `~0` and `/` written
+    `~1` (`/items/2/tags/0`). Every path names a place the schema declares, so
+    its length is one the build computes from the schema, and a pointer is never
+    cut;
+  - `bound`: the bound the value broke, for `tooLong` (bytes), `tooMany`
+    (elements) and `tooDeep` (levels); absent for every other code.
+
+  The record carries no sentence: a sentence would quote the refused text, whose
+  length no type bounds, or be a function of the three fields.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="refusal"
+       sce:event-name="lift.refusal">
+  <sce:import kind="enum" src="refusal_code.scxml" as="LiftRefusalCode"/>
+  <datamodel>
+    <data id="code" sce:type="enum:LiftRefusalCode" sce:direction="in"/>
+    <data id="path" sce:type="string[lift_path=256]" sce:direction="in"/>
+    <data id="bound" sce:type="optional&lt;uint32&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>

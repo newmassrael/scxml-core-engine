@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/lift/refusal_code.scxml — why a payload reader refused a text as a
+  value of a schema (docs/adr/0087, section 2.3): the class of the refusal, which
+  refusal.scxml carries beside the place it names. Every variant is a refusal:
+  there is none for "the text was read". The numbers are the ones every runtime's
+  reader carries beside its sentence, so a refusal is the same value on every
+  backend:
+
+  - `notJson`: the text is empty, is not JSON, carries more than one JSON value,
+    or holds an object that repeats a name;
+  - `notObject`: the text is one JSON value that is not an object;
+  - `tooDeep`: a container is opened deeper than the deepest one a value of the
+    schema holds;
+  - `missing`: a field of a record is absent and no revision default fills it;
+  - `nullNotOptional`: `null` stands where the type is not optional;
+  - `wrongKind`: a value of another JSON kind stands where a number, a truth
+    value, a text, a byte string, a list or a record is;
+  - `badNumber`: a number is not in its type's spelling: not whole, below zero
+    for an unsigned type, a 64-bit integer as a number past 2^53 - 1 or as a text
+    that is not its digits;
+  - `outOfRange`: a whole number past its type's width, or a real past the range
+    of a `float32`;
+  - `tooLong`: a text or a byte string past its bound;
+  - `tooMany`: a list past its bound;
+  - `unknownVariant`: a name the enum does not declare;
+  - `notByteText`: a byte string's text holds a character above U+00FF;
+  - `nulInText`: a text holds U+0000, which no text of SCE holds.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="refusal_code" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="notJson" value="1"/>
+      <sce:variant name="notObject" value="2"/>
+      <sce:variant name="tooDeep" value="3"/>
+      <sce:variant name="missing" value="4"/>
+      <sce:variant name="nullNotOptional" value="5"/>
+      <sce:variant name="wrongKind" value="6"/>
+      <sce:variant name="badNumber" value="7"/>
+      <sce:variant name="outOfRange" value="8"/>
+      <sce:variant name="tooLong" value="9"/>
+      <sce:variant name="tooMany" value="10"/>
+      <sce:variant name="unknownVariant" value="11"/>
+      <sce:variant name="notByteText" value="12"/>
+      <sce:variant name="nulInText" value="13"/>
+    </data>
+  </datamodel>
+</scxml>
