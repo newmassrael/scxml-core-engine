@@ -1718,7 +1718,7 @@ func TestALiftReadsATextIntoARecordOrKeepsItsRefusal(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	answerJSON := func(a static_lift.StaticLiftAnswerRecord) any {
 		return map[string]any{
-			"id": a.Id(), "amount": a.Amount(), "title": a.Title(), "kind": a.Kind().String(),
+			"id": a.Id(), "amount": signedDigits(a.Amount()), "title": a.Title(), "kind": a.Kind().String(),
 			"note": a.Note(), "tag": sce.BytesAsPayloadText(a.Tag()), "priority": a.Priority(),
 		}
 	}

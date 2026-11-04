@@ -732,7 +732,8 @@ private func liftedText() -> Machine {
     let answer = { (a: StaticLiftAnswerRecord) -> JSONValue in
         .object([
             (key: "id", value: integer(a.id)),
-            (key: "amount", value: integer(a.amount)),
+            // A 64-bit field is stated as the text of its digits.
+            (key: "amount", value: .text(String(a.amount))),
             (key: "title", value: .text(a.title)),
             (key: "kind", value: .text(a.kind.declaredName)),
             (key: "note", value: optionalText(a.note)),

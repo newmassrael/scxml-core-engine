@@ -2787,10 +2787,6 @@ static bool static_lift_read_record_answer(const void *sm, size_t index, const c
         *out = (int64_t)held.value.id;
         return true;
     }
-    if (strcmp(field, "amount") == 0) {
-        *out = held.value.amount;
-        return true;
-    }
     if (strcmp(field, "priority") == 0) {
         *out = (int64_t)held.value.priority;
         return true;
@@ -2813,6 +2809,10 @@ static const char *static_lift_text_record_answer(const void *sm, size_t index, 
     }
     if (strcmp(field, "kind") == 0) {
         return lift_kind_declared_name(held.value.kind);
+    }
+    /* A 64-bit field is stated as the text of its digits. */
+    if (strcmp(field, "amount") == 0) {
+        return wide_signed_digits(held.value.amount);
     }
     if (strcmp(field, "note") == 0 && held.value.note.present) {
         memcpy(note, held.value.note.value.data, sizeof(note));
