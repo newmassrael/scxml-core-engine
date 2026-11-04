@@ -1872,6 +1872,9 @@ add_executable(integration_tests
     # docs/adr/0084: what another thread has for the generated engine enters
     # through its inbox, while the owner runs macrosteps.
     integration/WhatAnotherThreadPostsEntersThroughTheInboxAotTest.cpp
+    # docs/adr/0084, D8: the same for the Interpreter, whose owner is the thread
+    # running its macrosteps; it reads inbox_probe.scxml as written.
+    integration/WhatAnotherThreadPostsEntersThroughTheInboxTest.cpp
     integration/NativeActionAotTest.cpp
     # NL→IR Item C1 Path A: the typed `_event.data` view read out of the data
     # wire every producer but the generated inject seam fills. A gate of its

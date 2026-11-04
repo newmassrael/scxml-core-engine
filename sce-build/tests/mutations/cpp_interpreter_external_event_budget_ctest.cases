@@ -55,8 +55,8 @@ PY
 
 mutation_case "processEvent's loop starts with nothing spent" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     "    runMainEventLoop(1);\n    if (topLevelFinalReached_) {",
-     "    runMainEventLoop(0);\n    if (topLevelFinalReached_) {")
+     "            runMainEventLoop(1);\n        }\n        if (topLevelFinalReached_) {",
+     "            runMainEventLoop(0);\n        }\n        if (topLevelFinalReached_) {")
 PY
 
 mutation_case "an invocation starts with one event already spent" <<'PY'

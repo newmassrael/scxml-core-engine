@@ -108,12 +108,10 @@ PY
 
 mutation_case "the interpreter loop abandons the queue silently" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """        exitState(state);
-    }
+     """    closeInbox();
     recordUnseenQueuedEvents();
 """,
-     """        exitState(state);
-    }
+     """    closeInbox();
 """)
 PY
 
@@ -124,10 +122,10 @@ PY
 
 mutation_case "the interpreter counts the refusal and never publishes it" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """    stats.unseenExternalEvents = unseenExternalEvents_;
-    stats.lastUnseenEventName = lastUnseenEventName_;""",
-     """    stats.unseenExternalEvents = 0u;
-    stats.lastUnseenEventName = lastUnseenEventName_;""")
+     """        stats.unseenExternalEvents = unseenExternalEvents_;
+        stats.lastUnseenEventName = lastUnseenEventName_;""",
+     """        stats.unseenExternalEvents = 0u;
+        stats.lastUnseenEventName = lastUnseenEventName_;""")
 PY
 
 # ── C11: no case for the raise door, and that is the finding ───────

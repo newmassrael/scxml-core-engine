@@ -28,11 +28,13 @@ mutation_oracles tests/integration/EventBindingAcrossAMacrostepTest.cpp
 
 mutation_case "the host's event is bound again after the loop took others" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """    runMainEventLoop(1);
-    if (topLevelFinalReached_) {""",
-     """    runMainEventLoop(1);
-    bindCurrentEvent(event);
-    if (topLevelFinalReached_) {""")
+     """            runMainEventLoop(1);
+        }
+        if (topLevelFinalReached_) {""",
+     """            runMainEventLoop(1);
+            bindCurrentEvent(event);
+        }
+        if (topLevelFinalReached_) {""")
 PY
 
 # ── An internal event taken without being bound ────────────────────

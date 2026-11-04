@@ -153,6 +153,40 @@ void EventRaiserImpl::clearEventCallback() {
     SCE_LOG_DEBUG("EventRaiserImpl: Event callback cleared");
 }
 
+void EventRaiserImpl::setForeignEntry(ForeignEntry entry) {
+    auto installed = std::make_shared<const ForeignEntry>(std::move(entry));
+    std::lock_guard<std::mutex> lock(callbackMutex_);
+    foreignEntry_ = std::move(installed);
+}
+
+void EventRaiserImpl::clearForeignEntry() {
+    std::lock_guard<std::mutex> lock(callbackMutex_);
+    foreignEntry_.reset();
+}
+
+std::optional<bool> EventRaiserImpl::postFromAnotherThread(const std::string &eventName, const std::string &eventData,
+                                                           EventPriority priority, const std::string &originSessionId,
+                                                           const std::string &sendId, const std::string &invokeId,
+                                                           const std::string &originType,
+                                                           const std::optional<ScriptValue> &typedData) {
+    std::shared_ptr<const ForeignEntry> entry;
+    {
+        std::lock_guard<std::mutex> lock(callbackMutex_);
+        entry = foreignEntry_;
+    }
+    if (!entry || !entry->isForeignNow || !entry->post || !entry->isForeignNow()) {
+        return std::nullopt;
+    }
+    // The event as the machine's queue would have held it; its `_event.type` is
+    // read off the queue it is taken from, as for any queued event.
+    Core::EventMetadata event(eventName, eventData, "", sendId, invokeId, originType, originSessionId);
+    event.typedData = typedData;
+    const EventQueue queue = priority == EventPriority::INTERNAL ? EventQueue::Internal : EventQueue::External;
+    SCE_LOG_DEBUG("EventRaiserImpl: '{}' raised from another thread while its machine runs; posted to its inbox",
+                  eventName);
+    return entry->post(std::move(event), queue);
+}
+
 bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string &eventData) {
     // Default to INTERNAL priority for backward compatibility (raise actions and #_internal targets)
     return raiseEventWithPriority(eventName, eventData, EventPriority::INTERNAL, "", "", "");
@@ -388,6 +422,15 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
             }
         }  // end if (canProcessImmediately)
     }  // end if (immediateMode_.load() && !isPlatform)
+
+    // docs/adr/0084, D8: the queues are the owner's, the thread running the
+    // machine's macrostep. A raise made on another thread while one runs is posted
+    // to the machine's inbox and applied at the macrostep's boundary, rather than
+    // put on a queue the running macrostep is reading.
+    if (const std::optional<bool> posted = postFromAnotherThread(eventName, eventData, priority, originSessionId,
+                                                                 sendId, invokeId, originType, typedData)) {
+        return *posted;
+    }
 
     // SCXML compliance: Use synchronous queue when immediate mode is disabled
     // §scxml-3.13: EXTERNAL events queued when INTERNAL events are pending

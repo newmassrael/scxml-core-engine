@@ -201,6 +201,38 @@ public:
     void clearEventCallback();
 
     /**
+     * @brief The inbox of the machine this raiser serves, as a raise from another
+     *        thread reaches it (docs/adr/0084, D8; ARCHITECTURE.md "Engine Threading")
+     *
+     * The machine's queues are its owner's: the thread running its macrostep. A
+     * raise this raiser would put on a queue, made on a thread that is not running
+     * the machine while another thread is, is posted to the machine's inbox instead,
+     * and the thread running the machine applies it at its next macrostep boundary.
+     * A raise the owner makes, or one made while no thread runs the machine, is
+     * queued as it always was.
+     */
+    struct ForeignEntry {
+        /// Whether a raise made on the calling thread now is made from another
+        /// thread while a macrostep of the machine runs.
+        std::function<bool()> isForeignNow;
+        /// Post @p event, for the queue it belongs to; whether the inbox took it.
+        /// A refusal is the machine's to count: the raise is not queued either way.
+        std::function<bool(Core::EventMetadata &&event, EventQueue queue)> post;
+    };
+
+    /**
+     * @brief Install the inbox a raise from another thread is posted to (see
+     *        `ForeignEntry`); the machine installs it when it takes this raiser
+     */
+    void setForeignEntry(ForeignEntry entry);
+
+    /**
+     * @brief Remove the inbox installed with `setForeignEntry`: every raise is
+     *        queued again, as before a machine took this raiser
+     */
+    void clearForeignEntry();
+
+    /**
      * @brief Shutdown the async processing (for clean destruction)
      */
     void shutdown() override;
@@ -415,8 +447,27 @@ private:
      */
     template <typename Visit> auto overTheHeadOf(EventQueue queue, Visit &&visit);
 
+    /**
+     * @brief Post a raise this raiser was about to queue to its machine's inbox,
+     *        when it is made from another thread while the machine runs
+     *        (`ForeignEntry`)
+     *
+     * @return The inbox's answer when the raise was posted, or std::nullopt when it
+     *         is to be queued here
+     */
+    std::optional<bool> postFromAnotherThread(const std::string &eventName, const std::string &eventData,
+                                              EventPriority priority, const std::string &originSessionId,
+                                              const std::string &sendId, const std::string &invokeId,
+                                              const std::string &originType,
+                                              const std::optional<ScriptValue> &typedData);
+
     // Event callback
     EventCallback eventCallback_;
+
+    // docs/adr/0084, D8: the inbox a raise from another thread is posted to. Read
+    // and replaced under callbackMutex_, and held by a pointer so a raise copies
+    // one reference, not the two functions.
+    std::shared_ptr<const ForeignEntry> foreignEntry_;
 
     // §scxml-5.10: Consolidated thread-local event context for callback execution
     static thread_local EventContext currentEventContext_;

@@ -79,7 +79,7 @@ public:
         return engine_->sendExternalEvent(name, data);
     }
 
-    // State queries — release GIL to avoid contention with processEventMutex_
+    // State queries — release GIL while another thread may be running a macrostep
     bool isRunning() const {
         py::gil_scoped_release release;
         return engine_->isRunning();

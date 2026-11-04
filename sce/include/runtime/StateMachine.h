@@ -3,7 +3,9 @@
 
 #pragma once
 
+#include "core/EngineInbox.h"
 #include "core/EntrySetHelper.h"
+#include "core/EventMetadata.h"
 #include "core/ExternalEventBudget.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/HostInvokeLedger.h"
@@ -35,7 +37,7 @@
 #include <optional>
 #include <set>
 #include <string>
-#include <thread>
+#include <variant>
 #include <vector>
 
 namespace SCE {
@@ -70,6 +72,21 @@ struct InterpreterPolicy {
  * What it does with a document is W3C SCXML Appendix D: its microstep is
  * `SCE::Core::MicrostepAlgorithms`, the procedure the AOT engine runs, handed
  * this machine's parsed model; its macrostep is the appendix's main event loop.
+ *
+ * Threading: the rule is ARCHITECTURE.md "Engine Threading" (docs/adr/0084, D8).
+ * This engine runs no loop of a thread of its own, and its scheduler delivers on
+ * threads of the scheduler's, so its owner is the thread running its macrosteps,
+ * for as long as it runs them, and between them it has none. Every call that
+ * hands the machine an input (`processEvent` and the raiser's dispatch, a raise
+ * on its raiser, `completeHostInvoke`, `failHostInvoke`, `endHostInvokeIn` and
+ * their spellings, a host-run invocation's deadline) is safe from any thread and
+ * is taken one of three ways: inside the macrostep the calling thread is running,
+ * as it always was; as a run of the main event loop of its own when no thread
+ * runs the machine, the calling thread owning it until that run ends; or, when
+ * another thread runs it, posted to its inbox, which that thread applies at its
+ * next macrostep boundary by the operation of the same name. No input waits for
+ * a macrostep. `start`, `stop` and the destructor, which cannot be posted, wait
+ * for one another thread is running.
  */
 class StateMachine : public std::enable_shared_from_this<StateMachine> {
 public:
@@ -275,6 +292,13 @@ public:
      * Handed to a machine whose macrostep is already running on this thread,
      * the event is put on its queue instead — Appendix D processes an event
      * only where its main event loop takes one — and the result says so.
+     * Handed to one another thread is running, it is posted to the machine's
+     * inbox, which that thread applies at its next macrostep boundary, and the
+     * result says that too; refused there because the run has ended, it is
+     * counted as `unseenExternalEvents` (ARCHITECTURE.md "Engine Threading").
+     * Taken by a call that finds the machine idle with inputs other threads
+     * posted still to apply, the event is queued behind them in auto mode, so it
+     * does not overtake what was posted before it.
      *
      * @param eventName Name of the event to process
      * @param eventData Optional event data (JSON string)
@@ -543,10 +567,10 @@ public:
         /// takes exactly the budget and empties the queue counts zero: a long
         /// backlog is ordinary, an endless one is not. The events left queued
         /// stay queued, so a host that calls again gets another budget and the
-        /// machine goes on from where it was. Only `processEvent` and `start`
-        /// run the loop here: this engine has no `tick`, and its scheduler
-        /// delivers each delayed event on a thread of its own, as a call of its
-        /// own.
+        /// machine goes on from where it was. `processEvent`, `start` and each
+        /// run an input from another thread starts on an idle machine run the
+        /// loop here: this engine has no `tick`, and its scheduler delivers each
+        /// delayed event on a thread of its own, as a call of its own.
         uint32_t truncatedEventChains = 0;
         /// The name of the event at the head of the queue when that last
         /// happened, empty while the count is zero. In a chain that sends
@@ -752,11 +776,14 @@ public:
      * @brief A host-run invocation of this session finished: `done.invoke.<invokeId>`
      *        with @p doneData, if start @p token is still running
      *
-     * An owner operation (ARCHITECTURE.md "Engine Threading"). Until this engine
-     * has its inbox it is applied as a host call is: inside the running macrostep
-     * when one runs on the calling thread, and otherwise as a macrostep of its own.
+     * Safe from any thread (ARCHITECTURE.md "Engine Threading"): applied inside
+     * the macrostep the calling thread is running, or as a run of the main event
+     * loop of its own when no thread runs the machine, and otherwise posted to
+     * the machine's inbox, where the token is checked when the thread running the
+     * machine applies it.
      *
-     * @return false, raising nothing, for a stale token or an invocation that is over
+     * @return false, raising nothing, for a stale token or an invocation that is
+     *         over; posted, whether the inbox took the ending
      */
     bool completeHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
                             const std::string &doneData, const std::string &origin = "",
@@ -773,6 +800,12 @@ public:
     /**
      * @brief End a host-run invocation of the session @p sessionId names, this one
      *        or one it started at any depth (docs/adr/0045)
+     *
+     * Each session runs a loop of its own, so the session found takes the ending
+     * through its own door, as `completeHostInvoke` takes one (docs/adr/0084, D2):
+     * posted to that session's inbox while another thread runs it, when the
+     * outcome is `Delivered` if the inbox took it and `NotRunning` if the
+     * session's run had ended.
      */
     HostInvokeEndOutcome endHostInvokeIn(const std::string &sessionId, const HostInvokeEnding &ending);
 
@@ -879,6 +912,16 @@ public:
     bool raiseExternalEvent(const std::string &eventName, const std::string &eventData);
 
     /**
+     * @brief How many inputs this machine's inbox refused: posted from another
+     *        thread while one ran the machine, after its run had ended or been
+     *        stopped, or when the heap refused the memory for one
+     *        (ARCHITECTURE.md "Engine Threading")
+     *
+     * An event among them is also counted in `Statistics::unseenExternalEvents`.
+     */
+    uint64_t refusedInboxPosts() const;
+
+    /**
      * @brief Get the last error from SCXML loading/parsing
      * @return Error detail string, empty if no error
      */
@@ -936,7 +979,8 @@ private:
      * to this machine — is off for the whole step rather than toggled around
      * each block of content. Between macrosteps it is on in auto mode, so an
      * event arriving from another thread (a delayed `<send>` firing, a child
-     * session reporting) starts the next macrostep at once.
+     * session reporting) starts the next macrostep at once on an idle machine.
+     * Opened only by a thread that owns the machine (`Standing`).
      */
     class MacrostepScope {
     public:
@@ -949,17 +993,97 @@ private:
         StateMachine &machine_;
     };
 
-    /// Whether this machine's macrostep is running on the calling thread. Per
-    /// machine rather than a thread-local depth: an autoforward hands a child
-    /// its copy through the child's `processEvent`, on this very thread, and
-    /// the child's macrostep is its own.
-    bool macrostepInProgressOnThisThread() const;
+    // ── The owner and the inbox (docs/adr/0084, D8) ──────────────────────
+    //
+    // ARCHITECTURE.md "Engine Threading". The owner is the thread running this
+    // machine's macrosteps, recorded in the inbox (`EngineInboxState::claimOwner`),
+    // for as long as it runs them: a drive. An input from a thread that finds
+    // another one driving is posted, and the driving thread applies it at its next
+    // macrostep boundary by the operation a direct call makes, so a posted input
+    // and a direct one cannot differ.
+
+    /// An event handed to this machine, with every field the main event loop
+    /// binds, and the queue it belongs to. Applied as an event handed over inside
+    /// a running macrostep is (`holdDelivery`): put on that queue, for the main
+    /// event loop to take in turn.
+    struct InboxEvent {
+        Core::EventMetadata event;
+        bool fromExternalQueue = true;
+    };
+
+    /// The end of a host-run invocation of this session, applied with
+    /// `endHostInvoke`, where the token is checked: an ending of a start that was
+    /// cancelled or started again by then raises nothing, as a direct one would.
+    struct InboxHostInvokeEnding {
+        HostInvokeEnding ending;
+    };
+
+    /// The deadline of a host-run invocation of this session came due on the
+    /// scheduler's thread, applied with the ledger's `expire`.
+    struct InboxHostInvokeDeadline {
+        HostInvokeDeadline deadline;
+    };
+
+    /// One input of this machine's inbox: the closed set of what another thread
+    /// hands it.
+    using InboxInput = std::variant<InboxEvent, InboxHostInvokeEnding, InboxHostInvokeDeadline>;
+
+    /// How the calling thread stands to this machine when it hands it an input.
+    enum class Standing {
+        /// It is running the machine's macrostep: the input is taken there.
+        Running,
+        /// No thread was: it owns the machine now, until its drive ends.
+        Claimed,
+        /// Another thread is running the machine: the input is posted.
+        Busy,
+    };
+
+    /// The calling thread's hold on this machine for one drive. Defined in
+    /// StateMachine.cpp.
+    class DriveHold;
+
+    /// How the calling thread stands to this machine, claiming it when no thread
+    /// runs it.
+    Standing standHere();
+    /// Claim this machine for a call that cannot be posted (`start`, `stop`, the
+    /// destructor), waiting for a drive another thread is running to end. True
+    /// when this call claimed it, false when the calling thread was running it.
+    bool holdForLifecycle();
+    /// The calling thread's drive is over: release the machine, and drive what
+    /// other threads posted while it ran and it did not apply.
+    void finishDrive();
+    /// A drive of a claimed machine for what other threads posted: the main
+    /// event loop, which applies it at its first boundary.
+    void driveWhatWasPosted();
+    /// Post @p input to this machine's inbox, and drive it if no thread runs the
+    /// machine by now; whether the inbox took it. An event it refused is counted
+    /// as unseen.
+    bool post(InboxInput input);
+    /// Apply, on the owner, what the inbox held when this was called, oldest
+    /// first; how many inputs were applied.
+    std::size_t drainInbox();
+    /// Close the inbox and apply what it still holds: the run has ended or was
+    /// stopped, and takes no more posts.
+    void closeInbox();
+    /// Apply one posted @p input by the operation a direct call makes.
+    void applyInboxInput(InboxInput &&input);
+    /// Refuse @p operation, which only the owner may make, on a thread that does
+    /// not own this machine (debug builds).
+    void requireOwnedHere(const char *operation) const;
+    /// Post @p event, handed to this machine while another thread runs it, and
+    /// answer the caller as `processEvent` answers.
+    TransitionResult postDelivery(Core::EventMetadata event, bool fromExternalQueue);
+
+    // docs/adr/0084: what other threads posted, applied at each macrostep
+    // boundary of the drive that runs when they post, and the record of which
+    // thread runs this machine now. Open from construction, so what is posted
+    // while the first run is entered is kept for it.
+    Core::EngineInboxOwner<InboxInput> inbox_;
 
     // Thread-safe: accessed from EventRaiser callback (main thread) and from
     // scheduler threads
     std::atomic<bool> isRunning_{false};
     bool autoProcessQueuedEvents_ = true;  // Interactive mode: the host steps queued events itself
-    std::atomic<std::thread::id> macrostepOwner_{};
 
     /// Set on entering a top-level `<final>`. The entry point that owns the
     /// macrostep finishes the session once the microstep is over.
@@ -1026,9 +1150,12 @@ private:
     std::string lastUndecodablePayloadEvent_;
     /// §scxml-3.13: external events refused because this machine had stopped,
     /// or left on its external queue when it did, and the name of the last
-    /// one. Reported through `Statistics::unseenExternalEvents`.
+    /// one. Reported through `Statistics::unseenExternalEvents`. Guarded by
+    /// `unseenEventsMutex_`, since an event the inbox refused is counted on the
+    /// thread that posted it, which does not own the machine.
     uint32_t unseenExternalEvents_ = 0;
     std::string lastUnseenEventName_;
+    mutable std::mutex unseenEventsMutex_;
     /// Microsteps this macrostep has taken, on eventless transitions and on
     /// internal events alike — one count, because a document that alternates
     /// the two is one chain. Only the main event loop spends it: the raiser
@@ -1124,9 +1251,11 @@ private:
     std::unique_ptr<HostInvokeDeadlines> hostInvokeDeadlines_;
 
     /// Run @p apply as an owner operation of this machine: inside the macrostep
-    /// that runs on this thread, or else as a macrostep of its own, whose main
-    /// event loop then takes what @p apply queued.
-    bool applyAsOwner(const std::function<bool()> &apply);
+    /// that runs on this thread, or as a drive of its own when no thread runs the
+    /// machine, whose main event loop then takes what @p apply queued; and when
+    /// another thread runs it, post @p posted, the same input, for that thread to
+    /// apply. What @p apply answered, or, posted, whether the inbox took it.
+    bool applyAsOwner(const std::function<bool()> &apply, InboxInput posted);
     /// The one body behind every ending of a host-run invocation: the ledger's
     /// token check, and the `done.invoke` or `error.invoke` on the external queue.
     bool endHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token, bool failed,
@@ -1143,12 +1272,6 @@ private:
 
     // W3C SCXML: Thread safety for StateHierarchyManager access from JSEngine worker thread
     mutable std::mutex hierarchyManagerMutex_;  // Protects hierarchyManager_ read access
-
-    // Serializes macrosteps started from different threads, and lets the
-    // destructor wait for one in progress (ASAN heap-use-after-free fix). A
-    // delivery on the thread already running this machine's macrostep never
-    // takes it: it is queued instead (`macrostepInProgressOnThisThread`).
-    std::mutex processEventMutex_;
 
     // Statistics
     mutable Statistics stats_;

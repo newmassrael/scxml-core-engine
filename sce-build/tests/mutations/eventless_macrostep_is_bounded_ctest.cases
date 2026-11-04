@@ -140,11 +140,11 @@ PY
 
 mutation_case "the interpreter budget outlives the macrostep that spent it" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """    macrostepTruncated_ = false;
-    macrostepMicrostepsTaken_ = 0;
+     """        macrostepTruncated_ = false;
+        macrostepMicrostepsTaken_ = 0;
 
-    // §scxml-D-microstepProcedure: what the visualizer shows belongs to this event""",
-     """    // §scxml-D-microstepProcedure: what the visualizer shows belongs to this event""")
+        // §scxml-D-microstepProcedure: what the visualizer shows belongs to this event""",
+     """        // §scxml-D-microstepProcedure: what the visualizer shows belongs to this event""")
 PY
 
 # ── Interpreter: the count ─────────────────────────────────────────

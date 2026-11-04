@@ -44,6 +44,9 @@
 #include <fstream>
 #include <set>
 #include <sstream>
+#include <stdexcept>
+#include <thread>
+#include <variant>
 
 namespace SCE {
 
@@ -123,21 +126,234 @@ struct StateMachine::MicrostepHost {
 };
 
 StateMachine::MacrostepScope::MacrostepScope(StateMachine &machine) : machine_(machine) {
-    machine_.macrostepOwner_.store(std::this_thread::get_id());
     if (machine_.eventRaiser_) {
         machine_.eventRaiser_->setImmediateMode(false);
     }
 }
 
 StateMachine::MacrostepScope::~MacrostepScope() {
-    machine_.macrostepOwner_.store(std::thread::id{});
     if (machine_.eventRaiser_) {
         machine_.eventRaiser_->setImmediateMode(machine_.autoProcessQueuedEvents_);
     }
 }
 
-bool StateMachine::macrostepInProgressOnThisThread() const {
-    return macrostepOwner_.load() == std::this_thread::get_id();
+// ── The owner and the inbox (docs/adr/0084, D8) ──────────────────────────
+//
+// ARCHITECTURE.md "Engine Threading". This engine runs no loop of a thread of its
+// own, and its scheduler delivers on the scheduler's threads, so the owner is the
+// thread running its macrosteps: a call that finds no thread running the machine
+// claims it in the inbox and drives it, the main event loop included, and releases
+// it when the loop is done. A call from a thread that finds another one driving
+// never waits for it: what it hands the machine is posted, and the driving thread
+// applies it at its next macrostep boundary. The handover is the one place the two
+// can miss each other: the driving thread releases and then asks whether anything
+// was posted, and a poster posts and then asks whether the machine is free. A
+// sequentially consistent fence on each side, between its write and its read,
+// makes one of the two see the other (`standHere`, `finishDrive`).
+
+/**
+ * @brief The calling thread's hold on this machine for one drive
+ *
+ * Released when it goes, so a drive that throws does not leave the machine owned
+ * by a thread that has stopped running it. A hold that holds nothing (the calling
+ * thread was already running the machine) releases nothing.
+ */
+class StateMachine::DriveHold {
+public:
+    DriveHold(StateMachine &machine, bool held) : machine_(machine), held_(held) {}
+
+    ~DriveHold() {
+        if (held_) {
+            machine_.inbox_.state().releaseOwner();
+        }
+    }
+
+    DriveHold(const DriveHold &) = delete;
+    DriveHold &operator=(const DriveHold &) = delete;
+
+    /// The drive is over: release the machine, and drive what was posted meanwhile.
+    void finish() {
+        if (held_) {
+            held_ = false;
+            machine_.finishDrive();
+        }
+    }
+
+private:
+    StateMachine &machine_;
+    bool held_;
+};
+
+StateMachine::Standing StateMachine::standHere() {
+    Core::EngineInboxState<InboxInput> &inbox = inbox_.state();
+    if (inbox.ownedHere()) {
+        return Standing::Running;
+    }
+    // Between a post this thread may have made and the claim: see the fence in
+    // `finishDrive`.
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    return inbox.claimOwner() ? Standing::Claimed : Standing::Busy;
+}
+
+bool StateMachine::holdForLifecycle() {
+    // None of `start`, `stop` and the destructor can be posted, and each must have
+    // happened when it returns, so a drive another thread is running is waited for:
+    // yielding first, since most drives are short, and then sleeping, so a long one
+    // does not keep a core busy.
+    constexpr unsigned YIELDS_BEFORE_SLEEPING = 64;
+    for (unsigned waited = 0;; ++waited) {
+        switch (standHere()) {
+        case Standing::Running:
+            return false;
+        case Standing::Claimed:
+            return true;
+        case Standing::Busy:
+            break;
+        }
+        if (waited < YIELDS_BEFORE_SLEEPING) {
+            std::this_thread::yield();
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+}
+
+void StateMachine::finishDrive() {
+    Core::EngineInboxState<InboxInput> &inbox = inbox_.state();
+    for (;;) {
+        inbox.releaseOwner();
+        // A post made while this thread drove found the machine taken and left its
+        // input for this thread; one made from here on finds it free and drives it
+        // itself. The fence orders the release before the read below, as the
+        // poster's orders its post before its claim (`standHere`).
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        // A machine not running applies nothing: before its first run what was
+        // posted waits for it, and after its run the inbox is closed and empty.
+        if (!isRunning_ || !inbox.holdsPosts()) {
+            return;
+        }
+        if (!inbox.claimOwner()) {
+            // Another thread took the machine, and applies them.
+            return;
+        }
+        try {
+            driveWhatWasPosted();
+        } catch (...) {
+            inbox.releaseOwner();
+            throw;
+        }
+    }
+}
+
+void StateMachine::driveWhatWasPosted() {
+    {
+        MacrostepScope macrostep(*this);
+        if (isRunning_) {
+            // A posted input starts a piece of work as a host's call does.
+            if (eventRaiser_) {
+                eventRaiser_->resetErrorCascadeDepth();
+            }
+            macrostepTruncated_ = false;
+            macrostepMicrostepsTaken_ = 0;
+            // The loop applies what was posted at its first macrostep boundary.
+            runMainEventLoop();
+            if (topLevelFinalReached_) {
+                finishAtTopLevelFinal();
+            }
+        }
+    }
+    updateStatistics();
+}
+
+bool StateMachine::post(InboxInput input) {
+    // The name an event is counted under if the inbox refuses it, read before the
+    // input moves.
+    std::optional<std::string> eventName;
+    if (const auto *posted = std::get_if<InboxEvent>(&input)) {
+        eventName = posted->event.name;
+    }
+    if (!inbox_.state().post(std::move(input))) {
+        // Refused because the run has ended or was stopped: an event this machine
+        // will never look at is counted, as a direct one is
+        // (`Statistics::unseenExternalEvents`).
+        if (eventName) {
+            SCE_LOG_WARN("StateMachine: '{}' was posted from another thread after the run ended", *eventName);
+            noteUnseenEvent(*eventName);
+        }
+        return false;
+    }
+    // The thread that was running the machine may have finished meanwhile. Then
+    // nobody is left to apply the input but this thread.
+    if (standHere() == Standing::Claimed) {
+        DriveHold hold(*this, true);
+        if (isRunning_) {
+            driveWhatWasPosted();
+        }
+        hold.finish();
+    }
+    return true;
+}
+
+std::size_t StateMachine::drainInbox() {
+    requireOwnedHere("drainInbox");
+    return inbox_.state().drain([this](InboxInput &&input) { applyInboxInput(std::move(input)); });
+}
+
+void StateMachine::closeInbox() {
+    requireOwnedHere("closeInbox");
+    inbox_.state().close();
+    drainInbox();
+}
+
+void StateMachine::applyInboxInput(InboxInput &&input) {
+    if (const auto *posted = std::get_if<InboxEvent>(&input)) {
+        // What a direct call makes of an event when the machine is not running.
+        if (!isRunning_) {
+            noteUnseenEvent(posted->event.name);
+            return;
+        }
+        (void)holdDelivery(posted->event, posted->fromExternalQueue);
+        return;
+    }
+    if (const auto *ended = std::get_if<InboxHostInvokeEnding>(&input)) {
+        const HostInvokeEnding &ending = ended->ending;
+        (void)endHostInvoke(ending.processorType, ending.invokeId, ending.token, !ending.done, ending.data,
+                            ending.origin, ending.originType);
+        return;
+    }
+    if (const auto *due = std::get_if<InboxHostInvokeDeadline>(&input)) {
+        raiseHostInvokeReport(hostInvokes_.expire(*invokers_, due->deadline));
+    }
+}
+
+void StateMachine::requireOwnedHere(const char *operation) const {
+#ifndef NDEBUG
+    if (!inbox_.state().ownedHere()) {
+        throw std::logic_error(std::string(operation) +
+                               " is an owner-thread operation of this machine and was reached on a thread that is "
+                               "not running it (ARCHITECTURE.md \"Engine Threading\"): an input from another thread "
+                               "enters through the machine's inbox");
+    }
+#else
+    (void)operation;
+#endif
+}
+
+StateMachine::TransitionResult StateMachine::postDelivery(EventMetadata event, bool fromExternalQueue) {
+    TransitionResult result;
+    result.success = false;
+    result.eventName = event.name;
+    if (post(InboxEvent{std::move(event), fromExternalQueue})) {
+        result.errorMessage = "Posted: another thread is running this machine's macrostep, and takes the event at "
+                              "its next macrostep boundary";
+    } else {
+        result.errorMessage = "State machine not running";
+    }
+    return result;
+}
+
+uint64_t StateMachine::refusedInboxPosts() const {
+    return inbox_.state().refusedPosts();
 }
 
 std::shared_ptr<StateMachine> StateMachine::createFromSCXMLString(const std::string &scxmlContent,
@@ -311,9 +527,6 @@ StateMachine::StateMachine(IScriptEngine &scriptEngine, const std::string &sessi
 }
 
 StateMachine::~StateMachine() {
-    // Clear callbacks first to prevent execution during destruction
-    completionCallback_ = nullptr;
-
     // CRITICAL: Clear EventRaiser callback to prevent heap-use-after-free
     // EventScheduler threads may still be running and executing callbacks
     // Clearing the callback ensures they won't access destroyed StateMachine
@@ -323,15 +536,19 @@ StateMachine::~StateMachine() {
         if (eventRaiserImpl) {
             SCE_LOG_DEBUG("StateMachine: Clearing EventRaiser callback before destruction");
             eventRaiserImpl->clearEventCallback();
+            eventRaiserImpl->clearForeignEntry();
         }
     }
 
-    // CRITICAL: Wait for any in-progress macrostep to complete (ASAN heap-use-after-free fix)
-    // Lock mutex to ensure no processEvent is running when we proceed with destruction
-    {
-        std::lock_guard<std::mutex> processEventLock(processEventMutex_);
-        SCE_LOG_DEBUG("StateMachine: All processEvent calls completed, proceeding with destruction");
-    }
+    // CRITICAL: a drive another thread is running finishes before anything here is
+    // torn down (ASAN heap-use-after-free fix), and this thread keeps the machine
+    // from then on: it is never released, so no thread drives it again, and what is
+    // posted to it is refused once `stop` closes the inbox.
+    (void)holdForLifecycle();
+    SCE_LOG_DEBUG("StateMachine: No other thread runs this machine, proceeding with destruction");
+
+    // Cleared once no drive can reach it, so none is cut short of its callback.
+    completionCallback_ = nullptr;
 
     // A run still going is exited as a stopped one (§scxml-D-exitInterpreter);
     // one that already ended has nothing left to exit.
@@ -403,9 +620,6 @@ bool StateMachine::loadModel(std::shared_ptr<SCXMLModel> model) {
 }
 
 bool StateMachine::start(bool autoProcessQueuedEvents) {
-    // Interactive mode: the host steps queued events itself
-    autoProcessQueuedEvents_ = autoProcessQueuedEvents;
-
     if (!document_ || document_->documentInitialTargets().empty()) {
         SCE_LOG_ERROR("StateMachine: Cannot start - no initial state defined");
         return false;
@@ -431,6 +645,14 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
         return false;
     }
 
+    // ARCHITECTURE.md "Engine Threading": the run is entered by the calling thread,
+    // which owns the machine until the macrosteps the start runs are done. A start
+    // cannot be posted, so a drive another thread is running is waited for.
+    DriveHold hold(*this, holdForLifecycle());
+
+    // Interactive mode: the host steps queued events itself
+    autoProcessQueuedEvents_ = autoProcessQueuedEvents;
+
     // A run is a session (§scxml-D-interpret initialises the datamodel
     // afresh). The one an earlier run of this machine left behind — kept so
     // its datamodel stayed readable after it ended — is released here, so the
@@ -453,31 +675,41 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
         SCE_LOG_WARN("StateMachine: EventRaiser is null - sessionId: {}", sessionId_);
     }
 
-    std::lock_guard<std::mutex> processEventLock(processEventMutex_);
-    MacrostepScope macrostep(*this);
+    // docs/adr/0084: a run takes posts from its start (one that ended or was
+    // stopped closed the inbox), and what was posted while it was being entered is
+    // applied at its first macrostep boundary.
+    inbox_.state().open();
+    {
+        MacrostepScope macrostep(*this);
 
-    // §scxml-D-interpret: initialise the global data structures and the data model,
-    // run the global <script>, then enter the initial configuration and set running.
-    isRunning_ = true;
-    sessionUsedByARun_ = true;
-    topLevelFinalReached_ = false;
-    terminalState_.reset();
-    macrostepTruncated_ = false;
-    macrostepMicrostepsTaken_ = 0;
+        // §scxml-D-interpret: initialise the global data structures and the data model,
+        // run the global <script>, then enter the initial configuration and set running.
+        isRunning_ = true;
+        sessionUsedByARun_ = true;
+        topLevelFinalReached_ = false;
+        terminalState_.reset();
+        macrostepTruncated_ = false;
+        macrostepMicrostepsTaken_ = 0;
 
-    enterInitialConfiguration();
-    runMainEventLoop();
-    if (topLevelFinalReached_) {
-        finishAtTopLevelFinal();
+        enterInitialConfiguration();
+        runMainEventLoop();
+        if (topLevelFinalReached_) {
+            finishAtTopLevelFinal();
+        }
     }
 
     updateStatistics();
+    hold.finish();
 
     SCE_LOG_INFO("StateMachine: Started successfully");
     return true;
 }
 
 void StateMachine::stop() {
+    // ARCHITECTURE.md "Engine Threading": the run is ended by its owner. A stop
+    // cannot be posted, so one called while another thread drives the machine
+    // waits for that drive, which applies what was posted before it, to end.
+    DriveHold hold(*this, holdForLifecycle());
     SCE_LOG_DEBUG("StateMachine: Stopping state machine (isRunning: {})", isRunning_.load());
 
     // W3C SCXML Test 250: Exit ALL active states with onexit handlers (only if still running)
@@ -507,7 +739,14 @@ void StateMachine::stop() {
     // the session goes at destruction or when the next run starts
     // (releaseSession()).
 
+    // docs/adr/0084: the inbox closes with the run, after what it holds is applied
+    // as a direct call would be now: an event finds the machine stopped and is
+    // counted as unseen, and an ending finds its invocation cancelled by the exit
+    // above and is refused by the token check. The next `start` opens it again.
+    closeInbox();
+
     updateStatistics();
+    hold.finish();
     SCE_LOG_INFO("StateMachine: Stopped");
 }
 
@@ -583,8 +822,39 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     const std::string eventType = EventRaiserImpl::getCurrentEventType();
     const bool fromExternalQueue = EventRaiserImpl::isCurrentEventFromExternalQueue();
 
+    EventMetadata event(eventName, eventData, eventType, sendId, invokeId, originType, originSessionId);
+    // §scxml-5.10: Carry typed event data from EventRaiser thread-local (avoids JSON round-trip)
+    event.typedData = EventRaiserImpl::getCurrentTypedData();
+
+    // ARCHITECTURE.md "Engine Threading": the event is taken by the thread running
+    // this machine. That is this thread inside its own macrostep, this thread for a
+    // drive of its own when no thread runs the machine, and otherwise the thread
+    // that does, through the inbox.
+    switch (standHere()) {
+    case Standing::Running:
+        if (!isRunning_) {
+            return refuseUnseen(eventName);
+        }
+        // §scxml-D-mainEventLoop: an event is processed only where the main
+        // event loop takes it. One handed to this machine from inside its own
+        // running macrostep — by a raiser that delivers synchronously, a host
+        // callback bound into the datamodel, an autoforward from a parent this
+        // macrostep called into — goes onto the queue it belongs to.
+        return holdDelivery(event, fromExternalQueue);
+    case Standing::Busy:
+        // Another thread runs this machine. Waiting for it would make this thread
+        // wait for a whole macrostep, and a thread that macrostep waits for
+        // (a script engine's worker calling back into the host) would never return.
+        return postDelivery(std::move(event), fromExternalQueue);
+    case Standing::Claimed:
+        break;
+    }
+    DriveHold hold(*this, true);
+
     if (!isRunning_) {
-        return refuseUnseen(eventName);
+        const TransitionResult refused = refuseUnseen(eventName);
+        hold.finish();
+        return refused;
     }
 
     // Check JS environment
@@ -593,64 +863,59 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
         TransitionResult result;
         result.success = false;
         result.errorMessage = "JavaScript environment not ready";
+        hold.finish();
         return result;
     }
 
-    EventMetadata event(eventName, eventData, eventType, sendId, invokeId, originType, originSessionId);
-    // §scxml-5.10: Carry typed event data from EventRaiser thread-local (avoids JSON round-trip)
-    event.typedData = EventRaiserImpl::getCurrentTypedData();
+    TransitionResult result;
+    {
+        MacrostepScope macrostep(*this);
 
-    if (macrostepInProgressOnThisThread()) {
-        // §scxml-D-mainEventLoop: an event is processed only where the main
-        // event loop takes it. One handed to this machine from inside its own
-        // running macrostep — by a raiser that delivers synchronously, a host
-        // callback bound into the datamodel, an autoforward from a parent this
-        // macrostep called into — goes onto the queue it belongs to.
-        return holdDelivery(event, fromExternalQueue);
-    }
+        // §scxml-3.12.2: a call from the host starts a new piece of work, so any
+        // `error.*` chain the last one built is over.
+        if (eventRaiser_) {
+            eventRaiser_->resetErrorCascadeDepth();
+        }
+        // The same boundary bounds the macrostep's own chain: the algorithm
+        // starts a macrostep at the external dequeue, and for this engine the
+        // host's call is that dequeue — so a machine left inside an endless
+        // chain gets a full budget for each event it is given, and each refusal is
+        // counted separately. It is also the only way a chain refused for leaving
+        // events queued ever gets drained: the events are still there, and this is
+        // where the budget that drains them comes back.
+        macrostepTruncated_ = false;
+        macrostepMicrostepsTaken_ = 0;
 
-    // Serialize against a macrostep another thread is running, and against
-    // destruction.
-    std::lock_guard<std::mutex> processEventLock(processEventMutex_);
-    if (!isRunning_) {
-        // It stopped while this call waited for the other thread's macrostep.
-        return refuseUnseen(eventName);
-    }
+        // §scxml-D-microstepProcedure: what the visualizer shows belongs to this event
+        lastEnabledTransitions_.clear();
+        lastOptimalTransitions_.clear();
 
-    MacrostepScope macrostep(*this);
+        SCE_LOG_DEBUG("StateMachine: Processing event: '{}' with data: '{}' in session: '{}', originSessionId: '{}'",
+                      eventName, eventData, sessionId_, originSessionId);
 
-    // §scxml-3.12.2: a call from the host starts a new piece of work, so any
-    // `error.*` chain the last one built is over.
-    if (eventRaiser_) {
-        eventRaiser_->resetErrorCascadeDepth();
-    }
-    // The same boundary bounds the macrostep's own chain: the algorithm
-    // starts a macrostep at the external dequeue, and for this engine the
-    // host's call is that dequeue — so a machine left inside an endless
-    // chain gets a full budget for each event it is given, and each refusal is
-    // counted separately. It is also the only way a chain refused for leaving
-    // events queued ever gets drained: the events are still there, and this is
-    // where the budget that drains them comes back.
-    macrostepTruncated_ = false;
-    macrostepMicrostepsTaken_ = 0;
-
-    // §scxml-D-microstepProcedure: what the visualizer shows belongs to this event
-    lastEnabledTransitions_.clear();
-    lastOptimalTransitions_.clear();
-
-    SCE_LOG_DEBUG("StateMachine: Processing event: '{}' with data: '{}' in session: '{}', originSessionId: '{}'",
-                  eventName, eventData, sessionId_, originSessionId);
-
-    const TransitionResult result = processTakenEvent(event, fromExternalQueue);
-    // The host's own event is the first external event of this invocation of the
-    // loop (ARCHITECTURE.md "External-Event Budget"): it was processed directly
-    // above rather than queued first, so the loop starts with one spent.
-    runMainEventLoop(1);
-    if (topLevelFinalReached_) {
-        finishAtTopLevelFinal();
+        // docs/adr/0084: what other threads posted before this call, and the
+        // machine's last drive left for this one, is applied first, in the order the
+        // inbox took it. In auto mode the event then joins the queue behind it: a
+        // thread whose earlier input was posted would otherwise see this one
+        // overtake it. The interactive host steps the queue itself, and its event
+        // is processed at once, as it always was.
+        if (drainInbox() > 0 && autoProcessQueuedEvents_) {
+            result = holdDelivery(event, fromExternalQueue);
+            runMainEventLoop();
+        } else {
+            result = processTakenEvent(event, fromExternalQueue);
+            // The host's own event is the first external event of this invocation of the
+            // loop (ARCHITECTURE.md "External-Event Budget"): it was processed directly
+            // above rather than queued first, so the loop starts with one spent.
+            runMainEventLoop(1);
+        }
+        if (topLevelFinalReached_) {
+            finishAtTopLevelFinal();
+        }
     }
 
     updateStatistics();
+    hold.finish();
     return result;
 }
 
@@ -669,6 +934,8 @@ StateMachine::TransitionResult StateMachine::refuseUnseen(const std::string &eve
 }
 
 void StateMachine::noteUnseenEvent(const std::string &eventName) {
+    // Counted by the owner, and by a thread whose post the inbox refused.
+    std::lock_guard<std::mutex> lock(unseenEventsMutex_);
     ++unseenExternalEvents_;
     lastUnseenEventName_ = eventName;
 }
@@ -895,6 +1162,7 @@ void StateMachine::enterInitialConfiguration() {
 }
 
 void StateMachine::runMainEventLoop(uint32_t alreadyTaken) {
+    requireOwnedHere("runMainEventLoop");
     // External events this invocation has taken off the queue, against
     // `externalEventBudget_`. A local, because the budget is one invocation's: a
     // cut leaves the queue as it is and the next invocation gets a budget of its
@@ -969,6 +1237,19 @@ void StateMachine::runMainEventLoop(uint32_t alreadyTaken) {
         // left there, and going back for it is a turn that takes nothing.
         if (!refused && !macrostepTruncated_ && autoProcessQueuedEvents_ && eventRaiser_ &&
             eventRaiser_->hasQueuedInternalEvents()) {
+            continue;
+        }
+
+        // docs/adr/0084: the macrostep is complete, and this is the point before
+        // the external queue is consulted. What other threads posted since the last
+        // boundary is applied here, in the order the inbox took it, so an event it
+        // carries joins its queue behind what this macrostep queued. In interactive
+        // mode too: the host then steps what was posted as it steps the rest.
+        if (drainInbox() > 0 && !refused && !macrostepTruncated_ && autoProcessQueuedEvents_ && eventRaiser_ &&
+            eventRaiser_->hasQueuedInternalEvents()) {
+            // Applying an input can raise an internal event (an event handed over
+            // from the internal queue, an error a deadline's report raises), which
+            // comes before anything external, as one raised in the macrostep would.
             continue;
         }
 
@@ -1309,6 +1590,11 @@ void StateMachine::finishAtTopLevelFinal() {
     for (const auto &state : configurationInExitOrder()) {
         exitState(state);
     }
+    // docs/adr/0084: the inbox closes with the run, and what was posted before is
+    // applied first as a direct call would be now: an event is counted with the
+    // rest of what the machine never looked at, and an ending finds its invocation
+    // cancelled by the exit above.
+    closeInbox();
     recordUnseenQueuedEvents();
 
     if (completionCallback_) {
@@ -1508,6 +1794,11 @@ void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &s
         // child lost its done.invoke to that cancel in a branch taken from
         // the restored step.
         isRunning_ = running;
+        // docs/adr/0084: a run restored running takes posts as a started one does;
+        // a stop before the restore had closed the inbox.
+        if (running) {
+            inbox_.state().open();
+        }
         SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: running restored as {}, mutex will release", running);
 
         // An ended run comes back ended where it ended (§scxml-D-enterStates).
@@ -1581,8 +1872,11 @@ StateMachine::Statistics StateMachine::getStatistics() const {
     // engine also refuses them through `TransitionResult::success`; the count
     // is what the generated engines can offer, and parity is what makes a
     // document portable between them.
-    stats.unseenExternalEvents = unseenExternalEvents_;
-    stats.lastUnseenEventName = lastUnseenEventName_;
+    {
+        std::lock_guard<std::mutex> lock(unseenEventsMutex_);
+        stats.unseenExternalEvents = unseenExternalEvents_;
+        stats.lastUnseenEventName = lastUnseenEventName_;
+    }
     return stats;
 }
 
@@ -2204,14 +2498,28 @@ bool StateMachine::completeHostInvoke(const std::string &processorType, const st
                                       const std::string &doneData, const std::string &origin,
                                       const std::string &originType) {
     return applyAsOwner(
-        [&] { return endHostInvoke(processorType, invokeId, token, false, doneData, origin, originType); });
+        [&] { return endHostInvoke(processorType, invokeId, token, false, doneData, origin, originType); },
+        InboxHostInvokeEnding{HostInvokeEnding{/*processorType=*/processorType,
+                                               /*invokeId=*/invokeId,
+                                               /*token=*/token,
+                                               /*done=*/true,
+                                               /*data=*/doneData,
+                                               /*origin=*/origin,
+                                               /*originType=*/originType}});
 }
 
 bool StateMachine::failHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
                                   const std::string &errorData, const std::string &origin,
                                   const std::string &originType) {
     return applyAsOwner(
-        [&] { return endHostInvoke(processorType, invokeId, token, true, errorData, origin, originType); });
+        [&] { return endHostInvoke(processorType, invokeId, token, true, errorData, origin, originType); },
+        InboxHostInvokeEnding{HostInvokeEnding{/*processorType=*/processorType,
+                                               /*invokeId=*/invokeId,
+                                               /*token=*/token,
+                                               /*done=*/false,
+                                               /*data=*/errorData,
+                                               /*origin=*/origin,
+                                               /*originType=*/originType}});
 }
 
 HostInvokeEndOutcome StateMachine::endHostInvokeIn(const std::string &sessionId, const HostInvokeEnding &ending) {
@@ -2248,10 +2556,15 @@ HostInvokeEndOutcome StateMachine::failHostInvokeIn(const std::string &sessionId
 
 HostInvokeRoute StateMachine::routeHostInvokeEnd(const std::string &sessionId, const HostInvokeEnding &ending) {
     if (!sessionId.empty() && sessionId == sessionId_) {
-        const bool delivered = applyAsOwner([&] {
-            return endHostInvoke(ending.processorType, ending.invokeId, ending.token, !ending.done, ending.data,
-                                 ending.origin, ending.originType);
-        });
+        // docs/adr/0084, D2: this session runs a loop of its own, so the ending
+        // enters through this session's own door, posted to its inbox while another
+        // thread runs it, when the answer is whether the inbox took it.
+        const bool delivered = applyAsOwner(
+            [&] {
+                return endHostInvoke(ending.processorType, ending.invokeId, ending.token, !ending.done, ending.data,
+                                     ending.origin, ending.originType);
+            },
+            InboxHostInvokeEnding{ending});
         return {true, delivered};
     }
     // docs/adr/0045: a session of the tree is reached by its id, through the
@@ -2268,31 +2581,48 @@ HostInvokeRoute StateMachine::routeHostInvokeEnd(const std::string &sessionId, c
     return {};
 }
 
-bool StateMachine::applyAsOwner(const std::function<bool()> &apply) {
+bool StateMachine::applyAsOwner(const std::function<bool()> &apply, InboxInput posted) {
     // ARCHITECTURE.md "Engine Threading": an ending changes the invocation table
     // and the queues, so it is applied by the owner. A call made from inside the
-    // running macrostep is applied there, and its loop takes what it queued.
-    if (macrostepInProgressOnThisThread()) {
+    // running macrostep is applied there, and its loop takes what it queued; one
+    // made while another thread runs the machine is posted for that thread, and
+    // answers whether the inbox took it.
+    switch (standHere()) {
+    case Standing::Running:
         return apply();
+    case Standing::Busy:
+        return post(std::move(posted));
+    case Standing::Claimed:
+        break;
     }
-    // Until this engine's inbox lands, a call from outside a macrostep enters as a
-    // host's event does (`processEvent`): it waits for a macrostep another thread
-    // runs, and is then a macrostep of its own.
-    std::lock_guard<std::mutex> processEventLock(processEventMutex_);
-    MacrostepScope macrostep(*this);
-    const bool applied = apply();
-    if (isRunning_) {
-        if (eventRaiser_) {
-            eventRaiser_->resetErrorCascadeDepth();
+    // No thread ran the machine: this call is a drive of its own, whose main event
+    // loop then takes what it queued.
+    DriveHold hold(*this, true);
+    bool applied = false;
+    {
+        MacrostepScope macrostep(*this);
+        // What other threads posted before this call, and the machine's last drive
+        // left for this one, is applied first, in the order the inbox took it. A
+        // machine not running applies none of it: before its first run it waits
+        // for the run.
+        if (isRunning_) {
+            (void)drainInbox();
         }
-        macrostepTruncated_ = false;
-        macrostepMicrostepsTaken_ = 0;
-        runMainEventLoop();
-        if (topLevelFinalReached_) {
-            finishAtTopLevelFinal();
+        applied = apply();
+        if (isRunning_) {
+            if (eventRaiser_) {
+                eventRaiser_->resetErrorCascadeDepth();
+            }
+            macrostepTruncated_ = false;
+            macrostepMicrostepsTaken_ = 0;
+            runMainEventLoop();
+            if (topLevelFinalReached_) {
+                finishAtTopLevelFinal();
+            }
         }
     }
     updateStatistics();
+    hold.finish();
     return applied;
 }
 
@@ -2325,10 +2655,14 @@ void StateMachine::raiseHostInvokeReport(const Core::HostInvokeReport &report) {
 
 void StateMachine::expireHostInvoke(const HostInvokeDeadline &deadline) {
     hostInvokeDeadlines_->forget(deadline.token);
-    (void)applyAsOwner([&] {
-        raiseHostInvokeReport(hostInvokes_.expire(*invokers_, deadline));
-        return true;
-    });
+    // docs/adr/0084, D8: the deadline comes due on the scheduler's thread, and is
+    // judged by the thread running the machine, posted to it when that is another.
+    (void)applyAsOwner(
+        [&] {
+            raiseHostInvokeReport(hostInvokes_.expire(*invokers_, deadline));
+            return true;
+        },
+        InboxHostInvokeDeadline{deadline});
 }
 
 void StateMachine::raiseHostInvokeEvent(const std::string &name, const std::string &data, const std::string &invokeId,
@@ -2381,6 +2715,12 @@ void StateMachine::setCompletionCallback(CompletionCallback callback) {
 // EventRaiser management
 void StateMachine::setEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) {
     SCE_LOG_DEBUG("StateMachine: setEventRaiser called for session: {}", sessionId_);
+    // A raiser this machine no longer takes posts nothing to its inbox.
+    if (eventRaiser_ && eventRaiser_ != eventRaiser) {
+        if (const auto previous = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_)) {
+            previous->clearForeignEntry();
+        }
+    }
     eventRaiser_ = eventRaiser;
 
     // SCXML W3C compliance: Set EventRaiser callback to StateMachine's processEvent
@@ -2415,6 +2755,18 @@ void StateMachine::setEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) {
             SCE_LOG_DEBUG(
                 "StateMachine: EventRaiser callback set to processEvent - session: {}, EventRaiser instance: {}",
                 sessionId_, (void *)eventRaiserImpl.get());
+
+            // docs/adr/0084, D8: a raise the raiser would queue, made on a thread
+            // that is not running this machine while another thread is (a delayed
+            // `<send>` the scheduler fires, a child reporting from its own thread,
+            // a Mesh router's or an HTTP listener's delivery), is posted to this
+            // machine's inbox, and the thread running it applies it at its next
+            // macrostep boundary. The queues stay the owner's.
+            eventRaiserImpl->setForeignEntry(EventRaiserImpl::ForeignEntry{
+                [this] { return !inbox_.state().isOwnerHere(); },
+                [this](Core::EventMetadata &&event, EventQueue queue) {
+                    return post(InboxEvent{std::move(event), queue == EventQueue::External});
+                }});
         }
     }
 
