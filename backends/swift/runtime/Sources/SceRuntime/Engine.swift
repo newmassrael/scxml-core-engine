@@ -211,6 +211,10 @@ public final class Engine<Policy: StatePolicy> {
     /// run ended starts closed.
     var inboxClosed = false
 
+    /// Set while `drainInbox` applies what it took, so the external events those inputs
+    /// raise do not drain the inbox again (`drainInbox`, `enqueueExternal`).
+    var drainingInbox = false
+
     /// `_event.invokeid` of the event being processed (§scxml-5.10.1), empty when none is: while
     /// the initial configuration is entered, or between two events. A `<send>` to a processor the
     /// host serves carries it out (`HostSendRequest.invokeID`), as a W3C child's send to its parent
@@ -592,7 +596,7 @@ public final class Engine<Policy: StatePolicy> {
                     target: ""
                 )
                 due.metadata.name = act.name
-                externalQueue.raise(due)
+                enqueueExternal(due)
             }
             // The macrostep this act drives may <cancel> a later one, so the queue is
             // re-consulted after it and not before.
@@ -798,7 +802,7 @@ public final class Engine<Policy: StatePolicy> {
     public func raiseExternal(_ event: Event, eventData: String = "", origin: String = "") {
         // §scxml-5.10.1: what the host hands the external queue is typed "external"
         // here, where it enters that queue.
-        externalQueue.raise(
+        enqueueExternal(
             .withFields(
                 event,
                 data: eventData,
@@ -810,6 +814,29 @@ public final class Engine<Policy: StatePolicy> {
                 target: ""
             )
         )
+    }
+
+    /// The one door onto the external queue: a host's `raiseExternal` and its spellings,
+    /// a `<send>` to this session, delayed or not, a reply a host-served or BasicHTTP
+    /// send brought back, a host-run invocation's `done.invoke` or `error.invoke`, and
+    /// what a child this owner drives sends its parent.
+    ///
+    /// docs/adr/0084, D2: the external queue takes events in the order they arrived.
+    /// What another thread posted before this event arrived first (a BasicHTTP listener's
+    /// delivery a synchronous send waited for, W3C test 201), so the inbox is applied
+    /// before this event joins the queue, and not only at the macrostep boundary. While
+    /// the inbox is being applied this is a plain push: the drain applies what it took in
+    /// order (`drainInbox`). Not before a run starts or once it is over: a post made
+    /// before the first run waits for that run's first boundary, and the close that ends
+    /// a run applies what is held then.
+    ///
+    /// `raise` does not come here, and does not drain: the internal queue is the running
+    /// macrostep's own, and arrival order is a property of the external queue.
+    private func enqueueExternal(_ event: EventWithMetadata<Event>) {
+        if isRunning {
+            drainInbox()
+        }
+        externalQueue.raise(event)
     }
 
     /// The event an event that arrives by name is delivered as (§scxml-3.12.1).
@@ -865,7 +892,7 @@ public final class Engine<Policy: StatePolicy> {
             target: ""
         )
         meta.metadata.name = arrivalName(of: event, name: eventName)
-        externalQueue.raise(meta)
+        enqueueExternal(meta)
     }
 
     /// What `EventMetadata.name` is for an event that arrived as `name` and was
@@ -925,7 +952,7 @@ public final class Engine<Policy: StatePolicy> {
     /// Preserves the invoke id for parent finalize handlers. Matches Rust
     /// `Engine::raise_external_with_meta`.
     public func raiseExternalWithMeta(_ event: EventWithMetadata<Event>) {
-        externalQueue.raise(event)
+        enqueueExternal(event)
     }
 
     /// Processes an external event (convenience API, runs one macrostep)
@@ -952,7 +979,7 @@ public final class Engine<Policy: StatePolicy> {
             noteUnseenEvent(event)
             return
         }
-        externalQueue.raise(EventWithMetadata(event, metadata: metadata))
+        enqueueExternal(EventWithMetadata(event, metadata: metadata))
         step()
     }
 
@@ -1686,7 +1713,7 @@ public final class Engine<Policy: StatePolicy> {
             var metadata = EventMetadata.external(sendID: "", origin: "")
             metadata.data = response.eventData
             if let arriving = arrivingEvent(name: response.eventName, metadata: metadata) {
-                externalQueue.raise(arriving)
+                enqueueExternal(arriving)
             }
         }
     }
@@ -1808,11 +1835,12 @@ public final class Engine<Policy: StatePolicy> {
             }
 
             // docs/adr/0084: the macrostep is complete, and this is the point before the
-            // external queue is consulted. What other threads posted since the last
-            // boundary is applied here, in the order the inbox took it, so an event it
-            // carries joins the external queue behind what this macrostep queued
-            // (§scxml-C-1). Each input is applied by an operation that raises onto the
-            // external queue only, so the internal queue is not asked again.
+            // external queue is consulted. What other threads posted since the last drain
+            // is applied here, in the order the inbox took it, so an event it carries
+            // joins the external queue behind what this macrostep queued before it
+            // arrived (§scxml-C-1); an event the macrostep queued later drained the inbox
+            // first (`enqueueExternal`). Each input is applied by an operation that raises
+            // onto the external queue only, so the internal queue is not asked again.
             drainInbox()
 
             guard let head = externalQueue.front() else {

@@ -107,8 +107,8 @@ protocol OwnedInbox<Event>: AnyObject {
 
 /// The inbox of one engine (`Engine.inbox`): a multi-producer, single-consumer queue, and the
 /// only part of an engine that is safe to use from any thread. The engine's owner applies what was
-/// posted at its next macrostep boundary, before it takes the next external event, in the order
-/// the posts were taken.
+/// posted at its next macrostep boundary, before it takes the next external event, and before it
+/// puts an event of its own on the external queue, in the order the posts were taken.
 public final class EngineInbox<Event: Sendable>: Sendable {
     private let hold: Mutex<InboxHold<Event>>
 
@@ -203,14 +203,25 @@ extension Engine {
         drainInbox()
     }
 
-    /// The macrostep boundary's half of the inbox (docs/adr/0084): applies, on the owner, what
-    /// other threads posted, in the order the inbox took it, each by the owner-thread operation
-    /// of the same name. What the inbox held when the boundary was reached, so posters that never
-    /// stop cannot hold the owner here; what they post meanwhile is applied at the next one.
+    /// The owner's half of the inbox (docs/adr/0084): applies, on the owner, what other threads
+    /// posted, in the order the inbox took it, each by the owner-thread operation of the same
+    /// name. Reached at the macrostep boundary and before an event of the owner's own joins the
+    /// external queue (`enqueueExternal`). What the inbox held when the drain began, so posters
+    /// that never stop cannot hold the owner here; what they post meanwhile is applied at the
+    /// next drain.
+    ///
+    /// An owner-thread operation, as every call on the engine is: the `Sendable` handle posts
+    /// and never drains.
     func drainInbox() {
-        guard let owned = ownedInbox else {
+        // One drain at a time. Applying an input is the owner-thread operation of the same name,
+        // and each of those raises its event through `enqueueExternal`, which drains first:
+        // without this flag a drain would start inside the one applying the inputs before it,
+        // and take what was posted since ahead of the rest of what it took.
+        guard !drainingInbox, let owned = ownedInbox else {
             return
         }
+        drainingInbox = true
+        defer { drainingInbox = false }
         for input in owned.takeAll() {
             applyInboxInput(input)
         }

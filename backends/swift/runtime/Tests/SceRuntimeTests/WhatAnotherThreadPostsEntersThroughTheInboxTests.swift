@@ -13,6 +13,9 @@ import Testing
 //
 //   * many threads post endings and external events while the owner ticks, and what the machine
 //     takes, and what is left running, are those of a single-threaded replay of the same posts;
+//   * the external queue takes events in the order they arrived: a post made while a macrostep
+//     runs is applied before an event that macrostep then puts on the queue itself, a `<send>` to
+//     itself or a host-run invocation's `done.invoke` (W3C test 201's shape);
 //   * an ending posted for a start that was cancelled, or started again, is refused by the token
 //     check, as a direct one is (§scxml-6.4);
 //   * a post is taken before the run starts and wakes the owner; the inbox closes with a run that
@@ -229,6 +232,48 @@ private func postFromAnotherThread(_ inbox: EngineInbox<FlatEvent>, _ input: Eng
     let replayed = replay(posted)
     #expect(record.taken == replayed.taken, "the run differs from a single-threaded replay of its posts")
     #expect(record.invoker == replayed.invoker, "the invocations differ from a single-threaded replay of the posts")
+}
+
+/// W3C test 201's shape, without the HTTP listener: inside the macrostep that enters `idle`, once
+/// `probe` is started, the owner waits for a thread that posts `ping` (as a BasicHTTP send waits
+/// for the listener that delivers its event), and then `queueOwn` puts an event of the owner's own
+/// on the external queue. What the machine took. The semaphore the post signals is the only
+/// ordering; nothing sleeps.
+private func takenWhenTheOwnerQueuesItsOwnEventAfterAPost(
+    _ queueOwn: @escaping (Engine<ScriptedPolicy>, ProbeRecord) -> Void
+) -> [String] {
+    let (engine, record) = makeProbe()
+    let inbox = engine.inbox
+    let enterIdle = engine.policy.onEntry[.idle]
+    engine.policy.onEntry[.idle] = { engine in
+        enterIdle?(engine)
+        #expect(postFromAnotherThread(inbox, .externalEvent(.ping, eventData: "posted")))
+        queueOwn(engine, record)
+    }
+    engine.initialize()
+    return record.taken
+}
+
+@Test func anEventPostedBeforeTheOwnersOwnSendIsTakenFirst() {
+    let taken = takenWhenTheOwnerQueuesItsOwnEventAfterAPost { engine, _ in
+        // What the generated `<send event="ping"/>` with no target raises.
+        var own = EventMetadata.external(sendID: "", origin: "")
+        own.data = "own"
+        engine.raiseExternalWithMeta(EventWithMetadata<FlatEvent>(.ping, metadata: own))
+    }
+    #expect(taken == ["ping:posted", "ping:own"], "the owner's own send overtook an event posted before it")
+}
+
+@Test func anEventPostedBeforeAHostRunInvocationsDoneInvokeIsTakenFirst() {
+    let taken = takenWhenTheOwnerQueuesItsOwnEventAfterAPost { engine, record in
+        guard let token = startedToken(record) else {
+            Issue.record("`probe` never started")
+            return
+        }
+        // The host completes `probe` on the owner, inside the same macrostep.
+        #expect(engine.completeHostInvoke(processorType: probeType, invokeID: probeID, token: token, doneData: "own"))
+    }
+    #expect(taken == ["ping:posted", "done:own"], "the owner's own done.invoke overtook an event posted before it")
 }
 
 @Test func aPostedEndingOfACancelledOrRestartedStartIsRefusedAsADirectOneIs() throws {
