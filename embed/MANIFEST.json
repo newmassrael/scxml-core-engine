@@ -1,6 +1,6 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "6f71b4eacd",
+  "embed_version": "d669f6f5b2",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 494,
@@ -1237,6 +1237,19 @@
       "header": "core/HostProcessor.h",
       "kind": "struct",
       "members": [
+        "field std::map<std::string, HostSendHandler> handlers",
+        "method TreeEventProcessors &(TreeEventProcessors &&) operator=",
+        "method TreeEventProcessors &(const TreeEventProcessors &) operator=",
+        "method void () ~TreeEventProcessors",
+        "method void (TreeEventProcessors &&) TreeEventProcessors",
+        "method void (const TreeEventProcessors &) TreeEventProcessors"
+      ],
+      "name": "SCE::TreeEventProcessors"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
         "field std::map<std::string, std::vector<std::string>> params",
         "field std::string content",
         "field std::string eventData",
@@ -2398,6 +2411,12 @@
       "kind": "class",
       "members": [],
       "name": "SCE::InterpreterDocument"
+    },
+    {
+      "header": "runtime/InvokeExecutor.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::HostRunInvokeHandler"
     },
     {
       "header": "runtime/InvokeExecutor.h",
