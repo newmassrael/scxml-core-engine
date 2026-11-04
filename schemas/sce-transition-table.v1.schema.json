@@ -3,7 +3,7 @@
   "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-transition-table.v1.schema.json",
   "x-sce-schema-status": "pre-release",
   "title": "SCE transition table (wire schema v1)",
-  "description": "One line of the NDJSON stream `sce-codegen transition-table <doc.scxml>` writes: one row per node of the design that can carry a requirement (a state, a transition, an executable action, an invoke, a data item, a top-level script), in document order, read from the same walk the requirements report and the manifest classification use, so a `node_path` names the same node in all three. A row of kind `transition` also carries `index` and `targets`: the position of the transition within its state and its target set, one id per token, so a reader does not recover them from `node_path` and the `to` column. With `--header` the stream is led by one `header` record naming the machine and the §synth-6.2.6 `source_hash` of the document set it was read from, the same value a generated file and a sourcemap carry, so a consumer that keeps the export apart from the build can check it against the machine it compiled; the generator commit rides on that record only, because a stamp on every row would change every line of an export that is diffed across commits. The `sce:req` tokens are opaque: nothing here reads their shape. Each line is one instance of this schema. Authoritative producer is sce-build/src/transition_table.rs. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
+  "description": "One line of the NDJSON stream `sce-codegen transition-table <doc.scxml>` writes: one row per node of the design that can carry a requirement (a state, a transition, an executable action, an invoke, a data item, a top-level script), in document order, read from the same walk the requirements report and the manifest classification use, so a `node_path` names the same node in all three. A row of kind `transition` also carries `index` and `targets`: the position of the transition within its state and its target set, one id per token, so a reader does not recover them from `node_path` and the `to` column. A row of a document written against a feature model also carries `requires` when its node is not present in every variant, so the stream is the featured transition table of docs/adr/0057 §7 and a consumer derives each variant's rows from it; `--features` writes one variant's own. With `--header` the stream is led by one `header` record naming the machine and the §synth-6.2.6 `source_hash` of the document set it was read from, the same value a generated file and a sourcemap carry, so a consumer that keeps the export apart from the build can check it against the machine it compiled; the generator commit rides on that record only, because a stamp on every row would change every line of an export that is diffed across commits. The `sce:req` tokens are opaque: nothing here reads their shape. Each line is one instance of this schema. Authoritative producer is sce-build/src/transition_table.rs. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
   "oneOf": [
     { "$ref": "#/definitions/header" },
     { "$ref": "#/definitions/row" }
@@ -110,6 +110,18 @@
           "description": "The target set of the transition, one state id per token, as written; a token naming a `<history>` stays that id. Empty for a targetless transition. Present on a `transition` row and on no other.",
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
+        },
+        "requires": {
+          "description": "The condition under which the node is present, on a row of a document written against a feature model whose node is not present in every variant (docs/adr/0057 §7): the node's effective condition (its own `sce:requires` and those of the elements around it) in canonical form. It holds in a configuration when every feature of one of its terms is on there. Each term is a least configuration of the condition written by its features that no other feature of it requires, its features in byte order, the terms in the order of their features, none containing another, so two rows carry the same value exactly when their nodes are present in the same variants. Absent on a node present in every variant, which is every node of a document of no feature model and every row of `--features`. The rows of the variant of a configuration are the rows with no `requires` and those whose `requires` holds there, in order; a kept transition's `index` is its position among the kept transitions of its state, and `node_path`, a state's `to` and `action` (which name its initial child, the first in the variant where it writes none) and a transition's `action` (which lists its actions) are the variant's own, which `--features` writes.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" }
+          }
         }
       },
       "if": {

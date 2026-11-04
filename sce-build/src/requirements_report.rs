@@ -244,6 +244,20 @@ impl<'a> NodeSubject<'a> {
             NodeSubject::Variable { variable, .. } => &variable.unresolved,
         }
     }
+
+    /// The condition under which the node is present (ADR 0057 §9): its own
+    /// and those of the elements around it. `None` for a node present in
+    /// every variant, and for every node of a variant.
+    pub(crate) fn presence(&self) -> Option<&'a crate::feature_selector::Selector> {
+        match self {
+            NodeSubject::State(state) => state.presence.as_ref(),
+            NodeSubject::Transition { transition, .. } => transition.presence.as_ref(),
+            NodeSubject::Action { action, .. } => action.presence.as_ref(),
+            NodeSubject::Invoke { base, .. } => base.presence.as_ref(),
+            NodeSubject::GlobalScript { action, .. } => action.presence.as_ref(),
+            NodeSubject::Variable { variable, .. } => variable.presence.as_ref(),
+        }
+    }
 }
 
 /// One row per `<data>` in a `<datamodel>`, in document order.

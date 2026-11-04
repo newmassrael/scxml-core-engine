@@ -1669,6 +1669,14 @@ name = "feature_selection"
 path = "tests/feature_selection.rs"
 required-features = ["cli"]
 
+# The featured transition table (ADR 0057 §7): each variant's own table is the
+# featured rows its configuration keeps. It runs `sce-codegen transition-table`,
+# so it carries the `cli` gate.
+[[test]]
+name = "the_featured_transition_table_derives_each_variant"
+path = "tests/the_featured_transition_table_derives_each_variant.rs"
+required-features = ["cli"]
+
 # `sce-codegen codec-roles` prints the table of which elements of a codec a
 # value presents and which the encoding derives (docs/adr/0058 §1). It runs
 # `sce-codegen`, so it carries the `cli` gate; the classification it prints is

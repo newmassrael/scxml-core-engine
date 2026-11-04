@@ -509,7 +509,19 @@ that backend gap to be closed, as its own change, rather than holding to a weake
   saved text and on the refusal. The Kotlin, Go, Python, C++ and C11 runtimes then took the member with the same
   text and refusals (2026-11-04); the C++ and C11 lanes hold their machine for every build to each build's own on
   it as the Rust crate does.
-- Still to do: Swift; the featured transition table; conditions in the forge AST and the sourcemap.
+- **The featured transition table** (§7, 2026-11-04). `sce-codegen transition-table` of a gated document gives a
+  row whose node is not in every variant `requires`: the node's effective condition in canonical form, any of the
+  terms, each all of its features (`Selector::condition_terms` reads it back from the presence the parser stamps).
+  The rows of a variant are the rows its configuration satisfies, in order, and keep every column a node states of
+  itself. What a row counts or summarises from other nodes is the variant's own: a transition's `index` (its
+  position among its state's kept transitions), `node_path`, a state's `to` and `action` (its initial child, the
+  first child of the variant where it writes none) and a transition's `action` (the actions the variant keeps); so
+  `transition-table --features` writes a variant's own table, with the document's hash. The §7 bullet's "a
+  consumer derives a variant by the same rule" holds for the rows and for the columns a node states of itself, and
+  the test holds every configuration's derived rows to `--features`, the counted `index` included, and finds a
+  position, a default initial child and a transition's summary each moved by some variant. A declared table in the machine for every build needed nothing: each build's is its own variant's,
+  selected as the rest of the output is.
+- Still to do: Swift; conditions in the forge AST and the sourcemap.
 
 ## Questions left open
 

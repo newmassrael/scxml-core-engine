@@ -156,6 +156,67 @@ impl Selector {
             Selector::Not(operand) => format!("!{}", operand.c()),
         }
     }
+
+    /// The selector as a condition's canonical form (ADR 0057 §7): any of the
+    /// terms, each all of its features, the features of a term in byte order
+    /// and the terms in the order of their features, no term containing
+    /// another. For the selector [`Selector::of_condition`] writes these are
+    /// the terms of [`PresenceCondition::canonical_form`]. `True` is the one
+    /// empty term and `False` no term. `None` for a selector that negates,
+    /// which no condition's selector does: a condition is monotone.
+    pub fn condition_terms(&self) -> Option<Vec<Vec<String>>> {
+        let terms: Vec<Vec<String>> = match self {
+            Selector::True => vec![Vec::new()],
+            Selector::False => Vec::new(),
+            Selector::Feature(name) => vec![vec![name.clone()]],
+            Selector::Any(operands) => {
+                let mut terms = Vec::new();
+                for operand in operands {
+                    terms.extend(operand.condition_terms()?);
+                }
+                terms
+            }
+            Selector::All(operands) => {
+                let mut terms: Vec<Vec<String>> = vec![Vec::new()];
+                for operand in operands {
+                    let factors = operand.condition_terms()?;
+                    terms = terms
+                        .iter()
+                        .flat_map(|term| {
+                            factors.iter().map(move |factor| {
+                                let mut product = term.clone();
+                                product.extend(factor.iter().cloned());
+                                product
+                            })
+                        })
+                        .collect();
+                }
+                terms
+            }
+            Selector::Not(_) => return None,
+        };
+        let mut terms: Vec<Vec<String>> = terms
+            .into_iter()
+            .map(|mut term| {
+                term.sort();
+                term.dedup();
+                term
+            })
+            .collect();
+        terms.sort_by(|x, y| x.len().cmp(&y.len()).then_with(|| x.cmp(y)));
+        terms.dedup();
+        let mut least: Vec<Vec<String>> = Vec::new();
+        for term in terms {
+            if !least
+                .iter()
+                .any(|kept| kept.iter().all(|feature| term.contains(feature)))
+            {
+                least.push(term);
+            }
+        }
+        least.sort();
+        Some(least)
+    }
 }
 
 /// A build the feature model does not admit: one that turns `feature` on and
@@ -302,6 +363,61 @@ mod tests {
         assert_eq!(
             Selector::of_condition(&PresenceCondition::always(), &m),
             Selector::True
+        );
+    }
+
+    /// A condition's selector reads back as the terms of its canonical form,
+    /// whatever order the selector holds its operands in: `any` sorts a feature
+    /// before a conjunction, the canonical form sorts by the features.
+    #[test]
+    fn a_conditions_selector_reads_back_as_its_canonical_terms() {
+        let m = model();
+        for text in [
+            "accept",
+            "all(unicast, accept)",
+            "any(auth, accept)",
+            "all(any(auth, unicast), accept)",
+            "any(all(accept, auth), unicast)",
+            "any(all(accept, auth), all(auth, unicast), accept)",
+        ] {
+            let condition = condition(&m, text);
+            let expected: Vec<Vec<String>> = condition
+                .canonical_form(&m)
+                .unwrap()
+                .terms()
+                .iter()
+                .map(|term| term.iter().map(|name| name.to_string()).collect())
+                .collect();
+            assert_eq!(
+                Selector::of_condition(&condition, &m).condition_terms(),
+                Some(expected),
+                "{text}"
+            );
+        }
+        let mixed = Selector::any([
+            Selector::Feature("unicast".into()),
+            Selector::all([
+                Selector::Feature("auth".into()),
+                Selector::Feature("accept".into()),
+            ]),
+        ]);
+        assert_eq!(
+            mixed.condition_terms(),
+            Some(vec![
+                vec!["accept".to_string(), "auth".to_string()],
+                vec!["unicast".to_string()],
+            ])
+        );
+        assert_eq!(Selector::True.condition_terms(), Some(vec![Vec::new()]));
+        assert_eq!(Selector::False.condition_terms(), Some(Vec::new()));
+        assert_eq!(
+            Selector::all([
+                Selector::Feature("auth".into()),
+                !Selector::Feature("unicast".into())
+            ])
+            .condition_terms(),
+            None,
+            "a selector that negates is no condition"
         );
     }
 

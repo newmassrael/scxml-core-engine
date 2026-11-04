@@ -8957,6 +8957,14 @@ requires is `validation/feature-selection-incomplete` (refused, never
 completed), and a selection for a document that imports no model is
 `validation/feature-selection-without-model`.
 
+`sce-codegen transition-table` of a document that carries conditions is the featured
+transition table (ADR 0057 §7): every node of every variant, a row whose node is not
+present in every variant carrying its effective condition in canonical form as
+`requires`, so the rows of a variant are the rows its configuration satisfies, in order;
+`transition-table --features` writes one variant's own (`docs/SCE_TRANSITION_TABLE.md`,
+"A document written against a feature model"). A declared table (§2.20) in the one
+output of the Rust, C11 and C++ backends is each build's own variant's.
+
 ---
 
 ## Appendix — `DiagnosticCode` index (493 codes)

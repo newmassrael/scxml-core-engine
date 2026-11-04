@@ -51,6 +51,17 @@
 //! action row that actually carries the delay and is `-` on
 //! transitions, rather than being synthesised onto a transition the IR
 //! never gave one to.
+//!
+//! # A document written against a feature model
+//!
+//! The table of a gated document is the featured transition table of ADR
+//! 0057 §7: a row of a node that is not present in every variant carries
+//! `requires`, the node's effective condition in canonical form, and the
+//! rows of a variant are the rows whose condition its configuration
+//! satisfies, in order. Columns the node states of itself carry over to the
+//! variant; those that count or summarise other nodes are the variant's own
+//! (`docs/SCE_TRANSITION_TABLE.md`, "A document written against a feature
+//! model"), and the variant's own table is one `--features` away.
 
 use std::io::{self, Write};
 
@@ -99,6 +110,15 @@ pub struct TransitionRow {
     /// `to` column joins these and may add `type=`; this does not.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub targets: Option<Vec<String>>,
+    /// The condition under which the node is present, when the document is
+    /// written against a feature model and the node is not in every variant
+    /// (ADR 0057 §7): its effective condition in canonical form, any of the
+    /// terms, each all of its features ([`Selector::condition_terms`]).
+    /// Absent on a node present in every variant.
+    ///
+    /// [`Selector::condition_terms`]: crate::feature_selector::Selector::condition_terms
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requires: Option<Vec<Vec<String>>>,
 }
 
 /// The kind of node a [`TransitionRow`] describes.
@@ -196,11 +216,19 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                 node.record.requirement_ids.join(" ")
             };
             let node_path = node.record.node_path.clone();
+            // A presence is only ever the selector of a condition (the
+            // parser stamps `Selector::of_condition`), which never negates.
+            let requires = node.subject.presence().map(|presence| {
+                presence
+                    .condition_terms()
+                    .expect("a node's presence is the selector of a condition")
+            });
             match node.subject {
                 NodeSubject::State(state) => TransitionRow {
                     kind: RowKind::State,
                     index: None,
                     targets: None,
+                    requires,
                     source,
                     from: state.id.clone(),
                     event: "(state)".to_string(),
@@ -219,6 +247,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     kind: RowKind::Transition,
                     index: Some(records[&node_path].index),
                     targets: Some(records[&node_path].targets.clone()),
+                    requires,
                     source,
                     from: state.id.clone(),
                     // An eventless transition is the SCXML spelling for
@@ -258,6 +287,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     },
                     index: None,
                     targets: None,
+                    requires,
                     source,
                     from: state.id.clone(),
                     // Five sites, five pseudo-events. `(transition)`
@@ -287,6 +317,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     kind: RowKind::Invoke,
                     index: None,
                     targets: None,
+                    requires,
                     source,
                     from: state.id.clone(),
                     event: "(invoke)".to_string(),
@@ -308,6 +339,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     kind: RowKind::Script,
                     index: None,
                     targets: None,
+                    requires,
                     source,
                     from: "<scxml>".to_string(),
                     event: "(global script)".to_string(),
@@ -328,6 +360,7 @@ pub fn transition_table(model: &SCXMLModel) -> Vec<TransitionRow> {
                     kind: RowKind::Data,
                     index: None,
                     targets: None,
+                    requires,
                     source,
                     from: state.map_or_else(|| "<scxml>".to_string(), |s| s.id.clone()),
                     event: "(data)".to_string(),
@@ -734,6 +767,61 @@ mod tests {
         TransitionTableHeader::new("machine", "0".repeat(64))
     }
 
+    /// The stream of the product-line fixture every lane reads, a document
+    /// written against a feature model, as written (ADR 0057 §7).
+    fn featured_stream() -> Vec<serde_json::Value> {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/product_line/session.scxml"
+        );
+        let model = SCXMLParser::new().parse_file(path).expect("parse");
+        let mut buf = Vec::new();
+        emit_transition_table_ndjson(&model, None, &mut buf).unwrap();
+        String::from_utf8(buf)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("a line is JSON"))
+            .collect()
+    }
+
+    #[test]
+    fn a_row_of_a_gated_node_carries_its_condition_and_no_other_row_does() {
+        let requires: Vec<(String, serde_json::Value)> = featured_stream()
+            .into_iter()
+            .map(|row| {
+                (
+                    row["node_path"].as_str().unwrap().to_string(),
+                    row.get("requires").cloned().unwrap_or_default(),
+                )
+            })
+            .collect();
+        let of = |path: &str| {
+            requires
+                .iter()
+                .find(|(p, _)| p == path)
+                .unwrap_or_else(|| panic!("no row {path}: {requires:?}"))
+                .1
+                .clone()
+        };
+        let unicast = serde_json::json!([["session-unicast"]]);
+        let accept = serde_json::json!([["session-unicast-accept"]]);
+        assert_eq!(of("states.probe"), unicast);
+        assert_eq!(of("states.probe.transitions[0]"), unicast, "inside a gate");
+        assert_eq!(of("states.idle"), serde_json::Value::Null);
+        assert_eq!(of("states.idle.transitions[0]"), accept);
+        assert_eq!(
+            of("states.idle.on_entry_blocks[0][0]"),
+            serde_json::Value::Null
+        );
+        assert_eq!(of("states.idle.on_entry_blocks[0][1]"), unicast);
+        for row in featured_stream() {
+            assert_eq!(violations(&row), Vec::<String>::new(), "{row}");
+        }
+        for row in stream_of(EVERY_KIND, None) {
+            assert!(row.get("requires").is_none(), "{row}");
+        }
+    }
+
     #[test]
     fn schema_file_declares_status() {
         assert_eq!(
@@ -813,11 +901,30 @@ mod tests {
             .find(|row| row["kind"] == "state")
             .expect("a state row");
         let header = serde_json::to_value(a_header()).unwrap();
-        for valid in [&transition_row, &state_row, &header] {
+        let gated_row = featured_stream()
+            .into_iter()
+            .find(|row| row.get("requires").is_some())
+            .expect("a row of a gated node");
+        for valid in [&transition_row, &state_row, &header, &gated_row] {
             assert_eq!(violations(valid), Vec::<String>::new(), "{valid}");
         }
 
-        let changes: [(&str, serde_json::Value); 8] = [
+        let changes: [(&str, serde_json::Value); 11] = [
+            ("a condition of no term, which holds nowhere", {
+                let mut r = gated_row.clone();
+                r["requires"] = serde_json::json!([]);
+                r
+            }),
+            ("a term of no feature, which holds everywhere", {
+                let mut r = gated_row.clone();
+                r["requires"] = serde_json::json!([[]]);
+                r
+            }),
+            ("a term naming what is no feature name", {
+                let mut r = gated_row.clone();
+                r["requires"] = serde_json::json!([["Session_Unicast"]]);
+                r
+            }),
             ("a transition row without its index", {
                 let mut r = transition_row.clone();
                 r.as_object_mut().unwrap().remove("index");

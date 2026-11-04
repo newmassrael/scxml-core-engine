@@ -2915,6 +2915,14 @@ enum Commands {
         /// one: it is part of the source set the hash covers.
         #[arg(long, requires = "header", value_name = "PATH")]
         deploy: Option<String>,
+        /// Emit the table of the variant these features denote, mirroring
+        /// `generate --features` (ADR 0057 §6): comma-separated, `--features`
+        /// alone for the variant with no feature on. Without it the table of
+        /// a document written against a feature model is the featured table
+        /// (ADR 0057 §7): every node of every variant, each row of a node not
+        /// in every variant carrying its condition in `requires`.
+        #[arg(long, value_delimiter = ',', num_args = 0.., value_name = "FEATURE")]
+        features: Option<Vec<String>>,
     },
     /// Emit the review table of a NON-statechart forge kind as NDJSON —
     /// one record per node that can carry `sce:req`, with the `source`
@@ -4332,9 +4340,11 @@ fn main() {
             header,
             input_root,
             deploy,
+            features,
         } => cmd_transition_table(
             &scxml,
             header.then_some((input_root.as_deref(), deploy.as_deref())),
+            selected_features(features),
             error_format,
         ),
         Commands::ReviewTable { document } => cmd_review_table(&document, error_format),
@@ -11800,13 +11810,15 @@ fn cmd_manifest(dir: &str) {
 /// the one `generate` embeds for the same inputs, so it goes through the
 /// same [`DriftContext::compute`] and is refused on the same terms: a
 /// walk that fails or leaves the document uncovered is not a hash to
-/// publish.
+/// publish. The hash covers the source set and not the selection, so the
+/// table of a variant carries the hash every build of the document does.
 fn cmd_transition_table(
     scxml: &str,
     header: Option<(Option<&str>, Option<&str>)>,
+    features: Option<Vec<String>>,
     error_format: ErrorFormat,
 ) {
-    let mut parser = sce_build::parser::SCXMLParser::new();
+    let mut parser = select_variant(sce_build::parser::SCXMLParser::new(), &features);
     let model = parser
         .parse_file(scxml)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));

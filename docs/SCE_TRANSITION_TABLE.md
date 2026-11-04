@@ -143,6 +143,56 @@ Two flags matter when the document is not generated from its own directory. `tra
 takes `--input-root` and `--deploy` and they mean what they mean to `generate`: pass the values
 `generate` was given, or the two hashes name different source sets.
 
+## A document written against a feature model
+
+A document that gates its elements with `sce:requires` (ADR 0057, SCE Accepted Subset §2.22)
+denotes one machine for each configuration of its feature model. Its export is the featured
+transition table of ADR 0057 §7: every node of every variant, in document order, and each row of
+a node that is not present in every variant carries `requires`, the node's effective condition
+(its own and those of the elements around it) in canonical form:
+
+```
+{"source":"(none)","from":"idle","event":"secure","guard":"-","after":"-","to":"open","action":"-","node_path":"states.idle.transitions[2]","kind":"transition","index":2,"targets":["open"],"requires":[["session-tls"],["session-unicast-accept"]]}
+```
+
+`requires` is any of its terms, each all of its features: the row is present in a configuration
+where every feature of one term is on. A term is a least configuration of the condition, written
+by its features that no other feature of it requires (`session-unicast-accept` stands for itself
+and the `session-unicast` it requires); its features are in byte order, the terms in the order of
+their features, and no term contains another, so two rows carry the same `requires` exactly when
+their nodes are present in the same variants, whatever the author wrote. A row with no `requires`
+is in every variant, which is every row of a document of no feature model.
+
+**The rows of a variant** are the rows with no `requires` and those whose `requires` holds in its
+configuration, in the order the export lists them. Each keeps what its node states of itself:
+`source`, `from`, `event`, `guard`, `after`, `kind` and `targets`, and `to` and `action` except
+on the two kinds below. What a row counts or summarises from other nodes is the variant's own:
+
+| Column | In a variant |
+|---|---|
+| `index` of a transition | its position among the kept transitions of its state, which a consumer counts |
+| `node_path` | names the node by the variant's positions; the export's names it in the document, as the requirements report and the manifest classification of the same document do |
+| `to` and `action` of a state | name its initial child, which for a state that writes none is its first child in the variant |
+| `action` of a transition | lists the transition's actions that the variant keeps |
+
+`sce-codegen transition-table --features a,b` writes the table of the variant those features
+denote, as `generate --features` generates it, and those columns with it; its rows carry no
+`requires`. Its header names the same `source_hash`: the hash covers the source set, not the
+selection, so every build of the document carries it.
+
+**The table a machine emits** (`sce:transition-table="emit"`) is always one variant's. The Rust,
+C11 and C++ backends generate a gated document as one output for every build (ADR 0057 §10), and
+each build's table is its own variant's, selected as the rest of the output is: one `ALL` under
+each `#[cfg]` in Rust, one `transitions` under each `#if` in C++, and in C one
+`<PREFIX><NAME>_TRANSITION_COUNT` and the entries it counts under each `#if`. Every other backend generates one variant with `--features`, and its table is
+that variant's. Either way a build is checked against its design as above, beside the rows of its
+own variant.
+
+`sce-build/tests/the_featured_transition_table_derives_each_variant.rs` derives every
+configuration's rows from the featured table of a document with a node of each shape a condition
+reaches and holds them to `--features`, row for row; it also finds each column of the table above
+computed differently by some variant, so none of them could have been carried.
+
 ## What it costs a program
 
 A C++, C or Rust program that drives the machine and never names the table carries none of it:
