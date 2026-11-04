@@ -54,14 +54,16 @@ const PLAIN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-/// A machine that sends over BasicHTTP.
+/// A machine that sends over BasicHTTP. It is planned, never run, so its
+/// target names no endpoint of the suite (the fixture's is spelled once, in
+/// `tests/w3c/basic_http_test_endpoint.h`).
 const POSTER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
        initial="s0" name="poster">
     <state id="s0">
         <onentry>
             <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
-                  target="http://localhost:8080/test" event="posted"/>
+                  target="http://example.invalid/hook" event="posted"/>
         </onentry>
         <transition event="posted" target="done"/>
     </state>
