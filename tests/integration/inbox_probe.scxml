@@ -14,9 +14,10 @@
   `ping:<data>;`, `done:<data>;` and `failed:<data>;`, so the variable is the
   order the machine took them in.
 
-  It sits beside its driver, as parallel_current_state.scxml does: only the C++
-  engine is driven with it, and the generated machine is compiled with the
-  host-invoker declaration `x-sce-host` (tests/CMakeLists.txt).
+  It sits beside its C++ driver, as parallel_current_state.scxml does. The C++
+  engine and the C11 machine are driven with it (tests/CMakeLists.txt,
+  backends/c/tests/CMakeLists.txt), each generated with the host-invoker
+  declaration `x-sce-host`.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        name="inbox_probe" datamodel="ecmascript" initial="running">

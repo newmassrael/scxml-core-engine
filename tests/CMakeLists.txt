@@ -2723,8 +2723,9 @@ sce_add_state_machine(
 
 # docs/adr/0084: the machine WhatAnotherThreadPostsEntersThroughTheInboxAotTest
 # posts to from other threads. It sits beside its driver, as
-# parallel_current_state.scxml does, because only the C++ engine is driven with
-# it; the declaration is the one above, since its `job` is a host-run invocation.
+# parallel_current_state.scxml does, and the C11 machine is driven with it too
+# (backends/c/tests/CMakeLists.txt); the declaration is the one above, since its
+# `job` is a host-run invocation.
 sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/inbox_probe.scxml
