@@ -252,25 +252,67 @@ private:
 };
 
 /**
+ * @brief An `<invoke>` of a type the host serves, run by the invoker the host
+ *        registered on the machine's tree (docs/adr/0084, D4 and D6)
+ *
+ * It evaluates the element into the request `core/HostProcessor.h` defines and
+ * hands it to its machine (`StateMachine::performHostInvoke`), whose host-invoke
+ * ledger keeps the run; the state's exit cancels it through the same machine. No
+ * child session exists, so nothing is registered under the invoke's id for a
+ * `<send target="#_<id>">`.
+ *
+ * Held by the invoke executor of @p owner, so it never outlives its machine, and
+ * the exits a machine makes as it is destroyed still reach the host.
+ */
+class HostRunInvokeHandler : public IInvokeHandler {
+public:
+    HostRunInvokeHandler(IScriptEngine &scriptEngine, StateMachine &owner, std::string type);
+
+    std::string startInvoke(const std::shared_ptr<IInvokeNode> &invoke, const std::string &parentSessionId,
+                            std::shared_ptr<IEventDispatcher> eventDispatcher) override;
+
+    /// As `startInvoke`: a host-run invocation has no child session to pre-allocate.
+    std::string startInvokeWithSessionId(const std::shared_ptr<IInvokeNode> &invoke, const std::string &parentSessionId,
+                                         std::shared_ptr<IEventDispatcher> eventDispatcher,
+                                         const std::string &childSessionId, bool isRestoration = false) override;
+
+    /// Tell the machine the state exited; its ledger stays silent for a run that is over.
+    bool cancelInvoke(const std::string &invokeid) override;
+
+    /// Whether this handler started its invocation and its state has not exited since.
+    bool isInvokeActive(const std::string &invokeid) const override;
+
+    std::string getType() const override;
+
+private:
+    IScriptEngine &scriptEngine_;
+    StateMachine &owner_;
+    std::string type_;
+    std::string startedId_;
+};
+
+/**
  * @brief Factory for creating invoke handlers (Factory Pattern)
  *
- * §scxml-6.4.1: the set of supported `type` values is closed. A value
- * outside it is *not* substituted with the SCXML processor — the factory
- * returns null and the caller raises `error.execution`, which is the
- * observable the spec mandates and the one SCE_MESH.md §9.5 relies on
- * for foreign-processor degradation of `<invoke type="sce:mesh-rpc">`.
+ * §scxml-6.4.1 leaves the set of invocable types to the platform. The
+ * platform's own processor answers first (`isSupportedType`), then an
+ * invoker the host registered on the machine's tree (docs/adr/0084, D4), then
+ * nothing: the factory returns null and the caller raises `error.execution`. A
+ * value the platform does not serve is never substituted with the SCXML
+ * processor. A Mesh request with no router registered takes that last path,
+ * which is the degradation SCE_MESH.md §9.5 relies on.
  */
 class InvokeHandlerFactory {
 public:
     /**
-     * @brief §scxml-6.4.1: Test whether a `type` value names a supported processor
+     * @brief §scxml-6.4.1: Test whether a `type` value names the platform's own processor
      *
      * Accepts the `scxml` shorthand and the SCXML processor URI with and
      * without its trailing slash. An absent `type` defaults to SCXML
      * before reaching here, so the empty string is not a member.
      *
      * @param type Resolved invoke type (post-`typeexpr` evaluation)
-     * @return true when a handler can be created for this type
+     * @return true when the platform runs this type itself
      */
     static bool isSupportedType(const std::string &type);
 
@@ -279,9 +321,12 @@ public:
      *
      * @param type Resolved invoke type (post-`typeexpr` evaluation)
      * @param scriptEngine Script engine injected into the handler
-     * @return Handler for a supported type, nullptr otherwise
+     * @param owner The machine whose `<invoke>` this is, asked for an invoker the
+     *              host registered on its tree; none leaves the platform's own set
+     * @return Handler for a served type, nullptr otherwise
      */
-    static std::shared_ptr<IInvokeHandler> createHandler(const std::string &type, IScriptEngine &scriptEngine);
+    static std::shared_ptr<IInvokeHandler> createHandler(const std::string &type, IScriptEngine &scriptEngine,
+                                                         const std::shared_ptr<StateMachine> &owner = nullptr);
 
 private:
     // No static registration - handlers created directly with engine injection

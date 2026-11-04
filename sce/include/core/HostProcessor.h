@@ -345,6 +345,45 @@ struct TreeInvokers {
 };
 
 /**
+ * @brief The event processors a host registered for the types it serves, shared by
+ *        every session of one Interpreter tree (docs/adr/0084, D4)
+ *
+ * The send half of `TreeInvokers`: the Interpreter's root holds it, and a child it
+ * starts is handed the root's own, so a processor registered later serves the child
+ * too. Opaque to a host, which registers through `registerEventProcessor`.
+ */
+struct TreeEventProcessors {
+    std::map<std::string, HostSendHandler> handlers;
+};
+
+/**
+ * @brief The `type` of a Mesh request the host's router serves (SCE_MESH.md §19)
+ *
+ * Under the reserved `sce:` prefix, so the general registration refuses it and a
+ * router is installed only by the call that names itself one
+ * (`registerMeshRpcInvoker`).
+ */
+inline constexpr std::string_view MESH_RPC_INVOKE_TYPE = "sce:mesh-rpc";
+
+/**
+ * @brief The `<param>` that names a Mesh request's envelope type (SCE_MESH.md §19)
+ *
+ * Envelope metadata: the router receives it among the request's params, and it is
+ * not part of the request's `eventData`.
+ */
+inline constexpr std::string_view MESH_EVENT_PARAM = "_mesh_event";
+
+/**
+ * @brief The `<param>` that names a Mesh request's deadline, kept by the router and
+ *        never armed by the engine (SCE_MESH.md §19)
+ *
+ * Envelope metadata, as `MESH_EVENT_PARAM` is. A Mesh request may spell it
+ * `HOST_INVOKE_DEADLINE_PARAM` instead; the router receives it under this name,
+ * written as the whole number of milliseconds `parseHostInvokeDeadlineMs` reads.
+ */
+inline constexpr std::string_view MESH_DEADLINE_PARAM = "_mesh_deadline_ms";
+
+/**
  * @brief How a host ends a host-run invocation of some session of a tree: the
  *        start it ends, and whether it completed (`done.invoke`) or failed
  *        (`error.invoke`), with `data` as the event's `_event.data`

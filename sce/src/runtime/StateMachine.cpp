@@ -8,7 +8,10 @@
 #include "scripting/SessionRegistry.h"
 
 #include "common/DoneDataHelper.h"
+#include "common/EventDataHelper.h"
 #include "common/LogToLogger.h"
+#include "common/SCXMLConstants.h"
+#include "common/SendHelper.h"
 #include "core/EntryExitHelper.h"
 #include "core/MicrostepAlgorithms.h"
 #include "core/ParallelCompletionHelper.h"
@@ -17,6 +20,7 @@
 #endif
 #include "common/StringUtils.h"
 #include "core/TransitionHelper.h"
+#include "events/DueActionTarget.h"
 #include "events/EventRaiserService.h"
 
 #include "factory/NodeFactory.h"
@@ -35,6 +39,7 @@
 #include "scripting/IScriptEngine.h"
 #include "scripting/ScriptEngineProvider.h"  // For backward-compat static factory methods
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <fstream>
 #include <set>
@@ -151,8 +156,134 @@ std::shared_ptr<StateMachine> StateMachine::createFromSCXMLString(IScriptEngine 
     return sm;
 }
 
+/**
+ * @brief This engine's scheduler as the host-invoke ledger asks it
+ *        (`Core::HostInvokeDeadlineSchedulerTrait`; docs/adr/0084, D5)
+ *
+ * The ledger hands a deadline over as a moment of the engine's clock and asks for
+ * it back by the start's token. This engine's scheduler takes a delay and a send
+ * id instead, so the adapter is the narrowest one that turns the first into the
+ * second: the clock is the steady clock in milliseconds, the delay is the moment
+ * less the time now, and the send id is one the document cannot name. It holds the
+ * moment each pending deadline comes due, which the scheduler does not answer by
+ * token. The ledger's own logic stays in the ledger.
+ *
+ * The entry waits in the queue every delayed send waits in, so the scheduler's
+ * mode governs it as it governs them. It is armed with no session, so a document's
+ * `<cancel>`, which names its own session, never reaches it: the deadline is the
+ * engine's. When it comes due on the scheduler's thread it is handed back to the
+ * machine (`expireHostInvoke`), which applies it as an owner operation.
+ */
+class StateMachine::HostInvokeDeadlines {
+public:
+    explicit HostInvokeDeadlines(StateMachine &machine) : machine_(machine) {}
+
+    /// The engine's clock a deadline is a moment of.
+    static uint64_t nowMs() {
+        return static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+                .count());
+    }
+
+    void scheduleHostInvokeDeadlineAt(uint64_t token, std::shared_ptr<const HostInvokeDeadline> deadline,
+                                      uint64_t atMs) {
+        const std::shared_ptr<IEventScheduler> scheduler = schedulerOf();
+        if (!scheduler) {
+            SCE_LOG_ERROR("StateMachine: the deadline of host-run invocation '{}' cannot be armed: session '{}' has "
+                          "no scheduler",
+                          deadline->invokeId, machine_.sessionId_);
+            return;
+        }
+        const std::string sendId = "_sce_host_invoke_deadline." + machine_.sessionId_ + "." + std::to_string(token);
+        // The scheduler adds the delay to a clock counted in nanoseconds, so a
+        // delay is held below what that count can carry; the ledger already holds
+        // the moment at the clock's maximum rather than letting it wrap.
+        const uint64_t now = nowMs();
+        const uint64_t waitMs = std::min<uint64_t>(atMs > now ? atMs - now : 0, FARTHEST_DELAY_MS);
+        const auto delay = std::chrono::milliseconds(static_cast<int64_t>(waitMs));
+
+        // Named, in the scheduler's views, by the event it raises if it comes due
+        // while the invocation still runs.
+        EventDescriptor entry;
+        entry.eventName = Core::HostInvokeTimedOut{deadline->invokeId}.eventName();
+        entry.type = "platform";
+        entry.sendId = sendId;
+        entry.delay = delay;
+        const std::weak_ptr<StateMachine> owner = machine_.weak_from_this();
+        auto target = std::make_shared<DueActionTarget>("host-invoke-deadline", [owner, deadline] {
+            if (const auto machine = owner.lock()) {
+                machine->expireHostInvoke(*deadline);
+            }
+        });
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            pending_[token] = Pending{sendId, atMs};
+        }
+        try {
+            (void)scheduler->scheduleEvent(entry, delay, target, sendId, "").get();
+        } catch (const std::exception &e) {
+            SCE_LOG_ERROR("StateMachine: the deadline of host-run invocation '{}' could not be armed: {}",
+                          deadline->invokeId, e.what());
+            forget(token);
+        }
+    }
+
+    void dropHostInvokeDeadline(uint64_t token) {
+        std::string sendId;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            const auto pending = pending_.find(token);
+            if (pending == pending_.end()) {
+                return;
+            }
+            sendId = pending->second.sendId;
+            pending_.erase(pending);
+        }
+        if (const std::shared_ptr<IEventScheduler> scheduler = schedulerOf()) {
+            (void)scheduler->cancelEvent(sendId, "");
+        }
+    }
+
+    std::optional<uint64_t> hostInvokeDeadlineDueAt(uint64_t token) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto pending = pending_.find(token);
+        if (pending == pending_.end()) {
+            return std::nullopt;
+        }
+        return pending->second.atMs;
+    }
+
+    /// The deadline of start @p token left the scheduler: it is no longer pending.
+    void forget(uint64_t token) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pending_.erase(token);
+    }
+
+private:
+    /// About a hundred years: far below what the scheduler's nanosecond clock can
+    /// add, and farther than any deadline that is meant to come due.
+    static constexpr uint64_t FARTHEST_DELAY_MS = 100ULL * 365 * 24 * 60 * 60 * 1000;
+
+    /// A deadline the scheduler holds: the entry's send id, and the moment it comes due.
+    struct Pending {
+        std::string sendId;
+        uint64_t atMs = 0;
+    };
+
+    std::shared_ptr<IEventScheduler> schedulerOf() const {
+        return machine_.eventRaiser_ ? machine_.eventRaiser_->getScheduler() : nullptr;
+    }
+
+    StateMachine &machine_;
+    // Read and written from the owner and from the scheduler's thread, where an
+    // entry leaves the queue.
+    mutable std::mutex mutex_;
+    std::map<uint64_t, Pending> pending_;
+};
+
 StateMachine::StateMachine(IScriptEngine &scriptEngine, const std::string &sessionId)
-    : scriptEngine_(scriptEngine), jsEnvironmentReady_(false) {
+    : scriptEngine_(scriptEngine), jsEnvironmentReady_(false),
+      hostInvokeDeadlines_(std::make_unique<HostInvokeDeadlines>(*this)) {
     if (sessionId.empty()) {
         sessionId_ = SessionRegistry::instance().generateSessionIdString("sm_");
     } else {
@@ -1669,6 +1800,11 @@ bool StateMachine::setupJSEnvironment() {
         }
     }
 
+    // docs/adr/0084, D4: the tree's event processors, which a host-served <send> asks
+    if (cachedExecutorImpl_) {
+        cachedExecutorImpl_->setHostEventProcessors(eventProcessors_);
+    }
+
     // The host of the machine's `<sce:action>`s, if one was installed before start
     if (nativeActionHost_ && cachedExecutorImpl_) {
         cachedExecutorImpl_->setNativeActionHost(nativeActionHost_);
@@ -2005,6 +2141,202 @@ void StateMachine::registerChildMeshRouters(ChildMeshRouters factory) {
 
 const ChildMeshRouters &StateMachine::getChildMeshRouters() const {
     return childMeshRouters_;
+}
+
+// ── The host processor door (docs/adr/0084, D4 and D6) ───────────────────
+
+void StateMachine::registerEventProcessor(const std::string &processorType, HostSendHandler handler) {
+    SendHelper::refuseReservedHostType("registerEventProcessor", processorType);
+    eventProcessors_->handlers[processorType] = std::move(handler);
+}
+
+bool StateMachine::hasEventProcessor(const std::string &processorType) const {
+    return eventProcessors_->handlers.find(processorType) != eventProcessors_->handlers.end();
+}
+
+void StateMachine::registerInvoker(const std::string &processorType, HostInvokeHandler handler) {
+    SendHelper::refuseReservedHostType("registerInvoker", processorType);
+    invokers_->handlers[processorType] = std::move(handler);
+}
+
+bool StateMachine::hasInvoker(const std::string &processorType) const {
+    return invokers_->handlers.find(processorType) != invokers_->handlers.end();
+}
+
+void StateMachine::registerMeshRpcInvoker(HostInvokeHandler router) {
+    // SCE_MESH.md §19: the router is installed by the call that names itself one,
+    // so the reserved type is written here and nowhere else.
+    invokers_->handlers[std::string(MESH_RPC_INVOKE_TYPE)] = std::move(router);
+}
+
+void StateMachine::adoptHostProcessorsOf(const StateMachine &parent) {
+    invokers_ = parent.invokers_;
+    eventProcessors_ = parent.eventProcessors_;
+    if (cachedExecutorImpl_) {
+        cachedExecutorImpl_->setHostEventProcessors(eventProcessors_);
+    }
+}
+
+bool StateMachine::performHostInvoke(const HostInvokeRequest &request) {
+    const auto report = hostInvokes_.start(*invokers_, request, sessionId_, *hostInvokeDeadlines_,
+                                           [] { return HostInvokeDeadlines::nowMs(); });
+    if (!report.has_value()) {
+        return false;
+    }
+    raiseHostInvokeReport(*report);
+    return true;
+}
+
+bool StateMachine::cancelHostInvoke(const std::string &processorType, const std::string &invokeId) {
+    return hostInvokes_.cancel(*invokers_, processorType, invokeId, *hostInvokeDeadlines_);
+}
+
+bool StateMachine::completeHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
+                                      const std::string &doneData, const std::string &origin,
+                                      const std::string &originType) {
+    return applyAsOwner(
+        [&] { return endHostInvoke(processorType, invokeId, token, false, doneData, origin, originType); });
+}
+
+bool StateMachine::failHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
+                                  const std::string &errorData, const std::string &origin,
+                                  const std::string &originType) {
+    return applyAsOwner(
+        [&] { return endHostInvoke(processorType, invokeId, token, true, errorData, origin, originType); });
+}
+
+HostInvokeEndOutcome StateMachine::endHostInvokeIn(const std::string &sessionId, const HostInvokeEnding &ending) {
+    const HostInvokeRoute route = routeHostInvokeEnd(sessionId, ending);
+    if (!route.reached) {
+        return HostInvokeEndOutcome::NoSuchSession;
+    }
+    return route.delivered ? HostInvokeEndOutcome::Delivered : HostInvokeEndOutcome::NotRunning;
+}
+
+HostInvokeEndOutcome StateMachine::completeHostInvokeIn(const std::string &sessionId, const std::string &processorType,
+                                                        const std::string &invokeId, uint64_t token,
+                                                        const std::string &doneData) {
+    return endHostInvokeIn(sessionId, HostInvokeEnding{/*processorType=*/processorType,
+                                                       /*invokeId=*/invokeId,
+                                                       /*token=*/token,
+                                                       /*done=*/true,
+                                                       /*data=*/doneData,
+                                                       /*origin=*/"",
+                                                       /*originType=*/""});
+}
+
+HostInvokeEndOutcome StateMachine::failHostInvokeIn(const std::string &sessionId, const std::string &processorType,
+                                                    const std::string &invokeId, uint64_t token,
+                                                    const std::string &errorData) {
+    return endHostInvokeIn(sessionId, HostInvokeEnding{/*processorType=*/processorType,
+                                                       /*invokeId=*/invokeId,
+                                                       /*token=*/token,
+                                                       /*done=*/false,
+                                                       /*data=*/errorData,
+                                                       /*origin=*/"",
+                                                       /*originType=*/""});
+}
+
+HostInvokeRoute StateMachine::routeHostInvokeEnd(const std::string &sessionId, const HostInvokeEnding &ending) {
+    if (!sessionId.empty() && sessionId == sessionId_) {
+        const bool delivered = applyAsOwner([&] {
+            return endHostInvoke(ending.processorType, ending.invokeId, ending.token, !ending.done, ending.data,
+                                 ending.origin, ending.originType);
+        });
+        return {true, delivered};
+    }
+    // docs/adr/0045: a session of the tree is reached by its id, through the
+    // children this one started, each of which applies the ending as its own.
+    for (const auto &child : getInvokedChildren()) {
+        if (!child) {
+            continue;
+        }
+        const HostInvokeRoute route = child->routeHostInvokeEnd(sessionId, ending);
+        if (route.reached) {
+            return route;
+        }
+    }
+    return {};
+}
+
+bool StateMachine::applyAsOwner(const std::function<bool()> &apply) {
+    // ARCHITECTURE.md "Engine Threading": an ending changes the invocation table
+    // and the queues, so it is applied by the owner. A call made from inside the
+    // running macrostep is applied there, and its loop takes what it queued.
+    if (macrostepInProgressOnThisThread()) {
+        return apply();
+    }
+    // Until this engine's inbox lands, a call from outside a macrostep enters as a
+    // host's event does (`processEvent`): it waits for a macrostep another thread
+    // runs, and is then a macrostep of its own.
+    std::lock_guard<std::mutex> processEventLock(processEventMutex_);
+    MacrostepScope macrostep(*this);
+    const bool applied = apply();
+    if (isRunning_) {
+        if (eventRaiser_) {
+            eventRaiser_->resetErrorCascadeDepth();
+        }
+        macrostepTruncated_ = false;
+        macrostepMicrostepsTaken_ = 0;
+        runMainEventLoop();
+        if (topLevelFinalReached_) {
+            finishAtTopLevelFinal();
+        }
+    }
+    updateStatistics();
+    return applied;
+}
+
+bool StateMachine::endHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
+                                 bool failed, const std::string &data, const std::string &origin,
+                                 const std::string &originType) {
+    const auto ended =
+        hostInvokes_.endRun(processorType, invokeId, token, failed, data, origin, originType, *hostInvokeDeadlines_);
+    if (!ended.has_value()) {
+        return false;
+    }
+    raiseHostInvokeEvent(ended->eventName(), ended->data, ended->invokeId, ended->origin, ended->originType);
+    return true;
+}
+
+void StateMachine::raiseHostInvokeReport(const Core::HostInvokeReport &report) {
+    if (const auto *notStarted = std::get_if<Core::HostInvokeNotStarted>(&report)) {
+        // An invocation that could not start is an error of the element.
+        if (eventRaiser_) {
+            eventRaiser_->raiseEvent("error.execution", notStarted->reason);
+        }
+    } else if (const auto *completed = std::get_if<Core::HostInvokeCompletedAtOnce>(&report)) {
+        // A completion the host returned with the start takes the door a later one takes.
+        (void)endHostInvoke(completed->processorType, completed->invokeId, completed->token, false, completed->doneData,
+                            "", "");
+    } else if (const auto *timedOut = std::get_if<Core::HostInvokeTimedOut>(&report)) {
+        raiseHostInvokeEvent(timedOut->eventName(), Core::HostInvokeTimedOut::data(), timedOut->invokeId, "", "");
+    }
+}
+
+void StateMachine::expireHostInvoke(const HostInvokeDeadline &deadline) {
+    hostInvokeDeadlines_->forget(deadline.token);
+    (void)applyAsOwner([&] {
+        raiseHostInvokeReport(hostInvokes_.expire(*invokers_, deadline));
+        return true;
+    });
+}
+
+void StateMachine::raiseHostInvokeEvent(const std::string &name, const std::string &data, const std::string &invokeId,
+                                        const std::string &origin, const std::string &originType) {
+    // An event of the invocation, from outside the machine: the external queue,
+    // carrying the invocation's id, and the origin the host named for it, if any.
+    Core::EventMetadata event(name, data, "external", "", invokeId,
+                              originType.empty() ? std::string(Constants::SCXML_EVENT_PROCESSOR_TYPE) : originType,
+                              origin);
+    // Read as the raiser reads the data of every event it is handed.
+    if (!data.empty()) {
+        event.typedData = EventDataHelper::jsonStringToScriptValue(data);
+    }
+    if (!eventRaiser_ || !eventRaiser_->enqueue(event, EventQueue::External)) {
+        SCE_LOG_WARN("StateMachine: '{}' of a host-run invocation has no event queue to take it", name);
+        noteUnseenEvent(name);
+    }
 }
 
 // EventDispatcher management

@@ -27,7 +27,9 @@
 #include "common/StringUtils.h"
 #include "common/UniqueIdGenerator.h"
 #include "core/ForeachHelper.h"
+#include "events/DueActionTarget.h"
 #include "events/EventDescriptor.h"
+#include "events/EventDispatcherImpl.h"
 #include "events/EventRaiserService.h"
 #include "runtime/TypeRegistry.h"
 
@@ -850,7 +852,12 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
 
         // §scxml-6.2 (test 199): Validate send type using SendHelper (Zero Duplication)
         // ARCHITECTURE.md: Single Source of Truth - both Interpreter and AOT use SendHelper
-        if (!SendHelper::isSupportedSendType(sendType)) {
+        // The platform's processors answer first, then one the host registered
+        // for the type (docs/adr/0084, D4), then nothing, which is the error.
+        const bool platformServed = SendHelper::isSupportedSendType(sendType);
+        const bool hostServed = !platformServed && hostEventProcessors_ &&
+                                hostEventProcessors_->handlers.find(sendType) != hostEventProcessors_->handlers.end();
+        if (!platformServed && !hostServed) {
             SCE_LOG_ERROR("ActionExecutorImpl: Unsupported send type: {}", sendType);
             // §scxml-5.10: Generate error.execution event with sendid for failed send
             if (eventRaiser_) {
@@ -1043,6 +1050,36 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
 
         // ALL script engine operations complete - now safe to call EventDispatcher
 
+        if (hostServed) {
+            // docs/adr/0084, D4: the processor takes the whole send, and its target
+            // is the processor's to read, so no session is looked up for it. What it
+            // is handed is the request core/HostProcessor.h defines, field for field,
+            // from this evaluation of the element: the pairs as the text and the
+            // `_event.data` a local delivery of this send would carry, and the
+            // invokeid of the event being processed now.
+            HostSendRequest request;
+            request.processorType = sendType;
+            request.eventName = eventName;
+            request.target = target;
+            request.content = action.getContent();
+            request.params = evaluatedParams;
+            request.sendId = sendId;
+            EventDescriptor delivery;
+            delivery.data = eventData;
+            delivery.params = evaluatedParams;
+            delivery.typedParams = typedParams;
+            delivery.content = contentData;
+            request.eventData = delivery.payload();
+            request.invokeId = currentInvokeId_;
+            if (!performHostServedSend(request, delay) && eventRaiser_) {
+                eventRaiser_->raiseEvent("error.execution",
+                                         "<send type='" + sendType + "' delay> could not wait on a scheduler", sendId,
+                                         false /* overload discriminator for sendId variant */);
+                return false;
+            }
+            return !aParamFailed && !contentFailed;
+        }
+
         // §scxml-C-1 + 6.4: a target naming a session or an invocation that
         // is not there is decided here, when the send is, as every generated
         // engine decides it — error.communication, nothing delivered, and the
@@ -1212,6 +1249,72 @@ bool ActionExecutorImpl::executeCancelAction(const CancelAction &action) {
 
 void ActionExecutorImpl::setNativeActionHost(std::shared_ptr<INativeActionHost> host) {
     nativeActionHost_ = std::move(host);
+}
+
+void ActionExecutorImpl::setHostEventProcessors(std::shared_ptr<const TreeEventProcessors> processors) {
+    hostEventProcessors_ = std::move(processors);
+}
+
+bool ActionExecutorImpl::performHostServedSend(const HostSendRequest &request, std::chrono::milliseconds delay) {
+    // docs/adr/0084, D4: the act is the registered processor's, and what it
+    // answers arrives from outside the machine, on the external queue, in the
+    // order the processor wrote it (HostSendHandler).
+    const std::shared_ptr<const TreeEventProcessors> processors = hostEventProcessors_;
+    const std::shared_ptr<IEventRaiser> raiser = eventRaiser_;
+    const auto perform = [processors, raiser](const HostSendRequest &sent) {
+        if (!processors) {
+            SCE_LOG_ERROR("ActionExecutorImpl: no processor registry for <send type='{}'>", sent.processorType);
+            return;
+        }
+        const auto handler = processors->handlers.find(sent.processorType);
+        if (handler == processors->handlers.end()) {
+            SCE_LOG_ERROR("ActionExecutorImpl: no processor is registered for <send type='{}'>", sent.processorType);
+            return;
+        }
+        for (const auto &reply : handler->second(sent)) {
+            if (!reply.eventName.empty() && raiser) {
+                raiser->raiseExternalEvent(reply.eventName, reply.eventData);
+            }
+        }
+    };
+
+    // A delay is the send's, not the processor's: zero is no deferral.
+    if (delay.count() <= 0) {
+        perform(request);
+        return true;
+    }
+
+    // Armed on the scheduler `<cancel>` asks (the dispatcher's), under the send's
+    // id and this session, so a `<cancel>` of the id reaches it as it reaches any
+    // delayed send, and the session's end discards it.
+    std::shared_ptr<IEventScheduler> scheduler;
+    if (const auto dispatcher = std::dynamic_pointer_cast<EventDispatcherImpl>(eventDispatcher_)) {
+        scheduler = dispatcher->getScheduler();
+    }
+    if (!scheduler && raiser) {
+        scheduler = raiser->getScheduler();
+    }
+    if (!scheduler) {
+        SCE_LOG_ERROR("ActionExecutorImpl: <send type='{}' delay> has no scheduler to wait on", request.processorType);
+        return false;
+    }
+    EventDescriptor entry;
+    entry.eventName = request.eventName;
+    entry.target = request.target;
+    entry.type = request.processorType;
+    entry.sendId = request.sendId;
+    entry.sessionId = sessionId_;
+    entry.delay = delay;
+    entry.params = request.params;
+    auto target = std::make_shared<DueActionTarget>("host-processor", [perform, request] { perform(request); });
+    try {
+        (void)scheduler->scheduleEvent(entry, delay, target, request.sendId, sessionId_).get();
+    } catch (const std::exception &e) {
+        SCE_LOG_ERROR("ActionExecutorImpl: <send type='{}' delay> could not be armed: {}", request.processorType,
+                      e.what());
+        return false;
+    }
+    return true;
 }
 
 bool ActionExecutorImpl::executeNativeAction(const NativeAction &action) {

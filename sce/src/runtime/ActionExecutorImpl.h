@@ -6,8 +6,10 @@
 #include "IActionExecutor.h"
 #include "IEventRaiser.h"
 #include "core/EventMetadata.h"
+#include "core/HostProcessor.h"
 #include "runtime/TypeRegistry.h"
 #include "scripting/IScriptEngine.h"
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -127,6 +129,13 @@ public:
      */
     void setNativeActionHost(std::shared_ptr<INativeActionHost> host);
 
+    /**
+     * @brief Install the event processors of the machine's tree, which serve a
+     *        `<send>` whose type the platform does not implement (docs/adr/0084, D4)
+     * @param processors The tree's registry (`StateMachine::registerEventProcessor`)
+     */
+    void setHostEventProcessors(std::shared_ptr<const TreeEventProcessors> processors);
+
 private:
     IScriptEngine &scriptEngine_;
     /// §scxml-B-2-8-1: which rung the last bound payload got — see
@@ -145,6 +154,15 @@ private:
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
     std::shared_ptr<INativeActionHost> nativeActionHost_;
+    std::shared_ptr<const TreeEventProcessors> hostEventProcessors_;
+
+    /**
+     * @brief Perform a host-served `<send>`: now, or when its delay elapses
+     *
+     * @return false only when a delay could not be armed, which the caller
+     *         reports as it reports a send that could not be dispatched
+     */
+    bool performHostServedSend(const HostSendRequest &request, std::chrono::milliseconds delay);
 
     // Assignment context tracking to prevent _event updates during assign actions
 

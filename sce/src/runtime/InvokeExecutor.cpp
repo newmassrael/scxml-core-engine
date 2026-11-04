@@ -6,9 +6,12 @@
 #include "common/AssignmentExecutionHelper.h"
 #include "common/DatamodelValidationHelper.h"
 #include "common/DocumentStem.h"
+#include "common/EventDataHelper.h"
 #include "common/LogToLogger.h"
+#include "common/NamelistHelper.h"
 #include "common/SCXMLConstants.h"
 #include "common/UniqueIdGenerator.h"
+#include "core/HostProcessor.h"
 #include "core/InvokeHelper.h"
 #include "events/EventDescriptor.h"
 #include "events/EventDispatcherImpl.h"
@@ -32,9 +35,12 @@
 #include <fstream>
 #include <functional>
 #include <iomanip>
+#include <map>
 #include <mutex>
+#include <optional>
 #include <random>
 #include <sstream>
+#include <vector>
 
 namespace SCE {
 
@@ -401,6 +407,13 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                             .withEventDispatcher(childDispatcher)
                             .withEventRaiser(childEventRaiser)
                             .build();
+
+    // docs/adr/0084, D4 and docs/adr/0045: the processors and invokers the host
+    // registered serve every session of the tree, so the child is served by its
+    // parent's registries before anything of it runs.
+    if (auto parentSM = parentStateMachine_.lock()) {
+        stateMachine->adoptHostProcessorsOf(*parentSM);
+    }
 
     // SCE_MESH.md, Child Sessions in Mesh: what arrives for the child is raised
     // on its own raiser, given to the router before the child starts; the
@@ -946,6 +959,191 @@ std::string SCXMLInvokeHandler::generateInvokeId(const std::string &stateId) con
 }
 
 // ============================================================================
+// HostRunInvokeHandler Implementation
+// ============================================================================
+
+/**
+ * @brief The request a host-run `<invoke>` hands its invoker, from this engine's
+ *        own evaluation of the element (docs/adr/0084, D4)
+ *
+ * Field for field the request the generated engine builds for the same element
+ * (`invoke_methods.jinja2`), evaluated in the order it evaluates them and through
+ * the helpers it reads them with: the id to `idlocation`, `srcexpr`, `<content
+ * expr>`, the `namelist`, then each `<param>` in document order. An attribute that
+ * cannot be evaluated starts nothing; a `<param>` that cannot is reported and its
+ * pair left out, and the invocation still starts. `eventData` is the pairs as a
+ * local delivery of a `<send>` with them would carry them, typed as the data model
+ * holds them.
+ *
+ * A Mesh request (`MESH_RPC_INVOKE_TYPE`) is shaped as SCE_MESH.md §19 lowers one
+ * for the generated backends (`host_processor_analyzer::lower_mesh`): its
+ * `_mesh_event` and deadline are envelope fields, among the params and not in
+ * `eventData`, and the deadline, which the router keeps, is named
+ * `MESH_DEADLINE_PARAM` and written as the whole number of milliseconds it reads
+ * as. A request with no `_mesh_event`, a field given twice, or a deadline that is
+ * not a whole number of milliseconds starts nothing.
+ *
+ * @param raise Raises `error.execution` with its argument as the event's data
+ * @return the request, or nothing when the element starts nothing
+ */
+static std::optional<HostInvokeRequest>
+evaluateHostInvokeRequest(IScriptEngine &scriptEngine, const IInvokeNode &invoke, const std::string &type,
+                          const std::string &invokeid, const std::string &sessionId,
+                          const std::function<void(const std::string &)> &raise) {
+    HostInvokeRequest request;
+    request.processorType = type;
+    request.invokeId = invokeid;
+    request.src = invoke.getSrc();
+    request.content = invoke.getContent();
+
+    if (!invoke.getIdLocation().empty() && !AssignmentExecutionHelper::storeIdInLocation(
+                                               scriptEngine, sessionId, invoke.getIdLocation(), invokeid, raise)) {
+        return std::nullopt;
+    }
+    if (!invoke.getSrcExpr().empty()) {
+        const auto src = scriptEngine.evaluateExpression(sessionId, invoke.getSrcExpr()).get();
+        if (!ScriptResultUtils::isSuccess(src)) {
+            raise("<invoke srcexpr='" + invoke.getSrcExpr() + "'> could not be evaluated");
+            return std::nullopt;
+        }
+        request.src = ScriptResultUtils::resultToString(src);
+    }
+    if (!invoke.getContentExpr().empty()) {
+        const auto content = scriptEngine.evaluateExpression(sessionId, invoke.getContentExpr()).get();
+        if (!ScriptResultUtils::isSuccess(content)) {
+            raise("<invoke contentexpr='" + invoke.getContentExpr() + "'> could not be evaluated");
+            return std::nullopt;
+        }
+        request.content = ScriptResultUtils::resultToString(content);
+    }
+
+    // The pairs the author sent, as text and as the data model holds them, for
+    // `eventData`; envelope fields go to `params` only.
+    std::map<std::string, std::vector<std::string>> payloadText;
+    std::map<std::string, std::vector<ScriptValue>> payloadTyped;
+    if (!invoke.getNamelist().empty()) {
+        std::map<std::string, std::vector<std::string>> namelistValues;
+        if (!NamelistHelper::evaluateNamelist(scriptEngine, sessionId, invoke.getNamelist(), namelistValues, raise,
+                                              &payloadTyped)) {
+            return std::nullopt;
+        }
+        for (const auto &[name, values] : namelistValues) {
+            auto &slot = request.params[name];
+            slot.insert(slot.end(), values.begin(), values.end());
+            auto &text = payloadText[name];
+            text.insert(text.end(), values.begin(), values.end());
+        }
+    }
+
+    const bool meshRequest = type == MESH_RPC_INVOKE_TYPE;
+    bool envelopeRefused = false;
+    for (const auto &[name, expr, location] : invoke.getParams()) {
+        const std::string &valueSource = expr.empty() ? location : expr;
+        if (valueSource.empty()) {
+            raise("<invoke> <param name='" + name + "'> names no location");
+            continue;
+        }
+        const auto value = scriptEngine.evaluateExpression(sessionId, valueSource).get();
+        if (!ScriptResultUtils::isSuccess(value)) {
+            raise("<invoke> <param name='" + name + "'> " +
+                  (expr.empty() ? "location could not be read" : "expr failed to evaluate"));
+            continue;
+        }
+        const std::string text = ScriptResultUtils::resultToString(value);
+        const bool deadline = name == MESH_DEADLINE_PARAM || name == HOST_INVOKE_DEADLINE_PARAM;
+        if (meshRequest && (name == MESH_EVENT_PARAM || deadline)) {
+            const std::string field(deadline ? MESH_DEADLINE_PARAM : MESH_EVENT_PARAM);
+            if (request.params.count(field) > 0) {
+                raise("<invoke type='" + type + "' id='" + invokeid + "'>: " + field + " is given more than once");
+                envelopeRefused = true;
+                continue;
+            }
+            if (!deadline) {
+                request.params[field].push_back(text);
+                continue;
+            }
+            const auto ms = parseHostInvokeDeadlineMs(text);
+            if (!ms.has_value()) {
+                raise("<invoke type='" + type + "' id='" + invokeid + "'>: " + field + "='" + text +
+                      "' is not a whole number of milliseconds");
+                envelopeRefused = true;
+                continue;
+            }
+            request.params[field].push_back(std::to_string(*ms));
+            continue;
+        }
+        request.params[name].push_back(text);
+        payloadText[name].push_back(text);
+        payloadTyped[name].push_back(value.getInternalValue());
+    }
+    if (meshRequest && !envelopeRefused && request.params.count(std::string(MESH_EVENT_PARAM)) == 0) {
+        raise("<invoke type='" + type + "' id='" + invokeid + "'> names no " + std::string(MESH_EVENT_PARAM));
+        envelopeRefused = true;
+    }
+    if (envelopeRefused) {
+        return std::nullopt;
+    }
+    if (!payloadText.empty()) {
+        request.eventData = EventDataHelper::buildEventDataJson(payloadText, payloadTyped);
+    }
+    return request;
+}
+
+HostRunInvokeHandler::HostRunInvokeHandler(IScriptEngine &scriptEngine, StateMachine &owner, std::string type)
+    : scriptEngine_(scriptEngine), owner_(owner), type_(std::move(type)) {}
+
+std::string HostRunInvokeHandler::startInvoke(const std::shared_ptr<IInvokeNode> &invoke,
+                                              const std::string &parentSessionId,
+                                              std::shared_ptr<IEventDispatcher> /*eventDispatcher*/) {
+    if (!invoke) {
+        return "";
+    }
+    const auto raise = [&parentSessionId](const std::string &detail) {
+        SCE_LOG_ERROR("HostRunInvokeHandler: {}", detail);
+        if (auto eventRaiser = EventRaiserService::getInstance().getEventRaiser(parentSessionId)) {
+            eventRaiser->raiseEvent("error.execution", detail);
+        }
+    };
+    // The executor gave an `<invoke>` with no id its generated one before this.
+    const std::string invokeid = invoke->getId();
+    const auto request = evaluateHostInvokeRequest(scriptEngine_, *invoke, type_, invokeid, parentSessionId, raise);
+    if (!request.has_value()) {
+        return "";
+    }
+    if (!owner_.performHostInvoke(*request)) {
+        raise("<invoke type='" + type_ + "'> names an external service this platform does not support");
+        return "";
+    }
+    startedId_ = invokeid;
+    return invokeid;
+}
+
+std::string HostRunInvokeHandler::startInvokeWithSessionId(const std::shared_ptr<IInvokeNode> &invoke,
+                                                           const std::string &parentSessionId,
+                                                           std::shared_ptr<IEventDispatcher> eventDispatcher,
+                                                           const std::string & /*childSessionId*/,
+                                                           bool /*isRestoration*/) {
+    return startInvoke(invoke, parentSessionId, std::move(eventDispatcher));
+}
+
+bool HostRunInvokeHandler::cancelInvoke(const std::string &invokeid) {
+    // The state exited: the machine's ledger tells the host to stop a run that is
+    // still going, and nothing for one that ended. Either way the executor lets
+    // the invocation go.
+    (void)owner_.cancelHostInvoke(type_, invokeid);
+    startedId_.clear();
+    return true;
+}
+
+bool HostRunInvokeHandler::isInvokeActive(const std::string &invokeid) const {
+    return !startedId_.empty() && startedId_ == invokeid;
+}
+
+std::string HostRunInvokeHandler::getType() const {
+    return type_;
+}
+
+// ============================================================================
 // InvokeHandlerFactory Implementation
 // ============================================================================
 
@@ -957,9 +1155,16 @@ bool InvokeHandlerFactory::isSupportedType(const std::string &type) {
 }
 
 std::shared_ptr<IInvokeHandler> InvokeHandlerFactory::createHandler(const std::string &type,
-                                                                    IScriptEngine &scriptEngine) {
+                                                                    IScriptEngine &scriptEngine,
+                                                                    const std::shared_ptr<StateMachine> &owner) {
     if (isSupportedType(type)) {
         return std::make_shared<SCXMLInvokeHandler>(scriptEngine);
+    }
+
+    // §scxml-6.4.1: the platform's set is widened by what the host registered
+    // on the machine's tree (docs/adr/0084, D4), a Mesh router included.
+    if (owner && owner->hasInvoker(type)) {
+        return std::make_shared<HostRunInvokeHandler>(scriptEngine, *owner, type);
     }
 
     // §scxml-6.4.1: an unsupported type is never substituted with a
@@ -1066,8 +1271,10 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
         return invokeid;
     }
 
-    // Create appropriate handler using factory pattern
-    auto handler = InvokeHandlerFactory::createHandler(invokeType, scriptEngine_);
+    // Create appropriate handler using factory pattern: the platform's processor,
+    // then an invoker the host registered on the parent machine's tree.
+    auto parentSM = parentStateMachine_.lock();
+    auto handler = InvokeHandlerFactory::createHandler(invokeType, scriptEngine_, parentSM);
     if (!handler) {
         // §scxml-6.4.1: an unsupported invoke type MUST place
         // error.execution on the internal event queue. The author catches
@@ -1096,7 +1303,6 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
 
     // W3C SCXML Test 192: Set parent StateMachine for completion callback (thread-safe)
     auto scxmlHandler = std::dynamic_pointer_cast<SCXMLInvokeHandler>(handler);
-    auto parentSM = parentStateMachine_.lock();
     if (scxmlHandler && parentSM) {
         scxmlHandler->setParentStateMachine(parentSM);
     }
@@ -1105,6 +1311,17 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
     // This ensures mapping is available when child immediately completes and sends events
     invokeHandlers_[invokeid] = handler;
     SCE_LOG_DEBUG("InvokeExecutor: Pre-registered handler for invoke: {}", invokeid);
+
+    // §scxml-6.4.1: a type the host serves starts no child session, so no session
+    // is allocated or mapped under the invoke's id. The handler is kept until the
+    // state exits, which cancels the run through it.
+    if (!scxmlHandler) {
+        if (handler->startInvoke(invoke, sessionId, eventDispatcher_).empty()) {
+            invokeHandlers_.erase(invokeid);
+            return "";
+        }
+        return invokeid;
+    }
 
     std::string childSessionId = SessionRegistry::instance().generateSessionIdString("session_");
     SessionRegistry::instance().registerInvokeMapping(sessionId, invokeid, childSessionId);

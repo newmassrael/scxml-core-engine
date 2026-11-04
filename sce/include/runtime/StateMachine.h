@@ -6,6 +6,8 @@
 #include "core/EntrySetHelper.h"
 #include "core/ExternalEventBudget.h"
 #include "core/HierarchicalStateHelper.h"
+#include "core/HostInvokeLedger.h"
+#include "core/HostProcessor.h"
 #include "core/InvokeHelper.h"  // §scxml-6.4: Shared invoke lifecycle logic (Zero Duplication)
 #include "core/LogMacros.h"
 #include "core/MacrostepCeilings.h"
@@ -671,6 +673,131 @@ public:
      */
     const ChildMeshRouters &getChildMeshRouters() const;
 
+    // ── The host processor door (docs/adr/0084, D4 and D6) ─────────────────
+    //
+    // The registrations and endings the generated engine has
+    // (`StaticExecutionEngine`), with the request and handler shapes of
+    // `core/HostProcessor.h` and the bookkeeping of `core/HostInvokeLedger.h`.
+    // What the door decides is ADR 0084's and ARCHITECTURE.md's ("Engine
+    // Threading"); these comments say only how this engine reaches it.
+
+    /**
+     * @brief Serve every `<send type="processorType">` of this machine's tree from
+     *        the host
+     *
+     * Shared by every session of the tree, as the invokers are: a child this
+     * machine starts is served by the same registry, a processor registered later
+     * included. Registering a type again replaces its handler. A type the
+     * platform implements itself (the SCXML and BasicHTTP processors) is answered
+     * by the platform first.
+     *
+     * @throws std::invalid_argument for a type under the reserved `sce:` prefix
+     *         (`SendHelper::isReservedHostType`)
+     */
+    void registerEventProcessor(const std::string &processorType, HostSendHandler handler);
+
+    /**
+     * @brief Whether an event processor is registered for @p processorType
+     */
+    bool hasEventProcessor(const std::string &processorType) const;
+
+    /**
+     * @brief Run every `<invoke type="processorType">` of this machine's tree on
+     *        the host
+     *
+     * Shared by every session of the tree; each request names the session that
+     * made it (`HostInvokeRequest::sessionId`). The SCXML processor is answered
+     * by the platform first, then a registered invoker, then nothing, which
+     * raises `error.execution`.
+     *
+     * @throws std::invalid_argument for a type under the reserved `sce:` prefix
+     *         (`SendHelper::isReservedHostType`)
+     */
+    void registerInvoker(const std::string &processorType, HostInvokeHandler handler);
+
+    /**
+     * @brief Whether an invoker is registered for @p processorType
+     */
+    bool hasInvoker(const std::string &processorType) const;
+
+    /**
+     * @brief Install the host's Mesh router as the invoker of `sce:mesh-rpc`
+     *        (SCE_MESH.md §19, docs/adr/0084 D6)
+     *
+     * The one call that may register under the reserved prefix, because it names
+     * itself a router. The router receives the request §19 gives it and ends it
+     * through `completeHostInvoke` / `failHostInvoke`; its deadline is its own.
+     * With no router registered a Mesh request raises `error.execution`.
+     */
+    void registerMeshRpcInvoker(HostInvokeHandler router);
+
+    /**
+     * @brief Start a host-run invocation this machine's `<invoke>` evaluated
+     *
+     * Called by the invoke executor while the macrostep that started the
+     * invocation runs. `false` when no invoker is registered for its type; the
+     * start, and what it leaves to raise, is otherwise the ledger's.
+     */
+    bool performHostInvoke(const HostInvokeRequest &request);
+
+    /**
+     * @brief Stop the host-run invocation of this type and id, whose state exited
+     *
+     * Called by the invoke executor from the exit; silent for one that is not
+     * running. @return whether the host was told to stop it
+     */
+    bool cancelHostInvoke(const std::string &processorType, const std::string &invokeId);
+
+    /**
+     * @brief A host-run invocation of this session finished: `done.invoke.<invokeId>`
+     *        with @p doneData, if start @p token is still running
+     *
+     * An owner operation (ARCHITECTURE.md "Engine Threading"). Until this engine
+     * has its inbox it is applied as a host call is: inside the running macrostep
+     * when one runs on the calling thread, and otherwise as a macrostep of its own.
+     *
+     * @return false, raising nothing, for a stale token or an invocation that is over
+     */
+    bool completeHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
+                            const std::string &doneData, const std::string &origin = "",
+                            const std::string &originType = "");
+
+    /**
+     * @brief As `completeHostInvoke`, for a failure: `error.invoke.<invokeId>` with
+     *        @p errorData
+     */
+    bool failHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
+                        const std::string &errorData, const std::string &origin = "",
+                        const std::string &originType = "");
+
+    /**
+     * @brief End a host-run invocation of the session @p sessionId names, this one
+     *        or one it started at any depth (docs/adr/0045)
+     */
+    HostInvokeEndOutcome endHostInvokeIn(const std::string &sessionId, const HostInvokeEnding &ending);
+
+    /**
+     * @brief `endHostInvokeIn` for a completion
+     */
+    HostInvokeEndOutcome completeHostInvokeIn(const std::string &sessionId, const std::string &processorType,
+                                              const std::string &invokeId, uint64_t token,
+                                              const std::string &doneData = "");
+
+    /**
+     * @brief `endHostInvokeIn` for a failure
+     */
+    HostInvokeEndOutcome failHostInvokeIn(const std::string &sessionId, const std::string &processorType,
+                                          const std::string &invokeId, uint64_t token,
+                                          const std::string &errorData = "");
+
+    /**
+     * @brief Be served by the registries of @p parent's tree, as a child session
+     *        it starts is (docs/adr/0045)
+     *
+     * The invoke executor calls it before the child runs.
+     */
+    void adoptHostProcessorsOf(const StateMachine &parent);
+
     /**
      * @brief §scxml-6.4.3: Set completion callback for top-level final state notification
      *
@@ -982,6 +1109,37 @@ private:
     std::vector<PendingInvoke> pendingInvokes_;
     std::recursive_mutex
         pendingInvokesMutex_;  // Recursive: same-thread re-entry during child invoke initialization (W3C 6.4)
+
+    // docs/adr/0084, D4: the registries of the host processor door, shared by
+    // every session of the tree (a child adopts its parent's, `adoptHostProcessorsOf`).
+    std::shared_ptr<TreeInvokers> invokers_ = std::make_shared<TreeInvokers>();
+    std::shared_ptr<TreeEventProcessors> eventProcessors_ = std::make_shared<TreeEventProcessors>();
+
+    // docs/adr/0084, D5: the host-run invocations of this session, kept by the
+    // shared ledger, and the scheduler it arms their deadlines on.
+    Core::HostInvokeLedger hostInvokes_;
+    /// This engine's scheduler as the ledger asks it (`HostInvokeDeadlineSchedulerTrait`).
+    /// Defined in StateMachine.cpp.
+    class HostInvokeDeadlines;
+    std::unique_ptr<HostInvokeDeadlines> hostInvokeDeadlines_;
+
+    /// Run @p apply as an owner operation of this machine: inside the macrostep
+    /// that runs on this thread, or else as a macrostep of its own, whose main
+    /// event loop then takes what @p apply queued.
+    bool applyAsOwner(const std::function<bool()> &apply);
+    /// The one body behind every ending of a host-run invocation: the ledger's
+    /// token check, and the `done.invoke` or `error.invoke` on the external queue.
+    bool endHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token, bool failed,
+                       const std::string &data, const std::string &origin, const std::string &originType);
+    /// Do what a start or a deadline of the ledger left this engine to do.
+    void raiseHostInvokeReport(const Core::HostInvokeReport &report);
+    /// The deadline of a start came due on the scheduler.
+    void expireHostInvoke(const HostInvokeDeadline &deadline);
+    /// Deliver @p ending to the session @p sessionId names, here or below.
+    HostInvokeRoute routeHostInvokeEnd(const std::string &sessionId, const HostInvokeEnding &ending);
+    /// Put one event of a host-run invocation on the external queue.
+    void raiseHostInvokeEvent(const std::string &name, const std::string &data, const std::string &invokeId,
+                              const std::string &origin, const std::string &originType);
 
     // W3C SCXML: Thread safety for StateHierarchyManager access from JSEngine worker thread
     mutable std::mutex hierarchyManagerMutex_;  // Protects hierarchyManager_ read access
