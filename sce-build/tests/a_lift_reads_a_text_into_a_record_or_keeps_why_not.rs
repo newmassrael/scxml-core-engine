@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::generator::Language;
 use tempfile::tempdir;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -305,7 +306,7 @@ fn every_backend_lowers_a_lift() {
         false,
         r#"      <sce:lift text="_event.data.text" schema="Answer" location="answer" refusal="why"/>"#,
     );
-    for language in ["rust", "go", "kotlin", "python", "cpp", "c", "swift"] {
+    for language in Language::ALL.iter().map(|l| l.canonical_name()) {
         let (ok, out) = run(&["check", "-l", language], &doc, &borrowed);
         assert!(ok, "{language} lowers a lift:\n{out}");
     }
