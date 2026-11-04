@@ -844,14 +844,27 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * its `done.invoke`. That call must not drain in turn, or the inputs posted
      * after the one being applied would join the queue ahead of what it raises.
      * Inside a drain it is a plain push, and the drain takes the rest in order.
+     *
+     * [first] is an input already taken off the inbox, oldest of all: the one
+     * the coroutine loop's wait received ([awaitNextExternalEvent]). It is the
+     * head of the inbox, not an event of the owner's own, so it is applied as
+     * the first input of this drain, under the same guard. Applied outside it,
+     * the posted event it carries would reach [enqueueExternal], whose drain
+     * would queue what was posted after it ahead of it.
      */
-    private fun drainInbox() {
-        if (drainingInbox) return
+    private fun drainInbox(first: InboxInput<E>? = null) {
+        if (drainingInbox) {
+            // Unreachable for [first]: the loop's wait runs between macrosteps,
+            // never inside a drain. Applied all the same rather than dropped.
+            first?.let { applyInboxInput(it) }
+            return
+        }
         drainingInbox = true
         try {
-            while (true) {
-                val input = eventChannel.tryReceive().getOrNull() ?: return
+            var input = first ?: eventChannel.tryReceive().getOrNull()
+            while (input != null) {
                 applyInboxInput(input)
+                input = eventChannel.tryReceive().getOrNull()
             }
         } finally {
             drainingInbox = false
@@ -5816,7 +5829,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             if (received != null) {
                 // Closed: the run has ended or the engine was stopped.
                 val input = received.getOrNull() ?: return null
-                underMacrostepLock(running) { applyInboxInput(input) }
+                // The oldest input of the inbox: the first of a drain, which then
+                // takes what was posted after it, in order ([drainInbox]).
+                underMacrostepLock(running) { drainInbox(first = input) }
                 continue
             }
             underMacrostepLock(running) {
