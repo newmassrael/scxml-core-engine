@@ -59,6 +59,8 @@ public:
                                            std::shared_ptr<IEventTarget> target, const std::string &sendId = "",
                                            const std::string &sessionId = "") override;
 
+    std::chrono::milliseconds now() const override;
+
     bool cancelEvent(const std::string &sendId, const std::string &sessionId = "") override;
     size_t cancelEventsForSession(const std::string &sessionId) override;
     bool hasEvent(const std::string &sendId) const override;

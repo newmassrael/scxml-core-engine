@@ -144,6 +144,19 @@ public:
                                                    const std::string &sessionId = "") = 0;
 
     /**
+     * @brief The reading of the clock a delay handed to `scheduleEvent` is counted from
+     *
+     * In MANUAL mode the logical clock the host moves (`advanceTime`); in AUTOMATIC
+     * mode the steady clock. A caller that holds a moment and arms it here as a delay
+     * reads now from this, so the moment and the firing are read off one clock: a
+     * moment read off another clock and converted by a second reading may fire a
+     * millisecond early, or a whole logical span off (docs/adr/0084, D5).
+     *
+     * @return Milliseconds since the clock's epoch
+     */
+    virtual std::chrono::milliseconds now() const = 0;
+
+    /**
      * @brief Cancel a scheduled event
      * @param sendId Send ID of the event to cancel
      * @param sessionId Session ID for cross-session isolation (empty = no session check)

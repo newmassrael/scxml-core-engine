@@ -735,6 +735,14 @@ std::chrono::milliseconds EventSchedulerImpl::getLogicalTime() const {
     return std::chrono::milliseconds(logicalTime_.load(std::memory_order_acquire));
 }
 
+std::chrono::milliseconds EventSchedulerImpl::now() const {
+    // The clock `scheduleEvent` counts a delay from, in the mode it reads it in.
+    if (mode_.load(std::memory_order_acquire) == SchedulerMode::MANUAL) {
+        return getLogicalTime();
+    }
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch());
+}
+
 void EventSchedulerImpl::setLogicalTime(std::chrono::milliseconds timeMs) {
     auto oldTime = logicalTime_.exchange(timeMs.count(), std::memory_order_release);
     SCE_LOG_DEBUG("EventSchedulerImpl: Logical time set from {}ms to {}ms (snapshot restoration)", oldTime,

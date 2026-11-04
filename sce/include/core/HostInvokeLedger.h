@@ -52,7 +52,13 @@ namespace SCE::Core {
  *   `token` comes due, convertible to `std::optional<uint64_t>`, empty when none is
  *   pending.
  *
- * The generated engine's `PullScheduler` serves as it is. A C++17 trait, so it means
+ * The `nowMs` an engine hands the ledger (`start`, `startRestored`, `running`) reads
+ * the clock this scheduler fires by, and nothing else: a moment read off one clock and
+ * fired by another comes due at a moment nobody named. A pull scheduler is told the
+ * time on each pop, so the engine hands both the one clock it pops with; a scheduler
+ * that keeps a clock of its own (the Interpreter's) answers the reading itself, and
+ * the engine hands the ledger that. The generated engine's `PullScheduler` serves as
+ * it is. A C++17 trait, so it means
  * the same thing in a consumer's C++17 translation unit and in SCE's C++20 ones
  * (docs/adr/0059).
  */

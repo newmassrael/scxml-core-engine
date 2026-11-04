@@ -1296,7 +1296,7 @@ Decided by `docs/adr/0084-what-reaches-an-engine-from-outside-enters-through-one
 | Registration and the reserved prefix | `SendHelper::refuseReservedHostType`, held to `reserved_type_cases.json` | `registerEventProcessor`, `registerInvoker` | `StateMachine::registerEventProcessor`, `registerInvoker`, `registerMeshRpcInvoker` |
 | Who serves a type | | the build's declaration and the registration | the platform's processor, then the registration, then `error.execution` (`InvokeHandlerFactory`, `ActionExecutorImpl`'s send) |
 | Sessions served | | the tree (`TreeInvokers`) | the tree (`TreeInvokers`, `TreeEventProcessors`, `adoptHostProcessorsOf`) |
-| A running invocation | `core/HostInvokeLedger.h` | one ledger per session, on `PullScheduler` | one ledger per `StateMachine`, on its scheduler through `StateMachine::HostInvokeDeadlines` |
+| A running invocation | `core/HostInvokeLedger.h` | one ledger per session, on `PullScheduler`, its deadlines moments of the clock it pops with | one ledger per `StateMachine`, on its scheduler through `StateMachine::HostInvokeDeadlines`, its deadlines moments of that scheduler's clock (`IEventScheduler::now`, the logical clock in MANUAL mode) |
 | Endings | | `completeHostInvoke`, `failHostInvoke`, `endHostInvokeIn` | the same names |
 
 The request is built by each engine from its own evaluation of the element (the

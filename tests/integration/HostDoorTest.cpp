@@ -129,10 +129,11 @@ protected:
 
     /// A machine for @p scxml with a scheduler and a dispatcher, loaded and not yet
     /// started: a host registers before `start()`, since the initial state's
-    /// requests are made during it.
-    std::shared_ptr<StateMachine> prepare(const std::string &scxml) {
+    /// requests are made during it. The scheduler runs in @p mode: in MANUAL mode
+    /// its clock is the logical one the test moves (`scheduler_->advanceTime`).
+    std::shared_ptr<StateMachine> prepare(const std::string &scxml, SchedulerMode mode = SchedulerMode::AUTOMATIC) {
         sm_ = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
-        auto scheduler = std::make_shared<EventSchedulerImpl>(
+        scheduler_ = std::make_shared<EventSchedulerImpl>(
             [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target, const std::string &) -> bool {
                 try {
                     return target->send(event).get().isSuccess;
@@ -140,12 +141,13 @@ protected:
                     return false;
                 }
             });
+        scheduler_->setMode(mode);
         raiser_ = std::make_shared<EventRaiserImpl>();
-        raiser_->setScheduler(scheduler);
+        raiser_->setScheduler(scheduler_);
         raiser_->setImmediateMode(false);
         sm_->setEventRaiser(raiser_);
         sm_->setEventDispatcher(
-            std::make_shared<EventDispatcherImpl>(scheduler, std::make_shared<EventTargetFactoryImpl>(raiser_)));
+            std::make_shared<EventDispatcherImpl>(scheduler_, std::make_shared<EventTargetFactoryImpl>(raiser_)));
         EXPECT_TRUE(sm_->loadSCXMLFromString(scxml)) << "the document did not load";
         return sm_;
     }
@@ -207,6 +209,7 @@ protected:
 
     IScriptEngine *engine_ = nullptr;
     std::shared_ptr<StateMachine> sm_;
+    std::shared_ptr<EventSchedulerImpl> scheduler_;
     std::shared_ptr<EventRaiserImpl> raiser_;
 };
 
@@ -523,6 +526,48 @@ TEST_F(HostDoorTest, ADeadlinePassedEndsTheRunAndAReplyAfterwardsIsRefused) {
         << "the host was not told to stop the run its deadline ended";
     EXPECT_FALSE(sm->completeHostInvoke(DECLARED_TYPE, "slow", request->token, "{}"))
         << "a reply after the deadline was accepted";
+}
+
+// docs/adr/0084, D5: a deadline is a moment of the clock the scheduler fires by, so
+// on a scheduler whose clock the host moves (MANUAL) it comes due when that clock
+// has covered it, to the millisecond, however much wall time passed. The logical
+// clock is set far from any steady reading first: a moment of one clock fired by
+// the other would come due at a moment nobody named. The scheduler answers its own
+// reading (`IEventScheduler::now`), which is what the ledger reads the moment off.
+TEST_F(HostDoorTest, ADeadlineComesDueOnTheClockOfTheSchedulerItIsArmedOn) {
+    auto sm = prepare(R"scxml(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript"
+       initial="timed" name="host_door_logical_deadline">
+  <state id="timed">
+    <invoke id="slow" type="x-sce-host">
+      <param name="_sce_deadline_ms" expr="5000"/>
+    </invoke>
+    <transition event="error.invoke.slow" cond="_event.invokeid === 'slow' &amp;&amp; _event.data === 'deadline'"
+                target="expired"/>
+  </state>
+  <final id="expired"/>
+</scxml>)scxml",
+                      SchedulerMode::MANUAL);
+    scheduler_->setLogicalTime(std::chrono::milliseconds(1000000));
+    EXPECT_EQ(scheduler_->now(), std::chrono::milliseconds(1000000))
+        << "a MANUAL scheduler's reading is its logical clock";
+    sm->registerInvoker(DECLARED_TYPE, recordingInvoker(invoker_));
+    ASSERT_TRUE(sm->start());
+    const auto request = invoker_.latest("slow");
+    ASSERT_TRUE(request.has_value()) << "`slow` never started";
+    const std::string cancelled = "CANCEL slow " + std::to_string(request->token);
+
+    // Wall time passes; the scheduler's clock does not, so nothing comes due.
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    scheduler_->advanceTime(std::chrono::milliseconds(4999));
+    raiser_->processQueuedEvents();
+    EXPECT_TRUE(sm->isStateActive("timed")) << "the deadline came due before the clock covered it";
+    EXPECT_FALSE(invoker_.saw(cancelled)) << "the host was told to stop before the deadline";
+
+    scheduler_->advanceTime(std::chrono::milliseconds(1));
+    raiser_->processQueuedEvents();
+    EXPECT_EQ(sm->terminalState().value_or(""), "expired") << "the deadline did not come due at 5000";
+    EXPECT_TRUE(invoker_.saw(cancelled)) << "the host was not told to stop the run its deadline ended";
 }
 
 // docs/adr/0084, D6: a Mesh request is served by the router the host registered,

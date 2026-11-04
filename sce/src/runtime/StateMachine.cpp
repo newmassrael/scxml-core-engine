@@ -163,8 +163,12 @@ std::shared_ptr<StateMachine> StateMachine::createFromSCXMLString(IScriptEngine 
  * The ledger hands a deadline over as a moment of the engine's clock and asks for
  * it back by the start's token. This engine's scheduler takes a delay and a send
  * id instead, so the adapter is the narrowest one that turns the first into the
- * second: the clock is the steady clock in milliseconds, the delay is the moment
- * less the time now, and the send id is one the document cannot name. It holds the
+ * second: the clock is the scheduler's own (`IEventScheduler::now`, the logical
+ * clock in MANUAL mode), the delay is the moment less that clock's reading now, and
+ * the send id is one the document cannot name. The ledger reads the moment off the
+ * same clock (`nowMs`), so the moment and the firing are one clock's: a moment of
+ * the steady clock converted against a logical one, or by a second steady reading a
+ * millisecond later, came due early. It holds the
  * moment each pending deadline comes due, which the scheduler does not answer by
  * token. The ledger's own logic stays in the ledger.
  *
@@ -178,11 +182,16 @@ class StateMachine::HostInvokeDeadlines {
 public:
     explicit HostInvokeDeadlines(StateMachine &machine) : machine_(machine) {}
 
-    /// The engine's clock a deadline is a moment of.
-    static uint64_t nowMs() {
-        return static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
-                .count());
+    /// The clock a deadline is a moment of: the scheduler's it is armed on. With no
+    /// scheduler no deadline can be armed, and arming one says so; the reading is
+    /// then the clock's epoch.
+    uint64_t nowMs() const {
+        const std::shared_ptr<IEventScheduler> scheduler = schedulerOf();
+        if (!scheduler) {
+            return 0;
+        }
+        const auto reading = scheduler->now().count();
+        return reading > 0 ? static_cast<uint64_t>(reading) : 0;
     }
 
     void scheduleHostInvokeDeadlineAt(uint64_t token, std::shared_ptr<const HostInvokeDeadline> deadline,
@@ -2179,7 +2188,7 @@ void StateMachine::adoptHostProcessorsOf(const StateMachine &parent) {
 
 bool StateMachine::performHostInvoke(const HostInvokeRequest &request) {
     const auto report = hostInvokes_.start(*invokers_, request, sessionId_, *hostInvokeDeadlines_,
-                                           [] { return HostInvokeDeadlines::nowMs(); });
+                                           [this] { return hostInvokeDeadlines_->nowMs(); });
     if (!report.has_value()) {
         return false;
     }
