@@ -80,7 +80,8 @@ private func readDescribed(_ type: Any, _ v: PayloadValue) throws {
             continue
         }
         let refusal = try #require(got, "\(name): read, the table refuses it")
-        let code = try #require(RefusalCode(declaredName: try #require(want["code"] as? String)))
+        let codeName = try #require(want["code"] as? String)
+        let code = try #require(RefusalCode(declaredName: codeName))
         let pointer = try #require(want["pointer"] as? String)
         let bound = (want["bound"] as? Int).map { UInt32($0) }
         #expect(refusal.code == code, "\(name): \(refusal.reason)")
