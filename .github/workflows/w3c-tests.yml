@@ -65,7 +65,11 @@ jobs:
   test-cpp:
     name: C++ W3C Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 60 until the WASM half joined (2026-11-04). Its cold emscripten build was
+    # about 600s wall on three build slots of a workstation, so a runner's few
+    # cores take longer; the 25 minutes added are an allowance until a run of
+    # the job is read, not a measurement.
+    timeout-minutes: 85
     permissions:
       checks: write
       pull-requests: write
@@ -187,11 +191,41 @@ jobs:
     # a developer's own `./w3c_test_cli 531`, not in the channel that reports
     # conformance.
     - name: Run W3C SCXML Test Suite
+      id: cpp-suite
       run: |
         ulimit -c unlimited
         SPDLOG_LEVEL="${{ inputs.log-level || 'debug' }}" \
         SCE_W3C_REPORT_DIR=build/tests \
           scripts/gate w3c-cpp
+
+    # The same runner built with emscripten and run under Node, then the
+    # interactive suite, as one gate: the emsdk set up above is what it builds
+    # with, sourced in this step as deploy-visualizer.yml does. It runs whenever
+    # the native suite RAN, whatever that suite's verdict, because the two
+    # builds fail for different reasons and one red must not hide the other;
+    # it does not run when a step before the suite failed, since its own
+    # prerequisites are the same ones. SCE_REQUIRE_TOOLS turns the gate's
+    # "emsdk missing, skipping" into a failure here, where emsdk is installed.
+    - name: Run W3C SCXML Test Suite (WASM, under Node)
+      if: ${{ !cancelled() && (steps.cpp-suite.outcome == 'success' || steps.cpp-suite.outcome == 'failure') }}
+      env:
+        SCE_REQUIRE_TOOLS: 1
+      run: |
+        source emsdk/emsdk_env.sh
+        scripts/gate w3c-wasm
+
+    - name: Upload WASM Test Output
+      uses: actions/upload-artifact@v7
+      if: ${{ !cancelled() }}
+      with:
+        name: w3c-test-output-wasm
+        path: |
+          build_wasm/tests/w3c_wasm_output.log
+          build_wasm/tests/comprehensive_interactive_wasm_output.log
+          build_wasm/tests/w3c_test_results.xml
+          build_wasm/tests/w3c_failed_test_logs/
+        retention-days: 30
+        if-no-files-found: ignore
 
     - name: Debug Environment
       if: failure()
