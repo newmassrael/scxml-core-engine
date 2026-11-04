@@ -1395,7 +1395,7 @@ fn registry_stdout(root: &Path, args: &[&str]) -> String {
 /// and the plan covers what the selection chose.
 ///
 /// Through bx the push no longer runs the runner as one command. It asks bx
-/// for the set `gates` (`[checks.gates]` in bx.toml) with the runner's plan of
+/// for the set `prepush` (`[checks.prepush]` in bx.toml) with the runner's plan of
 /// its own selection (`scripts/gate --plan`, which hands the selection to
 /// `gate_registry.py --plan`). Three files hold that chain, and a rename in any
 /// one leaves the push handing bx a set it does not declare, or a plan that is
@@ -1411,7 +1411,7 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
     let manifest = std::fs::read_to_string(root.join("bx.toml")).expect("read bx.toml");
     let set: Vec<String> = manifest
         .lines()
-        .skip_while(|l| l.trim() != "[checks.gates]")
+        .skip_while(|l| l.trim() != "[checks.prepush]")
         .skip(1)
         .take_while(|l| !l.trim_start().starts_with('['))
         .filter(|l| !l.trim_start().starts_with('#'))
@@ -1420,12 +1420,12 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
     assert!(
         set.iter()
             .any(|l| l == r#"plan=["bash","scripts/gate","--plan","--all"]"#),
-        "bx.toml's [checks.gates] does not plan through `scripts/gate --plan`, \
+        "bx.toml's [checks.prepush] does not plan through `scripts/gate --plan`, \
          so the set run by hand would not be the registry's: {set:?}"
     );
     assert!(
         set.iter().any(|l| l == "cache=true"),
-        "bx.toml's [checks.gates] does not say `cache = true`, so bx does not \
+        "bx.toml's [checks.prepush] does not say `cache = true`, so bx does not \
          hold the platform to naming the architecture a kept verdict needs: \
          {set:?}"
     );
@@ -1433,8 +1433,8 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
     let hook = std::fs::read_to_string(root.join("tools/git-hooks/pre-push"))
         .expect("read tools/git-hooks/pre-push");
     assert!(
-        code_lines(&hook).any(|l| l.contains("--checks gates -- bash scripts/gate --plan")),
-        "the push hook no longer hands bx the set `gates` with the runner's \
+        code_lines(&hook).any(|l| l.contains("--checks prepush -- bash scripts/gate --plan")),
+        "the push hook no longer hands bx the set `prepush` with the runner's \
          plan of the push's own selection"
     );
 

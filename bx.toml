@@ -401,7 +401,7 @@ outputs = [
 # THE PUSH'S GATES, AS A SET OF CHECKS bx SPREADS OVER THE BUILD MACHINES (bx
 # RFC 0004, section 7) AND WHOSE PASSES IT KEEPS (RFC 0020).
 #
-# `tools/git-hooks/pre-push` runs `bx --checks gates -- bash scripts/gate --plan
+# `tools/git-hooks/pre-push` runs `bx --checks prepush -- bash scripts/gate --plan
 # <its selection>`. A plan command given after `--` replaces `plan` below for
 # that one run, which is how the push's change set reaches the plan: as
 # ARGUMENTS, so that it decides the list of units, and never as an environment
@@ -425,6 +425,6 @@ outputs = [
 # machines at once and a red does not hold the others up, so a push learns every
 # red it has in one round. bx names each unit it did not finish as not measured,
 # so nothing that did not run reads as passed.
-[checks.gates]
+[checks.prepush]
 plan  = ["bash", "scripts/gate", "--plan", "--all"]
 cache = true

@@ -186,7 +186,7 @@ fi
 # Until 2026-11-04 one bx call carried the whole runner, so the tree crossed
 # once and every gate ran one after another on one machine, about seven
 # minutes, while the shared main moved on and the push lost the ref race. Now
-# bx runs the declared set `gates` (`[checks.gates]` in bx.toml): it runs
+# bx runs the declared set `prepush` (`[checks.prepush]` in bx.toml): it runs
 # `scripts/gate --plan` HERE with the same selection arguments the in-place run
 # takes, and gets one unit per gate back, planned from the registry. So the two
 # paths cannot select differently: the selection is made by one function, and
@@ -208,7 +208,7 @@ fi
 # own 3, "could not run", stays 3).
 run_gates() {
     if [[ -n "${BX:-}" && -x "${BX}" ]]; then
-        "$BX" --checks gates -- bash scripts/gate --plan "$@"
+        "$BX" --checks prepush -- bash scripts/gate --plan "$@"
     else
         "$RUNNER" "$@"
     fi

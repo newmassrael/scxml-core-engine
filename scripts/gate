@@ -24,7 +24,7 @@
 # `--plan` runs no gate. It takes the same selection as a run (`--all`,
 # `--changed-in`, `--changed-from`, slugs), syncs the Rust toolchain the way a
 # run does, and prints the units bx runs for it, one JSON object a line: the
-# plan of the set `[checks.gates]` in bx.toml, which the push hook hands to bx.
+# plan of the set `[checks.prepush]` in bx.toml, which the push hook hands to bx.
 # Each unit is this runner on one gate at the release the plan read
 # (`--rust`), so the release is in the unit's argv and therefore in the key bx
 # keeps the unit's pass under. See "Whether a gate's verdict may be kept" and

@@ -416,7 +416,7 @@ PACE_NORMALISED: dict[str, str] = {
 
 # ── Whether a gate's verdict may be kept ──────────────────────────
 #
-# A push hands its gates to bx as a set of check units (`[checks.gates]` in
+# A push hands its gates to bx as a set of check units (`[checks.prepush]` in
 # bx.toml): one unit per gate the change selects, planned from this table by
 # `scripts/gate --plan` (`plan_units` below). bx keeps a unit's PASS in the
 # site's action cache under a key made of the unit's argv, the content of its
