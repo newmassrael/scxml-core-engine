@@ -277,7 +277,8 @@ by that form with `CapacityExceeded`, and accepted by every form that stores not
 backend that stores.** A storing decode equals store after parse, so `CapacityExceeded` means the frame is in the
 language: Rust stops at the field and then judges the frame by its view, which costs nothing unless it refuses, and
 a deployment that states a capacity generates the views. C11 has no view and stops at the field until it reads past
-what it cannot store.
+what it cannot store. *Superseded for Rust by the amendment of 2026-11-05 at the end of this section: Rust reads past
+what it cannot store as C11 does, and judges the frame by nothing else.*
 
 *Decided by the owner on 2026-11-02, on review of this section: what a bound guarded stays guarded where the bound is
 absent.* §2's check was also the only thing standing between a frame and two failures that have nothing to do with the
@@ -359,12 +360,15 @@ are one value held two ways. So:
   path. It reads once, from the decode body it shares with the view, and only the path past a capacity reads the frame
   a second time, as store after parse already says. So the view decides a frame's validity and is not what storing is
   built on: the law stands that a form that stores refuses with `CapacityExceeded` only a frame the view accepts.
+  *Since the amendment of 2026-11-05 the path past a capacity reads nothing a second time either; the law stands,
+  held by the same differential test.*
 - **The judgement stands on every codec that takes a profile, in every tree.** A capacity below a bound is not a fact a
   tree can know once `S` is a parameter: a program may name such a profile with no deployment. So the path past a
   capacity is generated wherever a profile is taken. It judges by the view where the tree has views, since a view holds
   no entry, and by the codec's lent form where it has none, since `Lent` holds a list at its bound and cannot run out.
   A body with no view of its own judges by its lent form too. The lent form is the costlier judge, a whole value on the
-  stack, which is why the view is taken where it exists and why a deployment's tree has views.
+  stack, which is why the view is taken where it exists and why a deployment's tree has views. *Superseded by the
+  amendment of 2026-11-05: no Rust decode judges a frame a second time, by a view or by any other form.*
 - **A CBOR codec keeps its two types.** Its `{Codec}<'a>` already is a view: it stores nothing, holds no list, and is
   covariant, and its decode cannot run out. `{Codec}Owned<S>` is what stores, and it is built from that value after the
   whole map has parsed, so store after parse holds by construction. Moving it onto `{Codec}In<S>` would give up the
@@ -379,7 +383,8 @@ are one value held two ways. So:
   views. With one tree for every deployment that is the deploy input reaching into the tree, so it stops: a test that
   compares a tree generated with and without a deploy input found it. A tree without views judges a frame past a
   capacity by its lent form, which is correct and costs a whole value on the stack, so a build with a deployment
-  generates its tree with `--views`.
+  generates its tree with `--views`. *Since the amendment of 2026-11-05 a decode past a capacity asks nothing of a
+  view, and views are a build's choice for what they are, a list held as a span.*
 - **A module's `cfg` is the build's, and the caller says it.** A consumer may compile a codec's module under a feature
   of its own, and a file that names a module the build leaves out does not compile. Neither the documents nor the deploy
   input know a build's layout, so the gate is an input of the file's generation, `--gate <codec>=<predicate>`, and a gate
@@ -389,7 +394,8 @@ are one value held two ways. So:
   with no bound loops until the chain or the frame ends, with no refusal past a depth and no reservation. What cannot
   hold such a list says so by name: `Inline` has no impl for its tag, a deployment that gives it no capacity is
   refused, C11 is refused without a capacity, and a Rust tree without views is refused, since its decode past a
-  capacity would judge the frame by the lent form, which holds lists as `Inline` does. A gated C11 chain wrote past its
+  capacity would judge the frame by the lent form, which holds lists as `Inline` does. *The last refusal is lifted by
+  the amendment of 2026-11-05: with no judge, a tree without views holds such a list as any profile it names does.* A gated C11 chain wrote past its
   array when a deployment's capacity was below the depth; it now refuses, as the ungated chain did.
 - **Step 4 for positional byte strings and text, as landed.** A `tail` or `length-ref` takes no `sce:max-size`, and
   its bound is `CodecField::bound`: what the document states met with what the field that carries the length can say,
@@ -499,10 +505,53 @@ are one value held two ways. So:
   storage of the run is what it was. A depth the document states is still refused past with `TooManyElements`; that
   shape is held by fixtures of its own (`codec_chain_depth_plain`, `codec_chain_depth_gated`) and the reject vectors
   moved with it. A Rust tree of a set that holds a list of no bound is generated with views, as the generator
-  requires. The goldens of `tests/forge/expected/` are one crate and so one tree: the landing generated each as a tree
-  of its own document, so a HELLO's golden named the view of a locator whose golden had none, which only the build of
-  that crate saw. A golden is now generated with views where its codec, or a codec of the directory that holds it, has
-  a list of no bound of its own or in a codec it holds, and a test reads every name a golden takes from one beside it.
+  required until the amendment of 2026-11-05. The goldens of `tests/forge/expected/` are one crate and so one tree:
+  the landing generated each as a tree of its own document, so a HELLO's golden named the view of a locator whose
+  golden had none, which only the build of that crate saw. A golden is now generated with views where its codec, or a
+  codec of the directory that holds it, has a list of no bound of its own or in a codec it holds, and a test reads
+  every name a golden takes from one beside it.
+
+*Amendment of 2026-11-05, decided by the owner: a Rust storing decode is a store after a parse in one pass, by the
+rule C11 already followed.* A Rust decode that stopped at the field past its capacity and then judged the frame
+again, by its view or by its lent form, kept that second form's value in the decode's call chain: a bare-metal
+client measured a put's `decode_into` frame at 1,416 bytes, and once the lists of a group were built where they
+live (ADR 0065 §6, amendment of the same day), what was left past one inline list was that judge (288, 296 and 280
+bytes on the three probe codecs against lists of 136 and 132). There is no judge any more:
+
+- **The rule, shared.** A field past what the profile holds is read on and not held, the capacity is noted, and the
+  decode answers `CapacityExceeded` just before it would succeed, once the frame is read whole and every refusal of
+  the frame's own has had its turn. Rust notes it through `note_capacity` and `note_held` (`codec.rs` of the Rust
+  runtime) in a decode's `_over`, as C11 notes it through `sce_forge_codec_note_capacity`
+  (`backends/c/forge-runtime/include/sce/forge/codec.h`) in its `_over` and reads a list past its array in
+  `C11ListLoop` and `c11_chain_entry_lines`; the Rust content-line codec already did (`ContentLineReader`, with
+  the same helper). So the Rust and C11 backends give one frame one answer by one rule, and the law above, that a
+  form that stores refuses with `CapacityExceeded` only a frame a form that stores nothing accepts, holds without
+  a second reading.
+- **Each site.** A list reads every entry its count or its chain names, holds each where the list has room
+  (`push_keeping`) and counts its bound on the entries read; its fill answers `CapacityExceeded` once the list is read
+  whole, and a list so read keeps the entries it held (`Bounded::refill`), which are inside its bounds since every
+  profile holds at least a list's fewest. A body, embedded or an arm of a variant, reads its own frame whole before
+  it says so, and the decode that holds it notes it and goes on where that frame ends. Bytes or text past what a
+  copying profile holds leave the field at its default. Two lists of one count answer it where their held counts
+  differ, which only a capacity makes them do.
+- **The gates on a chain's entries.** A chain notes the kinds its gates ask for of every entry it reads, held or
+  not, so the fields after it are read as the frame says. A full list keeps an entry of each kind it read in place
+  of one whose kinds another entry holds, so the arm the kinds name is one the value can hold while the list has room
+  for one entry of each kind; the door the arm is installed through keeps it and answers that it was past the
+  capacity.
+- **What the value holds.** On `CapacityExceeded`, as on every `Err`, `decode_into` leaves `_out` not to be read, and
+  every field of it holds what its type says: a list inside its bounds, a chain its arm's kinds, two lists one count,
+  a group built by value left as it was.
+- **What is not read whole, stated.** Two frames are answered `CapacityExceeded` before the frame is read whole, and a
+  frame malformed after that point gets that answer rather than its own: a chain whose gated kinds outnumber what the
+  profile holds of it, so that no arm the value can hold is the frame's; and a list held to its law (ADR 0065 §6 R8)
+  whose entries break the law past its capacity, since the law is held to the entries the list keeps. A deployment
+  that gives a chain fewer entries than it has gated kinds, or a lawful list fewer entries than a frame breaks its law
+  at, is the only one that meets them.
+- **What it frees.** No form is generated to judge a frame: `store_into`, `stored` and `past_capacity` are gone, and
+  a Rust tree with a list of no bound is no longer refused without views. The MCU frame of a lent decode is held by
+  `scripts/codec_frame_probe.sh` (`backends/rust/probes/nostd-codec-frame`), which refuses a frame on the decode's
+  chain that is not shorter than one inline list of its codec.
 
 ## Alternatives
 
