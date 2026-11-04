@@ -208,7 +208,7 @@ fn an_algorithm_reads_and_writes_the_fields_of_the_optional_record_it_holds() {
             "held = sce_algorithm.copied(it)",
             // A field of the present record is the member of the object.
             "held.count = 7",
-            "held.title = 'bumped'",
+            "held.title = \"bumped\"",
             "return held.count",
             "return x.count",
         ],

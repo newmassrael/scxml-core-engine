@@ -233,7 +233,7 @@ fn each_backend_converts_the_integer_to_its_decimal_digits() {
         (Language::Kotlin, "\"E\"+(7300+n).toString()"),
         (Language::Rust, "format!(\"{}{}\",\"E\",7300+n)"),
         (Language::Go, "\"E\"+strconv.FormatInt(int64(7300+n),10)"),
-        (Language::Python, "'E'+str(7300+n)"),
+        (Language::Python, "\"E\"+str(7300+n)"),
     ];
     for &(language, spelling) in spellings {
         let lines = lines_naming_the_base(&generated(DOCUMENT, language));
@@ -286,13 +286,13 @@ fn a_go_file_that_does_not_use_strconv_does_not_import_it() {
 
 /// A conditional in the left operand must stay a unit. Written bare, Kotlin's
 /// `if (flag) "A" else "B" + n` reads the `+` into the else branch and Python's
-/// `'A' if flag else 'B' + str(n)` does the same: the other operand is lost
+/// `"A" if flag else "B" + str(n)` does the same: the other operand is lost
 /// from the branch that was taken.
 #[test]
 fn a_conditional_string_is_parenthesised_before_the_plus() {
     for (language, spelling) in [
         (Language::Kotlin, "(if(flag)\"A\"else\"B\")+n.toString()"),
-        (Language::Python, "('A'ifflagelse'B')+str(n)"),
+        (Language::Python, "(\"A\"ifflagelse\"B\")+str(n)"),
     ] {
         let lines: Vec<String> = generated(CONDITIONAL_LEFT, language)
             .lines()

@@ -13174,10 +13174,10 @@ mod tests {
     #[test]
     fn bytes_non_ascii_literal_not_reinterpreted() {
         let ctx = bytes_ctx();
-        // A backslash escape is declined — Rust would otherwise need a
-        // decoder; the node stays a StringLit, so no `BytesLit` byte
-        // constant (`== b"…"`) is emitted. The gate / validator handles
-        // the residual mismatch, not codegen.
+        // The lexer reads `\t` into a tab, which is not printable ASCII, so
+        // the literal is declined; the node stays a StringLit, so no
+        // `BytesLit` byte constant (`== b"…"`) is emitted. The gate /
+        // validator handles the residual mismatch, not codegen.
         let out = tp_with("raw === 'a\\tb'", ExprTarget::Rust, &ctx);
         assert_eq!(out, "raw == \"a\\tb\"");
         assert!(
