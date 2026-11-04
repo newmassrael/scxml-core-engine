@@ -3302,9 +3302,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             ${INTEGRATION_C_TEST_inbox_probe_SOURCES}
             ${_sce_inbox_platform}
         )
-        target_link_libraries(${_sce_inbox_target} PRIVATE
-            sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54 Threads::Threads
-        )
+        sce_c_link_runtime(${_sce_inbox_target})
+        # The driver's own posting threads.
+        target_link_libraries(${_sce_inbox_target} PRIVATE Threads::Threads)
         target_include_directories(${_sce_inbox_target} PRIVATE
             "${SCE_C_INTEGRATION_GENERATED_DIR}"
             "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
