@@ -124,8 +124,21 @@ host is the arrangement measured above to fail.
   is ignored).
 - A post returns whether the inbox took it. A bounded inbox (C11 and `no_std` Rust, whose capacity the deployment
   declares) refuses a post when full and says so; nothing is dropped silently. A hosted runtime's inbox is unbounded.
-- A post wakes the owner through a waker the host installs (`Hal::wake` in Rust; a runtime with its own loop, such as
-  Kotlin's coroutine mode or the Interpreter's worker, wakes itself).
+- A post wakes the owner through a waker the host installs (`wakeWith` and its spellings; a runtime with its own loop,
+  such as Kotlin's coroutine mode or the Interpreter's worker, wakes itself). Amended at step 4: Rust's generated
+  machines fix their HAL, so `Hal::wake` alone is no waker a host installs. A `std` post calls the HAL's wake and then
+  the waker installed with `wake_with`, and a bare-metal deployment names its waking HAL as a parameter of the
+  `BoundedInbox` it declares.
+- What the inbox holds when a run ends (a top-level final, or the host's stop) is applied then, by the same operations,
+  as a direct call would be at that moment: an event joins the external queue of a machine that will not dequeue it and
+  is counted as unseen (§scxml-3.13), and an ending finds its invocation over and is refused by the token check. No
+  runtime drops a held input. What differs is a post that arrives after the end (decided at step 4):
+  - A runtime that can close without waiting for a post in flight closes the inbox at the end and refuses later posts:
+    C++, Kotlin, Go, Python and Swift.
+  - A runtime whose owner cannot wait for a post in flight (a bare-metal owner sharing one core with its posters, at a
+    strict priority) never closes: C11 and Rust, whose `std` profile keeps the rule its bare-metal profile needs. A
+    later post is taken and applied where the owner next reaches the end of its loop, as the direct call would be then.
+    Its outcome is the closing runtimes' outcome; only the post's answer differs, taken rather than refused.
 - The C++ implementation is the forge LSCQ (`sce/forge/queue_segmented.h`): a list of the SCQ rings
   `EventQueueBridge.h` wraps, lock-free on both sides like them, and unbounded but for the heap, which a hosted inbox
   must be (amended at step 3: the bounded SCQ alone would have refused a post when full, a refusal no other hosted
