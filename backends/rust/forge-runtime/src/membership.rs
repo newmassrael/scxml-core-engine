@@ -26,11 +26,18 @@
 //! constructor that checks it once, as [`crate::bounded::Bounded`] is, and has no
 //! mutable access, so it stays what it was checked to be. The encode of a bare
 //! entry's chain walks either as [`Slots`].
+//!
+//! A decode builds the chain in the arm that will hold it ([`decode_chain_in`],
+//! [`decode_placed_in`]), since a list moved into an arm copies its whole
+//! capacity. Those two are the only places a chain is filled after it is made,
+//! and each checks it before it returns, so no value outside them holds a chain
+//! that is not what its type says.
 
 use core::marker::PhantomData;
 
 use crate::bounded::{BoundedIter, Entries};
-use crate::storage::HeldList;
+use crate::codec::CodecError;
+use crate::storage::{HeldList, SceList};
 
 /// A kind of entry: which entries of a chain a gate names. Generated, one for
 /// each identifier a gate looks for, over every form of the chain's entry.
@@ -526,6 +533,104 @@ impl<I: Iterator> Iterator for Slots<I> {
 
 impl<I: Iterator> ExactSizeIterator for Slots<I> {}
 
+/// Install in `group` the arm `install` makes of a chain, and read the chain's
+/// entries into it where the arm holds it (docs/adr/0065 §6 R6b, docs/adr/0077
+/// §7): `fill` is handed the arm's list empty, as [`crate::bounded::Bounded::refill`]
+/// hands a list, and `held` finds the chain again in the arm `install` made.
+///
+/// A value whose arms are decided by the kinds of entry a chain holds cannot
+/// know its arm before the chain is read, and a chain read into a local and
+/// then moved into its arm copies the list's whole capacity at each move. So
+/// the decode installs the arm it expects and reads the chain there: `Ok(true)`
+/// when the chain holds an entry of each kind of `H`, of none of `A`, and as
+/// many entries as its bounds admit; `Ok(false)` when it holds other kinds,
+/// which name another arm the decode then reads the chain into again. Fewer
+/// entries than `MIN` are a frame cut short (`NeedMoreBytes`), more than `MAX`
+/// a chain past its bound (`TooManyElements`).
+///
+/// Unless the chain is what the arm says, `group` is left at its default, so
+/// it holds no chain that its type does not describe, whatever `fill` did.
+pub fn decode_chain_in<G, L, H, A, const MAX: usize, const MIN: usize>(
+    group: &mut G,
+    install: impl FnOnce(Chain<L, H, A, MAX, MIN>) -> G,
+    held: impl FnOnce(&mut G) -> Option<&mut Chain<L, H, A, MAX, MIN>>,
+    fill: impl FnOnce(&mut L) -> Result<(), CodecError>,
+) -> Result<bool, CodecError>
+where
+    G: Default,
+    L: HeldList,
+    H: for<'s> Kinds<&'s [L::Entry]>,
+    A: for<'s> Kinds<&'s [L::Entry]>,
+{
+    *group = install(Chain {
+        list: <L as SceList<L::Entry>>::empty(),
+        kinds: PhantomData,
+    });
+    let settled = match held(group) {
+        Some(chain) => fill(&mut chain.list).and_then(|()| {
+            let entries = chain.list.as_slice();
+            match entries.len() {
+                n if n < MIN => Err(CodecError::NeedMoreBytes),
+                n if n > MAX => Err(CodecError::TooManyElements),
+                _ => Ok(H::each_in(&entries) && A::none_in(&entries)),
+            }
+        }),
+        None => unreachable!("the arm `install` makes holds the chain `held` finds"),
+    };
+    if !matches!(settled, Ok(true)) {
+        *group = G::default();
+    }
+    settled
+}
+
+/// [`decode_chain_in`] for the arm where the one gate on a bare entry holds
+/// (docs/adr/0065 §6 R6a): the arm is installed holding the named entry alone,
+/// the chain's entries are read into its others, and the first entry of the
+/// kind `K` is taken out where it stood and held as the place. `Ok(false)` when
+/// the chain holds no entry of the kind, and `TooManyElements` when it holds
+/// more than `MAX` entries, the named one among them.
+///
+/// The arm `install` makes holds the named entry alone, which a chain of the
+/// kind is, so `group` holds what its type describes throughout; it is left at
+/// its default unless the chain is the arm's.
+pub fn decode_placed_in<G, L, K, const MAX: usize>(
+    group: &mut G,
+    install: impl FnOnce(Placed<L, K, MAX>) -> G,
+    held: impl FnOnce(&mut G) -> Option<&mut Placed<L, K, MAX>>,
+    fill: impl FnOnce(&mut L) -> Result<(), CodecError>,
+) -> Result<bool, CodecError>
+where
+    G: Default,
+    L: HeldList,
+    K: Key<L::Entry>,
+{
+    *group = install(Placed {
+        rest: <L as SceList<L::Entry>>::empty(),
+        place: 0,
+        kind: PhantomData,
+    });
+    let settled = match held(group) {
+        Some(placed) => fill(&mut placed.rest).and_then(|()| {
+            if placed.rest.as_slice().len() > MAX {
+                return Err(CodecError::TooManyElements);
+            }
+            match placed.rest.as_slice().iter().position(|e| K::matches(e)) {
+                Some(at) => {
+                    placed.rest.remove_at(at);
+                    placed.place = at;
+                    Ok(true)
+                }
+                None => Ok(false),
+            }
+        }),
+        None => unreachable!("the arm `install` makes holds the chain `held` finds"),
+    };
+    if !matches!(settled, Ok(true)) {
+        *group = G::default();
+    }
+    settled
+}
+
 /// A decoded chain that holds an entry of the kind `K` as the others and the
 /// place of the first entry of the kind, the entry taken out where it stood;
 /// `Err` gives the chain back when it holds no entry of the kind, or when the
@@ -789,5 +894,206 @@ mod tests {
     fn the_default_placed_chain_is_the_named_entry_alone() {
         let alone = Placed::<&[u8], Even, 3>::default();
         assert!(alone.slots().eq([Slot::<&u8>::Named]));
+    }
+
+    type Entries4 = heapless::Vec<u8, 4>;
+
+    /// A value whose arms the chain's even entries decide, as a generated
+    /// group of one membership is: the chain whole with an even entry, or the
+    /// chain with none, absent where its own gate is clear.
+    #[derive(Debug, PartialEq)]
+    enum ByEven {
+        Even(Chain<Entries4, (Even,), (), 4, 1>),
+        NotEven(Option<Chain<Entries4, (), (Even,), 4, 1>>),
+    }
+
+    impl Default for ByEven {
+        fn default() -> Self {
+            ByEven::NotEven(None)
+        }
+    }
+
+    fn even_arm(group: &mut ByEven) -> Option<&mut Chain<Entries4, (Even,), (), 4, 1>> {
+        match group {
+            ByEven::Even(chain) => Some(chain),
+            ByEven::NotEven(_) => None,
+        }
+    }
+
+    fn not_even_arm(group: &mut ByEven) -> Option<&mut Chain<Entries4, (), (Even,), 4, 1>> {
+        match group {
+            ByEven::NotEven(Some(chain)) => Some(chain),
+            _ => None,
+        }
+    }
+
+    /// A fill that pushes `entries`, as a generated chain decode pushes each
+    /// entry it reads.
+    fn pushing(entries: &[u8]) -> impl FnOnce(&mut Entries4) -> Result<(), CodecError> + '_ {
+        move |list| {
+            for entry in entries {
+                SceList::try_push(list, *entry)?;
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_chain_read_into_the_arm_its_kinds_name_is_held_there() {
+        let mut group = ByEven::default();
+        assert_eq!(
+            decode_chain_in(&mut group, ByEven::Even, even_arm, pushing(&[1, 2])),
+            Ok(true)
+        );
+        let list = Entries4::from_slice(&[1, 2]).expect("two");
+        assert_eq!(
+            group,
+            ByEven::Even(Chain::from_list(list).expect("an even entry"))
+        );
+
+        let mut group = ByEven::default();
+        assert_eq!(
+            decode_chain_in(
+                &mut group,
+                |c| ByEven::NotEven(Some(c)),
+                not_even_arm,
+                pushing(&[1, 3])
+            ),
+            Ok(true)
+        );
+        let list = Entries4::from_slice(&[1, 3]).expect("two");
+        assert_eq!(
+            group,
+            ByEven::NotEven(Some(Chain::from_list(list).expect("no even entry")))
+        );
+    }
+
+    #[test]
+    fn a_chain_of_other_kinds_than_its_arm_leaves_the_value_at_its_default() {
+        // The arm expects an even entry and the chain holds none.
+        let mut group = ByEven::NotEven(None);
+        assert_eq!(
+            decode_chain_in(&mut group, ByEven::Even, even_arm, pushing(&[1, 3])),
+            Ok(false)
+        );
+        assert_eq!(group, ByEven::default());
+        // The arm expects none and the chain holds one.
+        assert_eq!(
+            decode_chain_in(
+                &mut group,
+                |c| ByEven::NotEven(Some(c)),
+                not_even_arm,
+                pushing(&[2])
+            ),
+            Ok(false)
+        );
+        assert_eq!(group, ByEven::default());
+    }
+
+    #[test]
+    fn a_chain_outside_its_bounds_or_cut_short_is_refused_and_not_held() {
+        let mut group = ByEven::default();
+        // Fewer entries than the chain's fewest is a frame cut short.
+        assert_eq!(
+            decode_chain_in(
+                &mut group,
+                |c| ByEven::NotEven(Some(c)),
+                not_even_arm,
+                pushing(&[])
+            ),
+            Err(CodecError::NeedMoreBytes)
+        );
+        assert_eq!(group, ByEven::default());
+        // An error of the fill is the decode's, and the arm is not left half read.
+        assert_eq!(
+            decode_chain_in(&mut group, ByEven::Even, even_arm, |list| {
+                SceList::try_push(list, 2u8)?;
+                Err(CodecError::NeedMoreBytes)
+            }),
+            Err(CodecError::NeedMoreBytes)
+        );
+        assert_eq!(group, ByEven::default());
+    }
+
+    /// A list that holds more entries than the chain's bound, so the bound is
+    /// what refuses.
+    type Entries8 = heapless::Vec<u8, 8>;
+
+    #[derive(Debug, PartialEq, Default)]
+    enum Narrow {
+        #[default]
+        Empty,
+        Held(Chain<Entries8, (), (), 2>),
+    }
+
+    fn narrow_arm(group: &mut Narrow) -> Option<&mut Chain<Entries8, (), (), 2>> {
+        match group {
+            Narrow::Held(chain) => Some(chain),
+            Narrow::Empty => None,
+        }
+    }
+
+    #[test]
+    fn a_chain_past_its_bound_is_refused_where_the_list_holds_more() {
+        let mut group = Narrow::default();
+        let three = |list: &mut Entries8| -> Result<(), CodecError> {
+            for entry in [1u8, 3, 5] {
+                SceList::try_push(list, entry)?;
+            }
+            Ok(())
+        };
+        assert_eq!(
+            decode_chain_in(&mut group, Narrow::Held, narrow_arm, three),
+            Err(CodecError::TooManyElements)
+        );
+        assert_eq!(group, Narrow::Empty);
+    }
+
+    /// The arms of a bare entry's one membership: placed where it holds, the
+    /// chain with none of the kind where it does not.
+    #[derive(Debug, PartialEq)]
+    enum ByMarker {
+        Marked(Placed<Entries4, Even, 4>),
+        Unmarked(Chain<Entries4, (), (Even,), 4, 1>),
+    }
+
+    impl Default for ByMarker {
+        fn default() -> Self {
+            ByMarker::Marked(Placed::default())
+        }
+    }
+
+    fn marked_arm(group: &mut ByMarker) -> Option<&mut Placed<Entries4, Even, 4>> {
+        match group {
+            ByMarker::Marked(placed) => Some(placed),
+            ByMarker::Unmarked(_) => None,
+        }
+    }
+
+    #[test]
+    fn a_bare_entry_read_in_place_is_taken_out_and_held_as_its_place() {
+        let mut group = ByMarker::Unmarked(
+            Chain::from_list(Entries4::from_slice(&[1]).expect("one")).expect("odd"),
+        );
+        assert_eq!(
+            decode_placed_in(
+                &mut group,
+                ByMarker::Marked,
+                marked_arm,
+                pushing(&[1, 4, 3, 6])
+            ),
+            Ok(true)
+        );
+        let ByMarker::Marked(placed) = &group else {
+            panic!("the marked arm is installed: {group:?}");
+        };
+        assert_eq!(placed.place(), 1);
+        assert_eq!(placed.rest().as_slice(), &[1u8, 3, 6][..]);
+        // A chain with no entry of the kind is not this arm's.
+        assert_eq!(
+            decode_placed_in(&mut group, ByMarker::Marked, marked_arm, pushing(&[1, 3])),
+            Ok(false)
+        );
+        assert_eq!(group, ByMarker::default());
     }
 }

@@ -275,7 +275,8 @@ pub use crate::bounded::{
     try_collect_bounded, Aligned, Bounded, BoundedIter, Bytes, Counted, Entries, Fewest, Text,
 };
 pub use crate::membership::{
-    place_first, place_first_in, Chain, Key, Kinds, OfKind, Placed, SkipAt, Slot, Slots, Without,
+    decode_chain_in, decode_placed_in, place_first, place_first_in, Chain, Key, Kinds, OfKind,
+    Placed, SkipAt, Slot, Slots, Without,
 };
 // A list whose entries say their inputs by a law (docs/adr/0065 §6 R8).
 pub use crate::law::{

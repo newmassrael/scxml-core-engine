@@ -751,8 +751,10 @@ impl<L: Entries> Counted for L {
 ///
 /// The two lists stay what the wire makes them, two runs of entries, so a view
 /// holds two spans of bytes and nothing is copied to pair them. The value is made
-/// by a constructor that compares them once, as [`Bounded`] is, and has no
-/// mutable access, so it stays what it was checked to be.
+/// by a constructor that compares them once, as [`Bounded`] is. Its only mutable
+/// access is the decode's, which fills each list where the value holds it
+/// ([`Aligned::refill_first`], [`Aligned::refill_second`]) and leaves the two of
+/// one count after every call, so it stays what it was checked to be.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Aligned<A, B> {
     first: A,
@@ -802,6 +804,77 @@ impl<A, B> Aligned<A, B> {
     }
 }
 
+impl<LA, LB, const MA: usize, const MB: usize> Aligned<Bounded<LA, MA>, Bounded<LB, MB>>
+where
+    LA: crate::storage::HeldList,
+    LB: crate::storage::HeldList,
+    LA::Entry: Default,
+    LB::Entry: Default,
+{
+    /// Fill the first list in place, as [`Bounded::refill`] fills a list, where
+    /// the value holds it: a decode reads the two lists of one count into the
+    /// arm that holds them, since a list moved into an arm copies its whole
+    /// capacity (docs/adr/0077 §7).
+    ///
+    /// The second list then holds as many default entries, so the two are of
+    /// one count until [`Self::refill_second`] reads the second. A second list
+    /// whose bound is below the first's count is refused as past its bound, and
+    /// one whose profile holds fewer entries as past its capacity, which is
+    /// what reading it would have answered. On `Err` both lists are empty.
+    pub fn refill_first(
+        &mut self,
+        fill: impl FnOnce(&mut LA) -> Result<(), crate::codec::CodecError>,
+    ) -> Result<(), crate::codec::CodecError> {
+        use crate::storage::SceList;
+        let filled = self.first.refill::<LA::Entry>(fill).and_then(|()| {
+            let count = self.first.0.as_slice().len();
+            self.second.0.clear();
+            if count > MB {
+                return Err(crate::codec::CodecError::TooManyElements);
+            }
+            for _ in 0..count {
+                self.second.0.try_push(Default::default())?;
+            }
+            Ok(())
+        });
+        if filled.is_err() {
+            self.first.0.clear();
+            self.second.0.clear();
+        }
+        filled
+    }
+
+    /// Fill the second list in place, as [`Self::refill_first`] fills the
+    /// first, and hold it to the first's count: fewer entries is a list cut
+    /// short (`NeedMoreBytes`), more is past the count (`TooManyElements`).
+    /// The decode reads both by the one count, so neither is reached from a
+    /// frame. On `Err` both lists are empty.
+    pub fn refill_second(
+        &mut self,
+        fill: impl FnOnce(&mut LB) -> Result<(), crate::codec::CodecError>,
+    ) -> Result<(), crate::codec::CodecError> {
+        use crate::storage::SceList;
+        let filled = self.second.refill::<LB::Entry>(fill).and_then(|()| {
+            match self
+                .second
+                .0
+                .as_slice()
+                .len()
+                .cmp(&self.first.0.as_slice().len())
+            {
+                core::cmp::Ordering::Less => Err(crate::codec::CodecError::NeedMoreBytes),
+                core::cmp::Ordering::Greater => Err(crate::codec::CodecError::TooManyElements),
+                core::cmp::Ordering::Equal => Ok(()),
+            }
+        });
+        if filled.is_err() {
+            self.first.0.clear();
+            self.second.0.clear();
+        }
+        filled
+    }
+}
+
 impl<A: Counted + Default, B: Counted + Default> Default for Aligned<A, B> {
     /// Two default lists. The lists a count is shared by have no fewest entries,
     /// so both start empty.
@@ -839,6 +912,55 @@ mod tests {
         // The default holds two empty lists, whose counts agree.
         let empty = Aligned::<heapless::Vec<u8, 4>, heapless::Vec<u16, 8>>::default();
         assert!(empty.is_empty());
+    }
+
+    type Pair = Aligned<Bounded<heapless::Vec<u8, 4>, 4>, Bounded<heapless::Vec<u16, 4>, 2>>;
+
+    /// A fill that pushes `entries`, as a generated list decode pushes each
+    /// entry it reads.
+    fn pushing<T: Copy>(
+        entries: &[T],
+    ) -> impl FnOnce(&mut heapless::Vec<T, 4>) -> Result<(), crate::codec::CodecError> + '_ {
+        move |list| {
+            for entry in entries {
+                crate::storage::SceList::try_push(list, *entry)?;
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn two_lists_of_one_count_filled_in_place_stay_of_one_count_at_every_step() {
+        use crate::codec::CodecError;
+        let mut pair = Pair::default();
+        assert_eq!(pair.refill_first(pushing(&[1u8, 2])), Ok(()));
+        // The second holds as many default entries until it is read.
+        assert_eq!(pair.first().as_slice(), &[1u8, 2][..]);
+        assert_eq!(pair.second().as_slice(), &[0u16, 0][..]);
+        assert_eq!(pair.refill_second(pushing(&[7u16, 8])), Ok(()));
+        assert_eq!(pair.second().as_slice(), &[7u16, 8][..]);
+        assert_eq!(pair.len(), 2);
+
+        // A second list of another count is refused, and both are emptied.
+        assert_eq!(
+            pair.refill_second(pushing(&[7u16])),
+            Err(CodecError::NeedMoreBytes)
+        );
+        assert!(pair.first().is_empty() && pair.second().is_empty());
+        assert_eq!(pair.refill_first(pushing(&[1u8])), Ok(()));
+        assert_eq!(
+            pair.refill_second(pushing(&[7u16, 8])),
+            Err(CodecError::TooManyElements)
+        );
+        assert!(pair.first().is_empty() && pair.second().is_empty());
+
+        // A first list past the second's bound is refused before the second
+        // is read, and both are emptied.
+        assert_eq!(
+            pair.refill_first(pushing(&[1u8, 2, 3])),
+            Err(CodecError::TooManyElements)
+        );
+        assert!(pair.first().is_empty() && pair.second().is_empty());
     }
 
     #[test]
