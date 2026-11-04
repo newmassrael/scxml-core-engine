@@ -332,10 +332,14 @@ grammar that approximates the language. A reader that cannot read a variant's so
   `SCE_OWNERSHIP_CHECKED`) are lists: their groups are merged inside, and they are written as the variants write
   them.
 - **Swift** reads Swift with tree-sitter-swift, whose `#if` positions are Swift's own (a declaration, a member, a
-  statement, a `case` of a `switch`; not an element of an array literal, which Swift refuses too). All 215 generated
+  statement; not an element of an array literal, which Swift refuses too). All 215 generated
   Swift machines committed in the tree parse with no error node (measured 2026-11-03). A source that does not is
   refused, and a test holds every committed generated Swift file to parsing with no error node, so a template that
   writes what this reader cannot read fails there and not in a consumer's build.
+  (Corrected 2026-11-04 while building Swift: this list also named "a `case` of a `switch`", which Swift admits and
+  tree-sitter-swift 0.7.4 does not; its grammar has no `directive` among a switch's clauses, and a block before the
+  first clause reads as an error. The reader reads the grammar it has, so a clause only some variants write moves
+  the choice to its `switch`; the statements of a clause are a list as any body's are.)
 
 **Writers.** Rust writes `#[cfg(P)]` before the member. C and C++ write `#if P` and `#endif` on lines of their own
 around the member, and the alternatives of one slot as one `#if` / `#elif` chain, since exactly one of them is
@@ -384,8 +388,9 @@ run of up to four events, and compares the observations (configuration, host cal
 C11 and C++ lanes build under CMake with `-D`; the Swift lane under SwiftPM with `.define`.
 
 **Order:** the split of the core with Rust as its first instance, changing no output (the Rust lane is the judge);
-C11; C++; Swift. The Swift backend writes no `<sce:action>` today, which the fixture uses: the Swift lane waits for
-that backend gap to be closed, as its own change, rather than holding to a weaker fixture.
+C11; C++; Swift. The Swift backend wrote no `<sce:action>` when this was accepted, which the fixture uses: the Swift
+lane waited for that backend gap to be closed, as its own change, rather than holding to a weaker fixture. (It was
+closed on 2026-10-31, by the host dispatch of `<sce:action>` in the Swift templates.)
 
 ## Consequences
 
@@ -540,7 +545,25 @@ that backend gap to be closed, as its own change, rather than holding to a weake
   sourcemap carries both on each symbol of a state, transition and entry or exit action; a variant's own map
   carries neither. An `<onentry>` or `<onexit>` is no node of either surface: its condition is in the `presence` of
   its actions.
-- Still to do: Swift.
+- **The Swift dialect and lane** (2026-11-04). [`variant_dialect::swift`](../../sce-build/src/variant_dialect/swift.rs)
+  reads Swift with tree-sitter-swift 0.7.4, behind `sce-build`'s default feature `swift-reader` (`sce-build-wasm`
+  builds without it, and generates Swift one variant at a time). Its lists are where the grammar places a
+  `directive`: the statements of the file, of a body and of a `case` clause after its `:`, and the declarations of
+  a type's body; a statement's label is one member with its statement. A directive is a line of its own, so a member
+  is selectable when it starts a line and ends one, and the one member of a body that tree-sitter-swift reads as an
+  expression (an `if` or a `switch` among them) is the value an implicit `return` may give and is not selectable,
+  as Rust's tail value is not. The writer is `#if` / `#elseif` / `#endif` over `Selector::swift`; the guard is an
+  `#error("…")` for each edge (`Refusal::swift`) at the end of `{stem}_sm.swift`. The resolver reads the same
+  tokens and compares where each line starts too, since a Swift statement ends with its line. The condition reader
+  and the comparison of resolved runs, which C's resolver had, are shared by both
+  (`variant_dialect::directives`). `backends/swift/feature-conformance` compiles the machine for every build under
+  each feature set's `.define`s beside each set's own, compares every run of up to four events, and `swiftc` with
+  only `SCE_FEATURE_SESSION_UNICAST_ACCEPT` stops at the model's `#error` (`scripts/test_swift_backend.sh
+  feature-conformance`, in the `swift-backend` gate). `every_generated_swift_source_reads_without_error` holds every
+  committed generated Swift source to the reader. A clause only some variants write moves the choice to its
+  `switch` (see the correction in §10).
+
+§10 is landed for every backend it names.
 
 ## Questions left open
 

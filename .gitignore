@@ -210,6 +210,9 @@ backends/swift/tests/Sources/W3cMachines/
 backends/swift/tests/Sources/Ecma262LoweredMachines/
 backends/swift/tests/Tests/W3cMachinesTests/*
 !backends/swift/tests/Tests/W3cMachinesTests/W3cSupport.swift
+# The machines of the feature conformance lane (docs/adr/0057 §10) are written the same way
+# (`scripts/regen_swift_feature_conformance.sh`); the tests that drive them are tracked.
+backends/swift/feature-conformance/Sources/
 
 # Python AOT integration trees: emitted by
 # `scripts/regen_donedata_local_invoke_python.sh` (and

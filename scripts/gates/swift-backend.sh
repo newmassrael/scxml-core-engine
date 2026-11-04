@@ -4,13 +4,17 @@
 #
 # Mirrors: swift-backend.yml
 #
-# The Swift backend's own lane: three of the SwiftPM packages under `backends/swift/`
+# The Swift backend's own lane: four of the SwiftPM packages under `backends/swift/`
 # built and tested with the toolchain the workflow pins.
 #
 #   runtime          the statechart runtime (`SceRuntime`)
 #   host-features    the reference host of the standard host features (`SceHostFeatures`)
 #   tests            the machines the generator writes, replayed against the shared
 #                    scenarios of `sce-build/tests/fixtures/static_datamodel/scenarios/`
+#   feature-conformance
+#                    the machine for every build of `tests/product_line/session.scxml`,
+#                    compiled under each feature set and held to that set's own machine,
+#                    and refusing a build that breaks the feature model (docs/adr/0057 §10)
 #
 # and, on the same toolchain, the Swift transition table and transition function held to
 # `sce-codegen transition-table` and to their producer by `sce-build`'s two equivalence
@@ -54,10 +58,10 @@ set -e
     || sce_gate_fail "scripts/test_swift_backend.sh exited $status (a Swift package failed to build or a test failed; the output above names it)"
 
 # One `Test run with N tests` line per test target that ran: the runtime, the reference host,
-# and the tests package's two targets.
+# the tests package's two targets and the feature conformance package's one.
 runs="$(grep -cE 'Test run with [0-9]+ tests? ' "$LOG" || true)"
-[ "$runs" -ge 4 ] \
-    || sce_gate_fail "$runs Swift test runs reported, expected one per test target (4 or more): a package built and ran nothing"
+[ "$runs" -ge 5 ] \
+    || sce_gate_fail "$runs Swift test runs reported, expected one per test target (5 or more): a package built and ran nothing"
 if grep -qE 'Test run with 0 tests ' "$LOG"; then
     sce_gate_fail "a Swift test run reported 0 tests: its test target was not discovered"
 fi
@@ -72,3 +76,10 @@ for held in the_swift_table_compiles_and_holds_the_export \
         || sce_gate_fail "$held did not run and pass: the Swift transition table or function was not held to the export or the producer"
 done
 sce_gate_step "the Swift transition table and transition function held by their equivalence tests"
+
+# The feature conformance package (`backends/swift/feature-conformance`, docs/adr/0057 §10) is one
+# of the test runs counted above; the refusal of a build that breaks the model's edge is a
+# compiler run of its own, read by its verdict line.
+grep -qF "feature-conformance: the build that breaks an edge is refused by the model's #error" "$LOG" \
+    || sce_gate_fail "the Swift machine for every build was not shown to refuse a build that breaks the feature model's edge"
+sce_gate_step "the Swift machine for every build refuses a build that breaks an edge"

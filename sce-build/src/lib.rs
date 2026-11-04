@@ -2103,6 +2103,18 @@ pub fn emit_model_artifacts(
     // (`--features`) is a plain document and passes here; the document as
     // written would be the variant with every feature on, which nobody chose.
     if let Some(line) = model.product_line.as_ref().filter(|line| line.is_gated()) {
+        let selection_required = || -> Result<generator::GeneratedOutput, CompileError> {
+            Err(forge::error::Located::new(
+                forge::error::GenerateError::CodegenFeatureSelectionRequired {
+                    model: line.model_name().to_string(),
+                    language: forge::codegen_matrix::language_wire_name(language).to_string(),
+                }
+                .into(),
+                source_name,
+                None,
+                None,
+            ))
+        };
         return match (language, options.variants) {
             (generator::Language::Rust, Some(variants)) => emit_lifted_artifacts(
                 model,
@@ -2127,28 +2139,42 @@ pub fn emit_model_artifacts(
                     ),
                 )
             }
+            // The Swift reader is native code behind `swift-reader` (ADR 0057
+            // §10): a build without it generates Swift one variant at a time.
+            (generator::Language::Swift, Some(variants)) => {
+                #[cfg(feature = "swift-reader")]
+                {
+                    emit_lifted_artifacts(
+                        model,
+                        template_dir,
+                        input_stem,
+                        source_name,
+                        options,
+                        variants,
+                        &variant_dialect::swift::Swift::new(
+                            line.model().features().map(|f| line.model().name(f)),
+                        ),
+                    )
+                }
+                #[cfg(not(feature = "swift-reader"))]
+                {
+                    let _ = variants;
+                    selection_required()
+                }
+            }
             // Every backend is named: one added to `Language` is decided here, not
             // inherited from the arm (`a_backend_is_decided_at_every_site_and_listed_once`).
             (
-                generator::Language::Rust | generator::Language::C11 | generator::Language::Cpp,
+                generator::Language::Rust
+                | generator::Language::C11
+                | generator::Language::Cpp
+                | generator::Language::Swift,
                 None,
             )
             | (
-                generator::Language::Kotlin
-                | generator::Language::Go
-                | generator::Language::Python
-                | generator::Language::Swift,
+                generator::Language::Kotlin | generator::Language::Go | generator::Language::Python,
                 _,
-            ) => Err(forge::error::Located::new(
-                forge::error::GenerateError::CodegenFeatureSelectionRequired {
-                    model: line.model_name().to_string(),
-                    language: forge::codegen_matrix::language_wire_name(language).to_string(),
-                }
-                .into(),
-                source_name,
-                None,
-                None,
-            )),
+            ) => selection_required(),
         };
     }
     emit_artifacts_within(

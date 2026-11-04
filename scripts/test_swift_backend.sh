@@ -17,7 +17,12 @@
 #
 # Usage (from repo root):
 #   scripts/test_swift_backend.sh [package ...]    # runtime, forge-runtime, host-features, tests,
-#                                                  # transition-outputs, forge, w3c, ecma262-lowered
+#                                                  # transition-outputs, feature-conformance, forge,
+#                                                  # w3c, ecma262-lowered
+#
+# `feature-conformance` is the package `backends/swift/feature-conformance`, whose machines
+# `scripts/regen_swift_feature_conformance.sh` writes first: the machine for every build of
+# a product line, held to each build's own (docs/adr/0057 §10). It is among the default list.
 #
 # `transition-outputs` is not a package: it is the two programs `sce-build`'s equivalence tests
 # build in Swift, the transition table a machine carries held to `sce-codegen transition-table`
@@ -57,7 +62,7 @@ fi
 if [ "$#" -gt 0 ]; then
     PACKAGES=("$@")
 else
-    PACKAGES=(runtime host-features tests transition-outputs)
+    PACKAGES=(runtime host-features tests transition-outputs feature-conformance)
 fi
 
 for package in "${PACKAGES[@]}"; do
@@ -99,6 +104,28 @@ for package in "${PACKAGES[@]}"; do
             # A tree another lane left on this machine is built with the rest, and not run here;
             # the numerical conformance tests are the Forge lane's (`forge` above).
             (cd backends/swift/tests && swift test --skip W3cMachinesTests --skip Ecma262LoweredTests --skip MatchesReference)
+            ;;
+        feature-conformance)
+            # docs/adr/0057 §10: the machine for every build of tests/product_line/session.scxml,
+            # compiled under each feature set's `.define`s, held to the machine that set
+            # generates alone through every run of up to four events.
+            scripts/regen_swift_feature_conformance.sh
+            echo "== swift test: backends/swift/feature-conformance"
+            (cd backends/swift/feature-conformance && swift test)
+            # A build the feature model does not admit (a feature on without the one it
+            # requires) stops at the model's `#error`, which names the edge. The compiler
+            # fails either way, since the machine imports a module this invocation does not
+            # name; the verdict is that it fails on the refusal.
+            echo "== swiftc: the machine for every build refuses a build that breaks an edge"
+            refusal="feature \`session-unicast-accept\` requires \`session-unicast\`"
+            refused="$(swiftc -typecheck -D SCE_FEATURE_SESSION_UNICAST_ACCEPT \
+                backends/swift/feature-conformance/Sources/LiftedNone/session_sm.swift 2>&1 || true)"
+            if grep -qF "$refusal" <<< "$refused"; then
+                echo "feature-conformance: the build that breaks an edge is refused by the model's #error"
+            else
+                echo "error: swiftc did not refuse a build with session-unicast-accept and without session-unicast" >&2
+                exit 1
+            fi
             ;;
         transition-outputs)
             # Each name is matched exactly in both test binaries, so each binary runs the one

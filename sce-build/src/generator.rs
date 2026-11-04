@@ -174,11 +174,13 @@ impl Language {
     /// Whether this backend keeps a product line's variability in one output
     /// for every build (docs/adr/0057 §9 and §10), so that a gated document is
     /// generated without a selection. Every other backend generates one
-    /// variant, named by `--features`.
+    /// variant, named by `--features`. Swift's reader is native code behind
+    /// the `swift-reader` feature, and a build without it is such a backend.
     pub fn keeps_variability(self) -> bool {
         match self {
             Language::Rust | Language::C11 | Language::Cpp => true,
-            Language::Kotlin | Language::Go | Language::Python | Language::Swift => false,
+            Language::Swift => cfg!(feature = "swift-reader"),
+            Language::Kotlin | Language::Go | Language::Python => false,
         }
     }
 

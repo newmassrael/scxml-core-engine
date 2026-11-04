@@ -4,8 +4,9 @@
   statechart every backend that keeps the variability generates once for every
   build and once for each variant alone, and holds the one to the other
   (docs/adr/0057 §10): `backends/rust/feature-conformance` for Rust, the
-  `c11_feature_conformance_*` tests of `backends/c/tests` for C11, and the
-  `cpp_feature_conformance_*` tests of `tests/CMakeLists.txt` for C++.
+  `c11_feature_conformance_*` tests of `backends/c/tests` for C11, the
+  `cpp_feature_conformance_*` tests of `tests/CMakeLists.txt` for C++, and
+  `backends/swift/feature-conformance` for Swift.
 
   What it holds that a lifted machine must keep per build:
     - an element under a condition: a state, a transition, an `<sce:action>`;

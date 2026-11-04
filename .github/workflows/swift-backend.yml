@@ -12,7 +12,9 @@ name: Swift backend (runtime, forge runtime, generated machines)
 #
 # What it runs is `scripts/gate swift-backend`, the gate the pre-push hook runs too:
 # `scripts/test_swift_backend.sh` regenerates the machines from the templates and runs the
-# four packages (`backends/swift/runtime`, `forge-runtime`, `host-features`, `tests`), and the gate reads
+# packages (`backends/swift/runtime`, `forge-runtime`, `host-features`, `tests`, and
+# `feature-conformance`, the machine for every build of `tests/product_line/` held to each
+# build's own, docs/adr/0057 §10), and the gate reads
 # the verdict from the output as well as the exit status, so a package whose tests were not
 # discovered is red and not a silent pass. On the same toolchain it runs the Swift programs of
 # `sce-build`'s two equivalence tests, which hold the transition table a machine carries to the
@@ -63,6 +65,8 @@ on:
       - 'scripts/regen_static_datamodel_swift.sh'
       - 'scripts/regen_swift_ecmascript.sh'
       - 'scripts/regen_swift_integration.sh'
+      - 'scripts/regen_swift_feature_conformance.sh'
+      - 'tests/product_line/**'
       - 'integration_resources/**'
       - 'scripts/regen_swift_w3c.sh'
       - 'tests/w3c/conformance/fixtures.json'

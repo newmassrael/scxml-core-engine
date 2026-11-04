@@ -84,6 +84,13 @@ quote = "1"
 # variants' Rust sources (`variant_dialect::rust`) cuts and joins their own text and leaves
 # every comment where the variant wrote it.
 proc-macro2 = { version = "1", features = ["span-locations"] }
+# The reader of the variants' Swift sources (`variant_dialect::swift`, ADR 0057
+# §10): Swift's parser reads a `#if`, so where one may stand is Swift's grammar,
+# read with tree-sitter-swift. Optional, and ON by default via `swift-reader`,
+# because the grammar is C, which `sce-build-wasm` does not build; a build
+# without it generates a gated document for Swift one variant at a time.
+tree-sitter = { version = "0.25", optional = true }
+tree-sitter-swift = { version = "0.7.4", optional = true }
 
 [build-dependencies]
 # The build script `include!`s `src/generator_witness.rs` to embed the
@@ -97,9 +104,11 @@ sha2 = { workspace = true }
 # `xsd` is on by default so every native build validates at the parser entry
 # point; a build that opts out says so at runtime rather than reporting the same
 # success as a validating one.
-default = ["xsd"]
+default = ["xsd", "swift-reader"]
 xsd = ["libxml"]
 cli = ["clap", "object"]
+# The Swift output for every build of a product line (ADR 0057 §10).
+swift-reader = ["tree-sitter", "tree-sitter-swift"]
 
 # The C-callable lowering surface — see `src/ffi.rs`. It began as a
 # measurement probe; the owner's 2026-08-29 decision to link the frontend
@@ -1673,9 +1682,6 @@ name = "feature_selection"
 path = "tests/feature_selection.rs"
 required-features = ["cli"]
 
-# The featured transition table (ADR 0057 §7): each variant's own table is the
-# featured rows its configuration keeps. It runs `sce-codegen transition-table`,
-# so it carries the `cli` gate.
 # The forge AST and the sourcemap carry each element's own and effective
 # condition (ADR 0057 §7). It runs `sce-codegen generate`, so it carries the
 # `cli` gate.
@@ -1692,10 +1698,21 @@ name = "a_variant_names_each_node_as_the_document_does"
 path = "tests/a_variant_names_each_node_as_the_document_does.rs"
 required-features = ["cli"]
 
+# The featured transition table (ADR 0057 §7): each variant's own table is the
+# featured rows its configuration keeps. It runs `sce-codegen transition-table`,
+# so it carries the `cli` gate.
 [[test]]
 name = "the_featured_transition_table_derives_each_variant"
 path = "tests/the_featured_transition_table_derives_each_variant.rs"
 required-features = ["cli"]
+
+# Every Swift source the generator wrote and the tree commits reads with the
+# reader of the Swift output for every build (ADR 0057 §10), so a template that
+# writes what the reader cannot read fails here and not in a consumer's build.
+[[test]]
+name = "every_generated_swift_source_reads_without_error"
+path = "tests/every_generated_swift_source_reads_without_error.rs"
+required-features = ["swift-reader"]
 
 # `sce-codegen codec-roles` prints the table of which elements of a codec a
 # value presents and which the encoding derives (docs/adr/0058 §1). It runs

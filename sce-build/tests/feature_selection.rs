@@ -206,6 +206,40 @@ fn the_cpp_backend_writes_one_machine_for_every_build() {
     );
 }
 
+/// The Swift backend keeps the variability with Swift's conditional compilation
+/// blocks (ADR 0057 §10), over the features' compilation conditions, and its
+/// source refuses a build that breaks the model's edge with an `#error`.
+#[test]
+fn the_swift_backend_writes_one_machine_for_every_build() {
+    let (dir, machine) = product_line();
+    let out = dir.path().join("out");
+    let run = sce_codegen(&["generate", path(&machine), "-l", "swift", "-o", path(&out)]);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let source = std::fs::read_to_string(out.join("machine_sm.swift")).expect("the machine");
+    assert!(
+        source.contains("#if SCE_FEATURE_SESSION_UNICAST_ACCEPT\n"),
+        "the gated state's code is under its presence"
+    );
+    assert!(
+        source.ends_with(
+            "#if (SCE_FEATURE_SESSION_UNICAST_ACCEPT && !SCE_FEATURE_SESSION_UNICAST)\n\
+             #error(\"feature `session-unicast-accept` requires `session-unicast`, \
+             which this build leaves out (feature model `features`)\")\n#endif\n"
+        ),
+        "the model's edge is a refusal in the source"
+    );
+    let check = sce_codegen(&["check", path(&machine), "-l", "swift"]);
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+}
+
 #[test]
 fn a_selection_generates_the_variant_it_denotes() {
     let (dir, machine) = product_line();

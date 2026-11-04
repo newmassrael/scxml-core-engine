@@ -23,8 +23,11 @@ use crate::feature_selector::{Refusal, Selector};
 use crate::generator::Language;
 use crate::variant_merge::{Interner, Source, Unmerged};
 
+mod directives;
 pub mod preprocessor;
 pub mod rust;
+#[cfg(feature = "swift-reader")]
+pub mod swift;
 
 /// How the sources one backend writes carry the variability of a product line.
 pub trait Dialect {

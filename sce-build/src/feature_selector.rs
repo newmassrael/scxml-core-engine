@@ -11,7 +11,8 @@
 //! that variant's configurations and in no other, and that predicate negates the
 //! gates the variant leaves out. A [`Selector`] is therefore the full Boolean
 //! language over feature names, spelled for each backend that selects at compile
-//! time: Rust's `cfg` predicate and the C preprocessor's `#if` expression.
+//! time: Rust's `cfg` predicate, the C preprocessor's `#if` expression and
+//! the condition of Swift's `#if`.
 //!
 //! A selector is kept small as it is built: a constant absorbs or annihilates
 //! where it meets a combinator, and a combinator of one operand is its operand.
@@ -156,6 +157,21 @@ impl Selector {
             Selector::Not(operand) => format!("!{}", operand.c()),
         }
     }
+
+    /// The condition of a Swift `#if`, each feature the compilation condition
+    /// a build sets for it (`-D`, SwiftPM's `.define`), spelled as its C macro
+    /// [`crate::feature_model::macro_spelling`], so that a build names its
+    /// features alike for every language it compiles.
+    pub fn swift(&self) -> String {
+        match self {
+            Selector::True => "true".to_string(),
+            Selector::False => "false".to_string(),
+            Selector::Feature(name) => crate::feature_model::macro_spelling(name),
+            Selector::All(operands) => format!("({})", join(operands, Selector::swift, " && ")),
+            Selector::Any(operands) => format!("({})", join(operands, Selector::swift, " || ")),
+            Selector::Not(operand) => format!("!{}", operand.swift()),
+        }
+    }
 }
 
 /// A build the feature model does not admit: one that turns `feature` on and
@@ -221,7 +237,27 @@ impl Refusal {
     /// The refusal as lines of the C or C++ preprocessor: an `#error` under
     /// the selector of the builds it refuses.
     pub fn c(&self, model_name: &str) -> String {
-        let message: String = self
+        format!(
+            "#if {}\n#error {}\n#endif\n",
+            self.selector().c(),
+            self.message_literal(model_name)
+        )
+    }
+
+    /// The refusal as Swift's compiler directives: an `#error` under the
+    /// selector of the builds it refuses.
+    pub fn swift(&self, model_name: &str) -> String {
+        format!(
+            "#if {}\n#error({})\n#endif\n",
+            self.selector().swift(),
+            self.message_literal(model_name)
+        )
+    }
+
+    /// The message as a string literal of C, C++ and Swift alike: in each, a
+    /// backslash escapes a quote and a backslash.
+    fn message_literal(&self, model_name: &str) -> String {
+        let escaped: String = self
             .message(model_name)
             .chars()
             .flat_map(|c| match c {
@@ -229,10 +265,7 @@ impl Refusal {
                 c => vec![c],
             })
             .collect();
-        format!(
-            "#if {}\n#error \"{message}\"\n#endif\n",
-            self.selector().c()
-        )
+        format!("\"{escaped}\"")
     }
 }
 

@@ -44,6 +44,7 @@
 use std::collections::BTreeMap;
 use std::ops::Range;
 
+use super::directives::{self, Condition, Expression, NEWLINE};
 use super::Dialect;
 use crate::feature_model::macro_spelling;
 use crate::feature_selector::{Refusal, Selector};
@@ -165,11 +166,7 @@ impl Dialect for Preprocessor {
     }
 
     fn valuation(&self, lifted: &Lifted, features: &dyn Fn(&str) -> Option<bool>) -> Vec<bool> {
-        lifted
-            .conditions
-            .values()
-            .map(|condition| condition.value(features).unwrap_or(false))
-            .collect()
+        directives::valuation(&lifted.conditions, features)
     }
 
     fn difference(
@@ -178,41 +175,12 @@ impl Dialect for Preprocessor {
         features: &dyn Fn(&str) -> Option<bool>,
         reference: &Lifted,
     ) -> Option<String> {
-        let ours = lifted.resolve(features);
-        let theirs = reference.resolve(&|_| None);
-        let differs = (0..ours.len().max(theirs.len())).find(|&at| {
-            ours.get(at).map(|(spelling, _)| spelling)
-                != theirs.get(at).map(|(spelling, _)| spelling)
-        })?;
-        Some(format!(
-            "the build reads {} where the variant reads {}",
-            quoted(&lifted.text, &ours, differs),
-            quoted(&reference.text, &theirs, differs)
-        ))
-    }
-}
-
-/// How many tokens a reported difference quotes on each side of it.
-const QUOTED_CONTEXT: usize = 12;
-
-/// The tokens around `at`, and the line the token at `at` is on.
-fn quoted(text: &str, tokens: &[(String, usize)], at: usize) -> String {
-    let from = at.saturating_sub(QUOTED_CONTEXT);
-    let to = (at + QUOTED_CONTEXT).min(tokens.len());
-    let words: Vec<&str> = tokens[from..to]
-        .iter()
-        .map(|(spelling, _)| match spelling.as_str() {
-            NEWLINE => "⏎",
-            other => other,
-        })
-        .collect();
-    match tokens.get(at) {
-        Some((_, offset)) => format!(
-            "`{}` at line {}",
-            words.join(" "),
-            text[..*offset].matches('\n').count() + 1
-        ),
-        None => format!("`{}` and then the end", words.join(" ")),
+        directives::difference(
+            &lifted.text,
+            &lifted.resolve(features),
+            &reference.text,
+            &reference.resolve(&|_| None),
+        )
     }
 }
 
@@ -285,11 +253,6 @@ const PUNCTUATORS: &[&str] = &[
 /// The punctuators C++ adds to C's, longest first ([lex.operators]). Each is
 /// tried before C's, so that `->*` is not read as `->` and `*`.
 const CPP_PUNCTUATORS: &[&str] = &["->*", "<=>", "::", ".*"];
-
-/// The end of a directive's line, as a token: a directive ends at its line,
-/// so two runs of tokens that break their directives at other places are
-/// other runs. No preprocessing token is spelled so.
-const NEWLINE: &str = "\n";
 
 /// `text` as logical lines of preprocessing tokens (phases 1 to 3). `cpp`
 /// reads C++'s raw string literals, whose text no splice changes.
@@ -793,126 +756,27 @@ impl Reader<'_, '_> {
 // The resolver: a source as one build reads it.
 // ---------------------------------------------------------------------------
 
-/// A condition over the features, as the resolver reads one written over
-/// their macros.
-#[derive(Debug, Clone)]
-enum Condition {
-    Constant(bool),
-    Feature(String),
-    Not(Box<Condition>),
-    All(Vec<Condition>),
-    Any(Vec<Condition>),
-}
-
-impl Condition {
-    fn value(&self, features: &dyn Fn(&str) -> Option<bool>) -> Option<bool> {
-        Some(match self {
-            Condition::Constant(value) => *value,
-            Condition::Feature(name) => features(name)?,
-            Condition::Not(operand) => !operand.value(features)?,
-            Condition::All(operands) => {
-                let mut all = true;
-                for operand in operands {
-                    all &= operand.value(features)?;
-                }
-                all
-            }
-            Condition::Any(operands) => {
-                let mut any = false;
-                for operand in operands {
-                    any |= operand.value(features)?;
-                }
-                any
-            }
-        })
-    }
-}
-
-/// Reads the expression of a `#if` in the grammar of the selectors, every
-/// name a feature's macro.
-struct Expression<'e> {
-    tokens: &'e [Token],
-    at: usize,
-    features: &'e BTreeMap<String, String>,
-}
-
-impl Expression<'_> {
-    fn read(tokens: &[Token], features: &BTreeMap<String, String>) -> Option<Condition> {
-        let mut expression = Expression {
-            tokens,
-            at: 0,
-            features,
-        };
-        let condition = expression.any()?;
-        (expression.at == tokens.len()).then_some(condition)
-    }
-
-    fn peek(&self) -> Option<&str> {
-        self.tokens
-            .get(self.at)
-            .map(|token| token.spelling.as_str())
-    }
-
-    fn eat(&mut self, spelling: &str) -> bool {
-        let found = self.peek() == Some(spelling);
-        if found {
-            self.at += 1;
-        }
-        found
-    }
-
-    fn any(&mut self) -> Option<Condition> {
-        let mut operands = vec![self.all()?];
-        while self.eat("||") {
-            operands.push(self.all()?);
-        }
-        Some(match operands.len() {
-            1 => operands.pop().expect("one operand"),
-            _ => Condition::Any(operands),
-        })
-    }
-
-    fn all(&mut self) -> Option<Condition> {
-        let mut operands = vec![self.unary()?];
-        while self.eat("&&") {
-            operands.push(self.unary()?);
-        }
-        Some(match operands.len() {
-            1 => operands.pop().expect("one operand"),
-            _ => Condition::All(operands),
-        })
-    }
-
-    fn unary(&mut self) -> Option<Condition> {
-        if self.eat("!") {
-            return Some(Condition::Not(Box::new(self.unary()?)));
-        }
-        if self.eat("(") {
-            let inner = self.any()?;
-            return self.eat(")").then_some(inner);
-        }
-        if self.eat("0") {
+/// The expression of a `#if` in the grammar of the selectors, whose atoms are
+/// `0`, `1` and `defined` of a feature's macro, parenthesised or not.
+fn expression(tokens: &[Token], features: &BTreeMap<String, String>) -> Option<Condition> {
+    let spellings: Vec<&str> = tokens.iter().map(|token| token.spelling.as_str()).collect();
+    Expression::read(&spellings, &|expression: &mut Expression<'_>| {
+        if expression.eat("0") {
             return Some(Condition::Constant(false));
         }
-        if self.eat("1") {
+        if expression.eat("1") {
             return Some(Condition::Constant(true));
         }
-        if self.eat("defined") {
-            let parenthesised = self.eat("(");
-            let feature = self.feature()?;
-            if parenthesised && !self.eat(")") {
-                return None;
-            }
-            return Some(feature);
+        if !expression.eat("defined") {
+            return None;
         }
-        None
-    }
-
-    fn feature(&mut self) -> Option<Condition> {
-        let name = self.features.get(self.peek()?)?.clone();
-        self.at += 1;
-        Some(Condition::Feature(name))
-    }
+        let parenthesised = expression.eat("(");
+        let feature = features.get(expression.next()?)?;
+        if parenthesised && !expression.eat(")") {
+            return None;
+        }
+        Some(Condition::Feature(feature.clone()))
+    })
 }
 
 /// A line of a source, or a conditional the resolver may decide.
@@ -1081,7 +945,7 @@ fn condition_of(line: &Line, features: &BTreeMap<String, String>) -> Option<Cond
         _ => None,
     };
     match line.directive()? {
-        "if" | "elif" => Expression::read(operands, features),
+        "if" | "elif" => expression(operands, features),
         "ifdef" | "elifdef" => defined(operands),
         "ifndef" | "elifndef" => defined(operands).map(|c| Condition::Not(Box::new(c))),
         "else" => operands.is_empty().then_some(Condition::Constant(true)),
