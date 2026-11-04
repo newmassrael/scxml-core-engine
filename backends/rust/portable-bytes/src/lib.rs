@@ -872,7 +872,7 @@ mod tests {
     fn a_literal_is_built_whole_at_its_bound() {
         assert_eq!(sce_text!(4, "ab"), "ab");
         assert_eq!(sce_text!(3, "aé"), "aé");
-        assert_eq!(sce_bytes!(2, b"ab"), &[b'a', b'b']);
+        assert_eq!(sce_bytes!(2, b"ab"), b"ab");
         assert_eq!(sce_bytes!(8, b""), &[] as &[u8]);
     }
 
@@ -1010,7 +1010,12 @@ mod tests {
             assert!(walked.push(each * 2).is_ok());
         }
         assert_eq!(walked, &[-2i64, 0, 2]);
-        assert_eq!(list.clone().into_iter().enumerate().last(), Some((2, 1)));
+        let mut walked_at = 0;
+        for (position, each) in list.clone().into_iter().enumerate() {
+            assert_eq!(each, [-1i64, 0, 1][position]);
+            walked_at += 1;
+        }
+        assert_eq!(walked_at, 3);
         list.clear();
         assert!(list.is_empty());
         for each in [7, 8, 9] {
@@ -1060,7 +1065,7 @@ mod tests {
         let tag = SceString::<4>::from_text("ab").expect("fits");
         let list = BoundedList::<SceString<4>, 2>::from_slice(core::slice::from_ref(&tag))
             .expect("one fits two");
-        assert_eq!(list, &[tag.clone()]);
+        assert_eq!(list, core::slice::from_ref(&tag));
         assert!(list == &[tag][..]);
     }
 
