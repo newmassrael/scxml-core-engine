@@ -102,6 +102,14 @@ STATIC_MESH_REQUEST_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_
 # first fixture types holds scalars that are always present.
 OPTIONAL_RESULT_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml"
 
+# The inbox probe (docs/adr/0084): the smallest machine with a host-run
+# `<invoke>` whose every taken event can be read back in order, which
+# backends/rust/tests/tests/what_another_thread_posts_enters_through_the_inbox.rs
+# drives while other threads post to its inbox. It sits beside the generated C++
+# engine's driver of the same case, whose tree tests/CMakeLists.txt generates at
+# build time, so only the Rust tree is committed from it here.
+INBOX_PROBE_FIXTURE="tests/integration/inbox_probe.scxml"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -114,6 +122,7 @@ trap 'rm -rf "$TMP"' EXIT
 "$CODEGEN" generate "$STATIC_DELAYED_SEND_FIXTURE" -l rust -o "$TMP/" --host-processor "$HOST_PROCESSOR"
 "$CODEGEN" generate "$STATIC_MESH_REQUEST_FIXTURE" -l rust -o "$TMP/"
 "$CODEGEN" generate "$OPTIONAL_RESULT_FIXTURE" -l rust -o "$TMP/" --host-invoker "$HOST_INVOKER"
+"$CODEGEN" generate "$INBOX_PROBE_FIXTURE" -l rust -o "$TMP/" --host-invoker "$HOST_INVOKER"
 
 mkdir -p "$GENERATED_DIR"
 source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
@@ -124,6 +133,7 @@ MODRS="$GENERATED_DIR/mod.rs"
 {
     echo "// GENERATED -- DO NOT EDIT (scripts/regen_host_processor.sh)"
     echo ""
+    echo "mod inbox_probe_sm;"
     echo "mod statechart_delayed_host_send_sm;"
     echo "mod statechart_host_invoker_optional_sm;"
     echo "mod statechart_host_invoker_sm;"
@@ -132,6 +142,7 @@ MODRS="$GENERATED_DIR/mod.rs"
     echo "mod statechart_static_host_invoke_sm;"
     echo "mod statechart_static_host_params_sm;"
     echo "mod statechart_static_mesh_request_sm;"
+    echo "pub use inbox_probe_sm::*;"
     echo "pub use statechart_delayed_host_send_sm::*;"
     echo "pub use statechart_host_invoker_optional_sm::*;"
     echo "pub use statechart_host_invoker_sm::*;"
@@ -286,6 +297,7 @@ echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
 echo "  $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $OPTIONAL_RESULT_FIXTURE (--host-invoker $HOST_INVOKER)"
+echo "  $INBOX_PROBE_FIXTURE (--host-invoker $HOST_INVOKER)"
 echo "Regenerated: $GO_GENERATED_DIR/ from"
 echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $GO_DELAYED_DIR/ from"

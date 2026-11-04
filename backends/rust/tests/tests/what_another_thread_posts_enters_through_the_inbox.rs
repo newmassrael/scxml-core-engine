@@ -1,0 +1,465 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// docs/adr/0084, ARCHITECTURE.md "Engine Threading": a Rust engine is confined to
+// its owner by the type system, and what another thread has for it enters
+// through its inbox. The per-runtime conformance case of the ADR's D3, with the
+// generated C++ engine's (WhatAnotherThreadPostsEntersThroughTheInboxAotTest)
+// and the Kotlin engine's beside it:
+//
+//   * many threads post endings and external events while the owner runs
+//     macrosteps, and what the machine takes, and what its host is told, are
+//     those of a single-threaded replay of the same posts;
+//   * an ending posted for a start that was cancelled or started again is
+//     refused by the token check, as a direct one is;
+//   * an ending posted for a session of the tree, named by its id, is applied
+//     as `end_host_invoke_in` applies it;
+//   * a post is taken before the run starts and applied at its first boundary,
+//     and one taken after the run was stopped is counted as unseen.
+//
+// Fixture: tests/integration/inbox_probe.scxml, generated with the host-invoker
+// declaration `x-sce-host` into src/integration/host_processor/ by
+// scripts/regen_host_processor.sh. `taken` is what the machine took, in order,
+// as `ping:<data>;`, `done:<data>;` and `failed:<data>;`.
+
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
+
+use sce_rust_runtime::{
+    Engine, HostInvokeEnding, HostInvokeEvent, IScriptEngine, InboxInput, InboxInputOf, InboxWaker,
+};
+use sce_rust_tests::integration::host_processor::{
+    InboxProbeEvent as Event, InboxProbePolicy as Policy,
+};
+
+/// The type the fixture was generated for (`HOST_INVOKER` in
+/// scripts/regen_host_processor.sh).
+const TYPE: &str = "x-sce-host";
+/// The fixture's one host-run invocation.
+const JOB: &str = "job";
+
+type Input = InboxInputOf<Policy>;
+
+/// One machine and its host's half: what the invoker was asked, in order, as
+/// `start:<token>` and `cancel:<token>`. The invoker answers nothing on a
+/// start, so the work runs past the call.
+struct Machine {
+    engine: Engine<Policy>,
+    script_engine: Arc<dyn IScriptEngine>,
+    host: Arc<Mutex<Vec<String>>>,
+}
+
+impl Machine {
+    /// Built and served, not yet run.
+    fn built() -> Self {
+        let script_engine: Arc<dyn IScriptEngine> = Arc::new(sce_rust_lua::LuaEngine::new());
+        let mut engine = Engine::new(Policy::new(Arc::clone(&script_engine)));
+        let host: Arc<Mutex<Vec<String>>> = Arc::default();
+        let log = Arc::clone(&host);
+        engine.register_invoker(TYPE, move |event: HostInvokeEvent| {
+            let line = match event {
+                HostInvokeEvent::Start(request) => format!("start:{}", request.token),
+                HostInvokeEvent::Cancel(cancel) => format!("cancel:{}", cancel.token),
+            };
+            log.lock().expect("the host's log").push(line);
+            None
+        });
+        Self {
+            engine,
+            script_engine,
+            host,
+        }
+    }
+
+    /// Entered and driven once on the calling thread, which owns it.
+    fn booted() -> Self {
+        let mut machine = Self::built();
+        machine.boot();
+        machine
+    }
+
+    fn boot(&mut self) {
+        self.engine.initialize();
+        self.engine.step();
+    }
+
+    /// What the machine took, in order.
+    fn taken(&self) -> String {
+        sce_rust_runtime::helpers::datamodel_read::read_string(
+            &*self.script_engine,
+            self.engine.policy().session_id.as_deref(),
+            "taken",
+        )
+        .expect("the fixture declares `taken` as a string")
+    }
+
+    /// What the host was asked, in order.
+    fn host_log(&self) -> Vec<String> {
+        self.host.lock().expect("the host's log").clone()
+    }
+
+    /// The token of the latest start of `job`.
+    fn latest_token(&self) -> u64 {
+        self.host_log()
+            .iter()
+            .rev()
+            .find_map(|line| line.strip_prefix("start:"))
+            .map(|token| token.parse::<u64>().expect("a token is a number"))
+            .expect("`job` never started")
+    }
+}
+
+/// `text` as the JSON string the machine reads back as `text` in `_event.data`.
+fn quoted(text: &str) -> String {
+    format!("\"{text}\"")
+}
+
+/// An ending of start `token` of `job` in the session of the tree whose id is
+/// `session_id`, or of the machine whose inbox takes it when that is `None`: a
+/// completion when `done`, a failure otherwise, with `data` as `_event.data`.
+fn ending_of(session_id: Option<&str>, token: u64, done: bool, data: &str) -> Input {
+    InboxInput::host_invoke_ending(
+        session_id,
+        HostInvokeEnding {
+            processor_type: TYPE,
+            invoke_id: JOB,
+            token,
+            done,
+            data,
+        },
+    )
+}
+
+/// An ending of start `token` of `job` of the machine whose inbox takes it.
+fn ending(token: u64, done: bool, data: &str) -> Input {
+    ending_of(None, token, done, data)
+}
+
+/// `ping` with `data`, as the document's own event.
+fn ping(data: &str) -> Input {
+    InboxInput::external(Event::Ping, data, "")
+}
+
+/// `ping` with `data`, named by text, as a host that knows no member names it.
+fn ping_by_name(data: &str) -> Input {
+    InboxInput::external_by_name("ping", data)
+}
+
+/// Post `input` from a thread of its own, which does not own `engine`; whether
+/// the inbox took it. Joined before it returns, so the post happens before what
+/// the caller does next.
+fn post_from_another_thread(engine: &Engine<Policy>, input: Input) -> bool {
+    let inbox = engine.inbox();
+    std::thread::spawn(move || inbox.post(input).is_ok())
+        .join()
+        .expect("the posting thread")
+}
+
+/// One post of the run below, with what the machine records if it takes it.
+struct Post {
+    input: Input,
+    recorded: String,
+    is_ending: bool,
+}
+
+/// What producer `producer` posts as its `k`th input: external events, typed and
+/// by name, and now and then an ending of `token`, completed or failed. Each data
+/// names its producer and its place, so the record says which post it came from.
+fn post_of(producer: usize, k: usize, token: u64) -> Post {
+    let label = format!("p{producer}-{k}");
+    let data = quoted(&label);
+    match k % 7 {
+        3 => Post {
+            input: ending(token, true, &data),
+            recorded: format!("done:{label};"),
+            is_ending: true,
+        },
+        5 => Post {
+            input: ending(token, false, &data),
+            recorded: format!("failed:{label};"),
+            is_ending: true,
+        },
+        1 => Post {
+            input: ping_by_name(&data),
+            recorded: format!("ping:{label};"),
+            is_ending: false,
+        },
+        _ => Post {
+            input: ping(&data),
+            recorded: format!("ping:{label};"),
+            is_ending: false,
+        },
+    }
+}
+
+/// What the machine must take from `posted`, in the order the inbox took it:
+/// every event, and of the endings only the first, since it ends `job` and the
+/// token check refuses the rest.
+fn expected_from(posted: &[Post]) -> String {
+    let mut ended = false;
+    let mut expected = String::new();
+    for post in posted {
+        if post.is_ending {
+            if ended {
+                continue;
+            }
+            ended = true;
+        }
+        expected.push_str(&post.recorded);
+    }
+    expected
+}
+
+/// What the owner sleeps on: the posts the waker counted, and the producers
+/// still running.
+struct Wakes {
+    count: Mutex<usize>,
+    woken: Condvar,
+}
+
+// Eight threads post sixty inputs each while the owner, woken by the waker the
+// host installed, drives the machine. The order the inbox took the posts in is
+// recorded under one lock with the post, so it is the order of the inbox itself;
+// the machine must take them in that order, and a machine of its own replaying
+// the same posts on one thread must end where this one did.
+#[test]
+fn posts_from_many_threads_during_macrosteps_are_taken_as_a_single_threaded_replay_takes_them() {
+    const PRODUCERS: usize = 8;
+    const PER_PRODUCER: usize = 60;
+
+    let mut machine = Machine::booted();
+    let token = machine.latest_token();
+
+    let wakes = Arc::new(Wakes {
+        count: Mutex::new(0),
+        woken: Condvar::new(),
+    });
+    let counter = Arc::clone(&wakes);
+    let waker: InboxWaker = Arc::new(move || {
+        *counter.count.lock().expect("the wake count") += 1;
+        counter.woken.notify_one();
+    });
+    machine.engine.inbox().wake_with(Some(waker));
+
+    let order: Mutex<Vec<Post>> = Mutex::new(Vec::new());
+    let refused: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    let running = AtomicUsize::new(PRODUCERS);
+    let released = AtomicBool::new(false);
+
+    std::thread::scope(|scope| {
+        for producer in 0..PRODUCERS {
+            let inbox = machine.engine.inbox();
+            let (order, refused, running, released, wakes) =
+                (&order, &refused, &running, &released, &wakes);
+            scope.spawn(move || {
+                while !released.load(Ordering::Acquire) {
+                    std::thread::yield_now();
+                }
+                for k in 0..PER_PRODUCER {
+                    let post = post_of(producer, k, token);
+                    let mut posted = order.lock().expect("the order of the posts");
+                    match inbox.post(post.input.clone()) {
+                        Ok(()) => posted.push(post),
+                        Err(_) => refused
+                            .lock()
+                            .expect("the refused posts")
+                            .push(post.recorded),
+                    }
+                }
+                running.fetch_sub(1, Ordering::AcqRel);
+                // Taken and released so the owner, if it is waiting, sees the
+                // count of running producers change.
+                drop(wakes.count.lock().expect("the wake count"));
+                wakes.woken.notify_one();
+            });
+        }
+        released.store(true, Ordering::Release);
+
+        // The owner: asleep until a post wakes it, then a macrostep, for as long
+        // as any producer runs. Bounded, so a lost wake shows as a slow case and
+        // not a hung one.
+        let mut seen = 0;
+        while running.load(Ordering::Acquire) > 0 {
+            {
+                let count = wakes.count.lock().expect("the wake count");
+                let (count, _) = wakes
+                    .woken
+                    .wait_timeout_while(count, Duration::from_millis(100), |count| {
+                        *count == seen && running.load(Ordering::Acquire) > 0
+                    })
+                    .expect("the wake count");
+                seen = *count;
+            }
+            machine.engine.step();
+        }
+    });
+    // What the last producer posted after the owner's last macrostep.
+    machine.engine.step();
+
+    let posted = order.into_inner().expect("the order of the posts");
+    let refused = refused.into_inner().expect("the refused posts");
+    assert!(
+        refused.is_empty(),
+        "an engine's own inbox refused {} posts",
+        refused.len()
+    );
+    assert_eq!(posted.len(), PRODUCERS * PER_PRODUCER);
+    assert_eq!(
+        *wakes.count.lock().expect("the wake count"),
+        posted.len(),
+        "the waker was not called once for each post the inbox took"
+    );
+    assert_eq!(
+        machine.taken(),
+        expected_from(&posted),
+        "the machine did not take the posts in the order the inbox took them"
+    );
+    // The first ending ended `job`, so the host was told of its start and nothing
+    // else.
+    assert_eq!(
+        machine.host_log(),
+        [format!("start:{token}")],
+        "an ending was not applied, or a refused one was"
+    );
+
+    let mut replay = Machine::booted();
+    assert_eq!(
+        replay.latest_token(),
+        token,
+        "the replay's start has another token, so the run's endings are not its"
+    );
+    let inbox = replay.engine.inbox();
+    for post in &posted {
+        inbox
+            .post(post.input.clone())
+            .expect("the replay's inbox refused a post");
+    }
+    replay.engine.step();
+    assert_eq!(
+        replay.taken(),
+        machine.taken(),
+        "the run differs from a single-threaded replay of its posts"
+    );
+    assert_eq!(
+        replay.host_log(),
+        machine.host_log(),
+        "the invocation differs from a single-threaded replay of the posts"
+    );
+}
+
+// What a cancelled process sends is ignored, and a restarted `<invoke>` is a
+// different process under the same id (the engine's token check). A posted
+// ending is judged when the owner applies it, by the same check a direct one
+// meets.
+#[test]
+fn a_posted_ending_of_a_cancelled_or_restarted_start_is_refused_as_a_direct_one_is() {
+    let mut machine = Machine::booted();
+    let first = machine.latest_token();
+    machine.engine.process_event(Event::Leave);
+    machine.engine.process_event(Event::Go);
+    let second = machine.latest_token();
+    assert_ne!(first, second, "a restart reused the first start's token");
+
+    assert!(
+        post_from_another_thread(&machine.engine, ending(first, true, &quoted("stale"))),
+        "the inbox refused a post; the token is the owner's to judge"
+    );
+    machine.engine.step();
+    assert_eq!(
+        machine.taken(),
+        "",
+        "the cancelled start's ending was taken"
+    );
+
+    assert!(post_from_another_thread(
+        &machine.engine,
+        ending(second, true, &quoted("fresh"))
+    ));
+    assert_eq!(
+        machine.taken(),
+        "",
+        "a post was applied before the owner reached a macrostep boundary"
+    );
+    machine.engine.step();
+    assert_eq!(machine.taken(), "done:fresh;");
+
+    // Ended once, so a later ending of the same start finds nothing to end.
+    assert!(post_from_another_thread(
+        &machine.engine,
+        ending(second, false, &quoted("late"))
+    ));
+    machine.engine.step();
+    assert_eq!(machine.taken(), "done:fresh;", "the same start ended twice");
+    assert_eq!(
+        machine.host_log(),
+        [
+            format!("start:{first}"),
+            format!("cancel:{first}"),
+            format!("start:{second}"),
+        ]
+    );
+}
+
+// An ending that names a session of the tree is applied as `end_host_invoke_in`
+// applies it: the root's own id reaches the root, and an id no session of the
+// tree has ends nothing.
+#[test]
+fn a_posted_ending_naming_a_session_of_the_tree_is_applied_in_that_session() {
+    let mut machine = Machine::booted();
+    let token = machine.latest_token();
+    let session = machine
+        .engine
+        .policy()
+        .session_id
+        .clone()
+        .expect("a generated root has a session id from its construction");
+
+    assert!(post_from_another_thread(
+        &machine.engine,
+        ending_of(Some("no-such-session"), token, true, &quoted("elsewhere"))
+    ));
+    machine.engine.step();
+    assert_eq!(
+        machine.taken(),
+        "",
+        "an ending for a session the tree does not hold was applied"
+    );
+
+    assert!(post_from_another_thread(
+        &machine.engine,
+        ending_of(Some(session.as_str()), token, true, &quoted("here"))
+    ));
+    machine.engine.step();
+    assert_eq!(machine.taken(), "done:here;");
+    assert_eq!(machine.host_log(), [format!("start:{token}")]);
+}
+
+// The inbox is open from the moment the engine is built, so what is posted before
+// the run starts is applied at its first boundary. It stays open after the run is
+// stopped, and what is posted then is applied where the owner next reaches the
+// end of its loop, as a direct raise would be: counted as unseen, not dropped.
+#[test]
+fn a_post_before_the_run_is_taken_by_it_and_one_after_the_stop_is_counted_as_unseen() {
+    let mut machine = Machine::built();
+    assert!(
+        post_from_another_thread(&machine.engine, ping(&quoted("early"))),
+        "the inbox of an engine not yet run refused a post"
+    );
+    machine.boot();
+    assert_eq!(
+        machine.taken(),
+        "ping:early;",
+        "what was posted before the run was not taken by it"
+    );
+
+    machine.engine.stop();
+    let unseen = machine.engine.unseen_external_events();
+    assert!(
+        post_from_another_thread(&machine.engine, ping(&quoted("late"))),
+        "the inbox of a stopped engine refused a post"
+    );
+    machine.engine.step();
+    assert_eq!(machine.engine.unseen_external_events(), unseen + 1);
+    assert_eq!(machine.engine.last_unseen_event(), Some(Event::Ping));
+}

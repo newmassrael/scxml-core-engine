@@ -4,8 +4,9 @@
 <!--
   The smallest machine with a host-run invocation whose every taken event can
   be read back in order: what WhatAnotherThreadPostsEntersThroughTheInboxAotTest
-  posts to the generated C++ engine's inbox from other threads
-  (docs/adr/0084, ARCHITECTURE.md "Engine Threading").
+  posts to the generated C++ engine's inbox from other threads, and
+  backends/rust/tests/tests/what_another_thread_posts_enters_through_the_inbox.rs
+  to the Rust engine's (docs/adr/0084, ARCHITECTURE.md "Engine Threading").
 
   `working` (initial) starts the host-run invocation `job` on entry and so
   cancels it on exit; `leave` goes to `idle` and `go` back, which starts `job`
@@ -15,9 +16,10 @@
   order the machine took them in.
 
   It sits beside its C++ driver, as parallel_current_state.scxml does. The C++
-  engine and the C11 machine are driven with it (tests/CMakeLists.txt,
-  backends/c/tests/CMakeLists.txt), each generated with the host-invoker
-  declaration `x-sce-host`.
+  engine, the C11 machine and the Rust engine are driven with it, each machine
+  generated with the host-invoker declaration `x-sce-host`
+  (tests/CMakeLists.txt and backends/c/tests/CMakeLists.txt at build time, and
+  scripts/regen_host_processor.sh for the committed Rust tree).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        name="inbox_probe" datamodel="ecmascript" initial="running">
