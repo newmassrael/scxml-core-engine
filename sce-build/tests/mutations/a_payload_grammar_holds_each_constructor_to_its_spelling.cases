@@ -32,7 +32,7 @@ PY
 
 mutation_case "a byte string's characters are any character" <<'PY'
 edit("sce-build/src/forge/value_type.rs",
-     "            \"pattern\": LATIN1_PATTERN\n",
+     "            \"pattern\": latin1_pattern()\n",
      "            \"pattern\": \"^.*$\"\n")
 PY
 
@@ -124,6 +124,18 @@ mutation_case "a text holds one byte past its bound in the GBNF grammar" <<'PY'
 edit("sce-build/src/forge/value_type.rs",
      "            format!(\"{GBNF_QUOTE} t{} {GBNF_QUOTE}\", max.max)",
      "            format!(\"{GBNF_QUOTE} t{} {GBNF_QUOTE}\", max.max + 1)")
+PY
+
+mutation_case "an escape writes its hex in upper case" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "        EscapeForm::Json | EscapeForm::Gbnf if n <= 0xffff => format!(\"\\\\u{n:04x}\"),",
+     "        EscapeForm::Json | EscapeForm::Gbnf if n <= 0xffff => format!(\"\\\\u{n:04X}\"),")
+PY
+
+mutation_case "a code point past ASCII is written raw in a GBNF literal" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "        if c.is_ascii() {\n            out.push(c);",
+     "        if c.is_ascii() || true {\n            out.push(c);")
 PY
 
 mutation_case "a range's last digit stops below its end" <<'PY'

@@ -1840,9 +1840,64 @@ impl SchemaDefs {
     }
 }
 
+/// The form a code point is escaped in: JSON's (`\uxxxx`, a UTF-16 pair past
+/// U+FFFF; also the escape of an ECMA-262 regular expression) or GBNF's
+/// (`\xhh` below U+0080, `\uxxxx`, then `\Uxxxxxxxx`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EscapeForm {
+    Json,
+    Gbnf,
+}
+
+/// `c` as an escape of `form`, its hex in lowercase: the one spelling both
+/// forms give a code point that is not ASCII, and the bounds of every class
+/// they write, so the texts are ASCII whatever a document names.
+fn escaped(c: char, form: EscapeForm) -> String {
+    let n = u32::from(c);
+    match form {
+        EscapeForm::Gbnf if n < 0x80 => format!("\\x{n:02x}"),
+        EscapeForm::Json | EscapeForm::Gbnf if n <= 0xffff => format!("\\u{n:04x}"),
+        EscapeForm::Gbnf => format!("\\U{n:08x}"),
+        EscapeForm::Json => {
+            let mut units = [0u16; 2];
+            c.encode_utf16(&mut units)
+                .iter()
+                .map(|unit| format!("\\u{unit:04x}"))
+                .collect()
+        }
+    }
+}
+
+/// `text` with every character past ASCII escaped in `form`; `text` is a JSON
+/// text or a GBNF grammar, where such a character stands only inside a string
+/// or a literal, which reads the escape as the character.
+fn ascii_only(text: &str, form: EscapeForm) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_ascii() {
+                c.to_string()
+            } else {
+                escaped(c, form)
+            }
+        })
+        .collect()
+}
+
 /// The pattern of a byte string's text: every character one byte, U+0000 to
 /// U+00FF (the Latin-1 text the wire spells, docs/adr/0086 section 3.1).
-const LATIN1_PATTERN: &str = r"^[\u0000-ÿ]*$";
+fn latin1_pattern() -> String {
+    format!(
+        "^[{}-{}]*$",
+        escaped('\u{0}', EscapeForm::Json),
+        escaped('\u{ff}', EscapeForm::Json)
+    )
+}
+
+/// A JSON text (`serde_json`'s compact one, keys ascending) with every
+/// character past ASCII escaped: what a payload schema is written as.
+pub fn ascii_json(value: &serde_json::Value) -> String {
+    ascii_only(&value.to_string(), EscapeForm::Json)
+}
 
 /// `name` as a reference token of a JSON Pointer (RFC 6901, section 3): `~`
 /// written `~0`, `/` written `~1`.
@@ -1926,7 +1981,7 @@ fn json_schema(
         ValueType::Bytes { max } => json!({
             "type": "string",
             "maxLength": max.max,
-            "pattern": LATIN1_PATTERN
+            "pattern": latin1_pattern()
         }),
         // A writer writes the key of a value that is absent, as `null`.
         ValueType::Optional { elem } => json!({
@@ -2013,27 +2068,55 @@ const GBNF_QUOTE: &str = r#""\"""#;
 /// one byte: `\"`, `\\`, the five short escapes, every other control character
 /// `\u00xx` in lowercase hex, U+0000 left out; `c2` U+0080 to U+07FF; `c3`
 /// U+0800 to U+FFFF without the surrogates; `c4` U+10000 to U+10FFFF.
-const GBNF_TEXT_CHARACTERS: [(&str, &str); 4] = [
-    (
-        "c1",
-        r#"[\x20-\x21\x23-\x5B\x5D-\x7F] | "\\" [\"\\bfnrt] | "\\u000" [1-7bef] | "\\u001" [0-9a-f]"#,
-    ),
-    ("c2", r"[\u0080-߿]"),
-    ("c3", r"[ࠀ-퟿-￿]"),
-    ("c4", r"[\U00010000-\U0010FFFF]"),
-];
+fn gbnf_text_characters() -> [(&'static str, String); 4] {
+    [
+        (
+            "c1",
+            format!(
+                "{} | {GBNF_ESCAPES} [1-7bef] | {GBNF_U001}",
+                gbnf_class(&[(0x20, 0x21), (0x23, 0x5b), (0x5d, 0x7f)])
+            ),
+        ),
+        ("c2", gbnf_class(&[(0x80, 0x7ff)])),
+        ("c3", gbnf_class(&[(0x800, 0xd7ff), (0xe000, 0xffff)])),
+        ("c4", gbnf_class(&[(0x1_0000, 0x10_ffff)])),
+    ]
+}
+
+/// The escapes of the writer whose value is one byte: `\"`, `\\`, the five
+/// short escapes, then `\u000` before the last digit of the controls up to
+/// U+000F that have no short escape, which a class follows.
+const GBNF_ESCAPES: &str = r#""\\" [\"\\bfnrt] | "\\u000""#;
+
+/// The controls from U+0010 to U+001F, each `\u001` and a lowercase digit.
+const GBNF_U001: &str = r#""\\u001" [0-9a-f]"#;
+
+/// A GBNF class of the code point ranges `ranges`, each bound escaped.
+fn gbnf_class(ranges: &[(u32, u32)]) -> String {
+    let bound = |n: u32| escaped(char::from_u32(n).expect("a scalar value"), EscapeForm::Gbnf);
+    let inside: String = ranges
+        .iter()
+        .map(|&(lo, hi)| format!("{}-{}", bound(lo), bound(hi)))
+        .collect();
+    format!("[{inside}]")
+}
 
 /// A character of a byte string's text, each one byte (U+0000 to U+00FF), as
 /// the writer spells it: raw, or the escape a text's `c1` writes, U+0000
 /// among them.
-const GBNF_BYTE: &str =
-    r#"[\x20-\x21\x23-\x5B\x5D-\xFF] | "\\" [\"\\bfnrt] | "\\u000" [0-7bef] | "\\u001" [0-9a-f]"#;
+fn gbnf_byte() -> String {
+    format!(
+        "{} | {GBNF_ESCAPES} [0-7bef] | {GBNF_U001}",
+        gbnf_class(&[(0x20, 0x21), (0x23, 0x5b), (0x5d, 0xff)])
+    )
+}
 
 /// A number as RFC 8259 section 6 writes one.
 const GBNF_NUMBER: &str = r#""-"? ( "0" | [1-9] [0-9]* ) ( "." [0-9]+ )? ( [eE] [-+]? [0-9]+ )?"#;
 
-/// A GBNF literal of `text`, a JSON text: `"` and `\` escaped and every other
-/// character as it is, a JSON text holding no raw control character.
+/// A GBNF literal of `text`, a JSON text: `"` and `\` escaped, a character
+/// past ASCII escaped ([`escaped`]), and every other character as it is, a
+/// JSON text holding no raw control character.
 fn gbnf_literal(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     out.push('"');
@@ -2041,7 +2124,11 @@ fn gbnf_literal(text: &str) -> String {
         if matches!(c, '"' | '\\') {
             out.push('\\');
         }
-        out.push(c);
+        if c.is_ascii() {
+            out.push(c);
+        } else {
+            out.push_str(&escaped(c, EscapeForm::Gbnf));
+        }
     }
     out.push('"');
     out
@@ -2147,7 +2234,7 @@ impl GbnfRules {
             push_rule(&mut out, "number", GBNF_NUMBER);
         }
         if let Some(most) = self.bytes {
-            push_rule(&mut out, "byte", GBNF_BYTE);
+            push_rule(&mut out, "byte", &gbnf_byte());
             push_rule(&mut out, "b0", "\"\"");
             for k in 1..=most {
                 push_rule(
@@ -2158,8 +2245,8 @@ impl GbnfRules {
             }
         }
         if let Some(most) = self.text {
-            for (name, body) in GBNF_TEXT_CHARACTERS {
-                push_rule(&mut out, name, body);
+            for (name, body) in gbnf_text_characters() {
+                push_rule(&mut out, name, &body);
             }
             push_rule(&mut out, "t0", "\"\"");
             for k in 1..=most {
@@ -3855,18 +3942,19 @@ mod tests {
         r#"uint8 ::= "0" | [1-9] [0-9]{0,1} | "1" [0-9]{2} | "2" [0-4] [0-9] | "25" [0-5]"#;
 
     /// The characters of a text and the chain of a text of at most five bytes.
-    const TEXT_TO_FIVE: &str = r##"c1 ::= [\x20-\x21\x23-\x5B\x5D-\x7F] | "\\" [\"\\bfnrt] | "\\u000" [1-7bef] | "\\u001" [0-9a-f]
-c2 ::= [\u0080-\u07FF]
-c3 ::= [\u0800-\uD7FF\uE000-\uFFFF]
-c4 ::= [\U00010000-\U0010FFFF]
-t0 ::= ""
-t1 ::= "" | c1 t0
-t2 ::= "" | c1 t1 | c2 t0
-t3 ::= "" | c1 t2 | c2 t1 | c3 t0
-t4 ::= "" | c1 t3 | c2 t2 | c3 t1 | c4 t0
-t5 ::= "" | c1 t4 | c2 t3 | c3 t2 | c4 t1
-"##;
-
+    const TEXT_TO_FIVE: &str = concat!(
+        "c1 ::= [\\x20-\\x21\\x23-\\x5b\\x5d-\\x7f] | \"\\\\\" [\\\"\\\\bfnrt] | \"\\\\u000\" \
+         [1-7bef] | \"\\\\u001\" [0-9a-f]\n",
+        "c2 ::= [\\u0080-\\u07ff]\n",
+        "c3 ::= [\\u0800-\\ud7ff\\ue000-\\uffff]\n",
+        "c4 ::= [\\U00010000-\\U0010ffff]\n",
+        "t0 ::= \"\"\n",
+        "t1 ::= \"\" | c1 t0\n",
+        "t2 ::= \"\" | c1 t1 | c2 t0\n",
+        "t3 ::= \"\" | c1 t2 | c2 t1 | c3 t0\n",
+        "t4 ::= \"\" | c1 t3 | c2 t2 | c3 t1 | c4 t0\n",
+        "t5 ::= \"\" | c1 t4 | c2 t3 | c3 t2 | c4 t1\n",
+    );
     #[test]
     fn a_number_of_at_most_32_bits_is_an_integer_between_its_ends() {
         for (text, lo, hi) in [
@@ -4040,7 +4128,7 @@ t5 ::= "" | c1 t4 | c2 t3 | c3 t2 | c4 t1
         assert_eq!(
             gbnf_text("bytes[3]"),
             "root ::= \"\\\"\" b3 \"\\\"\"\n\
-             byte ::= [\\x20-\\x21\\x23-\\x5B\\x5D-\\xFF] | \"\\\\\" [\\\"\\\\bfnrt] | \"\\\\u000\" \
+             byte ::= [\\x20-\\x21\\x23-\\x5b\\x5d-\\xff] | \"\\\\\" [\\\"\\\\bfnrt] | \"\\\\u000\" \
              [0-7bef] | \"\\\\u001\" [0-9a-f]\n\
              b0 ::= \"\"\n\
              b1 ::= \"\" | byte b0\n\
@@ -4347,6 +4435,20 @@ t5 ::= "" | c1 t4 | c2 t3 | c3 t2 | c4 t1
         assert_eq!(pointer_token("a~b/c"), "a~0b~1c");
         assert_eq!(gbnf_literal(r#"{"a\b":"#), r#""{\"a\\b\":""#);
         assert_eq!(json_quoted("a\"\u{1}\u{7f}é"), "\"a\\\"\\u0001\u{7f}é\"");
+        // A code point past ASCII is escaped, its hex in lowercase: GBNF past
+        // U+FFFF in eight digits, JSON as a UTF-16 pair.
+        assert_eq!(escaped('A', EscapeForm::Gbnf), "\\x41");
+        assert_eq!(escaped('\u{0}', EscapeForm::Json), "\\u0000");
+        assert_eq!(escaped('\u{e9}', EscapeForm::Gbnf), "\\u00e9");
+        assert_eq!(escaped('\u{e9}', EscapeForm::Json), "\\u00e9");
+        assert_eq!(escaped('\u{1f600}', EscapeForm::Gbnf), "\\U0001f600");
+        assert_eq!(escaped('\u{1f600}', EscapeForm::Json), "\\ud83d\\ude00");
+        assert_eq!(gbnf_literal("\"caf\u{e9}\""), "\"\\\"caf\\u00e9\\\"\"");
+        assert_eq!(
+            ascii_json(&serde_json::json!({"enum": ["caf\u{e9}", "\u{1f600}"]})),
+            "{\"enum\":[\"caf\\u00e9\",\"\\ud83d\\ude00\"]}"
+        );
+        assert_eq!(latin1_pattern(), "^[\\u0000-\\u00ff]*$");
         assert!(is_rule_name("item-12"));
         assert!(!is_rule_name(""));
         assert!(!is_rule_name("( a )"));
