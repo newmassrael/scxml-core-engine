@@ -9269,47 +9269,46 @@ mod tests {
         assert_eq!(check_expression_needs("myVariable"), (true, false));
     }
 
-    // ── is_static_string_literal / extract_static_string_literal ─
+    // ── static_string_literal ───────────────────────────────────
 
     #[test]
     fn static_string_single_quotes() {
-        assert!(is_static_string_literal("'hello'"));
-        assert_eq!(extract_static_string_literal("'hello'"), "hello");
+        assert_eq!(static_string_literal("'hello'").as_deref(), Some("hello"));
     }
 
     #[test]
     fn static_string_double_quotes() {
-        assert!(is_static_string_literal("\"hello\""));
-        assert_eq!(extract_static_string_literal("\"hello\""), "hello");
+        assert_eq!(static_string_literal("\"hello\"").as_deref(), Some("hello"));
     }
 
     #[test]
     fn static_string_with_whitespace() {
-        assert!(is_static_string_literal("  'hello'  "));
-        assert_eq!(extract_static_string_literal("  'hello'  "), "hello");
+        assert_eq!(
+            static_string_literal("  'hello'  ").as_deref(),
+            Some("hello")
+        );
     }
 
     #[test]
     fn static_string_empty_quoted() {
-        assert!(is_static_string_literal("''"));
-        assert_eq!(extract_static_string_literal("''"), "");
+        assert_eq!(static_string_literal("''").as_deref(), Some(""));
     }
 
     #[test]
     fn static_string_mismatched_quotes() {
-        assert!(!is_static_string_literal("'hello\""));
-        assert!(!is_static_string_literal("\"hello'"));
+        assert_eq!(static_string_literal("'hello\""), None);
+        assert_eq!(static_string_literal("\"hello'"), None);
     }
 
     #[test]
     fn static_string_too_short() {
-        assert!(!is_static_string_literal("x"));
-        assert!(!is_static_string_literal(""));
+        assert_eq!(static_string_literal("x"), None);
+        assert_eq!(static_string_literal(""), None);
     }
 
     #[test]
     fn static_string_no_quotes() {
-        assert!(!is_static_string_literal("hello"));
+        assert_eq!(static_string_literal("hello"), None);
     }
 
     // ── protect_context_strings / restore_context_strings ─────
