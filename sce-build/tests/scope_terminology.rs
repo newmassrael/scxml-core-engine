@@ -128,6 +128,17 @@ const EXEMPT_PREFIXES: &[(&str, &str)] = &[
          file is the upstream one.",
     ),
     (
+        "sce/src/events/EmscriptenFetchClient.cpp",
+        "the JavaScript this file hands to Node calls Node's own `http` \
+         module, whose request option is named `agent` and whose pool is \
+         the `Agent` class (`agent: false` opens one connection per \
+         request). Both are Node's names, like the `User-Agent` header in \
+         NON_READER_PREFIXES, and renaming them would break the call; none \
+         of the lines says who reads anything SCE emits. Named as one file \
+         rather than as `sce/src/events/`, because that directory holds \
+         code this gate should keep reading.",
+    ),
+    (
         ".claude/sce_loop.scxml",
         "the same distinction as `examples/ai_loop/`, in the file that \
          actually runs it: this state machine SUPERVISES an agent \
