@@ -49,9 +49,7 @@ pub(super) fn unlowered(
     match m.encoding {
         CodecEncoding::Positional => {}
         CodecEncoding::Cbor => return cbor_unlowered(m),
-        CodecEncoding::ContentLine => {
-            return Some("a `sce:encoding=\"content-line\"` codec".to_string())
-        }
+        CodecEncoding::ContentLine => return content_line_unlowered(m),
     }
     if let Some(variant) = &m.variant {
         if let Some(why) = variant_unlowered(m, variant, element) {
@@ -94,6 +92,27 @@ pub(super) fn cbor_unlowered(m: &CodecModel) -> Option<String> {
         }
     }
     None
+}
+
+/// What of the content-line codec `m` (SCE_FORGE.md section 4.6.4) the Swift codec does not lower yet:
+/// an entry, or a parameter of one, named for a member of the struct, which the struct would declare
+/// twice. The line grammar and the shapes of an entry are the runtime's and the template's, and are the
+/// same on every backend that lowers one ([`crate::forge::content_line_codec::lowers`]).
+pub(super) fn content_line_unlowered(m: &CodecModel) -> Option<String> {
+    if let Some(why) = crate::forge::content_line_codec::refusal(Language::Swift, m) {
+        return Some(why);
+    }
+    let model = m.content_line.as_ref()?;
+    model
+        .entries
+        .iter()
+        .find(|e| MEMBERS.contains(&e.id.as_str()))
+        .map(|e| {
+            format!(
+                "the content-line entry '{}', named for a member of the struct",
+                e.id
+            )
+        })
 }
 
 /// What of the codec `m` the Swift codec does not lower yet when another document holds it as an
@@ -905,6 +924,11 @@ pub(super) fn render(
     // A codec that writes one CBOR map has none of the positional codec's layout to render.
     if m.encoding == CodecEncoding::Cbor {
         return crate::forge::cbor_codec::render(env, m, imports, Language::Swift);
+    }
+    // So is a component of content lines (SCE_FORGE.md section 4.6.4), whose line grammar is the
+    // runtime's.
+    if m.encoding == CodecEncoding::ContentLine {
+        return crate::forge::content_line_codec::render(env, m, imports, Language::Swift);
     }
     let l = LangCtx::new(crate::generator::Language::Swift, imports);
     let sequential = is_sequential(m);

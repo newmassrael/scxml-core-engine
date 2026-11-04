@@ -1,0 +1,105 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Content-line codec kind (SCE_FORGE.md section 4.6.4): { decoded, encoded } cases and reject
+   vectors, as the generic codec fragment has them, with what a content-line component adds: an entry
+   can be absent (`nil`) or a list, a case marked `decode_only` is an input the codec reads and does
+   not write, and a refused decode leaves the cursor where it found it.
+
+   Each case builds the value the vector's `decoded` says, so the decode is held to it by the type's
+   own equality and the encode writes it. An entry that is an enum (docs/adr/0015) is written in a
+   vector as its carrier number and held by the codec as the enum's own type: a value is taken from the
+   number by the enum's `fromUnderlying`, which a closed enum answers `nil` for a carrier it does not
+   declare, so a closed enum is required and an open one, whose conversion is total, is not.
+
+   Swift names no failure (the typed error is not in the schedule), so a reject asserts refusal; the
+   rule that refused is pinned by the runtime's own tests (`ContentLineTests`). #}
+{% macro lift(m, raw) -%}
+{% if m.enum_open %}{{ m.enum_document | to_pascal_case }}.fromUnderlying({{ raw | swift_unmarshal(m.type) }}){% else %}try #require({{ m.enum_document | to_pascal_case }}.fromUnderlying({{ raw | swift_unmarshal(m.type) }})){% endif %}
+{%- endmacro %}
+    let spec = try oracleSpec("{{ f.ref_section }}", "{{ f.name }}")
+    let cases = try oracleArray(spec.member("cases"))
+    #expect(!cases.isEmpty, "{{ f.name }}: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "{{ f.name }} case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+        if case .text(let text)? = testCase.member("text") {
+            #expect(Array(text.utf8) == expectedBytes, "{{ f.name }} case \(index): `text` and `encoded` disagree")
+        }
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+
+        var expected = {{ f.name | to_pascal_case }}()
+{% for field in f.fields %}
+{% if field.members %}
+        // A list of line records (docs/adr/0014), as the vector writes each: an object keyed by the
+        // parameter ids, then `value` or `values`.
+        expected.{{ field.name }} = try oracleArray(decoded.member("{{ field.name }}")).map { record in
+            try {{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line(
+{% for m in field.members %}
+{% if m.enum_document and m.list %}
+                {{ m.name }}: try oracleArray(record.member("{{ m.name }}")).map { {{ lift(m, "$0") }} }{{ "," if not loop.last }}
+{% elif m.enum_document and m.optional %}
+                {{ m.name }}: try oracleOptional(record.member("{{ m.name }}")) { {{ lift(m, "$0") }} }{{ "," if not loop.last }}
+{% elif m.enum_document %}
+                {{ m.name }}: {{ lift(m, 'record.member("' ~ m.name ~ '")') }}{{ "," if not loop.last }}
+{% elif m.list %}
+                {{ m.name }}: try oracleArray(record.member("{{ m.name }}")).map { {{ "$0" | swift_unmarshal(m.type) }} }{{ "," if not loop.last }}
+{% elif m.optional %}
+                {{ m.name }}: try oracleOptional(record.member("{{ m.name }}")) { {{ "$0" | swift_unmarshal(m.type) }} }{{ "," if not loop.last }}
+{% else %}
+                {{ m.name }}: {{ ('record.member("' ~ m.name ~ '")') | swift_unmarshal(m.type) }}{{ "," if not loop.last }}
+{% endif %}
+{% endfor %}
+            )
+        }
+{% elif field.list and field.enum_document %}
+        expected.{{ field.name }} = try oracleArray(decoded.member("{{ field.name }}")).map { {{ lift(field, "$0") }} }
+{% elif field.list %}
+        expected.{{ field.name }} = try oracleArray(decoded.member("{{ field.name }}")).map { {{ "$0" | swift_unmarshal(field.type) }} }
+{% elif field.enum_document %}
+        if let value = try oracleOptional(decoded.member("{{ field.name }}"), { {{ lift(field, "$0") }} }) {
+            expected.{{ field.name }} = value
+        }
+{% else %}
+        if let value = try oracleOptional(decoded.member("{{ field.name }}"), { {{ "$0" | swift_unmarshal(field.type) }} }) {
+            expected.{{ field.name }} = value
+        }
+{% endif %}
+{% endfor %}
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try {{ f.name | to_pascal_case }}.decode(&cursor)
+        #expect(roundTripped == expected, "{{ f.name }} case \(index) decode")
+        if decodeOnly {
+            // The bytes around a component are not the codec's (a case whose input holds the next
+            // component after the END line): the codec reads its own component and stops there.
+            #expect(cursor.remaining < expectedBytes.count, "{{ f.name }} case \(index) decode did not move the cursor")
+        } else {
+            #expect(cursor.remaining == 0, "{{ f.name }} case \(index) decode consumed the component and nothing else")
+        }
+
+        if !decodeOnly {
+            var sink = BytesSink()
+            try expected.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "{{ f.name }} case \(index) encode")
+        }
+    }
+
+{# Decode-rejection vectors: the wire this codec MUST refuse, read from the reference like the cases
+   are. A refusal leaves the cursor where it found it. #}
+    for (index, reject) in try oracleArray(spec.member("rejects")).enumerated() {
+        let rejectBytes = try oracleBytes(reject.member("encoded"))
+        let why = try oracleText(reject.member("why"))
+        var rejectCursor = SceCursor(rejectBytes)
+        var refused = false
+        do {
+            _ = try {{ f.name | to_pascal_case }}.decode(&rejectCursor)
+        } catch {
+            refused = true
+        }
+        #expect(refused, "{{ f.name }} reject \(index): \(why)")
+        #expect(rejectCursor.remaining == rejectBytes.count, "{{ f.name }} reject \(index): the cursor moved")
+    }

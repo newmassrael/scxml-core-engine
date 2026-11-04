@@ -35,8 +35,8 @@ pub fn lowers(lang: Language) -> bool {
         | Language::Cpp
         | Language::Go
         | Language::Python
-        | Language::C11 => true,
-        Language::Swift => false,
+        | Language::C11
+        | Language::Swift => true,
     }
 }
 
@@ -99,7 +99,7 @@ pub fn render(
         Language::Go => render_go(env, m, imports),
         Language::Python => render_python(env, m, imports),
         Language::C11 => render_c(env, m, imports),
-        Language::Swift => unreachable!("`lowers` is false for swift, so `refusal` returned above"),
+        Language::Swift => render_swift(env, m, imports),
     }
 }
 
@@ -228,7 +228,8 @@ pub(crate) fn bound_literal(lang: Language, bound: Option<u32>) -> String {
             Language::Kotlin => "ContentLine.UNBOUNDED",
             Language::Python => "content_line.UNBOUNDED",
             Language::Rust => "usize::MAX",
-            Language::C11 | Language::Swift => {
+            Language::Swift => "ContentLine.unbounded",
+            Language::C11 => {
                 unreachable!("a backend that holds no unbounded text renders no literal for one")
             }
         }
@@ -259,14 +260,15 @@ fn entries_context(
     // of its own for each array and reads none of these.
     let literal = |bound: Option<u32>| -> Option<String> {
         match (l.language(), bound) {
-            (Language::C11 | Language::Swift, None) => None,
-            (lang @ (Language::C11 | Language::Swift), Some(_)) => Some(bound_literal(lang, bound)),
+            (Language::C11, None) => None,
+            (lang @ Language::C11, Some(_)) => Some(bound_literal(lang, bound)),
             (
                 lang @ (Language::Rust
                 | Language::Cpp
                 | Language::Kotlin
                 | Language::Go
-                | Language::Python),
+                | Language::Python
+                | Language::Swift),
                 bound,
             ) => Some(bound_literal(lang, bound)),
         }
@@ -400,6 +402,56 @@ fn render_kotlin(
     insert_component(&mut ctx, m);
     insert_enum_tables(&mut ctx, &l, m);
     ctx.insert("entries".into(), entries.into());
+    l.render(env, "codec_content_line", ctx)
+}
+
+fn render_swift(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(Language::Swift, imports);
+    let mut ctx = l.base_context(&m.name);
+    l.insert_imports(&mut ctx, imports);
+    // Owned values, as every Swift codec holds them: a string is a `String`, a list an `Array`, and
+    // an optional entry or parameter absent is `nil`. A required entry starts at its type's own
+    // default (an enum at its first declared variant) and is filled in by decode.
+    let mut entries = entries_context(
+        &l,
+        m,
+        |_| "String".to_string(),
+        |ty| Some(l.default_expr(ty)),
+    );
+    shape_fields(
+        &mut entries,
+        &FieldShapes {
+            list_of: &|t| format!("[{t}]"),
+            list_default: Some("[]"),
+            optional_type: &|t| l.codec_optional_of(t),
+            optional_default: Some("nil"),
+        },
+    );
+    // The members of the struct in declaration order, which its memberwise initializer takes: an
+    // entry, then the parameters declared for it unless they are members of its line record.
+    let mut fields: Vec<serde_json::Value> = Vec::new();
+    for entry in &entries {
+        fields.push(serde_json::json!({
+            "name": entry["name"],
+            "field_type": entry["field_type"],
+        }));
+        if entry["is_records"].as_bool() != Some(true) {
+            for param in entry["params"].as_array().into_iter().flatten() {
+                fields.push(serde_json::json!({
+                    "name": param["name"],
+                    "field_type": param["field_type"],
+                }));
+            }
+        }
+    }
+    insert_component(&mut ctx, m);
+    insert_enum_tables(&mut ctx, &l, m);
+    ctx.insert("entries".into(), entries.into());
+    ctx.insert("fields".into(), fields.into());
     l.render(env, "codec_content_line", ctx)
 }
 

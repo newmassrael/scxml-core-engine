@@ -383,7 +383,8 @@ impl CodecFailure {
             (Language::C11, CodecFailure::LineBadEscape) => Some("SCE_FORGE_CODEC_LINE_BAD_ESCAPE"),
             (Language::C11, CodecFailure::LineBadValue) => Some("SCE_FORGE_CODEC_LINE_BAD_VALUE"),
             // Cpp / Kotlin / Python: refusal is observable, its name is not.
-            // Swift writes no codec yet, so there is no refusal to observe.
+            // Swift's decode throws the runtime's typed error, which the conformance schedule
+            // does not yet name.
             (Language::Cpp | Language::Kotlin | Language::Python | Language::Swift, _) => None,
         }
     }

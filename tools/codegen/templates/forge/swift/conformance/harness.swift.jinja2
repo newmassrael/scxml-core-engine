@@ -145,7 +145,11 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 // MARK: - {{ f.kind }}: {{ f.name }}
 
 @Test func {{ f.name | to_camel_case }}MatchesReference() throws {
+{% if f.kind == "codec" and f.content_line %}
+{% set _kind_tmpl = "kinds/codec_content_line.swift.jinja2" %}
+{% else %}
 {% set _kind_tmpl = "kinds/" ~ f.kind ~ ".swift.jinja2" %}
+{% endif %}
 {% include _kind_tmpl %}
 }
 

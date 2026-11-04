@@ -5124,6 +5124,381 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     }
 }
 
+// MARK: - codec: codec_content_line_enums
+
+@Test func codecContentLineEnumsMatchesReference() throws {
+
+    let spec = try oracleSpec("codecs", "codec_content_line_enums")
+    let cases = try oracleArray(spec.member("cases"))
+    #expect(!cases.isEmpty, "codec_content_line_enums: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_content_line_enums case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+        if case .text(let text)? = testCase.member("text") {
+            #expect(Array(text.utf8) == expectedBytes, "codec_content_line_enums case \(index): `text` and `encoded` disagree")
+        }
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+
+        var expected = CodecContentLineEnums()
+        if let value = try oracleOptional(decoded.member("uid"), { try oracleText($0) }) {
+            expected.uid = value
+        }
+        if let value = try oracleOptional(decoded.member("status"), { try #require(EnumContentLineStatus.fromUnderlying(try oracleInteger($0, as: UInt8.self))) }) {
+            expected.status = value
+        }
+        if let value = try oracleOptional(decoded.member("clazz"), { EnumContentLineClass.fromUnderlying(try oracleInteger($0, as: UInt8.self)) }) {
+            expected.clazz = value
+        }
+        expected.history = try oracleArray(decoded.member("history")).map { try #require(EnumContentLineStatus.fromUnderlying(try oracleInteger($0, as: UInt8.self))) }
+        // A list of line records (docs/adr/0014), as the vector writes each: an object keyed by the
+        // parameter ids, then `value` or `values`.
+        expected.attendee = try oracleArray(decoded.member("attendee")).map { record in
+            try CodecContentLineEnumsAttendeeLine(
+                attendeeRole: try #require(EnumContentLineRole.fromUnderlying(try oracleInteger(record.member("attendeeRole"), as: UInt16.self))),
+                attendeeStatus: try oracleOptional(record.member("attendeeStatus")) { try #require(EnumContentLineStatus.fromUnderlying(try oracleInteger($0, as: UInt8.self))) },
+                value: try oracleText(record.member("value"))
+            )
+        }
+        // A list of line records (docs/adr/0014), as the vector writes each: an object keyed by the
+        // parameter ids, then `value` or `values`.
+        expected.step = try oracleArray(decoded.member("step")).map { record in
+            try CodecContentLineEnumsStepLine(
+                stepNote: try oracleOptional(record.member("stepNote")) { try oracleText($0) },
+                value: try #require(EnumContentLineStatus.fromUnderlying(try oracleInteger(record.member("value"), as: UInt8.self)))
+            )
+        }
+        if let value = try oracleOptional(decoded.member("note"), { try oracleText($0) }) {
+            expected.note = value
+        }
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecContentLineEnums.decode(&cursor)
+        #expect(roundTripped == expected, "codec_content_line_enums case \(index) decode")
+        if decodeOnly {
+            // The bytes around a component are not the codec's (a case whose input holds the next
+            // component after the END line): the codec reads its own component and stops there.
+            #expect(cursor.remaining < expectedBytes.count, "codec_content_line_enums case \(index) decode did not move the cursor")
+        } else {
+            #expect(cursor.remaining == 0, "codec_content_line_enums case \(index) decode consumed the component and nothing else")
+        }
+
+        if !decodeOnly {
+            var sink = BytesSink()
+            try expected.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_content_line_enums case \(index) encode")
+        }
+    }
+
+    for (index, reject) in try oracleArray(spec.member("rejects")).enumerated() {
+        let rejectBytes = try oracleBytes(reject.member("encoded"))
+        let why = try oracleText(reject.member("why"))
+        var rejectCursor = SceCursor(rejectBytes)
+        var refused = false
+        do {
+            _ = try CodecContentLineEnums.decode(&rejectCursor)
+        } catch {
+            refused = true
+        }
+        #expect(refused, "codec_content_line_enums reject \(index): \(why)")
+        #expect(rejectCursor.remaining == rejectBytes.count, "codec_content_line_enums reject \(index): the cursor moved")
+    }}
+
+// MARK: - codec: codec_content_line_event
+
+@Test func codecContentLineEventMatchesReference() throws {
+
+    let spec = try oracleSpec("codecs", "codec_content_line_event")
+    let cases = try oracleArray(spec.member("cases"))
+    #expect(!cases.isEmpty, "codec_content_line_event: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_content_line_event case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+        if case .text(let text)? = testCase.member("text") {
+            #expect(Array(text.utf8) == expectedBytes, "codec_content_line_event case \(index): `text` and `encoded` disagree")
+        }
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+
+        var expected = CodecContentLineEvent()
+        if let value = try oracleOptional(decoded.member("uid"), { try oracleText($0) }) {
+            expected.uid = value
+        }
+        if let value = try oracleOptional(decoded.member("dtstart"), { try oracleText($0) }) {
+            expected.dtstart = value
+        }
+        if let value = try oracleOptional(decoded.member("dtstartTzid"), { try oracleText($0) }) {
+            expected.dtstartTzid = value
+        }
+        if let value = try oracleOptional(decoded.member("summary"), { try oracleText($0) }) {
+            expected.summary = value
+        }
+        if let value = try oracleOptional(decoded.member("description"), { try oracleText($0) }) {
+            expected.description = value
+        }
+        if let value = try oracleOptional(decoded.member("organizer"), { try oracleText($0) }) {
+            expected.organizer = value
+        }
+        if let value = try oracleOptional(decoded.member("organizerCn"), { try oracleText($0) }) {
+            expected.organizerCn = value
+        }
+        if let value = try oracleOptional(decoded.member("rrule"), { try oracleText($0) }) {
+            expected.rrule = value
+        }
+        expected.exdate = try oracleArray(decoded.member("exdate")).map { try oracleText($0) }
+        if let value = try oracleOptional(decoded.member("sequence"), { try oracleInteger($0, as: UInt16.self) }) {
+            expected.sequence = value
+        }
+        if let value = try oracleOptional(decoded.member("priority"), { try oracleInteger($0, as: Int32.self) }) {
+            expected.priority = value
+        }
+        if let value = try oracleOptional(decoded.member("allDay"), { try oracleTruth($0) }) {
+            expected.allDay = value
+        }
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecContentLineEvent.decode(&cursor)
+        #expect(roundTripped == expected, "codec_content_line_event case \(index) decode")
+        if decodeOnly {
+            // The bytes around a component are not the codec's (a case whose input holds the next
+            // component after the END line): the codec reads its own component and stops there.
+            #expect(cursor.remaining < expectedBytes.count, "codec_content_line_event case \(index) decode did not move the cursor")
+        } else {
+            #expect(cursor.remaining == 0, "codec_content_line_event case \(index) decode consumed the component and nothing else")
+        }
+
+        if !decodeOnly {
+            var sink = BytesSink()
+            try expected.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_content_line_event case \(index) encode")
+        }
+    }
+
+    for (index, reject) in try oracleArray(spec.member("rejects")).enumerated() {
+        let rejectBytes = try oracleBytes(reject.member("encoded"))
+        let why = try oracleText(reject.member("why"))
+        var rejectCursor = SceCursor(rejectBytes)
+        var refused = false
+        do {
+            _ = try CodecContentLineEvent.decode(&rejectCursor)
+        } catch {
+            refused = true
+        }
+        #expect(refused, "codec_content_line_event reject \(index): \(why)")
+        #expect(rejectCursor.remaining == rejectBytes.count, "codec_content_line_event reject \(index): the cursor moved")
+    }}
+
+// MARK: - codec: codec_content_line_records
+
+@Test func codecContentLineRecordsMatchesReference() throws {
+
+    let spec = try oracleSpec("codecs", "codec_content_line_records")
+    let cases = try oracleArray(spec.member("cases"))
+    #expect(!cases.isEmpty, "codec_content_line_records: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_content_line_records case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+        if case .text(let text)? = testCase.member("text") {
+            #expect(Array(text.utf8) == expectedBytes, "codec_content_line_records case \(index): `text` and `encoded` disagree")
+        }
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+
+        var expected = CodecContentLineRecords()
+        if let value = try oracleOptional(decoded.member("uid"), { try oracleText($0) }) {
+            expected.uid = value
+        }
+        // A list of line records (docs/adr/0014), as the vector writes each: an object keyed by the
+        // parameter ids, then `value` or `values`.
+        expected.attendee = try oracleArray(decoded.member("attendee")).map { record in
+            try CodecContentLineRecordsAttendeeLine(
+                attendeeCn: try oracleOptional(record.member("attendeeCn")) { try oracleText($0) },
+                attendeeRole: try oracleText(record.member("attendeeRole")),
+                value: try oracleText(record.member("value"))
+            )
+        }
+        // A list of line records (docs/adr/0014), as the vector writes each: an object keyed by the
+        // parameter ids, then `value` or `values`.
+        expected.exdate = try oracleArray(decoded.member("exdate")).map { record in
+            try CodecContentLineRecordsExdateLine(
+                exdateTzid: try oracleOptional(record.member("exdateTzid")) { try oracleText($0) },
+                values: try oracleArray(record.member("values")).map { try oracleText($0) }
+            )
+        }
+        expected.categories = try oracleArray(decoded.member("categories")).map { try oracleText($0) }
+        expected.geo = try oracleArray(decoded.member("geo")).map { try oracleText($0) }
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecContentLineRecords.decode(&cursor)
+        #expect(roundTripped == expected, "codec_content_line_records case \(index) decode")
+        if decodeOnly {
+            // The bytes around a component are not the codec's (a case whose input holds the next
+            // component after the END line): the codec reads its own component and stops there.
+            #expect(cursor.remaining < expectedBytes.count, "codec_content_line_records case \(index) decode did not move the cursor")
+        } else {
+            #expect(cursor.remaining == 0, "codec_content_line_records case \(index) decode consumed the component and nothing else")
+        }
+
+        if !decodeOnly {
+            var sink = BytesSink()
+            try expected.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_content_line_records case \(index) encode")
+        }
+    }
+
+    for (index, reject) in try oracleArray(spec.member("rejects")).enumerated() {
+        let rejectBytes = try oracleBytes(reject.member("encoded"))
+        let why = try oracleText(reject.member("why"))
+        var rejectCursor = SceCursor(rejectBytes)
+        var refused = false
+        do {
+            _ = try CodecContentLineRecords.decode(&rejectCursor)
+        } catch {
+            refused = true
+        }
+        #expect(refused, "codec_content_line_records reject \(index): \(why)")
+        #expect(rejectCursor.remaining == rejectBytes.count, "codec_content_line_records reject \(index): the cursor moved")
+    }}
+
+// MARK: - codec: codec_content_line_required_lists
+
+@Test func codecContentLineRequiredListsMatchesReference() throws {
+
+    let spec = try oracleSpec("codecs", "codec_content_line_required_lists")
+    let cases = try oracleArray(spec.member("cases"))
+    #expect(!cases.isEmpty, "codec_content_line_required_lists: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_content_line_required_lists case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+        if case .text(let text)? = testCase.member("text") {
+            #expect(Array(text.utf8) == expectedBytes, "codec_content_line_required_lists case \(index): `text` and `encoded` disagree")
+        }
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+
+        var expected = CodecContentLineRequiredLists()
+        if let value = try oracleOptional(decoded.member("uid"), { try oracleText($0) }) {
+            expected.uid = value
+        }
+        expected.tag = try oracleArray(decoded.member("tag")).map { try oracleText($0) }
+        expected.cats = try oracleArray(decoded.member("cats")).map { try oracleText($0) }
+        // A list of line records (docs/adr/0014), as the vector writes each: an object keyed by the
+        // parameter ids, then `value` or `values`.
+        expected.rec = try oracleArray(decoded.member("rec")).map { record in
+            try CodecContentLineRequiredListsRecLine(
+                recKind: try oracleOptional(record.member("recKind")) { try oracleText($0) },
+                value: try oracleText(record.member("value"))
+            )
+        }
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecContentLineRequiredLists.decode(&cursor)
+        #expect(roundTripped == expected, "codec_content_line_required_lists case \(index) decode")
+        if decodeOnly {
+            // The bytes around a component are not the codec's (a case whose input holds the next
+            // component after the END line): the codec reads its own component and stops there.
+            #expect(cursor.remaining < expectedBytes.count, "codec_content_line_required_lists case \(index) decode did not move the cursor")
+        } else {
+            #expect(cursor.remaining == 0, "codec_content_line_required_lists case \(index) decode consumed the component and nothing else")
+        }
+
+        if !decodeOnly {
+            var sink = BytesSink()
+            try expected.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_content_line_required_lists case \(index) encode")
+        }
+    }
+
+    for (index, reject) in try oracleArray(spec.member("rejects")).enumerated() {
+        let rejectBytes = try oracleBytes(reject.member("encoded"))
+        let why = try oracleText(reject.member("why"))
+        var rejectCursor = SceCursor(rejectBytes)
+        var refused = false
+        do {
+            _ = try CodecContentLineRequiredLists.decode(&rejectCursor)
+        } catch {
+            refused = true
+        }
+        #expect(refused, "codec_content_line_required_lists reject \(index): \(why)")
+        #expect(rejectCursor.remaining == rejectBytes.count, "codec_content_line_required_lists reject \(index): the cursor moved")
+    }}
+
+// MARK: - codec: codec_content_line_open
+
+@Test func codecContentLineOpenMatchesReference() throws {
+
+    let spec = try oracleSpec("codecs", "codec_content_line_open")
+    let cases = try oracleArray(spec.member("cases"))
+    #expect(!cases.isEmpty, "codec_content_line_open: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_content_line_open case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+        if case .text(let text)? = testCase.member("text") {
+            #expect(Array(text.utf8) == expectedBytes, "codec_content_line_open case \(index): `text` and `encoded` disagree")
+        }
+        var decodeOnly = false
+        if case .bool(let flag)? = testCase.member("decode_only") {
+            decodeOnly = flag
+        }
+
+        var expected = CodecContentLineOpen()
+        if let value = try oracleOptional(decoded.member("uid"), { try oracleText($0) }) {
+            expected.uid = value
+        }
+        if let value = try oracleOptional(decoded.member("description"), { try oracleText($0) }) {
+            expected.description = value
+        }
+        // A list of line records (docs/adr/0014), as the vector writes each: an object keyed by the
+        // parameter ids, then `value` or `values`.
+        expected.attendee = try oracleArray(decoded.member("attendee")).map { record in
+            try CodecContentLineOpenAttendeeLine(
+                attendeeCn: try oracleOptional(record.member("attendeeCn")) { try oracleText($0) },
+                value: try oracleText(record.member("value"))
+            )
+        }
+        expected.categories = try oracleArray(decoded.member("categories")).map { try oracleText($0) }
+        expected.resources = try oracleArray(decoded.member("resources")).map { try oracleText($0) }
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecContentLineOpen.decode(&cursor)
+        #expect(roundTripped == expected, "codec_content_line_open case \(index) decode")
+        if decodeOnly {
+            // The bytes around a component are not the codec's (a case whose input holds the next
+            // component after the END line): the codec reads its own component and stops there.
+            #expect(cursor.remaining < expectedBytes.count, "codec_content_line_open case \(index) decode did not move the cursor")
+        } else {
+            #expect(cursor.remaining == 0, "codec_content_line_open case \(index) decode consumed the component and nothing else")
+        }
+
+        if !decodeOnly {
+            var sink = BytesSink()
+            try expected.encode(into: &sink)
+            #expect(sink.bytes == expectedBytes, "codec_content_line_open case \(index) encode")
+        }
+    }
+
+    for (index, reject) in try oracleArray(spec.member("rejects")).enumerated() {
+        let rejectBytes = try oracleBytes(reject.member("encoded"))
+        let why = try oracleText(reject.member("why"))
+        var rejectCursor = SceCursor(rejectBytes)
+        var refused = false
+        do {
+            _ = try CodecContentLineOpen.decode(&rejectCursor)
+        } catch {
+            refused = true
+        }
+        #expect(refused, "codec_content_line_open reject \(index): \(why)")
+        #expect(rejectCursor.remaining == rejectBytes.count, "codec_content_line_open reject \(index): the cursor moved")
+    }}
+
 // MARK: - codec: codec_flags_basic
 
 @Test func codecFlagsBasicMatchesReference() throws {

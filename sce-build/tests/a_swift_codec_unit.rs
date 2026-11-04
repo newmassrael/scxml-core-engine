@@ -984,13 +984,47 @@ fn an_embedded_codec_bounded_by_a_length_is_read_from_those_bytes_alone() {
     );
 }
 
+/// A content-line codec (SCE_FORGE.md section 4.6.4) is a struct of its entries read from the lines of
+/// one component and written in declaration order. The line grammar is the runtime's: the generated
+/// code asks the reader for each value and the writer to write one, and spells none of it.
 #[test]
-fn what_the_swift_codec_does_not_write_is_refused_by_name() {
-    let refusal = swift_of("tests/forge/resources/codec_content_line_enums.scxml")
-        .expect_err("a content-line codec must be refused, not written");
+fn a_content_line_codec_is_a_struct_of_its_entries_read_and_written_by_the_runtime() {
+    let code = swift_of("tests/forge/resources/codec_content_line_records.scxml")
+        .expect("a content-line codec is written");
     assert!(
-        refusal.contains("has no Swift lowering yet") && refusal.contains("content-line"),
-        "a content-line codec is refused, but not by name: {refusal}"
+        code.contains("var reader = try ContentLineReader.begin(rest, component: \"VEVENT\")"),
+        "a decode stands after the BEGIN of its component: {code}"
+    );
+    assert!(
+        code.contains("var out = ContentLineWriter(component: \"VEVENT\")"),
+        "an encode writes the lines of its component: {code}"
+    );
+    assert!(
+        code.contains("public struct CodecContentLineRecordsAttendeeLine: Equatable, Sendable"),
+        "a repeated property with a parameter is a list of line records: {code}"
+    );
+    assert!(
+        code.contains("try cursor.advance(reader.consumed)"),
+        "the cursor moves only when the component was read whole: {code}"
+    );
+}
+
+/// An entry that is an enum is read and written by the text of its variants (docs/adr/0015): the
+/// table is data of the codec, and an open enum holds any number its carrier does where a closed one
+/// refuses a number it does not declare.
+#[test]
+fn a_content_line_enum_entry_is_read_by_the_text_of_its_variants() {
+    let code = swift_of("tests/forge/resources/codec_content_line_enums.scxml")
+        .expect("a content-line codec with enum entries is written");
+    assert!(code.contains("private let TEXTS_"), "{code}");
+    assert!(code.contains("try line.readEnum(TEXTS_"), "{code}");
+    assert!(
+        code.contains("throw CodecError.lineBadValue"),
+        "a closed enum refuses a carrier it does not declare: {code}"
+    );
+    assert!(
+        code.contains("try out.enumValue(TEXTS_"),
+        "an enum value is written as the text of its variant: {code}"
     );
 }
 

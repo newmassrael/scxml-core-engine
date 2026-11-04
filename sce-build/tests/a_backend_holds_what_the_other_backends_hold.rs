@@ -448,7 +448,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     ),
     // What the emitters carry, once they exist.
     (Language::Swift, "sce-static data model", Why::NotYet(SWIFT_STATIC_IN_PART)),
-    (Language::Swift, "content-line codec", Why::NotYet(SWIFT_NO_FORGE)),
     (
         Language::Swift,
         "save and restore",
@@ -462,8 +461,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         "artifact for the ecmascript engine",
         Why::Design("it lowers ECMAScript to Lua at build time, and the Lua is the only artifact"),
     ),
-    // The numerical conformance harness and its kind fragments.
-    (Language::Swift, "conformance fragment `codec_content_line`", Why::NotYet(SWIFT_NO_FORGE)),
     // The gates, which run what an emitter writes.
     // Mesh (SCE_MESH.md §mesh-19, §mesh-20).
     (Language::Swift, "Mesh emitter", Why::NotYet(SWIFT_NO_MESH)),

@@ -1,0 +1,329 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- The read of one property's value into the constant `name`; a refusal throws, this backend's decode
+    convention. The line grammar (unfolding, TEXT escapes, quoting) is the runtime's
+    (`ContentLineReader`); this spells none of it. #}
+{% macro read_value(name, e, indent) -%}
+{%- if e.separator -%}
+let {{ name }} = try line.readStrings(separator: "{{ e.separator }}", maxValues: {{ e.max_values_lit }}, maxSize: {{ e.max_size_lit }}, text: {{ "true" if e.text else "false" }})
+{%- elif e.kind == "string" -%}
+let {{ name }} = try line.readString(maxSize: {{ e.max_size_lit }}, text: {{ "true" if e.text else "false" }})
+{%- elif e.kind == "bool" -%}
+let {{ name }} = try line.readBool()
+{%- elif e.kind == "enum" -%}
+{#- The text names a carrier and the enum's own conversion takes it to a variant, so a closed and an
+    open enum are read by one rule (docs/adr/0015): a closed enum refuses a carrier it does not
+    declare, and an open one holds any. #}
+{% if e.enum_is_open %}let {{ name }} = {{ e.enum_from }}({{ e.carrier_type }}(truncatingIfNeeded: try line.readEnum(TEXTS_{{ e.enum_alias }}))){% else %}guard let {{ name }} = {{ e.enum_from }}({{ e.carrier_type }}(truncatingIfNeeded: try line.readEnum(TEXTS_{{ e.enum_alias }}))) else {
+{{ indent }}    throw CodecError.lineBadValue
+{{ indent }}}{% endif %}
+{%- elif e.kind == "uint" -%}
+let {{ name }} = {{ e.value_type }}(truncatingIfNeeded: try line.readUint(max: UInt64({{ e.value_type }}.max)))
+{%- else -%}
+let {{ name }} = {{ e.value_type }}(truncatingIfNeeded: try line.readInt(min: Int64({{ e.value_type }}.min), max: Int64({{ e.value_type }}.max)))
+{%- endif -%}
+{%- endmacro %}
+{#- The write of one property's value `v`, its name and parameters already written. #}
+{% macro write_value(e) -%}
+{%- if e.separator -%}
+try out.strings(v, separator: "{{ e.separator }}", text: {{ "true" if e.text else "false" }}, maxSize: {{ e.max_size_lit }}, maxValues: {{ e.max_values_lit }})
+{%- elif e.kind == "string" -%}
+try out.string(v, text: {{ "true" if e.text else "false" }}, maxSize: {{ e.max_size_lit }})
+{%- elif e.kind == "bool" -%}
+out.boolean(v)
+{%- elif e.kind == "enum" -%}
+try out.enumValue(TEXTS_{{ e.enum_alias }}, carrier: UInt64(truncatingIfNeeded: {{ e.enum_to }}))
+{%- elif e.kind == "uint" -%}
+out.uint(UInt64(v))
+{%- else -%}
+out.int(Int64(v))
+{%- endif -%}
+{%- endmacro %}
+{#- The write of one parameter whose present value is the expression `x`: a parameter that is an enum
+    is written as the text of its variant (docs/adr/0015), and `pv` is the name `enum_to` takes its
+    carrier from. #}
+{% macro write_param(p, x, indent) -%}
+{%- if p.kind == "enum" -%}
+do {
+{{ indent }}    let pv = {{ x }}
+{{ indent }}    try out.enumParam("{{ p.param }}", TEXTS_{{ p.enum_alias }}, carrier: UInt64(truncatingIfNeeded: {{ p.enum_to }}))
+{{ indent }}}
+{%- else -%}
+try out.param("{{ p.param }}", {{ x }}, maxSize: {{ p.max_size_lit }})
+{%- endif -%}
+{%- endmacro %}
+{#- The read of one parameter's value into the constant `name`. #}
+{% macro read_param(name, p, indent) -%}
+{%- if p.kind == "enum" -%}
+{% if p.enum_is_open %}let {{ name }} = {{ p.enum_from }}({{ p.carrier_type }}(truncatingIfNeeded: try line.readParamEnum(TEXTS_{{ p.enum_alias }}))){% else %}guard let {{ name }} = {{ p.enum_from }}({{ p.carrier_type }}(truncatingIfNeeded: try line.readParamEnum(TEXTS_{{ p.enum_alias }}))) else {
+{{ indent }}    throw CodecError.lineBadValue
+{{ indent }}}{% endif %}
+{%- else -%}
+let {{ name }} = try line.readParamString(maxSize: {{ p.max_size_lit }})
+{%- endif -%}
+{%- endmacro %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="content-line")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+import SceForgeRuntime
+
+{# What an entry that is an enum is written and read by (docs/adr/0015): each variant's text and the
+   carrier it stands for, held as data here because the enum's own type carries none. #}
+{% for t in enum_tables %}
+private let TEXTS_{{ t.alias }} = EnumTexts([
+{% for r in t.rows %}
+    EnumText("{{ r.text }}", {{ r.value }}),
+{% endfor %}
+])
+
+{% endfor %}
+{% for e in entries if e.is_records %}
+/// One line of `{{ e.property }}` (docs/adr/0014): the parameters it carries and its {% if e.separator %}list of values, cut at `{{ e.separator }}`{% else %}value{% endif %}. A parameter that may be absent is `nil`.
+public struct {{ e.record_type }}: Equatable, Sendable {
+{% for p in e.params %}
+    /// Parameter `{{ p.param }}`{% if p.required %}, required{% endif %}.
+    public var {{ p.name }}: {{ p.field_type }} = {{ p.default }}
+{% endfor %}
+{% if e.separator %}
+    /// The values of the line, at most {{ e.max_values_lit }}.
+    public var {{ e.value_member }}: [String] = []
+{% else %}
+    /// The value of the line.
+    public var {{ e.value_member }}: {{ e.value_type }} = {{ e.value_default }}
+{% endif %}
+
+    public init() {}
+
+    public init({% for p in e.params %}{{ p.name }}: {{ p.field_type }}, {% endfor %}{{ e.value_member }}: {{ "[String]" if e.separator else e.value_type }}) {
+{% for p in e.params %}
+        self.{{ p.name }} = {{ p.name }}
+{% endfor %}
+        self.{{ e.value_member }} = {{ e.value_member }}
+    }
+}
+
+{% endfor %}
+/// One `{{ component }}` component of content lines (SCE_FORGE.md §4.6.4). Decode reads the properties
+/// this codec declares in any order and skips the rest; encode writes the entries present in
+/// declaration order, folded at 75 octets. A required entry starts at its type's default and an
+/// optional one absent (`nil`), so `{{ struct_name }}()` is the infallible initializer every codec
+/// offers. A repeated property that declares a parameter, or whose line holds a list of values, is a
+/// list of line records.
+public struct {{ struct_name }}: Equatable, Sendable {
+{% for e in entries %}
+    /// Property `{{ e.property }}`{% if e.is_records %}, {% if e.max_count is not none %}up to {{ e.max_count }}{% else %}any number of{% endif %} lines, each a record{% elif e.is_list %}, {% if e.max_count is not none %}up to {{ e.max_count }}{% else %}any number of{% endif %} lines{% elif e.is_values %}, a list of {% if e.max_values is not none %}at most {{ e.max_values }}{% else %}any number of{% endif %} values{% endif %}{% if e.required %}, required{% endif %}.
+    public var {{ e.name }}: {{ e.field_type }} = {{ e.default }}
+{% if not e.is_records %}
+{% for p in e.params %}
+    /// Parameter `{{ p.param }}` of `{{ e.property }}`{% if p.required %}, required{% endif %}.
+    public var {{ p.name }}: {{ p.field_type }} = {{ p.default }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+
+    public init() {}
+{% if fields %}
+
+    public init({% for f in fields %}{{ f.name }}: {{ f.field_type }}{% if not loop.last %}, {% endif %}{% endfor %}) {
+{% for f in fields %}
+        self.{{ f.name }} = {{ f.name }}
+{% endfor %}
+    }
+{% endif %}
+
+    /// Writes this component to `sink` in one write: a value past its declared bound, or one a line
+    /// could not carry, is refused and nothing is written, and a bounded sink that cannot hold all of
+    /// it answers `bufferOverflow` and holds none of it (SCE_FORGE.md §4.6.4).
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        var out = ContentLineWriter(component: "{{ component }}")
+        out.begin()
+{% for e in entries %}
+{% if e.is_records %}
+{% if e.max_count is not none %}
+        if self.{{ e.name }}.count > {{ e.max_count }} { throw CodecError.lineTooMany }
+{% endif %}
+{% if e.required %}
+        if self.{{ e.name }}.isEmpty { throw CodecError.lineRequiredMissing }
+{% endif %}
+        for record in self.{{ e.name }} {
+            let v = record.{{ e.value_member }}
+            out.property("{{ e.property }}")
+{% for p in e.params %}
+{% if p.required %}
+            {{ write_param(p, "record." ~ p.name, "            ") }}
+{% else %}
+            if let {{ p.name }}Value = record.{{ p.name }} {
+                {{ write_param(p, p.name ~ "Value", "                ") }}
+            }
+{% endif %}
+{% endfor %}
+            {{ write_value(e) }}
+        }
+{% elif e.is_list %}
+{% if e.max_count is not none %}
+        if self.{{ e.name }}.count > {{ e.max_count }} { throw CodecError.lineTooMany }
+{% endif %}
+{% if e.required %}
+        if self.{{ e.name }}.isEmpty { throw CodecError.lineRequiredMissing }
+{% endif %}
+        for v in self.{{ e.name }} {
+            out.property("{{ e.property }}")
+            {{ write_value(e) }}
+        }
+{% elif e.required %}
+        do {
+            let v = self.{{ e.name }}
+            out.property("{{ e.property }}")
+{% for p in e.params %}
+{% if p.required %}
+            {{ write_param(p, "self." ~ p.name, "            ") }}
+{% else %}
+            if let {{ p.name }}Value = self.{{ p.name }} {
+                {{ write_param(p, p.name ~ "Value", "                ") }}
+            }
+{% endif %}
+{% endfor %}
+            {{ write_value(e) }}
+        }
+{% else %}
+        do {
+            let held = self.{{ e.name }}
+{% for p in e.optional_params %}
+            let {{ p.name }}Held = self.{{ p.name }}
+{% endfor %}
+{% if e.is_values %}
+            if !held.isEmpty {
+                let v = held
+{% else %}
+            if let v = held {
+{% endif %}
+                out.property("{{ e.property }}")
+{% for p in e.params %}
+{% if p.required %}
+                {{ write_param(p, "self." ~ p.name, "                ") }}
+{% else %}
+                if let {{ p.name }}Value = {{ p.name }}Held {
+                    {{ write_param(p, p.name ~ "Value", "                    ") }}
+                }
+{% endif %}
+{% endfor %}
+                {{ write_value(e) }}
+            }{% if e.optional_params %} else if {% for p in e.optional_params %}{% if not loop.first %} || {% endif %}{{ p.name }}Held != nil{% endfor %} {
+                // A parameter with no value of its property has no line to stand on.
+                throw CodecError.lineRequiredMissing
+            }{% endif %}{{ '' }}
+        }
+{% endif %}
+{% endfor %}
+        out.finish()
+        try sink.writeBytes(out.bytes)
+    }
+
+    /// Decodes one component at the cursor and moves the cursor past its `END:` line. The component
+    /// is read from a copy of the input, and the cursor moves only when it was read whole: a
+    /// component that is short answers `needMoreBytes`, and any other refusal names the rule that
+    /// refused it; either leaves the cursor where it was.
+    public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> {{ struct_name }} {
+        let rest = Array(try cursor.peekSlice(cursor.remaining))
+        var reader = try ContentLineReader.begin(rest, component: "{{ component }}")
+{% for e in entries %}
+{% if e.is_records %}
+        var {{ e.name }}Values: [{{ e.record_type }}] = []
+{% elif e.is_list %}
+        var {{ e.name }}Values: [{{ e.value_type }}] = []
+{% elif e.is_values %}
+        var {{ e.name }}Value: [String]? = nil
+{% else %}
+        var {{ e.name }}Value: {{ e.value_type }}? = nil
+{% endif %}
+{% if not e.is_records %}
+{% for p in e.params %}
+        var {{ p.name }}Read: {{ p.value_type }}? = nil
+{% endfor %}
+{% endif %}
+{% endfor %}
+        while var line = try reader.next() {
+{% for e in entries %}
+{{ '            ' }}{% if not loop.first %}} else {% endif %}if line.isNamed("{{ e.property }}") {
+{% if e.is_list or e.is_records %}
+{% if e.max_count is not none %}
+                if {{ e.name }}Values.count >= {{ e.max_count }} { throw CodecError.lineTooMany }
+{% endif %}
+{% else %}
+                if {{ e.name }}Value != nil { throw CodecError.lineTooMany }
+{% endif %}
+{% set held = "Line" if e.is_records else "Read" %}
+{% if e.is_records %}
+{#- The parameters of this line are locals of the line: they belong to its record, and the line is
+    judged on them before its value is looked at. #}
+{% for p in e.params %}
+                var {{ p.name }}{{ held }}: {{ p.value_type }}? = nil
+{% endfor %}
+{% endif %}
+{% if e.params %}
+                while try line.nextParam() {
+{% for p in e.params %}
+{{ '                    ' }}{% if not loop.first %}} else {% endif %}if line.paramNamed("{{ p.param }}") {
+                        if {{ p.name }}{{ held }} != nil { throw CodecError.lineTooMany }
+                        {{ read_param("param", p, "                        ") }}
+                        {{ p.name }}{{ held }} = param
+{% endfor %}
+                    }
+                }
+{% endif %}
+                {{ read_value("v", e, "                ") }}
+{% if e.is_records %}
+{% for p in e.params if p.required %}
+                guard let {{ p.name }}Final = {{ p.name }}Line else { throw CodecError.lineRequiredMissing }
+{% endfor %}
+                {{ e.name }}Values.append({{ e.record_type }}({% for p in e.params %}{{ p.name }}: {{ p.name ~ "Final" if p.required else p.name ~ "Line" }}, {% endfor %}{{ e.value_member }}: v))
+{% elif e.is_list %}
+                {{ e.name }}Values.append(v)
+{% else %}
+                {{ e.name }}Value = v
+{% endif %}
+{% endfor %}
+{% if entries %}
+            }
+{% endif %}
+        }
+{% for e in entries if e.required and (e.is_list or e.is_records) %}
+        // A required list needs a line.
+        if {{ e.name }}Values.isEmpty { throw CodecError.lineRequiredMissing }
+{% endfor %}
+        {{ "var" if fields else "let" }} frame = {{ struct_name }}()
+{% for e in entries %}
+{% if e.is_list or e.is_records %}
+        frame.{{ e.name }} = {{ e.name }}Values
+{% elif e.is_values and e.required %}
+        guard let {{ e.name }}Final = {{ e.name }}Value else { throw CodecError.lineRequiredMissing }
+        frame.{{ e.name }} = {{ e.name }}Final
+{% elif e.is_values %}
+        frame.{{ e.name }} = {{ e.name }}Value ?? []
+{% elif e.required %}
+        guard let {{ e.name }}Final = {{ e.name }}Value else { throw CodecError.lineRequiredMissing }
+        frame.{{ e.name }} = {{ e.name }}Final
+{% else %}
+        frame.{{ e.name }} = {{ e.name }}Value
+{% endif %}
+{% if not e.is_records %}
+{% for p in e.params %}
+{% if p.required %}
+        guard let {{ p.name }}Final = {{ p.name }}Read else { throw CodecError.lineRequiredMissing }
+        frame.{{ p.name }} = {{ p.name }}Final
+{% else %}
+        frame.{{ p.name }} = {{ p.name }}Read
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+        // Only a component that decoded whole moves the cursor.
+        try cursor.advance(reader.consumed)
+        return frame
+    }
+}
