@@ -214,6 +214,8 @@
       "refusal": { "code": "notJson", "pointer": "", "bound": null } },
     { "name": "the four kinds of JSON whitespace", "data": " \t\r\n{ \"v\" :\t1 }\r\n", "type": "uint8",
       "accepted": true },
+    { "name": "a field whose name is spelled with an escape", "data": "{\"\\u0076\":7}", "type": "uint8",
+      "accepted": true },
     { "name": "a lift of a text that is only whitespace", "data": " \n", "type": "uint8", "depth": 1,
       "refusal": { "code": "notJson", "pointer": "", "bound": null } },
     { "name": "a lift of a record of its one field", "data": "{\"v\":7}", "type": "uint8", "depth": 1,

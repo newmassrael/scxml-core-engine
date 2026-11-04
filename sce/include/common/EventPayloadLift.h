@@ -235,17 +235,11 @@ public:
 
     /** Whether the JSON string at `p` spells exactly `name`. */
     static bool stringIs(const char *p, const char *name) {
-        p++;  // past the opening quote
-        while (*name != '\0') {
-            // An escaped field name is legal JSON and no schema writes one, so
-            // it cannot be the name being looked for.
-            if (*p == '\0' || *p == '"' || *p == '\\' || *p != *name) {
-                return false;
-            }
-            p++;
-            name++;
-        }
-        return *p == '"';
+        // A name is the text it spells: a sender may write any character of a name
+        // as an escape, and every runtime reads the name the escapes spell
+        // (tests/json_text/payload_refusal.json).
+        std::string spelled;
+        return walkText(p, spelled).empty() && spelled == name;
     }
 
     /** The value `name` carries in the object at `object`, or nullptr when it names none. */
