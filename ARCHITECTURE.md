@@ -1213,7 +1213,10 @@ checks the owner and has the inbox, `EngineInbox`). So does the generated C++
 engine: its inbox is `inbox()`, unbounded on the forge LSCQ
 (`core/EngineInbox.h`); SCE's own Mesh deliveries, deadlines and remote child
 sessions' lifecycle post to it; and a debug build checks the owner, which is the
-thread that drives it (`StaticExecutionEngine.h`). So does the Go engine: its
+thread that drives it (`StaticExecutionEngine.h`). The invocation table an ending
+is judged against is the shared layer's host-invoke ledger
+(`core/HostInvokeLedger.h`), changed only by the owner's operations. So does the
+Go engine: its
 inbox is `Engine.Inbox`, unbounded, and its owner is the goroutine that drives
 it, which its documentation names and nothing checks
 (`backends/go/runtime/inbox.go`). So does the Python runtime: its inbox is
@@ -1421,6 +1424,7 @@ Helpers distributed across `sce/include/core/` and `sce/include/common/`:
 | `HierarchicalStateHelper` | 3.13, D | Ancestry and descendancy, the domain-candidate filter |
 | `ForeachHelper` | 4.6 | Loop variable declaration and type preservation |
 | `InvokeHelper` | 6.4 | Invoke lifecycle (defer/cancel/execute pattern) |
+| `HostInvokeLedger` | 6.4, 6.4.1 | The host-run invocations of one session: the started table and its tokens, the record made before the handler is asked, refusal, immediate completion, the deadline (armed and dropped through the engine's scheduler, `HostInvokeDeadlineSchedulerTrait`; the ledger owns no clock), the one ending, and what a save reads of a running invocation. Each operation answers what is left for the engine to do (`HostInvokeReport`, `HostInvokeEnded`), and the engine does it in its own spelling of an event (ADR 0084, D5) |
 | `TransitionHelper` | 3.13 | Transition selection and execution |
 | `ConflictResolutionHelper` | D.2 | Optimal transition set selection |
 | `ParallelTransitionHelper` (`ExitSetAlgorithms`) | D.2 | `getTransitionDomain` + `computeExitSet` over the configuration, and the union of a microstep's exit sets in exit order |
