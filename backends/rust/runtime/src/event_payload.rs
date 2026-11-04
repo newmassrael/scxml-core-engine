@@ -32,9 +32,20 @@
 //! links name the whole path because these lines are merged with the module's
 //! outer docs in `lib.rs`, and rustdoc resolves the merged text from the crate
 //! root. A value outside its type is refused before
-//! anything of it is kept, and the refusal names the path through every depth
-//! as a JSON Pointer (RFC 6901): `'items/2/tags/0' is 9 bytes, past the 8 its
-//! type declares`. A key a record's schema does not declare is stepped over.
+//! anything of it is kept, and the refusal names the path through every depth:
+//! `'items/2/tags/0' is 9 bytes, past the 8 its type declares`. A key a
+//! record's schema does not declare is stepped over.
+//!
+//! # A refusal is a sentence and a record
+//!
+//! The sentence is what the delivery's `error.execution` carries. Beside it a
+//! refusal carries what a statechart acts on (docs/adr/0087, section 2.4): a
+//! [`RefusalCode`], the place as a strict RFC 6901 pointer (`/items/2/tags/0`,
+//! `~` written `~0` and `/` written `~1`, empty for the whole text), and the
+//! bound the value broke. The sentence's path keeps the spelling it always had,
+//! the reference tokens joined by `/` with nothing escaped. A repeated name
+//! anywhere in the text, and a text holding U+0000, are refused, so every
+//! runtime's reader holds one set of texts (tests/json_text/payload_refusal.json).
 //!
 //! ⚠ `std` only, because the wire is: a `no_std` build has no
 //! `EventMetadata::data` and no script engine to disagree with, so the typed
@@ -50,29 +61,171 @@ use core::fmt;
 
 use sce_portable_bytes::BoundedList;
 
+/// The class of a refusal: the enum `sce:std/lift/refusal_code.scxml`
+/// declares, each variant at the number that document gives it
+/// (docs/adr/0087, section 2.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum RefusalCode {
+    /// The text is empty, is not JSON, carries more than one JSON value, or
+    /// holds an object that repeats a name.
+    NotJson = 1,
+    /// The text is one JSON value that is not an object.
+    NotObject = 2,
+    /// A container is opened deeper than any a value of the schema holds.
+    TooDeep = 3,
+    /// A field of a record is absent and no revision default fills it.
+    Missing = 4,
+    /// `null` stands where the type is not optional.
+    NullNotOptional = 5,
+    /// A value of another JSON kind.
+    WrongKind = 6,
+    /// A number not in its type's spelling.
+    BadNumber = 7,
+    /// A whole number past its type's width, or a real past a `float32`'s
+    /// range.
+    OutOfRange = 8,
+    /// A text or byte string past its bound.
+    TooLong = 9,
+    /// A list past its bound.
+    TooMany = 10,
+    /// A name the enum does not declare.
+    UnknownVariant = 11,
+    /// A byte string's text holding a character above U+00FF.
+    NotByteText = 12,
+    /// A text holding U+0000.
+    NulInText = 13,
+}
+
+impl RefusalCode {
+    /// Every code, in the order of their numbers.
+    pub const ALL: [RefusalCode; 13] = [
+        RefusalCode::NotJson,
+        RefusalCode::NotObject,
+        RefusalCode::TooDeep,
+        RefusalCode::Missing,
+        RefusalCode::NullNotOptional,
+        RefusalCode::WrongKind,
+        RefusalCode::BadNumber,
+        RefusalCode::OutOfRange,
+        RefusalCode::TooLong,
+        RefusalCode::TooMany,
+        RefusalCode::UnknownVariant,
+        RefusalCode::NotByteText,
+        RefusalCode::NulInText,
+    ];
+
+    /// The number the enum declares the code at.
+    pub fn number(self) -> u8 {
+        self as u8
+    }
+
+    /// The name the enum declares the code by.
+    pub fn name(self) -> &'static str {
+        match self {
+            RefusalCode::NotJson => "notJson",
+            RefusalCode::NotObject => "notObject",
+            RefusalCode::TooDeep => "tooDeep",
+            RefusalCode::Missing => "missing",
+            RefusalCode::NullNotOptional => "nullNotOptional",
+            RefusalCode::WrongKind => "wrongKind",
+            RefusalCode::BadNumber => "badNumber",
+            RefusalCode::OutOfRange => "outOfRange",
+            RefusalCode::TooLong => "tooLong",
+            RefusalCode::TooMany => "tooMany",
+            RefusalCode::UnknownVariant => "unknownVariant",
+            RefusalCode::NotByteText => "notByteText",
+            RefusalCode::NulInText => "nulInText",
+        }
+    }
+
+    /// The code the enum declares by `name`, if it declares one.
+    pub fn from_name(name: &str) -> Option<RefusalCode> {
+        RefusalCode::ALL
+            .into_iter()
+            .find(|code| code.name() == name)
+    }
+}
+
 /// Why an event's data cannot be read as its schema's fields.
 ///
-/// A sentence, not a code: it rides in the `error.execution` event's data,
-/// where the document's own handler can read it.
+/// The sentence rides in the `error.execution` event's data, where the
+/// document's own handler can read it. Beside it the refusal carries what a
+/// statechart reads as data (docs/adr/0087, section 2.4): its code, the place
+/// as a strict RFC 6901 pointer, and the bound the value broke, for
+/// [`RefusalCode::TooLong`] and [`RefusalCode::TooMany`].
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PayloadRefusal(String);
+pub struct PayloadRefusal {
+    reason: String,
+    code: RefusalCode,
+    pointer: String,
+    bound: Option<u32>,
+}
 
 impl PayloadRefusal {
-    /// Refuse a payload, saying why in the words the document's handler reads.
-    pub fn new(reason: impl Into<String>) -> Self {
-        Self(reason.into())
+    /// Refuse a payload at `pointer` (empty for the whole text, else a strict
+    /// RFC 6901 pointer, [`pointer_below`]), saying why in the words the
+    /// document's handler reads.
+    pub fn new(code: RefusalCode, pointer: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+            code,
+            pointer: pointer.into(),
+            bound: None,
+        }
+    }
+
+    /// This refusal, naming the bound the value broke. A bound no `uint32`
+    /// holds is no bound a type declares, and is held at the largest one.
+    pub fn with_bound(mut self, bound: usize) -> Self {
+        self.bound = Some(u32::try_from(bound).unwrap_or(u32::MAX));
+        self
     }
 
     /// Why the payload was refused.
     pub fn reason(&self) -> &str {
-        &self.0
+        &self.reason
+    }
+
+    /// The class of the refusal.
+    pub fn code(&self) -> RefusalCode {
+        self.code
+    }
+
+    /// The place refused, as a strict RFC 6901 pointer: empty for the whole
+    /// text.
+    pub fn pointer(&self) -> &str {
+        &self.pointer
+    }
+
+    /// The bound the value broke, for a text, a byte string or a list past
+    /// it; `None` for every other refusal.
+    pub fn bound(&self) -> Option<u32> {
+        self.bound
     }
 }
 
 impl fmt::Display for PayloadRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.reason)
     }
+}
+
+/// `token` below the strict RFC 6901 pointer `prefix` (empty for the whole
+/// text): `/` and the token with `~` written `~0` and `/` written `~1`
+/// (RFC 6901, section 3).
+pub fn pointer_below(prefix: &str, token: &str) -> String {
+    let mut out = String::with_capacity(prefix.len() + token.len() + 1);
+    out.push_str(prefix);
+    out.push('/');
+    for c in token.chars() {
+        match c {
+            '~' => out.push_str("~0"),
+            '/' => out.push_str("~1"),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 use crate::json::{JsonError, Value};
@@ -95,20 +248,39 @@ impl PayloadFields {
     pub fn decode(data: &str) -> Result<Self, PayloadRefusal> {
         let trimmed = data.trim();
         if trimmed.is_empty() {
-            return Err(PayloadRefusal::new("the event carries no data"));
-        }
-        if !trimmed.starts_with('{') {
             return Err(PayloadRefusal::new(
+                RefusalCode::NotJson,
+                "",
+                "the event carries no data",
+            ));
+        }
+        let parsed = crate::json::parse(trimmed);
+        if !trimmed.starts_with('{') {
+            // One sentence for a text that is no object, as it has always
+            // been; the code tells one JSON value that is not an object from a
+            // text that is not JSON at all (docs/adr/0087, section 2.3).
+            let code = if parsed.is_ok() {
+                RefusalCode::NotObject
+            } else {
+                RefusalCode::NotJson
+            };
+            return Err(PayloadRefusal::new(
+                code,
+                "",
                 "the event's data is a bare value, and this event's schema declares named fields",
             ));
         }
-        let value = crate::json::parse(trimmed).map_err(|e| match e {
-            JsonError::Trailing => {
-                PayloadRefusal::new("the event's data carries more than one JSON value")
-            }
-            JsonError::Malformed(what) => {
-                PayloadRefusal::new(format!("the event's data is not JSON ({what})"))
-            }
+        let value = parsed.map_err(|e| match e {
+            JsonError::Trailing => PayloadRefusal::new(
+                RefusalCode::NotJson,
+                "",
+                "the event's data carries more than one JSON value",
+            ),
+            JsonError::Malformed(what) => PayloadRefusal::new(
+                RefusalCode::NotJson,
+                "",
+                format!("the event's data is not JSON ({what})"),
+            ),
         })?;
         let Value::Object(fields) = value else {
             unreachable!("a text that starts with '{{' and parses is an object")
@@ -148,6 +320,7 @@ impl PayloadFields {
             members: &self.fields,
             defaults: None,
             prefix: "",
+            pointer: "",
         }
     }
 
@@ -155,6 +328,17 @@ impl PayloadFields {
     /// lacks it is refused by name.
     pub fn field(&self, name: &str) -> Result<PayloadValue<'_>, PayloadRefusal> {
         self.record().field(name)
+    }
+
+    /// The refusal of the text `name` the field `field` carries, which the
+    /// enum `alias` does not declare a variant by: what a generated reader of
+    /// an enum field answers once it has matched every name the enum declares.
+    pub fn unknown_variant(&self, field: &str, name: &str, alias: &str) -> PayloadRefusal {
+        PayloadRefusal::new(
+            RefusalCode::UnknownVariant,
+            pointer_below("", field),
+            format!("{field} ({name}) is not a variant of {alias}"),
+        )
     }
 
     /// A field of `optional<T>` (docs/adr/0055, section 4): absent where the
@@ -246,6 +430,7 @@ pub struct PayloadRecord<'a> {
     members: &'a [(String, Value)],
     defaults: Option<&'a [(String, Value)]>,
     prefix: &'a str,
+    pointer: &'a str,
 }
 
 impl<'a> PayloadRecord<'a> {
@@ -255,6 +440,7 @@ impl<'a> PayloadRecord<'a> {
     /// stepped over.
     pub fn field(&self, name: &str) -> Result<PayloadValue<'a>, PayloadRefusal> {
         let path = join(self.prefix, name);
+        let pointer = pointer_below(self.pointer, name);
         let found = self
             .members
             .iter()
@@ -262,20 +448,29 @@ impl<'a> PayloadRecord<'a> {
             .find(|(key, _)| key == name)
             .map(|(_, value)| value);
         match found {
-            Some(value) => Ok(PayloadValue { value, path }),
-            None => Err(PayloadRefusal::new(format!(
-                "the event's data has no '{path}'"
-            ))),
+            Some(value) => Ok(PayloadValue {
+                value,
+                path,
+                pointer,
+            }),
+            None => Err(PayloadRefusal::new(
+                RefusalCode::Missing,
+                pointer,
+                format!("the event's data has no '{path}'"),
+            )),
         }
     }
 }
 
 /// One value of an event's data, at the path through every depth that names
-/// it: a field's name, then each index and field name below it, joined by `/`.
+/// it: a field's name, then each index and field name below it, joined by `/`;
+/// and at the strict RFC 6901 pointer to the same place, which a refusal
+/// carries beside its sentence.
 #[derive(Clone, Debug)]
 pub struct PayloadValue<'a> {
     value: &'a Value,
     path: String,
+    pointer: String,
 }
 
 impl<'a> PayloadValue<'a> {
@@ -284,24 +479,45 @@ impl<'a> PayloadValue<'a> {
         &self.path
     }
 
+    /// The strict RFC 6901 pointer to this value (`/items/2`).
+    pub fn pointer(&self) -> &str {
+        &self.pointer
+    }
+
     /// Whether the value is `null`, the one spelling of an absent value.
     pub fn is_null(&self) -> bool {
         matches!(self.value, Value::Null)
     }
 
-    /// A refusal of this value, saying `what` of it after its path:
-    /// `'items/1/level' (x) is not a variant of Level`.
-    pub fn refuse(&self, what: &str) -> PayloadRefusal {
-        PayloadRefusal::new(format!("'{}' {what}", self.path))
+    /// A refusal of this value, of class `code`, saying `what` of it after its
+    /// path: `'items/1/level' (x) is not a variant of Level`.
+    pub fn refuse(&self, code: RefusalCode, what: &str) -> PayloadRefusal {
+        PayloadRefusal::new(
+            code,
+            self.pointer.clone(),
+            format!("'{}' {what}", self.path),
+        )
+    }
+
+    /// The refusal of the text `name` this value carries, which the enum
+    /// `alias` does not declare a variant by.
+    pub fn unknown_variant(&self, name: &str, alias: &str) -> PayloadRefusal {
+        self.refuse(
+            RefusalCode::UnknownVariant,
+            &format!("({name}) is not a variant of {alias}"),
+        )
     }
 
     /// The refusal of `null` where the type is not optional, or the refusal
     /// `otherwise` of any other value of the wrong kind.
     fn wrong_kind(&self, otherwise: &str) -> PayloadRefusal {
         if self.is_null() {
-            self.refuse("is null, and its type is not optional")
+            self.refuse(
+                RefusalCode::NullNotOptional,
+                "is null, and its type is not optional",
+            )
         } else {
-            self.refuse(otherwise)
+            self.refuse(RefusalCode::WrongKind, otherwise)
         }
     }
 
@@ -327,13 +543,21 @@ impl<'a> PayloadValue<'a> {
         T: TryFrom<i64>,
     {
         let text = self.number()?;
-        let whole: i64 = text
-            .parse()
-            .map_err(|_| self.refuse(&format!("is not a whole number ({text})")))?;
+        let whole: i64 = text.parse().map_err(|_| {
+            // A whole number no `i64` holds is past every signed width; any
+            // other spelling is no whole number at all.
+            let code = if spells_whole(text) {
+                RefusalCode::OutOfRange
+            } else {
+                RefusalCode::BadNumber
+            };
+            self.refuse(code, &format!("is not a whole number ({text})"))
+        })?;
         T::try_from(whole).map_err(|_| {
-            self.refuse(&format!(
-                "does not fit the width its schema declares ({text})"
-            ))
+            self.refuse(
+                RefusalCode::OutOfRange,
+                &format!("does not fit the width its schema declares ({text})"),
+            )
         })
     }
 
@@ -344,12 +568,23 @@ impl<'a> PayloadValue<'a> {
     {
         let text = self.number()?;
         let whole: u64 = text.parse().map_err(|_| {
-            self.refuse(&format!("is not a whole number at or above zero ({text})"))
+            // Below zero is no spelling of an unsigned number; a whole number
+            // no `u64` holds is past every unsigned width.
+            let code = if spells_whole(text) && !text.starts_with('-') {
+                RefusalCode::OutOfRange
+            } else {
+                RefusalCode::BadNumber
+            };
+            self.refuse(
+                code,
+                &format!("is not a whole number at or above zero ({text})"),
+            )
         })?;
         T::try_from(whole).map_err(|_| {
-            self.refuse(&format!(
-                "does not fit the width its schema declares ({text})"
-            ))
+            self.refuse(
+                RefusalCode::OutOfRange,
+                &format!("does not fit the width its schema declares ({text})"),
+            )
         })
     }
 
@@ -363,21 +598,30 @@ impl<'a> PayloadValue<'a> {
     fn wide(&self, signed: bool) -> Result<&'a str, PayloadRefusal> {
         match self.value {
             Value::Text(text) if is_decimal(text, signed) => Ok(text),
-            Value::Text(text) => {
-                Err(self.refuse(&format!("is not a whole number written as digits ({text})")))
-            }
+            Value::Text(text) => Err(self.refuse(
+                RefusalCode::BadNumber,
+                &format!("is not a whole number written as digits ({text})"),
+            )),
             Value::Number(text) => {
                 let exact = text
                     .parse::<i128>()
                     .map(|n| n.unsigned_abs() <= EXACT_IN_A_DOUBLE)
-                    .map_err(|_| self.refuse(&format!("is not a whole number ({text})")))?;
+                    .map_err(|_| {
+                        self.refuse(
+                            RefusalCode::BadNumber,
+                            &format!("is not a whole number ({text})"),
+                        )
+                    })?;
                 if exact {
                     Ok(text)
                 } else {
-                    Err(self.refuse(&format!(
-                        "is a number past 2^53 - 1, which is not exact everywhere ({text}); \
-                         a 64-bit integer that large is written as a text of its digits"
-                    )))
+                    Err(self.refuse(
+                        RefusalCode::BadNumber,
+                        &format!(
+                            "is a number past 2^53 - 1, which is not exact everywhere ({text}); \
+                             a 64-bit integer that large is written as a text of its digits"
+                        ),
+                    ))
                 }
             }
             _ => Err(self.wrong_kind("is not a number")),
@@ -388,22 +632,22 @@ impl<'a> PayloadValue<'a> {
     /// number no larger than 2^53 - 1 in magnitude.
     pub fn signed64(&self) -> Result<i64, PayloadRefusal> {
         let text = self.wide(true)?;
-        text.parse().map_err(|_| {
-            self.refuse(&format!(
-                "does not fit the width its schema declares ({text})"
-            ))
-        })
+        text.parse().map_err(|_| self.past_width(text))
     }
 
     /// A 64-bit unsigned value: the canonical text of its digits, or a JSON
     /// number no larger than 2^53 - 1.
     pub fn unsigned64(&self) -> Result<u64, PayloadRefusal> {
         let text = self.wide(false)?;
-        text.parse().map_err(|_| {
-            self.refuse(&format!(
-                "does not fit the width its schema declares ({text})"
-            ))
-        })
+        text.parse().map_err(|_| self.past_width(text))
+    }
+
+    /// The refusal of a number past the width its type declares.
+    fn past_width(&self, text: &str) -> PayloadRefusal {
+        self.refuse(
+            RefusalCode::OutOfRange,
+            &format!("does not fit the width its schema declares ({text})"),
+        )
     }
 
     /// A 32-bit fractional value: the binary32 nearest the number the payload
@@ -416,13 +660,9 @@ impl<'a> PayloadValue<'a> {
     /// would round from the text instead, and give infinity for `1e39`.
     pub fn float32(&self) -> Result<f32, PayloadRefusal> {
         let text = self.number()?;
-        let wide: f64 = text
-            .parse()
-            .map_err(|_| self.refuse(&format!("is not a number ({text})")))?;
+        let wide: f64 = text.parse().map_err(|_| self.not_a_real(text))?;
         if wide.abs() > f64::from(f32::MAX) {
-            return Err(self.refuse(&format!(
-                "does not fit the width its schema declares ({text})"
-            )));
+            return Err(self.past_width(text));
         }
         Ok(wide as f32)
     }
@@ -430,8 +670,12 @@ impl<'a> PayloadValue<'a> {
     /// A 64-bit fractional value.
     pub fn float64(&self) -> Result<f64, PayloadRefusal> {
         let text = self.number()?;
-        text.parse()
-            .map_err(|_| self.refuse(&format!("is not a number ({text})")))
+        text.parse().map_err(|_| self.not_a_real(text))
+    }
+
+    /// The refusal of a number written in no spelling a real is read from.
+    fn not_a_real(&self, text: &str) -> PayloadRefusal {
+        self.refuse(RefusalCode::BadNumber, &format!("is not a number ({text})"))
     }
 
     /// A truth value.
@@ -444,8 +688,17 @@ impl<'a> PayloadValue<'a> {
 
     /// The text the value carries, held to no bound: what an enum's variant is
     /// named by, which its reader matches against the names its enum declares.
+    ///
+    /// A text holding U+0000 is refused: a runtime that holds a text
+    /// NUL-terminated would end it there, so no runtime holds one, and every
+    /// reader refuses the same texts (docs/adr/0087, section 2.3). A byte
+    /// string may hold the byte zero ([`Self::bytes`]).
     pub fn name(&self) -> Result<&'a str, PayloadRefusal> {
         match self.value {
+            Value::Text(text) if text.contains('\0') => Err(self.refuse(
+                RefusalCode::NulInText,
+                "carries U+0000, which no text holds",
+            )),
             Value::Text(text) => Ok(text),
             _ => Err(self.wrong_kind("is not a text")),
         }
@@ -475,9 +728,10 @@ impl<'a> PayloadValue<'a> {
         let mut out: Vec<u8> = Vec::with_capacity(text.len());
         for c in text.chars() {
             if (c as u32) > 0xFF {
-                return Err(
-                    self.refuse("carries a character above U+00FF, which no single byte spells")
-                );
+                return Err(self.refuse(
+                    RefusalCode::NotByteText,
+                    "carries a character above U+00FF, which no single byte spells",
+                ));
             }
             out.push(c as u8);
         }
@@ -488,9 +742,19 @@ impl<'a> PayloadValue<'a> {
     }
 
     fn past_bytes(&self, held: usize, bound: usize) -> PayloadRefusal {
-        self.refuse(&format!(
-            "is {held} bytes, past the {bound} its type declares"
-        ))
+        self.refuse(
+            RefusalCode::TooLong,
+            &format!("is {held} bytes, past the {bound} its type declares"),
+        )
+        .with_bound(bound)
+    }
+
+    fn past_count(&self, held: usize, bound: usize) -> PayloadRefusal {
+        self.refuse(
+            RefusalCode::TooMany,
+            &format!("holds {held} elements, past the {bound} its type declares"),
+        )
+        .with_bound(bound)
     }
 
     /// A value of `optional<T>` (docs/adr/0055): absent where the value is
@@ -519,25 +783,20 @@ impl<'a> PayloadValue<'a> {
             return Err(self.wrong_kind("is not a list"));
         };
         if items.len() > N {
-            return Err(self.refuse(&format!(
-                "holds {} elements, past the {N} its type declares",
-                items.len()
-            )));
+            return Err(self.past_count(items.len(), N));
         }
         let mut list = BoundedList::<T, N>::new();
         for (index, value) in items.iter().enumerate() {
+            let token = index.to_string();
             let element = PayloadValue {
                 value,
-                path: join(&self.path, &index.to_string()),
+                path: join(&self.path, &token),
+                pointer: pointer_below(&self.pointer, &token),
             };
             // The length was held above, so the push cannot refuse; the arm is
-            // the same sentence, for a bound the two could disagree about.
-            list.push(read(&element)?).map_err(|_| {
-                self.refuse(&format!(
-                    "holds {} elements, past the {N} its type declares",
-                    items.len()
-                ))
-            })?;
+            // the same refusal, for a bound the two could disagree about.
+            list.push(read(&element)?)
+                .map_err(|_| self.past_count(items.len(), N))?;
         }
         Ok(list)
     }
@@ -560,20 +819,30 @@ impl<'a> PayloadValue<'a> {
             members,
             defaults: defaults.as_deref(),
             prefix: &self.path,
+            pointer: &self.pointer,
         };
         read(&record)
     }
 }
 
 /// The members of a schema's defaults, which the generator spells as one JSON
-/// object.
+/// object. A text that is none is the generator's, not a sender's, and is
+/// refused as no JSON object of the whole.
 fn defaults_of(defaults: &str) -> Result<Vec<(String, Value)>, PayloadRefusal> {
     match crate::json::parse(defaults.trim()) {
         Ok(Value::Object(members)) => Ok(members),
         _ => Err(PayloadRefusal::new(
+            RefusalCode::NotJson,
+            "",
             "the schema's defaults are not a JSON object, which the generator never writes",
         )),
     }
+}
+
+/// Whether `text` spells a whole number: digits, after a `-` or not.
+fn spells_whole(text: &str) -> bool {
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// `segment` below `prefix`, as a JSON Pointer's reference tokens are joined.
@@ -662,7 +931,9 @@ pub fn record_json(mut members: Vec<(&str, String)>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{list_json, optional_json, quote, record_json, PayloadFields};
+    use super::{
+        list_json, optional_json, quote, record_json, PayloadFields, PayloadRefusal, RefusalCode,
+    };
 
     const DEFAULTS: &str = r#"{"layout":"week","count":"7","urgent":true}"#;
 
@@ -743,6 +1014,202 @@ mod tests {
             written >= 10,
             "the table lost the cases a record is written for: {written}"
         );
+    }
+
+    /// The value `v` read as the type `ty` the shared refusal table describes,
+    /// one call per constructor, as a generated reader reads it. The table's
+    /// bounds are 2, 3 and 8, each read through the instance of its bound.
+    fn read_described(
+        ty: &crate::json::Value,
+        v: &super::PayloadValue<'_>,
+    ) -> Result<(), PayloadRefusal> {
+        use crate::json::Value;
+        let bound = |key: &str| match ty.member(key) {
+            Some(Value::Number(n)) => n.clone(),
+            other => panic!("{key} is a number: {other:?}"),
+        };
+        match ty {
+            Value::Text(scalar) => match scalar.as_str() {
+                "uint8" => v.unsigned::<u8>().map(|_| ()),
+                "uint16" => v.unsigned::<u16>().map(|_| ()),
+                "uint32" => v.unsigned::<u32>().map(|_| ()),
+                "uint64" => v.unsigned64().map(|_| ()),
+                "int8" => v.signed::<i8>().map(|_| ()),
+                "int16" => v.signed::<i16>().map(|_| ()),
+                "int32" => v.signed::<i32>().map(|_| ()),
+                "int64" => v.signed64().map(|_| ()),
+                "float32" => v.float32().map(|_| ()),
+                "float64" => v.float64().map(|_| ()),
+                "bool" => v.truth().map(|_| ()),
+                "string" => v.name().map(|_| ()),
+                other => panic!("the table names no type {other}"),
+            },
+            Value::Array(names) => {
+                let name = v.name()?;
+                if names
+                    .iter()
+                    .any(|declared| matches!(declared, Value::Text(t) if t == name))
+                {
+                    Ok(())
+                } else {
+                    Err(v.unknown_variant(name, "Described"))
+                }
+            }
+            Value::Object(_) => {
+                if let Some(inner) = ty.member("optional") {
+                    return v
+                        .optional(|present| read_described(inner, present))
+                        .map(|_| ());
+                }
+                if ty.member("string").is_some() {
+                    return match bound("string").as_str() {
+                        "2" => v.text::<2>().map(|_| ()),
+                        "3" => v.text::<3>().map(|_| ()),
+                        "8" => v.text::<8>().map(|_| ()),
+                        other => panic!("the table's bounds are 2, 3 and 8, not {other}"),
+                    };
+                }
+                if ty.member("bytes").is_some() {
+                    return match bound("bytes").as_str() {
+                        "2" => v.bytes::<2>().map(|_| ()),
+                        "3" => v.bytes::<3>().map(|_| ()),
+                        "8" => v.bytes::<8>().map(|_| ()),
+                        other => panic!("the table's bounds are 2, 3 and 8, not {other}"),
+                    };
+                }
+                if let Some(inner) = ty.member("list") {
+                    let each = |element: &super::PayloadValue<'_>| read_described(inner, element);
+                    return match bound("max").as_str() {
+                        "2" => v.list::<(), 2>(each).map(|_| ()),
+                        "3" => v.list::<(), 3>(each).map(|_| ()),
+                        "8" => v.list::<(), 8>(each).map(|_| ()),
+                        other => panic!("the table's bounds are 2, 3 and 8, not {other}"),
+                    };
+                }
+                if let Some(Value::Object(fields)) = ty.member("record") {
+                    return v.record(None, |record| {
+                        for (id, field) in fields {
+                            read_described(field, &record.field(id)?)?;
+                        }
+                        Ok(())
+                    });
+                }
+                panic!("a type of the table names no constructor: {ty:?}")
+            }
+            other => panic!("a type of the table is a name, a list or an object: {other:?}"),
+        }
+    }
+
+    /// tests/json_text/payload_refusal.json: every case read through this
+    /// runtime's reader, the code, pointer and bound of each refusal held to
+    /// what the table says, and each case it accepts read (docs/adr/0087,
+    /// section 9.1, item 3). The table is the one every runtime's reader is
+    /// held to.
+    #[test]
+    fn every_case_of_the_shared_table_is_refused_with_its_code_pointer_and_bound() {
+        use crate::json::{parse, Value};
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/json_text/payload_refusal.json"
+        );
+        let table = std::fs::read_to_string(path).expect("the shared refusal table");
+        let table = parse(&table).expect("the table is JSON");
+        let Some(Value::Array(cases)) = table.member("cases") else {
+            panic!("the table has cases");
+        };
+        assert!(cases.len() >= 40, "the table lost cases: {}", cases.len());
+        let mut failures = Vec::new();
+        for case in cases {
+            let (Some(Value::Text(name)), Some(Value::Text(data)), Some(ty)) = (
+                case.member("name"),
+                case.member("data"),
+                case.member("type"),
+            ) else {
+                panic!("a case has a name, data and a type: {case:?}");
+            };
+            let read = PayloadFields::decode(data)
+                .and_then(|fields| read_described(ty, &fields.field("v")?));
+            match (case.member("refusal"), read) {
+                (None, Ok(())) => {}
+                (Some(want), Err(got)) => {
+                    let code = match want.member("code") {
+                        Some(Value::Text(code)) => RefusalCode::from_name(code)
+                            .unwrap_or_else(|| panic!("{name}: the enum declares no {code}")),
+                        other => panic!("{name}: a refusal has a code: {other:?}"),
+                    };
+                    let pointer = match want.member("pointer") {
+                        Some(Value::Text(pointer)) => pointer.as_str(),
+                        other => panic!("{name}: a refusal has a pointer: {other:?}"),
+                    };
+                    let bound = match want.member("bound") {
+                        Some(Value::Number(n)) => Some(n.parse::<u32>().expect("a uint32")),
+                        Some(Value::Null) => None,
+                        other => panic!("{name}: a refusal has a bound or null: {other:?}"),
+                    };
+                    if (got.code(), got.pointer(), got.bound()) != (code, pointer, bound) {
+                        failures.push(format!(
+                            "{name}: refused {:?} at {:?} bound {:?} ({got}), the table says \
+                             {code:?} at {pointer:?} bound {bound:?}",
+                            got.code(),
+                            got.pointer(),
+                            got.bound()
+                        ));
+                    }
+                }
+                (want, got) => {
+                    failures.push(format!("{name}: the table says {want:?}, read {got:?}"))
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    /// The codes are the variants `sce:std/lift/refusal_code.scxml` declares,
+    /// by the same names and at the same numbers, so a refusal is one value of
+    /// that enum on every runtime.
+    #[test]
+    fn every_code_is_the_variant_the_standard_enum_declares() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../stdlib/lift/refusal_code.scxml"
+        );
+        let document = std::fs::read_to_string(path).expect("the standard refusal code");
+        let declared = document.matches("<sce:variant ").count();
+        assert_eq!(declared, RefusalCode::ALL.len(), "one code per variant");
+        for code in RefusalCode::ALL {
+            let variant = format!(
+                "<sce:variant name=\"{}\" value=\"{}\"/>",
+                code.name(),
+                code.number()
+            );
+            assert!(document.contains(&variant), "{code:?}: {variant}");
+            assert_eq!(RefusalCode::from_name(code.name()), Some(code));
+        }
+    }
+
+    /// A pointer is RFC 6901's: `/` before each reference token, `~` written
+    /// `~0` and `/` written `~1`, and `~` escaped first so that `~1` in a name
+    /// is not read back as `/`.
+    #[test]
+    fn a_pointer_escapes_tilde_and_solidus_in_each_token() {
+        assert_eq!(super::pointer_below("", "items"), "/items");
+        assert_eq!(super::pointer_below("/items", "2"), "/items/2");
+        assert_eq!(super::pointer_below("", "a~b/c"), "/a~0b~1c");
+        assert_eq!(super::pointer_below("", "~1"), "/~01");
+        assert_eq!(super::pointer_below("", ""), "/");
+    }
+
+    /// What a generated reader of an enum field answers for a name its enum
+    /// does not declare: the sentence it always wrote, and the code and pointer
+    /// beside it.
+    #[test]
+    fn a_name_no_variant_declares_is_refused_as_unknown_variant() {
+        let fields = PayloadFields::decode(r#"{"status": "x"}"#).expect("reads");
+        let refusal = fields.unknown_variant("status", "x", "Status");
+        assert_eq!(refusal.reason(), "status (x) is not a variant of Status");
+        assert_eq!(refusal.code(), RefusalCode::UnknownVariant);
+        assert_eq!(refusal.pointer(), "/status");
+        assert_eq!(refusal.bound(), None);
     }
 
     #[test]
@@ -849,21 +1316,27 @@ mod tests {
     fn a_top_level_text_and_byte_string_are_held_to_their_bound_when_read() {
         let fields = PayloadFields::decode(r#"{"note": "abcde", "blob": "abcde", "ok": "abcd"}"#)
             .expect("the object reads");
+        let past = |at: &str, what: &str| {
+            PayloadRefusal::new(RefusalCode::TooLong, at, what).with_bound(4)
+        };
         assert_eq!(
             fields.field("note").and_then(|v| v.text::<4>()),
-            Err(super::PayloadRefusal::new(
+            Err(past(
+                "/note",
                 "'note' is 5 bytes, past the 4 its type declares"
             ))
         );
         assert_eq!(
             fields.field("blob").and_then(|v| v.bytes::<4>()),
-            Err(super::PayloadRefusal::new(
+            Err(past(
+                "/blob",
                 "'blob' is 5 bytes, past the 4 its type declares"
             ))
         );
         assert_eq!(
             fields.bytes::<4>("blob"),
-            Err(super::PayloadRefusal::new(
+            Err(past(
+                "/blob",
                 "'blob' is 5 bytes, past the 4 its type declares"
             ))
         );
@@ -905,7 +1378,11 @@ mod tests {
         let r = fields.field("r").expect("present");
         assert_eq!(
             r.record(None, |rec| rec.field("b").map(|_| ())),
-            Err(super::PayloadRefusal::new("the event's data has no 'r/b'"))
+            Err(PayloadRefusal::new(
+                RefusalCode::Missing,
+                "/r/b",
+                "the event's data has no 'r/b'"
+            ))
         );
         assert_eq!(
             r.record(Some(r#"{"b": 9}"#), |rec| rec.field("b")?.unsigned::<u8>()),
@@ -913,11 +1390,17 @@ mod tests {
         );
         assert_eq!(
             fields.field("s").and_then(|s| s.record(None, |_| Ok(()))),
-            Err(super::PayloadRefusal::new("'s' is not a record"))
+            Err(PayloadRefusal::new(
+                RefusalCode::WrongKind,
+                "/s",
+                "'s' is not a record"
+            ))
         );
         assert_eq!(
             r.record(Some("[]"), |_| Ok(())),
-            Err(super::PayloadRefusal::new(
+            Err(PayloadRefusal::new(
+                RefusalCode::NotJson,
+                "",
                 "the schema's defaults are not a JSON object, which the generator never writes"
             ))
         );
@@ -1062,7 +1545,7 @@ mod tests_cross {
             Ty::Enum => {
                 let name = v.name()?;
                 if !ENUM_NAMES.contains(&name) {
-                    return Err(v.refuse(&format!("({name}) is not a variant of Level")));
+                    return Err(v.unknown_variant(name, "Level"));
                 }
                 Held::S(name.to_string())
             }

@@ -4527,7 +4527,9 @@ fn static_enum_of<'e>(
 /// What the Rust lift reads an enum-typed payload field as: the variant whose
 /// declared name the wire carries, as a saved state names it. A name the enum
 /// does not declare is a payload that does not fit its schema, which the lift
-/// refuses as it refuses a number out of range.
+/// refuses as it refuses a number out of range, with the code and pointer of
+/// the refusal beside its sentence (`PayloadFields::unknown_variant`,
+/// docs/adr/0087, section 2.5).
 fn rust_enum_lift(
     enums: &[crate::forge::static_lowering::StaticEnumType],
     alias: &str,
@@ -4548,8 +4550,7 @@ fn rust_enum_lift(
         .collect();
     format!(
         "match fields.text(\"{field}\")?.as_str() {{ {arms}other => return \
-         Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(format!(\
-         \"{field} ({{other}}) is not a variant of {alias}\"))) }}"
+         Err(fields.unknown_variant(\"{field}\", other, \"{alias}\")) }}"
     )
 }
 

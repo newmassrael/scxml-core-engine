@@ -851,8 +851,13 @@ pub fn request_field_wire(
     name: &str,
     ty: RequestFieldType,
 ) -> Result<String, crate::event_payload::PayloadRefusal> {
-    use crate::event_payload::PayloadRefusal;
+    use crate::event_payload::{pointer_below, PayloadRefusal, RefusalCode};
     use crate::ScriptValue;
+    // The refusal of the field `name`, in the classes a reader of a completion
+    // gives the same judgement (docs/adr/0087, section 2.3).
+    fn refuse(code: RefusalCode, name: &str, what: &str) -> PayloadRefusal {
+        PayloadRefusal::new(code, pointer_below("", name), format!("'{name}' {what}"))
+    }
     fn whole<T: TryFrom<i128> + ToString>(
         value: &ScriptValue,
         name: &str,
@@ -864,30 +869,44 @@ pub fn request_field_wire(
                 *f as i128
             }
             ScriptValue::Double(_) => {
-                return Err(PayloadRefusal::new(format!(
-                    "'{name}' is not a whole number"
-                )))
+                return Err(refuse(
+                    RefusalCode::BadNumber,
+                    name,
+                    "is not a whole number",
+                ))
             }
-            _ => return Err(PayloadRefusal::new(format!("'{name}' is not a number"))),
+            _ => return Err(refuse(RefusalCode::WrongKind, name, "is not a number")),
         };
         T::try_from(n).map(|v| v.to_string()).map_err(|_| {
-            PayloadRefusal::new(format!(
-                "'{name}' does not fit the width its schema declares ({n})"
-            ))
+            // Below zero is no value of an unsigned type at any width; any
+            // other whole number this one refuses is past its width.
+            let unsigned = T::try_from(-1_i128).is_err();
+            let code = if unsigned && n < 0 {
+                RefusalCode::BadNumber
+            } else {
+                RefusalCode::OutOfRange
+            };
+            refuse(
+                code,
+                name,
+                &format!("does not fit the width its schema declares ({n})"),
+            )
         })
     }
     fn fractional(value: &ScriptValue, name: &str) -> Result<f64, PayloadRefusal> {
         let f = match value {
             ScriptValue::Int(i) => *i as f64,
             ScriptValue::Double(f) => *f,
-            _ => return Err(PayloadRefusal::new(format!("'{name}' is not a number"))),
+            _ => return Err(refuse(RefusalCode::WrongKind, name, "is not a number")),
         };
         // JSON, which a completion's record crosses as, has no spelling for
         // these, so a request may not carry one either.
         if !f.is_finite() {
-            return Err(PayloadRefusal::new(format!(
-                "'{name}' is not a finite number"
-            )));
+            return Err(refuse(
+                RefusalCode::BadNumber,
+                name,
+                "is not a finite number",
+            ));
         }
         Ok(f)
     }
@@ -909,39 +928,42 @@ pub fn request_field_wire(
         RequestFieldType::Float32 => {
             let narrowed = fractional(value, name)? as f32;
             if !narrowed.is_finite() {
-                return Err(PayloadRefusal::new(format!(
-                    "'{name}' does not fit the width its schema declares"
-                )));
+                return Err(refuse(
+                    RefusalCode::OutOfRange,
+                    name,
+                    "does not fit the width its schema declares",
+                ));
             }
             Ok(fractional_wire(f64::from(narrowed)))
         }
         RequestFieldType::Float64 => fractional(value, name).map(fractional_wire),
         RequestFieldType::Bool => match value {
             ScriptValue::Bool(b) => Ok(b.to_string()),
-            _ => Err(PayloadRefusal::new(format!(
-                "'{name}' is not a truth value"
-            ))),
+            _ => Err(refuse(RefusalCode::WrongKind, name, "is not a truth value")),
         },
         RequestFieldType::String => match value {
             ScriptValue::String(s) => Ok(s.clone()),
-            _ => Err(PayloadRefusal::new(format!("'{name}' is not a text"))),
+            _ => Err(refuse(RefusalCode::WrongKind, name, "is not a text")),
         },
         RequestFieldType::Bytes(cap) => {
             let ScriptValue::String(s) = value else {
-                return Err(PayloadRefusal::new(format!(
-                    "'{name}' is not a byte string"
-                )));
+                return Err(refuse(RefusalCode::WrongKind, name, "is not a byte string"));
             };
             if s.chars().any(|c| (c as u32) > 0xFF) {
-                return Err(PayloadRefusal::new(format!(
-                    "'{name}' carries a character above U+00FF, which no single byte spells"
-                )));
+                return Err(refuse(
+                    RefusalCode::NotByteText,
+                    name,
+                    "carries a character above U+00FF, which no single byte spells",
+                ));
             }
             let len = s.chars().count();
             if len > cap {
-                return Err(PayloadRefusal::new(format!(
-                    "'{name}' is {len} bytes, past the {cap} its schema declares"
-                )));
+                return Err(refuse(
+                    RefusalCode::TooLong,
+                    name,
+                    &format!("is {len} bytes, past the {cap} its schema declares"),
+                )
+                .with_bound(cap));
             }
             Ok(s.clone())
         }

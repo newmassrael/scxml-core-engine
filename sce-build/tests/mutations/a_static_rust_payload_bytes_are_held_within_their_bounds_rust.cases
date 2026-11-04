@@ -39,6 +39,6 @@ PY
 
 mutation_case "a character past U+00FF is read as the byte its low eight bits make" <<'PY'
 edit("backends/rust/runtime/src/event_payload.rs",
-     "            if (c as u32) > 0xFF {\n                return Err(\n                    self.refuse(\"carries a character above U+00FF, which no single byte spells\")",
-     "            if (c as u32) > 0x10FFFF {\n                return Err(\n                    self.refuse(\"carries a character above U+00FF, which no single byte spells\")")
+     "            if (c as u32) > 0xFF {\n                return Err(self.refuse(\n                    RefusalCode::NotByteText,",
+     "            if (c as u32) > 0x10FFFF {\n                return Err(self.refuse(\n                    RefusalCode::NotByteText,")
 PY
