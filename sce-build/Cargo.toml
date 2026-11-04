@@ -1604,6 +1604,14 @@ name = "a_src_child_is_found_from_the_document_that_names_it"
 path = "tests/a_src_child_is_found_from_the_document_that_names_it.rs"
 required-features = ["cli"]
 
+# A plan states what the machines of each planned generation need linked
+# (`--plan-requires`), which a build links a generated C11 machine from. It
+# spawns `sce-codegen generate`, so it carries the `cli` gate.
+[[test]]
+name = "a_plan_states_what_its_machines_require"
+path = "tests/a_plan_states_what_its_machines_require.rs"
+required-features = ["cli"]
+
 # `orchestrate --go-module-prefix` reaches every statechart of the set and every
 # child one carries. It spawns `sce-codegen orchestrate` and `check`, so it
 # carries the `cli` gate.

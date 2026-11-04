@@ -1684,6 +1684,7 @@ pub fn compile_from_string_lang_typed(
             None,
         );
         output.files.extend(emitted.files);
+        output.requires.extend(emitted.requires);
     }
     Ok(output)
 }
@@ -2034,6 +2035,7 @@ fn compile_scxml_lang_typed_mutated(
     for EmittedChild { output: child, .. } in children {
         output.files.extend(child.files);
         output.deps.extend(child.deps);
+        output.requires.extend(child.requires);
     }
     output.deps.extend(preprocessor_deps);
     output.deps.sort();
@@ -2599,10 +2601,20 @@ fn emit_lifted_artifacts<D: variant_dialect::Dialect>(
     if let Some(mismatch) = mismatch {
         return Err(refused(mismatch.difference, &mismatch.features));
     }
+    // A build compiles one variant of the guarded file, so it links what any
+    // variant requires.
+    let requires: BTreeSet<generator::RuntimeRequirement> = outputs
+        .iter()
+        .flat_map(|output| output.requires.iter().copied())
+        .collect();
     let mut deps: Vec<PathBuf> = outputs.into_iter().flat_map(|output| output.deps).collect();
     deps.sort();
     deps.dedup();
-    Ok(generator::GeneratedOutput { files, deps })
+    Ok(generator::GeneratedOutput {
+        files,
+        deps,
+        requires,
+    })
 }
 
 /// Write the edges of `line`'s feature model into `source`, the dialect's
@@ -2660,7 +2672,7 @@ fn emit_artifacts_within(
             .map_err(|e| locate_codegen_error(e, source_name, model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.rs"), code)],
-                deps: Vec::new(),
+                ..Default::default()
             }
         }
         generator::Language::Cpp => generator::generate_cpp_for_engine(
@@ -2681,7 +2693,7 @@ fn emit_artifacts_within(
             .map_err(|e| locate_codegen_error(e, source_name, model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}Sm.kt"), code)],
-                deps: Vec::new(),
+                ..Default::default()
             }
         }
         generator::Language::Go => {
@@ -2695,7 +2707,7 @@ fn emit_artifacts_within(
             .map_err(|e| locate_codegen_error(e, source_name, model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.go"), code)],
-                deps: Vec::new(),
+                ..Default::default()
             }
         }
         generator::Language::Python => {
@@ -2703,7 +2715,7 @@ fn emit_artifacts_within(
                 .map_err(|e| locate_codegen_error(e, source_name, model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.py"), code)],
-                deps: Vec::new(),
+                ..Default::default()
             }
         }
         generator::Language::C11 => {
@@ -2715,7 +2727,7 @@ fn emit_artifacts_within(
                 .map_err(|e| locate_codegen_error(e, source_name, model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.swift"), code)],
-                deps: Vec::new(),
+                ..Default::default()
             }
         }
     };
@@ -2810,6 +2822,7 @@ fn emit_inline_kind_siblings(
             output.files.push((name, code));
         }
         output.deps.extend(sibling.deps);
+        output.requires.extend(sibling.requires);
     }
     Ok(())
 }
@@ -4665,6 +4678,7 @@ pub fn compile_rust_deployment(
     Ok(generator::GeneratedOutput {
         files: vec![(forge::deployment::file_name(&deployment.name), text)],
         deps,
+        ..Default::default()
     })
 }
 
@@ -10829,8 +10843,8 @@ pub fn compile_mesh_transport(
         // read all the same, and are inputs of the run.
         return Ok(MeshResult {
             output: generator::GeneratedOutput {
-                files: Vec::new(),
                 deps: external_resolution.configs.iter().cloned().collect(),
+                ..Default::default()
             },
             dynamic_target_sends,
             deadline_override_notices,

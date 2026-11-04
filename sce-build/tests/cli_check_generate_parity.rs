@@ -448,6 +448,15 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
          document no differently, so `check` needs no counterpart",
     ),
     f(
+        "--plan-requires",
+        Reach::Emission,
+        Some(&["--plan", "--plan-requires"]),
+        "rust",
+        "adds to a plan what the machines of each planned generation need \
+         linked, as the backend decided while rendering them; it reads the \
+         document no differently, so `check` needs no counterpart",
+    ),
+    f(
         "--profile",
         Reach::Verdict,
         None,

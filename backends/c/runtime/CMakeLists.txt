@@ -37,6 +37,62 @@
 #                           platform impl (e.g. an lwIP-based
 #                           `sce_link_runtime_lwip`).
 
+# ── What a generated machine requires, and which tier implements it ──
+#
+# A generated C11 machine states what it needs linked beside it that the
+# header-only tier does not provide (`sce-codegen --plan --plan-requires`,
+# read into `<PREFIX>_REQUIRES` by cmake/SCECodegenPlan.cmake), and includes
+# the interface of each exactly when it states it:
+#
+#   lua   the Lua 5.4 engine its data model is evaluated in (`lua.h`)
+#   dom   the Lua binding of the XML DOM (`sce/lua_dom_binding.h`)
+#   http  the BasicHTTP client (`sce/http_client.h`)
+#
+# SCE_C_RUNTIME_REQUIREMENTS is every requirement the generator can state
+# (`RuntimeRequirement` in sce-build/src/generator.rs;
+# `a_c11_machine_includes_what_it_states_it_requires` holds the two to each
+# other), set whatever this configuration builds. Each tier below registers
+# the requirement it implements where it is built
+# (`SCE_C_RUNTIME_REQUIREMENT_<requirement>`), so a requirement whose tier
+# this configuration does not build has no library, and a build knows which
+# machines it cannot link here from the machines rather than from a list of
+# them. `sce_c_runtime_libraries` reads the two.
+set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENTS lua dom http)
+
+# sce_c_runtime_libraries(<LIBRARIES_VAR> <UNMET_VAR> <requirement>...)
+#
+#   The libraries of this runtime that implement the requirements a generated
+#   machine states, in LIBRARIES_VAR, each once, and in UNMET_VAR each
+#   requirement whose tier this configuration does not build: a machine that
+#   states one cannot be linked here. A requirement no tier of this runtime
+#   implements is refused rather than linked with nothing: the generator
+#   states one this runtime was never taught.
+function(sce_c_runtime_libraries LIBRARIES_VAR UNMET_VAR)
+    get_property(_KNOWN GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENTS)
+    set(_LIBRARIES "")
+    set(_UNMET "")
+    foreach(_REQUIREMENT IN LISTS ARGN)
+        if(NOT "${_REQUIREMENT}" IN_LIST _KNOWN)
+            message(FATAL_ERROR
+                "A generated C11 machine requires `${_REQUIREMENT}`, which no tier of "
+                "backends/c/runtime implements (it knows: ${_KNOWN}). Name the library "
+                "that implements it in SCE_C_RUNTIME_REQUIREMENTS and register it where "
+                "that library is built.")
+        endif()
+        get_property(_LIBRARY GLOBAL PROPERTY "SCE_C_RUNTIME_REQUIREMENT_${_REQUIREMENT}")
+        if("${_LIBRARY}" STREQUAL "")
+            list(APPEND _UNMET "${_REQUIREMENT}")
+        else()
+            list(APPEND _LIBRARIES ${_LIBRARY})
+        endif()
+    endforeach()
+    if(_LIBRARIES)
+        list(REMOVE_DUPLICATES _LIBRARIES)
+    endif()
+    set(${LIBRARIES_VAR} "${_LIBRARIES}" PARENT_SCOPE)
+    set(${UNMET_VAR} "${_UNMET}" PARENT_SCOPE)
+endfunction()
+
 # ── Tier 1: sce_c_runtime (INTERFACE — public headers) ──────────
 add_library(sce_c_runtime INTERFACE)
 target_include_directories(sce_c_runtime
@@ -60,8 +116,9 @@ set_target_properties(sce_c_base PROPERTIES
 
 # ── Tier 3: sce_c_scripting (STATIC, optional — Lua bridges) ────
 # SCE_ENABLE_LUA mirrors the same option used by the cpp `sce_scripting`
-# tier (see ARCHITECTURE.md). When OFF, fixtures with NEEDS_LUA are
-# expected to be excluded by the consumer's CMakeLists.
+# tier (see ARCHITECTURE.md). When OFF, `lua` and `dom` have no library here,
+# and a consumer leaves out every machine that states either
+# (`sce_c_runtime_libraries` above names them unmet).
 if(SCE_ENABLE_LUA)
     add_library(sce_c_scripting STATIC
         scripting/lua_dom_binding.c
@@ -72,6 +129,11 @@ if(SCE_ENABLE_LUA)
         C_STANDARD_REQUIRED ON
         C_EXTENSIONS OFF
     )
+    # A machine that embeds the Lua engine links it, and one that can hand its
+    # data model an XML document links the binding (which links the engine
+    # and the freestanding parser in turn).
+    set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_lua lua54)
+    set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_dom sce_c_scripting)
 endif()
 
 # ── Tier 4: sce_c_runtime_posix (STATIC, optional — platform impl) ──
@@ -91,4 +153,8 @@ if(SCE_C_RUNTIME_POSIX)
         C_STANDARD_REQUIRED ON
         C_EXTENSIONS OFF
     )
+    # The POSIX implementation of the BasicHTTP client a machine that sends
+    # over BasicHTTP links. A bare-metal consumer's platform tier registers
+    # its own.
+    set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_http sce_c_runtime_posix)
 endif()

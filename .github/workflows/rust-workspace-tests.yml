@@ -153,6 +153,11 @@ on:
       # The C11 conformance suite's build, which the same suite compiles in
       # and holds to declaring its fixtures after their plans were asked.
       - 'backends/c/tests/CMakeLists.txt'
+      # The conformance registry, whose fixtures the suite generates.
+      - 'tests/w3c/conformance/fixtures.json'
+      # The C11 runtime's build, whose vocabulary of what a machine requires
+      # the suite compiles in and holds to what the generator can state.
+      - 'backends/c/runtime/CMakeLists.txt'
       # The standard library: its statecharts that save are held to their
       # pinned shapes (docs/adr/0045), so an edit of one alone starts the suite.
       - 'stdlib/**'
@@ -269,6 +274,11 @@ on:
       # The C11 conformance suite's build, which the same suite compiles in
       # and holds to declaring its fixtures after their plans were asked.
       - 'backends/c/tests/CMakeLists.txt'
+      # The conformance registry, whose fixtures the suite generates.
+      - 'tests/w3c/conformance/fixtures.json'
+      # The C11 runtime's build, whose vocabulary of what a machine requires
+      # the suite compiles in and holds to what the generator can state.
+      - 'backends/c/runtime/CMakeLists.txt'
       # The standard library: its statecharts that save are held to their
       # pinned shapes (docs/adr/0045), so an edit of one alone starts the suite.
       - 'stdlib/**'

@@ -788,6 +788,13 @@ GATES: dict[str, dict] = {
             # in and holds to declaring its fixtures after their plans were
             # asked together.
             "backends/c/tests/CMakeLists.txt",
+            # The conformance registry, whose fixtures
+            # `a_c11_machine_includes_what_it_states_it_requires` generates.
+            "tests/w3c/conformance/fixtures.json",
+            # The C11 runtime's build, whose vocabulary of what a machine
+            # requires `a_c11_machine_includes_what_it_states_it_requires`
+            # compiles in and holds to what the generator can state.
+            "backends/c/runtime/CMakeLists.txt",
             # The standard library, whose statecharts that save are held to
             # their pinned shapes (`a_standard_statechart_that_saves_keeps_its_shape`,
             # docs/adr/0045): an edit of one alone has to start the suite.

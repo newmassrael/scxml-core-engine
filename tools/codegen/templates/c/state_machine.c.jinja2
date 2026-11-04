@@ -450,7 +450,11 @@
 
 {{ event_payload_lift_decl }}
 {% endif %}
-{% if model.needs_dom_helper %}
+{# The DOM binding and the HTTP client are included because the set of what
+   this machine requires names them (`RuntimeRequirement` in
+   sce-build/src/generator.rs): the set a plan states to the build that links
+   the machine, so each include and its link are one decision. #}
+{% if "dom" in runtime_requires %}
 /* W3C SCXML B.2: XML DOM helper (backends/c/runtime/include/sce/lua_dom_binding.h).
    cpp `LuaDOMBinding` 1:1 algorithmic mirror in pure C — pugixml is
    C++-only and would break the C11 zero-dependency contract (RFC §synth-5-J-1). Lives in the
@@ -458,7 +462,7 @@
    `sce_c_base` DOM parser. See ARCHITECTURE.md §"C11 backend layering". */
 #include <sce/lua_dom_binding.h>
 {% endif %}
-{% if model.needs_http_send %}
+{% if "http" in runtime_requires %}
 /* W3C SCXML C.2: HTTP/1.1 client + JSON response extractor
    (backends/c/runtime/include/sce/http_client.h). Synchronous POST against
    the standalone Node server (`tests/w3c/standalone_http_server.js`) —

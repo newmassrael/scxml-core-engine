@@ -785,6 +785,89 @@ pub struct GeneratedOutput {
     /// `forge::cross_kind_check::check` already performs. Empty for
     /// `from_string` / in-memory routes.
     pub deps: Vec<PathBuf>,
+    /// What the machines of this output need linked beside them
+    /// ([`RuntimeRequirement`]): the union over every machine it holds, a
+    /// child carried in line among them. Empty for a backend that states
+    /// none, and for an output that holds no machine.
+    pub requires: BTreeSet<RuntimeRequirement>,
+}
+
+/// What a generated machine needs linked beside it that the header-only
+/// contracts of its runtime do not provide.
+///
+/// Which of them a machine needs is the generator's decision, made where the
+/// machine is rendered, and nowhere else: the C11 templates include `lua.h`,
+/// the DOM binding's header and the HTTP client's header exactly when the
+/// machine's set names the requirement ([`c11_runtime_requirements`]), so the
+/// set is the reason for each include rather than a second account of it. A
+/// build reads the set (`sce-codegen --plan --plan-requires`) and links each
+/// requirement with the library of its runtime that implements it
+/// (`backends/c/runtime/CMakeLists.txt`, `SCE_C_RUNTIME_REQUIREMENTS`). A
+/// list of the machines that need a library, kept in the build, is a second
+/// copy of this decision: the C11 conformance suite kept one as flags on 202
+/// hand-written registrations until 2026-11.
+///
+/// Stated by the C11 backend. Every other backend links its engine through
+/// libraries a build names for every machine, and states none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RuntimeRequirement {
+    /// Lua 5.4 (`lua.h`, `lualib.h`, `lauxlib.h`): the machine embeds the
+    /// Lua state its data model is evaluated in
+    /// ([`SCXMLModel::needs_script_engine`]).
+    Lua,
+    /// The Lua binding of the XML DOM (`sce/lua_dom_binding.h`), over the
+    /// freestanding DOM parser: the machine can hand its data model an XML
+    /// document, from its own text or in an arriving event's data
+    /// ([`SCXMLModel::needs_dom_helper`]).
+    Dom,
+    /// The BasicHTTP client (`sce/http_client.h`), which a platform tier of
+    /// the runtime implements: the machine sends over the BasicHTTP Event
+    /// I/O Processor ([`SCXMLModel::needs_http_send`]).
+    Http,
+}
+
+impl RuntimeRequirement {
+    /// Every requirement a backend can state, in the order a set lists them.
+    pub const ALL: [Self; 3] = [Self::Lua, Self::Dom, Self::Http];
+
+    /// The name a plan states the requirement by
+    /// (`\trequires\t<generation>\t<name>`), and a build maps to a library.
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Lua => "lua",
+            Self::Dom => "dom",
+            Self::Http => "http",
+        }
+    }
+
+    /// The line a C11 machine includes the requirement's interface with,
+    /// spelled as its templates write it: a machine includes it exactly when
+    /// its set names the requirement.
+    pub const fn c11_include(self) -> &'static str {
+        match self {
+            Self::Lua => "#include \"lua.h\"",
+            Self::Dom => "#include <sce/lua_dom_binding.h>",
+            Self::Http => "#include <sce/http_client.h>",
+        }
+    }
+}
+
+/// What a C11 machine generated from `model` requires
+/// ([`RuntimeRequirement`]), read from the facts its templates decide by: the
+/// set `render_c11` hands the templates, which include each requirement's
+/// interface because the set names it, and states in its output.
+pub fn c11_runtime_requirements(model: &SCXMLModel) -> BTreeSet<RuntimeRequirement> {
+    let mut requires = BTreeSet::new();
+    if model.needs_script_engine {
+        requires.insert(RuntimeRequirement::Lua);
+    }
+    if model.needs_dom_helper == Some(true) {
+        requires.insert(RuntimeRequirement::Dom);
+    }
+    if model.needs_http_send {
+        requires.insert(RuntimeRequirement::Http);
+    }
+    requires
 }
 
 /// Return `content` guaranteed to end with a newline.
@@ -3890,6 +3973,15 @@ fn render_c11(
     // function that derives it, so the two backends cannot disagree on how many
     // transitions a selection holds.
     let microstep_bounds = crate::microstep_bounds::MicrostepBounds::of(&model_lowered);
+    // What the machine needs linked, decided once, from the model the
+    // templates render: they include each requirement's interface because
+    // this set names it, and the output states the same set to the build.
+    let requires = c11_runtime_requirements(&model_lowered);
+    let runtime_requires: Vec<&str> = requires
+        .iter()
+        .copied()
+        .map(RuntimeRequirement::wire_name)
+        .collect();
     model_lowered.into_artifact_coordinates();
     let model_val = minijinja::Value::from_serialize(&model_lowered);
     let license_val = minijinja::Value::from_serialize(license_config());
@@ -3898,6 +3990,7 @@ fn render_c11(
         model => &model_val,
         base_path => &base_path,
         license_config => &license_val,
+        runtime_requires => &runtime_requires,
         event_payload_defs => &payload.defs,
         event_payload_type => &payload.type_name,
         event_payload_active => payload.active,
@@ -3951,6 +4044,7 @@ fn render_c11(
         model => &model_val,
         base_path => &base_path,
         license_config => &license_val,
+        runtime_requires => &runtime_requires,
         max_enabled => microstep_bounds.enabled,
         event_payload_type => &payload.type_name,
         event_payload_active => payload.active,
@@ -3984,6 +4078,7 @@ fn render_c11(
             (format!("{input_stem}_sm.h"), header_code),
             (format!("{input_stem}_sm.c"), source_code),
         ],
+        requires,
         ..Default::default()
     })
 }

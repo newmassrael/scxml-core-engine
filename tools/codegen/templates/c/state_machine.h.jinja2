@@ -178,7 +178,11 @@
 {% endfor %}
 {% endif %}
 
-{% if model.needs_script_engine %}
+{# Included because the set of what this machine requires names `lua`
+   (`RuntimeRequirement` in sce-build/src/generator.rs): the set a plan states
+   to the build that links the machine, so the include and the link are one
+   decision. #}
+{% if "lua" in runtime_requires %}
 /* RFC §synth-5-J-1: C11 backend embeds Lua 5.4 directly (no abstraction layer).
    The state machine struct owns the lua_State* lifecycle — opened by
    _init, closed by _destroy. ECMAScript datamodel expressions are

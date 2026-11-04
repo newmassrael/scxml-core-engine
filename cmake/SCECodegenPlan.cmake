@@ -167,11 +167,15 @@ endfunction()
 #   none; a true <child generations> asks for the plans of the children too
 #   (`--plan-children`).
 #
+#   `--plan-requires`: every plan states what the machines of each of its
+#   generations need linked (`<PREFIX>_REQUIRES`), so a route that links a
+#   machine reads it from the answer it already asks for.
+#
 #   `--no-format`: formatting changes bytes and never which files, and a plan
 #   is asked once per generation when the tree is configured, so it neither
 #   waits for clang-format on every file nor needs one there.
 function(_sce_codegen_plan_arguments VAR DOCUMENT LANGUAGE OUTPUT_DIR INPUT_ROOT CHILD_GENERATIONS)
-    set(_ARGUMENTS --plan)
+    set(_ARGUMENTS --plan --plan-requires)
     if(CHILD_GENERATIONS)
         list(APPEND _ARGUMENTS --plan-children)
     endif()
@@ -669,6 +673,16 @@ endfunction()
 #                             `--write-deps`, and the command's DEPFILE
 #     <PREFIX>_HEADERS        the paths of every header the run writes
 #     <PREFIX>_SOURCES        the paths of every C translation unit it writes
+#     <PREFIX>_REQUIRES       what the machines the run writes need linked
+#                             beside them, as the generator states it
+#                             (`--plan-requires`): each of `lua`, `dom` and
+#                             `http` the backend decided while rendering them,
+#                             or for a plan FROM another, what that plan
+#                             states for the child's generation. Empty for a
+#                             backend that states none. A C11 build links each
+#                             with the library its runtime names for it
+#                             (`sce_c_runtime_libraries`,
+#                             backends/c/runtime/CMakeLists.txt)
 #     <PREFIX>_DECLARED_ELSEWHERE
 #                             TRUE when a plan of CLAIM declared this machine
 #                             before, so its command is that plan's
@@ -692,6 +706,7 @@ function(sce_codegen_plan PREFIX)
     set(_GENERATIONS "")
     set(_DOCUMENT "")
     set(_DEPENDS "")
+    set(_REQUIRES "")
 
     if(_SCP_FROM)
         # ── A generation another plan holds ─────────────────────────────
@@ -724,6 +739,7 @@ function(sce_codegen_plan PREFIX)
         set(_INPUT_ROOT "${${_SCP_FROM}_INPUT_ROOT}")
         set(_DOCUMENT "${${_FROM}_DOCUMENT}")
         set(_ARGS "${${_FROM}_ARGS}")
+        set(_REQUIRES "${${_FROM}_REQUIRES}")
         set(_DEPENDS "${_DOCUMENT}")
         if(NOT "${${_FROM}_WRITER}" STREQUAL "")
             list(APPEND _DEPENDS "${${_FROM}_WRITER}")
@@ -783,12 +799,21 @@ function(sce_codegen_plan PREFIX)
                 "${_PLAN_ERROR}")
         endif()
 
-        # A line with a tab is a file of a child document's generation,
-        # `<child document>\t<file>`; every other line is the run's own.
+        # A line that begins with a tab names no file: it states what the
+        # machines of a generation need linked,
+        # `\trequires\t<generation>\t<requirement>` (`--plan-requires`), the
+        # run's own when <generation> is empty. Every other line with a tab is
+        # a file of a child document's generation, `<child document>\t<file>`;
+        # every other line is the run's own.
         set(_GENERATION_LINES "")
+        set(_REQUIREMENT_LINES "")
         string(REPLACE "\n" ";" _PLANNED "${_PLAN_OUTPUT}")
         foreach(_LINE ${_PLANNED})
             string(FIND "${_LINE}" "\t" _TAB)
+            if(_TAB EQUAL 0)
+                list(APPEND _REQUIREMENT_LINES "${_LINE}")
+                continue()
+            endif()
             if(NOT _TAB EQUAL -1)
                 list(APPEND _GENERATION_LINES "${_LINE}")
                 continue()
@@ -871,6 +896,35 @@ function(sce_codegen_plan PREFIX)
             if(NOT "${_NAME}" STREQUAL "sce_sourcemap.json")
                 list(APPEND _GENERATION_${_CHILD}_FILES "${_NAME}")
             endif()
+        endforeach()
+
+        # What the machines of each generation need linked: the run's own, and
+        # each child generation's, which a plan FROM this one reads.
+        foreach(_CHILD ${_GENERATIONS})
+            set(_GENERATION_${_CHILD}_REQUIRES "")
+        endforeach()
+        foreach(_LINE ${_REQUIREMENT_LINES})
+            if(NOT "${_LINE}" MATCHES "^\trequires\t([^\t]*)\t([^\t]+)$")
+                message(FATAL_ERROR
+                    "sce-codegen --plan generate for ${_SCP_DOCUMENT} (${_LANGUAGE}) answers "
+                    "a line this module cannot read: \"${_LINE}\". A line that begins with a "
+                    "tab states what a generation requires, "
+                    "`\\trequires\\t<generation>\\t<requirement>`.")
+            endif()
+            set(_REQUIREMENT "${CMAKE_MATCH_2}")
+            if("${CMAKE_MATCH_1}" STREQUAL "")
+                list(APPEND _REQUIRES "${_REQUIREMENT}")
+                continue()
+            endif()
+            get_filename_component(_CHILD_NAME "${CMAKE_MATCH_1}" NAME)
+            string(REGEX REPLACE "\\.scxml$" "" _CHILD "${_CHILD_NAME}")
+            if(NOT "${_CHILD}" IN_LIST _GENERATIONS)
+                message(FATAL_ERROR
+                    "sce-codegen --plan generate for ${_SCP_DOCUMENT} (${_LANGUAGE}) states "
+                    "that the generation of ${_CHILD_NAME} requires ${_REQUIREMENT}, and "
+                    "plans no generation of it")
+            endif()
+            list(APPEND _GENERATION_${_CHILD}_REQUIRES "${_REQUIREMENT}")
         endforeach()
         set(_WRITERS_OF "${_STEM}")
         set(_WRITER_FILES_${_STEM} ${_FILES})
@@ -1018,16 +1072,16 @@ endfunction()
 #
 #   The answer is every variable `sce_codegen_plan` documents, and, for each
 #   generation a CHILD_GENERATIONS plan holds, what a plan FROM it reads: its
-#   document, its files, its arguments and the machine of the generation
-#   that writes its document.
+#   document, its files, its arguments, what its machines require and the
+#   machine of the generation that writes its document.
 macro(_sce_codegen_plan_publish TO FROM)
     foreach(_SCPP_NAME FILES SYNTH CHILDREN STAGED GENERATIONS OUTPUTS BYPRODUCTS
-            BYPRODUCTS_ARG DEPFILE HEADERS SOURCES DECLARED_ELSEWHERE DOCUMENT DEPENDS
-            ARGS STEM OUTPUT_DIR LANGUAGE CLAIM INPUT_ROOT)
+            BYPRODUCTS_ARG DEPFILE HEADERS SOURCES REQUIRES DECLARED_ELSEWHERE DOCUMENT
+            DEPENDS ARGS STEM OUTPUT_DIR LANGUAGE CLAIM INPUT_ROOT)
         set(${TO}_${_SCPP_NAME} "${${FROM}${_SCPP_NAME}}" PARENT_SCOPE)
     endforeach()
     foreach(_SCPP_CHILD ${${FROM}GENERATIONS})
-        foreach(_SCPP_NAME DOCUMENT FILES ARGS WRITER)
+        foreach(_SCPP_NAME DOCUMENT FILES ARGS REQUIRES WRITER)
             set(${TO}_GENERATION_${_SCPP_CHILD}_${_SCPP_NAME}
                 "${${FROM}GENERATION_${_SCPP_CHILD}_${_SCPP_NAME}}" PARENT_SCOPE)
         endforeach()

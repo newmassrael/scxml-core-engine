@@ -27,7 +27,7 @@ use sce_build::manifest::{
     ArtifactEntry, DeployInfo, LanguageVerdict, Manifest, ManifestKind, RejectedInfo,
 };
 
-use sce_build::generator::with_trailing_newline;
+use sce_build::generator::{with_trailing_newline, RuntimeRequirement};
 use sce_build::w3c_suite::{SuiteIdentity, SuiteIdentityError};
 
 /// Where a conformance suite of the caller's own is rooted, and which
@@ -142,6 +142,15 @@ fn plans_children() -> bool {
     output_mode() == OutputMode::Plan && PLAN_CHILDREN.get().copied().unwrap_or(false)
 }
 
+/// Installed once by `main`, beside [`PLAN_CHILDREN`]: whether a `--plan` run
+/// also states what the machines of each planned generation need linked
+/// (`--plan-requires`, [`finish_generated_output`]).
+static PLAN_REQUIRES: OnceLock<bool> = OnceLock::new();
+
+fn plans_requirements() -> bool {
+    output_mode() == OutputMode::Plan && PLAN_REQUIRES.get().copied().unwrap_or(false)
+}
+
 /// Installed once by `main`, beside [`PLAN_CHILDREN`]: where a `--plan` run
 /// writes the list of the files it read (`--plan-reads`, [`write_plan_reads`]).
 static PLAN_READS: OnceLock<PathBuf> = OnceLock::new();
@@ -184,16 +193,22 @@ struct PendingTree {
     /// In a `--plan-children` run, the generation of each child document the
     /// run wrote, in the order they were planned ([`plan_child_generations`]).
     generations: Vec<PlannedGeneration>,
+    /// In a `--plan` run, what the run's own machines need linked
+    /// ([`GenerateReport::runtime_requires`]), handed over where a run that
+    /// writes would print its manifest ([`emit_generate_manifest`]).
+    requires: BTreeSet<RuntimeRequirement>,
 }
 
 /// One generation a `--plan-children` run planned beside the run's own: the
 /// child document it reads, the arguments it is run with beside the ones
 /// every generation of the build is given ([`ChildGeneration::arguments`]),
-/// and every file it would produce that no generation before it does.
+/// every file it would produce that no generation before it does, and what
+/// its machines need linked.
 struct PlannedGeneration {
     document: PathBuf,
     arguments: Vec<String>,
     files: Vec<PathBuf>,
+    requires: BTreeSet<RuntimeRequirement>,
 }
 
 impl PendingTree {
@@ -202,6 +217,7 @@ impl PendingTree {
             order: Vec::new(),
             content: BTreeMap::new(),
             generations: Vec::new(),
+            requires: BTreeSet::new(),
         }
     }
 
@@ -394,7 +410,12 @@ fn ensure_output_dir(dir: &Path) -> std::io::Result<()> {
 /// with each further argument after another tab, then one line per file it
 /// would produce, as `<child document>\t<file>`. A file is never named by an
 /// empty path, so the empty field tells the two apart, and a line with no tab
-/// is always the run's own.
+/// is always the run's own. A `--plan-requires` run then states what the
+/// machines of each generation need linked, the run's first and then each
+/// planned generation's in the order they were planned, one line per
+/// requirement, as `\trequires\t<generation>\t<requirement>`, with an empty
+/// `<generation>` for the run's own: a line that begins with a tab names no
+/// file, since no file is named by an empty path.
 fn finish_generated_output() {
     match output_mode() {
         OutputMode::Write => return,
@@ -411,6 +432,24 @@ fn finish_generated_output() {
                 ));
                 for file in &generation.files {
                     out_line(&format!("{document}\t{}", file.display()));
+                }
+            }
+            if plans_requirements() {
+                let stated = std::iter::once((String::new(), &tree.requires)).chain(
+                    tree.generations.iter().map(|generation| {
+                        (
+                            generation.document.display().to_string(),
+                            &generation.requires,
+                        )
+                    }),
+                );
+                for (generation, requires) in stated {
+                    for requirement in requires {
+                        out_line(&format!(
+                            "\trequires\t{generation}\t{}",
+                            requirement.wire_name()
+                        ));
+                    }
                 }
             }
             return;
@@ -1313,6 +1352,12 @@ struct GenerateReport {
     /// named — see `Manifest::rejected_documents`. Empty on a run of one
     /// document, which says it in [`Self::rejected`].
     rejected_documents: Vec<sce_build::manifest::RejectedMember>,
+    /// What the machines this run writes need linked beside them, as their
+    /// backend decided while rendering them (`GeneratedOutput::requires`):
+    /// the document's machine, every child it carries in line, and every
+    /// other output of the run. Stated by a `--plan --plan-requires` run
+    /// ([`finish_generated_output`]).
+    runtime_requires: BTreeSet<RuntimeRequirement>,
 }
 
 impl GenerateReport {
@@ -1353,6 +1398,7 @@ impl GenerateReport {
             either(self.needs_event_scheduler, member.needs_event_scheduler);
         self.needs_host_processor = either(self.needs_host_processor, member.needs_host_processor);
         self.talks_to_a_mesh_peer |= member.talks_to_a_mesh_peer;
+        self.runtime_requires.extend(member.runtime_requires);
         once_each(&mut self.script_engine_causes, member.script_engine_causes);
         once_each(
             &mut self.host_processor_causes,
@@ -1624,10 +1670,14 @@ fn resolve_script_engine_target(
 
 /// Serialise `report` and write it as a single JSON line to stdout.
 ///
-/// Not in a `--plan` run, whose stdout is the list of paths and nothing else:
-/// a consumer that reads it line by line takes every line for a path.
+/// Not in a `--plan` run, whose stdout is the plan's answer and nothing else:
+/// a consumer that reads it line by line takes every line for a line of the
+/// answer. What of the report the answer carries, what the run's machines
+/// need linked, is handed to it here instead, for
+/// [`finish_generated_output`] to state when it was asked for.
 fn emit_generate_manifest(report: &GenerateReport) {
     if output_mode() == OutputMode::Plan {
+        pending_tree().requires.clone_from(&report.runtime_requires);
         return;
     }
     outln!(
@@ -1754,6 +1804,25 @@ struct Cli {
     /// and an answer without one is never reused.
     #[arg(long, global = true, requires = "plan", value_name = "FILE")]
     plan_reads: Option<PathBuf>,
+
+    /// With `--plan`: also state what the machines of each planned
+    /// generation need linked beside them that the header-only contracts of
+    /// their runtime do not provide, as the backend decided while rendering
+    /// them: `lua` (the Lua 5.4 engine a data model is evaluated in), `dom`
+    /// (the Lua binding of the XML DOM) and `http` (the BasicHTTP client).
+    /// After every other line, each is printed as
+    /// `\trequires\t<generation>\t<requirement>`, where `<generation>` is
+    /// empty for the run's own machines and, with `--plan-children`, the
+    /// child document of a generation it planned. A line that begins with a
+    /// tab is never a file: a file is never named by an empty path.
+    ///
+    /// The C11 backend states them, and includes each requirement's
+    /// interface exactly when it states it; the other backends state none. A
+    /// build links each with the library of its runtime that implements it,
+    /// so which machines need which library is the generator's answer and not
+    /// a list kept in the build.
+    #[arg(long, global = true, requires = "plan")]
+    plan_requires: bool,
 
     /// Diagnostic output format on stderr. `human` (default) preserves
     /// the existing CLI text. `json` emits one NDJSON record per error
@@ -4189,6 +4258,7 @@ fn main() {
         }
         let _ = OUTPUT_MODE.set(OutputMode::Plan);
         let _ = PLAN_CHILDREN.set(cli.plan_children);
+        let _ = PLAN_REQUIRES.set(cli.plan_requires);
         if let Some(reads) = cli.plan_reads {
             let _ = PLAN_READS.set(reads);
         }
@@ -6512,6 +6582,7 @@ fn plan_child_generations(
             document: child,
             arguments: kind.arguments(args),
             files,
+            requires: std::mem::take(&mut child_report.runtime_requires),
         });
         pending.extend(asked_by(&child_report));
     }
@@ -6947,6 +7018,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                     // is the staleness the import entry above prevents.
                     let mut import_deps = preprocessor_deps;
                     import_deps.extend(output.deps);
+                    report.runtime_requires.extend(output.requires);
                     let files = maybe_format_files(output.files, &cpp_formatter);
                     let out = Path::new(output_dir);
                     for (filename, code) in &files {
@@ -7662,6 +7734,9 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
             );
         }
         artifact_deps.extend(output.deps);
+        // What the machine needs linked, as its backend decided while
+        // rendering it, and below what each child it carries needs.
+        report.runtime_requires.extend(output.requires);
 
         let files = maybe_format_files(output.files, &cpp_formatter);
         for (filename, code) in &files {
@@ -7712,6 +7787,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
         for sce_build::EmittedChild { child, output } in children {
             artifact_deps.extend(output.deps);
+            report.runtime_requires.extend(output.requires);
             let child_files = maybe_format_files(output.files, &cpp_formatter);
             for (filename, code) in &child_files {
                 let file_path = out_path.join(filename);
@@ -7872,6 +7948,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 // What the transport read beside the deploy (a device's
                 // `vsomeip.json`) is an input of the run, as the deploy is.
                 artifact_deps.extend(result.output.deps);
+                report.runtime_requires.extend(result.output.requires);
                 let mesh_files = maybe_format_files(result.output.files, &cpp_formatter);
                 for (filename, code) in &mesh_files {
                     let file_path = out_path.join(filename);
@@ -14250,8 +14327,8 @@ fn plan_requests(text: &str, requests_path: &str) -> Vec<PlanRequest> {
                 requests_path,
                 number,
                 "a request asks one plan of a generation (`--plan [--plan-children] \
-                 generate <document> ...`), and the file it reads into is the batch's to \
-                 name (`--plan-reads`)",
+                 [--plan-requires] generate <document> ...`), and the file it reads into \
+                 is the batch's to name (`--plan-reads`)",
             ),
             Err(error) => refuse(
                 requests_path,

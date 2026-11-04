@@ -70,9 +70,9 @@
            can construct DOM userdata via `sce_lua_dom_push_object`.
            Mirrors cpp `LuaEngine::initializeSession` registerMetatable
            hook (sce/src/scripting/LuaEngine.cpp:385). The helper is
-           defined in backends/c/tests/support/lua_dom_binding.c and lives
-           outside the C11 runtime — only fixtures flagged NEEDS_DOM
-           link against it. */
+           defined in backends/c/runtime/scripting/lua_dom_binding.c (the
+           `sce_c_scripting` tier), which a machine links exactly when it
+           states the `dom` requirement, as this one does. */
         sce_lua_dom_register_metatable(sm->L);
         {% endif %}
         /* W3C SCXML B.2: the ECMAScript operators and library Lua does not
