@@ -200,6 +200,9 @@ use sce_rust_tests::integration::static_datamodel::static_state_algorithm_sm::{
 use sce_rust_tests::integration::static_datamodel::static_string_capacity_sm::{
     StaticStringCapacityPersist, StaticStringCapacityPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_string_literal_sm::{
+    StaticStringLiteralPersist, StaticStringLiteralPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_text_record_sm::{
     StaticTextRecordPersist, StaticTextRecordPolicy,
 };
@@ -1170,6 +1173,21 @@ fn static_string_capacity_holds_a_string_to_its_bytes() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_string_capacity.json"
+        ),
+    );
+}
+
+// A string literal holds the text its escapes denote, whatever quote the author
+// wrote it in and whatever the target language makes of the characters: a quote
+// of either kind, a backslash, a `$`, a `\(`, a control character and a
+// character past the Basic Multilingual Plane each arrive as themselves.
+#[test]
+fn static_string_literal_holds_the_text_its_escapes_denote() {
+    replay(
+        Engine::new(StaticStringLiteralPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_string_literal.json"
         ),
     );
 }

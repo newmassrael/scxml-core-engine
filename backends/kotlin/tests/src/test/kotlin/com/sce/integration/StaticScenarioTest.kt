@@ -94,6 +94,7 @@ import com.sce.integration.static_state_algorithm.StaticStateAlgorithmStateMachi
 import com.sce.integration.static_state_algorithm_enum.StaticStateAlgorithmEnumStateMachine
 import com.sce.integration.static_state_algorithm_optional.StaticStateAlgorithmOptionalStateMachine
 import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
+import com.sce.integration.static_string_literal.StaticStringLiteralStateMachine
 import com.sce.integration.static_text_record.StaticTextRecordStateMachine
 import com.sce.integration.static_timers.StaticTimersStateMachine
 import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
@@ -1546,6 +1547,28 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_string_capacity"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A string literal holds the text its escapes denote, written into the
+    // Kotlin source through the Kotlin escaper: a `$` opens no template
+    // expression, and a quote of either kind, a backslash, a control character
+    // and a character past the Basic Multilingual Plane each arrive as
+    // themselves.
+    @Test
+    fun staticStringLiteralHoldsTheTextItsEscapesDenote() {
+        val sm = StaticStringLiteralStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_string_literal"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

@@ -103,6 +103,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_state_algorithm_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_state_algorithm_optional"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_capacity"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_literal"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_text_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_timers"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_whole_payload"
@@ -2296,6 +2297,19 @@ func TestAStringIsHeldToItsBytes(t *testing.T) {
 		"copied":   func() any { return policy.Copied() },
 		"measured": func() any { return policy.Measured() },
 		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// A string literal holds the text its escapes denote, written into the Go source
+// through the Go escaper: a quote of either kind, a backslash, a `$`, a control
+// character and a character past the Basic Multilingual Plane each arrive as
+// themselves.
+func TestAStringLiteralHoldsTheTextItsEscapesDenote(t *testing.T) {
+	policy := static_string_literal.NewStaticStringLiteralPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_string_literal", drive[static_string_literal.StaticStringLiteralState, static_string_literal.StaticStringLiteralEvent](&policy, map[string]func() any{
+		"held":     func() any { return policy.Held() },
+		"measured": func() any { return policy.Measured() },
 	}))
 }
 

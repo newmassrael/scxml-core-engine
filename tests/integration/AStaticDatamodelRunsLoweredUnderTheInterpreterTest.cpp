@@ -846,6 +846,10 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // ... and one carried by a `<param>` and a `<donedata>`, as its Latin-1 text.
     EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_bytes_wire"), replayed.end())
         << "static_bytes_wire was not replayed: a byte string as a param has no lowering for the Interpreter";
+    // ... and the string literals whose escapes the lexer reads into their text, each
+    // written again as the ECMAScript literal the script engine reads back as that text.
+    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "static_string_literal"), replayed.end())
+        << "static_string_literal was not replayed: a string literal has no lowering for the Interpreter";
     // ... and the copies of a shared list and a shared sheet, composed of the standard
     // merge rules: each holds lists of records with 64-bit fields and sends to its
     // Mesh peers, which its scenario states step by step.

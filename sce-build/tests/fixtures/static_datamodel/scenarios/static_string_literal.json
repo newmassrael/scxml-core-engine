@@ -1,0 +1,48 @@
+{
+  "machine": "static_string_literal",
+  "about": "A string literal holds the text its escapes denote, on every engine: the lexer reads each literal once into that text and every backend writes the text through its own string-literal escaper. Each event assigns `held` a literal whose spelling, pasted between double quotes, would break a target's literal or change its meaning: a quote of either kind, a backslash, a Kotlin template expression, a Swift interpolation, a line break and a tab, `\\x` and `\\u` escapes, a character past the Basic Multilingual Plane as a braced code point and as a surrogate pair, and a pair of question marks C reads as the start of a trigraph. `measure` reads the UTF-8 bytes of the text, not of its spelling. Expected values are derived from ECMA-262's reading of each literal, not observed from a backend.",
+  "steps": [
+    { "note": "a double quote inside a single-quoted literal is a double quote",
+      "expect": { "state": "idle", "variables": { "held": "a\"b", "measured": 0 } } },
+
+    { "note": "a single quote inside a double-quoted literal is a single quote",
+      "event": "quote",
+      "expect": { "variables": { "held": "it's", "measured": 0 } } },
+
+    { "note": "an escaped backslash is one backslash",
+      "event": "backslash",
+      "expect": { "variables": { "held": "a\\b", "measured": 0 } } },
+
+    { "note": "a dollar sign opens no template expression: the text is the ten characters written",
+      "event": "template",
+      "expect": { "variables": { "held": "$name ${x}", "measured": 0 } } },
+
+    { "note": "a backslash before a parenthesis opens no interpolation",
+      "event": "interpolation",
+      "expect": { "variables": { "held": "\\(x)", "measured": 0 } } },
+
+    { "note": "`\\n` and `\\t` are a line break and a tab",
+      "event": "controls",
+      "expect": { "variables": { "held": "a\nb\tc", "measured": 0 } } },
+
+    { "note": "`\\x41`, `\\u00e9` and `\\u{20ac}` are an `A`, an `e` with an acute accent and a euro sign",
+      "event": "hex",
+      "expect": { "variables": { "held": "Aé€", "measured": 0 } } },
+
+    { "note": "one, two and three bytes: six, though the spelling is eighteen characters",
+      "event": "measure",
+      "expect": { "variables": { "held": "Aé€", "measured": 6 } } },
+
+    { "note": "a braced code point and a surrogate pair both name U+10348",
+      "event": "astral",
+      "expect": { "variables": { "held": "𐍈𐍈", "measured": 6 } } },
+
+    { "note": "U+10348 is four bytes, so two of them are eight",
+      "event": "measure",
+      "expect": { "variables": { "held": "𐍈𐍈", "measured": 8 } } },
+
+    { "note": "two question marks and an equals sign are three characters, not a C trigraph",
+      "event": "trigraph",
+      "expect": { "variables": { "held": "a??=b", "measured": 8 } } }
+  ]
+}

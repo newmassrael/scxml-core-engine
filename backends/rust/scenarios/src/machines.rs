@@ -263,6 +263,7 @@ scenarios! {
     "static_state_algorithm_enum" => static_state_algorithm_enum_sm::{StaticStateAlgorithmEnumPolicy, StaticStateAlgorithmEnumPersist};
     "static_state_algorithm_optional" => static_state_algorithm_optional_sm::{StaticStateAlgorithmOptionalPolicy, StaticStateAlgorithmOptionalPersist};
     "static_string_capacity" => static_string_capacity_sm::{StaticStringCapacityPolicy, StaticStringCapacityPersist};
+    "static_string_literal" => static_string_literal_sm::{StaticStringLiteralPolicy, StaticStringLiteralPersist};
     "static_text_record" => static_text_record_sm::{StaticTextRecordPolicy, StaticTextRecordPersist};
     "static_timers" => static_timers_sm::{StaticTimersPolicy, StaticTimersPersist} @ Manual;
     "static_timers_stop" => static_timers_sm::{StaticTimersPolicy, StaticTimersPersist} @ Manual;

@@ -2117,6 +2117,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # header-only half, reached by its include directory.
     foreach(_STATIC_SCALAR_MACHINE static_counter static_event_arrival static_event_wildcard static_overflow
                                    static_block_ends static_foreach static_block_ends_list static_string_capacity
+                                   static_string_literal
                                    static_bytes static_donedata_content static_real static_real32
                                    static_wrapping_counter)
         sce_generate_static_integration_c_test(${_STATIC_SCALAR_MACHINE}
@@ -2707,6 +2708,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_real32_SOURCES}
         ${INTEGRATION_C_TEST_static_block_ends_list_SOURCES}
         ${INTEGRATION_C_TEST_static_string_capacity_SOURCES}
+        ${INTEGRATION_C_TEST_static_string_literal_SOURCES}
         ${INTEGRATION_C_TEST_static_bytes_SOURCES}
         ${INTEGRATION_C_TEST_static_donedata_SOURCES}
         ${INTEGRATION_C_TEST_static_donedata_content_SOURCES}

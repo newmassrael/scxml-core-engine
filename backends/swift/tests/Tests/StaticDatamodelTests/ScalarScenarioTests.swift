@@ -85,6 +85,17 @@ private func stringCapacity() -> Machine {
     )
 }
 
+private func stringLiteral() -> Machine {
+    let policy = StaticStringLiteralPolicy()
+    return drive(
+        policy,
+        variables: [
+            "held": { .text(policy.held) },
+            "measured": { integer(policy.measured) },
+        ]
+    )
+}
+
 private func blockEnds() -> Machine {
     let policy = StaticBlockEndsPolicy()
     return drive(
@@ -1139,6 +1150,14 @@ private func recordBytes() -> Machine {
 // that does not fit is refused, not cut.
 @Test func aStringHoldsNoMoreThanItsBound() {
     replay("static_string_capacity", stringCapacity())
+}
+
+// A string literal holds the text its escapes denote, written into the Swift source
+// through the Swift escaper: a backslash before `(` opens no interpolation, and a quote
+// of either kind, a control character and a character past the Basic Multilingual
+// Plane each arrive as themselves.
+@Test func aStringLiteralHoldsTheTextItsEscapesDenote() {
+    replay("static_string_literal", stringLiteral())
 }
 
 // A failing statement ends its block, and only its block: what stands after it in the

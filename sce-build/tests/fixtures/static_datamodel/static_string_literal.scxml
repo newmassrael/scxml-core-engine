@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, and §3.4 on string
+  literals): a string literal holds the text its escapes denote, on every engine.
+  The lexer reads each literal once into that text, and every backend writes the
+  text through its own string-literal escaper, so what a variable holds does not
+  depend on what the target language makes of the author's quote or escapes.
+
+  Each event assigns `held` a literal that would break a target's literal if its
+  spelling were pasted between double quotes: a double quote inside a single-quoted
+  literal (the initial value), a single quote inside a double-quoted one, a
+  backslash, a Kotlin template expression (`$name`, `${x}`), a Swift interpolation
+  (a backslash before `(`), a line break and a tab, `\x` and `\u` escapes some
+  targets do not have, a character past the Basic Multilingual Plane written as a
+  braced code point and as a surrogate pair, and two question marks that would
+  begin a C trigraph. `measure` writes `len(held)`, the UTF-8 bytes of the text
+  the escapes denote, which is not the length of their spelling.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_string_literal">
+  <datamodel>
+    <data id="held" sce:type="string[32]" expr="'a&quot;b'" sce:direction="out"/>
+    <data id="measured" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="quote" type="internal">
+      <assign location="held" expr="&quot;it's&quot;"/>
+    </transition>
+    <transition event="backslash" type="internal">
+      <assign location="held" expr="'a\\b'"/>
+    </transition>
+    <transition event="template" type="internal">
+      <assign location="held" expr="'$name ${x}'"/>
+    </transition>
+    <transition event="interpolation" type="internal">
+      <assign location="held" expr="'\\(x)'"/>
+    </transition>
+    <transition event="controls" type="internal">
+      <assign location="held" expr="'a\nb\tc'"/>
+    </transition>
+    <!-- An `A`, an `é` (two bytes) and a `€` (three bytes): six bytes. -->
+    <transition event="hex" type="internal">
+      <assign location="held" expr="'\x41\u00e9\u{20ac}'"/>
+    </transition>
+    <!-- U+10348 twice, four bytes each: eight bytes. -->
+    <transition event="astral" type="internal">
+      <assign location="held" expr="'\u{10348}\uD800\uDF48'"/>
+    </transition>
+    <transition event="trigraph" type="internal">
+      <assign location="held" expr="'a??=b'"/>
+    </transition>
+    <transition event="measure" type="internal">
+      <assign location="measured" expr="len(held)"/>
+    </transition>
+  </state>
+</scxml>

@@ -96,6 +96,9 @@
 //     "42"), with no script engine to read it as a number.
 //   * `static_string_capacity`: a string is a buffer of the UTF-8 bytes its variable
 //     declares, and an assignment past it is refused by bytes, not characters.
+//   * `static_string_literal`: a string literal holds the text its escapes denote,
+//     written into the C source through the C escaper: a quote, a backslash, a
+//     control character, a character past ASCII and a pair of question marks.
 //   * `static_bytes`: a byte string is a buffer of the bytes its variable declares and
 //     the length it holds, assigned from a literal or another byte string, compared,
 //     measured, and refused past its bound; a host is lent a view of it.
@@ -206,6 +209,7 @@
 #include "static_state_algorithm_optional_sm.h"
 #include "static_state_algorithm_sm.h"
 #include "static_string_capacity_sm.h"
+#include "static_string_literal_sm.h"
 #include "static_text_record_sm.h"
 #include "static_timers_sm.h"
 #include "static_whole_payload_sm.h"
@@ -705,6 +709,28 @@ static const variable_t string_capacity_variables[] = {
     {"refusals", static_string_capacity_read_refusals},
 };
 STATIC_SCENARIO(static_string_capacity, string_capacity_states, string_capacity_variables, static_string_capacity_text,
+                no_lists, no_records)
+
+// static_string_literal: a string literal holds the text its escapes denote, which
+// the generated source spells through the C escaper (octal for a byte past ASCII,
+// `\?` after a `?`). A published string is read as the text of its buffer.
+VARIABLE_READER(static_string_literal, measured)
+
+static const char *static_string_literal_text(void *sm, const char *name) {
+    const static_string_literal_t *machine = (const static_string_literal_t *)sm;
+    if (strcmp(name, "held") == 0) {
+        return static_string_literal_get_held(machine);
+    }
+    return NULL;
+}
+
+static const name_value_t string_literal_states[] = {
+    {"idle", STATIC_STRING_LITERAL_STATE_IDLE},
+};
+static const variable_t string_literal_variables[] = {
+    {"measured", static_string_literal_read_measured},
+};
+STATIC_SCENARIO(static_string_literal, string_literal_states, string_literal_variables, static_string_literal_text,
                 no_lists, no_records)
 
 // static_bytes: a byte string is a buffer of the bytes its variable declares and the
@@ -3249,6 +3275,7 @@ int main(void) {
     bad |= static_payload_enum_scenario("static_payload_enum", 8);
     bad |= static_payload_relay_scenario("static_payload_relay", 5);
     bad |= static_string_capacity_scenario("static_string_capacity", 14);
+    bad |= static_string_literal_scenario("static_string_literal", 11);
     bad |= static_bytes_scenario("static_bytes", 12);
     bad |= static_record_bytes_scenario("static_record_bytes", 36);
     bad |= static_payload_bytes_scenario("static_payload_bytes", 15);

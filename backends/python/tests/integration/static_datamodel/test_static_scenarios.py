@@ -1087,6 +1087,14 @@ def test_a_string_is_held_to_its_bytes() -> None:
     replay("static_string_capacity")
 
 
+# A string literal holds the text its escapes denote, written into the Python
+# source through the Python escaper: a quote of either kind, a backslash, a
+# control character and a character past the Basic Multilingual Plane each
+# arrive as themselves.
+def test_a_string_literal_holds_the_text_its_escapes_denote() -> None:
+    replay("static_string_literal")
+
+
 # A bytes variable is held to the bytes it declares, as a string is to its UTF-8
 # bytes: an assignment past the bound writes nothing, raises error.execution and
 # ends its block. A scenario states a byte string as its byte-exact Latin-1 text.
