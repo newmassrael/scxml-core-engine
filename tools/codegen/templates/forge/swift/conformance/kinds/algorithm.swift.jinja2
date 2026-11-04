@@ -18,7 +18,12 @@
    of an enum is the enum fixture's own type, which the oracle writes as the name a variant
    declares: the value is the variant of that name, built the same way for an expected value
    and compared as the enum. #}
-{% macro field_value(fld, raw, fixture) %}{% if fld.enum_document is defined %}try { () throws -> {{ fld.enum_document | to_pascal_case }} in switch try oracleText({{ raw }}) { {% for v in fld.variants %}case "{{ v.name }}": return {{ fld.enum_document | to_pascal_case }}.{{ v.ident }}; {% endfor %}default: throw OracleError(description: "{{ fixture }}.{{ fld.name }}: no variant is declared as the name the case writes") } }(){% else %}{{ raw | swift_unmarshal(fld.type) }}{% endif %}{% endmacro %}
+{% macro enum_value(document, variants, raw, label) %}try { () throws -> {{ document | to_pascal_case }} in switch try oracleText({{ raw }}) { {% for v in variants %}case "{{ v.name }}": return {{ document | to_pascal_case }}.{{ v.ident }}; {% endfor %}default: throw OracleError(description: "{{ label }}: no variant is declared as the name the case writes") } }(){% endmacro %}
+{% macro field_value(fld, raw, fixture) %}{% if fld.enum_document is defined %}{{ enum_value(fld.enum_document, fld.variants, raw, fixture ~ "." ~ fld.name) }}{% else %}{{ raw | swift_unmarshal(fld.type) }}{% endif %}{% endmacro %}
+{# A value that may be absent (docs/adr/0055) is the `T?` the generated algorithm's
+   slot is, `nil` where the oracle writes `null`; an optional answer is compared
+   whole, so an absent answer equals only an absent one. #}
+{% macro optional_value(raw, ty) %}try oracleOptional({{ raw }}) { {{ "$0" | swift_unmarshal(ty) }} }{% endmacro %}
     for testCase in try oracleCases("{{ f.ref_section }}", "{{ f.name }}") {
         let args = try oracleArray(testCase.member("args"))
 {% for arg_ty in f.args %}
@@ -41,6 +46,10 @@
         }
 {% elif arg_ty.list_of is defined %}
         let arg{{ i }} = try oracleArray(args[{{ i }}]).map { {{ "$0" | swift_unmarshal(arg_ty.list_of) }} }
+{% elif arg_ty.enum is defined %}
+        let arg{{ i }} = {{ enum_value(arg_ty.enum, arg_ty.variants, "args[" ~ i ~ "]", f.name ~ " arg" ~ i) }}
+{% elif arg_ty.optional is defined %}
+        let arg{{ i }} = {{ optional_value("args[" ~ i ~ "]", arg_ty.optional) }}
 {% else %}
         let arg{{ i }} = {{ ("args[" ~ i ~ "]") | swift_unmarshal(arg_ty) }}
 {% endif %}
@@ -97,6 +106,9 @@
 {% endif %}
 {% elif f.output.type == "bytes" %}
         let expected = try oracleBytes(testCase.member("expected"))
+        #expect(returned == expected, "{{ f.name }}")
+{% elif f.output.optional is defined %}
+        let expected = {{ optional_value("testCase.member(\"expected\")", f.output.optional) }}
         #expect(returned == expected, "{{ f.name }}")
 {% else %}
         let expected = {{ "testCase.member(\"expected\")" | swift_unmarshal(f.output.type) }}

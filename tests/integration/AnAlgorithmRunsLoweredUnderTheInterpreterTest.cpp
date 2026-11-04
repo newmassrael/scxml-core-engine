@@ -163,8 +163,14 @@ Lowered lower(const std::string &document) {
 /// integer a Number holds exactly is a Number and one it does not is a BigInt
 /// literal, which is the one form the lowered functions hold an integer in
 /// (`SceStatic`, docs/SCE_ACCEPTED_SUBSET.md 2.15); nothing is left unspelled but
-/// a value of a kind the reference does not carry.
+/// a value of a kind the reference does not carry. A value of an enum is the
+/// name its variant declares, which is a text, and an absent value of an
+/// optional slot is `null` (docs/adr/0055), as the lowered functions hold both.
 bool spell(const nlohmann::json &value, std::string &out) {
+    if (value.is_null()) {
+        out = "null";
+        return true;
+    }
     if (value.is_string()) {
         // A JSON string is a string literal of the script, its UTF-8 kept as
         // written: the lowered functions count a text in bytes.
@@ -280,8 +286,12 @@ Answer call(::SCE::IScriptEngine &engine, const std::string &session, const std:
 
 /// Whether two values are the same: a list or bytes by its elements in order, a
 /// record by its fields whatever order they were written in, a text by its
-/// bytes, and the rest as a number or a truth value is.
+/// bytes, an absent answer (`null`) by being absent, and the rest as a number or
+/// a truth value is.
 bool sameValue(const nlohmann::json &got, const nlohmann::json &want) {
+    if (got.is_null() || want.is_null()) {
+        return got.is_null() && want.is_null();
+    }
     if (got.is_array() || want.is_array()) {
         if (!got.is_array() || !want.is_array() || got.size() != want.size()) {
             return false;

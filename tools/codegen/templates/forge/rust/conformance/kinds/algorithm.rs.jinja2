@@ -26,14 +26,26 @@
    A `may-fail` algorithm (SCE_FORGE.md §3.4.1) returns `Result<T,
    AlgorithmError>`. A case that names a failure (`"fails": "overflow"`)
    carries no `expected`; it is judged by the error's contract name before
-   anything reads `expected`, and every other case unwraps the value. #}
+   anything reads `expected`, and every other case unwraps the value.
+
+   A value of an enum as an argument is built from the name its variant
+   declares, as a record's enum field is. An argument or an answer that may be
+   absent (docs/adr/0055) is an `Option` over the value, `None` where the
+   oracle writes `null`, and an optional answer is compared whole, so an absent
+   answer equals only an absent one. #}
+{# A value of the enum fixture `document`, read from the oracle's JSON `raw`, which
+   holds the name a variant declares: the variant of that name. `label` names the
+   value in a panic. #}
+{% macro enum_value(document, variants, raw, label) %}match {{ raw }}.as_str().expect("{{ label }}: a value of an enum is the name a variant declares") { {% for v in variants %}"{{ v.name }}" => fixtures::{{ document }}::{{ document | to_pascal_case }}::{{ v.ident }}, {% endfor %}other => panic!("{{ label }}: no variant is declared as {other}") }{% endmacro %}
+{# A value that may be absent, read from the oracle's JSON `raw`: `None` for `null`. #}
+{% macro optional_value(raw, ty) %}if {{ raw }}.is_null() { None } else { Some({{ raw | rust_unmarshal(ty) }}) }{% endmacro %}
 {# A record's `string` field is the runtime's bounded text, `SceString<N>` with
    the schema's `max-size`; the oracle's text is built into it with the fallible
    copy a host uses, and read back as the `&str` it compares as. A field that
    holds a value of an enum is the enum fixture's own type, which the oracle
    writes as the name a variant declares: the value is the variant of that name,
    and an expected value is built the same way and compared as the enum. #}
-{% macro field_value(fld, raw, fixture) %}{% if fld.enum_document is defined %}match {{ raw }}.as_str().expect("{{ fixture }}.{{ fld.name }}: an enum field is the name a variant declares") { {% for v in fld.variants %}"{{ v.name }}" => fixtures::{{ fld.enum_document }}::{{ fld.enum_document | to_pascal_case }}::{{ v.ident }}, {% endfor %}other => panic!("{{ fixture }}.{{ fld.name }}: no variant is declared as {other}") }{% elif fld.type == "string" %}::sce_portable_bytes::SceString::<{{ fld.max_size }}>::from_text({{ raw | rust_unmarshal("string") }}).expect("{{ fixture }}.{{ fld.name }}: the case text fits the schema's bound"){% else %}{{ raw | rust_unmarshal(fld.type) }}{% endif %}{% endmacro %}
+{% macro field_value(fld, raw, fixture) %}{% if fld.enum_document is defined %}{{ enum_value(fld.enum_document, fld.variants, raw, fixture ~ "." ~ fld.name) }}{% elif fld.type == "string" %}::sce_portable_bytes::SceString::<{{ fld.max_size }}>::from_text({{ raw | rust_unmarshal("string") }}).expect("{{ fixture }}.{{ fld.name }}: the case text fits the schema's bound"){% else %}{{ raw | rust_unmarshal(fld.type) }}{% endif %}{% endmacro %}
 {# A list or bytes output is written into a destination the caller holds
    (docs/adr/0082): the call hands one in and, where the algorithm wrote it,
    yields it, so the call reads as `Result<the list, _>` as it did before. #}
@@ -75,6 +87,10 @@
             .iter()
             .map(|x| {{ "x" | rust_unmarshal(arg_ty.list_of) }})
             .collect();
+{% elif arg_ty.enum is defined %}
+        let arg{{ i }} = {{ enum_value(arg_ty.enum, arg_ty.variants, "case[\"args\"][" ~ i ~ "]", f.name ~ " arg" ~ i) }};
+{% elif arg_ty.optional is defined %}
+        let arg{{ i }}: Option<{{ arg_ty.optional | rust_type }}> = {{ optional_value("case[\"args\"][" ~ i ~ "]", arg_ty.optional) }};
 {% else %}
         let arg{{ i }} = {{ ("case[\"args\"][" ~ i ~ "]") | rust_unmarshal(arg_ty) }};
 {% endif %}
@@ -143,6 +159,12 @@
             .expect("{{ f.name }}: a case within the declared capacity");
 {% endif %}
         assert_eq!(actual.as_slice(), expected.as_slice(), "{{ f.name }}");
+{% elif f.output.optional is defined %}
+        let expected: Option<{{ f.output.optional | rust_type }}> = {{ optional_value("case[\"expected\"]", f.output.optional) }};
+{% if not f.may_fail %}
+        let actual = {{ call }};
+{% endif %}
+        assert_eq!(actual, expected, "{{ f.name }}");
 {% else %}
         let expected = {{ "case[\"expected\"]" | rust_unmarshal(f.output.type) }};
 {% if not f.may_fail %}

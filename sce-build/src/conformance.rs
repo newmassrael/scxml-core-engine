@@ -146,22 +146,41 @@ impl ListElemArg {
 }
 
 /// What an algorithm fixture's single call returns: one scalar, a
-/// `list<T>`, or a record. Untagged so a scalar output keeps its
-/// `{type, compare}` spelling; the list form is told apart by `list_of`, the
-/// record form by `record`.
+/// `list<T>`, a record, or a scalar that may be absent. Untagged so a scalar
+/// output keeps its `{type, compare}` spelling; the list form is told apart by
+/// `list_of`, the record form by `record`, the optional form by `optional`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum AlgorithmOutput {
     List(ListOutput),
     Record(RecordRef),
+    Optional(OptionalOutput),
     Scalar(ScalarOutput),
 }
 
+/// An `optional<T>` return (docs/adr/0055): `expected` is a value of `optional`
+/// or `null` where the algorithm answers none, and each fragment compares the
+/// two in its language's optional type, so an absent answer equals only an
+/// absent one.
+///
+/// ⚠ The element is a fixed-width number or a `bool`, compared for equality:
+/// what every backend holds an optional value of in an algorithm's slot, and
+/// what [`Manifest::validate`] admits.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct OptionalOutput {
+    pub optional: CanonicalType,
+    pub compare: CompareMode,
+}
+
 /// One argument of an algorithm fixture: a canonical scalar (`"i64"`), a
-/// record typed by an event-schema fixture (`{"record": "<fixture>"}`), or a
-/// read-only `list<T>` (`{"list_of": "i64"}`) — SCE_FORGE.md §4.12. Untagged
-/// so a scalar argument keeps its bare-string spelling.
+/// record typed by an event-schema fixture (`{"record": "<fixture>"}`), a
+/// read-only `list<T>` (`{"list_of": "i64"}`) — SCE_FORGE.md §4.12 — a value
+/// of an enum (`{"enum": "<enum fixture>"}`), or a scalar that may be absent
+/// (`{"optional": "i32"}`, docs/adr/0055). Untagged so a scalar argument keeps
+/// its bare-string spelling.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(untagged)]
@@ -169,6 +188,38 @@ pub enum AlgorithmArg {
     Scalar(CanonicalType),
     Record(RecordRef),
     List(ListArg),
+    Enum(EnumArg),
+    Optional(OptionalArg),
+}
+
+/// A value of an enum as an argument: the oracle writes it as the name its
+/// variant declares, and each fragment builds the enum fixture's own type from
+/// that name, as it builds a record's enum field.
+///
+/// ⚠ `variants` is DERIVED, never written: it is read at harness-render time
+/// from the enum fixture's document, with each variant's member as this
+/// language's declaration emits it, so the harness cannot name a member the
+/// generator did not write. A manifest that carries it is refused.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct EnumArg {
+    /// The enum fixture of this manifest that generates the type.
+    #[serde(rename = "enum")]
+    pub enum_document: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<RecordEnumVariant>,
+}
+
+/// An `optional<T>` argument (docs/adr/0055): the oracle writes a value of
+/// `optional`, or `null` for an absent one, and each fragment hands the
+/// algorithm its language's optional type over that value. The element is a
+/// fixed-width number or a `bool` ([`Manifest::validate`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct OptionalArg {
+    pub optional: CanonicalType,
 }
 
 /// A `list<T>` argument: the oracle writes it as a JSON array of `list_of`
@@ -227,8 +278,8 @@ pub struct RecordFieldSpec {
     pub variants: Vec<RecordEnumVariant>,
 }
 
-/// One variant of the enum a record's field holds, as a fragment builds the field
-/// from the name the oracle writes and compares it with one.
+/// One variant of the enum a record's field or an argument holds, as a fragment
+/// builds the value from the name the oracle writes and compares it with one.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct RecordEnumVariant {
@@ -1026,6 +1077,16 @@ pub fn c_type_for(ty: &str) -> &'static str {
     }
 }
 
+/// The C11 struct a value of canonical type `ty` that may be absent is held in
+/// (`sce_optional_int32_t`; docs/adr/0055), from the rule the generator names an
+/// algorithm's optional slot by (`static_lowering::c11_optional_type`), so the
+/// harness hands over the very type the parameter declares.
+pub fn c_optional_type_for(ty: &str) -> String {
+    let present = c_type_for(ty);
+    crate::forge::static_lowering::c11_optional_type(present)
+        .unwrap_or_else(|| format!("/* no optional of canonical type {ty} */ void"))
+}
+
 /// Format a JSON literal value (from `numerical_reference.json`) as a
 /// C11 source-level literal for the requested canonical type. Used by
 /// the C11 conformance harness to pre-bake oracle arrays at codegen
@@ -1294,6 +1355,10 @@ pub fn register_conformance_filters(env: &mut minijinja::Environment) {
     // produces the exact C11 source literal — replacing the runtime
     // JSON parsing every other backend does at test execution time.
     env.add_filter("c_type", |ty: String| c_type_for(&ty).to_string());
+    // The struct C11 holds a value of `ty` that may be absent in
+    // (`sce_optional_int32_t`, `sce/forge/optional.h`), named by the one rule
+    // the generated algorithm's slot is named by.
+    env.add_filter("c_optional_type", |ty: String| c_optional_type_for(&ty));
     // A string or a byte array as a C string literal, and its length in bytes
     // (a string's is its UTF-8 length, which the template's own `length` —
     // a count of characters — is not).
@@ -1741,13 +1806,70 @@ impl Manifest {
                         .filter_map(|a| match a {
                             AlgorithmArg::Record(r) => Some(r),
                             AlgorithmArg::List(list) => list.list_of.record(),
-                            AlgorithmArg::Scalar(_) => None,
+                            AlgorithmArg::Scalar(_)
+                            | AlgorithmArg::Enum(_)
+                            | AlgorithmArg::Optional(_) => None,
                         })
                         .chain(match output {
                             AlgorithmOutput::Record(r) => Some(r),
                             AlgorithmOutput::List(list) => list.list_of.record(),
-                            AlgorithmOutput::Scalar(_) => None,
+                            AlgorithmOutput::Optional(_) | AlgorithmOutput::Scalar(_) => None,
                         });
+                    // A value of an enum names an enum fixture of this manifest,
+                    // whose variants are derived when the harness renders.
+                    for e in args.iter().filter_map(|a| match a {
+                        AlgorithmArg::Enum(e) => Some(e),
+                        _ => None,
+                    }) {
+                        let names_an_enum = self.fixtures.iter().any(|g| {
+                            g.name == e.enum_document && matches!(g.spec, FixtureSpec::Enum { .. })
+                        });
+                        if !names_an_enum {
+                            return Err(format!(
+                                "fixture {}: enum `{}` names no enum fixture in this manifest",
+                                f.name, e.enum_document
+                            ));
+                        }
+                        if !e.variants.is_empty() {
+                            return Err(format!(
+                                "fixture {}: enum `{}` carries `variants`, which are \
+                                 derived from the enum document; remove them",
+                                f.name, e.enum_document
+                            ));
+                        }
+                    }
+                    // A value that may be absent is held by every backend's
+                    // algorithm over a fixed-width number or a `bool`
+                    // (docs/adr/0055), and an optional answer is compared for
+                    // equality: an absent value is near no number.
+                    let optional_elements = args
+                        .iter()
+                        .filter_map(|a| match a {
+                            AlgorithmArg::Optional(o) => Some(o.optional),
+                            _ => None,
+                        })
+                        .chain(match output {
+                            AlgorithmOutput::Optional(o) => Some(o.optional),
+                            _ => None,
+                        });
+                    for element in optional_elements {
+                        if matches!(element, CanonicalType::String | CanonicalType::Bytes) {
+                            return Err(format!(
+                                "fixture {}: algorithm `optional` must be a number or a \
+                                 bool — the harness holds no optional text or bytes",
+                                f.name
+                            ));
+                        }
+                    }
+                    if let AlgorithmOutput::Optional(o) = output {
+                        if o.compare != CompareMode::Equality {
+                            return Err(format!(
+                                "fixture {}: an `optional` output is compared for \
+                                 equality, so its `compare` is \"equality\"",
+                                f.name
+                            ));
+                        }
+                    }
                     for r in records {
                         let names_a_schema = self.fixtures.iter().any(|g| {
                             g.name == r.record && matches!(g.spec, FixtureSpec::EventSchema { .. })
@@ -2755,18 +2877,7 @@ fn read_record_fields(
                     ty: enum_carrier(record, &f.id, &model.underlying_type)?,
                     max_size: None,
                     enum_document: Some(model.name.clone()),
-                    variants: model
-                        .variants
-                        .iter()
-                        .map(|v| RecordEnumVariant {
-                            name: v.name.clone(),
-                            ident: crate::forge::enum_naming::variant_ident(
-                                language,
-                                &model.name,
-                                &v.name,
-                            ),
-                        })
-                        .collect(),
+                    variants: enum_variants_of(model, language),
                 });
             }
             let ty = match declared {
@@ -2830,6 +2941,56 @@ fn enum_carrier(
             ))
         }
     })
+}
+
+/// Each variant of the enum `model`, by the name its document declares and the
+/// member this language's declaration emits for it
+/// ([`crate::forge::enum_naming::variant_ident`]): what a fragment builds a value
+/// of the enum from, a record's field or an argument alike.
+fn enum_variants_of(
+    model: &crate::forge::model::EnumModel,
+    language: Language,
+) -> Vec<RecordEnumVariant> {
+    model
+        .variants
+        .iter()
+        .map(|v| RecordEnumVariant {
+            name: v.name.clone(),
+            ident: crate::forge::enum_naming::variant_ident(language, &model.name, &v.name),
+        })
+        .collect()
+}
+
+/// The variants of the enum an algorithm's argument is a value of, read from the
+/// document of the enum fixture `enum_fixture` names with the parse the generator
+/// reads, so the members a fragment names are the ones the declaration emits.
+fn read_enum_arg_variants(
+    manifest: &Manifest,
+    resource_dir: &Path,
+    enum_fixture: &str,
+    language: Language,
+) -> Result<Vec<RecordEnumVariant>, String> {
+    let path = manifest
+        .fixtures
+        .iter()
+        .find(|g| g.name == enum_fixture && matches!(g.spec, FixtureSpec::Enum { .. }))
+        .ok_or_else(|| format!("enum `{enum_fixture}` names no enum fixture in this manifest"))?
+        .document_path(resource_dir);
+    let text = crate::load_forge_source(&path, &[])
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?
+        .positions
+        .expanded;
+    match crate::forge::parser::parse_forge(&text, crate::DocumentLabel::symmetric(enum_fixture))
+        .map_err(|e| format!("{}: {e}", path.display()))?
+    {
+        Some(crate::forge::model::ForgeDocument::Enum(model)) => {
+            Ok(enum_variants_of(&model, language))
+        }
+        _ => Err(format!(
+            "enum `{enum_fixture}`: {} is not an enum document",
+            path.display()
+        )),
+    }
 }
 
 /// An event-schema document, and each enum it imports by the alias it imports it
@@ -3707,15 +3868,29 @@ pub fn render_harness(
                 let arg_records = args.iter_mut().filter_map(|arg| match arg {
                     AlgorithmArg::Record(r) => Some(r),
                     AlgorithmArg::List(list) => list.list_of.record_mut(),
-                    AlgorithmArg::Scalar(_) => None,
+                    AlgorithmArg::Scalar(_) | AlgorithmArg::Enum(_) | AlgorithmArg::Optional(_) => {
+                        None
+                    }
                 });
                 let output_record = match output {
                     AlgorithmOutput::Record(r) => Some(r),
                     AlgorithmOutput::List(list) => list.list_of.record_mut(),
-                    AlgorithmOutput::Scalar(_) => None,
+                    AlgorithmOutput::Optional(_) | AlgorithmOutput::Scalar(_) => None,
                 };
                 for r in arg_records.chain(output_record) {
                     r.fields = read_record_fields(manifest, resource_dir, &r.record, language)?;
+                }
+                // A value of an enum is built from the name its variant
+                // declares, into the member this language emits for it.
+                for arg in args.iter_mut() {
+                    if let AlgorithmArg::Enum(e) = arg {
+                        e.variants = read_enum_arg_variants(
+                            manifest,
+                            resource_dir,
+                            &e.enum_document,
+                            language,
+                        )?;
+                    }
                 }
                 // Symbol-name SSOT: lower the manifest's `function` to the
                 // exact per-language symbol the algorithm template defines,
@@ -3810,6 +3985,17 @@ pub fn render_harness(
     // entry in (docs/adr/0055, section 5), and imports it only then.
     let has_optional_codec_field = fixtures.iter().any(|f| {
         matches!(&f.spec, FixtureSpec::Codec { fields, .. } if fields.iter().any(|field| field.optional))
+    });
+    // An algorithm with an argument or an answer that may be absent: the Go
+    // harness holds it in the same optional type, the one the generated
+    // algorithm's slot is (docs/adr/0055, section 5).
+    let has_optional_algorithm_slot = fixtures.iter().any(|f| {
+        matches!(
+            &f.spec,
+            FixtureSpec::Algorithm { args, output, .. }
+                if matches!(output, AlgorithmOutput::Optional(_))
+                    || args.iter().any(|a| matches!(a, AlgorithmArg::Optional(_)))
+        )
     });
 
     // The oracle is an input to every backend's render.
@@ -3941,6 +4127,7 @@ pub fn render_harness(
         has_timer => has_timer,
         has_codec => has_codec,
         has_optional_codec_field => has_optional_codec_field,
+        has_optional_algorithm_slot => has_optional_algorithm_slot,
         float_tolerance => float_tolerance,
     };
 
@@ -4262,6 +4449,111 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The untagged forms of an algorithm's slots read each spelling as what it
+    /// is: a value of an enum by `enum`, a value that may be absent by
+    /// `optional`, and an answer that may be absent by `optional` beside its
+    /// `compare`, which a scalar output, whose `type` is required, does not take.
+    #[test]
+    fn an_enum_and_an_optional_slot_are_read_as_themselves() {
+        let args: Vec<AlgorithmArg> =
+            serde_json::from_str(r#"["i64", {"enum": "date_kind"}, {"optional": "u8"}]"#)
+                .expect("the arguments parse");
+        assert!(matches!(args[0], AlgorithmArg::Scalar(CanonicalType::I64)));
+        assert!(
+            matches!(&args[1], AlgorithmArg::Enum(e) if e.enum_document == "date_kind" && e.variants.is_empty())
+        );
+        assert!(matches!(
+            args[2],
+            AlgorithmArg::Optional(OptionalArg {
+                optional: CanonicalType::U8
+            })
+        ));
+        let output: AlgorithmOutput =
+            serde_json::from_str(r#"{"optional": "i64", "compare": "equality"}"#)
+                .expect("the output parses");
+        assert!(matches!(
+            output,
+            AlgorithmOutput::Optional(OptionalOutput {
+                optional: CanonicalType::I64,
+                compare: CompareMode::Equality
+            })
+        ));
+    }
+
+    /// One algorithm over `args` answering `output`, beside the enum fixture
+    /// `date_kind`, as [`Manifest::validate`] judges it.
+    fn validated_algorithm(args: &str, output: &str) -> Result<(), String> {
+        let manifest: Manifest = serde_json::from_str(&format!(
+            r#"{{"version": 1, "fixtures": [
+                {{"name": "date_kind", "kind": "enum", "ref_section": "enums",
+                  "variants": [{{"name": "none", "value": 0}}]}},
+                {{"name": "resolve", "kind": "algorithm", "ref_section": "pure_functions",
+                  "function": "resolve", "args": {args}, "output": {output}}}]}}"#
+        ))
+        .expect("the manifest parses");
+        manifest.validate()
+    }
+
+    const OPTIONAL_DAY: &str = r#"{"optional": "i64", "compare": "equality"}"#;
+
+    /// A value of an enum names an enum fixture of the manifest, the one its
+    /// variants are derived from.
+    #[test]
+    fn an_enum_argument_names_an_enum_fixture_of_the_manifest() {
+        validated_algorithm(r#"["i64", {"enum": "date_kind"}]"#, OPTIONAL_DAY)
+            .expect("an enum fixture of the manifest is admitted");
+        let refused = validated_algorithm(r#"["i64", {"enum": "no_such_enum"}]"#, OPTIONAL_DAY)
+            .expect_err("an enum the manifest does not hold is refused");
+        assert!(refused.contains("names no enum fixture"), "{refused}");
+    }
+
+    /// The variants of an enum argument are the document's, so a manifest that
+    /// writes them is refused.
+    #[test]
+    fn an_enum_argument_that_writes_its_variants_is_refused() {
+        let refused = validated_algorithm(
+            r#"[{"enum": "date_kind", "variants": [{"name": "none", "ident": "None"}]}]"#,
+            OPTIONAL_DAY,
+        )
+        .expect_err("written variants are refused");
+        assert!(refused.contains("carries `variants`"), "{refused}");
+    }
+
+    /// An optional slot holds a number or a `bool`: a text or a byte string that
+    /// may be absent is refused as an argument and as an answer.
+    #[test]
+    fn an_optional_text_or_byte_string_is_refused() {
+        validated_algorithm(
+            r#"[{"optional": "bool"}, {"optional": "u64"}]"#,
+            OPTIONAL_DAY,
+        )
+        .expect("an optional number or bool is admitted");
+        let argument = validated_algorithm(r#"[{"optional": "string"}]"#, OPTIONAL_DAY)
+            .expect_err("an optional text argument is refused");
+        assert!(
+            argument.contains("must be a number or a bool"),
+            "{argument}"
+        );
+        let answer = validated_algorithm(
+            r#"["i64"]"#,
+            r#"{"optional": "bytes", "compare": "equality"}"#,
+        )
+        .expect_err("an optional byte-string answer is refused");
+        assert!(answer.contains("must be a number or a bool"), "{answer}");
+    }
+
+    /// An answer that may be absent is compared for equality; a tolerance has
+    /// nothing to measure between an absent answer and a number.
+    #[test]
+    fn an_optional_answer_compared_within_a_tolerance_is_refused() {
+        let refused = validated_algorithm(
+            r#"["i64"]"#,
+            r#"{"optional": "f64", "compare": "tolerance"}"#,
+        )
+        .expect_err("a tolerance on an optional answer is refused");
+        assert!(refused.contains("compared for equality"), "{refused}");
     }
 
     /// Oracle cross-check: verify structural integrity between fixtures.json

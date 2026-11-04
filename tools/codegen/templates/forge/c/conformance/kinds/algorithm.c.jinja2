@@ -37,7 +37,13 @@
    that holds a value of an enum is baked as the constant the enum fixture's
    header declares for the variant the oracle names, and compared as the number
    it is. #}
-{% macro c_field(fld, raw) %}{% if fld.enum_document is defined %}{% for v in fld.variants %}{% if v.name == raw %}{{ v.ident }}{% endif %}{% endfor %}{% elif fld.type == "string" %}{ {{ raw | c_literal(fld.type) }} }{% else %}{{ raw | c_literal(fld.type) }}{% endif %}{% endmacro %}
+{% macro c_enum(variants, raw) %}{% for v in variants %}{% if v.name == raw %}{{ v.ident }}{% endif %}{% endfor %}{% endmacro %}
+{% macro c_field(fld, raw) %}{% if fld.enum_document is defined %}{{ c_enum(fld.variants, raw) }}{% elif fld.type == "string" %}{ {{ raw | c_literal(fld.type) }} }{% else %}{{ raw | c_literal(fld.type) }}{% endif %}{% endmacro %}
+{# A value that may be absent (docs/adr/0055) is the `sce_optional_<T>_t` the
+   generated algorithm's slot is (`sce/forge/optional.h`), baked absent where the
+   oracle writes `null`. An optional answer is compared by whether it is present
+   and then by its value, so an absent answer equals only an absent one. #}
+{% macro c_optional(raw, ty) %}{% if raw is none %}{ .present = false, .value = 0 }{% else %}{ .present = true, .value = {{ raw | c_literal(ty) }} }{% endif %}{% endmacro %}
 {% set destination = f.output.list_of is defined or f.output.type == "bytes" %}
 {% set call_args %}{% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endset %}
 {% if f.output.list_of is defined or f.output.type == "bytes" %}
@@ -77,12 +83,18 @@ static void test_{{ f.name }}(void) {
         {{ arg_ty.list_of | c_type }} input_arg{{ ai }}[{{ w.n }}];
 {% endif %}
         size_t  input_arg{{ ai }}_len;
+{% elif arg_ty.enum is defined %}
+        {{ arg_ty.enum | to_pascal_case }}_t input_arg{{ loop.index0 }};
+{% elif arg_ty.optional is defined %}
+        {{ arg_ty.optional | c_optional_type }} input_arg{{ loop.index0 }};
 {% else %}
         {{ arg_ty | c_type }} input_arg{{ loop.index0 }};
 {% endif %}
 {% endfor %}
 {% if f.output.record is defined %}
         {{ f.output.record | to_pascal_case }}Payload_t expected;
+{% elif f.output.optional is defined %}
+        {{ f.output.optional | c_optional_type }} expected;
 {% elif f.output.list_of is defined and f.output.list_of.record is defined %}
         {{ f.output.list_of.record | to_pascal_case }}Payload_t expected[{{ ns.width }}];
         size_t  expected_len;
@@ -117,12 +129,18 @@ static void test_{{ f.name }}(void) {
 {% elif arg_ty.list_of is defined %}
             .input_arg{{ ai }} = { {% for v in c.args[ai] %}{{ v | c_literal(arg_ty.list_of) }}, {% else %}0{% endfor %} },
             .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
+{% elif arg_ty.enum is defined %}
+            .input_arg{{ ai }} = {{ c_enum(arg_ty.variants, c.args[ai]) }},
+{% elif arg_ty.optional is defined %}
+            .input_arg{{ ai }} = {{ c_optional(c.args[ai], arg_ty.optional) }},
 {% else %}
             .input_arg{{ ai }} = {{ c.args[ai] | c_literal(arg_ty) }},
 {% endif %}
 {% endfor %}
 {% if c.fails is defined %}
             .fails = "{{ c.fails }}",
+{% elif f.output.optional is defined %}
+            .expected = {{ c_optional(c.expected, f.output.optional) }},
 {% elif f.output.record is defined %}
             .expected = { {% for fld in f.output.fields %}.{{ fld.ident }} = {{ c_field(fld, c.expected[fld.name]) }}, {% endfor %}},
 {% elif f.output.list_of is defined and f.output.list_of.record is defined %}
@@ -154,6 +172,10 @@ static void test_{{ f.name }}(void) {
         const {{ arg_ty.list_of.record | to_pascal_case }}Payload_view_t arg{{ loop.index0 }} = { cases[i].input_arg{{ loop.index0 }}, cases[i].input_arg{{ loop.index0 }}_len };
 {% elif arg_ty.list_of is defined %}
         const sce_forge_{{ (arg_ty.list_of | c_type) | replace("_t", "") }}_view_t arg{{ loop.index0 }} = { cases[i].input_arg{{ loop.index0 }}, cases[i].input_arg{{ loop.index0 }}_len };
+{% elif arg_ty.enum is defined %}
+        {{ arg_ty.enum | to_pascal_case }}_t arg{{ loop.index0 }} = cases[i].input_arg{{ loop.index0 }};
+{% elif arg_ty.optional is defined %}
+        {{ arg_ty.optional | c_optional_type }} arg{{ loop.index0 }} = cases[i].input_arg{{ loop.index0 }};
 {% else %}
         {{ arg_ty | c_type }} arg{{ loop.index0 }} = cases[i].input_arg{{ loop.index0 }};
 {% endif %}
@@ -292,6 +314,16 @@ static void test_{{ f.name }}(void) {
                     i, k, (unsigned)actual.bytes[k], (unsigned)cases[i].expected[k]);
                 ++g_failures;
             }
+        }
+{% elif f.output.optional is defined %}
+        const {{ f.output.optional | c_optional_type }} actual = {% if f.may_fail %}result.value{% else %}{{ f.function }}({{ call_args }}){% endif %};
+        if (actual.present != cases[i].expected.present
+            || (actual.present && actual.value != cases[i].expected.value)) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu: actual present=%d value=%lld expected present=%d value=%lld\n",
+                i, (int)actual.present, (long long)actual.value,
+                (int)cases[i].expected.present, (long long)cases[i].expected.value);
+            ++g_failures;
         }
 {% else %}
         {{ f.output.type | c_type }} actual = {% if f.may_fail %}result.value{% else %}{{ f.function }}({{ call_args }}){% endif %};

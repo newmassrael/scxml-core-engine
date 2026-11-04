@@ -14,13 +14,22 @@
    A `may-fail` algorithm (SCE_FORGE.md §3.4.1) raises `AlgorithmFailure` in
    place of a value. A case that names a failure (`"fails": "overflow"`)
    carries no `expected`; it is judged by the raised error's contract name
-   before anything reads `expected`. #}
+   before anything reads `expected`.
+
+   A value that may be absent (docs/adr/0055) is `Optional[T]` in the generated
+   algorithm, which is what `json.load` reads: `None` for `null`, the number
+   otherwise. So an optional argument is passed as the oracle writes it, and an
+   optional answer is compared with `expected` as any scalar is, an absent
+   answer equal only to `None`. #}
 {% set call %}{{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
+{# A value of the enum fixture `document`, read from `read`, which holds the name a
+   variant declares: the member of the enum's `IntEnum` that name maps to. #}
+{% macro enum_value(document, variants, read) %}{ {% for v in variants %}"{{ v.name }}": {{ document }}.{{ document | to_pascal_case }}.{{ v.ident }}, {% endfor %}}[{{ read }}]{% endmacro %}
 {# A field that holds a value of an enum is the enum fixture's own `IntEnum`,
    which the oracle writes as the name a variant declares: the value is the
    member that name maps to, and what comes back is compared by the name it
    declares. #}
-{% macro field_value(fld, read) %}{% if fld.enum_document is defined %}{ {% for v in fld.variants %}"{{ v.name }}": {{ fld.enum_document }}.{{ fld.enum_document | to_pascal_case }}.{{ v.ident }}, {% endfor %}}[{{ read }}]{% else %}{{ read }}{% endif %}{% endmacro %}
+{% macro field_value(fld, read) %}{% if fld.enum_document is defined %}{{ enum_value(fld.enum_document, fld.variants, read) }}{% else %}{{ read }}{% endif %}{% endmacro %}
 {% macro field_read(fld, read) %}{% if fld.enum_document is defined %}{{ read }}.declared_name(){% else %}{{ read }}{% endif %}{% endmacro %}
         for case in spec["cases"]:
 {# A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
@@ -50,6 +59,8 @@
             ]
 {% elif arg_ty.list_of is defined %}
             arg{{ ai }} = list(case["args"][{{ ai }}])
+{% elif arg_ty.enum is defined %}
+            arg{{ ai }} = {{ enum_value(arg_ty.enum, arg_ty.variants, "case[\"args\"][" ~ ai ~ "]") }}
 {% else %}
             arg{{ ai }} = case["args"][{{ ai }}]
 {% endif %}

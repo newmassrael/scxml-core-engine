@@ -26,7 +26,7 @@
   },
   "definitions": {
     "AlgorithmArg": {
-      "description": "One argument of an algorithm fixture: a canonical scalar (`\"i64\"`), a record typed by an event-schema fixture (`{\"record\": \"<fixture>\"}`), or a read-only `list<T>` (`{\"list_of\": \"i64\"}`) — SCE_FORGE.md §4.12. Untagged so a scalar argument keeps its bare-string spelling.",
+      "description": "One argument of an algorithm fixture: a canonical scalar (`\"i64\"`), a record typed by an event-schema fixture (`{\"record\": \"<fixture>\"}`), a read-only `list<T>` (`{\"list_of\": \"i64\"}`) — SCE_FORGE.md §4.12 — a value of an enum (`{\"enum\": \"<enum fixture>\"}`), or a scalar that may be absent (`{\"optional\": \"i32\"}`, docs/adr/0055). Untagged so a scalar argument keeps its bare-string spelling.",
       "anyOf": [
         {
           "$ref": "#/definitions/CanonicalType"
@@ -36,17 +36,26 @@
         },
         {
           "$ref": "#/definitions/ListArg"
+        },
+        {
+          "$ref": "#/definitions/EnumArg"
+        },
+        {
+          "$ref": "#/definitions/OptionalArg"
         }
       ]
     },
     "AlgorithmOutput": {
-      "description": "What an algorithm fixture's single call returns: one scalar, a `list<T>`, or a record. Untagged so a scalar output keeps its `{type, compare}` spelling; the list form is told apart by `list_of`, the record form by `record`.",
+      "description": "What an algorithm fixture's single call returns: one scalar, a `list<T>`, a record, or a scalar that may be absent. Untagged so a scalar output keeps its `{type, compare}` spelling; the list form is told apart by `list_of`, the record form by `record`, the optional form by `optional`.",
       "anyOf": [
         {
           "$ref": "#/definitions/ListOutput"
         },
         {
           "$ref": "#/definitions/RecordRef"
+        },
+        {
+          "$ref": "#/definitions/OptionalOutput"
         },
         {
           "$ref": "#/definitions/ScalarOutput"
@@ -130,6 +139,26 @@
           "$ref": "#/definitions/CanonicalType"
         }
       }
+    },
+    "EnumArg": {
+      "description": "A value of an enum as an argument: the oracle writes it as the name its variant declares, and each fragment builds the enum fixture's own type from that name, as it builds a record's enum field.\n\n⚠ `variants` is DERIVED, never written: it is read at harness-render time from the enum fixture's document, with each variant's member as this language's declaration emits it, so the harness cannot name a member the generator did not write. A manifest that carries it is refused.",
+      "type": "object",
+      "required": [
+        "enum"
+      ],
+      "properties": {
+        "enum": {
+          "description": "The enum fixture of this manifest that generates the type.",
+          "type": "string"
+        },
+        "variants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RecordEnumVariant"
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "EnumVariantFixture": {
       "description": "One `<sce:variant name=\"...\" value=\"...\"/>` of an `sce:kind=\"enum\"`.\n\n`name` is the SOURCE spelling — the document's — and not any language's rendering of it. That is what makes one manifest serve six arms whose identifier conventions disagree; each arm's identifier is added at render time from the generator's own spelling rule, never typed here.",
@@ -741,8 +770,38 @@
         "default"
       ]
     },
+    "OptionalArg": {
+      "description": "An `optional<T>` argument (docs/adr/0055): the oracle writes a value of `optional`, or `null` for an absent one, and each fragment hands the algorithm its language's optional type over that value. The element is a fixed-width number or a `bool` ([`Manifest::validate`]).",
+      "type": "object",
+      "required": [
+        "optional"
+      ],
+      "properties": {
+        "optional": {
+          "$ref": "#/definitions/CanonicalType"
+        }
+      },
+      "additionalProperties": false
+    },
+    "OptionalOutput": {
+      "description": "An `optional<T>` return (docs/adr/0055): `expected` is a value of `optional` or `null` where the algorithm answers none, and each fragment compares the two in its language's optional type, so an absent answer equals only an absent one.\n\n⚠ The element is a fixed-width number or a `bool`, compared for equality: what every backend holds an optional value of in an algorithm's slot, and what [`Manifest::validate`] admits.",
+      "type": "object",
+      "required": [
+        "compare",
+        "optional"
+      ],
+      "properties": {
+        "compare": {
+          "$ref": "#/definitions/CompareMode"
+        },
+        "optional": {
+          "$ref": "#/definitions/CanonicalType"
+        }
+      },
+      "additionalProperties": false
+    },
     "RecordEnumVariant": {
-      "description": "One variant of the enum a record's field holds, as a fragment builds the field from the name the oracle writes and compares it with one.",
+      "description": "One variant of the enum a record's field or an argument holds, as a fragment builds the value from the name the oracle writes and compares it with one.",
       "type": "object",
       "required": [
         "ident",

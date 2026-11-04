@@ -22,12 +22,19 @@
    it is judged by the error's contract name before anything reads
    `expected`, and every other case reads the value. #}
 {% set call %}{{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
+{# A value of the enum fixture `document`, read from the `string` `read` holds, the
+   name a variant declares: the variant that name maps to. #}
+{% macro enum_value(document, variants, read) %}(map[string]{{ document }}.{{ document | to_pascal_case }}{ {% for v in variants %}"{{ v.name }}": {{ document }}.{{ v.ident }}, {% endfor %}})[{{ read }}]{% endmacro %}
 {# A field that holds a value of an enum is the enum fixture's own type, which
    the oracle writes as the name a variant declares: the JSON unmarshals into a
    `string`, and the value is the variant that name maps to, built the same way
    for an expected value and compared as the enum. #}
 {% macro source_type(fld) %}{% if fld.enum_document is defined %}string{% else %}{{ fld.type | go_type }}{% endif %}{% endmacro %}
-{% macro field_value(fld, read) %}{% if fld.enum_document is defined %}(map[string]{{ fld.enum_document }}.{{ fld.enum_document | to_pascal_case }}{ {% for v in fld.variants %}"{{ v.name }}": {{ fld.enum_document }}.{{ v.ident }}, {% endfor %}})[{{ read }}]{% else %}{{ read }}{% endif %}{% endmacro %}
+{% macro field_value(fld, read) %}{% if fld.enum_document is defined %}{{ enum_value(fld.enum_document, fld.variants, read) }}{% else %}{{ read }}{% endif %}{% endmacro %}
+{# A value that may be absent (docs/adr/0055) is the runtime's `optional.Of[T]`,
+   the type the generated algorithm's slot is, whose UnmarshalJSON reads `null`
+   as the absent value; an optional answer is compared with `Equal`, under which
+   an absent value equals only an absent one. #}
 	cases := ref.pureCases(t, "{{ f.ref_section }}", "{{ f.name }}")
 	for _, c := range cases {
 {% for arg_ty in f.args %}
@@ -70,6 +77,13 @@
 {% elif arg_ty.list_of is defined %}
 		var arg{{ loop.index0 }} []{{ arg_ty.list_of | go_type }}
 		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
+{% elif arg_ty.enum is defined %}
+		var arg{{ i }}_src string
+		unmarshalOrFatal(t, c.Args[{{ i }}], &arg{{ i }}_src, "{{ f.name }} arg{{ i }}")
+		arg{{ i }} := {{ enum_value(arg_ty.enum, arg_ty.variants, "arg" ~ i ~ "_src") }}
+{% elif arg_ty.optional is defined %}
+		var arg{{ i }} optional.Of[{{ arg_ty.optional | go_type }}]
+		unmarshalOrFatal(t, c.Args[{{ i }}], &arg{{ i }}, "{{ f.name }} arg{{ i }}")
 {% else %}
 		var arg{{ loop.index0 }} {{ arg_ty | go_type }}
 		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
@@ -158,6 +172,14 @@
 			if int(actual[__i]) != expected[__i] {
 				t.Errorf("{{ f.name }}[%d]: actual=%v expected=%v", __i, actual[__i], expected[__i])
 			}
+		}
+{% elif f.output.optional is defined %}
+		var expected optional.Of[{{ f.output.optional | go_type }}]
+		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
+		actual := {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}
+
+		if !actual.Equal(expected) {
+			t.Errorf("{{ f.name }}: actual=%v expected=%v", actual, expected)
 		}
 {% else %}
 		var expected {{ f.output.type | go_type }}
