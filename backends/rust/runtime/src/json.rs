@@ -66,6 +66,12 @@ impl fmt::Display for JsonError {
     }
 }
 
+/// Whether `c` is whitespace RFC 8259 has between tokens (section 2): space,
+/// tab, line feed or carriage return.
+pub fn is_json_whitespace(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\n' | '\r')
+}
+
 /// Read `text` as exactly one JSON value, surrounding whitespace aside.
 pub fn parse(text: &str) -> Result<Value, JsonError> {
     let mut reader = Reader { text, at: 0 };
@@ -231,10 +237,14 @@ impl Reader<'_> {
         Some(c)
     }
 
+    /// Past the whitespace RFC 8259 has between tokens (section 2): space, tab,
+    /// line feed and carriage return, and no other, so a no-break space or a
+    /// vertical tab is a text that is not JSON on every runtime
+    /// (tests/json_text/payload_refusal.json).
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.peek() {
-            if c.is_whitespace() {
-                self.at += c.len_utf8();
+            if is_json_whitespace(c) {
+                self.at += 1;
             } else {
                 break;
             }
@@ -339,52 +349,117 @@ impl Reader<'_> {
                     Some('r') => out.push('\r'),
                     Some('t') => out.push('\t'),
                     Some('u') => {
-                        if self.at + 4 > self.text.len() {
-                            return Err(Self::malformed("a \\u escape is short"));
+                        let code = self.read_hex4()?;
+                        // A character past U+FFFF is written as the two halves of
+                        // its UTF-16 pair, each its own escape; a half alone names
+                        // no character, so the text is no JSON text any runtime
+                        // reads alike (RFC 8259, sections 7 and 8.2).
+                        let character = match code {
+                            0xD800..=0xDBFF => {
+                                if !self.text[self.at..].starts_with("\\u") {
+                                    return Err(Self::malformed(
+                                        "a \\u escape is half of a character",
+                                    ));
+                                }
+                                self.at += 2;
+                                let low = self.read_hex4()?;
+                                if !(0xDC00..=0xDFFF).contains(&low) {
+                                    return Err(Self::malformed(
+                                        "a \\u escape is half of a character",
+                                    ));
+                                }
+                                0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
+                            }
+                            0xDC00..=0xDFFF => {
+                                return Err(Self::malformed("a \\u escape is half of a character"));
+                            }
+                            other => other,
+                        };
+                        match char::from_u32(character) {
+                            Some(c) => out.push(c),
+                            None => return Err(Self::malformed("a \\u escape names no character")),
                         }
-                        let hex = &self.text[self.at..self.at + 4];
-                        let code = u32::from_str_radix(hex, 16)
-                            .map_err(|_| Self::malformed("a \\u escape is not hex"))?;
-                        out.push(char::from_u32(code).unwrap_or('\u{fffd}'));
-                        self.at += 4;
                     }
                     Some(e) => {
                         return Err(Self::malformed(&format!("unknown escape '\\{e}'")));
                     }
                 },
+                // RFC 8259, section 7: a character below U+0020 stands in a text
+                // only as an escape.
+                Some(c) if (c as u32) < 0x20 => {
+                    return Err(Self::malformed(
+                        "a control character stands in a text unescaped",
+                    ));
+                }
                 Some(c) => out.push(c),
             }
         }
     }
 
+    /// The four hex digits after a `\u`, as the number they spell: exactly four
+    /// of `0-9`, `a-f` and `A-F`, and no sign.
+    fn read_hex4(&mut self) -> Result<u32, JsonError> {
+        let digits = self
+            .text
+            .as_bytes()
+            .get(self.at..self.at + 4)
+            .ok_or_else(|| Self::malformed("a \\u escape is short"))?;
+        let mut code = 0u32;
+        for &digit in digits {
+            let value = char::from(digit)
+                .to_digit(16)
+                .ok_or_else(|| Self::malformed("a \\u escape is not hex"))?;
+            code = code * 16 + value;
+        }
+        self.at += 4;
+        Ok(code)
+    }
+
+    /// One number in RFC 8259's grammar (section 6): `-`, then `0` or a digit
+    /// that is not `0` and more digits, then a fraction and an exponent, each
+    /// with at least one digit. A leading zero, a fraction or an exponent with
+    /// no digit, and a sign but `-` are no JSON number.
     fn read_number(&mut self) -> Result<String, JsonError> {
         let start = self.at;
         if self.peek() == Some('-') {
             self.bump();
         }
-        while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
-            self.bump();
+        match self.peek() {
+            Some('0') => {
+                self.bump();
+            }
+            Some(c) if c.is_ascii_digit() => self.skip_digits(),
+            _ => return Err(Self::malformed("a number has no digits")),
         }
         if self.peek() == Some('.') {
             self.bump();
-            while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
-                self.bump();
+            if !matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
+                return Err(Self::malformed("a fraction has no digits"));
             }
+            self.skip_digits();
         }
         if matches!(self.peek(), Some('e') | Some('E')) {
             self.bump();
             if matches!(self.peek(), Some('+') | Some('-')) {
                 self.bump();
             }
-            while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
-                self.bump();
+            if !matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
+                return Err(Self::malformed("an exponent has no digits"));
             }
+            self.skip_digits();
         }
-        let slice = &self.text[start..self.at];
-        if slice.is_empty() || slice == "-" {
-            return Err(Self::malformed("a number has no digits"));
+        // A digit right after the number is a number with a leading zero
+        // (`01`), which no runtime reads alike.
+        if matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
+            return Err(Self::malformed("a number has a leading zero"));
         }
-        Ok(slice.to_string())
+        Ok(self.text[start..self.at].to_string())
+    }
+
+    fn skip_digits(&mut self) {
+        while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
+            self.bump();
+        }
     }
 
     fn read_keyword(&mut self, word: &str) -> Result<(), JsonError> {
@@ -472,5 +547,48 @@ mod tests {
         assert_eq!(parse("1 2"), Err(JsonError::Trailing));
         assert!(matches!(parse("{\"a\" 1}"), Err(JsonError::Malformed(_))));
         assert!(matches!(parse("[1,"), Err(JsonError::Malformed(_))));
+    }
+
+    /// RFC 8259 alone, as every runtime reads it: a number in its grammar, a
+    /// text with no raw control character and no half of a UTF-16 pair, and
+    /// whitespace of the four kinds between tokens
+    /// (tests/json_text/payload_refusal.json holds the same at every reader).
+    #[test]
+    fn what_is_not_rfc_8259_is_refused() {
+        for text in [
+            "01",
+            "-01",
+            "+1",
+            ".5",
+            "1.",
+            "1e",
+            "1e+",
+            "-",
+            "\"a\u{1}b\"",
+            "\"a\tb\"",
+            "\"\\ud800\"",
+            "\"\\udc00\"",
+            "\"\\ud800\\u0041\"",
+            "\"\\u+041\"",
+            "\"\\u12\u{e9}\"",
+            "\u{a0}1",
+            "\u{b}1",
+            "1\u{a0}",
+        ] {
+            assert!(
+                matches!(
+                    parse(text),
+                    Err(JsonError::Malformed(_)) | Err(JsonError::Trailing)
+                ),
+                "{text:?} was read"
+            );
+        }
+        assert_eq!(parse("-0"), Ok(Value::Number("-0".to_string())));
+        assert_eq!(parse("0.5e-3"), Ok(Value::Number("0.5e-3".to_string())));
+        assert_eq!(
+            parse("\"\\ud83d\\ude00\""),
+            Ok(Value::Text("\u{1f600}".to_string()))
+        );
+        assert_eq!(parse(" \t\r\n1 \t\r\n"), Ok(Value::Number("1".to_string())));
     }
 }

@@ -228,6 +228,114 @@ pub fn pointer_below(prefix: &str, token: &str) -> String {
     out
 }
 
+/// What a `<sce:lift>` reads (docs/adr/0087, section 2.1): `text` as a record
+/// of the schema named `schema`, whose fields `read` reads out of the record it
+/// is handed, as a delivery of the schema is read; or the refusal of the first
+/// place that is not one, its code, pointer and bound the statechart keeps as
+/// a record. [`PayloadFields::lift`] says what is refused before the fields are
+/// read. Each outcome is logged with the schema's name and, for a refusal, its
+/// code, pointer and bound; the text itself is not, since nothing bounds what a
+/// sender writes in it.
+pub fn lift_record<T>(
+    text: &str,
+    schema: &str,
+    depth: u32,
+    declared: &[&str],
+    defaults: Option<&str>,
+    read: impl FnOnce(&PayloadRecord<'_>) -> Result<T, PayloadRefusal>,
+) -> Result<T, PayloadRefusal> {
+    let lifted = PayloadFields::lift(text, depth, declared, defaults)
+        .and_then(|fields| read(&fields.record()));
+    match &lifted {
+        Ok(_) => crate::sce_log_info!("<sce:lift>: the text is a record of {schema}"),
+        Err(refusal) => crate::sce_log_info!(
+            "<sce:lift>: the text is no record of {schema}: {} at '{}', bound {:?} ({refusal})",
+            refusal.code().name(),
+            refusal.pointer(),
+            refusal.bound()
+        ),
+    }
+    lifted
+}
+
+/// The refusal of a container `text` opens deeper than `depth`, the deepest a
+/// value of a lift's schema holds (docs/adr/0087, section 2.1, item 4), or
+/// `None` when it opens none.
+///
+/// Decided over the brackets alone, before the text is read as JSON, so that
+/// every runtime decides it alike and no reader descends past the type: a text
+/// is skipped from its opening quote to the next quote no backslash escapes,
+/// each `{` and `[` outside one opens a level and each `}` and `]` closes one,
+/// and the first opened past `depth` is refused, whatever the text holds after
+/// it. A text that never closes ends the walk with nothing refused, and the
+/// reading of the text as JSON refuses it.
+///
+/// The pointer names the place the schema declares that the container stands
+/// at: the member of the outermost object it stands under, the name read from
+/// the last text closed in that object before a `:`, when that name is one of
+/// `declared`; otherwise the whole text, `""`. A container under a key no
+/// field declares is no place of the schema, and naming it would make the
+/// pointer as long as the text rather than the schema. The bound is `depth`.
+pub fn lift_too_deep(text: &str, depth: u32, declared: &[&str]) -> Option<PayloadRefusal> {
+    let bytes = text.as_bytes();
+    let mut level: u32 = 0;
+    let mut at = 0;
+    // The last text closed in the outermost container, and the member that
+    // text names once a `:` follows it there.
+    let mut last_text: Option<&str> = None;
+    let mut member: Option<&str> = None;
+    while at < bytes.len() {
+        match bytes[at] {
+            b'"' => {
+                let start = at;
+                at += 1;
+                while at < bytes.len() && bytes[at] != b'"' {
+                    at += if bytes[at] == b'\\' { 2 } else { 1 };
+                }
+                if at >= bytes.len() {
+                    return None;
+                }
+                if level == 1 {
+                    last_text = Some(&text[start..=at]);
+                }
+            }
+            b':' if level == 1 => member = last_text.take(),
+            b',' if level == 1 => {
+                member = None;
+                last_text = None;
+            }
+            b'{' | b'[' => {
+                level += 1;
+                if level > depth {
+                    let pointer = member
+                        .and_then(|name| match crate::json::parse(name) {
+                            Ok(Value::Text(name)) => Some(name),
+                            _ => None,
+                        })
+                        .filter(|name| declared.contains(&name.as_str()))
+                        .map(|name| pointer_below("", &name))
+                        .unwrap_or_default();
+                    return Some(
+                        PayloadRefusal::new(
+                            RefusalCode::TooDeep,
+                            pointer,
+                            format!(
+                                "the text opens a container deeper than the {depth} levels a \
+                                 value of its schema holds"
+                            ),
+                        )
+                        .with_bound(depth as usize),
+                    );
+                }
+            }
+            b'}' | b']' => level = level.saturating_sub(1),
+            _ => {}
+        }
+        at += 1;
+    }
+    None
+}
+
 use crate::json::{JsonError, Value};
 
 /// The fields an event's data names, each in the spelling it was written in
@@ -246,7 +354,8 @@ impl PayloadFields {
     /// script engine takes for the same string — through the runtime's one
     /// JSON reader.
     pub fn decode(data: &str) -> Result<Self, PayloadRefusal> {
-        let trimmed = data.trim();
+        // Only the whitespace RFC 8259 has: any other is a text that is not JSON.
+        let trimmed = data.trim_matches(crate::json::is_json_whitespace);
         if trimmed.is_empty() {
             return Err(PayloadRefusal::new(
                 RefusalCode::NotJson,
@@ -300,15 +409,65 @@ impl PayloadFields {
     /// the delivery does carry is read as it came, and held to its type as any
     /// other value is.
     pub fn decode_with_defaults(data: &str, defaults: &str) -> Result<Self, PayloadRefusal> {
-        let mut decoded = if data.trim().is_empty() {
+        let mut decoded = if data
+            .trim_matches(crate::json::is_json_whitespace)
+            .is_empty()
+        {
             Self::default()
         } else {
             Self::decode(data)?
         };
+        decoded.take_defaults(defaults)?;
+        Ok(decoded)
+    }
+
+    /// The fields of `defaults`, a schema's defaults, that these fields lack,
+    /// added to them.
+    fn take_defaults(&mut self, defaults: &str) -> Result<(), PayloadRefusal> {
         for (name, value) in defaults_of(defaults)? {
-            if !decoded.fields.iter().any(|(key, _)| *key == name) {
-                decoded.fields.push((name, value));
+            if !self.fields.iter().any(|(key, _)| *key == name) {
+                self.fields.push((name, value));
             }
+        }
+        Ok(())
+    }
+
+    /// Read the text a `<sce:lift>` reads as the fields of a record of a schema
+    /// (docs/adr/0087, section 2.1): `depth` is the deepest container a value of
+    /// the schema holds, `declared` the ids of its fields, and `defaults`, for
+    /// a schema a later revision of which added fields, the JSON object of their
+    /// defaults, which a text that lacks one reads in its place.
+    ///
+    /// Three refusals come before the fields are read, in this order: a text
+    /// that is empty or only whitespace (`notJson`); a container opened deeper
+    /// than `depth`, decided over the text's brackets alone before it is read as
+    /// JSON, so neither the work nor the stack of a lift grows with what a text
+    /// nests ([`lift_too_deep`], `tooDeep`); and a text that is not one JSON
+    /// object, as a delivery is refused ([`Self::decode`]). What is refused of a
+    /// field after that is what a delivery of the schema is refused for, by the
+    /// same readers.
+    pub fn lift(
+        text: &str,
+        depth: u32,
+        declared: &[&str],
+        defaults: Option<&str>,
+    ) -> Result<Self, PayloadRefusal> {
+        if text
+            .trim_matches(crate::json::is_json_whitespace)
+            .is_empty()
+        {
+            return Err(PayloadRefusal::new(
+                RefusalCode::NotJson,
+                "",
+                "the text is empty",
+            ));
+        }
+        if let Some(refusal) = lift_too_deep(text, depth, declared) {
+            return Err(refusal);
+        }
+        let mut decoded = Self::decode(text)?;
+        if let Some(defaults) = defaults {
+            decoded.take_defaults(defaults)?;
         }
         Ok(decoded)
     }
@@ -543,6 +702,14 @@ impl<'a> PayloadValue<'a> {
         T: TryFrom<i64>,
     {
         let text = self.number()?;
+        // `-0` is a JSON number and no spelling of a whole number: every runtime
+        // refuses it, as it refuses `"-0"` for a 64-bit integer.
+        if text == "-0" {
+            return Err(self.refuse(
+                RefusalCode::BadNumber,
+                &format!("is not a whole number ({text})"),
+            ));
+        }
         let whole: i64 = text.parse().map_err(|_| {
             // A whole number no `i64` holds is past every signed width; any
             // other spelling is no whole number at all.
@@ -602,6 +769,13 @@ impl<'a> PayloadValue<'a> {
                 RefusalCode::BadNumber,
                 &format!("is not a whole number written as digits ({text})"),
             )),
+            // `-0` is no whole number, and a number below zero no spelling of an
+            // unsigned one, as for every narrower width.
+            Value::Number(text) if text == "-0" || (!signed && text.starts_with('-')) => Err(self
+                .refuse(
+                    RefusalCode::BadNumber,
+                    &format!("is not a whole number of its type ({text})"),
+                )),
             Value::Number(text) => {
                 let exact = text
                     .parse::<i128>()
@@ -667,10 +841,16 @@ impl<'a> PayloadValue<'a> {
         Ok(wide as f32)
     }
 
-    /// A 64-bit fractional value.
+    /// A 64-bit fractional value. A number past the largest double (`1e999`)
+    /// does not fit it, as one past the largest single does not fit a
+    /// `float32`: no runtime holds the infinity a reader would round it to.
     pub fn float64(&self) -> Result<f64, PayloadRefusal> {
         let text = self.number()?;
-        text.parse().map_err(|_| self.not_a_real(text))
+        let real: f64 = text.parse().map_err(|_| self.not_a_real(text))?;
+        if !real.is_finite() {
+            return Err(self.past_width(text));
+        }
+        Ok(real)
     }
 
     /// The refusal of a number written in no spelling a real is read from.
@@ -1127,8 +1307,18 @@ mod tests {
             ) else {
                 panic!("a case has a name, data and a type: {case:?}");
             };
-            let read = PayloadFields::decode(data)
-                .and_then(|fields| read_described(ty, &fields.field("v")?));
+            // A case that gives a depth is read as a `<sce:lift>` of the record
+            // of the one field `v` reads it (docs/adr/0087, section 2.1).
+            let fields = match case.member("depth") {
+                Some(Value::Number(depth)) => PayloadFields::lift(
+                    data,
+                    depth.parse::<u32>().expect("a depth is a uint32"),
+                    &["v"],
+                    None,
+                ),
+                _ => PayloadFields::decode(data),
+            };
+            let read = fields.and_then(|fields| read_described(ty, &fields.field("v")?));
             match (case.member("refusal"), read) {
                 (None, Ok(())) => {}
                 (Some(want), Err(got)) => {
@@ -1162,6 +1352,64 @@ mod tests {
             }
         }
         assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    /// A lift refuses a container past its depth over the brackets alone,
+    /// before the text is read as JSON, and names the declared member it stands
+    /// under or the whole text (docs/adr/0087, section 2.1, item 4).
+    #[test]
+    fn a_lift_refuses_a_container_past_its_depth_before_it_reads_the_text() {
+        let declared = ["title", "count"];
+        let refused = |text: &str, depth: u32| {
+            super::lift_too_deep(text, depth, &declared)
+                .map(|r| (r.code(), r.pointer().to_string(), r.bound()))
+        };
+        let too_deep = |pointer: &str, bound: u32| {
+            Some((RefusalCode::TooDeep, pointer.to_string(), Some(bound)))
+        };
+        assert_eq!(refused(r#"{"title":"a","count":1}"#, 1), None);
+        assert_eq!(refused(r#"{"title":["a"]}"#, 1), too_deep("/title", 1));
+        assert_eq!(refused(r#"{"extra":{"a":1}}"#, 1), too_deep("", 1));
+        assert_eq!(refused(r#"{"title":[1]}"#, 1), too_deep("/title", 1));
+        assert_eq!(refused("[[1]]", 1), too_deep("", 1));
+        // Past the depth and never closed: refused before the grammar is asked.
+        assert_eq!(refused(r#"{"extra":[[[[[[["#, 1), too_deep("", 1));
+        // A bracket in a text is no container, an escaped quote no end of one.
+        assert_eq!(refused(r#"{"title":"[[{\"[","count":1}"#, 1), None);
+        // A container one level deeper than a record is within a depth of 2.
+        assert_eq!(refused(r#"{"title":{"a":1}}"#, 2), None);
+        // A text that never closes is the grammar's to refuse.
+        assert_eq!(refused(r#"{"title":"[["#, 1), None);
+        // A member after a comma is named by its own text, not the one before.
+        assert_eq!(refused(r#"{"title":"x","extra":[1]}"#, 1), too_deep("", 1));
+    }
+
+    /// What a lift reads: an empty text is not JSON, a container past the depth
+    /// is refused first, a field the text lacks is read from the defaults, and
+    /// the rest is a delivery's reading.
+    #[test]
+    fn a_lift_reads_a_text_as_a_delivery_after_its_own_refusals() {
+        let code = |r: Result<PayloadFields, PayloadRefusal>| r.map(|_| ()).map_err(|r| r.code());
+        assert_eq!(
+            code(PayloadFields::lift(" \t", 1, &["v"], None)),
+            Err(RefusalCode::NotJson)
+        );
+        assert_eq!(
+            code(PayloadFields::lift("[[", 1, &["v"], None)),
+            Err(RefusalCode::TooDeep)
+        );
+        assert_eq!(
+            code(PayloadFields::lift("[1]", 1, &["v"], None)),
+            Err(RefusalCode::NotObject)
+        );
+        assert_eq!(
+            code(PayloadFields::lift(r#"{"v":1,"v":2}"#, 1, &["v"], None)),
+            Err(RefusalCode::NotJson)
+        );
+        let read = PayloadFields::lift(r#"{"v":1}"#, 1, &["v", "w"], Some(r#"{"w":7}"#))
+            .expect("a text with a field from the defaults");
+        assert_eq!(read.unsigned::<u8>("w"), Ok(7));
+        assert_eq!(read.unsigned::<u8>("v"), Ok(1));
     }
 
     /// The codes are the variants `sce:std/lift/refusal_code.scxml` declares,
