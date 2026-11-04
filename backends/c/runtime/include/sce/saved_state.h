@@ -12,7 +12,7 @@
  * members of a session (the words of a refusal are the other backends'), hands
  * back each as a span of the text, and writes the members a machine's own
  * `_save` has no knowledge of (a waiting send, a queued event, a host-run
- * invocation, a record of revisions).
+ * invocation, a record of revisions, the configuration of a product line).
  *
  * Nothing is allocated. A session read is a handful of spans into the text the
  * caller owns; a send, an event or an invocation is read from its span when a
@@ -163,6 +163,8 @@ typedef struct sce_saved_session_s {
     sce_jv_t external;      /* an array of events */
     sce_jv_t revisions;     /* an object; valid when `has_revisions` */
     bool has_revisions;
+    sce_jv_t features; /* an array of texts, sorted, each once; valid when `has_features` */
+    bool has_features;
     int64_t host_invoke_token;
     int64_t auto_send_seq;
 } sce_saved_session_t;
@@ -258,6 +260,28 @@ static inline sce_jv_t sce_saved_nothing_(void) {
 
 static inline bool sce_saved_is_nothing_(sce_jv_t v) {
     return v.p == v.end;
+}
+
+/* Where the text `a` stands against the text `b` in the order of their decoded bytes, each taken
+ * as an unsigned value, which is the order every backend sorts a name in: negative before, zero
+ * the same, positive after; a text stands before every longer text it begins. */
+static inline int sce_saved_text_order_(sce_jv_t a, sce_jv_t b) {
+    sce_jstr_t x;
+    sce_jstr_t y;
+    unsigned char bx = 0u;
+    unsigned char by = 0u;
+    sce_jstr_init(&x, a);
+    sce_jstr_init(&y, b);
+    for (;;) {
+        const bool more_x = sce_jstr_next(&x, &bx);
+        const bool more_y = sce_jstr_next(&y, &by);
+        if (!more_x || !more_y) {
+            return (int)more_x - (int)more_y;
+        }
+        if (bx != by) {
+            return bx < by ? -1 : 1;
+        }
+    }
 }
 
 /* A text of digits as a signed 64-bit whole number: false when it is anything else. */
@@ -804,6 +828,33 @@ static inline bool sce_saved_session_read(sce_jv_t members, int form, sce_saved_
         }
     }
 
+    /* Optional too: only a machine of a product line records the features it was built with
+     * (docs/adr/0057, section 7), as a set, so each is named once and in order. Every element is
+     * judged a text before any two are compared. */
+    if (sce_jv_get(members, "features", &out->features)) {
+        sce_jv_t previous = sce_saved_nothing_();
+        bool first = true;
+        out->has_features = true;
+        if (sce_jv_kind(out->features) != SCE_JSON_ARRAY) {
+            return sce_saved_refuse(err, "'features' is not an array");
+        }
+        (void)sce_jv_iter(out->features, &it);
+        while (sce_jiter_element(&it, &item)) {
+            if (sce_jv_kind(item) != SCE_JSON_STRING) {
+                return sce_saved_refuse(err, "'features' is not a text");
+            }
+        }
+        (void)sce_jv_iter(out->features, &it);
+        while (sce_jiter_element(&it, &item)) {
+            if (!first && sce_saved_text_order_(previous, item) >= 0) {
+                return sce_saved_refuse(err,
+                                        "'features' is not in order or names a feature twice; it is a set, sorted");
+            }
+            previous = item;
+            first = false;
+        }
+    }
+
     if (!sce_jv_get(members, "shape", &out->shape)) {
         return sce_saved_refuse(err, "the saved state has no 'shape'");
     }
@@ -931,7 +982,174 @@ typedef struct sce_saved_shape_s {
     size_t record_count;
     const sce_saved_lineage_t *enums;
     size_t enum_count;
+    /* The configuration of a product line the machine was built for (docs/adr/0057, section 7):
+     * the features it turns on, sorted, each once, ended by NULL, so `{ NULL }` is the
+     * configuration that turns none on. NULL for a machine of no product line, which is every
+     * machine of a document that imports no feature model. A machine generated for every build of
+     * one states it per build, each feature under the build's own condition. */
+    const char *const *features;
 } sce_saved_shape_t;
+
+/* ── The configuration a state was taken in (docs/adr/0057, section 7) ────── */
+
+/* `text` added to the words `words` holds, `*len` of its `cap` bytes used and terminated: cut at
+ * what it has room for, as a refusal's words are (`SCE_SAVED_ERROR_LEN`). */
+static inline void sce_saved_words_(char *words, size_t cap, size_t *len, const char *text) {
+    size_t n = strlen(text);
+    if (*len + 1u >= cap) {
+        return;
+    }
+    if (n > cap - 1u - *len) {
+        n = cap - 1u - *len;
+    }
+    memcpy(words + *len, text, n);
+    *len += n;
+    words[*len] = '\0';
+}
+
+/* Whether the text `name` is one of `built`, a list ended by NULL. */
+static inline bool sce_saved_feature_built_(const char *const *built, sce_jv_t name) {
+    size_t i;
+    for (i = 0u; built[i] != NULL; ++i) {
+        if (sce_jv_string_is(name, built[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Whether `name` is one of the texts of `saved`, an array of them. */
+static inline bool sce_saved_feature_saved_(sce_jv_t saved, const char *name) {
+    sce_jiter_t it;
+    sce_jv_t item;
+    (void)sce_jv_iter(saved, &it);
+    while (sce_jiter_element(&it, &item)) {
+        if (sce_jv_string_is(item, name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* The features `saved` names, as a refusal names them (`[a, b]`), each cut at
+ * `SCE_SAVED_QUOTE_LEN` bytes: with `except` not NULL, only those that are none of it. */
+static inline void sce_saved_words_saved_(char *words, size_t cap, size_t *len, sce_jv_t saved,
+                                          const char *const *except) {
+    sce_jiter_t it;
+    sce_jv_t item;
+    char name[SCE_SAVED_QUOTE_LEN];
+    bool first = true;
+    sce_saved_words_(words, cap, len, "[");
+    (void)sce_jv_iter(saved, &it);
+    while (sce_jiter_element(&it, &item)) {
+        if (except != NULL && sce_saved_feature_built_(except, item)) {
+            continue;
+        }
+        if (!first) {
+            sce_saved_words_(words, cap, len, ", ");
+        }
+        sce_saved_quote_(item, name, sizeof(name));
+        sce_saved_words_(words, cap, len, name);
+        first = false;
+    }
+    sce_saved_words_(words, cap, len, "]");
+}
+
+/* The features `built` names, as a refusal names them: with `except` not NULL, only those that
+ * are none of the texts of the array it points at. */
+static inline void sce_saved_words_built_(char *words, size_t cap, size_t *len, const char *const *built,
+                                          const sce_jv_t *except) {
+    size_t i;
+    bool first = true;
+    sce_saved_words_(words, cap, len, "[");
+    for (i = 0u; built[i] != NULL; ++i) {
+        if (except != NULL && sce_saved_feature_saved_(*except, built[i])) {
+            continue;
+        }
+        if (!first) {
+            sce_saved_words_(words, cap, len, ", ");
+        }
+        sce_saved_words_(words, cap, len, built[i]);
+        first = false;
+    }
+    sce_saved_words_(words, cap, len, "]");
+}
+
+/* Refuses `session` unless it was taken in the configuration `features` of a product line (a list
+ * ended by NULL, as `sce_saved_shape_t.features` holds it), or both are of none (`features` NULL
+ * and no `features` saved) (docs/adr/0057, section 7). Judged before the shape, which differs too
+ * between builds that differ in states or variables, so a state of another build is refused by the
+ * features that differ and not by a digest. A build with fewer features lacks states or data the
+ * state may hold, and one with more has data and invocations the saved run never initialised or
+ * started: either is refused. Carrying a state across configurations is a migration, which a
+ * restore does not do.
+ *
+ * Nothing is allocated. The work is a walk of one list for each feature of the other, and a
+ * refusal names each feature cut at `SCE_SAVED_QUOTE_LEN` bytes, its words cut at
+ * `SCE_SAVED_ERROR_LEN`. */
+static inline bool sce_saved_check_features(const sce_saved_session_t *session, const char *const *features,
+                                            sce_saved_error_t *err) {
+    char words[SCE_SAVED_ERROR_LEN];
+    size_t len = 0u;
+    sce_jiter_t it;
+    sce_jv_t item;
+    size_t i = 0u;
+    bool same = true;
+    bool only_saved = false;
+    bool only_built = false;
+    if (!session->has_features && features == NULL) {
+        return true;
+    }
+    words[0] = '\0';
+    if (session->has_features && features != NULL) {
+        /* The same list, in the same order, is the same configuration. */
+        (void)sce_jv_iter(session->features, &it);
+        while (sce_jiter_element(&it, &item)) {
+            if (features[i] == NULL || !sce_jv_string_is(item, features[i])) {
+                same = false;
+                break;
+            }
+            ++i;
+        }
+        if (same && features[i] == NULL) {
+            return true;
+        }
+        (void)sce_jv_iter(session->features, &it);
+        while (!only_saved && sce_jiter_element(&it, &item)) {
+            only_saved = !sce_saved_feature_built_(features, item);
+        }
+        for (i = 0u; !only_built && features[i] != NULL; ++i) {
+            only_built = !sce_saved_feature_saved_(session->features, features[i]);
+        }
+        sce_saved_words_(words, sizeof(words), &len, "the saved state was taken with the features ");
+        sce_saved_words_saved_(words, sizeof(words), &len, session->features, NULL);
+        sce_saved_words_(words, sizeof(words), &len, " on, and this machine is built with ");
+        sce_saved_words_built_(words, sizeof(words), &len, features, NULL);
+        sce_saved_words_(words, sizeof(words), &len, ": ");
+        if (only_saved) {
+            sce_saved_words_saved_(words, sizeof(words), &len, session->features, features);
+            sce_saved_words_(words, sizeof(words), &len, " on only where it was saved");
+        }
+        if (only_saved && only_built) {
+            sce_saved_words_(words, sizeof(words), &len, ", ");
+        }
+        if (only_built) {
+            sce_saved_words_built_(words, sizeof(words), &len, features, &session->features);
+            sce_saved_words_(words, sizeof(words), &len, " on only in this build");
+        }
+    } else if (features != NULL) {
+        sce_saved_words_(words, sizeof(words), &len,
+                         "the saved state records no features, and this machine is built with the features ");
+        sce_saved_words_built_(words, sizeof(words), &len, features, NULL);
+        sce_saved_words_(words, sizeof(words), &len, " on");
+    } else {
+        sce_saved_words_(words, sizeof(words), &len, "the saved state was taken with the features ");
+        sce_saved_words_saved_(words, sizeof(words), &len, session->features, NULL);
+        sce_saved_words_(words, sizeof(words), &len,
+                         " on, and this machine is built from a document of no feature model");
+    }
+    return sce_saved_refuse(err, "%s", words);
+}
 
 /* Refuses the value `held`, at `what`, if it names a variant of `lineage` that a revision past
  * `at`, the one the state was saved at, added. What is not a text where one is held is left for
@@ -996,9 +1214,13 @@ static inline bool sce_saved_enum_holders_(const sce_saved_session_t *session, c
     return true;
 }
 
-/* Refuses `session` unless it was saved from a document of `shape`, and says at which revision of
- * each record schema and enum it was saved: `record_at[i]` for `shape->records[i]` and
- * `enum_at[i]` for `shape->enums[i]`, 1 for one the state names none of (docs/adr/0044).
+/* Refuses `session` unless it was taken in the configuration `shape` was built for and saved from
+ * a document of `shape`, and says at which revision of each record schema and enum it was saved:
+ * `record_at[i]` for `shape->records[i]` and `enum_at[i]` for `shape->enums[i]`, 1 for one the
+ * state names none of (docs/adr/0044).
+ *
+ * The configuration is judged first (`sce_saved_check_features`), so a state of another build of a
+ * product line is refused by the features that differ, not by its shape.
  *
  * A state that names no revision is of the first shape; one that does is of the revised shape,
  * and each revision it names is of a lineage this machine has, no later than this machine's
@@ -1015,6 +1237,9 @@ static inline bool sce_saved_check_shape(const sce_saved_session_t *session, con
     sce_jv_t value;
     size_t i;
     char written[SCE_SAVED_QUOTE_LEN];
+    if (!sce_saved_check_features(session, shape->features, err)) {
+        return false;
+    }
     for (i = 0u; i < shape->record_count; ++i) {
         record_at[i] = 1u;
     }
@@ -1138,6 +1363,24 @@ static inline void sce_saved_write_count(sce_jw_t *w, int64_t count) {
 static inline void sce_saved_write_member_text(sce_jw_t *w, const char *name, const char *text) {
     sce_jw_key(w, name);
     sce_jw_string(w, text);
+}
+
+/* The configuration `features` a machine of a product line was built for (a list ended by NULL, as
+ * `sce_saved_shape_t.features` holds it), as the member `features` of the session `w` has open,
+ * written last, after `revisions`. Nothing for a machine of no product line (`features` NULL), so
+ * its text is the one it was before configurations were recorded (docs/adr/0057, section 7). */
+static inline void sce_saved_write_features(sce_jw_t *w, const char *const *features) {
+    size_t i;
+    if (features == NULL) {
+        return;
+    }
+    sce_jw_key(w, "features");
+    sce_jw_begin_array(w);
+    for (i = 0u; features[i] != NULL; ++i) {
+        sce_jw_element(w);
+        sce_jw_string(w, features[i]);
+    }
+    sce_jw_end_array(w);
 }
 
 /* The parameters of a host-served send or invocation, as the text a saved state writes them:

@@ -9,7 +9,9 @@
 //     written, and a text of another kind is refused in the words every backend uses;
 //   * a machine writes the same members the other backends write, byte for byte;
 //   * a state is bound to the shape of its document and to the revision each schema was
-//     saved at, and a wall-clock moment converts to the engine's clock and back.
+//     saved at, and a wall-clock moment converts to the engine's clock and back;
+//   * a state records the configuration of a product line it was taken in, a sorted set,
+//     and a state of another configuration is refused by the features that differ.
 //
 // Nothing here allocates.
 
@@ -467,6 +469,163 @@ static void a_value_of_a_variant_a_later_revision_added_is_refused(void) {
     CHECK(sce_saved_check_shape(&session, &shape, NULL, enum_at, &err), "%s", err.message);
 }
 
+// ── The configuration a state was taken in (docs/adr/0057, section 7) ──────────────────────────
+
+// A format-1 state with every member in place, taken with the features `features` (the text of a
+// JSON value), or recording none when it is NULL, read into `out`: false, with the reason in `err`,
+// when it is refused as it is read. `text` holds the state, which `out` reads in place.
+static bool taken(const char *features, char *text, size_t cap, sce_saved_session_t *out, sce_saved_error_t *err) {
+    static const char head[] =
+        "{\"format\":1,\"shape\":\"s\",\"configuration\":[\"s\"],\"current\":\"s\",\"variables\":{},\"history\":{},"
+        "\"pending\":[],\"invokes\":[],\"hostinvokes\":[],\"hostinvoketoken\":\"0\",\"sendseq\":\"0\",\"external\":[]";
+    if (features == NULL) {
+        (void)snprintf(text, cap, "%s}", head);
+    } else {
+        (void)snprintf(text, cap, "%s,\"features\":%s}", head, features);
+    }
+    return sce_saved_read(text, strlen(text), out, err);
+}
+
+// `features` as the member a session writes, alone in an object, into `out`.
+static void written(const char *const *features, char *out, size_t cap) {
+    sce_jw_t w;
+    sce_jw_init(&w, out, cap);
+    sce_jw_begin_object(&w);
+    sce_saved_write_features(&w, features);
+    sce_jw_end_object(&w);
+    CHECK(sce_jw_finish(&w), "the member fits");
+}
+
+static void a_configuration_is_read_back_as_it_was_written(void) {
+    static const char *const built[] = {"session-unicast", "tls", NULL};
+    static const char *const none_on[] = {NULL};
+    static const char lead[] = "{\"features\":";
+    char member[256];
+    char array[256];
+    char text[1024];
+    size_t len;
+    sce_saved_session_t session;
+    sce_saved_error_t err;
+    sce_jiter_t it;
+    sce_jv_t item;
+    memset(&err, 0, sizeof(err));
+
+    written(built, member, sizeof(member));
+    CHECK(strcmp(member, "{\"features\":[\"session-unicast\",\"tls\"]}") == 0, "%s", member);
+    // The array the member holds, read back as a state's.
+    len = strlen(member);
+    (void)snprintf(array, sizeof(array), "%.*s", (int)(len - strlen(lead) - 1u), member + strlen(lead));
+    CHECK(taken(array, text, sizeof(text), &session, &err), "%s", err.message);
+    CHECK(session.has_features && sce_jv_count(session.features) == 2u, "two features");
+    CHECK(sce_jv_iter(session.features, &it) && sce_jiter_element(&it, &item) &&
+              sce_jv_string_is(item, "session-unicast") && sce_jiter_element(&it, &item) &&
+              sce_jv_string_is(item, "tls"),
+          "the features, in the order they were written");
+    CHECK(sce_saved_check_features(&session, built, &err), "%s", err.message);
+
+    // The configuration that turns none on is a configuration: an empty array, not no member.
+    written(none_on, member, sizeof(member));
+    CHECK(strcmp(member, "{\"features\":[]}") == 0, "%s", member);
+    CHECK(taken("[]", text, sizeof(text), &session, &err), "%s", err.message);
+    CHECK(session.has_features && sce_jv_count(session.features) == 0u, "the empty configuration");
+
+    // A machine of no product line records no configuration, and its text is the one it was
+    // before configurations were recorded.
+    written(NULL, member, sizeof(member));
+    CHECK(strcmp(member, "{}") == 0, "%s", member);
+    CHECK(taken(NULL, text, sizeof(text), &session, &err), "%s", err.message);
+    CHECK(!session.has_features && strstr(text, "features") == NULL, "%s", text);
+}
+
+// A restore judges the configuration a state was taken in before its shape, and names the features
+// that differ.
+static void a_state_of_another_configuration_is_refused_by_the_features_that_differ(void) {
+    static const char *const none_on[] = {NULL};
+    static const char *const a[] = {"a", NULL};
+    static const char *const a_b[] = {"a", "b", NULL};
+    static const char *const a_c[] = {"a", "c", NULL};
+    char text[1024];
+    sce_saved_session_t session;
+    sce_saved_error_t err;
+    sce_saved_shape_t shape;
+    unsigned record_at[1];
+    unsigned enum_at[1];
+    memset(&err, 0, sizeof(err));
+
+    CHECK(taken(NULL, text, sizeof(text), &session, &err) && sce_saved_check_features(&session, NULL, &err), "%s",
+          err.message);
+    CHECK(taken("[]", text, sizeof(text), &session, &err) && sce_saved_check_features(&session, none_on, &err), "%s",
+          err.message);
+    CHECK(taken("[\"a\",\"b\"]", text, sizeof(text), &session, &err) && sce_saved_check_features(&session, a_b, &err),
+          "%s", err.message);
+
+    CHECK(taken("[\"a\",\"b\"]", text, sizeof(text), &session, &err) &&
+              !sce_saved_check_features(&session, a_c, &err) &&
+              strcmp(err.message, "the saved state was taken with the features [a, b] on, and this machine is built "
+                                  "with [a, c]: [b] on only where it was saved, [c] on only in this build") == 0,
+          "%s", err.message);
+    CHECK(taken("[\"a\"]", text, sizeof(text), &session, &err) && !sce_saved_check_features(&session, none_on, &err) &&
+              strcmp(err.message, "the saved state was taken with the features [a] on, and this machine is built "
+                                  "with []: [a] on only where it was saved") == 0,
+          "%s", err.message);
+    CHECK(taken("[\"a\"]", text, sizeof(text), &session, &err) && !sce_saved_check_features(&session, a_c, &err) &&
+              strcmp(err.message, "the saved state was taken with the features [a] on, and this machine is built "
+                                  "with [a, c]: [c] on only in this build") == 0,
+          "%s", err.message);
+    CHECK(taken(NULL, text, sizeof(text), &session, &err) && !sce_saved_check_features(&session, a, &err) &&
+              strcmp(err.message, "the saved state records no features, and this machine is built with the "
+                                  "features [a] on") == 0,
+          "%s", err.message);
+    CHECK(taken("[]", text, sizeof(text), &session, &err) && !sce_saved_check_features(&session, NULL, &err) &&
+              strcmp(err.message, "the saved state was taken with the features [] on, and this machine is built "
+                                  "from a document of no feature model") == 0,
+          "%s", err.message);
+
+    // Judged before the shape: a state of another build is refused for its features even where its
+    // shape differs too.
+    memset(&shape, 0, sizeof(shape));
+    shape.first = shape.revised = "other";
+    shape.format2_first = shape.format2_revised = "other";
+    shape.features = a;
+    CHECK(taken("[\"b\"]", text, sizeof(text), &session, &err) &&
+              !sce_saved_check_shape(&session, &shape, record_at, enum_at, &err) &&
+              strstr(err.message, "the saved state was taken with the features [b] on") == err.message,
+          "%s", err.message);
+    // And a state of this build is judged by its shape after.
+    CHECK(taken("[\"a\"]", text, sizeof(text), &session, &err) &&
+              !sce_saved_check_shape(&session, &shape, record_at, enum_at, &err) &&
+              strstr(err.message, "the saved state is of a document of shape s") == err.message,
+          "%s", err.message);
+}
+
+// `features` is a set, written sorted by the bytes of each name: a text that repeats a feature or
+// names them out of order is refused as it is read.
+static void the_features_of_a_saved_state_are_a_sorted_set(void) {
+    static const char *const unordered[] = {"[\"b\",\"a\"]", "[\"a\",\"a\"]", "[\"ab\",\"a\"]", "[\"\\u00e9\",\"z\"]"};
+    char text[1024];
+    sce_saved_session_t session;
+    sce_saved_error_t err;
+    size_t i;
+    memset(&err, 0, sizeof(err));
+
+    CHECK(taken("[\"a\",\"b\"]", text, sizeof(text), &session, &err) && sce_jv_count(session.features) == 2u, "%s",
+          err.message);
+    // By bytes: an upper-case letter before a lower-case one, a name before a longer one it begins,
+    // and a byte past ASCII after every ASCII one.
+    CHECK(taken("[\"B\",\"a\",\"ab\",\"\\u00e9\"]", text, sizeof(text), &session, &err), "%s", err.message);
+    for (i = 0u; i < sizeof(unordered) / sizeof(unordered[0]); ++i) {
+        CHECK(!taken(unordered[i], text, sizeof(text), &session, &err) &&
+                  strcmp(err.message, "'features' is not in order or names a feature twice; it is a set, sorted") == 0,
+              "%s: %s", unordered[i], err.message);
+    }
+    CHECK(!taken("\"a\"", text, sizeof(text), &session, &err) && strcmp(err.message, "'features' is not an array") == 0,
+          "%s", err.message);
+    // Every element is a text before any two are compared.
+    CHECK(!taken("[\"b\",\"a\",1]", text, sizeof(text), &session, &err) &&
+              strcmp(err.message, "'features' is not a text") == 0,
+          "%s", err.message);
+}
+
 static void a_wall_clock_moment_converts_to_the_engines_clock_and_back(void) {
     CHECK(sce_saved_due_on(1000, 50u, 80u) == 1030, "30 ms from now");
     CHECK(sce_saved_due_on(1000, 50u, 20u) == 1000, "none earlier than now, for one already past");
@@ -486,6 +645,9 @@ int main(void) {
     a_machine_writes_the_members_the_other_backends_write();
     a_state_is_bound_to_its_shape_and_to_the_revision_each_schema_was_saved_at();
     a_value_of_a_variant_a_later_revision_added_is_refused();
+    a_configuration_is_read_back_as_it_was_written();
+    a_state_of_another_configuration_is_refused_by_the_features_that_differ();
+    the_features_of_a_saved_state_are_a_sorted_set();
     a_wall_clock_moment_converts_to_the_engines_clock_and_back();
     if (failures != 0) {
         (void)fprintf(stderr, "%d check(s) failed\n", failures);
