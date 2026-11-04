@@ -1226,9 +1226,9 @@ impl StatePolicy for StaticComposedPayloadPolicy {
                                                 "critical" => Ok(
                                                     StaticComposedPayloadSignalLevelEnum::Critical,
                                                 ),
-                                                other => Err(v.refuse(&format!(
-                                                    "({other}) is not a variant of SignalLevel"
-                                                ))),
+                                                other => {
+                                                    Err(v.unknown_variant(other, "SignalLevel"))
+                                                }
                                             })
                                         })?,
                                         due: r
@@ -1253,9 +1253,7 @@ impl StatePolicy for StaticComposedPayloadPolicy {
                                     "critical" => {
                                         Ok(StaticComposedPayloadSignalLevelEnum::Critical)
                                     }
-                                    other => Err(v.refuse(&format!(
-                                        "({other}) is not a variant of SignalLevel"
-                                    ))),
+                                    other => Err(v.unknown_variant(other, "SignalLevel")),
                                 })
                             })
                         })?,

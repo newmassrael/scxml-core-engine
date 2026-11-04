@@ -683,7 +683,7 @@ impl ComposedSpelling for RustComposed<'_> {
             .collect();
         format!(
             "{value}.name().and_then(|name| match name {{ {arms}other => \
-             Err({value}.refuse(&format!(\"({{other}}) is not a variant of {}\"))) }})",
+             Err({value}.unknown_variant(other, \"{}\")) }})",
             crate::filters::escape_rust(held.alias.clone())
         )
     }
@@ -1020,8 +1020,7 @@ mod tests {
         assert_eq!(
             read("enum:Level"),
             "v.name().and_then(|name| match name { \"low\" => Ok(MLevelEnum::Low), \"high\" => \
-             Ok(MLevelEnum::High), other => Err(v.refuse(&format!(\"({other}) is not a variant \
-             of Level\"))) })"
+             Ok(MLevelEnum::High), other => Err(v.unknown_variant(other, \"Level\")) })"
         );
     }
 
