@@ -17,11 +17,13 @@
 // names, field layouts, and semantics match the Rust (and C++) source. When the
 // Rust and Go versions diverge, Rust wins.
 //
-// # Threading Model
+// # Threading
 //
-// Engine is NOT safe for concurrent use. Callers needing multi-goroutine access
-// must protect with sync.Mutex. This matches the C++ and Rust single-threaded
-// microstep loop design.
+// The rule is ARCHITECTURE.md "Engine Threading" (docs/adr/0084). An Engine
+// belongs to the goroutine that drives it, and Engine's own documentation names
+// its owner-goroutine operations. Another goroutine reaches it through
+// Engine.Inbox, the one handle that is safe for concurrent use; a host does not
+// put a lock of its own around an engine.
 //
 // # Generics
 //

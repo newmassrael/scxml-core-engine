@@ -579,6 +579,10 @@ func cloneParams(params map[string][]string) map[string][]string {
 // This is the only way a host-run invocation's `done.invoke` reaches the
 // document. One raised through the ordinary external-event API skips the check
 // above, so the engine refuses it when it is dequeued.
+//
+// An owner-goroutine operation, as every ending is (Engine, "Threading"): a host
+// whose work finishes on a goroutine of its own posts the ending to Inbox
+// (Inbox.EndHostInvoke), and the owner applies it through this same door.
 func (e *Engine[S, E]) CompleteHostInvoke(processorType, invokeID string, token uint64, doneData string) bool {
 	return e.CompleteHostInvokeFrom(processorType, invokeID, token, doneData, "", "")
 }

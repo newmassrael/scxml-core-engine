@@ -1179,7 +1179,10 @@ checks the owner and has the inbox, `EngineInbox`). So does the generated C++
 engine: its inbox is `inbox()`, unbounded on the forge LSCQ
 (`core/EngineInbox.h`); SCE's own Mesh deliveries, deadlines and remote child
 sessions' lifecycle post to it; and a debug build checks the owner, which is the
-thread that drives it (`StaticExecutionEngine.h`).
+thread that drives it (`StaticExecutionEngine.h`). So does the Go engine: its
+inbox is `Engine.Inbox`, unbounded, and its owner is the goroutine that drives
+it, which its documentation names and nothing checks
+(`backends/go/runtime/inbox.go`).
 
 **The invariant.** A macrostep runs to completion: no input is observed in the
 middle of one (§scxml-C-1). Every engine holds it by the same mechanism.

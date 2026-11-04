@@ -12,14 +12,6 @@ import (
 	"time"
 )
 
-// Engine is the SCXML execution engine.
-//
-// Generic over State (S) and Event (E) types. Takes a StatePolicy[S, E]
-// interface that encodes the state machine structure. Matches Rust Engine<P>
-// from backends/rust/runtime/src/engine.rs and C++ StaticExecutionEngine<StatePolicy>.
-//
-// # Threading Model
-//
 // eventOutcome is what the engine did with one event it offered to the active
 // configuration.
 //
@@ -38,9 +30,28 @@ const (
 	eventTaken
 )
 
-// Engine is NOT safe for concurrent use. Callers needing multi-goroutine access
-// must protect with sync.Mutex. This matches the C++ and Rust single-threaded
-// microstep loop design.
+// Engine is the SCXML execution engine.
+//
+// Generic over State (S) and Event (E) types. Takes a StatePolicy[S, E]
+// interface that encodes the state machine structure. Matches Rust Engine<P>
+// from backends/rust/runtime/src/engine.rs and C++ StaticExecutionEngine<StatePolicy>.
+//
+// # Threading
+//
+// The rule is ARCHITECTURE.md "Engine Threading" (docs/adr/0084). An engine runs
+// no loop of its own: its owner is the goroutine that drives it, and the child
+// sessions it starts run on that goroutine too, so a tree has one owner. The
+// owner-goroutine operations are entering a run (Initialize, InitializeAsRoot,
+// EnterAt), driving it (Step, Tick, ProcessEvent, ProcessEventWithMeta,
+// AdvanceTimeMs, RunUntilCompletion), raising an external event (RaiseExternal,
+// RaiseExternalByName, RaiseExternalWithMeta), ending or cancelling a host-run
+// invocation (CompleteHostInvoke, CompleteHostInvokeFrom, FailHostInvoke,
+// EndHostInvokeIn, CompleteHostInvokeIn, FailHostInvokeIn, CancelHostInvoke),
+// applying a Mesh delivery (ApplyMeshCall, ApplyMeshCalls) and Stop; every other
+// method is the owner's too. Another goroutine uses Inbox instead, the one
+// handle that is safe for concurrent use. Nothing checks the owner at run time:
+// the rule holds by the host keeping it, as for any Go value confined to one
+// goroutine, and `go test -race` is what finds a call that breaks it.
 type Engine[S comparable, E comparable] struct {
 	// policy is the generated per-SM policy struct (datamodel, last-transition flags, etc.).
 	policy StatePolicy[S, E]
@@ -53,6 +64,12 @@ type Engine[S comparable, E comparable] struct {
 
 	// externalQueue is the §scxml-C-1 external event queue (low priority).
 	externalQueue *EventQueueManager[EventWithMetadata[E]]
+
+	// inbox is what other goroutines post to this engine (docs/adr/0084),
+	// applied at each macrostep boundary before externalQueue is consulted.
+	// Made with the engine and never replaced, so Inbox may read it from any
+	// goroutine. See inbox.go.
+	inbox *inboxState[E]
 
 	// isRunning tracks whether the engine is currently running.
 	isRunning bool
@@ -272,6 +289,7 @@ func NewEngine[S comparable, E comparable](policy StatePolicy[S, E]) *Engine[S, 
 		currentState:    policy.InitialState(),
 		internalQueue:   NewEventQueueManager[EventWithMetadata[E]](),
 		externalQueue:   NewEventQueueManager[EventWithMetadata[E]](),
+		inbox:           &inboxState[E]{},
 		isRunning:       false,
 		scheduler:       NewPullScheduler[E](),
 		donedataAtFinal: "",
@@ -350,6 +368,10 @@ func (e *Engine[S, E]) Initialize() {
 	e.clearTerminalState()
 	e.interpreterExited = false
 	e.lateBoundStates = nil
+	// docs/adr/0084: a run that ended or was stopped closed the inbox; this one
+	// takes posts again, and what was posted before the first run is applied at
+	// its first boundary.
+	e.inbox.open()
 
 	// §scxml-5.3: Initialize datamodel before any state entry
 	if e.policy.NeedsDataModelInit() {
@@ -468,6 +490,8 @@ func (e *Engine[S, E]) EnterAt(configuration []S, current S) ConfigurationReject
 	}
 
 	e.isRunning = true
+	// docs/adr/0084: the run resumed here takes posts, as one Initialize enters.
+	e.inbox.open()
 	return ConfigurationAccepted
 }
 
@@ -609,11 +633,17 @@ func (e *Engine[S, E]) Tick() {
 // §scxml-D-exitInterpreter: a run the host stops is exited as one that ended
 // — every active state's <onexit> runs, innermost first, and the
 // configuration ends empty. A run that already ended has been exited.
+//
+// The inbox closes with the run, after the exit, and what it still holds is
+// applied as a direct call would be now (docs/adr/0084): an event joins the
+// external queue of a machine that will not dequeue it, which the next Step
+// counts (UnseenExternalEvents), and an ending finds its invocation over.
 func (e *Engine[S, E]) Stop() {
 	if e.isRunning {
 		e.exitInterpreter()
 	}
 	e.isRunning = false
+	e.closeInbox()
 }
 
 // exitInterpreter is Appendix D's exitInterpreter (§scxml-D-exitInterpreter):
@@ -2014,6 +2044,14 @@ func (e *Engine[S, E]) runMainEventLoop() {
 			// that reached a top-level final state has exited the interpreter.
 			// Saying nothing about it is not the clause — see
 			// UnseenExternalEvents.
+			//
+			// The inbox closes with a run that ended, and what was posted to it
+			// before is applied first, so an event posted there is counted with
+			// the rest (docs/adr/0084). A stopped run closed it in Stop; one never
+			// started keeps what was posted for its first boundary.
+			if e.isInFinalState() {
+				e.closeInbox()
+			}
 			e.recordUnseenExternalEvents()
 			// §scxml-D-exitInterpreter: the loop is over because the run
 			// entered a top-level final, so every state still active is exited
@@ -2047,6 +2085,13 @@ func (e *Engine[S, E]) runMainEventLoop() {
 		if !e.macrostepTruncated && e.internalQueue.HasEvents() {
 			continue
 		}
+
+		// docs/adr/0084: the macrostep is complete, and this is the point before
+		// the external queue is consulted. What other goroutines posted since the
+		// last boundary is applied here, in the order the inbox took it, so an
+		// event it carries joins the external queue behind what this macrostep
+		// queued.
+		e.drainInbox()
 
 		head, queued := e.externalQueue.Front()
 		if !queued {
