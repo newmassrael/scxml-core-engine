@@ -49,12 +49,10 @@ PY
 
 mutation_case "a body past a capacity stops the decode that holds it" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''            let decode = |from: &str, into: &str| {
-                rust_noted(&format!("{body_type}::decode_into({from}, {into}{thread_arg})?;"))
-            };''',
-     r'''            let decode = |from: &str, into: &str| {
-                format!("{body_type}::decode_into({from}, {into}{thread_arg})?;")
-            };''')
+     r'''                if stores {
+                    rust_noted(&call)''',
+     r'''                if false {
+                    rust_noted(&call)''')
 PY
 
 mutation_case "a failed fill keeps what it pushed" <<'PY'

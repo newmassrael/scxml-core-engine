@@ -10945,6 +10945,7 @@ fn render_codec(
                             &embed_thread.decode_arg,
                             &m.fields,
                             c11_over,
+                            true,
                             lang,
                         )
                         .into(),
@@ -10978,6 +10979,7 @@ fn render_codec(
                                 &body_decoder,
                                 &embed_thread.decode_arg,
                                 &m.fields,
+                                false,
                                 false,
                                 lang,
                             )
@@ -11580,21 +11582,18 @@ fn render_codec(
     } else {
         (fields.clone(), fields)
     };
-    // Whether a Rust decode notes a capacity in `RUST_DECODE_OVER`, so declares
-    // it and answers it once the frame is read whole (docs/adr/0077 §7): a field
-    // statement does, and so does the decode of a variant's arm.
+    // Whether the eager Rust decode notes a capacity in `RUST_DECODE_OVER`, so
+    // declares it and answers it once the frame is read whole (docs/adr/0077
+    // §7): a statement it renders for a field names it, or a variant's arm,
+    // whose decode the template notes. A decode that notes nowhere neither
+    // declares nor tests it, and a view's statements never note.
     let decode_notes_over = matches!(lang, crate::generator::Language::Rust)
         && (m.variant.is_some()
             || wire.iter().any(|field| {
-                [
-                    "repeat_decode_stmt",
-                    "tlv_chain_decode_stmt",
-                    "embed_decode_stmt",
-                    "store_rebind",
-                ]
-                .iter()
-                .filter_map(|key| field.get(*key).and_then(|v| v.as_str()))
-                .any(|stmt| stmt.contains(&format!("&mut {RUST_DECODE_OVER}")))
+                RUST_EAGER_DECODE_KEYS
+                    .iter()
+                    .filter_map(|key| field.get(*key).and_then(|v| v.as_str()))
+                    .any(rust_names_over)
             }));
     ctx.insert("decode_notes_over".into(), decode_notes_over.into());
     ctx.insert("fields".into(), serde_json::json!(stored));
@@ -15247,6 +15246,9 @@ fn embed_streaming_decode_stmt(
     fields: &[CodecField],
     // Whether the C11 decode is a store after a parse ([`c11_may_exceed_capacity`]).
     c11_over: bool,
+    // Whether a Rust decode stores the body, so notes a capacity it was past
+    // ([`RUST_DECODE_OVER`]); a view stores nothing and cannot run out.
+    stores: bool,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -15290,7 +15292,12 @@ fn embed_streaming_decode_stmt(
             // capacity has read its own frame whole, and the decode notes it
             // and reads on (`RUST_DECODE_OVER`).
             let decode = |from: &str, into: &str| {
-                rust_noted(&format!("{body_type}::decode_into({from}, {into}{thread_arg})?;"))
+                let call = format!("{body_type}::decode_into({from}, {into}{thread_arg})?;");
+                if stores {
+                    rust_noted(&call)
+                } else {
+                    call
+                }
             };
             let held = format!("&mut {RUST_DECODE_OUT}.{id}");
             let inserted = format!("{RUST_DECODE_OUT}.{id}.insert({body_type}::default())");
@@ -16794,6 +16801,30 @@ const RUST_DECODE_OUT: &str = "_out";
 /// §7), the rule the C11 backend reads a frame by (`_over`,
 /// `sce_forge_codec_note_capacity`).
 const RUST_DECODE_OVER: &str = "_over";
+
+/// The statements an eager Rust decode renders for a field, each of which may
+/// note a capacity ([`RUST_DECODE_OVER`]); the template renders exactly these
+/// for a field when it does not render a view.
+const RUST_EAGER_DECODE_KEYS: [&str; 7] = [
+    "repeat_decode_stmt",
+    "tlv_chain_decode_stmt",
+    "embed_decode_stmt",
+    "present_if_decode_stmt",
+    "bounded_rebind",
+    "store_rebind",
+    "peek_byte_decode_stmt",
+];
+
+/// Whether `stmt` names [`RUST_DECODE_OVER`] as an identifier: notes a capacity
+/// in it or takes one into it.
+fn rust_names_over(stmt: &str) -> bool {
+    let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    stmt.match_indices(RUST_DECODE_OVER).any(|(at, _)| {
+        let before = stmt[..at].chars().next_back();
+        let after = stmt[at + RUST_DECODE_OVER.len()..].chars().next();
+        !before.is_some_and(is_ident) && !after.is_some_and(is_ident)
+    })
+}
 
 /// What a Rust list decode notes inside its fill that it read an entry it did
 /// not hold, or one whose body was past a capacity; the fill answers

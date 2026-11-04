@@ -5945,11 +5945,12 @@ mod tests {
 }
 
 /// What cannot hold a list the protocol states no bound of says so, naming the
-/// list (docs/adr/0077 §7): a Rust tree with no views, whose decode past a
-/// capacity would judge the frame by a form that holds lists at their bound; a
-/// C11 tree with no capacity for it, since C11 holds every list in an array;
-/// and a deployment that gives it none. The other backends grow, and read the
-/// list to its end.
+/// list (docs/adr/0077 §7): a C11 tree with no capacity for it, since C11 holds
+/// every list in an array, and a deployment that gives it none. The other
+/// backends grow, and read the list to its end. A Rust tree with no views holds
+/// it as any profile it names does: its decode past a capacity reads the frame
+/// in one pass and judges it by no other form (amendment of 2026-11-05), so the
+/// refusal a judge at the list's bound once needed is gone.
 #[test]
 fn what_cannot_hold_a_list_with_no_bound_refuses_it() {
     use sce_build::forge::diagnostic::SingleDiagnostic;
@@ -5964,11 +5965,13 @@ fn what_cannot_hold_a_list_with_no_bound_refuses_it() {
             &opts,
         )
     };
-    let refused = compile(Language::Rust, golden_options(Language::Rust))
-        .err()
-        .expect("a Rust tree with no views refuses a list with no bound");
-    assert!(refused.to_string().contains("`extensions`"), "{refused}");
-    assert!(refused.to_string().contains("--views"), "{refused}");
+    let rust = compile(Language::Rust, golden_options(Language::Rust))
+        .expect("a Rust tree with no views generates a list with no bound");
+    let rust = &rust.files[0].1;
+    assert!(
+        !rust.contains("View::decode") && !rust.contains("past_capacity"),
+        "a Rust decode past a capacity judges the frame a second time:\n{rust}"
+    );
 
     let refused = compile(Language::C11, golden_options(Language::C11))
         .err()
@@ -23768,15 +23771,16 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
         .map(|(_, body)| body.clone())
         .expect("parent codec emit");
 
-    // Arm dispatch decode site must extract S from `header` and thread.
+    // Arm dispatch decode site must extract S from `header` and thread. The
+    // call is pinned to its own closing parenthesis: the statement around it
+    // notes a capacity the arm reports (docs/adr/0077 §7).
     assert!(
-        parent_rust
-            .contains("CodecAxis1D1WithInput::decode_into(cursor, _b, (header >> 6) & 0x1)?"),
+        parent_rust.contains("CodecAxis1D1WithInput::decode_into(cursor, _b, (header >> 6) & 0x1)"),
         "variant arm decode must thread `(header >> 6) & 0x1`:\n{parent_rust}"
     );
     // No-input arm must NOT pick up any spurious arg.
     assert!(
-        parent_rust.contains("CodecAxis1D1NoInput::decode_into(cursor, _b)?"),
+        parent_rust.contains("CodecAxis1D1NoInput::decode_into(cursor, _b)"),
         "no-input arm decode must remain arg-less:\n{parent_rust}"
     );
     // Encode site: the arm says `S` itself, so it is handed the sink alone,
@@ -24556,12 +24560,15 @@ fn axis1_inversion_multi_flag_input_order() {
         .find(|(name, _)| name.contains("codec_multi_parent"))
         .map(|(_, b)| b.clone())
         .expect("parent emit");
+    // The call's arguments, closed by its own parenthesis: the statement that
+    // holds it notes a capacity the body reports and reads on (docs/adr/0077 §7),
+    // which is no part of the order pinned here.
     assert!(
         parent_body.contains(
             "CodecMultiDisp::decode_into(cursor, &mut _out.payload, \
              (header >> 5) & 0x1, \
              (header >> 6) & 0x1, \
-             (header >> 7) & 0x1)?"
+             (header >> 7) & 0x1)"
         ),
         "caller MUST emit (N, M, P) at the embed-site decode call in flag-input \
          declaration order; got:\n{parent_body}"
