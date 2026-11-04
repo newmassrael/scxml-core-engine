@@ -1,0 +1,6 @@
+# The detached probe's own lock and target directory, as the sibling probes'
+# are, and the codec goldens `scripts/codec_frame_probe.sh` stages into `src/`
+# from `tests/forge/expected/` (or from an earlier commit) before each build.
+/target
+Cargo.lock
+/src/codec_*.rs

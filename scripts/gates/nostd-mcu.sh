@@ -439,6 +439,19 @@ sce_footprint_weigh "diagnostics off" "$MACHINE_BYTES_NO_DIAGNOSTICS" "$CORE_BYT
 sce_footprint_weigh "plain documents" "$MACHINE_BYTES_PLAIN" "$CORE_BYTES_PLAIN" absent \
     "$STACK_ROOTS_PLAIN" "$STACK_BYTES_PLAIN" --features plain-documents
 
+# The frame of a codec's lent decode on the target, which the engine's stack
+# above does not reach: a bare-metal client measured a put's `decode_into` at
+# 1,416 bytes while its group read its lists into locals, and the decode now
+# builds each list where its arm holds it (docs/adr/0065 §6, amendment of
+# 2026-11-05). The probe decodes three committed goldens (a chain whose kinds
+# decide the arm, a bare entry's placed chain, two lists of one count) and the
+# script refuses a frame on any of their chains that is not shorter than one
+# inline list, a length the probe computes for the target. The same script with
+# `--at <rev>` records the frames of an earlier commit's goldens.
+sce_gate_step "codec decode frames (no whole inline list in a lent decode's frame)"
+scripts/codec_frame_probe.sh \
+    || sce_gate_fail "a codec decode's frame holds a whole inline list"
+
 # The stack tool's own cases: a trait object's call is followed into every
 # implementation it may reach, which is what the stack above rests on.
 python3 -m unittest discover -s tools/mcu_stack/tests -q \

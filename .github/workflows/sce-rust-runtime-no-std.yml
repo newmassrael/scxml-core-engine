@@ -22,6 +22,10 @@ name: sce-rust-runtime no_std MCU target build
 # are loads and stores alone: a queue module that needs a compare-and-swap must be absent there
 # (`backends/rust/forge-runtime/src/queue/mod.rs`), which thumbv7em cannot show, and a consumer that
 # builds the runtime for ARMv6-M found a module that was not.
+#
+# It also reads the stack frame of three codecs' lent `decode_into` on thumbv7em
+# (`backends/rust/probes/nostd-codec-frame`, `scripts/codec_frame_probe.sh`): the
+# committed goldens it decodes, the runtime and the probe trigger it.
 
 on:
   push:
@@ -32,12 +36,24 @@ on:
       - 'tools/codegen/templates/rust/**'
       - 'tools/mcu_stack/**'
       - 'scripts/gates/nostd-mcu.sh'
+      - 'scripts/codec_frame_probe.sh'
       - 'backends/rust/probes/nostd-build/**'
       - 'backends/rust/probes/portable-emit/**'
       - 'backends/rust/probes/feature-unification/**'
       - 'backends/rust/probes/nostd-queue-size/**'
       - 'backends/rust/probes/nostd-footprint/**'
       - 'backends/rust/probes/nostd-composed/**'
+      - 'backends/rust/probes/nostd-codec-frame/**'
+      - 'tests/forge/expected/codec_chain_has_envelope.rs'
+      - 'tests/forge/expected/codec_chain_has_marker.rs'
+      - 'tests/forge/expected/codec_chain_has_marker_slice.rs'
+      - 'tests/forge/expected/codec_chain_has_slice.rs'
+      - 'tests/forge/expected/codec_repeat_elem.rs'
+      - 'tests/forge/expected/codec_repeat_unconditional_count.rs'
+      - 'tests/forge/expected/codec_zenoh_ext_entry.rs'
+      - 'tests/forge/expected/codec_zenoh_ext_unit.rs'
+      - 'tests/forge/expected/codec_zenoh_ext_zbuf.rs'
+      - 'tests/forge/expected/codec_zenoh_ext_zint.rs'
       - 'backends/rust/portable-bytes/**'
       - 'sce-build/src/forge/composed_lowering.rs'
       - 'sce-build/src/forge/static_lowering.rs'
@@ -60,12 +76,24 @@ on:
       - 'tools/codegen/templates/rust/**'
       - 'tools/mcu_stack/**'
       - 'scripts/gates/nostd-mcu.sh'
+      - 'scripts/codec_frame_probe.sh'
       - 'backends/rust/probes/nostd-build/**'
       - 'backends/rust/probes/portable-emit/**'
       - 'backends/rust/probes/feature-unification/**'
       - 'backends/rust/probes/nostd-queue-size/**'
       - 'backends/rust/probes/nostd-footprint/**'
       - 'backends/rust/probes/nostd-composed/**'
+      - 'backends/rust/probes/nostd-codec-frame/**'
+      - 'tests/forge/expected/codec_chain_has_envelope.rs'
+      - 'tests/forge/expected/codec_chain_has_marker.rs'
+      - 'tests/forge/expected/codec_chain_has_marker_slice.rs'
+      - 'tests/forge/expected/codec_chain_has_slice.rs'
+      - 'tests/forge/expected/codec_repeat_elem.rs'
+      - 'tests/forge/expected/codec_repeat_unconditional_count.rs'
+      - 'tests/forge/expected/codec_zenoh_ext_entry.rs'
+      - 'tests/forge/expected/codec_zenoh_ext_unit.rs'
+      - 'tests/forge/expected/codec_zenoh_ext_zbuf.rs'
+      - 'tests/forge/expected/codec_zenoh_ext_zint.rs'
       - 'backends/rust/portable-bytes/**'
       - 'sce-build/src/forge/composed_lowering.rs'
       - 'sce-build/src/forge/static_lowering.rs'

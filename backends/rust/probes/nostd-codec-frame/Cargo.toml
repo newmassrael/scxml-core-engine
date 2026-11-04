@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The MCU frame instrument of a codec's lent decode. `nostd-footprint` weighs
+# what the engine costs an image and the stack of its deepest chain; this one
+# weighs the stack frame a codec's `decode_into` takes on the target, which a
+# bare-metal client measured at 1,416 bytes for a put whose group read its
+# lists into locals before it built its arm (docs/adr/0065 §6, amendment of
+# 2026-11-05; docs/adr/0077 §7).
+#
+# Its sources are the committed codec goldens of `tests/forge/expected/`,
+# staged into `src/` by `scripts/codec_frame_probe.sh` and never committed
+# here, so the instrument reads the code a consumer's regeneration produces,
+# and the same script stages the goldens of an earlier commit to record the
+# frame that commit's shape took.
+#
+# A STATICLIB for the reason `nostd-footprint` is one: with `lto = true` an
+# rlib carries bitcode, and a disassembly of it reads no frame at all.
+
+[package]
+name = "sce-nostd-codec-frame-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "MCU-target frame instrument: the stack frame of a codec's lent decode_into"
+license = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+
+[lib]
+name = "sce_nostd_codec_frame_probe"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+sce-forge-runtime = { path = "../../forge-runtime", default-features = false }
+
+# Declared and left off, so the goldens' `#[cfg(feature = "alloc")]` blocks are
+# a known cfg: the instrument is the heap-free tier a bare-metal client builds.
+[features]
+alloc = ["sce-forge-runtime/alloc"]
+
+# The profile a bare-metal client builds its images at, as `nostd-footprint`'s
+# is: a frame measured at another opt-level answers another question.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+
+# Detached from the parent workspace, as the sibling probes are: a staticlib
+# that defines a `#[panic_handler]` cannot be built for a host whose `std`
+# defines one.
+[workspace]
