@@ -3043,31 +3043,16 @@ impl StaticTarget for RustTarget {
                         self.record_field(&f.id)
                     };
                     let read = format!("{from}.{held}");
-                    let text = matches!(f.sce_type.present_type(), SceType::String);
-                    // A payload keeps the wire's text until its struct is held to
-                    // its bounds where it is read (docs/adr/0086, section 7.4), so
-                    // its text is held to the algorithm's bound where it crosses,
-                    // which only a call that may fail can refuse: any other has no
-                    // adapter, and the call is refused by name where the machine
-                    // is generated.
-                    if payload && text && !spec.callee.may_fail {
-                        return None;
-                    }
                     spec.record_field_crossing(self, f, &read, Crossing::ToAlgorithm, |read| {
-                        let portable = crate::forge::composed_lowering::RUST_PORTABLE;
-                        match (text, payload, f.max_size, &f.sce_type) {
-                            // The machine's record and the algorithm's hold the
-                            // text of one field in one type, the field's
-                            // `SceString<N>`, so the algorithm takes a copy of it
-                            // as it is, absent where it is absent.
-                            (true, false, _, _) => format!("{read}.clone()"),
-                            (true, true, Some(bound), EntryType::Optional { .. }) => format!(
-                                "{read}.as_deref().map({portable}::SceString::<{bound}>::from_text)\
-                                 .transpose()?"
-                            ),
-                            (true, true, Some(bound), EntryType::Scalar(_)) => {
-                                format!("{portable}::SceString::<{bound}>::from_text(&{read})?")
-                            }
+                        // The machine's record and the algorithm's hold the text
+                        // of one field in one type, the field's `SceString<N>`
+                        // (docs/adr/0086, section 7.4), so the algorithm takes a
+                        // copy of it as it is, absent where it is absent. A
+                        // payload whose schema holds text never crosses here: the
+                        // call that hands one is refused at check until its struct
+                        // is held to its bounds where it is read (section 4.4).
+                        match f.sce_type.present_type() {
+                            SceType::String => format!("{read}.clone()"),
                             _ => read.to_string(),
                         }
                     })
