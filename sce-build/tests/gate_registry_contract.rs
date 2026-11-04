@@ -1372,6 +1372,160 @@ fn the_push_hook_delegates_rather_than_carrying_gates() {
     );
 }
 
+/// The gate registry's standard output for `args`, run against this tree; a
+/// refusal fails the calling test with the registry's own words.
+fn registry_stdout(root: &Path, args: &[&str]) -> String {
+    let out = Command::new("python3")
+        .arg(root.join("tools/git-hooks/gate_registry.py"))
+        .arg("--repo-root")
+        .arg(root)
+        .args(args)
+        .output()
+        .expect("run gate_registry.py");
+    assert!(
+        out.status.success(),
+        "gate_registry.py {} failed:\n{}",
+        args.join(" "),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// The push, bx's declared set and the registry's planner name one another,
+/// and the plan covers what the selection chose.
+///
+/// Through bx the push no longer runs the runner as one command. It asks bx
+/// for the set `gates` (`[checks.gates]` in bx.toml) with the runner's plan of
+/// its own selection (`scripts/gate --plan`, which hands the selection to
+/// `gate_registry.py --plan`). Three files hold that chain, and a rename in any
+/// one leaves the push handing bx a set it does not declare, or a plan that is
+/// not the registry's. The plan is ASKED FOR here, not restated: for each change
+/// below its units must name only gates the selection chose and, with what each
+/// unit runs before its gate, cover every one of them, so the push verifies what
+/// `select` says it does. A unit may keep no verdict its gate says may not be
+/// kept.
+#[test]
+fn the_push_hands_bx_the_set_the_registry_plans() {
+    let root = repo_root();
+
+    let manifest = std::fs::read_to_string(root.join("bx.toml")).expect("read bx.toml");
+    let set: Vec<String> = manifest
+        .lines()
+        .skip_while(|l| l.trim() != "[checks.gates]")
+        .skip(1)
+        .take_while(|l| !l.trim_start().starts_with('['))
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .map(|l| l.chars().filter(|c| !c.is_whitespace()).collect())
+        .collect();
+    assert!(
+        set.iter()
+            .any(|l| l == r#"plan=["bash","scripts/gate","--plan","--all"]"#),
+        "bx.toml's [checks.gates] does not plan through `scripts/gate --plan`, \
+         so the set run by hand would not be the registry's: {set:?}"
+    );
+    assert!(
+        set.iter().any(|l| l == "cache=true"),
+        "bx.toml's [checks.gates] does not say `cache = true`, so bx does not \
+         hold the platform to naming the architecture a kept verdict needs: \
+         {set:?}"
+    );
+
+    let hook = std::fs::read_to_string(root.join("tools/git-hooks/pre-push"))
+        .expect("read tools/git-hooks/pre-push");
+    assert!(
+        code_lines(&hook).any(|l| l.contains("--checks gates -- bash scripts/gate --plan")),
+        "the push hook no longer hands bx the set `gates` with the runner's \
+         plan of the push's own selection"
+    );
+
+    let mapping: serde_json::Value = serde_json::from_str(&registry_stdout(&root, &["--mapping"]))
+        .expect("--mapping prints a JSON object");
+    let deps_of = |slug: &str| -> BTreeSet<String> {
+        let mut seen = BTreeSet::new();
+        let mut stack = vec![slug.to_string()];
+        while let Some(s) = stack.pop() {
+            let deps = mapping[s.as_str()]["deps"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|d| d.as_str());
+            for d in deps {
+                if seen.insert(d.to_string()) {
+                    stack.push(d.to_string());
+                }
+            }
+        }
+        seen
+    };
+
+    for changed in [
+        &["README.md"][..],
+        &["sce-build/src/lib.rs"][..],
+        &["backends/go/forge-runtime/go.mod"][..],
+    ] {
+        let mut ask = vec!["--changed"];
+        ask.extend_from_slice(changed);
+        let selected: BTreeSet<String> = registry_stdout(&root, &ask)
+            .lines()
+            .map(str::to_string)
+            .collect();
+
+        let mut plan_ask = vec!["--plan", "--rust", "1.0.0", "--changed"];
+        plan_ask.extend_from_slice(changed);
+        let plan = registry_stdout(&root, &plan_ask);
+
+        let mut covered = BTreeSet::new();
+        for line in plan.lines().filter(|l| !l.trim().is_empty()) {
+            let unit: serde_json::Value = serde_json::from_str(line)
+                .unwrap_or_else(|e| panic!("{changed:?}: plan line {line:?} is not JSON: {e}"));
+            if unit.get("result").is_some() {
+                assert!(
+                    selected.is_empty(),
+                    "{changed:?}: the plan says nothing applies while the \
+                     selection chose {selected:?}"
+                );
+                continue;
+            }
+            let name = unit["name"]
+                .as_str()
+                .expect("a unit has a name")
+                .to_string();
+            assert!(
+                selected.contains(&name),
+                "{changed:?}: the plan runs {name}, which the selection did not \
+                 choose: {selected:?}"
+            );
+            let argv: Vec<&str> = unit["argv"]
+                .as_array()
+                .expect("a unit has an argv")
+                .iter()
+                .filter_map(|a| a.as_str())
+                .collect();
+            assert_eq!(
+                argv,
+                ["bash", "scripts/gate", "--rust", "1.0.0", name.as_str()],
+                "{changed:?}: unit {name} does not run the runner on its own \
+                 gate at the planned release"
+            );
+            if mapping[name.as_str()]["cache"] == serde_json::Value::Bool(false) {
+                assert_eq!(
+                    unit["cache"],
+                    serde_json::Value::Bool(false),
+                    "{changed:?}: unit {name} keeps a verdict its gate says \
+                     may not be kept"
+                );
+            }
+            covered.extend(deps_of(&name));
+            covered.insert(name);
+        }
+        let missing: Vec<&String> = selected.difference(&covered).collect();
+        assert!(
+            missing.is_empty(),
+            "{changed:?}: selected, and run by no unit of the plan: {missing:?}"
+        );
+    }
+}
+
 /// Build a throwaway git repository with `body` staged at `rel`.
 ///
 /// The gate library resolves the repo root with `git rev-parse`, so the

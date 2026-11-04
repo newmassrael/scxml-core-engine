@@ -397,3 +397,34 @@ outputs = [
     "embed/MANIFEST.json",
     "embed/MANIFEST.inputs",
 ]
+
+# THE PUSH'S GATES, AS A SET OF CHECKS bx SPREADS OVER THE BUILD MACHINES (bx
+# RFC 0004, section 7) AND WHOSE PASSES IT KEEPS (RFC 0020).
+#
+# `tools/git-hooks/pre-push` runs `bx --checks gates -- bash scripts/gate --plan
+# <its selection>`. A plan command given after `--` replaces `plan` below for
+# that one run, which is how the push's change set reaches the plan: as
+# ARGUMENTS, so that it decides the list of units, and never as an environment
+# variable a unit would read and the key would not hold (RFC 0020, section 10).
+# `plan` below is what a run by hand gets: every gate, the PREPUSH_FULL set.
+#
+# There is no list of gates here. `tools/git-hooks/gate_registry.py` is the one
+# list, and the plan is its answer printed as units: one per selected gate that
+# no other selected gate runs, each `bash scripts/gate --rust <release> <slug>`,
+# each saying whether its pass may be kept and over what inputs. Why a gate's
+# pass may or may not be kept is written beside the gate, in the registry.
+#
+# `cache = true` is the set's default, and every unit states its own answer
+# over it. The set says it so that bx holds the platform above to naming its
+# architecture, which a kept verdict needs (RFC 0020, section 4.3); a set that
+# left it false would let units ask for `cache` with nothing checking that.
+#
+# `fail_fast` is left off, where the runner stops at its first red. The runner
+# ran one gate after another on one machine, so every gate after a red was time
+# the developer waited for and learned nothing from. Here units run on several
+# machines at once and a red does not hold the others up, so a push learns every
+# red it has in one round. bx names each unit it did not finish as not measured,
+# so nothing that did not run reads as passed.
+[checks.gates]
+plan  = ["bash", "scripts/gate", "--plan", "--all"]
+cache = true

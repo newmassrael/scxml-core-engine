@@ -174,19 +174,41 @@ fi
 #
 # `$BX` is the opt-in, and only its NAME lives in the tree: the path is this
 # machine's, set in its environment. Unset, the runner starts here as before.
-# Set, bx decides where the runner goes and says why; it falls back to this
-# machine by itself when no build machine can take the run. Its refusals (an
-# untracked file, a tree the far side does not agree with) are verdicts about
-# this checkout, so the hook adds no fallback of its own: running the gates
-# here after bx refused would answer a question bx already answered.
+# Set, bx decides where the gates go and says why; it falls back to this
+# machine by itself when no build machine can take them. Its refusals (an
+# untracked file, a tree the far side does not agree with, a plan it cannot
+# read) are verdicts about this checkout, so the hook adds no fallback of its
+# own: running the gates here after bx refused would answer a question bx
+# already answered.
 #
-# One bx call carries the whole run, so the tree crosses once and the gates
-# share the far side's build products. Each gate computes its verdict where it
-# runs, which is also where any tree it regenerates is compared. Nothing is
-# piped: bx's exit status is the runner's.
+# ── Through bx, the gates are a set of checks, not one command.
+#
+# Until 2026-11-04 one bx call carried the whole runner, so the tree crossed
+# once and every gate ran one after another on one machine, about seven
+# minutes, while the shared main moved on and the push lost the ref race. Now
+# bx runs the declared set `gates` (`[checks.gates]` in bx.toml): it runs
+# `scripts/gate --plan` HERE with the same selection arguments the in-place run
+# takes, and gets one unit per gate back, planned from the registry. So the two
+# paths cannot select differently: the selection is made by one function, and
+# the plan only prints its answer.
+#
+# What bx does with the units: it spreads them over the build machines, keeps
+# a passing unit's verdict under a key made of its argv, the tracked tree and
+# the declared platform, and does not run a unit again whose key already has a
+# kept pass (bx RFC 0020). Which gates may be kept, and why the others may not,
+# is the registry's (`cache` beside each gate). The change set reaches bx as
+# arguments of the plan command, never as an environment variable, so it is
+# part of what a kept verdict was kept for.
+#
+# What holds as it did: the tree the units read is the commit this push
+# publishes (checked above, and the key is that tree), each gate computes its
+# verdict where it runs, and nothing is piped, so the status below is bx's:
+# the largest status of any unit, 0 when every unit passed, 1 when a gate
+# found its tree wrong, 2 or more when a unit could not be measured (a gate's
+# own 3, "could not run", stays 3).
 run_gates() {
     if [[ -n "${BX:-}" && -x "${BX}" ]]; then
-        "$BX" --label pre-push -- scripts/gate "$@"
+        "$BX" --checks gates -- bash scripts/gate --plan "$@"
     else
         "$RUNNER" "$@"
     fi
@@ -202,10 +224,10 @@ fi
 # git feeds `<local ref> <local sha> <remote ref> <remote sha>` per pushed
 # ref on stdin. Union the changed paths over every ref in the push.
 #
-# Each ref yields a commit range as well as its paths. The runner is handed
-# the ranges (`--changed-in`), which mean the same thing on whichever machine
-# bx sends it to; the path list stays here for the notices at the end, which
-# this machine prints.
+# Each ref yields a commit range as well as its paths. The runner, or the plan
+# bx asks it for, is handed the ranges (`--changed-in`), which mean the same
+# thing on every machine the history reached; the path list stays here for
+# the notices at the end, which this machine prints.
 ZERO="0000000000000000000000000000000000000000"
 CHANGED_FILE="$(mktemp)"
 trap 'rm -f "$CHANGED_FILE"' EXIT
