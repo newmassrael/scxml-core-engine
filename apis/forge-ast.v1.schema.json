@@ -6310,11 +6310,8 @@
           "type": "object"
         },
         {
-          "description": "`<sce:intrusive link-field=\"…\"/>` — each element carries its own link field and the caller owns every node, so push cannot fail.",
+          "description": "`<sce:intrusive/>` — the caller owns every node, so push cannot fail. A node is of a type the target's runtime defines: it holds the element as its value and the list's link beside it, so the element declares no link (ADR 0088).",
           "properties": {
-            "link_field": {
-              "type": "string"
-            },
             "storage": {
               "enum": [
                 "intrusive"
@@ -6323,7 +6320,6 @@
             }
           },
           "required": [
-            "link_field",
             "storage"
           ],
           "type": "object"

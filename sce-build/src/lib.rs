@@ -8702,34 +8702,31 @@ fn validate_bounded_collection_cross_refs(
     Ok(())
 }
 
-/// SCE Protocol-Synthesis RFC §synth-5-P — the queue's references to other
-/// documents, which only the whole build can judge.
+/// SCE Protocol-Synthesis RFC §synth-5-P — the queue's reference to another
+/// document, which only the whole build can judge:
+/// `queue/element-type-not-a-kind`, `<sce:element-type>` does not name a
+/// codec or procedure document in the build. The candidates are the same map
+/// the bounded-collection pass reads, so a name that is an element there is
+/// an element here. The closed list rides `Fix::ReplaceOneOf`.
 ///
-/// * `queue/element-type-not-a-kind` — `<sce:element-type>` does not name a
-///   codec or procedure document in the build. The candidates are the same
-///   map the bounded-collection pass reads, so a name that is an element
-///   there is an element here. The closed list rides `Fix::ReplaceOneOf`.
-/// * `queue/intrusive-link-field-missing` — `<sce:intrusive link-field>`
-///   names a field the resolved element document does not declare. Runs only
-///   once the element type resolves, so the two never fire together; the
-///   closed list is the element's declared fields.
+/// Nothing else of the element is judged here, whatever the storage mode: an
+/// intrusive queue links nodes its runtime defines and holds the element as
+/// the node's value (ADR 0088), so the element declares no link.
 ///
-/// Each refusal is placed on the row that spells the offending text (the
-/// element-type row, the storage row), so a consumer applying the fix edits
-/// the right line. An empty `queues` is a no-op, which is every build with
-/// no queue document.
+/// The refusal is placed on the element-type row, so a consumer applying the
+/// fix edits the right line. An empty `queues` is a no-op, which is every
+/// build with no queue document.
 fn validate_queue_cross_refs(
     queues: &[(String, forge::model::QueueModel)],
     element_type_candidates: &std::collections::HashMap<String, forge::model::ForgeDocument>,
 ) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{Located, ValidationError};
-    use forge::model::QueueStorage;
 
     let mut element_type_names: Vec<String> = element_type_candidates.keys().cloned().collect();
     element_type_names.sort();
 
     for (diag_label, queue) in queues {
-        let Some(element) = element_type_candidates.get(queue.element_type.as_str()) else {
+        if !element_type_candidates.contains_key(queue.element_type.as_str()) {
             return Err(Located::new(
                 ValidationError::QueueElementTypeNotAKind {
                     queue_name: queue.name.clone(),
@@ -8739,61 +8736,6 @@ fn validate_queue_cross_refs(
                 .into(),
                 diag_label.clone(),
                 queue.element_type_line,
-                None,
-            ));
-        };
-        let QueueStorage::Intrusive { link_field } = &queue.storage else {
-            continue;
-        };
-        // Both candidate kinds are records; a kind without fields has no
-        // link field to offer and is left to its own checks.
-        let Some(fields) = element.record_fields() else {
-            continue;
-        };
-        // The queue uses the link in place as the index of the next node, so
-        // the field is a `uint32`; the other `uint32` fields are what a repair
-        // can name.
-        let link_type = fields
-            .iter()
-            .find(|(name, _)| name == link_field)
-            .map(|(_, ty)| ty.clone());
-        if let Some(ty) = &link_type {
-            if *ty != forge::model::SceType::Uint32 {
-                let mut candidates: Vec<String> = fields
-                    .iter()
-                    .filter(|(_, ty)| *ty == forge::model::SceType::Uint32)
-                    .map(|(name, _)| name.clone())
-                    .collect();
-                candidates.sort();
-                return Err(Located::new(
-                    ValidationError::QueueIntrusiveLinkFieldNotU32 {
-                        queue_name: queue.name.clone(),
-                        link_field: link_field.clone(),
-                        element_type: queue.element_type.clone(),
-                        actual: format!("{ty:?}").to_lowercase(),
-                        candidates,
-                    }
-                    .into(),
-                    diag_label.clone(),
-                    queue.storage_line,
-                    None,
-                ));
-            }
-        }
-        let mut candidates: Vec<String> = fields.into_iter().map(|(name, _)| name).collect();
-        if !candidates.iter().any(|name| name == link_field) {
-            candidates.sort();
-            return Err(Located::new(
-                ValidationError::QueueIntrusiveLinkFieldMissing {
-                    queue_name: queue.name.clone(),
-                    link_field: link_field.clone(),
-                    element_type: queue.element_type.clone(),
-                    element_kind: element.kind().to_string(),
-                    candidates,
-                }
-                .into(),
-                diag_label.clone(),
-                queue.storage_line,
                 None,
             ));
         }

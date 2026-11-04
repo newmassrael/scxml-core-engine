@@ -230,7 +230,8 @@ fn main() {
     // codec's struct; until it is compiled, nothing shows that the names it
     // writes are the names the runtime has. One queue per bounded algorithm
     // row, sharing one element codec under a parent module so the queues'
-    // `use super::queue_conformance_event` resolves.
+    // `use super::queue_conformance_event` resolves. The intrusive queues hold
+    // the same element: their nodes are the runtime's `Node` over it (ADR 0088).
     generate_stripped_fixtures(
         &[
             "queue_conformance_event",

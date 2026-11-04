@@ -18,12 +18,17 @@
 // Selected: {{ algorithm }}. Push is {{ push_progress }}, pop is {{ pop_progress }}.
 //
 {% if intrusive %}
-// The queue is intrusive (`<sce:intrusive link-field="{{ link_field }}"/>`): the elements are
-// nodes of an array the caller owns, linked through their own `{{ link_field }}` field, which
-// must be a `u32`. A node is named by its index in that array.
+// The queue is intrusive (`<sce:intrusive/>`): it links the nodes of an array the caller
+// owns, and a node is named by its index in that array. A node is `{{ pascal }}Node`, the
+// runtime's `Node` over the element: it holds an element as its `value` and the list's link
+// beside it, so the element is a value and carries no link (ADR 0088). Every queue over the
+// same element shares that node type, so a node popped from one may be pushed to another; it
+// is in one queue at a time.
 //
 // Operations (from `sce_forge_runtime::queue::intrusive`):
-//   unsafe new(nodes, len, stub) -> Self   the array, and the node set aside as the stub
+//   Node::new(value) -> {{ pascal }}Node     a node holding `value`
+//   unsafe new(nodes, len, stub) -> Self   the array of `{{ pascal }}Node`, and the node set
+//                                          aside as the stub
 //   unsafe push(index)                     wait-free; it cannot fail
 //   try_pop() -> Option<u32>               the index of the oldest node; None while a push
 //                                          is in flight or when the queue holds none
@@ -56,19 +61,8 @@
 #[cfg(not(target_has_atomic = "32"))]
 compile_error!("this queue's list swaps 32-bit links, and the target has no read-modify-write atomic");
 
-use sce_forge_runtime::queue::intrusive::{Link, Mpsc};
+use sce_forge_runtime::queue::intrusive::{Mpsc, Node};
 use super::{{ element_snake }}::{{ element_import }};
-
-/// The link this queue uses: the `{{ link_field }}` field of `{{ element_stored }}`. A marker of
-/// the queue's own, so another queue over the same element type may link through the same
-/// field or another without the two meeting.
-pub struct {{ pascal }}Link;
-
-// SAFETY: `{{ link_field }}` is an aligned `u32` field of `{{ element_stored }}`, checked when
-// the document was generated, and the queue is its only user while a node is queued.
-unsafe impl Link<{{ element_stored }}> for {{ pascal }}Link {
-    const OFFSET: usize = core::mem::offset_of!({{ element_stored }}, {{ link_field }});
-}
 
 /// Whether many consumers pop: their pops are serialised by a test-and-set
 /// flag. With one, the consumer must be a single thread.
@@ -84,9 +78,13 @@ pub const POP_PROGRESS: &str = "{{ pop_progress }}";
 /// The algorithm the selection table gave this contract.
 pub const ALGORITHM: &str = "{{ algorithm }}";
 
-/// The queue. It owns no storage: the nodes are the caller's, and the queue
-/// allocates nothing.
-pub type {{ pascal }} = Mpsc<{{ element_stored }}, {{ pascal }}Link, MANY_CONSUMERS>;
+/// A node of the queue: the element is its `value`, and the list's link is an
+/// atomic beside it that only the queue touches. Built by `Node::new(value)`.
+pub type {{ pascal }}Node = Node<{{ element_stored }}>;
+
+/// The queue. It owns no storage: the nodes are the caller's array of
+/// `{{ pascal }}Node`, and the queue allocates nothing.
+pub type {{ pascal }} = Mpsc<{{ element_stored }}, MANY_CONSUMERS>;
 {% elif segmented %}
 {% if not ring_slots %}
 // The rings' two handles are each taken once by a compare-and-swap of a flag. A target whose atomics

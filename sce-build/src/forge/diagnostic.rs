@@ -1457,14 +1457,13 @@ pub enum DiagnosticCode {
     /// build. Carries a `Fix::ReplaceOneOf` over the documents that exist.
     #[serde(rename = "queue/element-type-not-a-kind")]
     QueueElementTypeNotAKind,
-    /// `<sce:intrusive link-field>` names a field the element document does
-    /// not declare. Carries a `Fix::ReplaceOneOf` over the fields it does.
-    #[serde(rename = "queue/intrusive-link-field-missing")]
-    QueueIntrusiveLinkFieldMissing,
-    /// `<sce:intrusive link-field>` names a field that is not a `uint32`.
-    /// Carries a `Fix::ReplaceOneOf` over the element's `uint32` fields.
-    #[serde(rename = "queue/intrusive-link-field-not-u32")]
-    QueueIntrusiveLinkFieldNotU32,
+    /// `<sce:intrusive>` carries the removed `link-field` attribute. The
+    /// queue links nodes its runtime defines and the element is the value a
+    /// node holds (ADR 0088), so the element carries no link and the field
+    /// the attribute named can leave the element codec. The repair is a
+    /// removal of the attribute, so the fix is `remove_fields`.
+    #[serde(rename = "queue/intrusive-link-field-removed")]
+    QueueIntrusiveLinkFieldRemoved,
     /// The document is valid and the target language's runtime does not
     /// implement its storage mode yet. `expected` carries the modes it does.
     #[serde(rename = "queue/storage-runtime-missing")]
@@ -3981,8 +3980,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         QueueParticipantsUnresolved,
         QueueDeployLimitUnresolved,
         QueueElementTypeNotAKind,
-        QueueIntrusiveLinkFieldMissing,
-        QueueIntrusiveLinkFieldNotU32,
+        QueueIntrusiveLinkFieldRemoved,
         QueueStorageRuntimeMissing,
         QueueProgressUnreachableOnBackend,
         QueueAtomicWidthUnstated,
@@ -4857,8 +4855,7 @@ impl DiagnosticCode {
             | QueueParticipantsUnresolved
             | QueueDeployLimitUnresolved
             | QueueElementTypeNotAKind
-            | QueueIntrusiveLinkFieldMissing
-            | QueueIntrusiveLinkFieldNotU32
+            | QueueIntrusiveLinkFieldRemoved
             | QueueStorageRuntimeMissing
             | QueueProgressUnreachableOnBackend
             | QueueAtomicWidthUnstated
@@ -5600,8 +5597,7 @@ impl DiagnosticCode {
             | QueueParticipantsUnresolved
             | QueueDeployLimitUnresolved
             | QueueElementTypeNotAKind
-            | QueueIntrusiveLinkFieldMissing
-            | QueueIntrusiveLinkFieldNotU32
+            | QueueIntrusiveLinkFieldRemoved
             | QueueStorageRuntimeMissing
             | QueueProgressUnreachableOnBackend
             | QueueAtomicWidthUnstated
@@ -6233,8 +6229,7 @@ impl DiagnosticCode {
             QueueParticipantsUnresolved => "queue/participants-unresolved",
             QueueDeployLimitUnresolved => "queue/deploy-limit-unresolved",
             QueueElementTypeNotAKind => "queue/element-type-not-a-kind",
-            QueueIntrusiveLinkFieldMissing => "queue/intrusive-link-field-missing",
-            QueueIntrusiveLinkFieldNotU32 => "queue/intrusive-link-field-not-u32",
+            QueueIntrusiveLinkFieldRemoved => "queue/intrusive-link-field-removed",
             QueueStorageRuntimeMissing => "queue/storage-runtime-missing",
             QueueProgressUnreachableOnBackend => "queue/progress-unreachable-on-backend",
             QueueAtomicWidthUnstated => "queue/atomic-width-unstated",
@@ -10419,46 +10414,25 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![queue_name.clone(), element_type.clone()],
         },
-        ValidationError::QueueIntrusiveLinkFieldNotU32 {
+        // ADR 0088: an intrusive queue links nodes its runtime defines.
+        ValidationError::QueueIntrusiveLinkFieldRemoved {
             queue_name,
             link_field,
             element_type,
-            actual: _,
-            candidates,
         } => DiagnosticPayload {
-            code: DiagnosticCode::QueueIntrusiveLinkFieldNotU32,
+            code: DiagnosticCode::QueueIntrusiveLinkFieldRemoved,
             stage: Stage::Validation,
-            // `actual` is the link field as authored; the element's uint32
-            // fields ride `Fix::ReplaceOneOf`.
+            // `actual` is the attribute as authored. `fix` is the removal of
+            // exactly that attribute; that the field it named can leave the
+            // element codec rides the message, because a deterministic `fix`
+            // leaves `expected` absent.
             expected: None,
-            actual: Some(link_field.clone()),
-            fix: Some(Fix::ReplaceOneOf {
-                candidates: candidates.clone(),
+            actual: Some(format!("link-field=\"{link_field}\"")),
+            fix: Some(Fix::RemoveFields {
+                location: "sce:intrusive".to_string(),
+                fields: vec!["link-field".to_string()],
             }),
             key_fragments: vec![queue_name.clone(), element_type.clone(), link_field.clone()],
-        },
-        ValidationError::QueueIntrusiveLinkFieldMissing {
-            queue_name,
-            link_field,
-            element_type,
-            element_kind,
-            candidates,
-        } => DiagnosticPayload {
-            code: DiagnosticCode::QueueIntrusiveLinkFieldMissing,
-            stage: Stage::Validation,
-            // `actual` is the link field as authored; the element's sorted
-            // field names ride `Fix::ReplaceOneOf`.
-            expected: None,
-            actual: Some(link_field.clone()),
-            fix: Some(Fix::ReplaceOneOf {
-                candidates: candidates.clone(),
-            }),
-            key_fragments: vec![
-                queue_name.clone(),
-                element_type.clone(),
-                element_kind.clone(),
-                link_field.clone(),
-            ],
         },
         ValidationError::BroadcastLogElementTypeNotAKind {
             log_name,
@@ -15669,28 +15643,17 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:a0b0c15b8e70ec48","code":"queue/element-type-not-a-kind","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:element-type>rx_evnt</sce:element-type> does not name a codec-kind struct or procedure-kind state record in this build. SCE Protocol-Synthesis RFC §5.P: the queue stores the element document's own type, which resolves as a bounded collection's element does. Declare the element type as a separate `.scxml` document (codec: `<scxml sce:kind=\"codec\" name=\"rx_evnt\">`; procedure: `<scxml sce:kind=\"procedure\" name=\"rx_evnt\">`), or replace the body text with one of the registered candidates: rx_event, tx_event.","actual":"rx_evnt","fix":{"kind":"replace_one_of","candidates":["rx_event","tx_event"]}}"#,
             ),
             (
-                "forge/queue-intrusive-link-field-missing",
-                ValidationError::QueueIntrusiveLinkFieldMissing {
+                // ADR 0088: the element no longer carries the link. The fix
+                // removes the attribute and the message says the field it
+                // named can leave the element codec.
+                "forge/queue-intrusive-link-field-removed",
+                ValidationError::QueueIntrusiveLinkFieldRemoved {
                     queue_name: "rx_events".into(),
-                    link_field: "nxt".into(),
+                    link_field: "next".into(),
                     element_type: "rx_event".into(),
-                    element_kind: "codec".into(),
-                    candidates: vec!["next".into(), "sensor".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:c6bb0f4bc4505bc3","code":"queue/intrusive-link-field-missing","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:intrusive link-field=\"nxt\"/> names a field that does not exist on element-type 'rx_event' (codec kind). SCE Protocol-Synthesis RFC §5.P: an intrusive queue links its elements through a field each one carries, so the field must be one the element document declares. Replace `link-field=\"nxt\"` with one of the rx_event's declared fields: next, sensor.","actual":"nxt","fix":{"kind":"replace_one_of","candidates":["next","sensor"]}}"#,
-            ),
-            (
-                "forge/queue-intrusive-link-field-not-u32",
-                ValidationError::QueueIntrusiveLinkFieldNotU32 {
-                    queue_name: "rx_events".into(),
-                    link_field: "label".into(),
-                    element_type: "rx_event".into(),
-                    actual: "string".into(),
-                    candidates: vec!["next".into()],
-                }
-                .into(),
-                r#"{"v":1,"id":"fnv1a:0fed461a26c534c0","code":"queue/intrusive-link-field-not-u32","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:intrusive link-field=\"label\"/> names a field of element-type 'rx_event' whose type is string, not uint32. SCE Protocol-Synthesis RFC §5.P: an intrusive queue links its nodes through a uint32 field, the index of the next node of an array the caller owns. Replace `link-field=\"label\"` with one of the rx_event's uint32 fields: next.","actual":"label","fix":{"kind":"replace_one_of","candidates":["next"]}}"#,
+                r#"{"v":1,"id":"fnv1a:9dd378dd0fdb162d","code":"queue/intrusive-link-field-removed","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': <sce:intrusive link-field=\"next\"/> names a link field of element-type 'rx_event', and the element no longer carries the link. An intrusive queue links nodes its runtime defines, and each node holds an element as its value (ADR 0088, amending SCE Protocol-Synthesis RFC §5.P). Remove `link-field` and write `<sce:intrusive/>`; the field 'next' can leave the element's codec, 'rx_event'.","actual":"link-field=\"next\"","fix":{"kind":"remove_fields","location":"sce:intrusive","fields":["link-field"]}}"#,
             ),
             (
                 "forge/queue-storage-runtime-missing",
@@ -19340,11 +19303,8 @@ mod tests {
             // declared-limit candidate set, on the queue's own code.
             | QueueDeployLimitUnresolved
             // Queue cross-document resolution: the sorted codec + procedure
-            // names for the element type, and the element's sorted field
-            // names for the intrusive link field.
+            // names for the element type.
             | QueueElementTypeNotAKind
-            | QueueIntrusiveLinkFieldMissing
-            | QueueIntrusiveLinkFieldNotU32
             // Broadcast-log cross-document resolution (ADR 0062): the sorted
             // codec + procedure names for the element type.
             | BroadcastLogElementTypeNotAKind
@@ -19702,6 +19662,10 @@ mod tests {
             // (`Fix::RemoveFields`), deterministic, so `expected` is absent
             // and the queue document that replaces them rides the message.
             | WorkerInboxInlineRemoved
+            // The `link-field` of an intrusive queue is removed (ADR 0088):
+            // the repair is a removal of exactly that attribute
+            // (`Fix::RemoveFields`), deterministic, so `expected` is absent.
+            | QueueIntrusiveLinkFieldRemoved
             // Worker scheduler-capacity forge-side anchor
             // (RFC §synth-5-D line 912). Author repair is either adding the
             // worker to `deploy.machines.<m>.workers` or removing the
@@ -20815,8 +20779,7 @@ mod tests {
                 | QueueParticipantsUnresolved
                 | QueueDeployLimitUnresolved
                 | QueueElementTypeNotAKind
-                | QueueIntrusiveLinkFieldMissing
-                | QueueIntrusiveLinkFieldNotU32
+                | QueueIntrusiveLinkFieldRemoved
                 | QueueStorageRuntimeMissing
                 | QueueProgressUnreachableOnBackend
                 | QueueAtomicWidthUnstated
@@ -21867,8 +21830,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | QueueParticipantsUnresolved
             | QueueDeployLimitUnresolved
             | QueueElementTypeNotAKind
-            | QueueIntrusiveLinkFieldMissing
-            | QueueIntrusiveLinkFieldNotU32
+            | QueueIntrusiveLinkFieldRemoved
             | QueueStorageRuntimeMissing
             | QueueProgressUnreachableOnBackend
             | QueueAtomicWidthUnstated

@@ -1971,9 +1971,7 @@ fn render_queue(m: &QueueModel) -> Vec<Node> {
             "segmented segment {segment} allocator-progress {}",
             progress(*allocator_progress)
         ),
-        QueueStorage::Intrusive { link_field } => {
-            format!("intrusive link-field {}", text(link_field))
-        }
+        QueueStorage::Intrusive => "intrusive".to_string(),
     };
     let mut head = format!(
         "queue {} of {} producers {} consumers {} progress {} {storage}",

@@ -4,8 +4,10 @@
   producers and one consumer over nodes the caller owns. The selection table
   gives this Vyukov's MPSC list: push is wait-free, and pop blocks while a
   producer is between its two steps, so blocking is the strongest progress the
-  document can declare. The conformance crates compile what the generator
-  emits for it and run the queue.
+  document can declare. A node is of the type the runtime defines, holding a
+  `queue_conformance_event` as its value and the list's link beside it, so the
+  element is the one the other conformance queues hold (ADR 0088). The
+  conformance crates compile what the generator emits for it and run the queue.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -14,9 +16,9 @@
        sce:kind="queue"
        name="queue_conformance_intrusive"
        version="1.0">
-  <sce:element-type>queue_conformance_node</sce:element-type>
+  <sce:element-type>queue_conformance_event</sce:element-type>
   <sce:producers>many</sce:producers>
   <sce:consumers>one</sce:consumers>
   <sce:progress>blocking</sce:progress>
-  <sce:intrusive link-field="next"/>
+  <sce:intrusive/>
 </scxml>

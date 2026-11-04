@@ -3435,58 +3435,26 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
-    /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/intrusive-link-field-missing`)
-    /// — `<sce:intrusive link-field>` names a field the element document does
-    /// not declare. An intrusive queue links the elements through a field
-    /// each one carries, so the field has to exist on the element.
-    ///
-    /// Runs only once the element type resolves, so the two codes never fire
-    /// together. The fields are the element document's
-    /// [`crate::forge::model::ForgeDocument::record_fields`]; the closed
-    /// candidate list rides `Fix::ReplaceOneOf`.
+    /// SCE Protocol-Synthesis RFC §synth-5-P, as ADR 0088 amends it
+    /// (`queue/intrusive-link-field-removed`) — `<sce:intrusive>` carries the
+    /// removed `link-field` attribute. An intrusive queue links nodes of a type
+    /// its runtime defines, and the element is the value a node holds, so the
+    /// element carries no link and the author names none. The repair removes
+    /// the attribute; the field the attribute named can then leave the element
+    /// codec, since nothing reads it as a link any more. Judged on the queue
+    /// document alone, before the element type is resolved.
     #[error(
-        "queue '{queue_name}': <sce:intrusive link-field=\"{link_field}\"/> names a field that does not exist on element-type '{element_type}' ({element_kind} kind). \
-         SCE Protocol-Synthesis RFC §5.P: an intrusive queue links its elements through a field each one carries, so the field must be one the element document declares. \
-         Replace `link-field=\"{link_field}\"` with one of the {element_type}'s declared fields: {}.",
-        crate::forge::error::joined_or_none(.candidates)
+        "queue '{queue_name}': <sce:intrusive link-field=\"{link_field}\"/> names a link field of element-type '{element_type}', and the element no longer carries the link. \
+         An intrusive queue links nodes its runtime defines, and each node holds an element as its value (ADR 0088, amending SCE Protocol-Synthesis RFC §5.P). \
+         Remove `link-field` and write `<sce:intrusive/>`; the field '{link_field}' can leave the element's codec, '{element_type}'."
     )]
-    QueueIntrusiveLinkFieldMissing {
+    QueueIntrusiveLinkFieldRemoved {
         /// Queue name from `<scxml sce:kind="queue" name="...">`.
         queue_name: String,
         /// `link-field` value as authored.
         link_field: String,
-        /// Element-type name, already resolved to a codec or procedure.
+        /// `<sce:element-type>` body text as authored (not yet resolved).
         element_type: String,
-        /// `codec` or `procedure`.
-        element_kind: String,
-        /// Sorted declared field names of the element document.
-        candidates: Vec<String>,
-    },
-
-    /// SCE Protocol-Synthesis RFC §synth-5-P
-    /// (`queue/intrusive-link-field-not-u32`) — `<sce:intrusive link-field>`
-    /// names a field that exists and is not a `uint32`. The queue uses the field
-    /// in place as the index of the next node of an array the caller owns: an
-    /// index is 32 bits, and a pointer would not fit the field on a 64-bit
-    /// target nor mean the same in another process that maps the array. The
-    /// candidates are the element document's `uint32` fields.
-    #[error(
-        "queue '{queue_name}': <sce:intrusive link-field=\"{link_field}\"/> names a field of element-type '{element_type}' whose type is {actual}, not uint32. \
-         SCE Protocol-Synthesis RFC §5.P: an intrusive queue links its nodes through a uint32 field, the index of the next node of an array the caller owns. \
-         Replace `link-field=\"{link_field}\"` with one of the {element_type}'s uint32 fields: {}.",
-        crate::forge::error::joined_or_none(.candidates)
-    )]
-    QueueIntrusiveLinkFieldNotU32 {
-        /// Queue name from `<scxml sce:kind="queue" name="...">`.
-        queue_name: String,
-        /// `link-field` value as authored.
-        link_field: String,
-        /// Element-type name, already resolved to a codec or procedure.
-        element_type: String,
-        /// The field's type as the SCE spelling gives it (`uint8`, `string`).
-        actual: String,
-        /// Sorted names of the element document's `uint32` fields.
-        candidates: Vec<String>,
     },
 
     // RFC §synth-5-S: the broadcast log's refusals begin here.

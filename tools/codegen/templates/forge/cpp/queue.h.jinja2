@@ -18,12 +18,15 @@
 // Selected: {{ algorithm }}. Push is {{ push_progress }}, pop is {{ pop_progress }}.
 //
 {% if intrusive %}
-// The queue is intrusive (`<sce:intrusive link-field="{{ link_field }}"/>`): the elements are
-// nodes of an array the caller owns, linked through their own `{{ link_field }}` member, a
-// `std::uint32_t`. A node is named by its index in that array.
+// The queue is intrusive (`<sce:intrusive/>`): it links the nodes of an array the
+// caller owns, and a node is named by its index in that array. A node is
+// `{{ pascal }}Node`, the runtime's `SCE::Forge::Queue::Node` over the element: it holds
+// an element as its `value` and the list's link beside it, so the element is a value
+// and carries no link (ADR 0088). Every queue over the same element shares that node
+// type, so a node popped from one may be pushed to another; it is in one queue at a time.
 //
 // Operations (from `SCE::Forge::Queue::IntrusiveMpsc`):
-//   {{ pascal }}(nodes, len, stub)   the array, and the node set aside as the stub
+//   {{ pascal }}(nodes, len, stub)   the array of `{{ pascal }}Node`, and the node set aside as the stub
 //   push(index)                      wait-free; it cannot fail
 //   try_pop() -> std::optional<std::uint32_t>
 //                                    the index of the oldest node; empty while a push is
@@ -87,9 +90,14 @@ inline constexpr std::string_view POP_PROGRESS = "{{ pop_progress }}";
 /// The algorithm the selection table gave this contract.
 inline constexpr std::string_view ALGORITHM = "{{ algorithm }}";
 
-/// The queue. It owns no storage: the nodes are the caller's, and the queue
-/// allocates nothing.
-using {{ pascal }} = ::SCE::Forge::Queue::IntrusiveMpsc<{{ element_pascal }}Type, &{{ element_pascal }}Type::{{ link_field }}, MANY_CONSUMERS>;
+/// A node of the queue: the element is its `value`, and the list's link is an
+/// atomic beside it that only the queue touches. Built from a value
+/// (`{{ pascal }}Node{value}`) or by default; not copyable, as its link is not.
+using {{ pascal }}Node = ::SCE::Forge::Queue::Node<{{ element_pascal }}Type>;
+
+/// The queue. It owns no storage: the nodes are the caller's array of
+/// `{{ pascal }}Node`, and the queue allocates nothing.
+using {{ pascal }} = ::SCE::Forge::Queue::IntrusiveMpsc<{{ element_pascal }}Type, MANY_CONSUMERS>;
 {% elif segmented %}
 
 /// The elements one segment holds (`<sce:segmented segment>`).

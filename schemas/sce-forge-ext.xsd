@@ -2530,9 +2530,17 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- `<sce:intrusive/>` is written empty: the queue links nodes its
+       runtime defines, and each node holds an element as its value (ADR
+       0088), so the element carries no link and the author names none. -->
   <xs:element name="intrusive">
     <xs:complexType>
-      <xs:attribute name="link-field" type="xs:string"/>
+      <!-- Removed: the link field of the element. It stays in the grammar
+           for one reason: a document that still writes it must reach the
+           parser, which refuses it with `queue/intrusive-link-field-removed`
+           and says the field it named can leave the element codec, where a
+           schema failure would only say the attribute is unknown. -->
+      <xs:attribute name="link-field" type="xs:string" use="optional"/>
     </xs:complexType>
   </xs:element>
 

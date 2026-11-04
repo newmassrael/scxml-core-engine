@@ -25724,11 +25724,11 @@ fn rust_stored_element(
 /// what the algorithm gives as constants — so a reader of the generated code
 /// can see the contract without finding the document.
 ///
-/// Only `bounded` storage is lowered: that is the storage the Rust runtime
-/// has. `segmented` and `intrusive` are valid documents that are refused by
-/// name (`queue/storage-runtime-missing`) until their algorithms land.
-/// Capacity and participants are read from `const` forms; the `deploy.yaml`
-/// forms are refused as unsupported until their resolution is wired.
+/// Every storage mode is lowered: `bounded` to a ring, `segmented` to the
+/// linked rings or LSCQ over an injected allocator, and `intrusive` to the
+/// runtime's list over an array of its `Node` (ADR 0088), for which the module
+/// also names the node type. Capacity and participants take their constant,
+/// or the number [`resolve_queue_render_inputs`] resolved from the deploy file.
 fn render_queue_rust(
     env: &minijinja::Environment<'_>,
     m: &crate::forge::model::QueueModel,
@@ -25755,22 +25755,19 @@ fn render_queue_rust(
         // `queue::spsc`, `Scq` in `queue::scq`, `Lscq` in `queue::lscq`. The
         // intrusive list is `Mpsc` in `queue::intrusive`, and the linked
         // Lamport rings are `LinkedLamport` in `queue::linked`.
-        runtime_module => if inputs.link_field.is_some() {
+        runtime_module => if inputs.intrusive {
             "intrusive".to_string()
         } else if inputs.runtime_type == "LinkedLamport" {
             "linked".to_string()
         } else {
             inputs.runtime_type.to_lowercase()
         },
-        intrusive => inputs.link_field.is_some(),
+        intrusive => inputs.intrusive,
         segmented => inputs.segment.is_some(),
         segment => inputs.segment,
         allocator_rank => inputs.allocator_progress.map(|(rank, _)| rank),
         allocator_progress => inputs.allocator_progress.map(|(_, word)| word),
         hazard_slots => inputs.hazard_slots,
-        // The element's Rust field is the snake case of the id the document
-        // names, as the codec writes it.
-        link_field => inputs.link_field.as_deref().map(|f| filters::to_snake_case(f.to_string())),
         many_consumers => inputs.consumers == "many",
         runtime_type => inputs.runtime_type,
         algorithm => inputs.algorithm,
@@ -25792,8 +25789,9 @@ fn render_queue_rust(
 /// Protocol-Synthesis RFC §synth-5-P). The generated header names the queue
 /// type the selection table picks from `sce/forge/queue.h`, over the element
 /// document's generated type, and states the contract and what the algorithm
-/// gives as constants, exactly as the Rust module does. Bounded storage only,
-/// for the reason `render_queue_rust` gives.
+/// gives as constants, exactly as the Rust module does, and lowers the same
+/// storage modes; an intrusive queue also names its node type, the runtime's
+/// `Node` over the element (ADR 0088).
 fn render_queue_cpp(
     env: &minijinja::Environment<'_>,
     m: &crate::forge::model::QueueModel,
@@ -25816,11 +25814,8 @@ fn render_queue_cpp(
         capacity => inputs.capacity,
         ring_slots => inputs.ring_slots,
         participants => inputs.participants,
-        runtime_type => if inputs.link_field.is_some() { "IntrusiveMpsc" } else { inputs.runtime_type },
-        intrusive => inputs.link_field.is_some(),
-        // The element's C++ member is the id the document names, as the codec
-        // writes it.
-        link_field => inputs.link_field.clone(),
+        runtime_type => if inputs.intrusive { "IntrusiveMpsc" } else { inputs.runtime_type },
+        intrusive => inputs.intrusive,
         many_consumers => inputs.consumers == "many",
         segmented => inputs.segment.is_some(),
         segment => inputs.segment,
@@ -26888,9 +26883,10 @@ struct QueueRenderInputs {
     /// Python's lock; for C11 the runtime's lower-case infix: `spsc`, `scq64`,
     /// `scq32` or `irq`).
     runtime_type: &'static str,
-    /// The field of the element document an `intrusive` queue links through,
-    /// as the document spells it. `None` for `bounded` storage.
-    link_field: Option<String>,
+    /// Whether the storage is `intrusive`: the caller owns an array of the
+    /// runtime's nodes, each holding an element as its value and the list's
+    /// link beside it (ADR 0088). The element names no link.
+    intrusive: bool,
     /// The elements one segment of a `segmented` queue holds
     /// (`<sce:segmented segment="N"/>`). `None` for the other storage modes.
     segment: Option<u32>,
@@ -26978,8 +26974,9 @@ fn resolve_queue_render_inputs(
     }
 
     // The storage modes this backend's runtime has. `bounded` everywhere.
-    // `intrusive` where a node's link can be used in place with atomic
-    // accesses — Rust, C++ and C11, which address memory. A garbage-collected
+    // `intrusive` where the runtime defines a node that holds the element as
+    // its value and the list's link as an atomic beside it (ADR 0088) — Rust,
+    // C++ and C11, which address memory. A garbage-collected
     // backend (Kotlin, Go, Python) has no such field: a generated record there
     // is a plain object whose property cannot be made an atomic in place, and
     // the allocation an intrusive list exists to avoid is the collector's
@@ -26996,16 +26993,14 @@ fn resolve_queue_render_inputs(
     // allocator and not a domain, the collector being the reclamation, and Python
     // keeps one list under one lock. Only `intrusive` can still be refused for a
     // backend, and the reason is not a runtime to come.
-    let (bounded_capacity, link_field, segmented) = match &m.storage {
-        QueueStorage::Bounded { capacity } => (Some(capacity), None, None),
-        QueueStorage::Intrusive { link_field } if offers_intrusive => {
-            (None, Some(link_field.clone()), None)
-        }
+    let (bounded_capacity, intrusive, segmented) = match &m.storage {
+        QueueStorage::Bounded { capacity } => (Some(capacity), false, None),
+        QueueStorage::Intrusive if offers_intrusive => (None, true, None),
         QueueStorage::Segmented {
             segment,
             allocator_progress,
-        } => (None, None, Some((*segment, *allocator_progress))),
-        QueueStorage::Intrusive { .. } => {
+        } => (None, false, Some((*segment, *allocator_progress))),
+        QueueStorage::Intrusive => {
             // Placed on the storage element: the refusal's `actual` is the mode
             // that element spells, and the document names it elsewhere too.
             return Err(ForgeError::from(GenerateError::QueueStorageRuntimeMissing {
@@ -27104,7 +27099,7 @@ fn resolve_queue_render_inputs(
                         "bounded",
                         "bounded with one producer and one consumer (a Lamport ring)",
                     ),
-                    QueueStorage::Intrusive { .. } => ("intrusive", "bounded"),
+                    QueueStorage::Intrusive => ("intrusive", "bounded"),
                     QueueStorage::Segmented { .. } => (
                         "segmented",
                         "bounded, and, where the target has a compare-and-swap, intrusive and segmented with one producer and one consumer",
@@ -27394,7 +27389,7 @@ fn resolve_queue_render_inputs(
     } else {
         selection.pop
     };
-    let algorithm = match (single_ring, language, link_field.is_some()) {
+    let algorithm = match (single_ring, language, intrusive) {
         (true, crate::generator::Language::Python, _) if segmented.is_some() => {
             "a single list of segments under one lock"
         }
@@ -27470,7 +27465,7 @@ fn resolve_queue_render_inputs(
         participants,
         ring_slots,
         runtime_type,
-        link_field,
+        intrusive,
         segment: segmented.map(|(segment, _)| segment),
         allocator_progress: segmented.map(|(_, declared)| (declared as u8, progress(declared))),
         hazard_slots,
@@ -27976,10 +27971,10 @@ fn render_queue_c(
         runtime_type => inputs.runtime_type,
         entry_bits => inputs.entry_bits,
         wrap_bound_ops => inputs.wrap_bound_ops,
-        intrusive => inputs.link_field.is_some(),
-        // The element's C member is the id the document names, as the codec
-        // writes it.
-        link_field => inputs.link_field.clone(),
+        intrusive => inputs.intrusive,
+        // The guard of the node type an intrusive queue defines for its
+        // element, once per element whatever the queues over it (ADR 0088).
+        element_upper => to_upper_snake(&m.element_type),
         many_consumers => inputs.consumers == "many",
         segmented => inputs.segment.is_some(),
         segment => inputs.segment,

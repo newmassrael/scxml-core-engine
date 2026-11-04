@@ -33,9 +33,12 @@
 {% endif %}
  *
 {% if intrusive %}
- * The queue is intrusive (`<sce:intrusive link-field="{{ link_field }}"/>`): the elements are
- * nodes of an array the caller owns, linked through their own `{{ link_field }}` member, a
- * `uint32_t`, and a node is named by its index in that array. The queue is
+ * The queue is intrusive (`<sce:intrusive/>`): it links the nodes of an array the
+ * caller owns, and a node is named by its index in that array. A node is
+ * `{{ element_snake }}_node_t`: it holds an element as its `value` and the list's link,
+ * `next`, beside it, so the element is a value and carries no link (ADR 0088).
+ * Every queue over `{{ element_snake }}_t` shares that node type, so a node popped
+ * from one may be pushed to another; it is in one queue at a time. The queue is
  * `{{ snake }}_t`, a control block alone. Build it with `{{ snake }}_init` before
  * another participant can reach it.
  *
@@ -121,34 +124,46 @@ extern "C" {
 #define {{ upper_name }}_POP_PROGRESS "{{ pop_progress }}"
 #define {{ upper_name }}_ALGORITHM "{{ algorithm }}"
 
-/* The link is a `uint32_t` member of the element, aligned for one, which the
- * queue uses in place as the index of the node that follows. */
-SCE_STATIC_ASSERT(sizeof((({{ element_snake }}_t *)0)->{{ link_field }}) == sizeof(uint32_t),
-    "{{ snake }}: the link field '{{ link_field }}' must be a 32-bit unsigned member");
-SCE_STATIC_ASSERT(offsetof({{ element_snake }}_t, {{ link_field }}) % sizeof(uint32_t) == 0u,
-    "{{ snake }}: the link field '{{ link_field }}' must be aligned for a 32-bit word");
+/* A node of an intrusive queue over `{{ element_snake }}_t`: the element is its
+ * `value`, and `next` is the list's link, the index of the node that follows,
+ * reached only through the runtime's atomic operations. The link is placed after
+ * the value, so an array of nodes is laid out the same in every process that
+ * maps it. Defined once per element, so every queue over `{{ element_snake }}_t`
+ * shares it and a node can move from one to another (ADR 0088). */
+#ifndef SCE_{{ element_upper }}_NODE_T_DEFINED
+#define SCE_{{ element_upper }}_NODE_T_DEFINED
+typedef struct {
+    {{ element_snake }}_t value;
+    uint32_t next;
+} {{ element_snake }}_node_t;
+#endif
+
+/* The runtime reaches the link as an aligned 32-bit word at a fixed offset. */
+SCE_STATIC_ASSERT(sizeof((({{ element_snake }}_node_t *)0)->next) == sizeof(uint32_t),
+    "{{ snake }}: a node's link must be a 32-bit word");
+SCE_STATIC_ASSERT(offsetof({{ element_snake }}_node_t, next) % sizeof(uint32_t) == 0u,
+    "{{ snake }}: a node's link must be aligned for a 32-bit word");
 
 /* The queue. It owns no storage: the nodes are the caller's array of
- * `{{ element_snake }}_t`, a node is named by its index in it, and nothing
+ * `{{ element_snake }}_node_t`, a node is named by its index in it, and nothing
  * allocates. One node of the array is set aside as the stub and never pushed. */
 typedef struct {{ snake }} {
     sce_queue_{{ runtime_type }}_t core;
 } {{ snake }}_t;
 
 /* Builds an empty queue over the `len` nodes at `nodes`, with node `stub` set
- * aside. Returns zero, and builds nothing, when `stub` is not a node of the array,
- * when `len` reaches the value that means "none", or when the link does not fit
- * the node. Not safe against a concurrent user: hand the queue to the other
- * participants after it returns. */
-static inline int {{ snake }}_init({{ snake }}_t *q, {{ element_snake }}_t *nodes, uint32_t len, uint32_t stub)
+ * aside. Returns zero, and builds nothing, when `stub` is not a node of the array
+ * or when `len` reaches the value that means "none". Not safe against a
+ * concurrent user: hand the queue to the other participants after it returns. */
+static inline int {{ snake }}_init({{ snake }}_t *q, {{ element_snake }}_node_t *nodes, uint32_t len, uint32_t stub)
 {
-    return sce_queue_{{ runtime_type }}_init(&q->core, nodes, len, sizeof(nodes[0]),
-                                             offsetof({{ element_snake }}_t, {{ link_field }}), stub,
+    return sce_queue_{{ runtime_type }}_init(&q->core, nodes, len, sizeof({{ element_snake }}_node_t),
+                                             offsetof({{ element_snake }}_node_t, next), stub,
                                              {{ upper_name }}_MANY_CONSUMERS);
 }
 
 /* Puts node `index` on the queue: not the stub, and not already in the queue,
- * with its contents written. Cannot fail. */
+ * with its `value` written. Cannot fail. */
 static inline void {{ snake }}_push({{ snake }}_t *q, uint32_t index)
 {
     sce_queue_{{ runtime_type }}_push(&q->core, index);

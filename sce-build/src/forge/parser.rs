@@ -11179,12 +11179,13 @@ fn parse_broadcast_log(
 /// `<sce:progress>` (no defaults: each selects the algorithm), and exactly
 /// one of `<sce:bounded>`, `<sce:segmented>`, `<sce:intrusive>`.
 /// **Optional:** `<sce:participants>`, which the selected algorithm may
-/// require. **Refused here, once the document is read:** a declared progress
-/// the selected algorithm cannot give (`queue/progress-unreachable`), and an
-/// algorithm that sizes its ring from the participants with none written
-/// (`queue/participants-unresolved`). What needs another document or the
-/// deploy file (the element's kind, the link field, a deploy key) is judged
-/// where those are in hand.
+/// require. **Refused here, once the document is read:** the removed
+/// `<sce:intrusive link-field>` (`queue/intrusive-link-field-removed`), a
+/// declared progress the selected algorithm cannot give
+/// (`queue/progress-unreachable`), and an algorithm that sizes its ring from
+/// the participants with none written (`queue/participants-unresolved`). What
+/// needs another document or the deploy file (the element's kind, a deploy
+/// key) is judged where those are in hand.
 fn parse_queue(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
@@ -11281,23 +11282,23 @@ fn parse_queue(
             allocator_progress,
         }
     } else {
+        // `<sce:intrusive/>` takes no attribute. The queue links nodes its
+        // runtime defines and each node holds an element as its value (ADR
+        // 0088), so the element carries no link. A document that still names
+        // one with `link-field` is refused with the removal as its fix.
         let node = intrusive.expect("one storage element was written, and it is not the others");
-        let link_field = require_attr(&node, "link-field", "<sce:intrusive>", diag)?
-            .trim()
-            .to_string();
-        if link_field.is_empty() {
+        if let Some(link_field) = node.attribute("link-field") {
             return Err(located(
                 &node,
                 diag,
-                ValidationError::AttributeRuleViolated {
-                    element: "<sce:intrusive>".into(),
-                    attr: "link-field".into(),
-                    value: String::new(),
-                    rule: "non-empty field name of the element type".into(),
+                ValidationError::QueueIntrusiveLinkFieldRemoved {
+                    queue_name: doc_name.to_string(),
+                    link_field: link_field.trim().to_string(),
+                    element_type: element_type.clone(),
                 },
             ));
         }
-        QueueStorage::Intrusive { link_field }
+        QueueStorage::Intrusive
     };
 
     let participants = find_sce_child(root, "participants")
@@ -11329,7 +11330,7 @@ fn parse_queue(
     let storage_word = match &model.storage {
         QueueStorage::Bounded { .. } => "bounded",
         QueueStorage::Segmented { .. } => "segmented",
-        QueueStorage::Intrusive { .. } => "intrusive",
+        QueueStorage::Intrusive => "intrusive",
     };
     let cardinality_word = |c: QueueCardinality| match c {
         QueueCardinality::One => "one",

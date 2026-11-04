@@ -419,12 +419,7 @@ fn generate_error_of(located: Located<ForgeError>) -> GenerateError {
 }
 
 fn exchange_list() -> String {
-    queue_doc(
-        "many",
-        "one",
-        "blocking",
-        r#"<sce:intrusive link-field="next"/>"#,
-    )
+    queue_doc("many", "one", "blocking", r#"<sce:intrusive/>"#)
 }
 
 /// The triple a device is built for says what atomics the runtime has there, and nothing is typed

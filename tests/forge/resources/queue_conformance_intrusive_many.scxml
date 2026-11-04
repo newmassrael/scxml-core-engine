@@ -4,7 +4,9 @@
   producers and many consumers over nodes the caller owns. The selection table
   gives this Vyukov's list with a test-and-set flag that serialises the
   consumers, so pop is blocking in two ways: it waits for the flag's holder,
-  and it answers empty while a producer is between its two steps.
+  and it answers empty while a producer is between its two steps. Its nodes are
+  of the same type as `queue_conformance_intrusive`'s, the runtime's node over
+  `queue_conformance_event` (ADR 0088).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -13,9 +15,9 @@
        sce:kind="queue"
        name="queue_conformance_intrusive_many"
        version="1.0">
-  <sce:element-type>queue_conformance_node</sce:element-type>
+  <sce:element-type>queue_conformance_event</sce:element-type>
   <sce:producers>many</sce:producers>
   <sce:consumers>many</sce:consumers>
   <sce:progress>blocking</sce:progress>
-  <sce:intrusive link-field="next"/>
+  <sce:intrusive/>
 </scxml>

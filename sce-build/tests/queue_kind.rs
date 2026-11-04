@@ -11,6 +11,8 @@
 //! 2. `queue/allocator-progress-missing`
 //! 3. `queue/progress-unreachable`
 //! 4. `queue/participants-unresolved`
+//! 5. `queue/intrusive-link-field-removed`: the queue links nodes its runtime
+//!    defines and the element carries no link (ADR 0088)
 //!
 //! It also refuses, at emit, a valid document whose storage mode the Rust
 //! runtime does not have yet (`queue/storage-runtime-missing`).
@@ -27,7 +29,7 @@ use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 use sce_build::compile_scxml_with_imports;
-use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+use sce_build::forge::diagnostic::{DiagnosticCode, Fix, Stage, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located, ValidationError};
 use sce_build::forge::generator::{QUEUE_SCQ_GO_ARCHITECTURES, QUEUE_SCQ_JVM_ARCHITECTURES};
 use sce_build::forge::model::{
@@ -144,12 +146,7 @@ fn intrusive_fixture_parses_and_selects_the_vyukov_mpsc_list() {
         "queue_intrusive_mpsc",
     )
     .expect("intrusive queue parses");
-    assert_eq!(
-        q.storage,
-        QueueStorage::Intrusive {
-            link_field: "next".into(),
-        }
-    );
+    assert_eq!(q.storage, QueueStorage::Intrusive);
     let s = q.selection();
     assert_eq!(s.algorithm, QueueAlgorithm::VyukovMpsc);
     assert_eq!(
@@ -210,7 +207,7 @@ fn two_storage_elements_are_refused() {
         "one",
         "one",
         "blocking",
-        r#"<sce:bounded capacity="8"/><sce:intrusive link-field="next"/>"#,
+        r#"<sce:bounded capacity="8"/><sce:intrusive/>"#,
     );
     let (error, codes) = validation(parse(&xml, "rx_events").expect_err("two storages refuse"));
     match error {
@@ -296,7 +293,7 @@ fn an_intrusive_many_one_queue_cannot_declare_a_non_blocking_pop() {
         "many",
         "one",
         "lock-free",
-        r#"<sce:intrusive link-field="next"/>"#,
+        r#"<sce:intrusive/>"#,
     );
     let (error, _) = validation(parse(&xml, "rx_events").expect_err("pop blocks"));
     assert!(matches!(
@@ -325,19 +322,86 @@ fn an_scq_queue_without_participants_is_refused() {
     ));
 }
 
+/// ADR 0088: the queue links nodes its runtime defines, so `<sce:intrusive>`
+/// takes no attribute. A document that still names a link field is refused on
+/// the storage row, at validation, with the removal of exactly that attribute
+/// as its fix, and the message says the field can leave the element codec.
 #[test]
-fn an_empty_intrusive_link_field_is_refused() {
+fn a_link_field_on_an_intrusive_queue_is_refused_with_its_removal() {
     let xml = queue_doc(
         "rx_events",
+        "many",
         "one",
+        "blocking",
+        r#"<sce:intrusive link-field="next"/>"#,
+    );
+    let located = parse(&xml, "rx_events").expect_err("link-field is removed");
+    assert!(
+        row_text(&located, &xml).contains("<sce:intrusive link-field=\"next\"/>"),
+        "the refusal is placed on the storage row"
+    );
+    let diagnostics = located.error.to_diagnostics();
+    match diagnostics.as_slice() {
+        [d] => {
+            assert!(
+                matches!(d.code, DiagnosticCode::QueueIntrusiveLinkFieldRemoved),
+                "{:?}",
+                d.code
+            );
+            assert!(matches!(d.stage, Stage::Validation), "{:?}", d.stage);
+            match &d.fix {
+                Some(Fix::RemoveFields { location, fields }) => {
+                    assert_eq!(location, "sce:intrusive");
+                    assert_eq!(fields, &["link-field".to_string()]);
+                }
+                other => panic!("expected a remove_fields fix, got {other:?}"),
+            }
+            assert_eq!(d.actual.as_deref(), Some("link-field=\"next\""));
+            assert!(
+                d.message.contains("no longer carries the link")
+                    && d.message
+                        .contains("the field 'next' can leave the element's codec"),
+                "{}",
+                d.message
+            );
+        }
+        other => panic!("expected one diagnostic, got {other:?}"),
+    }
+    match located.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::QueueIntrusiveLinkFieldRemoved {
+                queue_name,
+                link_field,
+                element_type,
+            } => {
+                assert_eq!(queue_name, "rx_events");
+                assert_eq!(link_field, "next");
+                assert_eq!(element_type, "rx_event");
+            }
+            other => panic!("expected QueueIntrusiveLinkFieldRemoved, got {other:?}"),
+        },
+        other => panic!("expected a validation error, got {other:?}"),
+    }
+
+    // Whatever it names, an empty name included: the attribute is what is removed.
+    let empty = queue_doc(
+        "rx_events",
+        "many",
         "one",
-        "wait-free",
+        "blocking",
         r#"<sce:intrusive link-field=" "/>"#,
     );
-    let (error, _) = validation(parse(&xml, "rx_events").expect_err("empty link field"));
+    let (error, codes) = validation(parse(&empty, "rx_events").expect_err("link-field is removed"));
+    assert!(
+        matches!(
+            error,
+            ValidationError::QueueIntrusiveLinkFieldRemoved { ref link_field, .. } if link_field.is_empty()
+        ),
+        "{error:?}"
+    );
     assert!(matches!(
-        error,
-        ValidationError::AttributeRuleViolated { ref attr, .. } if attr == "link-field"
+        codes.as_slice(),
+        [DiagnosticCode::QueueIntrusiveLinkFieldRemoved]
     ));
 }
 
@@ -376,8 +440,7 @@ fn template_dir(language: Language) -> PathBuf {
     sce_build::find_template_dir_for(language)
 }
 
-/// The element document: a `sensor` value and a `next` field, the one an
-/// intrusive queue links its elements through.
+/// The element document: two `uint32` fields, `sensor` and `next`.
 fn codec_doc(name: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -1948,76 +2011,73 @@ fn an_element_type_that_names_no_document_is_refused_with_the_documents_there_ar
     }
 }
 
-#[test]
-fn an_intrusive_link_field_the_element_lacks_is_refused_with_its_fields() {
-    let xml = queue_doc(
-        "frame_queue",
-        "many",
-        "one",
-        "blocking",
-        r#"<sce:intrusive link-field="nxt"/>"#,
-    );
-    let located = compile(&xml, "frame_queue.scxml").expect_err("the element has no such field");
-    assert!(
-        row_text(&located, &xml).contains("link-field=\"nxt\""),
-        "the refusal is placed on the storage row"
-    );
-    match located.error {
-        ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::QueueIntrusiveLinkFieldMissing {
-                link_field,
-                element_type,
-                element_kind,
-                candidates,
-                ..
-            } => {
-                assert_eq!(link_field, "nxt");
-                assert_eq!(element_type, "rx_event");
-                assert_eq!(element_kind, "codec");
-                assert_eq!(
-                    candidates,
-                    ["next", "sensor"],
-                    "the element's fields, sorted"
-                );
-            }
-            other => panic!("expected QueueIntrusiveLinkFieldMissing, got {other:?}"),
-        },
-        other => panic!("expected a validation error, got {other:?}"),
-    }
+fn intrusive_doc(name: &str, consumers: &str) -> String {
+    queue_doc(name, "many", consumers, "blocking", r#"<sce:intrusive/>"#)
 }
 
-fn intrusive_doc(name: &str, consumers: &str) -> String {
-    queue_doc(
-        name,
-        "many",
-        consumers,
-        "blocking",
-        r#"<sce:intrusive link-field="next"/>"#,
+/// An element that is a value and nothing else: no `uint32` field a link could
+/// have been, so an intrusive queue over it shows that the link is the node's,
+/// not the element's (ADR 0088).
+fn value_codec_doc(name: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="{name}" version="1.0">
+  <datamodel>
+    <sce:field id="sensor" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="reading" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"##
     )
 }
 
+/// The intrusive queue's own file for `language`, over [`value_codec_doc`].
+fn intrusive_over_a_value(
+    language: Language,
+    options: &ForgeCompileOptions,
+    xml: &str,
+) -> Result<String, Located<ForgeError>> {
+    let files = compile_files_over(
+        language,
+        options,
+        &value_codec_doc("rx_event"),
+        xml,
+        "frame_queue.scxml",
+    )?;
+    Ok(files
+        .into_iter()
+        .map(|(_, content)| content)
+        .collect::<Vec<_>>()
+        .join("\n\n"))
+}
+
 #[test]
-fn an_intrusive_queue_emits_the_mpsc_list_over_the_link_the_document_names() {
+fn an_intrusive_queue_emits_the_mpsc_list_over_the_runtimes_node() {
     for (consumers, flag) in [("one", "false"), ("many", "true")] {
         let xml = intrusive_doc("frame_queue", consumers);
-        let code = compile(&xml, "frame_queue.scxml")
+        let code = intrusive_over_a_value(Language::Rust, &ForgeCompileOptions::default(), &xml)
             .unwrap_or_else(|e| panic!("many/{consumers} intrusive queue emits: {e:?}"));
         assert_parses(consumers, &code);
         assert!(
-            code.contains("use sce_forge_runtime::queue::intrusive::{Link, Mpsc};"),
+            code.contains("use sce_forge_runtime::queue::intrusive::{Mpsc, Node};"),
             "{code}"
         );
         assert!(
-            code.contains("const OFFSET: usize = core::mem::offset_of!(RxEvent, next);"),
-            "the link is the field the document names:\n{code}"
+            code.contains("pub type FrameQueueNode = Node<RxEvent>;"),
+            "the node is the runtime's, over the element:\n{code}"
         );
         assert!(
             code.contains(&format!("pub const MANY_CONSUMERS: bool = {flag};")),
             "{code}"
         );
         assert!(
-            code.contains("pub type FrameQueue = Mpsc<RxEvent, FrameQueueLink, MANY_CONSUMERS>;"),
+            code.contains("pub type FrameQueue = Mpsc<RxEvent, MANY_CONSUMERS>;"),
             "{code}"
+        );
+        assert!(
+            !code.contains("offset_of!") && !code.contains("Link<"),
+            "the element carries no link the queue reaches into:\n{code}"
         );
         assert!(
             code.contains("PUSH_PROGRESS: &str = \"wait-free\"")
@@ -2032,15 +2092,23 @@ fn an_intrusive_queue_emits_the_mpsc_list_over_the_link_the_document_names() {
 }
 
 #[test]
-fn an_intrusive_queue_emits_the_mpsc_list_in_cpp() {
+fn an_intrusive_queue_emits_the_mpsc_list_over_the_runtimes_node_in_cpp() {
     let xml = intrusive_doc("frame_queue", "one");
-    let code =
-        compile_for(Language::Cpp, &xml, "frame_queue.scxml").expect("intrusive queue emits");
+    let code = intrusive_over_a_value(Language::Cpp, &ForgeCompileOptions::default(), &xml)
+        .expect("intrusive queue emits");
+    assert!(
+        code.contains("using FrameQueueNode = ::SCE::Forge::Queue::Node<RxEventType>;"),
+        "the node is the runtime's, over the element:\n{code}"
+    );
     assert!(
         code.contains(
-            "::SCE::Forge::Queue::IntrusiveMpsc<RxEventType, &RxEventType::next, MANY_CONSUMERS>"
+            "using FrameQueue = ::SCE::Forge::Queue::IntrusiveMpsc<RxEventType, MANY_CONSUMERS>;"
         ),
         "{code}"
+    );
+    assert!(
+        !code.contains("&RxEventType::"),
+        "the queue names no member of the element:\n{code}"
     );
     assert!(
         code.contains("inline constexpr bool MANY_CONSUMERS = false;"),
@@ -2052,100 +2120,81 @@ fn an_intrusive_queue_emits_the_mpsc_list_in_cpp() {
 #[test]
 fn an_intrusive_queue_emits_the_list_for_the_target_c11_runs_on() {
     let xml = intrusive_doc("frame_queue", "many");
+    let c_header = |options: &ForgeCompileOptions| {
+        compile_files_over(
+            Language::C11,
+            options,
+            &value_codec_doc("rx_event"),
+            &xml,
+            "frame_queue.scxml",
+        )
+        .map(|files| {
+            files
+                .into_iter()
+                .find(|(name, _)| name == "frame_queue.h")
+                .unwrap_or_else(|| panic!("no header for frame_queue.scxml"))
+                .1
+        })
+    };
     // With a read-modify-write atomic, the exchange list; without, the same list
     // under the interrupt-masked critical section.
-    let atomic = c_compile(
-        &c_options("frame_queue", Some(32), Some(2), None),
-        &xml,
-        "frame_queue.scxml",
-    )
-    .expect("an intrusive queue emits on a target with an exchange");
+    let atomic = c_header(&c_options("frame_queue", Some(32), Some(2), None))
+        .expect("an intrusive queue emits on a target with an exchange");
     assert!(atomic.contains("sce_queue_intrusive_t core;"), "{atomic}");
     assert!(
         atomic.contains("#define FRAME_QUEUE_MANY_CONSUMERS 1"),
         "{atomic}"
     );
+    // The node is defined once per element, under a guard named after it, and
+    // holds the element as its value with the link beside it.
     assert!(
-        atomic.contains("offsetof(rx_event_t, next)"),
-        "the link is the field the document names:\n{atomic}"
+        atomic.contains("#ifndef SCE_RX_EVENT_NODE_T_DEFINED")
+            && atomic.contains("#define SCE_RX_EVENT_NODE_T_DEFINED"),
+        "{atomic}"
+    );
+    assert!(
+        atomic.contains(
+            "typedef struct {\n    rx_event_t value;\n    uint32_t next;\n} rx_event_node_t;"
+        ),
+        "{atomic}"
+    );
+    assert!(
+        atomic.contains("rx_event_node_t *nodes")
+            && atomic.contains("sizeof(rx_event_node_t)")
+            && atomic.contains("offsetof(rx_event_node_t, next)"),
+        "the queue is built over the node, and links through the node's link:\n{atomic}"
+    );
+    assert!(
+        !atomic.contains("offsetof(rx_event_t,"),
+        "the queue reaches into no member of the element:\n{atomic}"
     );
     assert!(
         atomic.contains("#define FRAME_QUEUE_PUSH_PROGRESS \"wait-free\""),
         "{atomic}"
     );
-    let masked = c_compile(
-        &c_options("frame_queue", Some(0), Some(1), None),
-        &xml,
-        "frame_queue.scxml",
-    )
-    .expect("an intrusive queue emits on a target with no atomic");
+    let masked = c_header(&c_options("frame_queue", Some(0), Some(1), None))
+        .expect("an intrusive queue emits on a target with no atomic");
     assert!(
         masked.contains("sce_queue_intrusive_irq_t core;")
             && masked.contains("#include <sce/forge/queue_irq.h>"),
         "{masked}"
     );
     assert!(
+        masked.contains("rx_event_node_t *nodes")
+            && masked.contains("offsetof(rx_event_node_t, next)"),
+        "the interrupt-masked list links the same node:\n{masked}"
+    );
+    assert!(
         masked.contains("#define FRAME_QUEUE_PUSH_PROGRESS \"blocking\""),
         "{masked}"
     );
     // The exchange is the target's to state, as it is for an SCQ row.
-    let unstated = c_compile(&ForgeCompileOptions::default(), &xml, "frame_queue.scxml")
+    let unstated = c_header(&ForgeCompileOptions::default())
         .expect_err("an exchange list needs the target's atomic width");
     assert!(matches!(
         generate_error(unstated),
         GenerateError::QueueAtomicWidthUnstated { .. }
     ));
-}
-
-#[test]
-fn an_intrusive_link_field_that_is_not_a_u32_is_refused_with_the_fields_that_are() {
-    let element = codec_doc("rx_event").replace(
-        r#"<sce:field id="next" sce:type="uint32" sce:byte="4" sce:bit-size="32"/>"#,
-        r#"<sce:field id="next" sce:type="uint16" sce:byte="4" sce:bit-size="16"/>"#,
-    );
-    let xml = intrusive_doc("frame_queue", "one");
-    let located = compile_files_over(
-        Language::Rust,
-        &ForgeCompileOptions::default(),
-        &element,
-        &xml,
-        "frame_queue.scxml",
-    )
-    .expect_err("a 16-bit link cannot name a node");
-    assert!(
-        row_text(&located, &xml).contains("link-field=\"next\""),
-        "the refusal is placed on the storage row"
-    );
-    match located.error {
-        ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::QueueIntrusiveLinkFieldNotU32 {
-                link_field,
-                actual,
-                candidates,
-                ..
-            } => {
-                assert_eq!(link_field, "next");
-                assert_eq!(actual, "uint16");
-                assert_eq!(candidates, ["sensor"]);
-            }
-            other => panic!("expected QueueIntrusiveLinkFieldNotU32, got {other:?}"),
-        },
-        other => panic!("expected a validation error, got {other:?}"),
-    }
-}
-
-#[test]
-fn only_an_intrusive_queue_is_asked_for_a_link_field() {
-    // A bounded queue writes none, and the element has the field a document
-    // would name: neither the element type nor the link field is refused.
-    let xml = queue_doc(
-        "frame_queue",
-        "one",
-        "one",
-        "wait-free",
-        r#"<sce:bounded capacity="8"/>"#,
-    );
-    compile(&xml, "frame_queue.scxml").expect("a resolvable element type is accepted");
 }
 
 // ─── Rust on a target whose atomics the deploy states ───

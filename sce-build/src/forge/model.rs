@@ -6176,9 +6176,11 @@ pub enum QueueStorage {
         segment: u32,
         allocator_progress: QueueProgress,
     },
-    /// `<sce:intrusive link-field="…"/>` — each element carries its own
-    /// link field and the caller owns every node, so push cannot fail.
-    Intrusive { link_field: String },
+    /// `<sce:intrusive/>` — the caller owns every node, so push cannot fail.
+    /// A node is of a type the target's runtime defines: it holds the
+    /// element as its value and the list's link beside it, so the element
+    /// declares no link (ADR 0088).
+    Intrusive,
 }
 
 /// Queue document — RFC §synth-5-P FIFO handed from one execution context
@@ -6372,8 +6374,8 @@ impl QueueModel {
             // One producer is no cheaper than many: the consumer returns the
             // last node by swapping a stub onto the tail, which is the
             // producers' own exchange, so the pop's window is the same.
-            (QueueStorage::Intrusive { .. }, _, One) => (A::VyukovMpsc, WaitFree, Blocking),
-            (QueueStorage::Intrusive { .. }, _, Many) => {
+            (QueueStorage::Intrusive, _, One) => (A::VyukovMpsc, WaitFree, Blocking),
+            (QueueStorage::Intrusive, _, Many) => {
                 (A::VyukovListWithConsumerFlag, WaitFree, Blocking)
             }
         };
