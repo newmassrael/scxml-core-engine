@@ -542,15 +542,22 @@ impl<I: Iterator> ExactSizeIterator for Slots<I> {}
 /// A value whose arms are decided by the kinds of entry a chain holds cannot
 /// know its arm before the chain is read, and a chain read into a local and
 /// then moved into its arm copies the list's whole capacity at each move. So
-/// the decode installs the arm it expects and reads the chain there: `Ok(true)`
-/// when the chain holds an entry of each kind of `H`, of none of `A`, and as
-/// many entries as its bounds admit; `Ok(false)` when it holds other kinds,
-/// which name another arm the decode then reads the chain into again. Fewer
-/// entries than `MIN` are a frame cut short (`NeedMoreBytes`), more than `MAX`
-/// a chain past its bound (`TooManyElements`).
+/// the decode installs the arm it expects and reads the chain there. It answers
+/// two things: whether the chain holds an entry of each kind of `H`, of none of
+/// `A`, and as many entries as its bounds admit (when it holds other kinds,
+/// they name another arm, which the decode reads the chain into again), and
+/// whether the chain was past what the profile holds. `fill` says the second
+/// as an entry decode does: it reads the chain whole, holding what fits
+/// ([`crate::codec::push_keeping`]), and then answers `CapacityExceeded`
+/// (docs/adr/0077 §7). Fewer entries than `MIN` are a frame cut short
+/// (`NeedMoreBytes`), more than `MAX` a chain past its bound
+/// (`TooManyElements`); a profile holds at least `MIN`, so a chain past its
+/// capacity holds them.
 ///
 /// Unless the chain is what the arm says, `group` is left at its default, so
-/// it holds no chain that its type does not describe, whatever `fill` did.
+/// it holds no chain that its type does not describe, whatever `fill` did. A
+/// chain past its capacity that still holds an entry of every kind it read
+/// keeps its arm, so the decode reads the arm's other elements on.
 ///
 /// The chain `install` is handed has not been read yet, and is checked before
 /// this returns. It is the one place a chain is made unchecked, so it is a
@@ -564,7 +571,7 @@ pub fn decode_chain_in<G, L, H, A, I, F, const MAX: usize, const MIN: usize>(
     install: I,
     held: F,
     fill: impl FnOnce(&mut L) -> Result<(), CodecError>,
-) -> Result<bool, CodecError>
+) -> Result<(bool, bool), CodecError>
 where
     G: Default,
     L: HeldList,
@@ -583,17 +590,26 @@ where
         list: <L as SceList<L::Entry>>::empty(),
         kinds: PhantomData,
     });
-    let read = held(group).map(|chain| {
-        fill(&mut chain.list).and_then(|()| {
-            let entries = SceList::as_slice(&chain.list);
-            match entries.len() {
-                n if n < MIN => Err(CodecError::NeedMoreBytes),
-                n if n > MAX => Err(CodecError::TooManyElements),
-                _ => Ok(H::each_in(&entries) && A::none_in(&entries)),
-            }
-        })
+    let read = held(group).map(|chain| -> Result<(bool, bool), CodecError> {
+        let over = read_whole(fill(&mut chain.list))?;
+        let entries = SceList::as_slice(&chain.list);
+        match entries.len() {
+            n if n < MIN => Err(CodecError::NeedMoreBytes),
+            n if n > MAX => Err(CodecError::TooManyElements),
+            _ => Ok((H::each_in(&entries) && A::none_in(&entries), over)),
+        }
     });
     settle(group, read)
+}
+
+/// Whether a fill that ended `filled` read its chain past the capacity: `Ok` of
+/// that, or the fill's own refusal of the frame.
+fn read_whole(filled: Result<(), CodecError>) -> Result<bool, CodecError> {
+    match filled {
+        Ok(()) => Ok(false),
+        Err(CodecError::CapacityExceeded) => Ok(true),
+        Err(refused) => Err(refused),
+    }
 }
 
 /// Whether a closure captures nothing: a zero-sized one holds no value, so no
@@ -608,13 +624,13 @@ const fn stateless<T>() -> bool {
 /// default, so that it holds no unread chain.
 fn settle<G: Default>(
     group: &mut G,
-    read: Option<Result<bool, CodecError>>,
-) -> Result<bool, CodecError> {
+    read: Option<Result<(bool, bool), CodecError>>,
+) -> Result<(bool, bool), CodecError> {
     let settled = read.unwrap_or_else(|| {
         *group = G::default();
         unreachable!("the arm `install` makes holds the chain `held` finds")
     });
-    if !matches!(settled, Ok(true)) {
+    if !matches!(settled, Ok((true, _))) {
         *group = G::default();
     }
     settled
@@ -623,9 +639,11 @@ fn settle<G: Default>(
 /// [`decode_chain_in`] for the arm where the one gate on a bare entry holds
 /// (docs/adr/0065 §6 R6a): the arm is installed holding the named entry alone,
 /// the chain's entries are read into its others, and the first entry of the
-/// kind `K` is taken out where it stood and held as the place. `Ok(false)` when
-/// the chain holds no entry of the kind, and `TooManyElements` when it holds
-/// more than `MAX` entries, the named one among them.
+/// kind `K` is taken out where it stood and held as the place. It answers as
+/// `decode_chain_in` does: the first is false when the chain holds no entry of
+/// the kind, the second whether it was past the capacity, and it refuses with
+/// `TooManyElements` a chain of more than `MAX` entries, the named one among
+/// them.
 ///
 /// The arm `install` makes holds the named entry alone, which a chain of the
 /// kind is, so `group` holds what its type describes throughout; it is left at
@@ -637,7 +655,7 @@ pub fn decode_placed_in<G, L, K, I, F, const MAX: usize>(
     install: I,
     held: F,
     fill: impl FnOnce(&mut L) -> Result<(), CodecError>,
-) -> Result<bool, CodecError>
+) -> Result<(bool, bool), CodecError>
 where
     G: Default,
     L: HeldList,
@@ -656,21 +674,20 @@ where
         place: 0,
         kind: PhantomData,
     });
-    let read = held(group).map(|placed| {
-        fill(&mut placed.rest).and_then(|()| {
-            let entries = SceList::as_slice(&placed.rest);
-            if entries.len() > MAX {
-                return Err(CodecError::TooManyElements);
+    let read = held(group).map(|placed| -> Result<(bool, bool), CodecError> {
+        let over = read_whole(fill(&mut placed.rest))?;
+        let entries = SceList::as_slice(&placed.rest);
+        if entries.len() > MAX {
+            return Err(CodecError::TooManyElements);
+        }
+        match entries.iter().position(|e| K::matches(e)) {
+            Some(at) => {
+                SceList::remove_at(&mut placed.rest, at);
+                placed.place = at;
+                Ok((true, over))
             }
-            match entries.iter().position(|e| K::matches(e)) {
-                Some(at) => {
-                    SceList::remove_at(&mut placed.rest, at);
-                    placed.place = at;
-                    Ok(true)
-                }
-                None => Ok(false),
-            }
-        })
+            None => Ok((false, over)),
+        }
     });
     settle(group, read)
 }
@@ -987,7 +1004,7 @@ mod tests {
         let mut group = ByEven::default();
         assert_eq!(
             decode_chain_in(&mut group, ByEven::Even, even_arm, pushing(&[1, 2])),
-            Ok(true)
+            Ok((true, false))
         );
         let list = Entries4::from_slice(&[1, 2]).expect("two");
         assert_eq!(
@@ -1003,7 +1020,7 @@ mod tests {
                 not_even_arm,
                 pushing(&[1, 3])
             ),
-            Ok(true)
+            Ok((true, false))
         );
         let list = Entries4::from_slice(&[1, 3]).expect("two");
         assert_eq!(
@@ -1018,7 +1035,7 @@ mod tests {
         let mut group = ByEven::NotEven(None);
         assert_eq!(
             decode_chain_in(&mut group, ByEven::Even, even_arm, pushing(&[1, 3])),
-            Ok(false)
+            Ok((false, false))
         );
         assert_eq!(group, ByEven::default());
         // The arm expects none and the chain holds one.
@@ -1029,7 +1046,7 @@ mod tests {
                 not_even_arm,
                 pushing(&[2])
             ),
-            Ok(false)
+            Ok((false, false))
         );
         assert_eq!(group, ByEven::default());
     }
@@ -1126,7 +1143,7 @@ mod tests {
                 marked_arm,
                 pushing(&[1, 4, 3, 6])
             ),
-            Ok(true)
+            Ok((true, false))
         );
         let ByMarker::Marked(placed) = &group else {
             panic!("the marked arm is installed: {group:?}");
@@ -1136,8 +1153,184 @@ mod tests {
         // A chain with no entry of the kind is not this arm's.
         assert_eq!(
             decode_placed_in(&mut group, ByMarker::Marked, marked_arm, pushing(&[1, 3])),
-            Ok(false)
+            Ok((false, false))
         );
         assert_eq!(group, ByMarker::default());
+    }
+
+    /// A list of two entries, below the chain's bound of four: a profile that
+    /// holds less than the protocol does.
+    type Entries2 = heapless::Vec<u8, 2>;
+
+    #[derive(Debug, PartialEq)]
+    enum ByEvenScant {
+        Even(Chain<Entries2, (Even,), (), 4, 1>),
+        NotEven(Chain<Entries2, (), (Even,), 4, 1>),
+        Both(Chain<Entries2, (Even, Small), (), 4, 1>),
+    }
+
+    impl Default for ByEvenScant {
+        fn default() -> Self {
+            ByEvenScant::NotEven(
+                Chain::from_list(Entries2::from_slice(&[1]).expect("one")).expect("odd"),
+            )
+        }
+    }
+
+    fn scant_even_arm(group: &mut ByEvenScant) -> Option<&mut Chain<Entries2, (Even,), (), 4, 1>> {
+        match group {
+            ByEvenScant::Even(chain) => Some(chain),
+            _ => None,
+        }
+    }
+
+    fn scant_both_arm(
+        group: &mut ByEvenScant,
+    ) -> Option<&mut Chain<Entries2, (Even, Small), (), 4, 1>> {
+        match group {
+            ByEvenScant::Both(chain) => Some(chain),
+            _ => None,
+        }
+    }
+
+    fn even(entry: &u8) -> bool {
+        *entry % 2 == 0
+    }
+
+    fn small(entry: &u8) -> bool {
+        *entry < 3
+    }
+
+    /// A fill that reads `entries` as a generated chain decode reads each one:
+    /// held where it fits, the kinds the gates ask for kept past the capacity,
+    /// and the chain past its capacity said once it is read whole.
+    fn keeping<'e, L: HeldList<Entry = u8> + 'e>(
+        entries: &'e [u8],
+        kinds: &'e [fn(&u8) -> bool],
+    ) -> impl FnOnce(&mut L) -> Result<(), CodecError> + 'e {
+        move |list| {
+            let mut full = false;
+            for entry in entries {
+                crate::codec::push_keeping(list, *entry, kinds, &mut full);
+            }
+            if full {
+                return Err(CodecError::CapacityExceeded);
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_chain_past_its_capacity_keeps_an_entry_of_each_kind_it_read_and_its_arm() {
+        // Four entries, two held: 4 comes past the capacity, of a kind the list
+        // holds none of, and takes the place of 3, whose kinds 1 holds too.
+        let mut group = ByEvenScant::default();
+        assert_eq!(
+            decode_chain_in(
+                &mut group,
+                ByEvenScant::Even,
+                scant_even_arm,
+                keeping(&[1, 3, 5, 4], &[even])
+            ),
+            Ok((true, true))
+        );
+        let ByEvenScant::Even(chain) = &group else {
+            panic!("the even arm is held: {group:?}");
+        };
+        assert_eq!(chain.inner().as_slice(), &[1u8, 4][..]);
+        // An entry past the capacity of no new kind is read and not held.
+        let mut group = ByEvenScant::default();
+        assert_eq!(
+            decode_chain_in(
+                &mut group,
+                ByEvenScant::Even,
+                scant_even_arm,
+                keeping(&[2, 4, 6], &[even])
+            ),
+            Ok((true, true))
+        );
+        let ByEvenScant::Even(chain) = &group else {
+            panic!("the even arm is held: {group:?}");
+        };
+        assert_eq!(chain.inner().as_slice(), &[2u8, 4][..]);
+    }
+
+    #[test]
+    fn a_chain_past_its_capacity_keeps_each_kind_while_it_has_room_for_one_of_each() {
+        // 4 and 5 are held; 1 is of the small kind, which neither holds, and
+        // takes the place of 5, which is of neither kind.
+        let mut group = ByEvenScant::default();
+        assert_eq!(
+            decode_chain_in(
+                &mut group,
+                ByEvenScant::Both,
+                scant_both_arm,
+                keeping(&[4, 5, 1], &[even, small])
+            ),
+            Ok((true, true))
+        );
+        let ByEvenScant::Both(chain) = &group else {
+            panic!("the arm of both kinds is held: {group:?}");
+        };
+        assert_eq!(chain.inner().as_slice(), &[4u8, 1][..]);
+        // A third kind finds no entry to replace: 4 alone is even and 1 alone
+        // small, so 7 is read and not held, and the two kinds stay.
+        let mut group = ByEvenScant::default();
+        assert_eq!(
+            decode_chain_in(
+                &mut group,
+                ByEvenScant::Both,
+                scant_both_arm,
+                keeping(&[4, 1, 7], &[even, small, |e: &u8| *e == 7])
+            ),
+            Ok((true, true))
+        );
+        let ByEvenScant::Both(chain) = &group else {
+            panic!("the arm of both kinds is held: {group:?}");
+        };
+        assert_eq!(chain.inner().as_slice(), &[4u8, 1][..]);
+    }
+
+    /// A list of one entry, below the number of kinds an arm asks for.
+    type Entries1 = heapless::Vec<u8, 1>;
+
+    #[derive(Debug, PartialEq)]
+    enum ByBothInOne {
+        Both(Chain<Entries1, (Even, Small), (), 4, 1>),
+        Neither(Chain<Entries1, (), (Even, Small), 4, 1>),
+    }
+
+    impl Default for ByBothInOne {
+        fn default() -> Self {
+            ByBothInOne::Neither(
+                Chain::from_list(Entries1::from_slice(&[3]).expect("one")).expect("neither"),
+            )
+        }
+    }
+
+    fn both_in_one_arm(
+        group: &mut ByBothInOne,
+    ) -> Option<&mut Chain<Entries1, (Even, Small), (), 4, 1>> {
+        match group {
+            ByBothInOne::Both(chain) => Some(chain),
+            ByBothInOne::Neither(_) => None,
+        }
+    }
+
+    #[test]
+    fn a_chain_whose_kinds_outnumber_its_capacity_leaves_the_value_at_its_default() {
+        // One entry held: 4, the one even entry; 1, the one small entry, has no
+        // entry to replace, so the arm that asks for both kinds is not held.
+        let mut group = ByBothInOne::default();
+        assert_eq!(
+            decode_chain_in(
+                &mut group,
+                ByBothInOne::Both,
+                both_in_one_arm,
+                keeping(&[4, 1], &[even, small])
+            ),
+            Ok((false, true))
+        );
+        assert_eq!(group, ByBothInOne::default());
     }
 }

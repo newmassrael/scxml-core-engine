@@ -336,6 +336,13 @@ impl<L, const MAX: usize, const MIN: usize> Bounded<L, MAX, MIN> {
     ///
     /// On `Err` the list holds `MIN` default entries, so it is still inside its
     /// bounds, whatever `fill` left.
+    ///
+    /// A list past what its profile holds is read whole and not held past that
+    /// capacity, and `fill` then answers `CapacityExceeded` (docs/adr/0077 §7).
+    /// The count the minimum is judged by is the one held, and it is the count
+    /// read wherever that is below the minimum: every profile holds at least
+    /// `MIN` entries (the build asserts it of each list's fewest), so a list
+    /// keeps fewer than `MIN` only when it read fewer.
     pub fn refill<T: Default>(
         &mut self,
         fill: impl FnOnce(&mut L) -> Result<(), crate::codec::CodecError>,
@@ -846,10 +853,11 @@ where
     }
 
     /// Fill the second list in place, as [`Self::refill_first`] fills the
-    /// first, and hold it to the first's count: fewer entries is a list cut
-    /// short (`NeedMoreBytes`), more is past the count (`TooManyElements`).
-    /// The decode reads both by the one count, so neither is reached from a
-    /// frame. On `Err` both lists are empty.
+    /// first, and hold it to the first's count. The decode reads both by the
+    /// one count, each whole, so the two hold different counts only where one
+    /// of them was past what its profile holds and kept fewer entries than it
+    /// read (docs/adr/0077 §7): a count that differs is `CapacityExceeded`,
+    /// said once the second list is read whole. On `Err` both lists are empty.
     #[doc(hidden)]
     pub fn refill_second(
         &mut self,
@@ -857,10 +865,10 @@ where
     ) -> Result<(), crate::codec::CodecError> {
         let filled = self.second.refill::<LB::Entry>(fill).and_then(|()| {
             let first = SceList::as_slice(&self.first.0).len();
-            match SceList::as_slice(&self.second.0).len().cmp(&first) {
-                core::cmp::Ordering::Less => Err(crate::codec::CodecError::NeedMoreBytes),
-                core::cmp::Ordering::Greater => Err(crate::codec::CodecError::TooManyElements),
-                core::cmp::Ordering::Equal => Ok(()),
+            if SceList::as_slice(&self.second.0).len() == first {
+                Ok(())
+            } else {
+                Err(crate::codec::CodecError::CapacityExceeded)
             }
         });
         if filled.is_err() {
@@ -942,16 +950,29 @@ mod tests {
         assert_eq!(pair.second().as_slice(), &[7u16, 8][..]);
         assert_eq!(pair.len(), 2);
 
-        // A second list of another count is refused, and both are emptied.
+        // A second list of another count is one whose list, or the first's,
+        // held fewer entries than it read: past a capacity, and both emptied.
         assert_eq!(
             pair.refill_second(pushing(&[7u16])),
-            Err(CodecError::NeedMoreBytes)
+            Err(CodecError::CapacityExceeded)
         );
         assert!(pair.first().is_empty() && pair.second().is_empty());
         assert_eq!(pair.refill_first(pushing(&[1u8])), Ok(()));
         assert_eq!(
             pair.refill_second(pushing(&[7u16, 8])),
-            Err(CodecError::TooManyElements)
+            Err(CodecError::CapacityExceeded)
+        );
+        assert!(pair.first().is_empty() && pair.second().is_empty());
+        // A first list past its capacity leaves both empty, and the second,
+        // read whole after it, is past a capacity too.
+        assert_eq!(
+            pair.refill_first(|_| Err(CodecError::CapacityExceeded)),
+            Err(CodecError::CapacityExceeded)
+        );
+        assert!(pair.first().is_empty() && pair.second().is_empty());
+        assert_eq!(
+            pair.refill_second(pushing(&[7u16])),
+            Err(CodecError::CapacityExceeded)
         );
         assert!(pair.first().is_empty() && pair.second().is_empty());
 

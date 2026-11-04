@@ -286,6 +286,88 @@ pub use crate::law::{
     try_collect_lawful, AfterKey, Follows, Law, LawOver, Lawful, LawfulWalk, Says, Uniform,
 };
 
+/// `result` with a refusal for a container past its capacity set aside in
+/// `over` and answered as `Ok`, every other refusal as it is: what a storing
+/// decode reads each value through, so that it reads the rest of the frame and
+/// says `CapacityExceeded` only for one that parsed (docs/adr/0077 §7). A body
+/// a decode reads through it reads its own frame whole before it says so, so
+/// the decode goes on from where that frame ends. The C11 backend reads each
+/// value through the same rule (`sce_forge_codec_note_capacity`,
+/// `backends/c/forge-runtime/include/sce/forge/codec.h`).
+pub fn note_capacity(result: Result<(), CodecError>, over: &mut bool) -> Result<(), CodecError> {
+    match result {
+        Err(CodecError::CapacityExceeded) => {
+            *over = true;
+            Ok(())
+        }
+        other => other,
+    }
+}
+
+/// [`note_capacity`] for a value a profile holds a field in, such as the bytes
+/// or text a copying profile stores: past its capacity the field holds its
+/// default, which is inside its bounds, and the decode reads on.
+pub fn note_held<T: Default>(
+    held: Result<T, CodecError>,
+    over: &mut bool,
+) -> Result<T, CodecError> {
+    match held {
+        Err(CodecError::CapacityExceeded) => {
+            *over = true;
+            Ok(T::default())
+        }
+        other => other,
+    }
+}
+
+/// Hold the decoded `entry` in `list`, or, past the list's capacity, note it in
+/// `full` and read on (docs/adr/0077 §7): the entry is read and not held, as the
+/// C11 backend reads an entry past its array.
+///
+/// `kinds` are the kinds of entry the gates on the list ask for
+/// (docs/adr/0065 §6 R6), each a test of an entry. An entry past the capacity
+/// of a kind the list holds none of is held in place of the last entry each of
+/// whose kinds another entry also holds, so a full list still holds an entry of
+/// every kind it read while it has room for one of each. The arm the gates name
+/// is then one whose chain the value can hold.
+pub fn push_keeping<L: HeldList>(
+    list: &mut L,
+    entry: L::Entry,
+    kinds: &[fn(&L::Entry) -> bool],
+    full: &mut bool,
+) {
+    if !SceList::is_full(list) {
+        if SceList::try_push(list, entry).is_err() {
+            *full = true;
+        }
+        return;
+    }
+    *full = true;
+    let held = SceList::as_slice(list);
+    let new_kind = kinds
+        .iter()
+        .any(|kind| kind(&entry) && !held.iter().any(|h| kind(h)));
+    if !new_kind {
+        return;
+    }
+    // An entry whose every kind some other entry also holds can make room.
+    let spare = (0..held.len()).rev().find(|&at| {
+        kinds.iter().all(|kind| {
+            !kind(&held[at])
+                || held
+                    .iter()
+                    .enumerate()
+                    .any(|(other, h)| other != at && kind(h))
+        })
+    });
+    if let Some(at) = spare {
+        SceList::remove_at(list, at);
+        if SceList::try_push(list, entry).is_err() {
+            unreachable!("a list holds an entry where it gave one up");
+        }
+    }
+}
+
 impl From<sce_portable_bytes::CapacityExceeded> for CodecError {
     /// A fixed-capacity `from_slice` past what it holds says nothing about the
     /// frame, which its bound judged (docs/adr/0077 §7).

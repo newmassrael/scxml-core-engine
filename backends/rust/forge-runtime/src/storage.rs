@@ -97,6 +97,13 @@ pub trait SceList<T>: Sized {
     /// Take out the element at `at`, closing the gap, which a chain's named
     /// entry leaves. `at` is within the list.
     fn remove_at(&mut self, at: usize);
+
+    /// Whether [`Self::try_push`] would refuse the next element: a decode reads
+    /// an entry past the capacity and does not hold it (docs/adr/0077 §7). A
+    /// growable list is never full.
+    fn is_full(&self) -> bool {
+        false
+    }
 }
 
 /// A [`SceList`] that says what it holds, so a bound can reach the entries from
@@ -486,6 +493,10 @@ impl<T, const N: usize> SceList<T> for heapless::Vec<T, N> {
 
     fn remove_at(&mut self, at: usize) {
         self.remove(at);
+    }
+
+    fn is_full(&self) -> bool {
+        heapless::Vec::is_full(self)
     }
 }
 

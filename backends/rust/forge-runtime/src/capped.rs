@@ -65,6 +65,10 @@ impl<T, const N: usize> SceList<T> for CappedVec<T, N> {
     fn remove_at(&mut self, at: usize) {
         self.0.remove(at);
     }
+
+    fn is_full(&self) -> bool {
+        self.0.len() == N
+    }
 }
 
 impl<T, const N: usize> HeldList for CappedVec<T, N> {

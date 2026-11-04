@@ -278,19 +278,9 @@ enum Phase {
     Done,
 }
 
-/// `result` with a refusal for a container past its capacity set aside in
-/// `over` and answered as `Ok`, every other refusal as it is: what a storing
-/// decode reads each value through, so that it reads the rest of the frame and
-/// says `CapacityExceeded` only for one that parsed (docs/adr/0077 §7).
-pub fn note_capacity(result: Result<(), CodecError>, over: &mut bool) -> Result<(), CodecError> {
-    match result {
-        Err(CodecError::CapacityExceeded) => {
-            *over = true;
-            Ok(())
-        }
-        other => other,
-    }
-}
+// The note a storing decode reads each value through, the one every Rust codec
+// shares (docs/adr/0077 §7), here at the path a content-line codec names it by.
+pub use crate::codec::note_capacity;
 
 /// The text a reader builds into a profile's container as it unescapes it, one
 /// byte at a time: each character is appended once its bytes are whole, so no
