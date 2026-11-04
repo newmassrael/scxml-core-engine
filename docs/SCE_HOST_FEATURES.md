@@ -301,8 +301,10 @@ once. Not provided here: any binding to a real provider.
 - **A computed argument is checked at build time.** Under `sce-static` a `<param>`
   of a typed request may be an expression of the machine's fields. Its type is
   known before the machine runs, so it is held to its field where it is written
-  (`scxml/static-datamodel-rule`): an integer whole in the field's range, a real no
-  wider than the field's, a bool, and a text held by a variable whose
+  (`scxml/static-datamodel-rule`): an integer whole in the field's range (a
+  literal takes the field's type, and one past its range is
+  `expression/literal-out-of-range`), a real no wider than the field's, a bool,
+  and a text held by a variable whose
   `sce:capacity` is no more than the field's `sce:max-size`. A computed value that
   fails at run time (a checked operation overflowing) refuses the request:
   `error.execution`, and nothing starts. Before this, a typed request could carry

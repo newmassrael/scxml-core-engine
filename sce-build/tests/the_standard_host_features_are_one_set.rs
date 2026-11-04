@@ -437,6 +437,35 @@ fn a_generation_that_names_no_answer_schema_declares_no_table() {
     );
 }
 
+/// A literal written into an unsigned field of a typed request takes the field's
+/// type (the probes write `max_tokens` as `64` into a `uint32`), and one the
+/// field's range does not hold is refused where it is written, never narrowed.
+#[test]
+fn a_literal_takes_the_type_of_the_request_field_it_supplies() {
+    let accepted = model_generate(MODEL_GENERATE, "", "");
+    let (ok, text) = run(&["check"], &accepted, &MODEL_SIBLINGS);
+    assert!(ok, "a literal an unsigned field holds was refused: {text}");
+    for (field, past) in [("max_tokens", "-1"), ("temperature_milli", "70000")] {
+        let doc = accepted.replace(
+            &format!(
+                "<param name=\"{field}\" expr=\"{}\"/>",
+                if field == "max_tokens" { "64" } else { "0" }
+            ),
+            &format!("<param name=\"{field}\" expr=\"{past}\"/>"),
+        );
+        assert_ne!(
+            doc, accepted,
+            "the probe writes {field} as the test expects"
+        );
+        let (ok, text) = run(&["check"], &doc, &MODEL_SIBLINGS);
+        assert!(!ok, "{past} was taken for {field}: {text}");
+        assert!(
+            text.contains("expression/literal-out-of-range"),
+            "{field} = {past}: {text}"
+        );
+    }
+}
+
 /// The document does not write the field the build writes.
 #[test]
 fn a_document_does_not_write_the_answer_schema_of_a_request() {

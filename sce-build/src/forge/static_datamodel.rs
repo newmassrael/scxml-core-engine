@@ -3716,7 +3716,8 @@ impl<'a> Judge<'a> {
     ///
     /// - an integer of a width the field's range holds whole (the same
     ///   signedness and no wider, or an unsigned value into a wider signed
-    ///   field), never narrowed;
+    ///   field), never narrowed; a literal takes the field's type, and is
+    ///   refused where the field's range does not hold it;
     /// - a real no wider than the field's;
     /// - a bool into a `bool` field;
     /// - a string or byte string held by a variable whose `sce:capacity` is no
@@ -3741,16 +3742,19 @@ impl<'a> Judge<'a> {
             return Ok(());
         };
         let written = wire.written;
-        let ty = self.expr(
-            ctx,
-            written,
-            wire.spelling,
-            Expected::Hint(InferredType::Unknown),
-        )?;
         // A typed request holds no optional field (`typed_invoke::validate`
         // refuses one by name, docs/adr/0055), so the field is read as it is.
         let want = InferredType::of_field(&field.sce_type);
-        let given = ty.wire_param_slot().unwrap_or(ty);
+        // The field is the place the value lands in, so a literal in it takes
+        // the field's type, as a literal takes the type of the variable an
+        // `<assign>` writes, and one the field's type cannot hold is refused
+        // where it is written (`expression/literal-out-of-range`).
+        let ty = self.expr(ctx, written, wire.spelling, Expected::Hint(want))?;
+        let given = match (ty, want) {
+            (InferredType::UntypedInt, InferredType::Int { .. } | InferredType::Float { .. })
+            | (InferredType::UntypedFloat, InferredType::Float { .. }) => want,
+            _ => ty.wire_param_slot().unwrap_or(ty),
+        };
         let verdict = match (want, given) {
             (
                 InferredType::Int {
