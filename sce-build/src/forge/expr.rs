@@ -15373,7 +15373,9 @@ mod tests {
         assert_eq!(js("level !== 3 || !ready"), "level !== 3 || !ready");
         assert_eq!(js("ready ? level : 0"), "ready ? level : 0");
         assert_eq!(js("label === 'idle'"), "label === 'idle'");
-        assert_eq!(js("label === \"idle\""), "label === \"idle\"");
+        // The literal is its value, written again by the one ECMAScript
+        // quoter, whichever quote the author chose.
+        assert_eq!(js("label === \"idle\""), "label === 'idle'");
     }
 
     #[test]

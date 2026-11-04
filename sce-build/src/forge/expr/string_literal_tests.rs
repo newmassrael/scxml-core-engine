@@ -40,12 +40,8 @@ fn both_dialects_read_the_ecmascript_escapes_into_their_characters() {
         (r"'\b\f\n\r\t\v'", "\u{8}\u{c}\n\r\t\u{b}"),
         (r"'a\0b'", "a\u{0}b"),
         (r"'\x41\x7e'", "A~"),
-        (r"'é'", "\u{e9}"),
         (r"'\u{10348}'", "\u{10348}"),
         (r"'\u{0000041}'", "A"),
-        // The two halves of a surrogate pair are the one character they make,
-        // in either spelling of a code unit.
-        (r"'𐍈'", "\u{10348}"),
         (r"'\u{D800}\u{DF48}'", "\u{10348}"),
         // A backslash before a line break continues the literal, and the
         // break is not part of the value.
@@ -62,8 +58,26 @@ fn both_dialects_read_the_ecmascript_escapes_into_their_characters() {
         ("'$name ${x} \u{e9}'", "$name ${x} \u{e9}"),
         ("''", ""),
     ];
+    // A four-digit `\u` escape, assembled at run time: written out whole in
+    // this file's source, the editing tools this tree is written with read it
+    // as the character it names and write that instead, which is how the
+    // first version of these two cases came to test nothing.
+    let unit = |hex: &str| format!("\\u{hex}");
+    let four_digit = [
+        (format!("'{}'", unit("00e9")), "\u{e9}"),
+        // The two halves of a surrogate pair are the one character they make,
+        // in either spelling of a code unit (the braced one is above).
+        (format!("'{}{}'", unit("D800"), unit("DF48")), "\u{10348}"),
+    ];
     for mode in [LexMode::Forge, LexMode::EcmaScript] {
         for (source, expected) in cases {
+            assert_eq!(value(source, mode), *expected, "{source} in {mode:?}");
+        }
+        for (source, expected) in &four_digit {
+            assert!(
+                source.is_ascii(),
+                "{source} is an escape, not its character"
+            );
             assert_eq!(value(source, mode), *expected, "{source} in {mode:?}");
         }
     }

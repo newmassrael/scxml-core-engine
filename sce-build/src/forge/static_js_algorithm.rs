@@ -1216,8 +1216,12 @@ mod tests {
         assert_eq!(symbol("days_in_month"), "days_in_month");
         assert_eq!(symbol("sync-failure.v2"), "sync_failure_v2");
         assert_eq!(quoted("it's a\\b"), r"'it\'s a\\b'");
-        // The one quoter writes a line separator and a control character as
-        // escapes, which this module's own quoter had left raw.
-        assert_eq!(quoted("a\u{2028}b\u{1}"), r"'a b\u0001'");
+        // The one quoter writes a line separator (U+2028) and a control
+        // character (U+0001) as `\u` escapes, which this module's own quoter
+        // had left raw. The expected text is assembled so that no escape of
+        // this file's own source stands for either character.
+        let line_separator = char::from_u32(0x2028).expect("a character");
+        let expected = ["'a", "\\", "u2028b", "\\", "u0001'"].concat();
+        assert_eq!(quoted(&format!("a{line_separator}b\u{1}")), expected);
     }
 }
