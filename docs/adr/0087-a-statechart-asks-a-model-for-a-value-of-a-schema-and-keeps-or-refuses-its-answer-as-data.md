@@ -1,8 +1,8 @@
 # ADR 0087 — A statechart asks a model for a value of a schema, and keeps its answer or its refusal as data
 
-- Status: Proposed (2026-11-04). Written for the owner's decision under the standing rule of 2026-10-26 and
-  2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored. Nothing of it is
-  implemented. Three questions are left to the owner, each with a recommendation ("Open questions").
+- Status: Accepted (2026-11-04), with each open question answered as recommended ("Owner's answers"). Written for
+  the owner's decision under the standing rule of 2026-10-26 and 2026-10-27: the most long-term correct structure,
+  textbook in its foundations, cost ignored. Nothing of it is implemented yet ("Landing order").
 - Date: 2026-11-04
 - Amends:
   - ADR 0086 section 4.2: a refused delivery keeps its sentence, whose path that section calls a JSON Pointer; it is
@@ -890,3 +890,12 @@ bound. A scenario that compares the record across eight lanes is the only place 
    `<sce:template>` substitutes constants (section 2.9: "fragments that differ by a small closed set of constants"),
    and a harness differs by its checks, which are states and transitions; the reference is copied and owned by the
    application, and a shared fragment would be a harness element by another route.
+
+## Owner's answers
+
+The owner accepted this ADR on 2026-11-04 ("수락"), with each open question answered as its recommendation:
+
+1. The GBNF counts bytes exactly (open question 1).
+2. The kind is named `text-template` (open question 2).
+3. The reference harness is not a standard fragment; it is a reference statechart an application copies and owns
+   (open question 3).
