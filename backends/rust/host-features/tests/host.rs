@@ -6,8 +6,9 @@
 // not serve.
 
 use sce_rust_host_features::{
-    HttpRequest, HttpResponse, Outcome, Params, ReferenceHost, ScriptedClock, SystemClock,
-    Transport, TransportFailure,
+    AnswerSchema, ExhaustiveProvider, HttpRequest, HttpResponse, ModelProvider, Outcome,
+    OutcomeClass, Params, ReferenceHost, ScriptedAnswer, ScriptedClock, ScriptedProvider,
+    SystemClock, Transport, TransportFailure, ANSWER_MAX_BYTES, MODEL_GENERATE,
 };
 
 struct Unreachable;
@@ -88,4 +89,153 @@ fn keys_are_ordered_by_their_utf8_bytes() {
         done(host.start("sce-host-kv-next-key", "walk", &walk))["key"],
         "\u{FF5E}"
     );
+}
+
+// ── Generated text (docs/SCE_HOST_FEATURES.md, section 6) ──
+
+/// The table of answer schemas a machine would hand its host.
+const SCHEMAS: &[AnswerSchema] = &[AnswerSchema {
+    id: "urn:sce:schema:answer:1",
+    json_schema: "{}",
+    gbnf: "root ::= \"{}\"",
+}];
+
+/// A generation's request.
+fn ask(prompt: &str, answer_schema: &str, max_tokens: &str, temperature: &str) -> Params {
+    [
+        ("prompt".to_string(), prompt.to_string()),
+        ("answer_schema".to_string(), answer_schema.to_string()),
+        ("max_tokens".to_string(), max_tokens.to_string()),
+        ("temperature_milli".to_string(), temperature.to_string()),
+    ]
+    .into()
+}
+
+fn model_host(provider: impl ModelProvider + Send + 'static) -> ReferenceHost<Unreachable> {
+    let mut host = ReferenceHost::new(Box::new(ScriptedClock::new()), Unreachable);
+    host.set_answer_schemas(SCHEMAS);
+    host.set_model_provider(Box::new(provider));
+    host
+}
+
+fn scripted(texts: &[&str]) -> ScriptedProvider {
+    ScriptedProvider {
+        answers: texts
+            .iter()
+            .map(|text| ScriptedAnswer {
+                text: (*text).to_string(),
+                finish: "stop".to_string(),
+            })
+            .collect(),
+        constrained: true,
+        ..ScriptedProvider::default()
+    }
+}
+
+/// Each argument the operation does not accept is refused before the provider
+/// is asked, so the answer it would give stays.
+#[test]
+fn a_generation_the_operation_does_not_accept_is_refused() {
+    let mut host = model_host(scripted(&["kept"]));
+    for (why, params) in [
+        ("an empty prompt", ask("", "", "8", "0")),
+        ("max_tokens zero", ask("p", "", "0", "0")),
+        ("a temperature past 2000", ask("p", "", "8", "2001")),
+        (
+            "an id the table does not hold",
+            ask("p", "urn:sce:schema:other:1", "8", "0"),
+        ),
+    ] {
+        assert!(
+            matches!(
+                host.start(MODEL_GENERATE, "gen", &params),
+                Some(Outcome::Refuse(_))
+            ),
+            "{why} was not refused"
+        );
+    }
+    let fields = done(host.start(MODEL_GENERATE, "gen", &ask("p", "", "8", "2000")));
+    assert_eq!(fields["text"], "kept", "a refusal took an answer");
+}
+
+/// A constrained provider says so only for a request that names an answer
+/// schema; its tokens are bytes.
+#[test]
+fn a_scripted_provider_is_constrained_only_under_an_answer_schema() {
+    let mut host = model_host(scripted(&["one", "two"]));
+    let free = done(host.start(MODEL_GENERATE, "gen", &ask("ab", "", "8", "0")));
+    assert_eq!(free["constrained"], false);
+    assert_eq!(free["error"], "");
+    let held = done(host.start(
+        MODEL_GENERATE,
+        "gen",
+        &ask("abc", "urn:sce:schema:answer:1", "8", "0"),
+    ));
+    assert_eq!(held["constrained"], true);
+    assert_eq!(held["prompt_tokens"], 3);
+    assert_eq!(held["answer_tokens"], 3);
+    assert_eq!(held["finish"], "stop");
+    assert_eq!(held["model"], "scripted");
+    let none = done(host.start(MODEL_GENERATE, "gen", &ask("ab", "", "8", "0")));
+    assert_eq!(none["error"], "unavailable", "no answer left");
+    assert_eq!(none["text"], "");
+}
+
+/// An answer past the bound of `text` is never cut.
+#[test]
+fn an_answer_past_its_bound_fails_whole() {
+    let long = "a".repeat(ANSWER_MAX_BYTES + 1);
+    let fits = "a".repeat(ANSWER_MAX_BYTES);
+    let mut host = model_host(scripted(&[&long, &fits]));
+    let past = done(host.start(MODEL_GENERATE, "gen", &ask("p", "", "8", "0")));
+    assert_eq!(past["error"], "answer_too_large");
+    let whole = done(host.start(MODEL_GENERATE, "gen", &ask("p", "", "8", "0")));
+    assert_eq!(whole["text"].as_str().map(str::len), Some(ANSWER_MAX_BYTES));
+}
+
+/// A prompt and `max_tokens` past the context fail and take no answer.
+#[test]
+fn a_generation_past_the_context_fails_and_keeps_the_answer() {
+    let mut host = model_host(ScriptedProvider {
+        context: 10,
+        ..scripted(&["kept"])
+    });
+    let past = done(host.start(MODEL_GENERATE, "gen", &ask("abc", "", "8", "0")));
+    assert_eq!(past["error"], "context_exceeded");
+    let within = done(host.start(MODEL_GENERATE, "gen", &ask("abc", "", "7", "0")));
+    assert_eq!(within["text"], "kept");
+}
+
+/// The exhaustive provider answers each class it is named, in order, behind the
+/// host's own judgement of the request.
+#[test]
+fn the_exhaustive_provider_answers_each_class_in_turn() {
+    let mut host = model_host(ExhaustiveProvider::new(vec![
+        OutcomeClass::Answer {
+            text: "t".to_string(),
+            finish: "length".to_string(),
+        },
+        OutcomeClass::Failure("busy".to_string()),
+        OutcomeClass::Refusal,
+        OutcomeClass::Hold,
+    ]));
+    let answer = done(host.start(MODEL_GENERATE, "gen", &ask("p", "", "8", "0")));
+    assert_eq!(
+        (answer["text"].as_str(), answer["finish"].as_str()),
+        (Some("t"), Some("length"))
+    );
+    assert_eq!(answer["model"], "exhaustive");
+    assert_eq!(answer["constrained"], false);
+    let failed = done(host.start(MODEL_GENERATE, "gen", &ask("p", "", "8", "0")));
+    assert_eq!(failed["error"], "busy");
+    assert!(matches!(
+        host.start(MODEL_GENERATE, "gen", &ask("p", "", "8", "0")),
+        Some(Outcome::Refuse(_))
+    ));
+    assert_eq!(
+        host.start(MODEL_GENERATE, "gen", &ask("p", "", "8", "0")),
+        Some(Outcome::Hold)
+    );
+    let past = done(host.start(MODEL_GENERATE, "gen", &ask("p", "", "8", "0")));
+    assert_eq!(past["error"], "unavailable", "asked past the sequence");
 }

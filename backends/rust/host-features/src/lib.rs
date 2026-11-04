@@ -16,6 +16,7 @@
 mod clock;
 mod http;
 mod kv;
+mod model;
 mod notify;
 mod serve;
 
@@ -23,7 +24,15 @@ use std::collections::BTreeMap;
 
 pub use clock::{ClockSource, Reading, ScriptedClock, SystemClock, Zone};
 pub use http::{HttpRequest, HttpResponse, Transport, TransportFailure};
+pub use model::{
+    ExhaustiveProvider, GenerateRequest, Generation, ModelProvider, OutcomeClass, ScriptedAnswer,
+    ScriptedProvider, ANSWER_MAX_BYTES, TEMPERATURE_MAX_MILLI,
+};
+pub use sce_rust_runtime::AnswerSchema;
 pub use serve::{serve, Shared};
+
+/// The operation that generates a text (docs/SCE_HOST_FEATURES.md, section 6).
+pub const MODEL_GENERATE: &str = "sce-host-model-generate";
 
 /// The request of an operation as the engine hands it to a host: each
 /// `<param>` by name, as text. A 64-bit integer is its decimal digits.
@@ -31,7 +40,7 @@ pub type Params = BTreeMap<String, String>;
 
 /// Every operation type of the standard host features, in the order the
 /// specification lists them.
-pub const TYPES: [&str; 11] = [
+pub const TYPES: [&str; 12] = [
     "sce-host-clock-now",
     "sce-host-clock-zone",
     "sce-host-kv-get",
@@ -43,6 +52,7 @@ pub const TYPES: [&str; 11] = [
     "sce-host-notify-post",
     "sce-host-notify-cancel",
     "sce-host-http-fetch",
+    MODEL_GENERATE,
 ];
 
 /// What a host answers a start with.
@@ -61,7 +71,7 @@ pub enum Outcome {
 
 /// The refusal the specification gives an argument the operation does not
 /// accept.
-const INVALID_ARGUMENT: &str = r#"{"reason":"invalid_argument"}"#;
+pub(crate) const INVALID_ARGUMENT: &str = r#"{"reason":"invalid_argument"}"#;
 
 /// The standard host features' semantics, over a clock and a transport.
 pub struct ReferenceHost<T: Transport> {
@@ -79,6 +89,12 @@ pub struct ReferenceHost<T: Transport> {
     pub(crate) monotonic_floor: i64,
     /// Every start the host was given, refused ones included, until taken.
     pub(crate) starts: Vec<Start>,
+    /// Where a generation's text comes from: a scripted provider until the
+    /// embedding gives another.
+    pub(crate) provider: Box<dyn ModelProvider + Send>,
+    /// The machine's table of answer schemas, which a generation's
+    /// `answer_schema` is resolved through.
+    pub(crate) answer_schemas: Vec<AnswerSchema>,
 }
 
 /// A start the host was given: the operation, the invocation's id and the
@@ -104,7 +120,21 @@ impl<T: Transport> ReferenceHost<T> {
             cancelled: Vec::new(),
             monotonic_floor: i64::MIN,
             starts: Vec::new(),
+            provider: Box::new(ScriptedProvider::default()),
+            answer_schemas: Vec::new(),
         }
+    }
+
+    /// Generate texts with `provider` from here on.
+    pub fn set_model_provider(&mut self, provider: Box<dyn ModelProvider + Send>) {
+        self.provider = provider;
+    }
+
+    /// Resolve a generation's `answer_schema` through `schemas`, the table of
+    /// the machine this host serves (its generated `ANSWER_SCHEMAS`). A request
+    /// that names an id the table does not hold is refused.
+    pub fn set_answer_schemas(&mut self, schemas: &[AnswerSchema]) {
+        self.answer_schemas = schemas.to_vec();
     }
 
     /// The starts the host was given since this was last called, oldest first.
@@ -193,12 +223,14 @@ impl<T: Transport> ReferenceHost<T> {
             "sce-host-http-fetch" => {
                 !http::acceptable(argument("method"), argument("url"), argument("headers"))
             }
+            MODEL_GENERATE => model::refuses(&self.answer_schemas, id, params),
             _ => false,
         };
         if refused {
             return Some(Outcome::Refuse(INVALID_ARGUMENT));
         }
         if let Some(code) = self.faults.get(operation) {
+            sce_rust_runtime::sce_log_info!("{operation} {id}: fails {code}, injected");
             return Some(failure(operation, code));
         }
         Some(match operation {
@@ -226,6 +258,7 @@ impl<T: Transport> ReferenceHost<T> {
                 argument("headers"),
                 argument("body"),
             ),
+            MODEL_GENERATE => model::generate(self, id, params),
             _ => unreachable!("the type was checked against TYPES"),
         })
     }
@@ -268,6 +301,14 @@ pub(crate) fn failure(operation: &str, code: &str) -> Outcome {
         }
         "sce-host-notify-post" => serde_json::json!({ "status": "" }),
         "sce-host-http-fetch" => serde_json::json!({ "status": 0, "headers": "", "body": "" }),
+        MODEL_GENERATE => serde_json::json!({
+            "text": "",
+            "constrained": false,
+            "model": "",
+            "prompt_tokens": 0,
+            "answer_tokens": 0,
+            "finish": "",
+        }),
         other => unreachable!("`{other}` is not a standard host operation"),
     };
     let Outcome::Done(text) = record(zero) else {

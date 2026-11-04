@@ -16,8 +16,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use sce_rust_host_features::{
-    serve, ClockSource, HttpRequest, HttpResponse, Reading, ReferenceHost, ScriptedClock, Shared,
-    Transport, TransportFailure, Zone,
+    serve, AnswerSchema, ClockSource, ExhaustiveProvider, HttpRequest, HttpResponse, OutcomeClass,
+    Reading, ReferenceHost, ScriptedAnswer, ScriptedClock, ScriptedProvider, Shared, Transport,
+    TransportFailure, Zone,
 };
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{Engine, SceClock, StatePolicy};
@@ -25,6 +26,7 @@ use sce_rust_scenarios::integration::static_datamodel::{
     static_host_clock_sm::{StaticHostClockPersist, StaticHostClockPolicy},
     static_host_http_sm::{StaticHostHttpPersist, StaticHostHttpPolicy},
     static_host_kv_sm::{StaticHostKvPersist, StaticHostKvPolicy},
+    static_host_model_sm::{StaticHostModelPersist, StaticHostModelPolicy, ANSWER_SCHEMAS},
     static_host_notify_sm::{StaticHostNotifyPersist, StaticHostNotifyPolicy},
 };
 use serde_json::{json, Map, Value};
@@ -103,10 +105,56 @@ fn answer(directive: &Value) -> Result<Option<HttpResponse>, TransportFailure> {
 
 type Clock = Arc<Mutex<ScriptedClock>>;
 
+/// The text a `model` answer gives: `text`, or `text_repeat` as a text and a
+/// count.
+fn answer_text(answer: &Value) -> String {
+    if let Some(text) = answer.get("text").and_then(Value::as_str) {
+        return text.to_string();
+    }
+    let repeat = &answer["text_repeat"];
+    repeat[0]
+        .as_str()
+        .expect("a text")
+        .repeat(repeat[1].as_u64().expect("a count") as usize)
+}
+
+/// Apply a `model` directive to the scripted provider: each member it names.
+fn script_model(provider: &mut ScriptedProvider, directive: &Value) {
+    if let Some(answers) = directive.get("answers").and_then(Value::as_array) {
+        provider.answers = answers
+            .iter()
+            .map(|answer| ScriptedAnswer {
+                text: answer_text(answer),
+                finish: answer
+                    .get("finish")
+                    .and_then(Value::as_str)
+                    .unwrap_or("stop")
+                    .to_string(),
+            })
+            .collect();
+    }
+    if let Some(constrained) = directive.get("constrained").and_then(Value::as_bool) {
+        provider.constrained = constrained;
+    }
+    if let Some(name) = directive.get("name").and_then(Value::as_str) {
+        provider.name = name.to_string();
+    }
+    if let Some(context) = directive.get("context").and_then(Value::as_u64) {
+        provider.context = context;
+    }
+    if let Some(hold) = directive.get("hold").and_then(Value::as_bool) {
+        provider.hold = hold;
+    }
+}
+
+/// The request fields a scenario writes as numbers; every other is text.
+const INTEGER_FIELDS: [&str; 3] = ["at_ms", "max_tokens", "temperature_milli"];
+
 struct Rig {
     host: Shared<Scripted>,
     clock: Clock,
     script: Arc<Mutex<Script>>,
+    model: Arc<Mutex<ScriptedProvider>>,
 }
 
 impl Rig {
@@ -159,13 +207,14 @@ impl Rig {
                         .collect(),
                 ),
                 "http" => self.script.lock().expect("the script").answer = Some(answer(value)),
+                "model" => script_model(&mut self.model.lock().expect("the provider"), value),
                 other => panic!("`{other}` is not a host directive"),
             }
         }
     }
 
     /// What the host was started with since the last step, as a scenario writes
-    /// it: the request as its record, `at_ms` being the one integer field.
+    /// it: the request as its record, the integer fields as numbers.
     fn starts(&self) -> Value {
         let starts = self.host.lock().expect("the host").take_starts();
         Value::Array(
@@ -174,7 +223,7 @@ impl Rig {
                 .map(|start| {
                     let mut request = Map::new();
                     for (name, text) in start.params {
-                        let value = if name == "at_ms" {
+                        let value = if INTEGER_FIELDS.contains(&name.as_str()) {
                             json!(text.parse::<i64>().expect("digits"))
                         } else {
                             Value::String(text)
@@ -252,6 +301,7 @@ fn replay<P: StatePolicy>(
     mut engine: Engine<P>,
     save: impl Fn(&Engine<P>) -> SavedState,
     machine: &str,
+    answer_schemas: &[AnswerSchema],
 ) {
     let scenario = scenario(machine);
     assert_eq!(
@@ -260,15 +310,20 @@ fn replay<P: StatePolicy>(
     );
     let clock: Clock = Arc::new(Mutex::new(ScriptedClock::new()));
     let script = Arc::new(Mutex::new(Script::default()));
-    let host: Shared<Scripted> = Arc::new(Mutex::new(ReferenceHost::new(
+    let model = Arc::new(Mutex::new(ScriptedProvider::default()));
+    let mut reference = ReferenceHost::new(
         Box::new(Arc::clone(&clock)) as Box<dyn ClockSource + Send>,
         Scripted(Arc::clone(&script)),
-    )));
+    );
+    reference.set_answer_schemas(answer_schemas);
+    reference.set_model_provider(Box::new(Arc::clone(&model)));
+    let host: Shared<Scripted> = Arc::new(Mutex::new(reference));
     serve(&mut engine, &host);
     let rig = Rig {
         host,
         clock,
         script,
+        model,
     };
     engine.set_clock(SceClock::Manual(0));
     engine.initialize();
@@ -331,6 +386,7 @@ fn a_machine_asks_the_key_value_store_of_its_host() {
         Engine::new(StaticHostKvPolicy::new()),
         |engine| engine.save_at(0).expect("saves"),
         "static_host_kv",
+        &[],
     );
 }
 
@@ -340,6 +396,7 @@ fn a_machine_reads_the_clock_of_its_host() {
         Engine::new(StaticHostClockPolicy::new()),
         |engine| engine.save_at(0).expect("saves"),
         "static_host_clock",
+        &[],
     );
 }
 
@@ -349,6 +406,7 @@ fn a_machine_posts_notifications_through_its_host() {
         Engine::new(StaticHostNotifyPolicy::new()),
         |engine| engine.save_at(0).expect("saves"),
         "static_host_notify",
+        &[],
     );
 }
 
@@ -358,6 +416,184 @@ fn a_machine_makes_an_http_exchange_through_its_host() {
         Engine::new(StaticHostHttpPolicy::new()),
         |engine| engine.save_at(0).expect("saves"),
         "static_host_http",
+        &[],
+    );
+}
+
+#[test]
+fn a_machine_asks_its_host_for_a_text_under_an_answer_schema() {
+    replay(
+        Engine::new(StaticHostModelPolicy::new()),
+        |engine| engine.save_at(0).expect("saves"),
+        "static_host_model",
+        ANSWER_SCHEMAS,
+    );
+}
+
+/// The table of the outcome classes of one generation every lane reads
+/// (docs/adr/0087, section 9.4).
+fn outcome_classes() -> Value {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/host_features/model_outcome_classes.json");
+    let text = std::fs::read_to_string(&path).expect("the class table is readable");
+    serde_json::from_str(&text).expect("the class table is JSON")
+}
+
+/// What the exhaustive provider answers for `class`.
+fn outcome_class(class: &Value) -> OutcomeClass {
+    match class["end"].as_str().expect("an end") {
+        "answer" => OutcomeClass::Answer {
+            text: class["text"].as_str().expect("a text").to_string(),
+            finish: class["finish"].as_str().expect("a finish").to_string(),
+        },
+        "failure" => OutcomeClass::Failure(class["error"].as_str().expect("a code").to_string()),
+        "refusal" => OutcomeClass::Refusal,
+        "hold" => OutcomeClass::Hold,
+        other => panic!("`{other}` is not an end"),
+    }
+}
+
+/// Every sequence of `count` indices below `classes`, in lexicographic order.
+fn sequences(classes: usize, count: usize) -> Vec<Vec<usize>> {
+    let mut all: Vec<Vec<usize>> = vec![Vec::new()];
+    for _ in 0..count {
+        all = all
+            .into_iter()
+            .flat_map(|prefix| {
+                (0..classes).map(move |next| {
+                    let mut longer = prefix.clone();
+                    longer.push(next);
+                    longer
+                })
+            })
+            .collect();
+    }
+    all
+}
+
+/// Run `static_host_model` against the exhaustive provider answering the classes
+/// `sequence` names, one call a class, and hold what the machine publishes after
+/// each call to what its class says.
+fn run_sequence(table: &Value, sequence: &[usize]) {
+    let classes = table["classes"].as_array().expect("classes");
+    let named: Vec<&str> = sequence
+        .iter()
+        .map(|&i| classes[i]["class"].as_str().expect("a class name"))
+        .collect();
+    let mut engine = Engine::new(StaticHostModelPolicy::new());
+    let clock: Clock = Arc::new(Mutex::new(ScriptedClock::new()));
+    let mut reference = ReferenceHost::new(
+        Box::new(Arc::clone(&clock)) as Box<dyn ClockSource + Send>,
+        Scripted(Arc::new(Mutex::new(Script::default()))),
+    );
+    reference.set_answer_schemas(ANSWER_SCHEMAS);
+    reference.set_model_provider(Box::new(ExhaustiveProvider::new(
+        sequence
+            .iter()
+            .map(|&i| outcome_class(&classes[i]))
+            .collect(),
+    )));
+    let host: Shared<Scripted> = Arc::new(Mutex::new(reference));
+    serve(&mut engine, &host);
+    engine.set_clock(SceClock::Manual(0));
+    engine.initialize();
+    settle(&mut engine);
+    let ask = &table["ask"];
+    let event = ask["event"].as_str().expect("the ask event");
+    let deadline_ms = table["deadline_ms"].as_u64().expect("a deadline");
+    let leave = table["leave"].as_str().expect("the leave event");
+    let mut answer = Value::Null;
+    for (n, &i) in sequence.iter().enumerate() {
+        let class = &classes[i];
+        engine.raise_external_by_name(event, &ask["data"].to_string());
+        settle(&mut engine);
+        match class.get("then").and_then(Value::as_str) {
+            Some("advance") => {
+                engine.advance_time_ms(deadline_ms);
+                settle(&mut engine);
+            }
+            Some("leave") => {
+                engine.raise_external_by_name(leave, "");
+                settle(&mut engine);
+            }
+            Some(other) => panic!("`{other}` is not how a held call ends"),
+            None => {}
+        }
+        let expect = &class["expect"];
+        if let Some(read) = expect.get("answer") {
+            answer = read.clone();
+        }
+        let saved: Value = serde_json::from_str(&engine.save_at(0).expect("saves").to_json())
+            .expect("a saved state is JSON");
+        let at = format!("{named:?}, call {}", n + 1);
+        assert_eq!(saved["current"], "idle", "{at}: the machine is idle");
+        let variables = &saved["variables"];
+        for name in ["outcome", "why", "finish"] {
+            assert!(
+                holds(&variables[name], &expect[name]),
+                "{at}: `{name}` is {}, not {}",
+                variables[name],
+                expect[name]
+            );
+        }
+        assert!(
+            holds(&variables["answer"], &answer),
+            "{at}: `answer` is {}, not {answer}",
+            variables["answer"]
+        );
+        assert!(
+            holds(&variables["calls"], &json!(n + 1)),
+            "{at}: `calls` is {}",
+            variables["calls"]
+        );
+    }
+}
+
+/// The machine around a model is tested exhaustively (docs/adr/0087, section
+/// 9.4): every sequence of outcome classes up to the table's bound, each call
+/// read as its class says, and every refusal code of the library either reached
+/// by a class or named as deferred with its reason.
+#[test]
+fn every_sequence_of_outcome_classes_is_read_as_its_classes_say() {
+    let table = outcome_classes();
+    assert_eq!(table["machine"], "static_host_model");
+    assert_eq!(
+        table["answer_schema"].as_str(),
+        ANSWER_SCHEMAS.first().map(|schema| schema.id),
+        "the table's answer schema is the machine's"
+    );
+    let classes = table["classes"].as_array().expect("classes").len();
+    let bound = table["bound"].as_u64().expect("a bound") as usize;
+    assert!(
+        classes > 0 && bound > 0,
+        "a table that names nothing judges nothing"
+    );
+    let mut runs = 0usize;
+    for count in 1..=bound {
+        for sequence in sequences(classes, count) {
+            run_sequence(&table, &sequence);
+            runs += 1;
+        }
+    }
+    let expected: usize = (1..=bound).map(|k| classes.pow(k as u32)).sum();
+    assert_eq!(runs, expected, "every sequence up to the bound was run");
+    let reached: std::collections::BTreeSet<&str> = table["classes"]
+        .as_array()
+        .expect("classes")
+        .iter()
+        .filter_map(|class| class["expect"]["why"]["code"].as_str())
+        .chain(
+            table["deferred"]
+                .as_array()
+                .expect("deferred")
+                .iter()
+                .filter_map(|deferred| deferred["code"].as_str()),
+        )
+        .collect();
+    assert_eq!(
+        reached.len(),
+        13,
+        "every code of sce:std/lift/refusal_code.scxml is reached or deferred: {reached:?}"
     );
 }
 
@@ -384,6 +620,7 @@ fn every_scenario_of_the_directory_is_replayed_here() {
             "static_host_clock",
             "static_host_http",
             "static_host_kv",
+            "static_host_model",
             "static_host_notify"
         ]
     );
