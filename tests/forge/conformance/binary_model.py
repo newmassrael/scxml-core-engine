@@ -58,8 +58,9 @@ What the model reads so far, and refuses by name past it:
 * a gate group ([`Group`], docs/adr/0065 §6 R4b, R4c): two or more elements
   one flag decides, a stated length counting on the side where its content is
   not, or the fields a disjunction `c.a || c.b` of the codec's own flags
-  decides where no other gate reads them. A group of a chain's membership, or
-  one holding a body or a list, is not read yet;
+  decides where no other gate reads them; a body or a list it holds is stated
+  in its arm as an element is. A group of a chain's membership is not read
+  yet;
 * the flag inputs a codec declares (`<sce:flag-inputs>`, one bit each): a gate
   on one is decided by the value the parent hands, which a case states in its
   `inputs`, and two elements one input decides are a group keyed by its name.
@@ -416,10 +417,6 @@ class Codec:
                         f"{self.name}: another gate reads a flag of `{f.gate.text}`, so it is "
                         "a check and not a group"
                     )
-        for group in self.groups():
-            for member in group.members():
-                if member.child is not None:
-                    raise Unread(f"{self.name}: a group holding `{member.id}`, a body or a list")
         for (carrier, name) in self.gate_flags():
             if f"{carrier}.{name}" in self.measured():
                 raise Unread(f"{self.name}: {carrier}.{name} is derived by two kinds")
@@ -1566,6 +1563,57 @@ FIXTURES = {
         ],
         "the flags byte's N is the key expression's input: derived from the key expression "
         "where the body holds one, the value's own where it does not.",
+    ),
+    "codec_zenoh_value_zbuf": Fixture(
+        [
+            ({"after_shm": {"arm": 1, "value": [1, 2, 3]}},
+             "after_shm clear: the value and its length", {"after_shm": 0}),
+            ({"after_shm": {"arm": 0, "value_len": 7, "encoding": 3,
+                            "slices": [{"kind": 1, "data": [9]}, {"kind": 2, "data": []}]}},
+             "after_shm set: the stated length, the encoding and two slices, counted",
+             {"after_shm": 1}),
+            ({"after_shm": {"arm": 0, "value_len": 0, "encoding": 0, "slices": []}},
+             "after_shm set and no slice: the count is zero", {"after_shm": 1}),
+        ],
+        "a group one flag input decides, one side holding a list of slices.",
+    ),
+    "codec_zenoh_value_entry": Fixture(
+        [
+            ({"header": 0x43, "body": {"arm": "codec_zenoh_value_zbuf", "body": {
+                "after_shm": {"arm": 1, "value": [5]}}}},
+             "the zbuf arm, handed after_shm clear by the entry", {"after_shm": 0}),
+            ({"header": 0xC3, "body": {"arm": "codec_zenoh_value_zbuf", "body": {
+                "after_shm": {"arm": 0, "value_len": 1, "encoding": 2,
+                              "slices": [{"kind": 0, "data": [1, 2]}]}}}},
+             "the zbuf arm, handed after_shm set, Z the value's own", {"after_shm": 1}),
+            ({"header": 0x21, "body": {"arm": "codec_zenoh_ext_zint", "body": {"value": 4}}},
+             "the zint arm, which takes no input", {"after_shm": 1}),
+        ],
+        "an arm handed the entry's own input, as an embedded body is.",
+    ),
+    "codec_zenoh_interest": Fixture(
+        [
+            ({"header": 0x19, "id": 1, "header.CURRENT || header.FUTURE": None,
+              "extensions": None},
+             "final: neither flag, so no body"),
+            ({"header": 0x39, "id": 2,
+              "header.CURRENT || header.FUTURE": {"arm": 0, "body": {"header": 0x01,
+                                                                    "keyexpr": None}},
+              "extensions": None},
+             "CURRENT alone: the body, not restricted"),
+            ({"header": 0x59, "id": 0x80,
+              "header.CURRENT || header.FUTURE": {"arm": 1, "body": {
+                  "header": 0x3F, "keyexpr": {"id": 3, "suffix": "k/*"}}},
+              "extensions": None},
+             "FUTURE alone: a restricted body with its key expression"),
+            ({"header": 0xF9, "id": 3,
+              "header.CURRENT || header.FUTURE": {"arm": 2, "body": {"header": 0x02,
+                                                                    "keyexpr": None}},
+              "extensions": [{"header": 0x01, "body": {"arm": "codec_zenoh_ext_unit",
+                                                       "body": {}}}]},
+             "both flags and Z: the body, then one extension"),
+        ],
+        "a body a disjunction of two flags decides, each arm setting the flags it names.",
     ),
     "codec_zenoh_declaration": Fixture(
         [

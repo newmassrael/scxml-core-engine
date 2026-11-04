@@ -41590,6 +41590,34 @@
         {"source": {"header": 1, "body": {"arm": "codec_init_syn_body", "body": {"version": 1, "S": null}}}, "encoded": [1, 1], "note": "the arm says S clear"},
         {"source": {"header": 66, "body": {"tag": 2, "body": {"version": 1, "S": {"arm": 0, "sn_res": 0, "batch_size": 0}}}}, "encoded": [66, 1, 0, 0, 0], "note": "the default arm binds S too, and keeps its tag"}
       ]
+    },
+    "codec_zenoh_value_zbuf": {
+      "fixture": "CodecZenohValueZbuf",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a group one flag input decides, one side holding a list of slices.",
+      "sources": [
+        {"source": {"after_shm": {"arm": 1, "value": [1, 2, 3]}}, "inputs": {"after_shm": 0}, "encoded": [3, 1, 2, 3], "note": "after_shm clear: the value and its length"},
+        {"source": {"after_shm": {"arm": 0, "value_len": 7, "encoding": 3, "slices": [{"kind": 1, "data": [9]}, {"kind": 2, "data": []}]}}, "inputs": {"after_shm": 1}, "encoded": [7, 3, 2, 1, 1, 9, 2, 0], "note": "after_shm set: the stated length, the encoding and two slices, counted"},
+        {"source": {"after_shm": {"arm": 0, "value_len": 0, "encoding": 0, "slices": []}}, "inputs": {"after_shm": 1}, "encoded": [0, 0, 0], "note": "after_shm set and no slice: the count is zero"}
+      ]
+    },
+    "codec_zenoh_value_entry": {
+      "fixture": "CodecZenohValueEntry",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. an arm handed the entry's own input, as an embedded body is.",
+      "sources": [
+        {"source": {"header": 67, "body": {"arm": "codec_zenoh_value_zbuf", "body": {"after_shm": {"arm": 1, "value": [5]}}}}, "inputs": {"after_shm": 0}, "encoded": [67, 1, 5], "note": "the zbuf arm, handed after_shm clear by the entry"},
+        {"source": {"header": 195, "body": {"arm": "codec_zenoh_value_zbuf", "body": {"after_shm": {"arm": 0, "value_len": 1, "encoding": 2, "slices": [{"kind": 0, "data": [1, 2]}]}}}}, "inputs": {"after_shm": 1}, "encoded": [195, 1, 2, 1, 0, 2, 1, 2], "note": "the zbuf arm, handed after_shm set, Z the value's own"},
+        {"source": {"header": 33, "body": {"arm": "codec_zenoh_ext_zint", "body": {"value": 4}}}, "inputs": {"after_shm": 1}, "encoded": [33, 4], "note": "the zint arm, which takes no input"}
+      ]
+    },
+    "codec_zenoh_interest": {
+      "fixture": "CodecZenohInterest",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a body a disjunction of two flags decides, each arm setting the flags it names.",
+      "sources": [
+        {"source": {"header": 25, "id": 1, "header.CURRENT || header.FUTURE": null, "extensions": null}, "encoded": [25, 1], "note": "final: neither flag, so no body"},
+        {"source": {"header": 57, "id": 2, "header.CURRENT || header.FUTURE": {"arm": 0, "body": {"header": 1, "keyexpr": null}}, "extensions": null}, "encoded": [57, 2, 1], "note": "CURRENT alone: the body, not restricted"},
+        {"source": {"header": 89, "id": 128, "header.CURRENT || header.FUTURE": {"arm": 1, "body": {"header": 63, "keyexpr": {"id": 3, "suffix": "k/*"}}}, "extensions": null}, "encoded": [89, 128, 1, 63, 3, 3, 107, 47, 42], "note": "FUTURE alone: a restricted body with its key expression"},
+        {"source": {"header": 249, "id": 3, "header.CURRENT || header.FUTURE": {"arm": 2, "body": {"header": 2, "keyexpr": null}}, "extensions": [{"header": 1, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}]}, "encoded": [249, 3, 2, 1], "note": "both flags and Z: the body, then one extension"}
+      ]
     }
   },
   "string_lookups": {

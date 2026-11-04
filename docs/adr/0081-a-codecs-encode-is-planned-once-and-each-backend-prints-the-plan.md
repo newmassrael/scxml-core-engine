@@ -256,6 +256,13 @@ gain 17 cases: the Zenoh declaration, whose arms are handed the header's N and Z
 it, the transport envelope, whose arms are handed A and S, and the init-syn envelope, whose default arm takes S too.
 A header that contradicts the arm it holds does not read back as written, so the model refuses it as a case.
 
+*Landed (step 3, tenth part, 2026-11-04): groups that hold a body or a list.* A body or a list a gate group holds is
+stated in its arm as an element is, and the literal binds it first, as it does an element's. The harness compares a
+group arm by arm: the same arm on both sides, or none, each member compared as an element is, a body by its elements
+and a list by its entries in order; an element and a group's member share the one comparison. Three codecs gain 10
+cases: the Zenoh zbuf value, whose `after_shm` side holds its slices, the value entry whose arm holds it, and the
+interest message, whose body `CURRENT || FUTURE` decides.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.

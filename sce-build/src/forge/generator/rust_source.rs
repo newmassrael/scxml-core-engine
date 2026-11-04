@@ -209,12 +209,12 @@ pub(crate) fn source_case(
             Ok((element.field.id.clone(), holds))
         })
         .collect::<Result<_, String>>()?;
-    checks.extend(plan.groups().iter().map(|group| {
-        (
+    for group in plan.groups() {
+        checks.push((
             gates_label(group),
-            group_equal(group, path, "&decoded", "&parts"),
-        )
-    }));
+            group_equal(plan, group, path, "&decoded", "&parts", held, &mut fresh)?,
+        ));
+    }
     if plan.model.variant.is_some() {
         checks.push((
             VARIANT_MEMBER.to_string(),
@@ -311,15 +311,6 @@ fn spelled(plan: &EncodePlan<'_>) -> Result<(), String> {
             return Err(format!(
                 "the group `{label}` is decided by a chain's membership, which is not spelled \
                  as a literal yet"
-            ));
-        }
-        if let Some(field) = plan.model.fields.iter().find(|f| {
-            group.arms.iter().any(|a| a.fields.contains(&f.id)) && child_alias(f).is_some()
-        }) {
-            return Err(format!(
-                "the group `{label}` holds `{}`, a body or a list, which is not spelled as a \
-                 literal yet",
-                field.id
             ));
         }
     }
@@ -695,29 +686,20 @@ fn literal_value(
     }
 }
 
-/// A `bool` expression that holds when the values `a` and `b` of the codec at
-/// `path`, references to two sources, present the same `element`: its value,
-/// or for a body each element of it and for a list each entry in order.
-fn element_equal(
-    element: &Element<'_>,
-    path: &CodecPath,
-    a: &str,
-    b: &str,
+/// A `bool` expression that holds when `x` and `y`, two values of the abstract
+/// type `value` as a source presents them, are the same: a body's elements
+/// each, a list's entries each in order, any other value whole.
+fn value_same(
+    value: &Value<'_>,
+    x: &str,
+    y: &str,
     held: &mut dyn HeldCodecs,
     fresh: &mut usize,
 ) -> Result<String, String> {
-    let accessor = filters::to_snake_case(element.field.id.clone());
-    let read = |v: &str| format!("{}::{accessor}({v})", path.source());
-    let (left, right) = (read(a), read(b));
-    *fresh += 1;
-    let (x, y) = (format!("a{fresh}"), format!("b{fresh}"));
-    let same = match &element.value {
-        Value::Body { codec } => {
-            let (x, y) = (x.clone(), y.clone());
-            held.read(codec, &mut |plan, path, held| {
-                body_equal(plan, path, &x, &y, held, fresh)
-            })?
-        }
+    match value {
+        Value::Body { codec } => held.read(codec, &mut |plan, path, held| {
+            body_equal(plan, path, x, y, held, fresh)
+        }),
         Value::List { codec, .. } => {
             let (ea, eb) = (format!("{x}_entry"), format!("{y}_entry"));
             let entry = {
@@ -732,14 +714,51 @@ fn element_equal(
             } else {
                 (ea, eb)
             };
-            format!(
+            Ok(format!(
                 "{{ let (mut {x}, mut {y}) = ({x}, {y}); loop {{ match ({x}.next(), {y}.next()) {{ \
                  (Some({ea}), Some({eb})) => {{ let same = {entry}; if !same {{ break false; }} }}, \
                  (None, None) => break true, _ => break false }} }} }}"
-            )
+            ))
         }
-        _ => return Ok(format!("{left} == {right}")),
-    };
+        _ => Ok(format!("{x} == {y}")),
+    }
+}
+
+/// `checks`, each a `bool` expression, as one that holds when every one does.
+fn all_of(checks: &[String]) -> String {
+    // Parenthesised only where they are joined: alone, a check is a block, a
+    // `match` or a comparison that needs none.
+    match checks {
+        [] => "true".to_string(),
+        [one] => one.clone(),
+        many => many
+            .iter()
+            .map(|c| format!("({c})"))
+            .collect::<Vec<_>>()
+            .join(" && "),
+    }
+}
+
+/// A `bool` expression that holds when the values `a` and `b` of the codec at
+/// `path`, references to two sources, present the same `element`: its value,
+/// or for a body each element of it and for a list each entry in order.
+fn element_equal(
+    element: &Element<'_>,
+    path: &CodecPath,
+    a: &str,
+    b: &str,
+    held: &mut dyn HeldCodecs,
+    fresh: &mut usize,
+) -> Result<String, String> {
+    let accessor = filters::to_snake_case(element.field.id.clone());
+    let read = |v: &str| format!("{}::{accessor}({v})", path.source());
+    let (left, right) = (read(a), read(b));
+    if !matches!(element.value, Value::Body { .. } | Value::List { .. }) {
+        return Ok(format!("{left} == {right}"));
+    }
+    *fresh += 1;
+    let (x, y) = (format!("a{fresh}"), format!("b{fresh}"));
+    let same = value_same(&element.value, &x, &y, held, fresh)?;
     // A body of no element binds nothing it reads.
     let (x, y) = if same == "true" {
         ("_".to_string(), "_".to_string())
@@ -755,19 +774,79 @@ fn element_equal(
     })
 }
 
-/// A `bool` expression that holds when `a` and `b`, references to two values
-/// of the codec `plan` at `path`, present the same elements.
 /// A `bool` expression that holds when `a` and `b`, references to two sources
-/// of the codec at `path`, hold the same arm of `group` with the same members.
-/// A group holds no body or list ([`spelled`]), so its value compares whole.
-fn group_equal(group: &GateGroup, path: &CodecPath, a: &str, b: &str) -> String {
+/// of the codec `plan` at `path`, hold the same arm of `group`, or none of it,
+/// with the same members: each compared as an element is, so a body or a list
+/// the arm holds compares by its elements or entries.
+fn group_equal(
+    plan: &EncodePlan<'_>,
+    group: &GateGroup,
+    path: &CodecPath,
+    a: &str,
+    b: &str,
+    held: &mut dyn HeldCodecs,
+    fresh: &mut usize,
+) -> Result<String, String> {
+    let ty = format!("{}::{}", path.module, group_type(&path.type_name, group));
+    let held_in = |pattern: String| {
+        if group.absent.is_some() {
+            format!("Some({pattern})")
+        } else {
+            pattern
+        }
+    };
+    let mut arms = Vec::new();
+    for arm in &group.arms {
+        let (mut xs, mut ys, mut same) = (Vec::new(), Vec::new(), Vec::new());
+        for id in &arm.fields {
+            let field = plan
+                .model
+                .fields
+                .iter()
+                .find(|f| &f.id == id)
+                .ok_or_else(|| format!("the codec has no field `{id}`"))?;
+            *fresh += 1;
+            let (x, y) = (format!("a{fresh}"), format!("b{fresh}"));
+            let one = value_same(&plan.value(field), &x, &y, held, fresh)?;
+            let member = filters::to_snake_case(id.clone());
+            // A body of no element binds nothing it reads.
+            if one == "true" {
+                xs.push(format!("{member}: _"));
+                ys.push(format!("{member}: _"));
+            } else {
+                xs.push(format!("{member}: {x}"));
+                ys.push(format!("{member}: {y}"));
+                same.push(one);
+            }
+        }
+        let arm_path = if group.is_sum() {
+            format!("{ty}::{}", group_arm_name(group, arm))
+        } else {
+            ty.clone()
+        };
+        arms.push(format!(
+            "({}, {}) => {}",
+            held_in(format!("{arm_path} {{ {} }}", xs.join(", "))),
+            held_in(format!("{arm_path} {{ {} }}", ys.join(", "))),
+            all_of(&same)
+        ));
+    }
+    if group.absent.is_some() {
+        arms.push("(None, None) => true".to_string());
+    }
+    if arms.len() > 1 {
+        arms.push("_ => false".to_string());
+    }
     let accessor = group_accessor(group);
-    format!(
-        "{source}::{accessor}({a}) == {source}::{accessor}({b})",
-        source = path.source()
-    )
+    Ok(format!(
+        "match ({src}::{accessor}({a}), {src}::{accessor}({b})) {{ {} }}",
+        arms.join(", "),
+        src = path.source()
+    ))
 }
 
+/// A `bool` expression that holds when `a` and `b`, references to two values
+/// of the codec `plan` at `path`, present the same elements.
 fn body_equal(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
@@ -782,25 +861,13 @@ fn body_equal(
         .iter()
         .map(|element| element_equal(element, path, a, b, held, fresh))
         .collect::<Result<Vec<_>, _>>()?;
-    checks.extend(
-        plan.groups()
-            .iter()
-            .map(|group| group_equal(group, path, a, b)),
-    );
+    for group in plan.groups() {
+        checks.push(group_equal(plan, group, path, a, b, held, fresh)?);
+    }
     if plan.model.variant.is_some() {
         checks.push(variant_equal(plan, path, a, b, held, fresh)?);
     }
-    // Parenthesised only where they are joined: alone, a check is a block,
-    // a `match` or a comparison that needs none.
-    Ok(match checks.as_slice() {
-        [] => "true".to_string(),
-        [one] => one.clone(),
-        many => many
-            .iter()
-            .map(|c| format!("({c})"))
-            .collect::<Vec<_>>()
-            .join(" && "),
-    })
+    Ok(all_of(&checks))
 }
 
 /// The source interface of a codec, as the text a codec file holds, or why the
