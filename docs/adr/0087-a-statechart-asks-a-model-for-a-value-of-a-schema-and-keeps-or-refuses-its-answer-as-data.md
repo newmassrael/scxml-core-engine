@@ -739,8 +739,9 @@ loop readable, replayable on every lane, and changeable by the application that 
 | 5, `resolve_date` | yes | yes | yes | yes | yes | yes | yes | yes |
 | 6, the reference harness | yes | yes | yes | yes | yes | yes | yes | refused by name |
 
-The Interpreter's lowering refuses every host-run `<invoke>` by name today (docs/SCE_ACCEPTED_SUBSET.md:6458-6462),
-and the model operation is one; it gains no handler here. A schema whose record holds a list or a record is lifted,
+The Interpreter's lowering refused every host-run `<invoke>` by name when this was written; since docs/adr/0084, D7, it
+lowers them and refuses the model operation alone by name (`unsupported_invoke` in `sce-build/src/forge/static_js.rs`),
+since the build writes its `answer_schema` and the table it names; it gains no handler here. A schema whose record holds a list or a record is lifted,
 and a template or harness over it generated, once ADR 0086 step 3 lands (the composed lowering); until then such a
 schema is refused there by name (`generate/unsupported-feature`), and the scalar-only answer schemas of the fixtures
 land first. A model's answer is often a list (`{"items":[...]}`), so step 3 is a dependency of the harness's general

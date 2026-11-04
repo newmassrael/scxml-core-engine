@@ -4617,7 +4617,9 @@ an empty one, one naming no event schema the document imports, one naming a sche
 whose payload has no grammar (an open enum among them) or whose id is past the 128
 bytes of `answer_schema`, and two answer schemas of one machine under one id. Rust,
 Go, Kotlin, Python, C++, Swift and C11 declare the table; the Interpreter's lowering
-declares none (docs/adr/0087, section 7.1).
+declares none and refuses the invoke by name (`generate/unsupported-feature`, "a
+model's generation"), since the lowered document would carry neither the table nor
+the `answer_schema` the build writes (docs/adr/0087, section 7.1).
 
 **Enum variables.** `sce:type="enum:<alias>"` holds a variable in a variant of
 the enum the document imports as `<alias>` (`<sce:import kind="enum">`). It

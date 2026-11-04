@@ -936,11 +936,17 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
 // (integration/StandardHostScenarioReplay.h). A step's `advance_ms` moves the
 // scheduler's logical clock, which the deadline of a host-run invocation is a moment
 // of, as the generated machine's clock is moved there.
+//
+// A model's generation (`sce-host-model-generate`) is the one host-run type the lowering
+// refuses (docs/adr/0087, section 7.1): the build writes its request's `answer_schema`
+// and the machine's table of answer schemas, and the lowered document carries neither.
+// Its scenario is answered by that refusal, by name, and replayed on the generated lanes.
 TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheStandardHostServesTheInterpreterAsItServesGeneratedCode) {
     const auto names = HostScenario::scenarioNames();
     ASSERT_EQ(names, (std::vector<std::string>{"static_host_clock", "static_host_http", "static_host_kv",
-                                               "static_host_notify"}))
-        << "every scenario of the directory is replayed here";
+                                               "static_host_model", "static_host_notify"}))
+        << "every scenario of the directory is replayed or refused by name here";
+    const std::set<std::string> refusedByName{"static_host_model"};
     for (const auto &name : names) {
         SCOPED_TRACE(name);
         const auto scenario = HostScenario::readScenario(name);
@@ -950,6 +956,15 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheStandardHostServes
         std::error_code ec;
         std::filesystem::remove_all(dir, ec);
         const LoweredSet set = lowerSet(kFixtures / (machineName + ".scxml"), dir);
+        if (refusedByName.count(machineName) != 0) {
+            ASSERT_FALSE(set.ok) << "`sce-codegen lower` lowered " << machineName << ", whose generation it refuses";
+            ASSERT_TRUE(set.refusal.is_object()) << "`sce-codegen lower` failed with no diagnostic";
+            EXPECT_EQ("generate/unsupported-feature", set.refusal.value("code", std::string{})) << set.refusal.dump();
+            EXPECT_NE(set.refusal.value("message", std::string{}).find("sce-host-model-generate"), std::string::npos)
+                << "the refusal names the model's generation: " << set.refusal.dump();
+            std::filesystem::remove_all(dir, ec);
+            continue;
+        }
         ASSERT_TRUE(set.ok) << "`sce-codegen lower` refused " << machineName << ": " << set.refusal.dump();
 
         // Declared before the machine, so it outlives every call the machine makes of it.

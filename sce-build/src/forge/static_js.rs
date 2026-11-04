@@ -35,11 +35,12 @@
 //! An algorithm with a construct
 //! [`crate::forge::static_js_algorithm`] does not spell (a `<sce:foreach>` over
 //! a bounded-collection import), an `<invoke type="scxml">` whose `src` names a
-//! Mesh peer rather than a document, and the executable content the walk does
-//! not lower are refused with `generate/unsupported-feature` naming the
-//! construct, never passed through: an expression left as the author wrote it
-//! would be run by the script engine as ECMAScript, which is the
-//! mis-execution the refusal exists to prevent.
+//! Mesh peer rather than a document, a model's generation
+//! (`sce-host-model-generate`, docs/adr/0087, section 7.1), and the executable
+//! content the walk does not lower are refused with
+//! `generate/unsupported-feature` naming the construct, never passed through:
+//! an expression left as the author wrote it would be run by the script engine
+//! as ECMAScript, which is the mis-execution the refusal exists to prevent.
 //!
 //! # Child sessions
 //!
@@ -89,7 +90,9 @@
 //! its expressions are lowered: each `<param>` and each `namelist` name as a
 //! `<send>`'s are, and the `srcexpr` and `<content expr>` to the string each
 //! computes. The envelope of a Mesh request (`_mesh_event`, the deadline) is
-//! literal and travels as written.
+//! literal and travels as written. A model's generation is the one host-run
+//! type refused: the build writes its request's `answer_schema` and the
+//! machine's table of answer schemas, and the lowered document carries neither.
 //!
 //! # Algorithms
 //!
@@ -966,11 +969,27 @@ impl StaticTarget for JsTarget {
 /// and D7). Their requests hand no child a variable it bounds, so the bounded
 /// `namelist` refusal below is a child session's alone.
 ///
+/// The one host-run type refused is a model's generation
+/// (`sce-host-model-generate`, docs/adr/0087, section 7.1): its request's
+/// `answer_schema` is written by the build from `sce:answer`, and the schema it
+/// names is resolved in the machine's table of answer schemas, and the lowered
+/// document carries neither, so its host would be asked for a text under no
+/// schema the machine names.
+///
 /// An allowlist, as [`unsupported_action`] is.
 fn unsupported_invoke(invoke: &Invoke, state: &str) -> Option<String> {
     let info = match invoke {
         Invoke::Scxml(info) => info,
         Invoke::Hybrid(info) => return unsupported_hybrid_invoke(info, state),
+        Invoke::Unsupported(info)
+            if info.invoke_type == crate::forge::model_answer::MODEL_GENERATE =>
+        {
+            return Some(format!(
+                "a model's generation (the <invoke type=\"{}\"> in state `{state}`, whose \
+                 answer schema the build writes from the machine's table of answer schemas)",
+                info.invoke_type
+            ));
+        }
         Invoke::MeshRpc(_) | Invoke::Unsupported(_) => return None,
     };
     // A `src` that names no document — a Mesh peer (`#<name>`) — has nothing to

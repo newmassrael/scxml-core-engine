@@ -380,7 +380,9 @@ The two C++ drivers read a scenario, set the host and judge it through one repla
 (`tests/integration/StandardHostScenarioReplay.h`); the Interpreter's runs the
 document `sce-codegen lower` makes of the machine, with the reference host registered
 on the `StateMachine` as it is on the generated engine (`SCE::StandardHost::serve`;
-docs/adr/0084, D7), and moves its scheduler's logical clock for `advance_ms`.
+docs/adr/0084, D7), and moves its scheduler's logical clock for `advance_ms`. The
+lowering refuses a model's generation by name (docs/adr/0087, section 7.1), so the
+Interpreter's driver holds `static_host_model` to that refusal instead of replaying it.
 
 Each driver runs the machine on a manual clock and the host on a scripted one, so a
 scenario is deterministic. The transports that exist are held by a test against a

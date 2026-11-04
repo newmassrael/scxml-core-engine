@@ -487,6 +487,23 @@ fn a_host_run_invoke_keeps_its_element_and_lowers_its_params() {
     );
 }
 
+/// A model's generation is the one host-run type the lowering refuses
+/// (docs/adr/0087, section 7.1): its request's `answer_schema` and the table it
+/// is resolved in are written by the build, and the lowered document would
+/// carry neither. Refused by name, naming the type and its state.
+#[test]
+fn a_model_generation_is_refused_by_name() {
+    let path = fixtures().join("static_host_model.scxml");
+    let refusal = lower_file_set(path.to_str().unwrap(), Vec::new()).expect_err("a refusal");
+    let text = format!("{refusal:?}");
+    assert!(
+        text.contains("UnsupportedFeature")
+            && text.contains("a model's generation")
+            && text.contains("sce-host-model-generate"),
+        "the refusal names the model's generation: {text}"
+    );
+}
+
 /// An inline child is a `sce-static` document of its own, lowered where it stands
 /// in its parent's text, and a string it bounds is handed through that bound: the
 /// Interpreter holds no bound, so the lowered `<param>` carries it.
