@@ -6105,13 +6105,16 @@ run never initialised or started, and the shape, which differs too between
 builds that differ in states or variables, would name only a digest. It refuses
 a state with no `features` in a machine of a product line, and one with
 `features` in a machine of none. Carrying a state across configurations is a
-migration, which a restore does not do. The Rust backend records and judges the
-configuration (`saved_state::check_features`), and
-`backends/rust/feature-conformance` holds the machine for every build to each
-build's own machine on it. The Kotlin, Go, Python, C++ and C11 runtimes do not
-read the member yet: they neither write it nor judge it, so until each takes it
-in a step of its own, a state taken in another configuration is refused there
-only where its shape differs.
+migration, which a restore does not do. Every backend that saves records and
+judges the configuration with the same refusals: Rust `saved_state::check_features`,
+Kotlin `SavedState.checkFeatures`, Go `CheckSavedFeatures`, Python
+`check_saved_features`, C++ `checkSavedFeatures` and C11
+`sce_saved_check_features`, each called before the shape is judged. The machine
+for every build is held to each build's own machine on the saved text and on the
+refusal in `backends/rust/feature-conformance` (Rust),
+`cpp_feature_conformance_*` (C++) and `c11_feature_conformance_*` (C11); Kotlin,
+Go and Python generate one variant at a time, and each runtime's own tests hold
+the member's text and its refusals.
 
 The request's `event_data` is a JSON object whose members are written in one
 order on every backend — ascending by name, whatever order the document declared

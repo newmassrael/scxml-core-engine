@@ -506,10 +506,10 @@ that backend gap to be closed, as its own change, rather than holding to a weake
   on only where the state was saved and those on only in the restoring build. The machine for every build states
   each feature under its own `#[cfg]` in one array, so each build records its own set. `tests/product_line/session.scxml`
   is now `sce-static`, and the Rust conformance crate holds the machine for every build to each build's own on the
-  saved text and on the refusal. The Kotlin, Go, Python, C++ and C11 runtimes neither write nor judge the member
-  yet; each takes it in a step of its own.
-- Still to do: Swift; `features` in the other five runtimes; the featured transition table; conditions in the
-  forge AST and the sourcemap.
+  saved text and on the refusal. The Kotlin, Go, Python, C++ and C11 runtimes then took the member with the same
+  text and refusals (2026-11-04); the C++ and C11 lanes hold their machine for every build to each build's own on
+  it as the Rust crate does.
+- Still to do: Swift; the featured transition table; conditions in the forge AST and the sourcemap.
 
 ## Questions left open
 
