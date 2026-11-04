@@ -3437,7 +3437,7 @@ memory the caller owns.
   <sce:bounded capacity="64"/>
   <!-- <sce:bounded source="deploy" key="machines.<m>.limits.<k>"/> -->
   <!-- <sce:segmented segment="64" allocator-progress="lock-free"/> -->
-  <!-- <sce:intrusive link-field="next"/> -->
+  <!-- <sce:intrusive/> -->
 
   <!-- required when the algorithm is SCQ or needs a reclamation domain -->
   <sce:participants const="4"/>
@@ -3470,8 +3470,11 @@ justified for that many enqueuers or dequeuers only (Nikolaev 2019
 
 In the no-alloc profile the whole of memory is fixed at build time,
 so an unbounded queue can mean only that the queue itself imposes no
-bound. `intrusive` is that mode: each element carries its own link
-field, the caller owns the element, and push cannot fail.
+bound. `intrusive` is that mode: the queue links nodes of a type its
+runtime defines, each holding an element as its value and the list's
+link beside it, the caller owns every node, and push cannot fail. The
+element is a value and carries no link, so `<sce:intrusive/>` takes no
+attribute (ADR 0088).
 
 **Algorithm selection.** The generator takes the first row that
 matches the storage mode and cardinality and whose guarantee is at
@@ -3628,8 +3631,8 @@ subsume the retired `worker/inbox-ordering-relaxed-across-cores`.
 
 ```
 try_push(&producer, elem: T) -> Result<(), PushError<T>>  // Full(T) | OutOfMemory(T)
-push(&producer, node: NodeRef<T>)                         // intrusive only; cannot fail
-try_pop(&consumer) -> Option<T>                           // intrusive: Option<NodeRef<T>>
+push(&producer, node: NodeRef<T>)                         // intrusive only; the runtime's node over T; cannot fail
+try_pop(&consumer) -> Option<T>                           // intrusive: Option<NodeRef<T>>, the node holding T as its value
 capacity() -> usize                                       // bounded only; a compile-time constant
 ```
 
@@ -3709,14 +3712,14 @@ pub enum Progress { WaitFree, LockFree, Blocking }
 pub enum QueueStorage {
     Bounded { capacity: CapacitySource },
     Segmented { segment: u32, allocator_progress: Progress },
-    Intrusive { link_field: String },
+    Intrusive,   // the runtime's node holds the link, not the element (ADR 0088)
 }
 ```
 
 **Diagnostics:**
 - `queue/storage-not-exactly-one` — none, or more than one, of `bounded` / `segmented` / `intrusive`
 - `queue/element-type-not-a-kind` — as `collection/element-type-not-a-kind`
-- `queue/intrusive-link-field-missing` — `link-field` is not a field of the element type
+- `queue/intrusive-link-field-removed` — `<sce:intrusive>` writes the removed `link-field`: the queue links nodes its runtime defines and the element carries no link (ADR 0088). The fix removes the attribute (`remove_fields`), and the field it named can leave the element codec
 - `queue/progress-unreachable` — no selection row meets the declared progress for this storage and cardinality; and `queue/progress-unreachable-on-backend` (generate stage) — the declared progress is above what the target backend's runtime gives any queue (Python gives `blocking`)
 - `queue/segmented-needs-alloc` — `segmented` on the no-alloc profile (a machine of `platform.class` `mcu`; generate stage, so a compile with no deploy cannot know it); and `queue/storage-runtime-missing` (generate stage) — a valid document whose storage mode the target backend's runtime does not implement yet, refused by name rather than lowered to a queue that gives less
 - `queue/allocator-progress-missing` — `<sce:segmented>` without `allocator-progress`

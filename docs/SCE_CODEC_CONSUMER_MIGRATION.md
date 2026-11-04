@@ -990,3 +990,22 @@ Landing: the commit that adds this section; every Rust tree is regenerated after
   array kept. The `_has_<chain>_<kind>` locals are declared before the chain and set in its loop.
 - `sce_forge_runtime::content_line::note_capacity` is also `sce_forge_runtime::codec::note_capacity`, one function.
 
+## An intrusive queue links nodes the runtime defines (ADR 0088)
+
+Landing: the commit that adds this section; the Rust, C++ and C11 queue trees are regenerated after it.
+
+- A queue document writes `<sce:intrusive/>`. One that still writes `<sce:intrusive link-field="…"/>` is refused with
+  `queue/intrusive-link-field-removed` (stage validation), whose fix is `remove_fields` on `sce:intrusive` with the
+  field `link-field`. `queue/intrusive-link-field-missing` and `queue/intrusive-link-field-not-u32` are retired.
+- The element is a value and carries no link: drop the `uint32` field the attribute named from the element codec,
+  unless something other than the queue reads it. An element no longer writes an index onto the wire.
+- Build the runtime's node over the element, and read the element as its `value`. Rust: an array of
+  `<Queue>Node` (`sce_forge_runtime::queue::intrusive::Node<T>`), each made by `Node::new(value)`, passed to the
+  queue's `unsafe fn new(nodes, len, stub)`; the `<Queue>Link` marker and the `Link` trait are gone, and the queue is
+  `Mpsc<T, MANY_CONSUMERS>`. C++: an array of `<Queue>Node` (`SCE::Forge::Queue::Node<T>`, made from a value or by
+  default, not copyable), and the queue is `IntrusiveMpsc<T, MANY_CONSUMERS>` over `Node<T>*`. C11: an array of
+  `<element>_node_t`, which the queue header defines once per element (`value`, then `next`), passed to
+  `<queue>_init`.
+- A node popped from one queue may be pushed to another over the same element; it is in one queue at a time. Push
+  and pop still name a node by its index in the caller's array.
+
