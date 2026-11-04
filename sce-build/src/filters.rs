@@ -2392,6 +2392,28 @@ mod kotlin_text_constants {
         assert_eq!(lines[2], "        append(\"\\$\")");
         assert_eq!(lines[3], "    }");
     }
+
+    /// The limit is the constant's and not its spelling's: a character the
+    /// literal escapes counts the one byte it stands for, so 65,535 backslashes
+    /// are one constant though the source spells them in twice as many.
+    #[test]
+    fn a_kotlin_constant_is_measured_as_the_text_and_not_its_escapes() {
+        let backslashes = "\\".repeat(65_535);
+        assert_eq!(
+            kotlin_string_val("NAME".into(), backslashes.clone(), None),
+            format!("const val NAME: String = \"{}\"", "\\\\".repeat(65_535))
+        );
+        let past = kotlin_string_val("NAME".into(), format!("{backslashes}\\"), None);
+        let lines: Vec<&str> = past.lines().collect();
+        assert_eq!(lines.len(), 4, "a head, two pieces and the close");
+        assert_eq!(lines[0], "val NAME: String = buildString {");
+        assert_eq!(
+            lines[1],
+            format!("    append(\"{}\")", "\\\\".repeat(65_535))
+        );
+        assert_eq!(lines[2], "    append(\"\\\\\")");
+        assert_eq!(lines[3], "}");
+    }
 }
 
 #[cfg(test)]
