@@ -284,6 +284,11 @@ impl<P: StatePolicy> EngineInbox<P> {
     /// # Errors
     ///
     /// [`InboxRefusal::EngineGone`], with the input, when the engine was dropped.
+    // The refusal hands the caller's input back, as `std::sync::mpsc`'s
+    // `SendError` does, so its size is the machine's event and payload types',
+    // not this crate's to box; the bounded inbox beside this one has no
+    // allocator to box it with.
+    #[allow(clippy::result_large_err)]
     pub fn post(&self, input: InboxInputOf<P>) -> Result<(), InboxRefusal<InboxInputOf<P>>> {
         self.shared
             .sender
@@ -377,6 +382,11 @@ impl<P: StatePolicy, const N: usize, W: Hal> BoundedInbox<P, N, W> {
     ///
     /// [`InboxRefusal::Full`], with the input, when the inbox holds `N` inputs;
     /// the refusal is counted ([`refused_posts`](Self::refused_posts)).
+    // The refusal hands the caller's input back, as `std::sync::mpsc`'s
+    // `TrySendError` does, so its size is the machine's event and payload
+    // types', not this crate's to box, and a bare-metal deployment has no
+    // allocator to box it with.
+    #[allow(clippy::result_large_err)]
     pub fn post(&self, input: InboxInputOf<P>) -> Result<(), InboxRefusal<InboxInputOf<P>>> {
         if let Err(input) = self.queue.enqueue(input) {
             // A count that stops at its ceiling rather than wraps to zero, which
