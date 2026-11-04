@@ -156,6 +156,42 @@ fn a_chain_of_several_memberships_is_read_into_the_arm_they_name() {
     );
 }
 
+/// A chain read again whose kinds its value still cannot hold, a profile with
+/// fewer entries than the chain has gated kinds, leaves the value at its default
+/// and the decode reads on, so a frame cut after the chain is refused for that
+/// and the capacity is said once the frame is read whole (docs/adr/0077 §7).
+#[test]
+fn a_chain_whose_kinds_its_value_cannot_hold_is_read_on_to_the_frames_end() {
+    let name = "codec_chain_has_tagged";
+    let body = eager_decode(name);
+    let flat = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert_contains(name, &flat, "if _entries_full { _over = true; break; }");
+    assert!(
+        !flat.contains("if _entries_full { return Err(CodecError::CapacityExceeded); }"),
+        "{name} answers the capacity before the frame is read whole:\n{body}"
+    );
+}
+
+/// Where an arm holds a list read after the chain, the list has no place to be
+/// read into but the arm the value cannot hold, so the decode answers the
+/// capacity at the chain rather than read on past the list unread
+/// (docs/adr/0077 §7).
+#[test]
+fn a_chain_whose_arm_holds_a_later_list_answers_the_capacity_at_the_chain() {
+    let name = "codec_chain_has_marker";
+    let body = eager_decode(name);
+    let flat = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert_contains(
+        name,
+        &flat,
+        "if _extensions_full { return Err(CodecError::CapacityExceeded); }",
+    );
+    assert!(
+        !flat.contains("if _extensions_full { _over = true; break; }"),
+        "{name} reads on past a list its arm would hold:\n{body}"
+    );
+}
+
 /// A flag-input decides the arm before any element is read, so the arm is
 /// installed first and the slices are read into it.
 #[test]

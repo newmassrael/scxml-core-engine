@@ -195,9 +195,12 @@ impl<S: CodecChainHasTaggedStorage> CodecChainHasTaggedIn<S> {
             if !_entries_first {
                 // Read again into the arm its kinds name, the chain holds them
                 // all unless it had no room for one of each: the value cannot
-                // hold the arm the frame names.
+                // hold the arm the frame names, and is left at its default
+                // while the decode reads on to the frame's end, so a frame
+                // malformed past the chain is refused for that.
                 if _entries_full {
-                    return Err(CodecError::CapacityExceeded);
+                    _over = true;
+                    break;
                 }
                 unreachable!("a chain read again holds the kinds it was first read with");
             }

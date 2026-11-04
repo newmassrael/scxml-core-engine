@@ -9457,6 +9457,33 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                     .map(|v| format!("{}\n{indent}", each(*v)))
                     .collect()
             };
+            // A chain read again that still has no room for one entry of each
+            // kind names an arm the value cannot hold, and the door leaves the
+            // group at its default. Where the group builds nothing after the
+            // chain, every field after it is read into a local by the kinds the
+            // fill noted, so the decode reads on and says the capacity once the
+            // frame is read whole (docs/adr/0077 §7). A list or body an arm
+            // holds after the chain has no place to be read into but that arm,
+            // so there the frame is answered at the chain.
+            let reads_on = built.iter().all(|f| f.id == chain.id);
+            let unheld = if reads_on {
+                format!(
+                    "// hold the arm the frame names, and is left at its default\n                \
+                     // while the decode reads on to the frame's end, so a frame\n                \
+                     // malformed past the chain is refused for that.\n                \
+                     if {full} {{\n                    \
+                         {RUST_DECODE_OVER} = true;\n                    \
+                         break;\n                \
+                     }}"
+                )
+            } else {
+                format!(
+                    "// hold the arm the frame names.\n                \
+                     if {full} {{\n                    \
+                         return Err(CodecError::CapacityExceeded);\n                \
+                     }}"
+                )
+            };
             stmts.insert(
                 chain.id.clone(),
                 format!(
@@ -9477,10 +9504,7 @@ fn rust_group_in_place(ctx: &GroupDecode<'_>) -> Option<GroupInPlace> {
                          if !{first} {{\n                \
                              // Read again into the arm its kinds name, the chain holds them\n                \
                              // all unless it had no room for one of each: the value cannot\n                \
-                             // hold the arm the frame names.\n                \
-                             if {full} {{\n                    \
-                                 return Err(CodecError::CapacityExceeded);\n                \
-                             }}\n                \
+                             {unheld}\n                \
                              unreachable!(\"a chain read again holds the kinds it was first read with\");\n            \
                          }}\n            \
                          {first} = false;\n            \
