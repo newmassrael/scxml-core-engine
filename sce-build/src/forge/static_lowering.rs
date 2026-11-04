@@ -12523,6 +12523,151 @@ impl StaticTarget for CTarget {
             )
         }
     }
+    // The header's `sce_payload_lift` refuses what comes before a field is read,
+    // and each field is read into a zeroed local record by the value reader of its
+    // type (`sce_payload_value_u8`, `sce_payload_value_text`, ...), the place of a
+    // refusal joined below the whole text as a reader composes it
+    // (`sce_payload_pointer_join`). The record replaces the variable only once every
+    // field read. A refusal's code is the machine's enum of it at the code's
+    // number, which the type's constants carry. Both outcomes are written to
+    // `stderr`, as `<log>` is on this backend; the text itself is not, since nothing
+    // bounds what a sender writes in it.
+    fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
+        // The statements that read the present value of `ty` at `value` into the
+        // place `into`, leaving the refusal in `sce_refusal`.
+        let read = |ty: &SceType, max: Option<u32>, value: &str, into: &str| -> Option<String> {
+            let reader = match ty {
+                SceType::Uint8 => "u8",
+                SceType::Uint16 => "u16",
+                SceType::Uint32 => "u32",
+                SceType::Uint64 => "u64",
+                SceType::Int8 => "i8",
+                SceType::Int16 => "i16",
+                SceType::Int32 => "i32",
+                SceType::Int64 => "i64",
+                SceType::Float32 => "f32",
+                SceType::Float64 => "f64",
+                SceType::Bool => "bool",
+                SceType::String => {
+                    return Some(format!(
+                        "sce_refusal = sce_payload_value_text({value}, {into}.data, {}u);",
+                        max?
+                    ))
+                }
+                SceType::Bytes => {
+                    return Some(format!(
+                        "sce_refusal = sce_payload_value_bytes({value}, {into}.data, {}u, &{into}.len);",
+                        max?
+                    ))
+                }
+                SceType::Enum(reference) => {
+                    let model = lift.enums.get(&reference.alias)?;
+                    let ty = self.enum_type(lift.machine, &reference.alias)?;
+                    let names: Vec<String> = model
+                        .variants
+                        .iter()
+                        .map(|v| format!("\"{}\"", filters::escape_c(v.name.clone())))
+                        .collect();
+                    let variants: Vec<String> = model
+                        .variants
+                        .iter()
+                        .map(|v| self.enum_variant(&ty, &model.name, &v.name))
+                        .collect();
+                    return Some(format!(
+                        "{{ static const char *const sce_names[] = {{ {} }}; static const {ty} sce_variants[] = \
+                         {{ {} }}; size_t sce_index = 0u; sce_refusal = sce_payload_value_variant({value}, \
+                         sce_names, {}u, &sce_index); if (sce_refusal == NULL) {{ {into} = \
+                         sce_variants[sce_index]; }} }}",
+                        names.join(", "),
+                        variants.join(", "),
+                        names.len()
+                    ));
+                }
+            };
+            Some(format!(
+                "sce_refusal = sce_payload_value_{reader}({value}, &{into});"
+            ))
+        };
+        let mut reads = String::new();
+        for field in &lift.schema.fields {
+            let into = format!("sce_lifted.{}", self.record_field(&field.id));
+            // An optional field is absent at `null`, which the zeroed record already
+            // is, and otherwise its present value read as the element's.
+            let reader = match &field.sce_type {
+                EntryType::Scalar(ty) => read(ty, field.max_size, "sce_value", &into)?,
+                EntryType::Optional { elem } => format!(
+                    "if (!sce_payload_is_null(sce_value)) {{ {into}.present = true; {} }}",
+                    read(elem, field.max_size, "sce_value", &format!("{into}.value"))?
+                ),
+            };
+            reads.push_str(&format!(
+                "if (sce_refusal == NULL) {{ const char *sce_value = NULL; sce_refusal = \
+                 sce_payload_field(&sce_fields, \"{id}\", &sce_value); if (sce_refusal == NULL) {{ {reader} }} \
+                 if (sce_refusal != NULL) {{ (void)sce_payload_pointer_join(sce_path, sizeof(sce_path), \"\", \
+                 \"{id}\");{bound} }} }} ",
+                id = filters::escape_c(field.id.clone()),
+                bound = field
+                    .max_size
+                    .map_or_else(String::new, |max| format!(" sce_bound = {max}u;")),
+            ));
+        }
+        let declared: Vec<String> = lift
+            .field_ids()
+            .iter()
+            .map(|id| format!("\"{}\"", filters::escape_c(id.to_string())))
+            .collect();
+        let defaults = lift.defaults.as_ref().map_or_else(
+            || "NULL".to_string(),
+            |json| format!("\"{}\"", filters::escape_c(json.clone())),
+        );
+        let path_bound = lift.path_bound()?;
+        let record_ty = self.record_type(lift.machine, lift.alias);
+        // The refusal, as a record of the standard refusal document.
+        let (code_alias, _) = lift.refusal_code()?;
+        let code_ty = self.enum_type(lift.machine, code_alias)?;
+        let refusal_ty = self.record_type(lift.machine, lift.refusal_alias);
+        let bound_present = optional_present(self, lift.machine, &SceType::Uint32, None);
+        let members = lift.refusal_members(
+            self,
+            &format!("({code_ty})sce_code"),
+            &self.record_string_runtime(path_bound, "sce_path"),
+            &format!(
+                "sce_payload_code_has_bound(sce_code) ? {} : {}",
+                self.optional_some(&bound_present, "sce_bound")?,
+                self.optional_none(&bound_present)?
+            ),
+        )?;
+        let lifted = if lift.location_optional {
+            self.optional_some(&record_ty, "sce_lifted")?
+        } else {
+            "sce_lifted".to_string()
+        };
+        let schema = filters::escape_c(lift.alias.to_string());
+        Some(format!(
+            "{{ static const char *const sce_declared[] = {{ {declared} }}; sce_payload_fields_t sce_fields; \
+             char sce_path[{path_cap}u]; {record_ty} sce_lifted; memset(&sce_lifted, 0, sizeof(sce_lifted)); \
+             const char *sce_refusal = sce_payload_lift({text}, {depth}u, sce_declared, {count}u, {defaults}, \
+             &sce_fields, sce_path, sizeof(sce_path)); uint32_t sce_bound = {depth}u; {reads}\
+             if (sce_refusal == NULL) {{ (void)fprintf(stderr, \"<sce:lift>: the text is a record of %s\\n\", \
+             \"{schema}\"); {write} {absent} }} else {{ const uint8_t sce_code = \
+             sce_payload_refusal_code(sce_refusal); (void)fprintf(stderr, \"<sce:lift>: the text is no record \
+             of %s: %s at '%s', bound %lu (%s)\\n\", \"{schema}\", sce_payload_code_name(sce_code), sce_path, \
+             sce_payload_code_has_bound(sce_code) ? (unsigned long)sce_bound : 0ul, sce_refusal); \
+             {refusal_ty} sce_why = {why}; {refused} }} }}",
+            declared = declared.join(", "),
+            path_cap = u64::from(path_bound) + 1,
+            text = lift.text,
+            depth = lift.depth,
+            count = declared.len(),
+            write = self.assign(lift.location, &lifted),
+            absent = self.assign(lift.refusal, &self.optional_none(&refusal_ty)?),
+            why = self.record_value(&refusal_ty, &members),
+            refused = self.assign(lift.refusal, &self.optional_some(&refusal_ty, "sce_why")?),
+        ))
+    }
+    fn lift_import(&self) -> Option<String> {
+        Some("#include <sce/event_payload.h>".to_string())
+    }
     // The value is computed into the slot the append would fill, which nothing
     // reads until the count moves past it, so a value that failed leaves the list
     // as it was; the bound is judged first, so a full list computes nothing.

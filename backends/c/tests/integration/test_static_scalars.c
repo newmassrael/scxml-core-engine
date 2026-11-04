@@ -168,6 +168,7 @@
 #include "static_invoke_sm.h"
 #include "static_invoke_string_sm.h"
 #include "static_invoke_tree_sm.h"
+#include "static_lift_sm.h"
 #include "static_list_assign_sm.h"
 #include "static_list_call_sm.h"
 #include "static_list_index_sm.h"
@@ -2767,6 +2768,133 @@ static const record_variable_t text_record_records[] = {RECORD_ROW(static_text_r
                                                         {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO(static_text_record, text_record_states, text_record_variables, NULL, no_lists, text_record_records)
 
+// static_lift: a text read into a record of lift_answer.scxml, or why it is not one
+// kept as a record of sce:std/lift/refusal.scxml (docs/adr/0087, section 2). Both are
+// records that may be absent, read only where they are present; a record's text is
+// its buffer's text, copied where it outlives the value the reader holds by value,
+// its byte string the Latin-1 text of its bytes, and an enum the name its document
+// declares.
+VARIABLE_READER(static_lift, lifts)
+VARIABLE_READER(static_lift, errors)
+
+static bool static_lift_read_record_answer(const void *sm, size_t index, const char *field, int64_t *out) {
+    const sce_optional_record_static_lift_record_answer_t held = static_lift_get_answer((const static_lift_t *)sm);
+    (void)index;
+    if (!held.present) {
+        return false;
+    }
+    if (strcmp(field, "id") == 0) {
+        *out = (int64_t)held.value.id;
+        return true;
+    }
+    if (strcmp(field, "amount") == 0) {
+        *out = held.value.amount;
+        return true;
+    }
+    if (strcmp(field, "priority") == 0) {
+        *out = (int64_t)held.value.priority;
+        return true;
+    }
+    return false;
+}
+
+static const char *static_lift_text_record_answer(const void *sm, size_t index, const char *field) {
+    static char title[sizeof(((static_lift_record_answer_t *)NULL)->title.data)];
+    static char note[sizeof(((static_lift_record_answer_t *)NULL)->note.value.data)];
+    static char tag[2 * sizeof(((static_lift_record_answer_t *)NULL)->tag.data) + 1];
+    const sce_optional_record_static_lift_record_answer_t held = static_lift_get_answer((const static_lift_t *)sm);
+    (void)index;
+    if (!held.present) {
+        return NULL;
+    }
+    if (strcmp(field, "title") == 0) {
+        memcpy(title, held.value.title.data, sizeof(title));
+        return title;
+    }
+    if (strcmp(field, "kind") == 0) {
+        return lift_kind_declared_name(held.value.kind);
+    }
+    if (strcmp(field, "note") == 0 && held.value.note.present) {
+        memcpy(note, held.value.note.value.data, sizeof(note));
+        return note;
+    }
+    if (strcmp(field, "tag") == 0) {
+        return bytes_latin1_text(tag, sizeof(tag), (sce_forge_bytes_view_t){held.value.tag.data, held.value.tag.len});
+    }
+    return NULL;
+}
+
+static bool static_lift_read_record_why(const void *sm, size_t index, const char *field, int64_t *out) {
+    const sce_optional_record_static_lift_record_lift_refusal_t held = static_lift_get_why((const static_lift_t *)sm);
+    (void)index;
+    if (!held.present) {
+        return false;
+    }
+    if (strcmp(field, "bound") == 0 && held.value.bound.present) {
+        *out = (int64_t)held.value.bound.value;
+        return true;
+    }
+    return false;
+}
+
+static const char *static_lift_text_record_why(const void *sm, size_t index, const char *field) {
+    static char path[sizeof(((static_lift_record_lift_refusal_t *)NULL)->path.data)];
+    const sce_optional_record_static_lift_record_lift_refusal_t held = static_lift_get_why((const static_lift_t *)sm);
+    (void)index;
+    if (!held.present) {
+        return NULL;
+    }
+    if (strcmp(field, "code") == 0) {
+        return refusal_code_declared_name(held.value.code);
+    }
+    if (strcmp(field, "path") == 0) {
+        memcpy(path, held.value.path.data, sizeof(path));
+        return path;
+    }
+    return NULL;
+}
+
+static const char *static_lift_text(void *sm, const char *name) {
+    if (strcmp(name, "said") == 0) {
+        return static_lift_get_said((const static_lift_t *)sm);
+    }
+    return NULL;
+}
+
+// Whether the optional value a step names is present: 1, 0, or -1 for a place that
+// holds none. A field of a record that is absent is absent with it.
+static int static_lift_presence(void *sm, const char *name, size_t index, const char *field) {
+    const static_lift_t *machine = (const static_lift_t *)sm;
+    (void)index;
+    if (strcmp(name, "answer") == 0) {
+        const sce_optional_record_static_lift_record_answer_t held = static_lift_get_answer(machine);
+        if (field == NULL) {
+            return held.present ? 1 : 0;
+        }
+        return strcmp(field, "note") == 0 ? (held.present && held.value.note.present ? 1 : 0) : -1;
+    }
+    if (strcmp(name, "why") == 0) {
+        const sce_optional_record_static_lift_record_lift_refusal_t held = static_lift_get_why(machine);
+        if (field == NULL) {
+            return held.present ? 1 : 0;
+        }
+        return strcmp(field, "bound") == 0 ? (held.present && held.value.bound.present ? 1 : 0) : -1;
+    }
+    return -1;
+}
+
+static const name_value_t lift_states[] = {
+    {"lifting", STATIC_LIFT_STATE_LIFTING},
+};
+static const variable_t lift_variables[] = {
+    {"lifts", static_lift_read_lifts},
+    {"errors", static_lift_read_errors},
+};
+static const record_variable_t lift_records[] = {
+    RECORD_ROW(static_lift, answer), RECORD_ROW(static_lift, why), {NULL, NULL, NULL, NULL}};
+STATIC_OPTIONAL_SCENARIO(static_lift, lift_states, lift_variables, static_lift_text, lift_records, NULL,
+                         static_lift_presence)
+
 // todo_peer: replayed through the readers `todo_peer_scenario.h` declares, which
 // `test_static_large.c` replays it through at the bounds of a team.
 
@@ -3103,6 +3231,7 @@ int main(void) {
     bad |= static_list_call_scenario("static_list_call", 6);
     bad |= static_state_algorithm_enum_scenario("static_state_algorithm_enum", 18);
     bad |= static_text_record_scenario("static_text_record", 12);
+    bad |= static_lift_scenario("static_lift", 37);
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);

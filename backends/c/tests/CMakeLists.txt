@@ -2547,6 +2547,15 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_text_record.scxml"
     )
+    # A `<sce:lift>` reads a text into a record of the schema the machine imports, with
+    # the enum that schema's field holds, and keeps why not as the standard refusal
+    # record (docs/adr/0087, section 2), so the staging carries the schemas of the
+    # record and of the two events beside the machine.
+    sce_generate_static_integration_c_test(static_lift
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_lift.scxml"
+        STAGE_ALSO lift_given.scxml lift_kept.scxml lift_answer.scxml enum_lift_kind.scxml
+    )
     sce_generate_static_integration_c_test(sheet_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml"
@@ -2772,6 +2781,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${_STATIC_EVENT_HEADERS}
         ${INTEGRATION_C_TEST_static_text_record_SOURCES}
         ${_STATIC_TEXT_HEADERS}
+        ${INTEGRATION_C_TEST_static_lift_SOURCES}
     )
     sce_c_link_runtime(sce_c_integration_static_scalars EXCLUDES lua dom)
     target_include_directories(sce_c_integration_static_scalars PRIVATE

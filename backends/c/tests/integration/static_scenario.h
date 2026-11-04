@@ -1001,7 +1001,8 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
             if (!sce_scenario_take(c, '}')) {
                 for (;;) {
                     char name[64];
-                    char want_text[64];
+                    // A text variable is stated whole: static_lift's holds a record's text.
+                    char want_text[128];
                     int64_t want = 0;
                     if (!sce_scenario_string(c, name, sizeof(name)) || !sce_scenario_take(c, ':')) {
                         return sce_scenario_fail(d, step, "a variable has no name");

@@ -103,6 +103,7 @@ SCE_C_UNUSED static const char sce_payload_refuse_missing[] = "is missing from t
 SCE_C_UNUSED static const char sce_payload_refuse_not_number[] = "is not a number";
 SCE_C_UNUSED static const char sce_payload_refuse_not_whole[] = "is not a whole number";
 SCE_C_UNUSED static const char sce_payload_refuse_not_digits[] = "is not a whole number written as digits";
+SCE_C_UNUSED static const char sce_payload_refuse_negative_zero[] = "is not a whole number (-0)";
 SCE_C_UNUSED static const char sce_payload_refuse_past_2_53[] =
     "is a number past 2^53 - 1, which is not exact everywhere; a 64-bit integer that large is written as a text of "
     "its digits";
@@ -127,6 +128,10 @@ SCE_C_UNUSED static const char sce_payload_refuse_past_count[] = "holds more ele
 SCE_C_UNUSED static const char sce_payload_refuse_past_bound[] = "is more bytes than its type declares";
 SCE_C_UNUSED static const char sce_payload_refuse_bad_defaults[] =
     "the schema's defaults are not a JSON object, which the generator never writes";
+/* What a `<sce:lift>` refuses before it reads a field (docs/adr/0087, section 2.1). */
+SCE_C_UNUSED static const char sce_payload_refuse_empty_text[] = "the text is empty";
+SCE_C_UNUSED static const char sce_payload_refuse_too_deep[] =
+    "the text opens a container deeper than a value of its schema holds";
 
 #define SCE_PAYLOAD_REFUSE_NO_DATA sce_payload_refuse_no_data
 #define SCE_PAYLOAD_REFUSE_NOT_OBJECT sce_payload_refuse_not_object
@@ -170,6 +175,7 @@ SCE_C_UNUSED static inline uint8_t sce_payload_refusal_code(const char *refusal)
         {sce_payload_refuse_not_number, SCE_PAYLOAD_CODE_WRONG_KIND},
         {sce_payload_refuse_not_whole, SCE_PAYLOAD_CODE_BAD_NUMBER},
         {sce_payload_refuse_not_digits, SCE_PAYLOAD_CODE_BAD_NUMBER},
+        {sce_payload_refuse_negative_zero, SCE_PAYLOAD_CODE_BAD_NUMBER},
         {sce_payload_refuse_past_2_53, SCE_PAYLOAD_CODE_BAD_NUMBER},
         {sce_payload_refuse_not_in_width, SCE_PAYLOAD_CODE_OUT_OF_RANGE},
         {sce_payload_refuse_below_zero, SCE_PAYLOAD_CODE_BAD_NUMBER},
@@ -187,6 +193,8 @@ SCE_C_UNUSED static inline uint8_t sce_payload_refusal_code(const char *refusal)
         {sce_payload_refuse_past_count, SCE_PAYLOAD_CODE_TOO_MANY},
         {sce_payload_refuse_past_bound, SCE_PAYLOAD_CODE_TOO_LONG},
         {sce_payload_refuse_bad_defaults, SCE_PAYLOAD_CODE_NOT_JSON},
+        {sce_payload_refuse_empty_text, SCE_PAYLOAD_CODE_NOT_JSON},
+        {sce_payload_refuse_too_deep, SCE_PAYLOAD_CODE_TOO_DEEP},
     };
 
     for (size_t i = 0u; i < sizeof(classes) / sizeof(classes[0]); ++i) {
@@ -294,22 +302,28 @@ SCE_C_UNUSED static inline const char *sce_payload_skip_value(const char *p) {
     return p;
 }
 
-/* Whether the JSON string starting at `p` spells exactly `name`. */
+/* The next character of a JSON string's body, as a code point, and past one JSON
+   string in the grammar; defined with the grammar's walk below. */
+SCE_C_UNUSED static inline unsigned long sce_payload_next_character(const char **p);
+SCE_C_UNUSED static inline const char *sce_payload_past_string(const char *p);
+
+/* Whether the JSON string starting at `p` spells exactly `name`, an ASCII name of
+   a schema's field. A name is the text it spells: a sender may write any character
+   of a name as an escape, and every runtime reads the name the escapes spell
+   (tests/json_text/payload_refusal.json). */
 SCE_C_UNUSED static inline bool sce_payload_string_is(const char *p, const char *name) {
+    /* Held to the grammar first, so that no escape is walked past the end of the text. */
+    if (sce_payload_past_string(p) == NULL) {
+        return false;
+    }
     p++; /* past the opening quote */
     while (*name != '\0') {
         if (*p == '\0' || *p == '"') {
             return false;
         }
-        if (*p == '\\') {
-            /* An escaped field name is legal JSON and no schema writes one, so
-               it cannot be the name being looked for. */
+        if (sce_payload_next_character(&p) != (unsigned long)(unsigned char)*name) {
             return false;
         }
-        if (*p != *name) {
-            return false;
-        }
-        p++;
         name++;
     }
     return *p == '"';
@@ -357,26 +371,38 @@ SCE_C_UNUSED static inline const char *sce_payload_find_in(const char *object, c
 /* Four hex digits at `p`, or -1 when they are not; defined with the readers below. */
 SCE_C_UNUSED static inline long sce_payload_hex4(const char *p);
 
-/* Past one JSON string at `p` in RFC 8259's grammar (section 7): closed, and every
-   escape one of the eight short ones or `\u` and four hex digits. NULL when `p`
-   spells none. Which character a `\u` escape names is the reader's question, not
-   the grammar's: half of a character is refused where a text is read. */
+/* Past one JSON string at `p` in RFC 8259's grammar (sections 7 and 8.2): closed, no
+   character below U+0020 standing unescaped, every escape one of the eight short ones
+   or `\u` and four hex digits, and a `\u` escape of the first half of a UTF-16 pair
+   followed at once by one of the second half, a second half never alone. NULL when
+   `p` spells none: a half of a character names no character, so the text is no JSON
+   text every runtime reads alike (tests/json_text/payload_refusal.json). */
 SCE_C_UNUSED static inline const char *sce_payload_past_string(const char *p) {
     if (*p != '"') {
         return NULL;
     }
     p++;
     while (*p != '"') {
-        if (*p == '\0') {
+        if ((unsigned char)*p < 0x20u) {
             return NULL;
         }
         if (*p == '\\') {
             p++;
             if (*p == 'u') {
-                if (sce_payload_hex4(p + 1) < 0) {
+                const long unit = sce_payload_hex4(p + 1);
+                if (unit < 0) {
                     return NULL;
                 }
                 p += 4;
+                if (unit >= 0xD800 && unit <= 0xDBFF) {
+                    const long low = (p[1] == '\\' && p[2] == 'u') ? sce_payload_hex4(p + 3) : -1;
+                    if (low < 0xDC00 || low > 0xDFFF) {
+                        return NULL;
+                    }
+                    p += 6;
+                } else if (unit >= 0xDC00 && unit <= 0xDFFF) {
+                    return NULL;
+                }
             } else if (*p == '\0' || strchr("\"\\/bfnrt", *p) == NULL) {
                 return NULL;
             }
@@ -754,6 +780,11 @@ SCE_C_UNUSED static inline const char *sce_payload_value_whole(const char *p, bo
        answer a guard for something nobody sent. */
     if (*end == '.' || *end == 'e' || *end == 'E') {
         return SCE_PAYLOAD_REFUSE_NOT_WHOLE;
+    }
+    /* `-0` is a JSON number and no spelling of a whole number: every runtime refuses
+       it, as it refuses `"-0"` for a 64-bit integer. */
+    if (*negative && value == 0u) {
+        return sce_payload_refuse_negative_zero;
     }
     *magnitude = (uint64_t)value;
     return NULL;
@@ -1502,6 +1533,131 @@ SCE_C_UNUSED static inline bool sce_payload_pointer_index(char *out, size_t cap,
     char segment[11];
     sce_payload_index_digits(segment, position);
     return sce_payload_pointer_join(out, cap, prefix, segment);
+}
+
+/* ── Reading a text as a record: `<sce:lift>` (docs/adr/0087, section 2.1) ── */
+
+/* The refusal of a container `text` opens deeper than `depth`, the deepest a value of
+   a lift's schema holds (docs/adr/0087, section 2.1, item 4), or NULL when it opens
+   none. The bound of the refusal is `depth`.
+
+   Decided over the brackets alone, before the text is read as JSON, so that every
+   runtime decides it alike and no reader descends past the type: a text is skipped from
+   its opening quote to the next quote no backslash escapes, each `{` and `[` outside one
+   opens a level and each `}` and `]` closes one, and the first opened past `depth` is
+   refused, whatever the text holds after it. A text that never closes ends the walk with
+   nothing refused, and the reading of the text as JSON refuses it.
+
+   `pointer`, of `cap` bytes, receives the member of the outermost object the container
+   stands under, the name of the last text closed in that object before a `:`, when that
+   name is one of the `count` names of `declared`; otherwise the whole text, "". */
+SCE_C_UNUSED static inline const char *sce_payload_lift_too_deep(const char *text, uint32_t depth,
+                                                                 const char *const *declared, size_t count,
+                                                                 char *pointer, size_t cap) {
+    uint32_t level = 0u;
+    const char *last_text = NULL;
+    const char *member = NULL;
+    if (cap > 0u) {
+        pointer[0] = '\0';
+    }
+    for (const char *p = text; *p != '\0'; ++p) {
+        if (*p == '"') {
+            const char *start = p;
+            ++p;
+            while (*p != '\0' && *p != '"') {
+                p += (*p == '\\' && p[1] != '\0') ? 2 : 1;
+            }
+            if (*p == '\0') {
+                return NULL;
+            }
+            if (level == 1u) {
+                last_text = start;
+            }
+        } else if (*p == ':' && level == 1u) {
+            member = last_text;
+            last_text = NULL;
+        } else if (*p == ',' && level == 1u) {
+            member = NULL;
+            last_text = NULL;
+        } else if (*p == '{' || *p == '[') {
+            ++level;
+            if (level > depth) {
+                if (member != NULL && sce_payload_past_string(member) != NULL) {
+                    for (size_t i = 0u; i < count; ++i) {
+                        if (sce_payload_string_is(member, declared[i])) {
+                            (void)sce_payload_pointer_join(pointer, cap, "", declared[i]);
+                            break;
+                        }
+                    }
+                }
+                return sce_payload_refuse_too_deep;
+            }
+        } else if ((*p == '}' || *p == ']') && level > 0u) {
+            --level;
+        }
+    }
+    return NULL;
+}
+
+/* Read the text a `<sce:lift>` reads as the fields of a record of a schema whose `count`
+   field ids are `declared`, and whose deepest value holds `depth` levels of containers.
+   `defaults`, for a schema a later revision of which added fields, is the JSON object of
+   their defaults, a literal the generated machine holds; NULL for none. Answers NULL when
+   `out` was filled, else a static sentence of the refusal, `pointer` (of `cap` bytes)
+   holding its place: "" but for a container past the depth under a declared member.
+
+   Three refusals come before the fields are read, in this order: a text that is NULL,
+   empty or only whitespace (`notJson`); a container opened deeper than `depth`
+   (`sce_payload_lift_too_deep`, `tooDeep`); and a text that is not one JSON object, as a
+   delivery is refused (`sce_payload_decode`). */
+SCE_C_UNUSED static inline const char *sce_payload_lift(const char *text, uint32_t depth, const char *const *declared,
+                                                        size_t count, const char *defaults, sce_payload_fields_t *out,
+                                                        char *pointer, size_t cap) {
+    out->object = NULL;
+    out->defaults = NULL;
+    if (cap > 0u) {
+        pointer[0] = '\0';
+    }
+    if (text == NULL || *sce_payload_skip_space(text) == '\0') {
+        return sce_payload_refuse_empty_text;
+    }
+    const char *refusal = sce_payload_lift_too_deep(text, depth, declared, count, pointer, cap);
+    if (refusal == NULL) {
+        refusal = sce_payload_decode(text, out);
+    }
+    if (refusal == NULL && defaults != NULL) {
+        const char *d = sce_payload_skip_space(defaults);
+        if (*d != '{') {
+            out->object = NULL;
+            return SCE_PAYLOAD_REFUSE_BAD_DEFAULTS;
+        }
+        out->defaults = d;
+    }
+    return refusal;
+}
+
+/* The variant of an enum the value at `p` names, as its index in the `count` names of
+   `names` into `*index`: a text, compared with each declared name as the characters it
+   spells, so a name of any length is compared in place and one no variant declares is
+   `unknownVariant`, as on every runtime. `null` is refused as a value of a type that is
+   not optional, any other value as not a text, and a text holding U+0000 as no text. */
+SCE_C_UNUSED static inline const char *sce_payload_value_variant(const char *p, const char *const *names, size_t count,
+                                                                 size_t *index) {
+    if (*p != '"') {
+        return sce_payload_wrong_kind(p, SCE_PAYLOAD_REFUSE_NOT_TEXT);
+    }
+    for (const char *c = p + 1; *c != '"' && *c != '\0';) {
+        if (sce_payload_next_character(&c) == 0u) {
+            return SCE_PAYLOAD_REFUSE_NUL_IN_TEXT;
+        }
+    }
+    for (size_t i = 0u; i < count; ++i) {
+        if (sce_payload_string_is(p, names[i])) {
+            *index = i;
+            return NULL;
+        }
+    }
+    return SCE_PAYLOAD_REFUSE_UNKNOWN_VARIANT;
 }
 
 /* The short form JSON gives a control character, or 0 when it has none. */

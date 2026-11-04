@@ -207,7 +207,19 @@ static int check_case(const char *object, int index) {
     refused_at_t at;
     memset(&at, 0, sizeof(at));
     sce_payload_fields_t fields;
-    const char *refusal = refuse_at(sce_payload_decode(data, &fields), "", &at);
+    const char *refusal = NULL;
+    if (member(object, "depth") != NULL) {
+        /* A case that gives a depth is read as a `<sce:lift>` of the record of the one
+           field `v` reads it (docs/adr/0087, section 2.1). */
+        static const char *const declared[] = {"v"};
+        const uint32_t depth = bound_of(object, "depth");
+        char lifted_at[POINTER_CAP];
+        refusal = refuse_at(sce_payload_lift(data, depth, declared, 1u, NULL, &fields, lifted_at, sizeof(lifted_at)),
+                            lifted_at, &at);
+        at.bound = depth;
+    } else {
+        refusal = refuse_at(sce_payload_decode(data, &fields), "", &at);
+    }
     const char *value = NULL;
     if (refusal == NULL) {
         refusal = refuse_at(sce_payload_field(&fields, "v", &value), "/v", &at);
@@ -313,6 +325,106 @@ static int check_pointers(void) {
     return failures;
 }
 
+/* A lift refuses a container past its depth over the brackets alone, before the text is
+   read as JSON, and names the declared member it stands under or the whole text
+   (docs/adr/0087, section 2.1, item 4). */
+static int check_lift_depth(void) {
+    static const char *const declared[] = {"title", "count"};
+
+    const struct {
+        const char *text;
+        uint32_t depth;
+        const char *pointer; /* NULL: no refusal */
+    } cases[] = {
+        {"{\"title\":\"a\",\"count\":1}", 1u, NULL},
+        {"{\"title\":[\"a\"]}", 1u, "/title"},
+        {"{\"extra\":{\"a\":1}}", 1u, ""},
+        {"[[1]]", 1u, ""},
+        {"{\"extra\":[[[[[[[", 1u, ""},
+        {"{\"title\":\"[[{\\\"[\",\"count\":1}", 1u, NULL},
+        {"{\"title\":{\"a\":1}}", 2u, NULL},
+        {"{\"title\":\"[[", 1u, NULL},
+        {"{\"title\":\"x\",\"extra\":[1]}", 1u, ""},
+        {"{\"count\":1,\"title\":[1]}", 1u, "/title"},
+        {"{\"title\":1,\"count\":\"x\",\"extra\":[1]}", 1u, ""},
+    };
+
+    int failures = 0;
+    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        char pointer[POINTER_CAP];
+        const char *refusal =
+            sce_payload_lift_too_deep(cases[i].text, cases[i].depth, declared, 2u, pointer, sizeof(pointer));
+        if (cases[i].pointer == NULL) {
+            if (refusal != NULL) {
+                fprintf(stderr, "FAIL: %s: refused as too deep\n", cases[i].text);
+                failures++;
+            }
+            continue;
+        }
+        if (sce_payload_refusal_code(refusal) != SCE_PAYLOAD_CODE_TOO_DEEP || strcmp(pointer, cases[i].pointer) != 0) {
+            fprintf(stderr, "FAIL: %s: refused %s at '%s', the case says tooDeep at '%s'\n", cases[i].text,
+                    sce_payload_code_name(sce_payload_refusal_code(refusal)), pointer, cases[i].pointer);
+            failures++;
+        }
+    }
+    return failures;
+}
+
+/* A lift's record reads what a delivery's would, a field it lacks out of the schema's
+   defaults, and refuses defaults that are no object and a text that is empty. */
+static int check_lift_defaults(void) {
+    static const char *const declared[] = {"v", "w"};
+    int failures = 0;
+    sce_payload_fields_t fields;
+    char pointer[POINTER_CAP];
+    uint8_t w = 0u;
+    const char *refusal =
+        sce_payload_lift("{\"v\":1}", 1u, declared, 2u, "{\"w\":7}", &fields, pointer, sizeof(pointer));
+    if (refusal != NULL || sce_payload_read_u8(&fields, "w", &w) != NULL || w != 7u) {
+        fprintf(stderr, "FAIL: a lift did not read its field out of the defaults (%s)\n",
+                refusal != NULL ? refusal : "read");
+        failures++;
+    }
+    refusal = sce_payload_lift("{\"v\":1}", 1u, declared, 2u, "[]", &fields, pointer, sizeof(pointer));
+    if (refusal != SCE_PAYLOAD_REFUSE_BAD_DEFAULTS || fields.object != NULL) {
+        fprintf(stderr, "FAIL: a lift took defaults that are no object\n");
+        failures++;
+    }
+    refusal = sce_payload_lift(NULL, 1u, declared, 2u, NULL, &fields, pointer, sizeof(pointer));
+    if (sce_payload_refusal_code(refusal) != SCE_PAYLOAD_CODE_NOT_JSON || strcmp(pointer, "") != 0) {
+        fprintf(stderr, "FAIL: a lift of no text was not refused as notJson\n");
+        failures++;
+    }
+    return failures;
+}
+
+/* An enum's name is compared as the characters it spells, at any length. */
+static int check_variants(void) {
+    static const char *const names[] = {"task", "note"};
+    int failures = 0;
+    size_t index = 99u;
+    if (sce_payload_value_variant("\"note\"", names, 2u, &index) != NULL || index != 1u) {
+        fprintf(stderr, "FAIL: the variant note was not read\n");
+        failures++;
+    }
+    if (sce_payload_value_variant("\"\\u0074ask\"", names, 2u, &index) != NULL || index != 0u) {
+        fprintf(stderr, "FAIL: a variant spelled with an escape was not read\n");
+        failures++;
+    }
+    if (sce_payload_value_variant("\"a name longer than any variant declares\"", names, 2u, &index) !=
+        SCE_PAYLOAD_REFUSE_UNKNOWN_VARIANT) {
+        fprintf(stderr, "FAIL: a long name was not refused as no variant\n");
+        failures++;
+    }
+    if (sce_payload_value_variant("null", names, 2u, &index) != SCE_PAYLOAD_REFUSE_NULL ||
+        sce_payload_value_variant("1", names, 2u, &index) != SCE_PAYLOAD_REFUSE_NOT_TEXT ||
+        sce_payload_value_variant("\"\\u0000\"", names, 2u, &index) != SCE_PAYLOAD_REFUSE_NUL_IN_TEXT) {
+        fprintf(stderr, "FAIL: a value that is no name was not refused by its kind\n");
+        failures++;
+    }
+    return failures;
+}
+
 int main(void) {
     int failures = 0;
     const int cases = walk_table(SCE_JSON_PAYLOAD_REFUSAL_TABLE, check_case, &failures);
@@ -324,6 +436,9 @@ int main(void) {
     }
     failures += check_codes();
     failures += check_pointers();
+    failures += check_lift_depth();
+    failures += check_lift_defaults();
+    failures += check_variants();
     if (failures != 0) {
         fprintf(stderr, "%d failure(s)\n", failures);
         return 1;
