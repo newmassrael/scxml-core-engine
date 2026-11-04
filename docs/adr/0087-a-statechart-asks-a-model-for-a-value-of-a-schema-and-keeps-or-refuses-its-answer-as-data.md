@@ -177,6 +177,26 @@ standard host operation, `sce-host-model-generate`, asks the host's model for a 
 build names. Dates are resolved in code from an expression the model writes. The loop around the model is a
 statechart, shipped as a reference, not an engine feature.**
 
+### 0. The boundary: the engine calls no model
+
+The engine, its generated code and its runtimes stay deterministic, as they have been: the same document and the same
+events give the same transitions and the same bytes on every lane. This ADR does not move that line, and draws it
+where `examples/ai_loop/ai_loop.scxml` already stands:
+
+- **The engine calls no model.** No runtime, generator or standard library holds a client of a model, a network call
+  to one, a key, or a dependency on one. A model is reached only through a host operation (section 4), exactly as a
+  clock or an HTTP endpoint is: the host performs the effect, the statechart receives its result as data and decides
+  from it deterministically.
+- **Every test is deterministic.** SCE's own tests, scenarios and examples run the host operation against a scripted
+  provider whose answers are written in the fixture; nothing in the repository's CI runs a model or needs a key.
+- **The primitives are general.** The grammar of a schema, `<sce:lift>`, `text-template` and `resolve_date` serve any
+  host that receives a text it must check (a form, a file, a message, a model's answer); none of them names a model.
+  `sce-host-model-generate` is the one standard operation whose subject is a generated text, and it is declared as data
+  and run by the host.
+- **SCE is described by its surfaces.** This document names language models where it states the field evidence and the
+  literature of the pattern it serves; SCE itself is a statechart compiler and runtime, and its documentation keeps
+  describing it by its surfaces, not by any one consumer's workflow.
+
 ### 1. The grammar of a schema
 
 #### 1.1 Rule
