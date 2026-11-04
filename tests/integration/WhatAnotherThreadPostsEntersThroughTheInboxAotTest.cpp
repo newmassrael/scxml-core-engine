@@ -20,7 +20,8 @@
 //   * the external queue takes events in the order they arrived: a post made
 //     while a macrostep runs is applied before an event the owner puts on that
 //     queue after it, whether a host-run invocation's `done.invoke` or the
-//     host's own `raiseExternal` (W3C test 201's shape);
+//     host's own `raiseExternal` (W3C test 201's shape), and a host's
+//     `processEvent` takes its event after what was posted before the call;
 //   * a post is taken before the run starts and refused once it is stopped;
 //   * an owner-thread operation called from another thread is refused with an
 //     error that names the inbox, and changes nothing (debug builds).
@@ -47,6 +48,7 @@
 #include <vector>
 
 #include "common/ForwardedEvent.h"
+#include "core/EventMetadata.h"
 #include "core/HostProcessor.h"
 #include "scripting/JSEngine.h"
 #include "scripting/ScriptEngineProvider.h"
@@ -382,6 +384,25 @@ TEST_F(WhatAnotherThreadPostsEntersThroughTheInbox, APostMadeBeforeTheHostsOwnRa
     ASSERT_EQ(postTaken, std::optional<bool>(true)) << "`job` never started, or the inbox refused the post";
     EXPECT_EQ(sm.getPolicy().taken(), std::optional<std::string>("ping:posted;ping:own;"))
         << "the host's own raise overtook an event posted before it";
+    EXPECT_EQ(sm.refusedInboxPosts(), 0u);
+}
+
+// A host's own call on the owner is an arrival too. `processEvent` hands its event
+// straight to the machine when nothing is held; here `ping:posted` was posted, and
+// the posting thread joined, before the host's call, so it arrived first and is
+// taken first, and the host's event joins the external queue behind it rather than
+// overtaking it.
+TEST_F(WhatAnotherThreadPostsEntersThroughTheInbox, APostMadeBeforeTheHostsProcessEventIsTakenFirst) {
+    Machine sm;
+    Host host;
+    host.serve(sm);
+    boot(sm);
+
+    ASSERT_TRUE(postFromAnotherThread(sm, ping(quoted("posted"))));
+    sm.processEvent(Event::Ping, SCE::Core::EventMetadata("ping", quoted("own")));
+
+    EXPECT_EQ(sm.getPolicy().taken(), std::optional<std::string>("ping:posted;ping:own;"))
+        << "the host's processEvent overtook an event posted before it";
     EXPECT_EQ(sm.refusedInboxPosts(), 0u);
 }
 

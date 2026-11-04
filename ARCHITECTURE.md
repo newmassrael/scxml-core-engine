@@ -1284,7 +1284,10 @@ middle of one (§scxml-C-1). Every engine holds it by the same mechanism.
    `<send>` to itself, a host-run invocation's `done.invoke`, a delayed send
    released on the owner, a child's report to its parent, the host's own raise
    on the owner thread), and its event joins behind what was posted before it;
-   an internal raise does not drain. Every engine does both. A generated
+   an internal raise does not drain. A host's event handed straight to the
+   machine (`processEvent` on the C++ engines) is an arrival as well: what is
+   held is applied first, and when anything was, the event joins the queue
+   behind it. Every engine does both. A generated
    runtime does the second at the one function its external enqueue goes
    through; applying a posted event reaches that function again and pushes it
    without draining, one drain at a time (ADR 0084, D2 as amended at step 9).

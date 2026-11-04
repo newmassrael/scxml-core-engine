@@ -59,6 +59,7 @@
 #include <algorithm>
 #include <any>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iterator>
@@ -775,6 +776,26 @@ private:
         macrostepTruncated_ = false;
         macrostepMicrostepsTaken_ = 0;
 
+        // docs/adr/0084, D2: the host's call is an arrival, and what other
+        // threads posted before it arrived first, so it is applied first, in the
+        // order the inbox took it. When that applied anything, the host's event
+        // joins the external queue behind it, through the one door every
+        // external enqueue takes, and the main event loop takes them all in
+        // order, this event's preliminary step and outcome with the rest
+        // (`processNextExternalEvent`). When it applied nothing, the event is
+        // handled here directly, as it always was.
+        const bool finalBefore = isInFinalState();
+        if (drainInbox() > 0) {
+            raiseExternal(eventWithMeta);
+            runMainEventLoop();
+            // §scxml-6.4: a parent is told at a top-level final only, and, as
+            // below, only when this call is what reached it.
+            if (!finalBefore && isInFinalState() && completionCallback_) {
+                completionCallback_();
+            }
+            return;
+        }
+
         // §scxml-D-mainEventLoop: the preliminary step is owed to the event,
         // not to the queue. This door bypasses `processNextExternalEvent`, so
         // it has to run the step itself or an `autoforward` child never sees
@@ -1185,10 +1206,12 @@ private:
      * the queue ahead of it. The drain already applying them takes them in
      * order, so a drain inside a drain applies nothing, and an applied event is
      * pushed as it is.
+     *
+     * @return How many inputs were applied: none inside a drain.
      */
-    void drainInbox() {
+    std::size_t drainInbox() {
         if (drainingInbox_) {
-            return;
+            return 0;
         }
         drainingInbox_ = true;
 
@@ -1200,7 +1223,7 @@ private:
             }
         } draining{drainingInbox_};
 
-        inbox_.state().drain([this](InboxInput &&input) { applyInboxInput(std::move(input)); });
+        return inbox_.state().drain([this](InboxInput &&input) { applyInboxInput(std::move(input)); });
     }
 
     /**

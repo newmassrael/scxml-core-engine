@@ -152,13 +152,19 @@ host is the arrangement measured above to fail.
   through, by the operation the boundary drain uses. Applying a posted event reaches that function again and pushes
   the event without draining: one drain applies at a time, and a drain asked for inside it applies nothing, since
   the outer one takes what it held in order. A bounded inbox (C11, `no_std` Rust) drains the same way, as an owner
-  operation, and the external queue's own bound and refusal do not change. The chokepoints:
+  operation, and the external queue's own bound and refusal do not change. A host's call that hands its event
+  straight to the machine rather than queue it (`processEvent` on the C++ engines) is an arrival too: it applies
+  what the inbox holds first, and when that applied anything, its event joins the external queue behind it and the
+  main event loop takes them in order (on the Interpreter, in auto mode; an interactive host steps the queue
+  itself); when it applied nothing, the event is processed directly, as before.
+  The chokepoints:
   - the Interpreter: `StateMachine::applyHeldBeforeExternalEnqueue`, which the raiser asks before an external raise
     (`EventRaiserImpl::ForeignEntry`'s `beforeExternalEnqueue`), as do a host-run invocation's `done.invoke` and an
     event handed over inside a running macrostep (step 8);
   - the generated C++ engine: `StaticExecutionEngine::raiseExternal(const EventWithMetadata &)`, just before its
     push onto the external queue, while a run is going (what is posted before a run is kept for it), with
-    `drainingInbox_` holding one drain at a time (`StaticExecutionEngine.h`);
+    `drainingInbox_` holding one drain at a time, and `processEvent` draining first as the Interpreter's does
+    (`StaticExecutionEngine.h`);
   - Rust, C11, Kotlin, Go, Python and Swift: each generated runtime applies its inbox at the one function its
     external enqueue goes through, in that runtime's engine, and every event of the owner's own reaches the queue
     only through it.
