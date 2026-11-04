@@ -26,14 +26,23 @@ ENGINE already refuses for the same guard, measured on the same document:
 
 A native lowering that answered differently from the engine would make the
 optimisation observable, which is the one thing it may not be.
+
+A refusal is a `TypedPayloadError`: the sentence the delivery's
+`error.execution` carries, and beside it what a statechart reads as data
+(docs/adr/0087, section 2.4): a `RefusalCode`, the place as a strict RFC 6901
+pointer (`/items/2/tags/0`, `~` written `~0` and `/` written `~1`, empty for the
+whole text) and the bound the value broke. A repeated name anywhere in the
+text, and a text holding U+0000, are refused, so every runtime's reader holds
+one set of texts (tests/json_text/payload_refusal.json).
 """
 
 from __future__ import annotations
 
+import enum
 import json
 import math
 import struct
-from typing import Any, Callable, Dict, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .number_text import number_text
 from .payload_reading import PayloadReading, payload_reading_of_text
@@ -179,6 +188,66 @@ class RecordOf:
 _COMPOSED = (Whole, WideOf, Text, Bytes, ListOf, RecordOf)
 
 
+class RefusalCode(enum.IntEnum):
+    """The class of a refusal: the enum ``sce:std/lift/refusal_code.scxml``
+    declares, each code at the number that document gives it
+    (docs/adr/0087, section 2.3). ``declared_name`` is the name it declares
+    the code by."""
+
+    NOT_JSON = 1
+    NOT_OBJECT = 2
+    TOO_DEEP = 3
+    MISSING = 4
+    NULL_NOT_OPTIONAL = 5
+    WRONG_KIND = 6
+    BAD_NUMBER = 7
+    OUT_OF_RANGE = 8
+    TOO_LONG = 9
+    TOO_MANY = 10
+    UNKNOWN_VARIANT = 11
+    NOT_BYTE_TEXT = 12
+    NUL_IN_TEXT = 13
+
+    @property
+    def declared_name(self) -> str:
+        """The name ``sce:std/lift/refusal_code.scxml`` declares the code by."""
+        head, *rest = self.name.lower().split("_")
+        return head + "".join(word.capitalize() for word in rest)
+
+    @classmethod
+    def named(cls, name: str) -> Optional["RefusalCode"]:
+        """The code the enum declares by ``name``, or None when it declares
+        none."""
+        for code in cls:
+            if code.declared_name == name:
+                return code
+        return None
+
+
+class TypedPayloadError(Exception):
+    """Why this event's data cannot be read as its schema's fields.
+
+    ``str()`` of it is the sentence the delivery's ``error.execution`` carries;
+    beside it are its ``code``, the place as a strict RFC 6901 ``pointer``
+    (empty for the whole text), and the ``bound`` the value broke, for a text,
+    a byte string or a list past it (``None`` for every other refusal)."""
+
+    def __init__(self, reason: str, code: RefusalCode, pointer: str,
+                 bound: Optional[int] = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.code = code
+        self.pointer = pointer
+        self.bound = bound
+
+
+def pointer_below(prefix: str, token: str) -> str:
+    """``token`` below the strict RFC 6901 pointer ``prefix`` (empty for the
+    whole text): ``/`` and the token with ``~`` written ``~0`` and ``/`` written
+    ``~1`` (RFC 6901, section 3)."""
+    return prefix + "/" + token.replace("~", "~0").replace("/", "~1")
+
+
 def _join(prefix: str, segment: str) -> str:
     """``segment`` below ``prefix``, as a JSON Pointer's reference tokens are
     joined."""
@@ -195,16 +264,30 @@ def _defaults_of(defaults: str) -> dict:
     except ValueError:
         parsed = None
     if not isinstance(parsed, dict):
+        # A text that is none is the generator's, not a sender's, and is
+        # refused as no JSON object of the whole.
         raise TypedPayloadError(
             "the schema's defaults are not a JSON object, which the generator "
-            "never writes")
+            "never writes", RefusalCode.NOT_JSON, "")
     return parsed
 
 
-def read_value(path: str, declared: Any, value: Any) -> Any:
+def _past_width(path: str, pointer: str, value: Any, low: int) -> TypedPayloadError:
+    """The refusal of a whole number outside ``low`` to its width's top:
+    below zero is no spelling of an unsigned number, and anything else outside
+    is past the width."""
+    code = (RefusalCode.BAD_NUMBER if low >= 0 and value < 0
+            else RefusalCode.OUT_OF_RANGE)
+    return TypedPayloadError(
+        f"{path!r} does not fit the width its schema declares ({value!r})",
+        code, pointer)
+
+
+def read_value(path: str, declared: Any, value: Any, pointer: str) -> Any:
     """One value of an event's data as its type declares it, at the path through
     every depth that names it (docs/adr/0086, section 4): a field's name, then
-    each index and field name below it, joined by ``/``.
+    each index and field name below it, joined by ``/``; ``pointer`` is the
+    strict RFC 6901 pointer to the same place, which a refusal carries.
 
     ``declared`` is what a field spec names a type by: a scalar (``int``,
     ``bool``, ``float``, ``Single``, ``str``, ``bytes``, an enum type), or one of
@@ -213,57 +296,63 @@ def read_value(path: str, declared: Any, value: Any) -> Any:
     before anything of it is kept, the refusal naming the path."""
     if isinstance(declared, OptionalOf):
         # Absence is the one JSON `null` (docs/adr/0055, section 4).
-        return None if value is None else read_value(path, declared.declared, value)
+        return None if value is None else read_value(path, declared.declared, value, pointer)
     if value is None:
-        raise TypedPayloadError(f"{path!r} is null, and its type is not optional")
+        raise TypedPayloadError(f"{path!r} is null, and its type is not optional",
+                                RefusalCode.NULL_NOT_OPTIONAL, pointer)
     if isinstance(declared, ListOf):
         if not isinstance(value, list):
-            raise TypedPayloadError(f"{path!r} is not a list")
+            raise TypedPayloadError(f"{path!r} is not a list",
+                                    RefusalCode.WRONG_KIND, pointer)
         if len(value) > declared.bound:
             raise TypedPayloadError(
                 f"{path!r} holds {len(value)} elements, past the {declared.bound} "
-                f"its type declares")
-        return [read_value(_join(path, str(index)), declared.declared, item)
+                f"its type declares", RefusalCode.TOO_MANY, pointer, declared.bound)
+        return [read_value(_join(path, str(index)), declared.declared, item,
+                           pointer_below(pointer, str(index)))
                 for index, item in enumerate(value)]
     if isinstance(declared, RecordOf):
         if not isinstance(value, dict):
-            raise TypedPayloadError(f"{path!r} is not a record")
+            raise TypedPayloadError(f"{path!r} is not a record",
+                                    RefusalCode.WRONG_KIND, pointer)
         members = value
         if declared.defaults is not None:
             members = {**_defaults_of(declared.defaults), **value}
         held = []
         for name, field_type in declared.fields:
             field_path = _join(path, name)
+            field_pointer = pointer_below(pointer, name)
             if name not in members:
-                raise TypedPayloadError(f"the event's data has no {field_path!r}")
-            held.append(read_value(field_path, field_type, members[name]))
+                raise TypedPayloadError(f"the event's data has no {field_path!r}",
+                                        RefusalCode.MISSING, field_pointer)
+            held.append(read_value(field_path, field_type, members[name], field_pointer))
         if declared.make is not None:
             return declared.make(*held)
         return {name: v for (name, _), v in zip(declared.fields, held)}
     if isinstance(declared, Text):
-        text = _as(path, str, value)
+        text = _as(path, str, value, pointer)
         size = _utf8_size(text)
         if size > declared.bound:
             raise TypedPayloadError(
-                f"{path!r} is {size} bytes, past the {declared.bound} its type declares")
+                f"{path!r} is {size} bytes, past the {declared.bound} its type declares",
+                RefusalCode.TOO_LONG, pointer, declared.bound)
         return text
     if isinstance(declared, Bytes):
-        held_bytes = _as(path, bytes, value)
+        held_bytes = _as(path, bytes, value, pointer)
         if len(held_bytes) > declared.bound:
             raise TypedPayloadError(
                 f"{path!r} is {len(held_bytes)} bytes, past the {declared.bound} "
-                f"its type declares")
+                f"its type declares", RefusalCode.TOO_LONG, pointer, declared.bound)
         return held_bytes
     if isinstance(declared, (Whole, WideOf)):
         if isinstance(declared, WideOf):
-            whole = as_wide(path, value, declared.low < 0)
+            whole = as_wide(path, value, declared.low < 0, pointer)
         else:
-            whole = _as(path, int, value)
+            whole = _as(path, int, value, pointer)
         if not declared.low <= whole <= declared.high:
-            raise TypedPayloadError(
-                f"{path!r} does not fit the width its schema declares ({whole!r})")
+            raise _past_width(path, pointer, whole, declared.low)
         return whole
-    return _as(path, declared, value)
+    return _as(path, declared, value, pointer)
 
 
 class BoundError(ValueError):
@@ -385,24 +474,26 @@ def _is_decimal(text: str, signed: bool) -> bool:
     return not (digits == "0" and text.startswith("-"))
 
 
-def as_wide(name: str, value: Any, signed: bool) -> int:
+def as_wide(name: str, value: Any, signed: bool, pointer: str) -> int:
     """A 64-bit field's value: the text of its digits, or a whole number exact in a
     double (`|n| <= 2^53 - 1`). A truth value is not a number here."""
-    if isinstance(value, bool):
-        raise TypedPayloadError(f"{name!r} is not a whole number ({value!r})")
     if isinstance(value, str):
         if not _is_decimal(value, signed):
             raise TypedPayloadError(
-                f"{name!r} is not a whole number written as digits ({value!r})")
+                f"{name!r} is not a whole number written as digits ({value!r})",
+                RefusalCode.BAD_NUMBER, pointer)
         return int(value)
-    if isinstance(value, int):
+    if isinstance(value, int) and not isinstance(value, bool):
         if abs(value) > _EXACT_IN_A_DOUBLE:
             raise TypedPayloadError(
                 f"{name!r} is a number past 2^53 - 1, which is not exact everywhere "
                 f"({value!r}); a 64-bit integer that large is written as a text of "
-                f"its digits")
+                f"its digits", RefusalCode.BAD_NUMBER, pointer)
         return value
-    raise TypedPayloadError(f"{name!r} is not a whole number ({value!r})")
+    # A fraction is a number in no whole spelling; a truth value, a list or a
+    # record is another kind of value.
+    code = RefusalCode.BAD_NUMBER if isinstance(value, float) else RefusalCode.WRONG_KIND
+    raise TypedPayloadError(f"{name!r} is not a whole number ({value!r})", code, pointer)
 
 
 def as_single(value: float) -> float:
@@ -414,8 +505,31 @@ def as_single(value: float) -> float:
         return math.inf if value > 0 else -math.inf
 
 
-class TypedPayloadError(Exception):
-    """Why this event's data cannot be read as its schema's fields."""
+def _object_of_distinct_names(pairs: List[Tuple[str, Any]]) -> dict:
+    """An object's members as a mapping, refusing a name that repeats.
+
+    An object whose names repeat has no single meaning: `json.loads` keeps the
+    last value, a reader that takes the first would read another, so it is
+    refused, at any depth, as every other runtime's reader refuses it
+    (docs/adr/0087, section 2.3)."""
+    members: dict = {}
+    for name, value in pairs:
+        if name in members:
+            raise ValueError(f"the field {name!r} appears twice")
+        members[name] = value
+    return members
+
+
+def _no_constant(spelling: str) -> Any:
+    """`NaN`, `Infinity` and `-Infinity` are not JSON (RFC 8259, section 6),
+    which `json.loads` takes by default."""
+    raise ValueError(f"{spelling} is not a JSON number")
+
+
+def _read_json(text: str) -> Any:
+    """One JSON text read by RFC 8259 alone, as every runtime reads it."""
+    return json.loads(text, object_pairs_hook=_object_of_distinct_names,
+                      parse_constant=_no_constant)
 
 
 def _decode(data: Any) -> dict:
@@ -436,12 +550,12 @@ def _decode(data: Any) -> dict:
     if isinstance(data, dict):
         return data
     if data is None or data == "":
-        raise TypedPayloadError("the event carries no data")
+        raise TypedPayloadError("the event carries no data", RefusalCode.NOT_JSON, "")
     if isinstance(data, (bytes, bytearray)):
         data = data.decode("utf-8", errors="replace")
     if isinstance(data, str):
         try:
-            decoded = json.loads(data)
+            decoded = _read_json(data)
         except ValueError as exc:
             rung = payload_reading_of_text(data)
             reading = (
@@ -449,18 +563,43 @@ def _decode(data: Any) -> dict:
                 if rung is PayloadReading.UNDECODABLE
                 else "is a space-normalized string, which names no fields")
             raise TypedPayloadError(
-                f"the event's data {reading} (B.2.8.1: {rung.value})") from exc
+                f"the event's data {reading} (B.2.8.1: {rung.value})",
+                RefusalCode.NOT_JSON, "") from exc
         if not isinstance(decoded, dict):
             raise TypedPayloadError(
                 "the event's data is a bare value, and this event's schema "
-                "declares named fields")
+                "declares named fields", RefusalCode.NOT_OBJECT, "")
         return decoded
     raise TypedPayloadError(
-        f"the event's data is a {type(data).__name__}, which names no fields")
+        f"the event's data is a {type(data).__name__}, which names no fields",
+        RefusalCode.NOT_OBJECT, "")
 
 
-def _as(name: str, declared: type, value: Any) -> Any:
-    """One field's value as its schema declares it, or a refusal.
+def _is_number(value: Any) -> bool:
+    """Whether a decoded value is a JSON number: a truth value is not one."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _text(name: str, value: Any, pointer: str) -> str:
+    """The text a value carries, held to no bound: a text field's value and the
+    name an enum's variant is read by.
+
+    A text holding U+0000 is refused: a runtime that holds a text NUL-terminated
+    would end it there, so no runtime holds one, and every reader refuses the
+    same texts (docs/adr/0087, section 2.3). A byte string may hold the byte
+    zero."""
+    if not isinstance(value, str):
+        raise TypedPayloadError(f"{name!r} is not a text ({value!r})",
+                                RefusalCode.WRONG_KIND, pointer)
+    if "\u0000" in value:
+        raise TypedPayloadError(f"{name!r} carries U+0000, which no text holds",
+                                RefusalCode.NUL_IN_TEXT, pointer)
+    return value
+
+
+def _as(name: str, declared: type, value: Any, pointer: str) -> Any:
+    """One field's value as its schema declares it, or a refusal naming
+    ``pointer``.
 
     ⚠ A truth value is not a number here, and a number is not a truth value.
     JSON spells both, and a schema that declared `uint32` and received `true`
@@ -469,27 +608,34 @@ def _as(name: str, declared: type, value: Any) -> Any:
     if declared is bool:
         if isinstance(value, bool):
             return value
-        raise TypedPayloadError(f"{name!r} is not a truth value ({value!r})")
+        raise TypedPayloadError(f"{name!r} is not a truth value ({value!r})",
+                                RefusalCode.WRONG_KIND, pointer)
     if declared is int:
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise TypedPayloadError(f"{name!r} is not a whole number ({value!r})")
+        if not _is_number(value) or isinstance(value, float):
+            # A fraction is a number in no whole spelling; anything else is
+            # another kind of value.
+            code = (RefusalCode.BAD_NUMBER if isinstance(value, float)
+                    else RefusalCode.WRONG_KIND)
+            raise TypedPayloadError(f"{name!r} is not a whole number ({value!r})",
+                                    code, pointer)
         return value
     if declared is Single:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise TypedPayloadError(f"{name!r} is not a number ({value!r})")
+        if not _is_number(value):
+            raise TypedPayloadError(f"{name!r} is not a number ({value!r})",
+                                    RefusalCode.WRONG_KIND, pointer)
         number = float(value)
         if abs(number) > FLOAT32_MAX:
             raise TypedPayloadError(
-                f"{name!r} does not fit the width its schema declares ({value!r})")
+                f"{name!r} does not fit the width its schema declares ({value!r})",
+                RefusalCode.OUT_OF_RANGE, pointer)
         return as_single(number)
     if declared is float:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise TypedPayloadError(f"{name!r} is not a number ({value!r})")
+        if not _is_number(value):
+            raise TypedPayloadError(f"{name!r} is not a number ({value!r})",
+                                    RefusalCode.WRONG_KIND, pointer)
         return float(value)
     if declared is str:
-        if not isinstance(value, str):
-            raise TypedPayloadError(f"{name!r} is not a text ({value!r})")
-        return value
+        return _text(name, value, pointer)
     if declared is bytes:
         # JSON has no byte string, so a text is read back as bytes rather than
         # refused. Latin-1 is the reading because it is the inject seam's
@@ -504,23 +650,24 @@ def _as(name: str, declared: type, value: Any) -> Any:
             except UnicodeEncodeError as exc:
                 raise TypedPayloadError(
                     f"{name!r} carries a character above U+00FF, which no "
-                    f"single byte spells") from exc
-        raise TypedPayloadError(f"{name!r} is not a byte string ({value!r})")
+                    f"single byte spells", RefusalCode.NOT_BYTE_TEXT, pointer) from exc
+        raise TypedPayloadError(f"{name!r} is not a byte string ({value!r})",
+                                RefusalCode.WRONG_KIND, pointer)
     if isinstance(declared, type) and hasattr(declared, "sce_name"):
         # An enum a `sce-static` machine declares: the wire carries the name its
         # document declares for the value (`sce_name`), as a saved state does,
         # and a name the enum does not declare is a payload that does not fit
         # its schema.
-        if not isinstance(value, str):
-            raise TypedPayloadError(f"{name!r} is not a text ({value!r})")
+        text = _text(name, value, pointer)
         for member in declared:
-            if member.sce_name == value:
+            if member.sce_name == text:
                 return member
         raise TypedPayloadError(
-            f"{name!r} ({value!r}) is not a variant of {declared.__name__}")
+            f"{name!r} ({text!r}) is not a variant of {declared.__name__}",
+            RefusalCode.UNKNOWN_VARIANT, pointer)
     raise TypedPayloadError(
         f"{name!r} is declared {declared!r}, and this module has no reading "
-        f"for it")
+        f"for it", RefusalCode.WRONG_KIND, pointer)
 
 
 def lift(data: Any, fields: Sequence[tuple], defaults: str | None = None) -> list:
@@ -564,8 +711,10 @@ def lift(data: Any, fields: Sequence[tuple], defaults: str | None = None) -> lis
         decoded = {**json.loads(defaults), **delivered}
     values = []
     for name, declared, *width in fields:
+        pointer = pointer_below("", name)
         if name not in decoded:
-            raise TypedPayloadError(f"the event's data has no {name!r}")
+            raise TypedPayloadError(f"the event's data has no {name!r}",
+                                    RefusalCode.MISSING, pointer)
         carried = decoded[name]
         if isinstance(declared, OptionalOf):
             # Absence is the one JSON `null` (docs/adr/0055, section 4).
@@ -574,18 +723,18 @@ def lift(data: Any, fields: Sequence[tuple], defaults: str | None = None) -> lis
                 continue
             declared = declared.declared
         if carried is None:
-            raise TypedPayloadError(f"{name!r} is null, and its type is not optional")
+            raise TypedPayloadError(f"{name!r} is null, and its type is not optional",
+                                    RefusalCode.NULL_NOT_OPTIONAL, pointer)
         if isinstance(declared, _COMPOSED):
             # A field of a composed type, or a scalar held to its bound, is read
             # by the one reader of a value at its path.
-            values.append(read_value(name, declared, carried))
+            values.append(read_value(name, declared, carried, pointer))
             continue
         if declared is Wide:
-            value = as_wide(name, carried, width[0] < 0)
+            value = as_wide(name, carried, width[0] < 0, pointer)
         else:
-            value = _as(name, declared, carried)
+            value = _as(name, declared, carried, pointer)
         if width and not width[0] <= value <= width[1]:
-            raise TypedPayloadError(
-                f"{name!r} does not fit the width its schema declares ({value!r})")
+            raise _past_width(name, pointer, value, width[0])
         values.append(value)
     return values

@@ -17,7 +17,7 @@ import struct
 from dataclasses import dataclass
 from typing import Any
 
-from .event_payload import TypedPayloadError
+from .event_payload import RefusalCode, TypedPayloadError, pointer_below
 from .host_processor import HostInvokeRequest
 from .scripting.i_script_engine import ScriptValue, ScriptValueKind
 
@@ -71,20 +71,29 @@ def request_field_wire(value: ScriptValue, name: str, field_type: RequestFieldTy
     # §scxml-6.4.1: a value the record's field cannot hold is an argument that
     # cannot be evaluated, so the invocation it belongs to starts nothing.
     kind = field_type.kind
+    pointer = pointer_below("", name)
+
+    def refuse(code: RefusalCode, what: str, bound: int | None = None) -> TypedPayloadError:
+        # The classes a reader of a completion gives the same judgement
+        # (docs/adr/0087, section 2.3).
+        return TypedPayloadError(f"{name!r} {what}", code, pointer, bound)
+
     if kind in _WHOLE_BOUNDS:
         if value.kind is ScriptValueKind.INT:
             whole = value.int_val
         elif value.kind is ScriptValueKind.DOUBLE:
             f = value.double_val
             if not math.isfinite(f) or f != math.trunc(f):
-                raise TypedPayloadError(f"{name!r} is not a whole number")
+                raise refuse(RefusalCode.BAD_NUMBER, "is not a whole number")
             whole = int(f)
         else:
-            raise TypedPayloadError(f"{name!r} is not a number")
+            raise refuse(RefusalCode.WRONG_KIND, "is not a number")
         lo, hi = _WHOLE_BOUNDS[kind]
         if not lo <= whole <= hi:
-            raise TypedPayloadError(
-                f"{name!r} does not fit the width its schema declares ({whole})")
+            # Below zero is no value of an unsigned type at any width.
+            code = (RefusalCode.BAD_NUMBER if lo == 0 and whole < 0
+                    else RefusalCode.OUT_OF_RANGE)
+            raise refuse(code, f"does not fit the width its schema declares ({whole})")
         return str(whole)
     if kind in ("float32", "float64"):
         if value.kind is ScriptValueKind.INT:
@@ -92,15 +101,15 @@ def request_field_wire(value: ScriptValue, name: str, field_type: RequestFieldTy
         elif value.kind is ScriptValueKind.DOUBLE:
             f = value.double_val
         else:
-            raise TypedPayloadError(f"{name!r} is not a number")
+            raise refuse(RefusalCode.WRONG_KIND, "is not a number")
         # JSON, which a completion's record crosses as, has no spelling for
         # these, so a request may not carry one either.
         if not math.isfinite(f):
-            raise TypedPayloadError(f"{name!r} is not a finite number")
+            raise refuse(RefusalCode.BAD_NUMBER, "is not a finite number")
         if kind == "float32":
             if abs(f) > _FLOAT32_MAX:
-                raise TypedPayloadError(
-                    f"{name!r} does not fit the width its schema declares")
+                raise refuse(RefusalCode.OUT_OF_RANGE,
+                             "does not fit the width its schema declares")
             f = _narrow_float32(f)
         # Spelled as every untyped `<param>` is (ECMAScript's `String()`), of
         # the value at its declared width.
@@ -108,23 +117,22 @@ def request_field_wire(value: ScriptValue, name: str, field_type: RequestFieldTy
     if kind == "bool":
         if value.kind is ScriptValueKind.BOOL:
             return "true" if value.bool_val else "false"
-        raise TypedPayloadError(f"{name!r} is not a truth value")
+        raise refuse(RefusalCode.WRONG_KIND, "is not a truth value")
     if kind == "string":
         if value.kind is ScriptValueKind.STRING:
             return value.string_val
-        raise TypedPayloadError(f"{name!r} is not a text")
+        raise refuse(RefusalCode.WRONG_KIND, "is not a text")
     if kind == "bytes":
         if value.kind is not ScriptValueKind.STRING:
-            raise TypedPayloadError(f"{name!r} is not a byte string")
+            raise refuse(RefusalCode.WRONG_KIND, "is not a byte string")
         text = value.string_val
         if any(ord(c) > 0xFF for c in text):
-            raise TypedPayloadError(
-                f"{name!r} carries a character above U+00FF, which no single "
-                f"byte spells")
+            raise refuse(RefusalCode.NOT_BYTE_TEXT,
+                         "carries a character above U+00FF, which no single byte spells")
         if len(text) > field_type.cap:
-            raise TypedPayloadError(
-                f"{name!r} is {len(text)} bytes, past the {field_type.cap} its "
-                f"schema declares")
+            raise refuse(RefusalCode.TOO_LONG,
+                         f"is {len(text)} bytes, past the {field_type.cap} its schema declares",
+                         field_type.cap)
         return text
     raise ValueError(f"request_field_wire: unknown field type {kind!r}")
 

@@ -292,6 +292,6 @@ PY
 
 mutation_case "a payload's enum field takes a name no variant declares" <<'PY'
 edit("backends/python/runtime/sce_runtime/event_payload.py",
-     "        raise TypedPayloadError(\n            f\"{name!r} ({value!r}) is not a variant of {declared.__name__}\")\n",
+     "        raise TypedPayloadError(\n            f\"{name!r} ({text!r}) is not a variant of {declared.__name__}\",\n            RefusalCode.UNKNOWN_VARIANT, pointer)\n",
      "        return next(iter(declared))\n")
 PY
