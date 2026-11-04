@@ -295,6 +295,14 @@ runtime's `Lawful::new`, the start a bool for each input the list binds and `()`
 where the law runs several, and the harness compares the start and the entries. Nine codecs gain 20 cases, the Zenoh
 query value among them, whose shared-memory marker hands the entry after it `after_shm`.
 
+*Landed (step 3, fourteenth part, 2026-11-04): two lists of one count.* The model reads a count that counts two lists,
+one always there and one gated on a flag of a carrier (docs/adr/0065 §6 R5), as the plan does: the flag's group holds
+the first list on both sides, so the arm where the flag holds holds both and the other the first alone. A case states
+each list by its id; the count is derived from them and refuses two of different lengths. The literal holds the pair
+as the runtime's `Aligned::new`, under the name the arm gives it, and the harness compares both lists. With this every
+gate group is spelled. One codec gains 3 cases. Three lists of one count, two that are both gated and two that are both
+always there stay refused by name, as the plan keeps them checks.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.

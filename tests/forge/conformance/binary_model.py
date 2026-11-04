@@ -52,7 +52,9 @@ What the model reads so far, and refuses by name past it:
   is stated as its codec's value, a list as an array of them, and a count or
   a body's length is derived as a byte length is, as is the flag a chain ends
   on: set on every entry but the last, so such a chain holds one or more. Two
-  lists of one count are not read yet;
+  lists of one count, one always there and one gated on a flag, are a group
+  of that flag (R5) whose arm where it holds holds both, each stated by its
+  id and of one length; other lists of one count are not read yet;
 * a field gated on one flag of a carrier (`sce:present-if="c.f"` or `"!c.f"`),
   present exactly where the gate holds, its flag derived from its presence;
 * a gate group ([`Group`], docs/adr/0065 §6 R4b, R4c): two or more elements
@@ -416,6 +418,21 @@ class Codec:
                 out.setdefault((f.gate.carrier, f.gate.flag), []).append(f)
         return out
 
+    def aligned(self, count: str) -> tuple[Field, Field] | None:
+        """The two lists `count` counts where they are aligned (docs/adr/0065
+        §6 R5): one always there and one gated on one flag of a carrier, as
+        (always there, gated). The gate decides the second whole, so the first
+        is on both sides of its group, and both are held to the one count."""
+        lists = [m for m in self.measured().get(count, []) if m.size == "list"]
+        if len(lists) != 2:
+            return None
+        always = [m for m in lists if m.gate is None]
+        gated = [m for m in lists if m.gate is not None and m.gate.one() is not None
+                 and not m.gate.one().is_input() and not m.gate.one().is_member()]
+        if len(always) != 1 or len(gated) != 1:
+            return None
+        return always[0], gated[0]
+
     def by_kind(self) -> set[str]:
         """Each element a group of a chain's kinds decides (R6): the chain's
         own gate, if it has one, stays its own."""
@@ -516,6 +533,17 @@ class Codec:
                     out.setdefault((c.gate.carrier, c.gate.flag), []).append(
                         (f, c.gate.when_clear)
                     )
+        # Two lists of one count, one always there and one the flag gates (R5):
+        # the first is on both sides, so the arm where the flag holds holds the
+        # two together, of one count, and the other the first alone.
+        for name in self.measured():
+            pair = self.aligned(name)
+            if pair is not None:
+                always, gated = pair
+                clause = gated.gate.one()
+                out.setdefault((clause.carrier, clause.flag), []).extend(
+                    [(always, True), (always, False)]
+                )
         return out
 
     def groups(self) -> list[Group]:
@@ -587,8 +615,11 @@ class Codec:
                 raise Unread(f"{self.name}: the measure {name} is not an unsigned number")
             if len({m.measure() for m in measured}) > 1:
                 raise Unread(f"{self.name}: {name} is measured by declarations of two kinds")
-            if sum(m.size == "list" for m in measured) > 1:
-                raise Unread(f"{self.name}: {name} counts two lists, which is not read yet")
+            if sum(m.size == "list" for m in measured) > 1 and self.aligned(name) is None:
+                raise Unread(
+                    f"{self.name}: {name} counts lists other than one always there and one "
+                    "gated on a flag, which is not read yet"
+                )
 
 
 def kind_fits(chain: Field, key: int) -> bool:
@@ -2030,6 +2061,18 @@ FIXTURES = {
              "both flags and Z: the body, then one extension"),
         ],
         "a body a disjunction of two flags decides, each arm setting the flags it names.",
+    ),
+    "codec_repeat_unconditional_count": Fixture(
+        [
+            ({"options": 0x01, "options.H": {"arm": 0, "links": [{"seq": 1}, {"seq": 2}],
+                                             "weights": [{"seq": 0x10}, {"seq": 0x20}]}},
+             "H set: the links and the weights, two of each, one count"),
+            ({"options": 0x00, "options.H": {"arm": 1, "links": [{"seq": 3}]}},
+             "H clear: the links alone"),
+            ({"options": 0x01, "options.H": {"arm": 0, "links": [], "weights": []}},
+             "H set and no entry: both lists empty, the count zero"),
+        ],
+        "two lists of one count (R5): the gated one held with the other, of one length.",
     ),
     "codec_chain_flag_carrier": Fixture(
         [

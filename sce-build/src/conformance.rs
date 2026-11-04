@@ -4390,8 +4390,9 @@ mod tests {
             "flags_wants_a_or_wants_b: Some(fixtures::codec_present_if_disjunction::\
              CodecPresentIfDisjunctionFlagsWantsAOrWantsB::WantsB { seq: 5 })",
             // A flag input the value says: the decode is handed it, and the
-            // value is held to saying the one the case hands.
-            "fixtures::codec_zenoh_wireexpr::CodecZenohWireexprWire::input_n(&parts) == true",
+            // value is held to saying the one the case hands, as the bool
+            // itself (a comparison with `true` is clippy's `bool_comparison`).
+            "fixtures::codec_zenoh_wireexpr::CodecZenohWireexprWire::input_n(&parts),",
             // A variant's default arm, holding the tag no arm names.
             "body: fixtures::codec_variant_dispatch::CodecVariantDispatchPartsBody::Default { \
              tag: fixtures::codec_variant_dispatch::CodecVariantDispatchUnknownTag::new(127)",

@@ -43964,6 +43964,15 @@
         {"source": {"exts": {"start": {}, "entries": [{"header": 132, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}, {"header": 67, "body": {"arm": "codec_zenoh_value_zbuf", "body": {"after_shm": {"arm": 0, "value_len": 1, "encoding": 2, "slices": [{"kind": 0, "data": [1]}]}}}}]}}, "encoded": [132, 67, 1, 2, 1, 0, 1, 1], "note": "the shared-memory marker (kind 4), then a zbuf handed after_shm"},
         {"source": {"exts": {"start": {}, "entries": [{"header": 67, "body": {"arm": "codec_zenoh_value_zbuf", "body": {"after_shm": {"arm": 1, "value": [7]}}}}]}}, "encoded": [67, 1, 7], "note": "a zbuf first: nothing before it, so its value inline"}
       ]
+    },
+    "codec_repeat_unconditional_count": {
+      "fixture": "CodecRepeatUnconditionalCount",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. two lists of one count (R5): the gated one held with the other, of one length.",
+      "sources": [
+        {"source": {"options": 1, "options.H": {"arm": 0, "links": [{"seq": 1}, {"seq": 2}], "weights": [{"seq": 16}, {"seq": 32}]}}, "encoded": [1, 2, 0, 1, 0, 2, 0, 16, 0, 32], "note": "H set: the links and the weights, two of each, one count"},
+        {"source": {"options": 0, "options.H": {"arm": 1, "links": [{"seq": 3}]}}, "encoded": [0, 1, 0, 3], "note": "H clear: the links alone"},
+        {"source": {"options": 1, "options.H": {"arm": 0, "links": [], "weights": []}}, "encoded": [1, 0], "note": "H set and no entry: both lists empty, the count zero"}
+      ]
     }
   },
   "string_lookups": {

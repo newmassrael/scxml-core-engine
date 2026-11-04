@@ -297,15 +297,6 @@ fn handed_inputs(
 
 /// Refuse what a literal does not spell yet.
 fn spelled(plan: &EncodePlan<'_>) -> Result<(), String> {
-    for group in plan.groups() {
-        let label = gates_label(group);
-        if group.aligned.is_some() {
-            return Err(format!(
-                "the group `{label}` holds two lists of one count, which is not spelled as a \
-                 literal yet"
-            ));
-        }
-    }
     if let Some(variant) = &plan.model.variant {
         // A peeked byte's tag is the arm's own first byte, which the arm's value
         // states: the literal is the one of a variant whose tag is derived.
@@ -542,24 +533,42 @@ fn group_literal(
         return Err(format!("the arm holds no `{extra}`"));
     }
     let mut members = Vec::new();
-    for id in &arm.fields {
+    let mut spell = |id: &str, bindings: &mut Vec<String>| -> Result<String, String> {
         let field = plan
             .model
             .fields
             .iter()
-            .find(|f| &f.id == id)
+            .find(|f| f.id == id)
             .ok_or_else(|| format!("the codec has no field `{id}`"))?;
         let value = object
             .get(id)
             .ok_or_else(|| format!("the arm states no `{id}`"))?;
-        let one = if holds_chain(group, field) {
+        if holds_chain(group, field) {
             let chain = ChainInArm { group, arm, field };
             chain_literal(plan, &chain, value, held, bindings)
         } else {
             literal_value(&plan.value(field), value, held, bindings)
         }
-        .map_err(|e| format!("`{id}`: {e}"))?;
-        members.push(format!("{}: {one}", filters::to_snake_case(id.clone())));
+        .map_err(|e| format!("`{id}`: {e}"))
+    };
+    for id in &arm.fields {
+        // Two lists of one count are one element of the arm (docs/adr/0065 §6
+        // R5): the first holds the second, each stated by its own id.
+        if group.is_second_in(arm, id) {
+            continue;
+        }
+        let snake = filters::to_snake_case(id.clone());
+        match group.second_of(arm, id) {
+            Some(second) => {
+                let (first_list, second_list) = (spell(id, bindings)?, spell(second, bindings)?);
+                members.push(format!(
+                    "{}: {RUNTIME_CODEC}::Aligned::new({first_list}, {second_list}).expect(\"the \
+                     case's lists are of one count\")",
+                    aligned_name(&snake, &filters::to_snake_case(second.to_string()))
+                ));
+            }
+            None => members.push(format!("{snake}: {}", spell(id, bindings)?)),
+        }
     }
     let ty = format!("{}::{}", path.module, group_type(&path.type_name, group));
     let value = if group.is_sum() {
@@ -989,22 +998,43 @@ fn group_equal(
     let mut arms = Vec::new();
     for arm in &group.arms {
         let (mut xs, mut ys, mut same) = (Vec::new(), Vec::new(), Vec::new());
-        for id in &arm.fields {
-            let field = plan
-                .model
+        let field_of = |id: &str| {
+            plan.model
                 .fields
                 .iter()
-                .find(|f| &f.id == id)
-                .ok_or_else(|| format!("the codec has no field `{id}`"))?;
+                .find(|f| f.id == id)
+                .ok_or_else(|| format!("the codec has no field `{id}`"))
+        };
+        for id in &arm.fields {
+            // The second of two lists of one count is held by the first (R5).
+            if group.is_second_in(arm, id) {
+                continue;
+            }
+            let field = field_of(id)?;
             *fresh += 1;
             let (x, y) = (format!("a{fresh}"), format!("b{fresh}"));
+            let mut member = filters::to_snake_case(id.clone());
             let one = if holds_chain(group, field) {
                 let chain = ChainInArm { group, arm, field };
                 chain_same(plan, &chain, &x, &y, held, fresh)?
+            } else if let Some(second) = group.second_of(arm, id) {
+                // Both lists, each compared as a list is.
+                member = aligned_name(&member, &filters::to_snake_case(second.to_string()));
+                let (xa, xb, ya, yb) = (
+                    format!("{x}_a"),
+                    format!("{x}_b"),
+                    format!("{y}_a"),
+                    format!("{y}_b"),
+                );
+                let first = value_same(&plan.value(field), &xa, &ya, held, fresh)?;
+                let second = value_same(&plan.value(field_of(second)?), &xb, &yb, held, fresh)?;
+                format!(
+                    "{{ let (({xa}, {xb}), ({ya}, {yb})) = ({x}.into_parts(), {y}.into_parts()); {} }}",
+                    all_of(&[first, second])
+                )
             } else {
                 value_same(&plan.value(field), &x, &y, held, fresh)?
             };
-            let member = filters::to_snake_case(id.clone());
             // A body of no element binds nothing it reads.
             if one == "true" {
                 xs.push(format!("{member}: _"));
