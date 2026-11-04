@@ -126,6 +126,14 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // a `paths:` filter over the files that ask plans now names the answers
     // it already has and cannot start on the arrival.
     "the_conformance_cmake_route_declares_what_the_generator_plans",
+    // Asks `git ls-files` for every tracked file and refuses a run of W3C
+    // registry ids a file keeps as its own list instead of asking the
+    // registry. The four copies it was written after sat in a C++ runner, a
+    // WASM pre-js, an interactive test and a Python test, which share no
+    // prefix, and the next one is written in a file that does not exist
+    // today, so a `paths:` filter over the places already cleaned names the
+    // answers and not the case.
+    "no_file_keeps_a_copy_of_the_w3c_registry",
     // Asks `git ls-files` for every tracked file and reads each one that
     // decodes, looking for a configuration RULE stated on a line that
     // cites a clause which does not state it. A SEVENTH backend writing

@@ -172,6 +172,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # generated structural methods are emitted from. The document whose tree breaks
 # that is one an author writes next, in any directory.
 #
+# `no_file_keeps_a_copy_of_the_w3c_registry` reads every tracked file and
+# refuses a list of W3C test numbers a file keeps instead of asking the
+# conformance registry. The four copies it was written after (a C++ runner, a
+# WASM pre-js, an interactive test, a Python test) shared no prefix, and the
+# next is written in a file that does not exist today.
+#
 # `ffi` is here so that SOMETHING in the Rust lanes compiles the C
 # surface. It is off by default and `clippy-check.yml` runs `--workspace
 # --all-targets` without `--all-features`, so without this no Rust lane
@@ -211,6 +217,7 @@ cargo test -p sce-build --features cli,ffi \
     --test codegen_binary_resolution \
     --test cmake_option_guard_scope \
     --test the_conformance_cmake_route_declares_what_the_generator_plans \
+    --test no_file_keeps_a_copy_of_the_w3c_registry \
     --test configuration_rules_cite_their_clause \
     --test gate_registry_contract \
     --test committed_sourcemap_drift \
