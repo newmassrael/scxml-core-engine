@@ -1,0 +1,54 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "python", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="text-template")
+# Runtime: {{ runtime_dep }}
+# Do not edit — regenerate from the source SCXML file.
+
+from typing import Final
+{% if fenced %}
+
+from sce_forge_runtime.text_template import remove_markers
+{% endif %}
+
+# The revision of the template (`sce:revision`, 1 when the document declares none).
+REVISION: Final[int] = {{ revision }}
+# The most UTF-8 bytes `render` returns: the literal text, and every hole at its longest
+# (docs/adr/0087, section 3.1, item 5).
+MAX_LEN: Final[int] = {{ max_len }}
+{% if fenced %}
+# The marker an untrusted hole's text opens with.
+FENCE_OPEN: Final[str] = "{{ fence_open }}"
+# The marker an untrusted hole's text closes with.
+FENCE_CLOSE: Final[str] = "{{ fence_close }}"
+{% endif %}
+
+
+def render({% for h in holes %}{{ h.param }}: {{ h.ty }}{% if not loop.last %}, {% endif %}{% endfor %}) -> str:
+    """Render the template `{{ template_name }}`: its text with each hole put where
+    the document puts it, the same text on every backend. Each text is at most its
+    hole's bound in UTF-8 bytes, which a statechart's `<sce:render>` holds by
+    construction; the result is then at most `MAX_LEN` UTF-8 bytes.
+{% for h in holes %}
+
+    `{{ h.param }}`: {{ h.doc }}.
+{% endfor %}
+    """
+    out: list[str] = []
+{% for p in parts %}
+{% if p.kind == "literal" %}
+    out.append("{{ p.text }}")
+{% elif p.kind == "text" or p.kind == "enum" %}
+    out.append({{ p.param }})
+{% elif p.kind == "integer" %}
+    out.append(str({{ p.param }}))
+{% elif p.kind == "fenced" %}
+    out.append(FENCE_OPEN)
+    out.append(remove_markers({{ p.param }}, FENCE_OPEN, FENCE_CLOSE))
+    out.append(FENCE_CLOSE)
+{% endif %}
+{% endfor %}
+    return "".join(out)

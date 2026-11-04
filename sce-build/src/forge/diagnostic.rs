@@ -863,6 +863,24 @@ pub enum DiagnosticCode {
     /// honoured. `actual` is the release the document names.
     #[serde(rename = "validation/native-action-release")]
     ValidationNativeActionRelease,
+    /// A text template's hole (docs/adr/0087, section 3.1): a type with no text
+    /// alike on every backend, `sce:trust` missing or misplaced, a hole declared
+    /// twice or never put, or a `<sce:put>` naming no hole.
+    #[serde(rename = "validation/text-template-hole")]
+    ValidationTextTemplateHole,
+    /// A text template's fence (docs/adr/0087, section 3.1): missing for an
+    /// untrusted hole, present without one, given twice, or a marker that is
+    /// empty, too long, not printable ASCII, inside the other or in the text.
+    #[serde(rename = "validation/text-template-fence")]
+    ValidationTextTemplateFence,
+    /// `<sce:render>` (docs/adr/0087, section 3.1): a `<sce:set>` naming no
+    /// hole, a hole given twice or not given, or a value that does not fit it.
+    #[serde(rename = "validation/render-holes")]
+    ValidationRenderHoles,
+    /// `<sce:render>`: a `location` whose bound is below its template's
+    /// `MAX_LEN`.
+    #[serde(rename = "validation/render-bound")]
+    ValidationRenderBound,
     #[serde(rename = "validation/mesh-rpc-reserved-param")]
     ValidationMeshRpcReservedParam,
     #[serde(rename = "validation/mesh-rpc-missing-target")]
@@ -3800,6 +3818,10 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationNativeActionArgument,
         ValidationNativeActionSignatureConflict,
         ValidationNativeActionRelease,
+        ValidationTextTemplateHole,
+        ValidationTextTemplateFence,
+        ValidationRenderHoles,
+        ValidationRenderBound,
         ValidationMeshRpcReservedParam,
         ValidationMeshRpcMissingTarget,
         ValidationMeshRpcDuplicateTarget,
@@ -4542,6 +4564,12 @@ impl DiagnosticCode {
             | MeshTopologyReceiverNotDeclared
             | MeshTopologyUncoveredEvents
             | MeshTopologyPatternCapabilityViolation => Some("SCE Mesh §9"),
+
+            // ── Text templates and their rendering (docs/adr/0087, section 3) ──
+            ValidationTextTemplateHole
+            | ValidationTextTemplateFence
+            | ValidationRenderHoles
+            | ValidationRenderBound => Some("ADR 0087 §3.1"),
 
             // ── Mesh-RPC invoke reserved params (SCE_MESH.md §9.5) ──
             ValidationMeshRpcReservedParam
@@ -5443,6 +5471,10 @@ impl DiagnosticCode {
             | ValidationNativeActionArgument
             | ValidationNativeActionSignatureConflict
             | ValidationNativeActionRelease
+            | ValidationTextTemplateHole
+            | ValidationTextTemplateFence
+            | ValidationRenderHoles
+            | ValidationRenderBound
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -5939,6 +5971,10 @@ impl DiagnosticCode {
                 "validation/native-action-signature-conflict"
             }
             ValidationNativeActionRelease => "validation/native-action-release",
+            ValidationTextTemplateHole => "validation/text-template-hole",
+            ValidationTextTemplateFence => "validation/text-template-fence",
+            ValidationRenderHoles => "validation/render-holes",
+            ValidationRenderBound => "validation/render-bound",
             ValidationMeshRpcReservedParam => "validation/mesh-rpc-reserved-param",
             ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
@@ -8100,6 +8136,65 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(released_by.clone()),
             fix: None,
             key_fragments: vec![name.clone(), released_by.clone(), detail.clone()],
+        },
+        // docs/adr/0087, section 3.1. The hole or the marker is what the row
+        // spells; each repair is a choice (another type, trust the hole, declare
+        // a fence), so neither `expected` nor `fix`.
+        ValidationError::TextTemplateHole {
+            template,
+            hole,
+            detail,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationTextTemplateHole,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(hole.clone()),
+            fix: None,
+            key_fragments: vec![template.clone(), hole.clone(), detail.clone()],
+        },
+        ValidationError::TextTemplateFence {
+            template,
+            marker,
+            detail,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationTextTemplateFence,
+            stage: Stage::Validation,
+            expected: None,
+            actual: (!marker.is_empty()).then(|| marker.clone()),
+            fix: None,
+            key_fragments: vec![template.clone(), marker.clone(), detail.clone()],
+        },
+        ValidationError::RenderHoles {
+            template,
+            hole,
+            detail,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationRenderHoles,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(hole.clone()),
+            fix: None,
+            key_fragments: vec![template.clone(), hole.clone(), detail.clone()],
+        },
+        // The location's bound is `actual`; raising it and shortening a hole are
+        // two repairs, so no fix.
+        ValidationError::RenderBound {
+            template,
+            location,
+            bound,
+            max_len,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationRenderBound,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(bound.to_string()),
+            fix: None,
+            key_fragments: vec![
+                template.clone(),
+                location.clone(),
+                bound.to_string(),
+                max_len.to_string(),
+            ],
         },
         ValidationError::MeshRpcReservedParam { param, detail } => DiagnosticPayload {
             code: DiagnosticCode::ValidationMeshRpcReservedParam,
@@ -13587,6 +13682,62 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:a2eeca6250cb45ae","code":"validation/native-action-release","stage":"validation","message":"<sce:action name=\"start_keepalive\" released-by=\"stop_keepalive\">: 'stop_keepalive' is not performed on the <onexit> of state 'established', whose <onentry> takes this duty: a way out of the state would not release it","actual":"stop_keepalive"}"#,
+            ),
+            (
+                // A hole of a type whose text differs by backend (docs/adr/0087,
+                // section 3.1, item 1).
+                "forge/text-template-hole",
+                ValidationError::TextTemplateHole {
+                    template: "ask_date".into(),
+                    hole: "flag".into(),
+                    detail: "is of bool, whose text is not the same on every backend: a hole is \
+                             a string[B], a fixed-width integer or a value of a closed enum"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b08d4b438ebfc2e9","code":"validation/text-template-hole","stage":"validation","spec":"ADR 0087 §3.1","message":"text-template 'ask_date', hole 'flag': is of bool, whose text is not the same on every backend: a hole is a string[B], a fixed-width integer or a value of a closed enum","actual":"flag"}"#,
+            ),
+            (
+                // An untrusted hole and no fence (docs/adr/0087, section 3.1,
+                // item 3): the rule is about the fence as a whole, so no marker
+                // is `actual`.
+                "forge/text-template-fence",
+                ValidationError::TextTemplateFence {
+                    template: "ask_date".into(),
+                    marker: String::new(),
+                    detail: "the hole 'request' is untrusted, and the template declares no \
+                             <sce:fence open close> to put its text between"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:af6cb52f48ac84fc","code":"validation/text-template-fence","stage":"validation","spec":"ADR 0087 §3.1","message":"text-template 'ask_date': the hole 'request' is untrusted, and the template declares no <sce:fence open close> to put its text between"}"#,
+            ),
+            (
+                // A hole of the template that no `<sce:set>` gives (docs/adr/0087,
+                // section 3.1, item 6).
+                "forge/render-holes",
+                ValidationError::RenderHoles {
+                    template: "AskDate".into(),
+                    hole: "weekday".into(),
+                    detail: "is not given: a <sce:render> gives each hole of its template once, \
+                             with one <sce:set>"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:938b6e798346feb8","code":"validation/render-holes","stage":"validation","spec":"ADR 0087 §3.1","message":"<sce:render template=\"AskDate\">, hole 'weekday': is not given: a <sce:render> gives each hole of its template once, with one <sce:set>","actual":"weekday"}"#,
+            ),
+            (
+                // A location below the template's MAX_LEN (docs/adr/0087, section
+                // 3.1, item 6), naming both numbers.
+                "forge/render-bound",
+                ValidationError::RenderBound {
+                    template: "AskDate".into(),
+                    location: "prompt".into(),
+                    bound: 64,
+                    max_len: 595,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2751e7a9f9ec8031","code":"validation/render-bound","stage":"validation","spec":"ADR 0087 §3.1","message":"<sce:render template=\"AskDate\" location=\"prompt\">: prompt holds at most 64 bytes, and the template renders a text of up to 595 bytes (its MAX_LEN): declare prompt with a bound of at least 595, or shorten a hole","actual":"64"}"#,
             ),
             (
                 "forge/mesh-rpc-reserved-param",
@@ -19466,6 +19617,10 @@ mod tests {
             | ValidationNativeActionArgument
             | ValidationNativeActionRelease
             | ValidationNativeActionSignatureConflict
+            | ValidationTextTemplateHole
+            | ValidationTextTemplateFence
+            | ValidationRenderHoles
+            | ValidationRenderBound
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -20450,6 +20605,8 @@ mod tests {
                 | ValidationLiftLocation | ValidationLiftText | ValidationLiftPathBound
                 | ValidationNativeActionArgument
                 | ValidationNativeActionSignatureConflict | ValidationNativeActionRelease
+                | ValidationTextTemplateHole | ValidationTextTemplateFence
+                | ValidationRenderHoles | ValidationRenderBound
                 | ValidationMeshRpcReservedParam
                 | ValidationMeshRpcMissingTarget
                 | ValidationMeshRpcDuplicateTarget
@@ -20868,9 +21025,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            497,
+            501,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 497 distinct variants to match the DiagnosticCode \
+             expected 501 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21517,6 +21674,10 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationNativeActionArgument
             | ValidationNativeActionRelease
             | ValidationNativeActionSignatureConflict
+            | ValidationTextTemplateHole
+            | ValidationTextTemplateFence
+            | ValidationRenderHoles
+            | ValidationRenderBound
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget

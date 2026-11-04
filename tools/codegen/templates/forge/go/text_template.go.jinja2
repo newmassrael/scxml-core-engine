@@ -1,0 +1,67 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "go", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="text-template")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package }}
+
+{# `strconv` is read off the text by the render door, as every Go unit's
+   standard packages are; `strings` is the builder every render writes into. #}
+import (
+{% for pkg in std_imports %}
+	"{{ pkg }}"
+{% endfor %}
+	"strings"
+{% if fenced %}
+
+	"github.com/newmassrael/sce-forge-runtime/texttemplate"
+{% endif %}
+)
+
+// Revision is the revision of the template (`sce:revision`, 1 when the document declares none).
+const Revision uint32 = {{ revision }}
+
+// MaxLen is the most UTF-8 bytes Render returns: the literal text, and every hole at
+// its longest (docs/adr/0087, section 3.1, item 5).
+const MaxLen int = {{ max_len }}
+{% if fenced %}
+
+// FenceOpen is the marker an untrusted hole's text opens with.
+const FenceOpen string = "{{ fence_open }}"
+
+// FenceClose is the marker an untrusted hole's text closes with.
+const FenceClose string = "{{ fence_close }}"
+{% endif %}
+
+// Render renders the template `{{ template_name }}`: its text with each hole put where
+// the document puts it, the same bytes on every backend. Each text is at most its
+// hole's bound, which a statechart's `<sce:render>` holds by construction; the result
+// is then at most MaxLen bytes.
+{% for h in holes %}
+//   - {{ h.param }}: {{ h.doc }}.
+{% endfor %}
+func Render({% for h in holes %}{{ h.param }} {{ h.ty }}{% if not loop.last %}, {% endif %}{% endfor %}) string {
+	var out strings.Builder
+	out.Grow(MaxLen)
+{% for p in parts %}
+{% if p.kind == "literal" %}
+	out.WriteString("{{ p.text }}")
+{% elif p.kind == "text" or p.kind == "enum" %}
+	out.WriteString({{ p.param }})
+{% elif p.kind == "integer" and p.signed %}
+	out.WriteString(strconv.FormatInt(int64({{ p.param }}), 10))
+{% elif p.kind == "integer" %}
+	out.WriteString(strconv.FormatUint(uint64({{ p.param }}), 10))
+{% elif p.kind == "fenced" %}
+	out.WriteString(FenceOpen)
+	out.WriteString(texttemplate.RemoveMarkers({{ p.param }}, FenceOpen, FenceClose))
+	out.WriteString(FenceClose)
+{% endif %}
+{% endfor %}
+	return out.String()
+}

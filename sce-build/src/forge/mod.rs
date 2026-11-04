@@ -84,6 +84,7 @@ pub mod static_lowering;
 pub mod stdlib;
 pub mod symbol_mangling;
 pub mod target_plugin;
+pub mod text_template;
 pub mod transform_dep_check;
 pub mod type_ctx;
 pub mod typed_invoke;

@@ -942,6 +942,9 @@ fn parse_forge_from_node(
         ForgeKind::BroadcastLog => {
             parse_broadcast_log(root, label).map(ForgeDocument::BroadcastLog)
         }
+        ForgeKind::TextTemplate => {
+            parse_text_template(root, label).map(ForgeDocument::TextTemplate)
+        }
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -1276,6 +1279,321 @@ pub(crate) fn parse_variant_value(text: &str) -> Option<i128> {
 /// `<sce:feature>` children, held to every rule of
 /// [`crate::feature_model::FeatureModel::new`]. A refusal is placed on the
 /// `<sce:feature>` that shows it.
+// ── Text-template kind parser ─────────────────────────────────
+
+/// Parse `<scxml sce:kind="text-template">…</scxml>` into a
+/// [`TextTemplateModel`] (docs/adr/0087, section 3.1).
+///
+/// The holes are the `<data>` of the `<datamodel>`, each typed by the type
+/// grammar an event schema's field is typed by, and held to the hole rules
+/// ([`crate::forge::text_template::hole_kind`]); the text is the one
+/// `<sce:text>`'s character data, as XML hands it (line ends normalized,
+/// entities expanded, nothing trimmed), with a `<sce:put hole>` standing where
+/// a hole's text goes. Every hole is put at least once, and the fence is
+/// present exactly when a hole is untrusted and is held to the fence rules
+/// ([`crate::forge::text_template::fence_refusal`]). Whether an enum hole's
+/// enum is a closed set needs the enum document, and is asked where the
+/// imports are read.
+fn parse_text_template(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<TextTemplateModel, Located<ForgeError>> {
+    use crate::forge::text_template::{fence_refusal, hole_kind};
+    let template = label.identifier.to_string();
+    let hole_error = |node: &roxmltree::Node, hole: &str, detail: String| {
+        located(
+            node,
+            label.diagnostic_label,
+            ValidationError::TextTemplateHole {
+                template: template.clone(),
+                hole: hole.to_string(),
+                detail,
+            },
+        )
+    };
+    let fence_error = |node: &roxmltree::Node, marker: &str, detail: String| {
+        located(
+            node,
+            label.diagnostic_label,
+            ValidationError::TextTemplateFence {
+                template: template.clone(),
+                marker: marker.to_string(),
+                detail,
+            },
+        )
+    };
+    let revision = read_revision(
+        root,
+        "text-template <scxml>",
+        "template",
+        label.diagnostic_label,
+    )?;
+
+    // The holes: read as an event schema's fields are, with `sce:trust` more.
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::TextTemplate,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
+    let mut holes: Vec<TemplateHole> = Vec::new();
+    for data in data_children(&datamodel) {
+        let (id, type_str) = field_id_and_type(&data, label.diagnostic_label)?;
+        let (ty, _, _) = read_schema_value_type(
+            &data,
+            label.diagnostic_label,
+            &format!("hole '{id}'"),
+            &type_str,
+        )?;
+        let trust = match sce_attr(&data, "trust").as_deref() {
+            None => None,
+            Some("trusted") => Some(HoleTrust::Trusted),
+            Some("untrusted") => Some(HoleTrust::Untrusted),
+            Some(other) => {
+                return Err(located(
+                    &data,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: format!("text-template hole '{id}'"),
+                        attr: "sce:trust".into(),
+                        value: other.to_string(),
+                        allowed: vec!["trusted".into(), "untrusted".into()],
+                    },
+                ));
+            }
+        };
+        let kind = hole_kind(&ty, trust).map_err(|detail| hole_error(&data, &id, detail))?;
+        // Every backend's `render` takes the hole by a parameter named for it
+        // (`forge::generator::template_hole_param`): its id is a name each of
+        // them can spell, and no two holes are one name in snake case.
+        let spellable = id.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+            && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if !spellable {
+            return Err(hole_error(
+                &data,
+                &id,
+                "is not a name every backend's render can take it by: a hole's id is a letter \
+                 and then letters, digits or `_`"
+                    .to_string(),
+            ));
+        }
+        let snake = crate::filters::to_snake_case(id.clone());
+        if let Some(other) = holes
+            .iter()
+            .find(|h| crate::filters::to_snake_case(h.id.clone()) == snake)
+        {
+            let detail = if other.id == id {
+                "is declared twice: each hole is one <data> of the <datamodel>".to_string()
+            } else {
+                format!(
+                    "is the hole '{}' again in snake case ({snake}), which a backend's render \
+                     takes both by: give the two holes names apart",
+                    other.id
+                )
+            };
+            return Err(hole_error(&data, &id, detail));
+        }
+        holes.push(TemplateHole { id, kind });
+    }
+
+    // The fence: at most one.
+    let fences: Vec<roxmltree::Node> = sce_children(root, "fence").collect();
+    if let Some(second) = fences.get(1) {
+        return Err(fence_error(
+            second,
+            "",
+            "declares a second <sce:fence>: a template's untrusted holes share one fence"
+                .to_string(),
+        ));
+    }
+    let fence = match fences.first() {
+        None => None,
+        Some(node) => {
+            let marker = |attr: &str| {
+                node.attribute(attr).map(str::to_string).ok_or_else(|| {
+                    located(
+                        node,
+                        label.diagnostic_label,
+                        ValidationError::MissingAttribute {
+                            element: "<sce:fence>".into(),
+                            attr: attr.into(),
+                        },
+                    )
+                })
+            };
+            Some((
+                node,
+                TemplateFence {
+                    open: marker("open")?,
+                    close: marker("close")?,
+                },
+            ))
+        }
+    };
+
+    // The text: one `<sce:text>`, its character data and its puts.
+    let texts: Vec<roxmltree::Node> = sce_children(root, "text").collect();
+    let text = match texts.as_slice() {
+        [] => {
+            return Err(located(
+                root,
+                label.diagnostic_label,
+                ValidationError::MissingElement {
+                    kind: ForgeKind::TextTemplate,
+                    element: "sce:text".into(),
+                },
+            ))
+        }
+        [one] => *one,
+        [_, second, ..] => {
+            return Err(located(
+                second,
+                label.diagnostic_label,
+                ValidationError::DuplicateId {
+                    kind: ForgeKind::TextTemplate,
+                    what: "element".into(),
+                    id: "sce:text".into(),
+                },
+            ))
+        }
+    };
+    let mut parts: Vec<TemplatePart> = Vec::new();
+    read_ledger::asked(&text, "put");
+    for child in text.children() {
+        if child.is_text() {
+            let data = child.text().unwrap_or_default();
+            match parts.last_mut() {
+                Some(TemplatePart::Literal(literal)) => literal.push_str(data),
+                _ if data.is_empty() => {}
+                _ => parts.push(TemplatePart::Literal(data.to_string())),
+            }
+            continue;
+        }
+        if !child.is_element() {
+            // A comment or a processing instruction is not character data.
+            continue;
+        }
+        let is_put =
+            child.tag_name().namespace() == Some(SCE_NAMESPACE) && child.tag_name().name() == "put";
+        if !is_put {
+            return Err(located(
+                &child,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:text>".into(),
+                    attr: "child element".into(),
+                    value: child.tag_name().name().to_string(),
+                    allowed: vec!["sce:put".into()],
+                },
+            ));
+        }
+        read_ledger::taken(&child);
+        let hole = child
+            .attribute("hole")
+            .ok_or_else(|| {
+                located(
+                    &child,
+                    label.diagnostic_label,
+                    ValidationError::MissingAttribute {
+                        element: "<sce:put>".into(),
+                        attr: "hole".into(),
+                    },
+                )
+            })?
+            .to_string();
+        if !holes.iter().any(|h| h.id == hole) {
+            let declared: Vec<&str> = holes.iter().map(|h| h.id.as_str()).collect();
+            return Err(hole_error(
+                &child,
+                &hole,
+                format!(
+                    "is put by a <sce:put> and declared by no <data>: the holes are {}",
+                    if declared.is_empty() {
+                        "none".to_string()
+                    } else {
+                        declared.join(", ")
+                    }
+                ),
+            ));
+        }
+        parts.push(TemplatePart::Put(hole));
+    }
+    // Every declared hole is put at least once.
+    for hole in &holes {
+        let put = parts
+            .iter()
+            .any(|p| matches!(p, TemplatePart::Put(id) if *id == hole.id));
+        if !put {
+            return Err(hole_error(
+                &text,
+                &hole.id,
+                "is declared and never put: a template puts each of its holes at least once"
+                    .to_string(),
+            ));
+        }
+    }
+
+    // The fence, against the holes and the text.
+    let untrusted = holes.iter().find(|h| {
+        matches!(
+            h.kind,
+            HoleKind::Text {
+                trust: HoleTrust::Untrusted,
+                ..
+            }
+        )
+    });
+    let literals: Vec<&str> = parts
+        .iter()
+        .filter_map(|p| match p {
+            TemplatePart::Literal(text) => Some(text.as_str()),
+            TemplatePart::Put(_) => None,
+        })
+        .collect();
+    let fence = match (fence, untrusted) {
+        (None, None) => None,
+        (None, Some(hole)) => {
+            return Err(fence_error(
+                root,
+                "",
+                format!(
+                    "the hole '{}' is untrusted, and the template declares no <sce:fence open \
+                     close> to put its text between",
+                    hole.id
+                ),
+            ));
+        }
+        (Some((node, _)), None) => {
+            return Err(fence_error(
+                node,
+                "",
+                "declares a <sce:fence> and no untrusted hole: a fence marks where an untrusted \
+                 text begins and ends, so a template whose holes are all trusted declares none"
+                    .to_string(),
+            ));
+        }
+        (Some((node, fence)), Some(_)) => {
+            if let Some((marker, detail)) = fence_refusal(&fence, &literals) {
+                return Err(fence_error(node, &marker, detail));
+            }
+            Some(fence)
+        }
+    };
+
+    Ok(TextTemplateModel {
+        name: template.clone(),
+        revision,
+        holes,
+        fence,
+        parts,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
+    })
+}
+
 fn parse_feature_model(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,

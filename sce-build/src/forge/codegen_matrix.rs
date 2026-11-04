@@ -115,7 +115,10 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // backends (Python at `blocking` only). A backend whose runtime row or template has not
         // landed yet is `broadcast-log/runtime-missing`, not a missing
         // template ([`awaits_runtime`]).
-        | ForgeKind::BroadcastLog => KindClass::Generic,
+        | ForgeKind::BroadcastLog
+        // docs/adr/0087, section 7.1: a text template is a pure function of
+        // its holes, generated on every backend.
+        | ForgeKind::TextTemplate => KindClass::Generic,
         // RFC §synth-5-C / §synth-5-J-4: Link is the first MCU-class kind.
         // Authoring it on cpp/kotlin/go/python raises
         // `codegen/mcu-class-kind-on-non-mcu-language`. The (rust, *)
@@ -318,6 +321,17 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // [`BROADCAST_LOG_BACKENDS`], the one list both this answer and
         // [`awaits_runtime`] read.
         ForgeKind::BroadcastLog => lists(BROADCAST_LOG_BACKENDS, lang),
+        // docs/adr/0087, section 3.1, item 7: a unit with `REVISION`, `MAX_LEN`
+        // and `render` on every backend (`forge/<language>/text_template.*`).
+        ForgeKind::TextTemplate => match lang {
+            Language::Rust
+            | Language::Cpp
+            | Language::Go
+            | Language::Kotlin
+            | Language::Python
+            | Language::C11
+            | Language::Swift => true,
+        },
     }
 }
 

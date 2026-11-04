@@ -95,6 +95,8 @@ pub fn pictures(
         // A broadcast log has no picture of its own yet, as a queue has none:
         // the pseudocode page and the field table carry it.
         ForgeDocument::BroadcastLog(_) => Ok(Vec::new()),
+        // A text template is a text with holes; the pseudocode page carries it.
+        ForgeDocument::TextTemplate(_) => Ok(Vec::new()),
     }
 }
 

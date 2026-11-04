@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0087, section 3: the smallest text template that holds both
+     kinds of text hole, so its fence is part of the exported envelope. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="text-template" name="text_template_ast_export_min">
+  <datamodel>
+    <data id="name" sce:type="string[16]" sce:trust="trusted"/>
+    <data id="said" sce:type="string[64]" sce:trust="untrusted"/>
+  </datamodel>
+  <sce:fence open="&lt;&lt;" close="&gt;&gt;"/>
+  <sce:text>To <sce:put hole="name"/>: <sce:put hole="said"/></sce:text>
+</scxml>

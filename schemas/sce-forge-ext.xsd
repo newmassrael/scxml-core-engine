@@ -90,6 +90,10 @@
            its oldest entry. The document states the contract (element type,
            producers, progress, retention) and names no algorithm. -->
       <xs:enumeration value="broadcast-log"/>
+      <!-- docs/adr/0087, section 3 — a text with typed holes, rendered by
+           one pure function on every backend; an untrusted hole is put
+           between the document's fence markers. -->
+      <xs:enumeration value="text-template"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -380,6 +384,19 @@
        for it rather than in libxml2's. -->
   <xs:attribute name="revision" type="xs:string"/>
   <xs:attribute name="since" type="xs:string"/>
+  <!-- docs/adr/0087, section 3.1: on a text hole of a `sce:kind="text-template"`
+       document, whether its value is the program's own (`trusted`) or came
+       from outside it (`untrusted`, put between the fence markers). Which
+       holes must and must not carry it is the parser's rule, answered as
+       `validation/text-template-hole`. -->
+  <xs:attribute name="trust">
+    <xs:simpleType>
+      <xs:restriction base="xs:string">
+        <xs:enumeration value="trusted"/>
+        <xs:enumeration value="untrusted"/>
+      </xs:restriction>
+    </xs:simpleType>
+  </xs:attribute>
   <!-- A field widened across revisions (docs/adr/0055, section 6).
        `sce:optional-since` on an `optional<T>` `<data>` field of a
        `sce:kind="event-schema"` names the revision that widened the field
@@ -1658,6 +1675,56 @@
     <xs:complexType>
       <xs:attribute name="target" type="xs:string" use="required"/>
       <xs:attribute name="expr" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
+    Render a text template a `sce-static` statechart imports into a string
+    variable (docs/adr/0087, section 3.1, item 6). `template` is the alias of
+    the `<sce:import kind="text-template">`; `location` a `string[N]`
+    variable with `N` at least the template's MAX_LEN, replaced whole. One
+    `<sce:set name expr>` per hole of the template, each once.
+  -->
+  <xs:element name="render">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="sce:set" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="template" type="xs:string" use="required"/>
+      <xs:attribute name="location" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
+    The two markers a `sce:kind="text-template"` document puts an untrusted
+    hole's text between (docs/adr/0087, section 3.1, item 3): printable
+    ASCII, 1 to 32 bytes each, neither inside the other nor in the template's
+    text — the parser's rules, answered as `validation/text-template-fence`.
+  -->
+  <xs:element name="fence">
+    <xs:complexType>
+      <xs:attribute name="open" type="xs:string" use="required"/>
+      <xs:attribute name="close" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
+    The text of a `sce:kind="text-template"` document (docs/adr/0087,
+    section 3.1, item 2): its character data, nothing trimmed, with a
+    `<sce:put hole>` standing where a hole's text goes.
+  -->
+  <xs:element name="text">
+    <xs:complexType mixed="true">
+      <xs:sequence>
+        <xs:element ref="sce:put" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Where the text of the hole `hole` goes in a template's `<sce:text>`. -->
+  <xs:element name="put">
+    <xs:complexType>
+      <xs:attribute name="hole" type="xs:NCName" use="required"/>
     </xs:complexType>
   </xs:element>
 

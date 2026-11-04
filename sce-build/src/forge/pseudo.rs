@@ -333,9 +333,10 @@ use crate::forge::model::{
     LinkClass, LinkModel, LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy,
     PresentIfPredicate, PresentIfScope, ProcedureHelper, ProcedureModel, ProcedureState,
     ProcedureTransition, QueueCardinality, QueueModel, QueueProgress, QueueStorage, SceType,
-    TestVector, TestVectorValue, TimerModel, TlvTerminateStrategy, TransformModel, ValidatorModel,
-    WorkerModel,
+    TestVector, TestVectorValue, TextTemplateModel, TimerModel, TlvTerminateStrategy,
+    TransformModel, ValidatorModel, WorkerModel,
 };
+use crate::forge::model::{HoleKind, TemplatePart};
 use crate::forge::page::{Indent, Node, Part, Shape, Word, EN};
 use crate::model::BlockRole;
 
@@ -563,6 +564,7 @@ pub fn render_nodes(
         ForgeDocument::Queue(m) => Ok(render_queue(m)),
         ForgeDocument::BroadcastLog(m) => Ok(render_broadcast_log(m)),
         ForgeDocument::FeatureModel(m) => Ok(render_feature_model(m)),
+        ForgeDocument::TextTemplate(m) => Ok(render_text_template(m)),
         ForgeDocument::Worker(m) => Ok(render_worker(m)),
         ForgeDocument::BufferPool(m) => Ok(render_buffer_pool(m)),
         ForgeDocument::Link(m) => Ok(render_link(m)),
@@ -2033,6 +2035,47 @@ fn render_feature_model(m: &FeaturesModel) -> Vec<Node> {
                 let _ = write!(line, " requires {}", required.join(" "));
             }
             out.line(&line);
+        }
+    });
+    out.nodes
+}
+
+// ── Text template ──────────────────────────────────────────────
+
+/// A text template (docs/adr/0087, section 3): its head, one line per hole
+/// with its type and trust, the fence's two markers on lines of their own,
+/// and the text as one line per literal part and per put. Each line carries
+/// one free-text value, at its end, so a marker or a literal holding a space
+/// keeps it.
+fn render_text_template(m: &TextTemplateModel) -> Vec<Node> {
+    let mut out = Out::new();
+    out.line(&format!(
+        "text-template {} revision {}",
+        text(&m.name),
+        m.revision()
+    ));
+    out.nested(|out| {
+        for hole in &m.holes {
+            let line = match &hole.kind {
+                HoleKind::Text { max, trust } => {
+                    format!("hole {} string{max} {}", text(&hole.id), trust.as_attr())
+                }
+                HoleKind::Integer(ty) => format!("hole {} {}", text(&hole.id), ty.as_attr()),
+                HoleKind::Enum(reference) => {
+                    format!("hole {} enum:{}", text(&hole.id), text(&reference.alias))
+                }
+            };
+            out.line(&line);
+        }
+        if let Some(fence) = &m.fence {
+            out.line(&format!("fence open {}", text(&fence.open)));
+            out.line(&format!("fence close {}", text(&fence.close)));
+        }
+        for part in &m.parts {
+            match part {
+                TemplatePart::Literal(literal) => out.line(&format!("text {}", text(literal))),
+                TemplatePart::Put(hole) => out.line(&format!("put {}", text(hole))),
+            }
         }
     });
     out.nodes

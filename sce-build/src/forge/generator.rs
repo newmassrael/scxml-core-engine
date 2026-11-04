@@ -1809,6 +1809,9 @@ fn load_forge_templates(
     language: crate::generator::Language,
     options: &crate::ForgeCompileOptions,
 ) -> Result<(), crate::forge::error::GenerateError> {
+    // A forge template writes a document's text through its language's literal
+    // door as a statechart's does (a text template's literal parts).
+    filters::register_literal_door(env, language);
     if !options.embedded_templates {
         return generator::load_templates(env, directory, language);
     }
@@ -1972,6 +1975,11 @@ pub fn generate_cpp_with_imports_and_externs(
         // atomics, `sce/forge/broadcast_log_narrow.h`) and reads the numbers the
         // document-set compile resolved into `options.broadcast_log_resolutions`.
         ForgeDocument::BroadcastLog(m) => render_broadcast_log_cpp(&env, m, imports, options)?,
+        // docs/adr/0087, section 3.1, item 7: a unit with `REVISION`, `MAX_LEN`
+        // and a `render` of the holes, on every backend through one renderer.
+        ForgeDocument::TextTemplate(m) => {
+            render_text_template(&env, m, imports, crate::generator::Language::Cpp)?
+        }
         // A declaration writes no file (`KindClass::Declaration`).
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -3616,6 +3624,225 @@ fn c_text_initializer(text: &str) -> String {
         .map(|line| format!("    {}", line.join(", ")))
         .collect();
     format!("{{\n{}\n}}", lines.join(",\n"))
+}
+
+/// The most bytes a literal piece of a template's text is written in, at a
+/// character boundary: a C string literal is promised 4095 characters (ISO C11
+/// 5.2.4.1), a Kotlin one 65,535 bytes of modified UTF-8, and a piece this short
+/// is under every such limit wherever a literal part is long.
+const TEMPLATE_LITERAL_PIECE: usize = 512;
+
+/// `text` cut into pieces of at most [`TEMPLATE_LITERAL_PIECE`] bytes, each at a
+/// character boundary, which put one after another write `text`.
+fn template_literal_pieces(text: &str) -> Vec<&str> {
+    let mut pieces = Vec::new();
+    let mut rest = text;
+    while rest.len() > TEMPLATE_LITERAL_PIECE {
+        let mut cut = TEMPLATE_LITERAL_PIECE;
+        while !rest.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        let (piece, tail) = rest.split_at(cut);
+        pieces.push(piece);
+        rest = tail;
+    }
+    if !rest.is_empty() {
+        pieces.push(rest);
+    }
+    pieces
+}
+
+/// The name the generated `render` of a text template takes the hole `id` by in
+/// `lang`: `hole_<snake>` where a parameter is snake case, `hole<Pascal>` where
+/// it is camel case, so no hole's id is a keyword of any backend. The parser
+/// refuses two holes whose snake forms are one ([`crate::forge::text_template`]).
+pub(crate) fn template_hole_param(id: &str, lang: crate::generator::Language) -> String {
+    use crate::generator::Language;
+    match lang {
+        Language::Rust | Language::Python | Language::Cpp | Language::C11 => {
+            format!("hole_{}", filters::to_snake_case(id.to_string()))
+        }
+        Language::Go | Language::Kotlin | Language::Swift => {
+            format!("hole{}", filters::to_pascal_case(id.to_string()))
+        }
+    }
+}
+
+/// A text-template unit (docs/adr/0087, section 3.1, item 7): `REVISION`,
+/// `MAX_LEN`, the fence's markers where a hole is untrusted, and a `render` that
+/// takes each hole in declaration order — a text and an enum's declared name as
+/// the language's text, an integer as its own width — and puts the literal parts
+/// and the holes in order. Rust, Go, Kotlin, Python, C++ and Swift return the
+/// text; C11 writes into the caller's buffer and answers it, or `NULL` when it
+/// does not fit (`sce/forge/text_template.h`). An enum hole's enum is read from
+/// the template's imports, and one that is not a closed set is refused, since a
+/// value no variant names has no name to put.
+fn render_text_template(
+    env: &minijinja::Environment,
+    m: &TextTemplateModel,
+    imports: &[ImportContext],
+    lang: crate::generator::Language,
+) -> Result<String, ForgeError> {
+    use crate::forge::error::ValidationError;
+    use crate::generator::Language;
+    let l = LangCtx::new(lang, imports);
+    let scope = import_type_scope(imports);
+    for hole in &m.holes {
+        let HoleKind::Enum(reference) = &hole.kind else {
+            continue;
+        };
+        let detail = match scope.enums.get(&reference.alias) {
+            None => Some(format!(
+                "holds a value of enum:{}, and the template imports no enum document under that \
+                 alias",
+                reference.alias
+            )),
+            Some(enumeration) if !enumeration.strict => Some(format!(
+                "holds a value of enum:{}, which declares sce:strict-variants=\"false\": a hole \
+                 holds a closed enum, whose every value has a declared name to put",
+                reference.alias
+            )),
+            Some(_) => None,
+        };
+        if let Some(detail) = detail {
+            return Err(ValidationError::TextTemplateHole {
+                template: m.name.clone(),
+                hole: hole.id.clone(),
+                detail,
+            }
+            .into());
+        }
+    }
+    let longest_name = |alias: &str| {
+        scope.enums.get(alias).map(|e| {
+            crate::forge::text_template::longest(e.variants.iter().map(|v| v.name.as_str()))
+        })
+    };
+    let max_len = crate::forge::text_template::max_len(m, &longest_name).ok_or_else(|| {
+        ForgeError::from(GenerateError::unsupported(format!(
+            "text-template '{}': the longest text it renders has no size the build can compute",
+            m.name
+        )))
+    })?;
+    // The language's text, as a parameter takes it, and an integer's own type.
+    let text_type = match lang {
+        Language::Rust => "&str",
+        Language::Cpp => "std::string_view",
+        Language::C11 => "const char *",
+        Language::Go => "string",
+        Language::Kotlin | Language::Swift => "String",
+        Language::Python => "str",
+    };
+    let integer_type = |ty: &SceType| -> String {
+        match lang {
+            Language::Rust => rust_type(ty).to_string(),
+            Language::Cpp => cpp_type(ty).to_string(),
+            Language::C11 => c_type(ty).to_string(),
+            Language::Go => go_type(ty).to_string(),
+            Language::Kotlin => kotlin_type(ty).to_string(),
+            Language::Swift => swift_type(ty).to_string(),
+            Language::Python => "int".to_string(),
+        }
+    };
+    let signed = |ty: &SceType| {
+        matches!(
+            ty,
+            SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64
+        )
+    };
+    let holes: Vec<serde_json::Value> = m
+        .holes
+        .iter()
+        .map(|hole| {
+            let param = template_hole_param(&hole.id, lang);
+            let (kind, ty, doc) = match &hole.kind {
+                HoleKind::Text { max, trust } => (
+                    "text",
+                    text_type.to_string(),
+                    format!(
+                        "the hole `{}`, a text of at most {} UTF-8 bytes, {}",
+                        hole.id,
+                        max.max,
+                        match trust {
+                            HoleTrust::Trusted => "put as it is (trusted)",
+                            HoleTrust::Untrusted =>
+                                "put between the fence's markers, every marker removed from it \
+                                 (untrusted)",
+                        }
+                    ),
+                ),
+                HoleKind::Integer(ty) => (
+                    "integer",
+                    integer_type(ty),
+                    format!(
+                        "the hole `{}`, a {}, put as its decimal digits",
+                        hole.id,
+                        ty.as_attr()
+                    ),
+                ),
+                HoleKind::Enum(reference) => (
+                    "enum",
+                    text_type.to_string(),
+                    format!(
+                        "the hole `{}`: the declared name of a variant of enum:{}, put as it is",
+                        hole.id, reference.alias
+                    ),
+                ),
+            };
+            serde_json::json!({ "param": param, "kind": kind, "ty": ty, "doc": doc })
+        })
+        .collect();
+    let mut parts: Vec<serde_json::Value> = Vec::new();
+    for part in &m.parts {
+        match part {
+            TemplatePart::Literal(text) => {
+                for piece in template_literal_pieces(text) {
+                    parts.push(serde_json::json!({ "kind": "literal", "text": piece }));
+                }
+            }
+            TemplatePart::Put(id) => {
+                let hole = m.hole(id).ok_or_else(|| {
+                    ForgeError::from(GenerateError::unsupported(format!(
+                        "text-template '{}': <sce:put hole=\"{id}\"> names no hole",
+                        m.name
+                    )))
+                })?;
+                let (kind, is_signed) = match &hole.kind {
+                    HoleKind::Text {
+                        trust: HoleTrust::Trusted,
+                        ..
+                    } => ("text", false),
+                    HoleKind::Text {
+                        trust: HoleTrust::Untrusted,
+                        ..
+                    } => ("fenced", false),
+                    HoleKind::Integer(ty) => ("integer", signed(ty)),
+                    HoleKind::Enum(_) => ("enum", false),
+                };
+                parts.push(serde_json::json!({
+                    "kind": kind,
+                    "param": template_hole_param(id, lang),
+                    "signed": is_signed,
+                }));
+            }
+        }
+    }
+    let mut ctx = l.base_context(&m.name);
+    ctx.insert("template_name".into(), m.name.clone().into());
+    ctx.insert(
+        "snake".into(),
+        filters::to_snake_case(m.name.clone()).into(),
+    );
+    ctx.insert("revision".into(), m.revision().into());
+    ctx.insert("max_len".into(), max_len.into());
+    ctx.insert("fenced".into(), m.fence.is_some().into());
+    if let Some(fence) = &m.fence {
+        ctx.insert("fence_open".into(), fence.open.clone().into());
+        ctx.insert("fence_close".into(), fence.close.clone().into());
+    }
+    ctx.insert("holes".into(), serde_json::Value::Array(holes));
+    ctx.insert("parts".into(), serde_json::Value::Array(parts));
+    l.render(env, "text_template", ctx)
 }
 
 fn render_event_schema(
@@ -23319,6 +23546,10 @@ pub fn generate_kotlin_with_imports(
         // it by [`render_broadcast_log_kotlin`], which reads the numbers the
         // document-set compile resolved.
         ForgeDocument::BroadcastLog(m) => render_broadcast_log_kotlin(&env, m, imports, options)?,
+        // Text template: see cpp dispatch.
+        ForgeDocument::TextTemplate(m) => {
+            render_text_template(&env, m, imports, crate::generator::Language::Kotlin)?
+        }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -23535,6 +23766,10 @@ pub fn generate_rust_with_imports_and_externs(
         // `options.broadcast_log_resolutions`, populated by the document-set
         // compile ([`compile_scxml_with_imports`]).
         ForgeDocument::BroadcastLog(m) => render_broadcast_log_rust(&env, m, imports, options)?,
+        // Text template: see cpp dispatch.
+        ForgeDocument::TextTemplate(m) => {
+            render_text_template(&env, m, imports, crate::generator::Language::Rust)?
+        }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -27835,6 +28070,10 @@ pub fn generate_go_with_imports(
         // `options.broadcast_log_resolutions`, populated by the document-set
         // compile ([`compile_scxml_with_imports`]).
         ForgeDocument::BroadcastLog(m) => render_broadcast_log_go(&env, m, imports, options)?,
+        // Text template: see cpp dispatch.
+        ForgeDocument::TextTemplate(m) => {
+            render_text_template(&env, m, imports, crate::generator::Language::Go)?
+        }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -28077,6 +28316,10 @@ pub fn generate_python_with_imports(
         // document is lowered over it by [`render_broadcast_log_python`], which
         // reads the numbers the document-set compile resolved.
         ForgeDocument::BroadcastLog(m) => render_broadcast_log_python(&env, m, imports, options)?,
+        // Text template: see cpp dispatch.
+        ForgeDocument::TextTemplate(m) => {
+            render_text_template(&env, m, imports, crate::generator::Language::Python)?
+        }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -28284,6 +28527,9 @@ pub fn generate_swift_with_imports(
             .and_then(|resolutions| resolutions.get(&m.name))
             .and_then(|resolution| resolution.element_swift_unlowered.as_ref())
             .map(|why| format!("bounded-collection '{}': {why}", m.name)),
+        // A template's holes are texts, integers and enum names, each a `String`
+        // or an integer of the standard library (docs/adr/0087, section 3.1).
+        ForgeDocument::TextTemplate(_) => None,
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -28324,6 +28570,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Procedure(m) => render_procedure_swift(&env, m, imports)?,
         ForgeDocument::BroadcastLog(m) => render_broadcast_log_swift(&env, m, imports, options)?,
         ForgeDocument::BoundedCollection(m) => render_bounded_collection_swift(&env, m, options)?,
+        ForgeDocument::TextTemplate(m) => render_text_template(&env, m, imports, Language::Swift)?,
         _ => unreachable!("every other kind returned above"),
     };
     Ok(GeneratedOutput {
@@ -29167,6 +29414,10 @@ pub fn generate_c11_with_imports_and_externs(
         // (`sce/forge/broadcast_log.h`), so the document is lowered over it, from
         // the resolution the document-set compile made (see the Rust dispatch).
         ForgeDocument::BroadcastLog(m) => render_broadcast_log_c(&env, m, imports, options)?,
+        // Text template: see cpp dispatch.
+        ForgeDocument::TextTemplate(m) => {
+            render_text_template(&env, m, imports, crate::generator::Language::C11)?
+        }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -38602,7 +38853,10 @@ impl StatelessFunction {
             | ForgeDocument::FeatureModel(_)
             // ADR 0062: stateful, as a queue is — reached through its producer
             // handle and its readers' cursors.
-            | ForgeDocument::BroadcastLog(_) => None,
+            | ForgeDocument::BroadcastLog(_)
+            // A template is rendered by `<sce:render>`, which names its holes;
+            // it is no function an expression calls (docs/adr/0087, section 3.2).
+            | ForgeDocument::TextTemplate(_) => None,
         }
     }
 

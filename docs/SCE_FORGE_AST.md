@@ -210,6 +210,7 @@ The closed enum, in declaration order:
 | `bounded-collection` | `BoundedCollectionModel` | Build-time capacity container with runtime occupancy. |
 | `queue` | `QueueModel` | First-in first-out hand-over between execution contexts; the document states the contract and the generator selects the algorithm. |
 | `feature-model` | `FeaturesModel` | The features of a product line and what each requires (ADR 0057); a declaration that emits nothing. |
+| `text-template` | `TextTemplateModel` | A text with typed holes and, for an untrusted hole, a fence (docs/adr/0087, section 3); rendered by one pure function on every backend. |
 
 The kinds cover SCE's full IR surface: the forge kinds plus
 the W3C SCXML statechart arm. `imports` and `externs` are always

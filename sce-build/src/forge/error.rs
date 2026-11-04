@@ -1212,6 +1212,66 @@ pub enum ValidationError {
         bound: u32,
     },
 
+    /// docs/adr/0087, section 3.1: a hole of a text template that breaks a
+    /// rule of holes — a type whose text is not the same on every backend,
+    /// `sce:trust` missing on a text hole or written on another, a hole
+    /// declared twice or never put — or a `<sce:put>` naming no hole. `template`
+    /// is the document's name, `hole` the id the rule is broken at (the
+    /// record's `actual`), and `detail` says what it is and what it must be.
+    ///
+    /// Wire code: `validation/text-template-hole`.
+    #[error("text-template '{template}', hole '{hole}': {detail}")]
+    TextTemplateHole {
+        template: String,
+        hole: String,
+        detail: String,
+    },
+
+    /// docs/adr/0087, section 3.1: a text template's fence that breaks a rule
+    /// of fences — an untrusted hole with no fence, a fence with no untrusted
+    /// hole, a second fence, or a marker that is empty, longer than 32 bytes,
+    /// not printable ASCII, inside the other, or in the template's own text.
+    /// `marker` is the marker the rule is broken at, empty where the rule
+    /// is about the fence as a whole.
+    ///
+    /// Wire code: `validation/text-template-fence`.
+    #[error("text-template '{template}': {detail}")]
+    TextTemplateFence {
+        template: String,
+        marker: String,
+        detail: String,
+    },
+
+    /// docs/adr/0087, section 3.1, item 6: a `<sce:render>` whose `<sce:set>`
+    /// children do not give each hole of its template once, or give one a
+    /// value that does not fit it. `hole` is the name the rule is broken at
+    /// (the record's `actual`).
+    ///
+    /// Wire code: `validation/render-holes`.
+    #[error("<sce:render template=\"{template}\">, hole '{hole}': {detail}")]
+    RenderHoles {
+        template: String,
+        hole: String,
+        detail: String,
+    },
+
+    /// docs/adr/0087, section 3.1, item 6: a `<sce:render>` whose `location`
+    /// holds fewer bytes than the longest text its template renders, so a
+    /// rendering could not be held whole.
+    ///
+    /// Wire code: `validation/render-bound`.
+    #[error(
+        "<sce:render template=\"{template}\" location=\"{location}\">: {location} holds at most \
+         {bound} bytes, and the template renders a text of up to {max_len} bytes (its MAX_LEN): \
+         declare {location} with a bound of at least {max_len}, or shorten a hole"
+    )]
+    RenderBound {
+        template: String,
+        location: String,
+        bound: u32,
+        max_len: u64,
+    },
+
     /// §scxml-G-7 — a `<sce:action>` `<sce:arg>` cannot be lowered to
     /// a typed native value: it is not a bare `_event.data.<field>`
     /// reference, the triggering event imports no EventSchema, or the

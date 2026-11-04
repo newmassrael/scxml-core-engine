@@ -122,6 +122,11 @@
       "prose": "An interrupt handler records each sensor sample. A logger and a safety monitor each read every sample, at their own pace. The latest 1023 samples are kept, and when the buffer is full the oldest sample is overwritten. A reader that falls behind must be told how many samples it missed and continue from the oldest one still kept. Neither reader may ever hold the interrupt handler up."
     },
     {
+      "id": "reply-notice",
+      "kind": "text-template",
+      "prose": "When a reply arrives, the device shows a notice: the sender's name, the reply's number and the words the sender wrote. The words come from another person and must be marked where they begin and end, so that nothing in them reads as part of the notice. The notice is never longer than its display line allows, and it is the same text on every device."
+    },
+    {
       "id": "client-only-build",
       "kind": "feature-model",
       "prose": "The session code is built in two shapes. A client build opens sessions and never accepts one; a server build also accepts incoming sessions. Accepting is only possible in a build that has sessions at all. The build options must name both capabilities so that a client build leaves the accepting code out entirely."

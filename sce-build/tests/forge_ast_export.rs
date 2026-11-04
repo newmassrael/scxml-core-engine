@@ -355,6 +355,9 @@ const FIXTURE_PER_KIND: &[(&str, &str)] = &[
     // ADR 0062: a broadcast log. One producer, wait-free, a constant
     // retention: the shape that needs no deploy file.
     ("broadcast-log", "broadcast_log_ast_export_min.scxml"),
+    // docs/adr/0087, section 3: a text template with a trusted and an
+    // untrusted hole and its fence.
+    ("text-template", "text_template_ast_export_min.scxml"),
 ];
 
 #[test]

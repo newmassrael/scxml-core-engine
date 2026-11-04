@@ -207,6 +207,9 @@ pub fn requirement_nodes(doc: &ForgeDocument) -> ReviewScope {
         ForgeDocument::BroadcastLog(_) => ReviewScope::NoAnnotationSite {
             kind: "broadcast-log",
         },
+        ForgeDocument::TextTemplate(_) => ReviewScope::NoAnnotationSite {
+            kind: "text-template",
+        },
     }
 }
 

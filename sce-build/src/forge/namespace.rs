@@ -221,6 +221,9 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
         | ForgeDocument::BroadcastLog(_)
         | ForgeDocument::Enum(_)
         | ForgeDocument::FeatureModel(_)
+        // A template's holes are named by `<sce:put>` and `<sce:set>`, never by
+        // an expression, and their uniqueness is the template parser's.
+        | ForgeDocument::TextTemplate(_)
         | ForgeDocument::Statechart(_) => {}
     }
     out

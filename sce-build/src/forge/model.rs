@@ -195,6 +195,15 @@ pub enum ForgeKind {
     /// backend; no backend lowers it yet, so generation refuses it by name
     /// (`broadcast-log/runtime-missing`).
     BroadcastLog,
+    /// A text with typed holes, rendered by one pure function on every
+    /// backend — docs/adr/0087, section 3. A hole is a bounded text, a
+    /// fixed-width integer or a value of a closed enum; a text hole says
+    /// whether it is trusted, and an untrusted one is put between the
+    /// document's two fence markers with every marker removed from its value.
+    /// The build knows the longest text it renders (`MAX_LEN`), and a
+    /// `sce-static` statechart renders it into a variable that holds it with
+    /// `<sce:render>`.
+    TextTemplate,
 }
 
 impl ForgeKind {
@@ -224,6 +233,7 @@ impl ForgeKind {
         "queue",
         "feature-model",
         "broadcast-log",
+        "text-template",
     ];
 
     /// This kind's `sce:kind` attribute value — the inverse of
@@ -260,6 +270,7 @@ impl ForgeKind {
             Self::Queue => "queue",
             Self::FeatureModel => "feature-model",
             Self::BroadcastLog => "broadcast-log",
+            Self::TextTemplate => "text-template",
         }
     }
 
@@ -287,6 +298,7 @@ impl ForgeKind {
             "queue" => Some(Self::Queue),
             "feature-model" => Some(Self::FeatureModel),
             "broadcast-log" => Some(Self::BroadcastLog),
+            "text-template" => Some(Self::TextTemplate),
             _ => None,
         }
     }
@@ -364,6 +376,9 @@ impl ForgeKind {
             // readers' cursors, owned by whoever constructs it, so it has
             // instance state.
             Self::BroadcastLog => true,
+            // docs/adr/0087, section 3.1: a template is a pure function of its
+            // holes, rendered anew on each call.
+            Self::TextTemplate => false,
         }
     }
 
@@ -435,6 +450,11 @@ impl ForgeKind {
             // ADR 0062: the algorithm lives once per language in that
             // language's forge runtime, as the queue's does.
             Self::BroadcastLog => RuntimeDep::ForgeRuntime,
+            // docs/adr/0087, section 3.1: the removal of the fence markers from
+            // an untrusted hole's value lives once per language in that
+            // language's forge runtime; a template with no untrusted hole calls
+            // nothing of it.
+            Self::TextTemplate => RuntimeDep::ForgeRuntime,
         }
     }
 
@@ -463,6 +483,7 @@ impl ForgeKind {
                 | Self::Queue
                 | Self::FeatureModel
                 | Self::BroadcastLog
+                | Self::TextTemplate
         )
     }
 }
@@ -491,6 +512,7 @@ impl std::fmt::Display for ForgeKind {
             Self::Queue => write!(f, "queue"),
             Self::FeatureModel => write!(f, "feature-model"),
             Self::BroadcastLog => write!(f, "broadcast-log"),
+            Self::TextTemplate => write!(f, "text-template"),
         }
     }
 }
@@ -6619,6 +6641,9 @@ pub enum ForgeDocument {
     /// A bounded log read by cursors its readers own. See [`BroadcastLogModel`].
     #[serde(rename = "broadcast-log")]
     BroadcastLog(BroadcastLogModel),
+    /// A text with typed holes. See [`TextTemplateModel`].
+    #[serde(rename = "text-template")]
+    TextTemplate(TextTemplateModel),
 }
 
 impl ForgeDocument {
@@ -6645,6 +6670,7 @@ impl ForgeDocument {
             Self::Queue(m) => &m.name,
             Self::FeatureModel(m) => &m.name,
             Self::BroadcastLog(m) => &m.name,
+            Self::TextTemplate(m) => &m.name,
         }
     }
 
@@ -6671,6 +6697,7 @@ impl ForgeDocument {
             Self::Queue(_) => ForgeKind::Queue,
             Self::FeatureModel(_) => ForgeKind::FeatureModel,
             Self::BroadcastLog(_) => ForgeKind::BroadcastLog,
+            Self::TextTemplate(_) => ForgeKind::TextTemplate,
         }
     }
 
@@ -6745,6 +6772,9 @@ impl ForgeDocument {
             // A log is reached through its producer handle and its readers'
             // cursors, not through fields of a record.
             Self::BroadcastLog(_) => return None,
+            // A template is rendered by `<sce:render>`, which names its holes;
+            // none of them is read through the alias as a field.
+            Self::TextTemplate(_) => return None,
         })
     }
 
@@ -6825,8 +6855,137 @@ impl ForgeDocument {
             Self::FeatureModel(_) => RuntimeDep::None,
             // The log's algorithm lives in the language's forge runtime.
             Self::BroadcastLog(_) => RuntimeDep::ForgeRuntime,
+            // An untrusted hole's markers are removed by the forge runtime's
+            // one function for it; a template with none calls nothing of it.
+            Self::TextTemplate(m) => {
+                if m.fence.is_some() {
+                    RuntimeDep::ForgeRuntime
+                } else {
+                    RuntimeDep::None
+                }
+            }
         }
     }
+}
+
+// ── Text-template kind ─────────────────────────────────────────
+
+/// Text-template document — docs/adr/0087, section 3: a text with typed
+/// holes, rendered by one pure function on every backend.
+///
+/// Schema (per `<scxml sce:kind="text-template">` body): a `<datamodel>` of
+/// `<data id sce:type [sce:trust]>` holes, read by the type grammar an event
+/// schema's fields are read by; at most one `<sce:fence open close>`; and one
+/// `<sce:text>` whose character data is the text, each `<sce:put hole>`
+/// standing where a hole's text goes. The parser holds the document to every
+/// rule of section 3.1 but one, whether an enum hole's enum is a closed set,
+/// which needs the enum document and is asked where the imports are read
+/// ([`crate::forge::text_template`]).
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TextTemplateModel {
+    pub name: String,
+    /// `sce:revision` on the root: which revision of the template this
+    /// document is. `None` when the document declares none, which makes it
+    /// the first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<u32>,
+    /// The holes in declaration order, which is the order the generated
+    /// `render` takes them in.
+    pub holes: Vec<TemplateHole>,
+    /// The two markers an untrusted hole's text is put between. Present
+    /// exactly when a hole is untrusted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fence: Option<TemplateFence>,
+    /// The text, in order: its literal parts and the holes put between them.
+    pub parts: Vec<TemplatePart>,
+    /// Post-preprocessor source position of the `<scxml
+    /// sce:kind="text-template">` root element (RFC §synth-5-O).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+impl TextTemplateModel {
+    /// The revision of the template this document is: what `sce:revision`
+    /// declares, and the first when it declares none.
+    pub fn revision(&self) -> u32 {
+        self.revision.unwrap_or(1)
+    }
+
+    /// The hole declared as `id`.
+    pub fn hole(&self, id: &str) -> Option<&TemplateHole> {
+        self.holes.iter().find(|h| h.id == id)
+    }
+}
+
+/// One hole of a [`TextTemplateModel`]: a `<data>` of its `<datamodel>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TemplateHole {
+    pub id: String,
+    /// What the hole holds, and so how its value is put into the text.
+    pub kind: HoleKind,
+}
+
+/// What a hole of a text template holds: the values whose text is the same on
+/// every backend (docs/adr/0087, section 3.1, item 1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum HoleKind {
+    /// `string[B]`: a text of at most `max` UTF-8 bytes, put as it is when
+    /// trusted and between the fence markers, every marker removed, when not.
+    Text {
+        max: crate::forge::value_type::Bound,
+        trust: HoleTrust,
+    },
+    /// A fixed-width integer, put as its decimal digits, `-` before a
+    /// negative one.
+    Integer(SceType),
+    /// A value of the closed enum the template imports as `alias`, put as its
+    /// variant's declared name.
+    Enum(EnumRef),
+}
+
+/// Whether a text hole's value is the program's own (`trusted`) or came from
+/// outside it (`untrusted`), which the fence marks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum HoleTrust {
+    Trusted,
+    Untrusted,
+}
+
+impl HoleTrust {
+    /// The value of `sce:trust` that says it.
+    pub fn as_attr(self) -> &'static str {
+        match self {
+            Self::Trusted => "trusted",
+            Self::Untrusted => "untrusted",
+        }
+    }
+}
+
+/// The `<sce:fence open close>` of a text template: two texts of printable
+/// ASCII, each of 1 to 32 bytes, neither inside the other, neither in the
+/// template's own text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TemplateFence {
+    pub open: String,
+    pub close: String,
+}
+
+/// One piece of a text template's text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
+pub enum TemplatePart {
+    /// Character data, put as its UTF-8 bytes.
+    Literal(String),
+    /// A `<sce:put hole>`: the id of the hole whose text goes here.
+    Put(String),
 }
 
 /// Parsed forge result — combines the document model with cross-file imports.
@@ -6917,7 +7076,7 @@ mod tests {
     fn forge_kind_attr_names_round_trip() {
         assert_eq!(
             ForgeKind::ALL_ATTR_NAMES.len(),
-            21,
+            22,
             "the kind vocabulary changed size — every arm below counts it"
         );
         let mut seen: BTreeSet<&'static str> = BTreeSet::new();

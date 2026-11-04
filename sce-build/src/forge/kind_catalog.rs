@@ -708,6 +708,42 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
             ],
             example: Example::Document(include_str!("../../kind-examples/event-schema.scxml")),
         },
+        K::TextTemplate => KindGuide {
+            role: KindRole::Computation,
+            summary: "A text with typed holes, rendered by one pure function into the same \
+                      bytes on every backend; a text from outside the program is put between \
+                      two fence markers, every marker removed from it, and the longest text \
+                      it renders is known when the program is built.",
+            choose_when: &[
+                "the text gives a message, a notification body or a prompt with places a \
+                 value is put into",
+                "the text says part of a message comes from a person or another program and \
+                 must be marked as data, not as instructions",
+                "the text bounds how long the composed message may be",
+            ],
+            distinct_from: &[
+                apart!(
+                    K::Interpolation,
+                    "an interpolation computes a number from a table of points; a text \
+                     template composes a text from named holes",
+                ),
+                apart!(
+                    K::EventSchema,
+                    "the fields an event carries are an event-schema; a text template is \
+                     rendered into one text a statechart holds",
+                ),
+            ],
+            notes: &[
+                "a hole is a string[B], a fixed-width integer or a value of a closed enum; a \
+                 text hole states sce:trust, trusted or untrusted",
+                "a template with an untrusted hole declares one <sce:fence open close>, two \
+                 markers of printable ASCII the template's own text does not hold",
+                "a sce-static statechart renders it with <sce:render template location>, one \
+                 <sce:set name expr> per hole, into a string variable whose bound is at least \
+                 the template's MAX_LEN",
+            ],
+            example: Example::Document(include_str!("../../kind-examples/text-template.scxml")),
+        },
     }
 }
 

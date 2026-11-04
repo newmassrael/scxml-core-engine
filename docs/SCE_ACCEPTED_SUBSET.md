@@ -472,7 +472,7 @@ producer side really holds is that it says when it did not validate.
 
 The `sce:kind` attribute on the root `<scxml>` element selects the
 forge kind the document compiles to. The closed value set is the
-twenty-one variants of `ForgeKind`, written in the `sce:kind` attribute
+twenty-two variants of `ForgeKind`, written in the `sce:kind` attribute
 as the kebab-case tokens below (source of truth:
 `sce-build/src/forge/model.rs` `ForgeKind::from_attr`; see
 `forge_kinds_catalog.md` for the stateful/stateless/inline-eligible
@@ -484,7 +484,42 @@ codec        validator   filter      interpolation
 timer        observer    algorithm   link         worker
 buffer-pool  bounded-collection      enum         event-schema
 queue        feature-model            broadcast-log
+text-template
 ```
+
+`text-template` (docs/adr/0087, section 3) is a text with typed holes, rendered by
+one pure function into the same bytes on every backend. Its holes are the `<data>`
+of its `<datamodel>`, read by the type grammar an event schema's fields are read by:
+a `string[B]`, which states `sce:trust="trusted"` or `"untrusted"`; a fixed-width
+integer; or a value of a closed enum the template imports. Its text is the one
+`<sce:text>`'s character data as XML hands it (line ends normalized, entities
+expanded, nothing trimmed), each `<sce:put hole="x"/>` standing where `x`'s text
+goes; every hole is put at least once. A template with an untrusted hole declares
+one `<sce:fence open close>`, two markers of printable ASCII of 1 to 32 bytes each,
+neither inside the other nor in the template's own text. Rendering puts each literal
+part's UTF-8 bytes; a trusted text as it is; an untrusted one between the markers,
+every occurrence of either marker removed from it until none is left (the leftmost
+first, the longer where both start at one byte); an integer's decimal digits, `-`
+before a negative one; and an enum value's declared name. The build computes the
+longest text a template renders, `MAX_LEN`: the literal bytes, and for each put `B`
+for a trusted text, `|open| + B + |close|` for an untrusted one, the most digits of an
+integer with its sign, and the enum's longest name. Every backend generates a unit
+with `REVISION`, `MAX_LEN`, the two markers where a hole is untrusted, and a `render`
+that takes the holes in declaration order (a text and an enum value's declared name
+as the language's text, an integer at its own width); Rust, Go, Kotlin, Python, C++
+and Swift return the text, and C11 writes into the caller's buffer of `MAX_LEN + 1`
+bytes and answers it, or `NULL` when it does not fit. The removal of the markers is
+one function of each language's forge runtime (`sce_forge_runtime::text_template`,
+`texttemplate.RemoveMarkers`, `com.sce.forge.runtime.TextTemplate`,
+`sce_forge_runtime.text_template`, `sce/forge/text_template.h` for C and C++, and
+`SceForgeRuntime.TextTemplate`). A hole of another type (a real, a `bool`, a byte
+string, an optional, a record, a list), `sce:trust` missing on a text hole or written
+on another, a hole declared twice or twice in snake case, a hole whose id is not a
+letter and then letters, digits or `_`, a `<sce:put>` naming no hole, a hole never put,
+and an enum hole whose enum is open are `validation/text-template-hole`; an untrusted
+hole with no fence, a fence with no untrusted hole, a second fence, and a marker that
+breaks a rule of markers are `validation/text-template-fence`. A `sce-static`
+statechart renders a template with `<sce:render>` (§2.15).
 
 `broadcast-log` (RFC §synth-5-S, ADR 0062) is a bounded log that one producer
 appends to and any number of readers read, each by a cursor of its own; a full log forgets
@@ -9069,7 +9104,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (497 codes)
+## Appendix — `DiagnosticCode` index (501 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -9155,6 +9190,10 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/native-action-argument` | Validation |
 | `validation/native-action-signature-conflict` | Validation |
 | `validation/native-action-release` | Validation |
+| `validation/text-template-hole` | Validation |
+| `validation/text-template-fence` | Validation |
+| `validation/render-holes` | Validation |
+| `validation/render-bound` | Validation |
 | `validation/mesh-rpc-reserved-param` | Validation |
 | `validation/mesh-rpc-missing-target` | Validation |
 | `validation/mesh-rpc-duplicate-target` | Validation |

@@ -429,6 +429,16 @@ impl Names {
                 self.name(&m.element_type);
                 Ok(())
             }
+            // A template's enum holes name the enums it imports
+            // (docs/adr/0087, section 3.1).
+            ForgeDocument::TextTemplate(m) => {
+                for hole in &m.holes {
+                    if let crate::forge::model::HoleKind::Enum(reference) = &hole.kind {
+                        self.name(&reference.alias);
+                    }
+                }
+                Ok(())
+            }
             // A field's type names each enum and each record it holds, at every
             // depth (docs/adr/0086): a record's import is otherwise used nowhere
             // a value is read.

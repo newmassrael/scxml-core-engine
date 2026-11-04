@@ -1019,12 +1019,16 @@ references against a real document and drift silently.
 | `validation/provenance-duplicate` | `validation` | no |  |
 | `validation/provenance-malformed` | `validation` | no |  |
 | `validation/removed-attribute` | `validation` | `remove_fields` | SCE Mesh §13 |
+| `validation/render-bound` | `validation` | no | ADR 0087 §3.1 |
+| `validation/render-holes` | `validation` | no | ADR 0087 §3.1 |
 | `validation/require-either` | `validation` | `add_one_of` |  |
 | `validation/reserved-code-identifier` | `validation` | no | SCE Accepted Subset §2.14 |
 | `validation/reserved-context-id` | `validation` | no |  |
 | `validation/sce-attribute-unread` | `validation` | `remove_fields` |  |
 | `validation/send-operand-type` | `validation` | no | SCE Forge §4.5 |
 | `validation/singleton-violation` | `validation` | no |  |
+| `validation/text-template-fence` | `validation` | no | ADR 0087 §3.1 |
+| `validation/text-template-hole` | `validation` | no | ADR 0087 §3.1 |
 | `validation/transform-output-cycle` | `validation` | no |  |
 | `validation/typed-invoke-request` | `validation` | no | SCE Accepted Subset §2.12 |
 | `validation/typed-invoke-schema` | `validation` | no | SCE Accepted Subset §2.12 |

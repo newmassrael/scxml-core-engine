@@ -342,6 +342,11 @@ fn forge_doc_provenance(doc: &ForgeDocument) -> (&'static str, &str, &Option<Sou
             &m.name,
             &m.source_location,
         ),
+        ForgeDocument::TextTemplate(m) => (
+            "<scxml sce:kind=\"text-template\">",
+            &m.name,
+            &m.source_location,
+        ),
     }
 }
 

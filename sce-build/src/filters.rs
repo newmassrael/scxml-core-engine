@@ -1602,7 +1602,7 @@ fn register_cpp_filters_inner(env: &mut minijinja::Environment, scope: &Arc<Docu
     env.add_filter("to_snake_case", to_snake_case);
     env.add_filter("escape_cpp", escape_cpp);
     env.add_filter("escape_cpp_format", escape_cpp_format);
-    env.add_filter("cpp_text_expr", cpp_text_expr);
+    register_literal_door(env, crate::generator::Language::Cpp);
     // The whitespace a `sce-static` machine's literal `<send><content>` is
     // normalised by, as the other backends spell it.
     env.add_filter("normalize_ws", normalize_ws);
@@ -1702,8 +1702,7 @@ pub fn register_c11_filters(env: &mut minijinja::Environment, scope: &Arc<Docume
     register_invoke_filters(env);
     register_event_wire_filters(env);
     env.add_filter("escape_c", escape_c);
-    env.add_filter("c_text_expr", c_text_expr);
-    env.add_filter("c_char_array_init", c_char_array_init);
+    register_literal_door(env, crate::generator::Language::C11);
     register_ecmascript_filters(env, scope);
     env.add_filter("to_in_predicate_c11", to_in_predicate_c11);
     env.add_filter("to_c11_upper_ident", to_c11_upper_ident);
@@ -1847,6 +1846,26 @@ pub fn c_char_array_init(text: String) -> String {
 /// only as long as the block it is written in.
 fn c_text_expr(text: String) -> String {
     c_text_expression(&text)
+}
+
+/// Register the literal door of `language`, the filters a C or C++ template
+/// writes a document's text through ([`c_text_expr`], [`c_char_array_init`],
+/// [`cpp_text_expr`]): one registration for a statechart's environment and a
+/// forge kind's (a text template's literal parts), so the two hold a text alike.
+/// Any other language has no door to register.
+pub fn register_literal_door(
+    env: &mut minijinja::Environment,
+    language: crate::generator::Language,
+) {
+    use crate::generator::Language;
+    match language {
+        Language::Cpp => env.add_filter("cpp_text_expr", cpp_text_expr),
+        Language::C11 => {
+            env.add_filter("c_text_expr", c_text_expr);
+            env.add_filter("c_char_array_init", c_char_array_init);
+        }
+        Language::Rust | Language::Go | Language::Kotlin | Language::Python | Language::Swift => {}
+    }
 }
 
 /// [`cpp_text_expression`] as a template filter, for a C++ site that makes a

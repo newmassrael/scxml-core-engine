@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- text-template: a notice whose sender's words come from outside the
+     program, so they are put between two markers that the words cannot
+     hold; the longest notice is known when the program is built. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="text-template" name="reply_notice">
+  <datamodel>
+    <data id="sender" sce:type="string[32]" sce:trust="trusted"/>
+    <data id="count" sce:type="uint16"/>
+    <data id="message" sce:type="string[256]" sce:trust="untrusted"/>
+  </datamodel>
+  <sce:fence open="[[" close="]]"/>
+  <sce:text>Reply <sce:put hole="count"/> from <sce:put hole="sender"/>:
+<sce:put hole="message"/></sce:text>
+</scxml>

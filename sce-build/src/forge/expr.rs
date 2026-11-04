@@ -7043,7 +7043,7 @@ fn string_bound(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Option<usize> {
 /// The most bytes the decimal text of an integer of type `ty` can take: the
 /// digits of its largest magnitude and a minus sign for a signed one. A literal
 /// takes the width of an `int64`, the widest it can be written as.
-fn integer_text_bound(ty: InferredType) -> usize {
+pub(crate) fn integer_text_bound(ty: InferredType) -> usize {
     // `bits * log10(2)` rounded up, in integers: 8 -> 3, 16 -> 5, 32 -> 10, 64 -> 20.
     let digits = |bits: usize| bits * 30103 / 100_000 + 1;
     match ty {

@@ -9371,7 +9371,10 @@ fn discover_stateful_member_methods(
         | ForgeDocument::FeatureModel(_)
         // ADR 0062: a log's publish and read are reached through the
         // producer handle and the readers' cursors, not on the alias.
-        | ForgeDocument::BroadcastLog(_) => Vec::new(),
+        | ForgeDocument::BroadcastLog(_)
+        // A template is rendered by `<sce:render>`, never called on its alias
+        // (docs/adr/0087, section 3.1).
+        | ForgeDocument::TextTemplate(_) => Vec::new(),
     }
 }
 

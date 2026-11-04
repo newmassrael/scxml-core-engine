@@ -1,0 +1,59 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="text-template") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "sce/forge/text_template.h" /* the writer the text is rendered into, docs/adr/0087 */
+
+/* The revision of the template (`sce:revision`, 1 when the document declares none). */
+#define {{ snake | upper }}_REVISION UINT32_C({{ revision }})
+/* The most UTF-8 bytes the rendered text holds, without its terminator: the literal text,
+ * and every hole at its longest (docs/adr/0087, section 3.1, item 5). A buffer of
+ * `_MAX_LEN + 1` bytes holds every rendering. */
+#define {{ snake | upper }}_MAX_LEN ((size_t){{ max_len }}u)
+{% if fenced %}
+/* The marker an untrusted hole's text opens with. */
+#define {{ snake | upper }}_FENCE_OPEN {{ fence_open | c_char_array_init }}
+/* The marker an untrusted hole's text closes with. */
+#define {{ snake | upper }}_FENCE_CLOSE {{ fence_close | c_char_array_init }}
+{% endif %}
+
+/* Renders the template `{{ template_name }}` into the caller's `out`, of `cap` bytes with
+ * the terminator: its text with each hole put where the document puts it, the same bytes
+ * on every backend, with no allocation. Answers `out`, or NULL with `out` holding "" when
+ * the text does not fit `cap`, which a buffer of `_MAX_LEN + 1` bytes always holds when
+ * each text is at most its hole's bound.
+{% for h in holes %}
+ * - `{{ h.param }}`: {{ h.doc }}.
+{% endfor %}
+ */
+static inline const char *{{ snake }}_render(char *out, size_t cap{% for h in holes %}, {{ h.ty }} {{ h.param }}{% endfor %}) {
+    sce_forge_text_t text = sce_forge_text_begin(out, cap);
+{% for p in parts %}
+{% if p.kind == "literal" %}
+    sce_forge_text_put(&text, {{ p.text | c_text_expr }});
+{% elif p.kind == "text" or p.kind == "enum" %}
+    sce_forge_text_put(&text, {{ p.param }});
+{% elif p.kind == "integer" and p.signed %}
+    sce_forge_text_put_int(&text, (int64_t){{ p.param }});
+{% elif p.kind == "integer" %}
+    sce_forge_text_put_uint(&text, (uint64_t){{ p.param }});
+{% elif p.kind == "fenced" %}
+    sce_forge_text_put_fenced(&text, {{ p.param }}, {{ snake | upper }}_FENCE_OPEN, {{ snake | upper }}_FENCE_CLOSE);
+{% endif %}
+{% endfor %}
+    return sce_forge_text_end(&text) ? out : NULL;
+}
+
+#endif /* {{ guard }} */

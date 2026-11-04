@@ -55,6 +55,9 @@ const PICTURES: &[(&str, &[&str])] = &[
     // page, where the storage, the cardinalities and the progress are each
     // a word, and the field table.
     ("queue", &[]),
+    // A text template is a text with holes; its reading is the pseudocode
+    // page, where each literal and each put is a line, and the field table.
+    ("text-template", &[]),
     ("timer", &["timeline.svg"]),
     ("transform", &["dataflow.svg"]),
     ("validator", &["dataflow.svg"]),
