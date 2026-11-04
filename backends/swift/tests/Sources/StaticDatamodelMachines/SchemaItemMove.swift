@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a959df7d40a6301aa78e8501513db4064b02c0155bca6d82b638d4f2f72d3815
+// source-hash: e939b2700c7d391ee77811c0c5056f1bd75fa31a962245a8882cc047f3a138a0
 // SCE-MAP: schema_item_move.scxml:7 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -28,7 +28,7 @@ public enum SchemaItemMove {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$id\":\"urn:sce:schema:schema_item_move:1\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"properties\":{\"id\":{\"maximum\":4294967295,\"minimum\":0,\"type\":\"integer\"},\"status\":{\"enum\":[\"open\",\"in_progress\",\"done\"]}},\"required\":[\"id\",\"status\"],\"type\":\"object\",\"x-sce-source-hash\":\"a959df7d40a6301aa78e8501513db4064b02c0155bca6d82b638d4f2f72d3815\"}"
+    public static let jsonSchema: String = "{\"$id\":\"urn:sce:schema:schema_item_move:1\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"properties\":{\"id\":{\"maximum\":4294967295,\"minimum\":0,\"type\":\"integer\"},\"status\":{\"enum\":[\"open\",\"in_progress\",\"done\"]}},\"required\":[\"id\",\"status\"],\"type\":\"object\",\"x-sce-source-hash\":\"e939b2700c7d391ee77811c0c5056f1bd75fa31a962245a8882cc047f3a138a0\"}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order,
