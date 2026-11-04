@@ -2045,13 +2045,44 @@ pub fn jvm_constant_chunks(text: &str) -> Vec<&str> {
 /// `const val NAME: String = "…"` while the text fits one class-file constant,
 /// and otherwise a `val` built when the file's class is initialized from pieces
 /// that each fit ([`jvm_constant_chunks`]), since kotlinc cannot write a
-/// constant past [`JVM_CONSTANT_MAX_BYTES`]. `indent` is the indentation the
+/// `const val` past [`JVM_CONSTANT_MAX_BYTES`]. `indent` is the indentation the
 /// declaration stands at, which the lines of the pieces take too.
 ///
 /// The one door a Kotlin template writes a generated text constant through,
 /// whatever its length, so a text no generator bounds (a payload's JSON
 /// Schema, an event name) compiles at every length. A constant of a fixed
-/// vocabulary (a hash, a progress word) needs none.
+/// vocabulary (a hash, a progress word) needs none; the census
+/// `sce-build/tests/a_kotlin_class_file_constant_takes_its_text_through_one_door.rs`
+/// refuses any other text constant, and lists those with the reason for each.
+///
+/// # Why a constant, and not every literal
+///
+/// kotlinc cuts a long string itself wherever the string is an expression,
+/// so only the places where it writes the string into a class-file attribute
+/// need this door. Read from the compiler the build pins (kotlinc 2.1.20,
+/// `gradle/libs.versions.toml`; `javap -c` over
+/// `kotlin-compiler-embeddable-2.1.20.jar`), and the same in 2.0.20:
+///
+/// - `org.jetbrains.kotlin.backend.jvm.codegen.ExpressionCodegen.visitConst`
+///   hands every `String` constant to `generateStringConstant`, which cuts it
+///   with `org.jetbrains.kotlin.codegen.CodegenUtilKt.splitStringConstant`
+///   (modified UTF-8 counted per UTF-16 unit against 65,535, the count of
+///   [`modified_utf8_len`]) and, past one piece, builds the string with one
+///   `StringBuilder.append` per piece. A literal in a function body or in a
+///   property initializer therefore compiles at any length.
+/// - `org.jetbrains.kotlin.codegen.StringConcatGenerator.fitRestrictions`
+///   does the same for the constant parts of a concatenation or a string
+///   template (`"a" + x`, `"a$x"`), and moves the largest of them out of an
+///   `invokedynamic` recipe whose bytes would pass 65,535.
+/// - kotlinc folds `"a" + "b"` into one constant (a `const val` may be
+///   initialized so), and in an expression the folded constant is cut like
+///   any other, so folding changes nothing there.
+///
+/// What kotlinc does not cut is a constant it writes into an attribute: the
+/// `ConstantValue` attribute of a `const val`'s field (written for a
+/// `const val` only, never for a plain `val`) and an annotation's argument.
+/// A text past [`JVM_CONSTANT_MAX_BYTES`] in either does not compile, so a
+/// text no generator bounds reaches neither except through this function.
 pub fn kotlin_string_val(name: String, text: String, indent: Option<String>) -> String {
     let chunks = jvm_constant_chunks(&text);
     if let [whole] = chunks.as_slice() {
