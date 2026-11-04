@@ -3,8 +3,11 @@
 //
 // W3C SCXML test552 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(552) invocation.
+// W3C SCXML 5.3.1: `<data id="Var1" src="file:test552.txt"/>` reads the
+// sidecar (literal `2`) at codegen time; `to_lua_expr` returns `2` unchanged
+// (numeric literals pass through), `Var1 = (2)` evaluates as the Lua number
+// 2, and the cond `typeof Var1 !== 'undefined'` lowers to `Var1 ~= nil`
+// (transform_typeof_undefined) → truthy → s0→pass.
 
 #include <stdio.h>
 

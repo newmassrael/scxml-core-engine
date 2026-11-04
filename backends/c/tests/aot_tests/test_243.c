@@ -18,6 +18,9 @@
 // W3C 6.4.1 <param> single-value transfer: parent's <param Var1=1>
 // overrides the child's <data id="Var1" expr="0"> default. Child's
 // `Var1==1` cond fires, dispatches `success` via #_parent → pass.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_226.c.
 
 #define _POSIX_C_SOURCE 199309L
 

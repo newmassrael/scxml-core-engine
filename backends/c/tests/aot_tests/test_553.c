@@ -13,8 +13,13 @@
 // matches first. Same `_tick` polling shape as test579/test580 since the
 // pass path depends on the scheduled timeout actually elapsing.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(553) invocation.
+// W3C SCXML 6.2 + C.1: <send namelist="__undefined__"/> against an undeclared
+// variable raises error.execution and short-circuits the dispatch via
+// lua_eval_namelist_var (two-source declared check `_scxml_declared` +
+// `rawget(_G, name)`, mirrors cpp NamelistHelper::evaluateNamelist +
+// hasVariable); the sibling `<send delay=1s event=timeout>` schedule survives
+// the short-circuit so the timeout transition still routes to pass before
+// event1 ever reaches the fail target. needs polling-driven _tick
 
 #define _POSIX_C_SOURCE 199309L
 

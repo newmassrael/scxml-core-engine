@@ -2903,67 +2903,14 @@ sce_add_state_machine(
 # read them back out with a regex — CMake was the registry, which meant
 # a checkout without CMake could not enumerate the suite at all.
 #
-# `list-fixtures` hands the ids over as a CMake list, the same way every
-# forge conformance harness already consumes its own catalog, so there is
-# no JSON parsing in CMake and no second copy of the set to keep in step.
-# `sce-build/tests/w3c_registry_drives_cmake.rs` pins that what is
-# scheduled here is what the registry declares.
-set(W3C_REGISTRY "${CMAKE_SOURCE_DIR}/tests/w3c/conformance/fixtures.json")
-
-# Build an id -> harness lookup from the registry, then register in
-# registry order. Grouping the calls by harness instead would give the
-# same set in a different order, and the order reaches the generated
-# W3CTestRegistry.cpp and the ctest schedule — registry order is the one
-# a reader can predict from the file.
-set(_W3C_HARNESSES simple scheduled http)
-foreach(_W3C_HARNESS ${_W3C_HARNESSES})
-    execute_process(
-        COMMAND "${SCE_CODEGEN}" list-fixtures
-                --manifest "${W3C_REGISTRY}"
-                --catalog w3c
-                --harness "${_W3C_HARNESS}"
-                --format cmake
-        OUTPUT_VARIABLE _W3C_IDS
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        RESULT_VARIABLE _W3C_LIST_RESULT
-        ERROR_VARIABLE _W3C_LIST_ERROR
-    )
-    if(NOT _W3C_LIST_RESULT EQUAL 0)
-        message(FATAL_ERROR
-            "sce-codegen list-fixtures --harness ${_W3C_HARNESS} failed for "
-            "${W3C_REGISTRY}: ${_W3C_LIST_ERROR}")
-    endif()
-    # An empty answer is a broken read, not an empty harness: the
-    # registry rejects a harness no fixture names, so a silent empty
-    # list here would drop a whole registration group.
-    if(NOT _W3C_IDS)
-        message(FATAL_ERROR
-            "sce-codegen list-fixtures returned no test for harness "
-            "${_W3C_HARNESS}; the registry read is broken")
-    endif()
-    foreach(_W3C_ID ${_W3C_IDS})
-        set(_W3C_HARNESS_OF_${_W3C_ID} "${_W3C_HARNESS}")
-    endforeach()
-endforeach()
-
-execute_process(
-    COMMAND "${SCE_CODEGEN}" list-fixtures
-            --manifest "${W3C_REGISTRY}"
-            --catalog w3c
-            --format cmake
-    OUTPUT_VARIABLE _W3C_ALL_IDS
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    RESULT_VARIABLE _W3C_LIST_RESULT
-    ERROR_VARIABLE _W3C_LIST_ERROR
-)
-if(NOT _W3C_LIST_RESULT EQUAL 0)
-    message(FATAL_ERROR
-        "sce-codegen list-fixtures failed for ${W3C_REGISTRY}: ${_W3C_LIST_ERROR}")
-endif()
-if(NOT _W3C_ALL_IDS)
-    message(FATAL_ERROR
-        "sce-codegen list-fixtures returned no test at all; the registry read is broken")
-endif()
+# The ids, in registry order, and the harness of each are read through
+# `sce_w3c_registry_fixtures` (cmake/SCEW3CRegistry.cmake), the one reading
+# of the registry the C11 route (backends/c/tests/CMakeLists.txt) shares, so
+# there is no JSON parsing in CMake and no second copy of the set to keep in
+# step; the configure depends on the registry, so adding a test needs no
+# manual cmake invocation. `sce-build/tests/w3c_registry_drives_cmake.rs`
+# pins that what is scheduled here is what the registry declares.
+sce_w3c_registry_fixtures(_W3C_ALL_IDS _W3C_HARNESS_OF_)
 
 # Every fixture's plan, asked of the generator in one batch before the loop
 # declares the fixtures one by one, each from the answer the batch kept
@@ -2973,22 +2920,17 @@ sce_prefetch_static_w3c_tests("${STATIC_W3C_OUTPUT_DIR}" cpp ${_W3C_ALL_IDS})
 
 foreach(_W3C_ID ${_W3C_ALL_IDS})
     set(_W3C_HARNESS "${_W3C_HARNESS_OF_${_W3C_ID}}")
-    if(NOT _W3C_HARNESS)
-        message(FATAL_ERROR
-            "test ${_W3C_ID} is listed by the registry but by no harness query; "
-            "the two listings disagree")
-    endif()
     if(_W3C_HARNESS STREQUAL "simple")
         sce_generate_static_w3c_test(${_W3C_ID} ${STATIC_W3C_OUTPUT_DIR})
-    else()
+    elseif(_W3C_HARNESS STREQUAL "scheduled" OR _W3C_HARNESS STREQUAL "http")
         string(TOUPPER "${_W3C_HARNESS}" _W3C_TYPE)
         sce_generate_static_w3c_test(${_W3C_ID} ${STATIC_W3C_OUTPUT_DIR} TYPE ${_W3C_TYPE})
+    else()
+        message(FATAL_ERROR
+            "test ${_W3C_ID} names the harness `${_W3C_HARNESS}`, which the C++ route "
+            "does not run: map it to the runner it needs here")
     endif()
 endforeach()
-
-# Re-run configure when the registry changes, so adding a test does not
-# need a manual cmake invocation.
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${W3C_REGISTRY}")
 
 # ============================================================================
 # W3C Test Registration Automation
@@ -3081,9 +3023,9 @@ if(Python3_FOUND AND NOT EMSCRIPTEN)
         OUTPUT ${CMAKE_SOURCE_DIR}/web/visualizer/test-list.js
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tools/generate_test_list.py
-                ${W3C_REGISTRY}
+                ${SCE_W3C_REGISTRY}
                 ${CMAKE_SOURCE_DIR}/web/visualizer/test-list.js
-        DEPENDS ${W3C_REGISTRY}
+        DEPENDS ${SCE_W3C_REGISTRY}
                 ${CMAKE_SOURCE_DIR}/tools/generate_test_list.py
         COMMENT "Generating web/visualizer/test-list.js from the conformance registry"
         VERBATIM
@@ -3239,10 +3181,10 @@ set(W3C_AOT_BRIEF_STAMP "${CMAKE_CURRENT_BINARY_DIR}/w3c/aot_briefs.checked")
 add_custom_command(
     OUTPUT "${W3C_AOT_BRIEF_STAMP}"
     COMMAND "${SCE_CODEGEN}" check-aot-briefs
-            --manifest "${W3C_REGISTRY}"
+            --manifest "${SCE_W3C_REGISTRY}"
             --header-dir "${CMAKE_CURRENT_SOURCE_DIR}/w3c/aot_tests"
     COMMAND "${CMAKE_COMMAND}" -E touch "${W3C_AOT_BRIEF_STAMP}"
-    DEPENDS "${W3C_REGISTRY}" "${SCE_CODEGEN}" ${W3C_AOT_HEADERS}
+    DEPENDS "${SCE_W3C_REGISTRY}" "${SCE_CODEGEN}" ${W3C_AOT_HEADERS}
     COMMENT "Checking that no AOT test header brief states its fixture's spec section"
     VERBATIM
 )

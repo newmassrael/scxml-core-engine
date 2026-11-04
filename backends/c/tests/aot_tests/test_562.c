@@ -12,8 +12,12 @@
 // `cond=_event.data == 'this is a string'` matches pass. Plain `_run` is
 // sufficient (no scheduler involved).
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(562) invocation.
+// W3C SCXML 5.10 + B.2: <send><content>this is  a  \nstring</content></send>
+// with the ECMAScript datamodel space-normalizes the multi-whitespace body to
+// "this is a string" — the new lua_send_content_literal macro tries Lua eval
+// first (fails on plain text), falls back to the `:gsub('%s+', ' ')` +
+// match-trim normalization (cpp EventDataHelper::jsonStringToScriptValue
+// raw-string fallback)
 
 #include <stdint.h>
 #include <stdio.h>

@@ -35,6 +35,19 @@
 // If the second `<send target="#_parent">` were silently dropped (e.g.
 // the dispatch shim returned early after the first match), parent
 // would stall in s02 and the 3 s timeout would route to fail.
+//
+// W3C SCXML 6.4 invoke — child shapes that the existing infrastructure
+// already covers without new template surface. test232: child whose
+// `initial=` IS a top-level `<final>` (final's `<onentry>` runs during the
+// parent's `execute_pending_invokes` entry walk, so multiple `<send
+// target="#_parent">` blocks all dispatch through the live `parent_dispatch`
+// before `done.invoke`). test237: child has its own `<send delay>` scheduler
+// but parent cancels via state-exit; the existing `destroy_active_children`
+// onexit hook + child SM zero-init reclaims the in-flight scheduled entry.
+// test239: dual-shape parity (one `src=file:` external child sibling + one
+// inline `<content><scxml>` child) — the author-supplied sibling, which the
+// parent's plan names and the build stages beside it, and the synth-invoke
+// extraction converge on the same downstream codegen.
 
 #define _POSIX_C_SOURCE 199309L
 

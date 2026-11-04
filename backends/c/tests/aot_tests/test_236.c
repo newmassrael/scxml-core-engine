@@ -33,6 +33,14 @@
 // `done.invoke` after it. Parent transitions s0→s1 on childToParent,
 // then s1→s2 on done.invoke, then s2→pass on the 2 s timeout. A child
 // that skipped its exit would let done.invoke arrive first → s0→fail.
+//
+// W3C SCXML 3.4 / 6.4 invoke completion ordering — a child that reaches its
+// top-level final runs exitInterpreter in its own main event loop, so a final
+// state's `<onexit><send target="#_parent">` fires BEFORE the parent raises
+// `done.invoke`; a cancelled child (parent state-exit) gets `parent_dispatch
+// = NULL` where it sends to its parent, then `_stop` (the same exit) and
+// `_destroy`, so onexit-emitted sends drop per W3C cancellation-drop
+// semantics.
 
 #define _POSIX_C_SOURCE 199309L
 

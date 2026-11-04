@@ -3,9 +3,23 @@
 //
 // W3C SCXML test457 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(457) invocation. The
-// runner here is the standard C11 boilerplate.
+// W3C SCXML 4.6 + 5.4: `<foreach array=...>` requires the value to satisfy
+// `instanceof Array`. s0's array=Var4 (number 7) fails the new `_isArray`
+// runtime check (mirrors cpp `LuaEngine::_isArray` lua_pushcfunction at
+// LuaEngine.cpp:463-483, T3-inlined as a Lua-script via dostring) → `_sce_n <
+// 0` arm raises error.execution + `return;` (W3C 5.10
+// stop-subsequent-content; axis I block helper terminates only that block).
+// s0→s1: array=Var5=[1,2,3] passes `_isArray` but item="'continue'" emits an
+// illegal Lua identifier — `lua_foreach_body_iter` chunk fails on first
+// iteration, raises error.execution and `break`s the C loop (body actions
+// never executed → Var1 stays 0). s1→s2 verifies Var1==0 (executable content
+// never ran), then s3 iterates [1,2,3] cleanly summing to Var6=6 → cond
+// Var6==6 → pass.
+//
+// The runner here is the standard C11 boilerplate: init, run, compare the
+// final state against TEST457_STATE_PASS, return 0 on PASS / 1 on FAIL. What
+// it links beside the machine is what the generator states the machine
+// requires (backends/c/tests/CMakeLists.txt).
 
 #include <stdio.h>
 

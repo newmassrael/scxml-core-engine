@@ -24,6 +24,15 @@
 // `Var1==1` cond fires, dispatches `event1` → parent reaches pass.
 // If the override path were a silent-broken hook, Var1 would stay 0,
 // child would dispatch `event0`, and the parent would route to fail.
+//
+// W3C SCXML 6.4.1 (test276): `<param>` overrides the child's `<data id="Var1"
+// expr="0">` initial-value default — verifies the post-`_init` overwrite
+// ordering. The child's `_init` seeds Var1=0, the parent's transfer
+// overwrites Var1=1 before the child's first `_step`, the child's `Var1==1`
+// cond matches → `event1` → pass.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_226.c.
 
 #define _POSIX_C_SOURCE 199309L
 

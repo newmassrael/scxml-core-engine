@@ -35,6 +35,20 @@
 // The fixture pins that the codegen does NOT cement the parse-time
 // value of Var1 into the static decision — it relies on the invoke
 // running in the parent's macrostep AFTER onentry's assign.
+//
+// W3C SCXML 6.4 (test215): `<invoke typeexpr="Var1">` with inline
+// `<content><scxml initial="subFinal"><final/></scxml></content>`. The parser
+// classifies this as a static invoke because `type=""` + non-empty inline
+// content matches the `is_static_invoke` shape; the runtime typeexpr value
+// never gates the spawn (cpp AOT codegen skips the eval too — same shape:
+// `static_invoke=true`, child spawned unconditionally). Test passes because
+// parent's onentry assigns `Var1='http://www.w3.org/TR/scxml/'` BEFORE the
+// invoke is scheduled, so even if the codegen WERE evaluating typeexpr it
+// would resolve to the SCXML processor URI and accept the spawn — both shapes
+// converge on done.invoke → parent reaches pass.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_187.c.
 
 #define _POSIX_C_SOURCE 199309L
 

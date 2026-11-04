@@ -20,6 +20,15 @@
 // origintype lua globals the receiver assigns nil and the
 // `<send targetexpr=nil/>` falls through the targetexpr arm's
 // unreachable clause to `error.communication` → wildcard fail.
+//
+// W3C SCXML 5.10.1 + 6.2: external events bind `_event.origin` to the
+// deterministic AOT-binding `<name>_session` literal and `_event.origintype`
+// to the SCXMLEventProcessor URI; a receiving transition's `<send
+// targetexpr=_event.origin typeexpr=_event.origintype/>` round-trips through
+// the new typeexpr+targetexpr combo arm — the targetexpr arm's
+// self-session-URI clause routes the round-tripped send back into the
+// external queue so the s1 `bar` transition matches before the
+// doc-order-later `baz` could fire the wildcard fail
 
 #include <stdio.h>
 

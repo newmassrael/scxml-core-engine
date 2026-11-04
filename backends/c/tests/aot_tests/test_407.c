@@ -3,8 +3,7 @@
 //
 // W3C SCXML test407 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(407) invocation.
+// W3C SCXML 3.9: onexit handler increments a datamodel variable on state exit
 
 #include <stdio.h>
 

@@ -3,8 +3,10 @@
 //
 // W3C SCXML test510 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(510) invocation.
+// W3C SCXML C.2 (test510): event-only POST; the success transition `event="*"
+// target="pass"` matches anything other than `timeout` / `error`, so any
+// event the server returns is enough. Exercises the location field of the
+// BasicHTTP I/O processor entry. Same emit shape as test201/509.
 
 #include <stdio.h>
 

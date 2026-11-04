@@ -789,8 +789,12 @@ GATES: dict[str, dict] = {
             # asked together.
             "backends/c/tests/CMakeLists.txt",
             # The conformance registry, whose fixtures
-            # `a_c11_machine_includes_what_it_states_it_requires` generates.
+            # `a_c11_machine_includes_what_it_states_it_requires` generates,
+            # and the one reading of it both conformance routes register
+            # their fixtures through, which `w3c_registry_drives_cmake`
+            # reads.
             "tests/w3c/conformance/fixtures.json",
+            "cmake/SCEW3CRegistry.cmake",
             # The C11 runtime's build, whose vocabulary of what a machine
             # requires `a_c11_machine_includes_what_it_states_it_requires`
             # compiles in and holds to what the generator can state.
@@ -1404,7 +1408,11 @@ GATES: dict[str, dict] = {
                    "the set for a README edit.",
         "extra": ["sce/**", "tests/w3c/**", "tests/CMakeLists.txt",
                   "resources/**", "tools/codegen/templates/**",
-                  "sce-build/src/**"],
+                  "sce-build/src/**",
+                  # The modules the route registers and plans its fixtures
+                  # through.
+                  "cmake/SCEW3CRegistry.cmake", "cmake/SCEStaticW3CTest.cmake",
+                  "cmake/SCECodegenPlan.cmake"],
         "deps": ["codegen-build"],
         "ci_only": "55s, and it is the gate that decides whether the budget "
                    "is met on a good run or on every run. Without it the set "
@@ -1712,7 +1720,13 @@ GATES: dict[str, dict] = {
                    "generator, and the inbox probe it shares with the C++ "
                    "engine's inbox test (docs/adr/0084).",
         "extra": ["backends/c/**", "tools/codegen/templates/**",
-                  "sce-build/src/**", "tests/integration/inbox_probe.scxml"],
+                  "sce-build/src/**", "tests/integration/inbox_probe.scxml",
+                  # The registry the route registers every fixture from, the
+                  # documents it generates, and the modules it registers and
+                  # plans them through.
+                  "tests/w3c/conformance/fixtures.json", "resources/**",
+                  "cmake/SCEW3CRegistry.cmake", "cmake/SCEStaticW3CTest.cmake",
+                  "cmake/SCECodegenPlan.cmake"],
         "deps": ["codegen-build"],
         "ci_only": "391s inside a push, measured 2026-08-23 — and that number "
                    "is the point. The same 245 tests read 85s and 95s run on "

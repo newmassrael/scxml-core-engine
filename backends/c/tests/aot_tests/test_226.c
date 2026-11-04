@@ -25,6 +25,21 @@
 // If the param transfer were a silent-broken hook, Var1 would stay
 // nil, the default transition would fire, and no varBound would
 // reach the parent → 3s timeout fail.
+//
+// W3C SCXML 6.4.1 invoke — `<param>` / `namelist` value passing AND the
+// cross-machine `<send target="#_parent">` plumbing the param tests rely on
+// for verdict signalling. Each child reaches `<final>` only after firing an
+// eventless transition whose body sends `success` / `failure` / `varBound` /
+// `event1` to the invoking parent; the parent's auto-generated
+// `<sm>_dispatch_external_by_name` shim converts the name to the parent's
+// event enum (analyzer-promoted) and enqueues onto the external queue.
+// Parent-side: `execute_pending_invokes` evaluates each `<param expr>` on its
+// own lua_State and transfers the top-of-stack value to the child's lua_State
+// via `lua_xfer_top_to_child`, gated per-name on `child_datamodel_vars` so
+// undeclared namelist names (test245) silently drop. Child-side: `_init`
+// skips the post-entry eventless loop when `has_parent_communication=true` so
+// the parent has a chance to apply param/namelist overrides + stamp
+// `parent_dispatch` before the child's first macrostep runs.
 
 #define _POSIX_C_SOURCE 199309L
 

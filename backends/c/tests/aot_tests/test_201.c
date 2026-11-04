@@ -3,8 +3,19 @@
 //
 // W3C SCXML test201 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(201) invocation.
+// W3C SCXML C.2 (test201): `<send type="BasicHTTP"
+// target="http://localhost:8080/test" event="event1"/>` event-only POST. The
+// standalone Node server (`tests/w3c/standalone_http_server.js`) JSON-echoes
+// the request as `{"event":"event1","data":...}`; the BasicHTTP+target arm in
+// `state_machine.c.jinja2` builds a form-encoded body
+// (`_scxmleventname=event1`), calls `sce_test_http_post` synchronously,
+// parses the response via `sce_test_http_parse_response`, dispatches the
+// echoed event name through the codegen-emitted `_event_from_name` switch,
+// and raises onto the external queue. No datamodel/cond → no Lua link
+// required, `_event.data` promotion skipped. cpp
+// `actions/send.jinja2:347-428` performHttpSend() callback + Go
+// `backends/go/tests/harness/harness.go::SetupHTTPTest` are the reference
+// implementations.
 
 #include <stdio.h>
 

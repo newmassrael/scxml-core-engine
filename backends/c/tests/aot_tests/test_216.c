@@ -17,6 +17,23 @@
 // pattern: pure AOT, no Interpreter dependency). Because the original
 // test216sub1.scxml is itself `<final/>`-only, the stub is
 // observationally identical for the W3C contract being tested here.
+//
+// W3C SCXML 6.4.1 (test216):`<invoke srcexpr="Var1">` runtime evaluation —
+// Var1 reassigned in onentry to the child path, codegen lowers a
+// luaL_dostring eval-validation gate then spawns the pre-generated
+// `test216_hybrid0` stub child. cpp `test216_sm.inl:166-185` is the
+// equivalent pure-AOT pattern.
+//
+// W3C SCXML 6.4.1 / 6.4.2 hybrid invoke — `<invoke srcexpr>` +
+// `<invoke><content expr>` runtime evaluation. cpp uses a pure-AOT pattern
+// with a trivial immediate-final stub child (`test{N}_hybrid{idx}.scxml`,
+// written by sce-build's `generate_hybrid_child_scxmls`). The eval runs at
+// macrostep end on the parent's lua_State for validation only — the result is
+// intentionally not consumed because the W3C contract checks evaluation
+// timing, not the value. Both fixtures' actual children (`test216sub1.scxml`
+// is `<final/>`-only; test530's inline scxml is `<scxml><final/></scxml>`)
+// are immediate-final, so the stub is observationally identical for the
+// contract being tested.
 
 #define _POSIX_C_SOURCE 199309L
 

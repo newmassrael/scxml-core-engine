@@ -3,8 +3,12 @@
 //
 // W3C SCXML test532 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(532) invocation.
+// W3C SCXML C.2 (test532): event-only POST shape identical to test201; the
+// fixture's transition uses an `expr="..."` attribute (a non-standard typo
+// for `cond=` in the W3C corpus) which the parser treats as inert — no
+// datamodel deref happens. The `event="test"` match falls through to
+// `target="pass"` regardless of the expr value, so the codegen does not need
+// to expose `_event.data` for this fixture. Same emit shape as test201.
 
 #include <stdio.h>
 

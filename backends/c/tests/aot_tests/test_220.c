@@ -26,6 +26,14 @@
 // The wildcard `event="*"` arm is the failure route so any non-
 // done.invoke event would route to fail; success means the runner
 // observes pass without that arm firing.
+//
+// W3C SCXML 6.4 (test220): identical inline-final child shape as test247, but
+// the invoke `type` is the full `http://www.w3.org/TR/scxml/` URI rather than
+// the bare `scxml` shorthand. Pins the parser's URI normalisation arm — both
+// spelling produce the same downstream shape so the spawn path is identical.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_247.c.
 
 #define _POSIX_C_SOURCE 199309L
 

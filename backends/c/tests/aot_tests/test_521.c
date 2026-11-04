@@ -7,6 +7,10 @@
 // `error.communication` — the C11 targetexpr arm's unreachable-fallback clause classifies the literal as not-empty /
 // not-#_internal / not-!-prefixed and falls through to the error-communication raise. Receiving transition matches and
 // routes to pass. Same code path test496 already pins.
+//
+// W3C SCXML 6.2: <send targetexpr="undefined"/> evaluates to a
+// non-dispatchable target — the targetexpr arm's unreachable-fallback clause
+// raises error.communication (same arm test496 already covers).
 
 #include <stdio.h>
 

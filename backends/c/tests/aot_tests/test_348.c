@@ -10,6 +10,12 @@
 // active the SCXMLEventProcessor literal collapses to bare-external
 // dispatch and the s0→pass transition fires. Without the carve-out
 // the `#error` guard would fail compilation.
+//
+// W3C SCXML 6.2: <send
+// type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor"> literal is the
+// default Event I/O Processor — the codegen-time send_type carve-out
+// collapses it to bare-external dispatch (cpp SendHelper::isSupportedSendType
+// mirror)
 
 #include <stdio.h>
 

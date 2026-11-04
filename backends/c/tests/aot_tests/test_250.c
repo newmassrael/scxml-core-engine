@@ -29,6 +29,9 @@
 // driven by the immediate `<send event="foo"/>` macrostep, so the
 // runner uses `_run` (drain to quiescence) rather than the polling
 // `_tick` loop required by delayed-send fixtures.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_178.c.
 
 #include <stdio.h>
 

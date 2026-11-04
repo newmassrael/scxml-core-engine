@@ -3,9 +3,14 @@
 //
 // W3C SCXML test404 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(404) invocation. The
-// runner here is the standard C11 boilerplate.
+// W3C SCXML 3.4: <parallel> entry activates every region simultaneously; exit
+// reverse-doc-order (s01p2 before s01p1 before s01p) drains queued raises in
+// order so receiving states match event1→event2→event3→event4
+//
+// The runner here is the standard C11 boilerplate: init, run, compare the
+// final state against TEST404_STATE_PASS, return 0 on PASS / 1 on FAIL. What
+// it links beside the machine is what the generator states the machine
+// requires (backends/c/tests/CMakeLists.txt).
 
 #include <stdio.h>
 

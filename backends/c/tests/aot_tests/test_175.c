@@ -13,6 +13,12 @@
 //
 // Same polling pattern as test579/580 — POSIX nanosleep(10ms) between
 // `_tick(sm)` calls, capped at 5 seconds.
+//
+// W3C SCXML 6.2: <send delayexpr> evaluates Var1 at send time and parses '1s'
+// to 1000 ms via the new lua_eval_delayexpr macro — paired with a sibling
+// literal-delay 0.5s send so event1 fires before event2 and the s0→s1→pass
+// chain wins over the s0 wildcard fail; needs polling-driven _tick (test579
+// pattern)
 
 #define _POSIX_C_SOURCE 199309L
 

@@ -19,6 +19,18 @@
 // trace — the existing late-binding lua_eval_eventexpr path
 // (test280 in registry) already returns nil for undeclared and
 // undefined for missing properties without raising.
+//
+// W3C SCXML 5.3.3 (test307): `binding="late"` access semantics — s0 logs Var1
+// before s1 declares it; s1 logs Var1.foo (missing property) after binding.
+// Both accesses MUST yield ECMAScript undefined silently (no
+// error.execution). The W3C corpus marks this manual because the tester
+// compares two `<log>` outputs for consistency, but the conformance bit
+// reduces to "reach FINAL via foo→bar (the no-error legs)". The existing
+// lua_eval_eventexpr path (test280 late-binding pin) already returns nil for
+// undeclared and missing properties without raising.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_178.c.
 
 #include <stdio.h>
 

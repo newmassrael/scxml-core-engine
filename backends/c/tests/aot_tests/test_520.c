@@ -3,8 +3,13 @@
 //
 // W3C SCXML test520 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(520) invocation.
+// W3C SCXML C.2 (test520): `<send target="..." type="BasicHTTP"><content>this
+// is some content</content></send>` — content-only POST (text/plain). No
+// event/params/namelist → the `{% elif action.content %}` branch in
+// `state_machine.c.jinja2` emits the literal as a static C-string into the
+// body buffer with `_http_content_type = "text/plain"`. The standalone
+// server's content-type-fallback returns event="HTTP.POST" (the HTTP method
+// name) per its `event1` / `HTTP.POST` default ladder.
 
 #include <stdio.h>
 

@@ -11,6 +11,12 @@
 // receiving transition matches event1 → pass. If the eval used the initial
 // value the dispatch would raise error.execution and the wildcard would
 // route to fail.
+//
+// W3C SCXML 6.2: <send targetexpr> evaluates Var1 at send time (Var1
+// reassigned to '#_internal' before send) — runtime target buffer drives the
+// codegen-time `#_internal` / `!`-prefix / unreachable dispatch arms; cpp
+// `SendHelper::isInternalTarget`/`isInvalidTarget` are inlined as
+// stack-buffer prefix checks (jinja2-inline contract)
 
 #include <stdio.h>
 

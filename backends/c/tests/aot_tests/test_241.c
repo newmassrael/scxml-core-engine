@@ -16,6 +16,14 @@
 // into the child's Var1 slot. With both transfers honoured, s01's
 // child fires `success` → parent moves to s02 → that child also
 // fires `success` → parent reaches pass.
+//
+// W3C SCXML 6.4.1 (test241): three sequential invokes (s01 namelist, s02/s03
+// param) — both mechanisms must yield identical observable values in the
+// child. Pins macrostep-end `execute_pending_invokes` cycling through
+// multiple per-state invokes within the same parent's lifetime.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_226.c.
 
 #define _POSIX_C_SOURCE 199309L
 

@@ -25,6 +25,9 @@
 // `core/InvokeHelper.h`. The cond `Var1.indexOf('s0.') === 0` checks
 // that the id was deposited via idlocation lower AND begins with the
 // owning state name + '.' separator.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_247.c.
 
 #define _POSIX_C_SOURCE 199309L
 

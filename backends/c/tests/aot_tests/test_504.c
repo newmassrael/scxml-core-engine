@@ -6,6 +6,10 @@
 // W3C SCXML 3.13: external transition exits all states up to the LCCA — the s211→s2 transition's exit set must include
 // s211, s21, s2 (not just s211), so the receiving s2-level catch confirms only one onexit per ancestor before the entry
 // chain rebuilds. Tests find_lcca + compute_exit_set's external-self-loop classification.
+//
+// W3C SCXML 3.13: external transition exits all states up to the LCCA — the
+// s2-level external transition's exit set includes the entire ancestor chain;
+// exercises find_lcca + compute_exit_set (from 266dc8d8).
 
 #include <stdio.h>
 

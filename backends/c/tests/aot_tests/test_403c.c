@@ -22,6 +22,12 @@
 // `<send delay="1s">` is a safety-net timeout — silent stub via the
 // emit_action send dimension matrix carve-out (the success path never
 // fires it, so the deferred scheduler infrastructure is unforced here).
+//
+// W3C SCXML App.D.2: cross-compound preemption via parallel-ancestor —
+// p0s3→fail and s0→fail are dropped because their LCA-walk exit sets include
+// the parallel ancestor p0; targetless transitions emit is_internal=true so
+// the conflict-resolution self-loop exemption keeps p0s4's wildcard alive
+// across both microsteps
 
 #include <stdio.h>
 

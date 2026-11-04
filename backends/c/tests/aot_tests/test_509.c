@@ -3,8 +3,11 @@
 //
 // W3C SCXML test509 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(509) invocation.
+// W3C SCXML C.2 (test509): event-only POST shape identical to test201;
+// verifies that the BasicHTTP processor uses HTTP POST method (server's
+// request-method check) and that the access URI receives messages back. Same
+// code path as test201 — single arm in `state_machine.c.jinja2` covers both
+// fixtures.
 
 #include <stdio.h>
 

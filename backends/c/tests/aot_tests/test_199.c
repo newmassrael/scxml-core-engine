@@ -13,6 +13,13 @@
 // that block, so the second `<send event="timeout"/>` never runs. The
 // result is that error.execution reaches the internal queue alone and
 // matches s0's `event="error.execution"` transition to `pass`.
+//
+// W3C SCXML 6.2: <send type="unsupported_type"> raises error.execution — the
+// literal type matches neither SCXMLEventProcessor nor BasicHTTP, so the
+// codegen-time false-fall (cpp `SendHelper::isSupportedSendType` mirror)
+// emits the error raise and returns from the surrounding onentry; the
+// receiving `event="error.execution"` transition matches before the second
+// `<send event="timeout"/>` (skipped per W3C 5.10) can fire.
 
 #include <stdio.h>
 

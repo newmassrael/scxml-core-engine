@@ -15,6 +15,10 @@
 // reserved-name guard is what activates s1's `error.execution → s2`
 // branch; without it the assign would silently succeed on the lua
 // state and the wildcard fallback would route to fail.
+//
+// W3C SCXML 5.10: every illegal <assign> to a read-only system variable
+// raises error.execution — chain across all four covers the codegen-time
+// reserved-name guard
 
 #include <stdio.h>
 

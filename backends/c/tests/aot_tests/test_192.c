@@ -38,6 +38,25 @@
 // external queue on the same macrostep so the round-trip
 // childToParent → parentToChild → eventReceived completes within the
 // 5 s parent-side timeout.
+//
+// W3C SCXML 6.4 (test192): explicit `<invoke id="invokedChild">` + parent's
+// `<send target="#_invokedChild" event="parentToChild">` from s01→s02
+// transition body. Child's onentry dispatches `childToParent` to parent; on
+// receiving `parentToChild` the child transitions to subFinal with `<send
+// target="#_parent" event="eventReceived">` before raising `done.invoke`. The
+// verdict event must arrive before `done.invoke → fail` to drive parent → s02
+// → pass. Pins both the codegen-time `#_<id>` resolution and the
+// macrostep-end child driving (without it the parent → child message would
+// sit in the child's queue undrained until the 5 s timeout fires).
+//
+// W3C SCXML 6.4 invoke — parent → child via `<send target="#_<invokeid>">`.
+// Each invoke with an explicit `id="X"` exposes the embedded child's public
+// `_raise_external_by_name` shim; the parent's send action codegen-resolves
+// the `#_X` literal to the matching invoke at template time and emits a
+// direct call. Combined with `_drive_active_children` (called from parent's
+// `_step` after `execute_pending_invokes`), the dispatched event lands on the
+// child's external queue and is drained on the same macrostep so the
+// round-trip completes within the parent-side timeout.
 
 #define _POSIX_C_SOURCE 199309L
 

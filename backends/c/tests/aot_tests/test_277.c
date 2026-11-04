@@ -22,8 +22,9 @@
 // lua_init_engine. State-local datamodel init failure remains
 // silent-drop (carve-out — no current fixture exercises it).
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(277) invocation.
+// W3C SCXML 5.3: <data expr> with an illegal expression raises
+// error.execution at init and leaves the location undefined for later
+// assignment
 
 #include <stdio.h>
 

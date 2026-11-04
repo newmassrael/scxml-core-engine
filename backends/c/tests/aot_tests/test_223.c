@@ -27,6 +27,16 @@
 // idlocation lower were a silent-broken hook, Var1 would still be
 // Lua nil at that point, the cond would evaluate false, and the
 // default arm would route to fail.
+//
+// W3C SCXML 6.4.1 (test223): `<invoke idlocation="Var1">` (no explicit id) —
+// the auto-generated id must be deposited in the parent datamodel variable
+// named by `idlocation`. The codegen lowers idlocation to `lua_pushstring +
+// lua_setglobal` immediately after `sce_invoke_pending_push`, mirroring cpp's
+// `scriptEngine.setVariable` at defer time. Cond `typeof Var1 !==
+// 'undefined'` verifies the slot was written.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_247.c.
 
 #define _POSIX_C_SOURCE 199309L
 

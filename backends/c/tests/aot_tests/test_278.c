@@ -3,8 +3,8 @@
 //
 // W3C SCXML test278 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(278) invocation.
+// W3C SCXML 5.3: state-local <datamodel> is reachable from outside its
+// lexical scope (default early binding)
 
 #include <stdio.h>
 

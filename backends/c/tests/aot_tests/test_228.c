@@ -27,6 +27,9 @@
 // assigns `_event.invokeid` to Var1, then s1's cond verifies the id
 // matches the literal — the round-trip pins the C-side `evt.invoke_id`
 // → lua-side `_pending_event_invokeid` → `_event.invokeid` chain.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_247.c.
 
 #define _POSIX_C_SOURCE 199309L
 

@@ -3,8 +3,15 @@
 //
 // W3C SCXML test534 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(534) invocation.
+// W3C SCXML C.2 (test534): `<send event="test" target="..."
+// type="BasicHTTP"><content>some content</content></send>` — event AND
+// content together. cpp's `HttpEventTarget::send`
+// (sce/src/events/HttpEventTarget.cpp:47) prefers form-urlencoded when an
+// event name is present; the C11 arm mirrors this — the `{% if action.event
+// or action.params or action.namelist %}` branch wins, so the body becomes
+// `_scxmleventname=test` and the content is silently ignored (matching the
+// comment in the fixture XML: "this content will be ignored, but it's here to
+// make sure we have a message body").
 
 #include <stdio.h>
 

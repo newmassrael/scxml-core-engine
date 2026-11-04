@@ -9,6 +9,10 @@
 // `'event2'` in onentry before the send, so the eventexpr must yield
 // "event2" — not the initial "event1". The first transition matches
 // event2 → pass; the wildcard catch-all event="*" → fail must NOT fire.
+//
+// W3C SCXML 6.2: <send eventexpr> evaluates the expression at send time using
+// the current datamodel value (Var1 reassigned 'event2' before send → matches
+// event2 transition, not initial 'event1')
 
 #include <stdio.h>
 

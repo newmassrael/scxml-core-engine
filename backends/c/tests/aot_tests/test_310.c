@@ -12,6 +12,13 @@
 // TEST310_STATE_S1)` so the bitmap read happens directly through the
 // public predicate — no lua trampoline, no runtime symbol resolution
 // (mirrors cpp `parser::convert_in_to_cpp` of `this->isStateActive`).
+//
+// W3C SCXML 5.9.2: pure In('s1') predicate cond is native-lowered (no
+// datamodel, no script engine) — `to_in_predicate_c11` filter rewrites
+// In('s1') → test310_in_state(sm, TEST310_STATE_S1) at codegen time,
+// mirroring cpp parser::convert_in_to_cpp's this->isStateActive("s1")
+// substitution; the eventless walk reaches s1 first so the bitmap-read
+// predicate returns true and the s0 transition routes to pass
 
 #include <stdio.h>
 

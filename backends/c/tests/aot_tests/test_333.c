@@ -10,6 +10,12 @@
 // so it just verifies the bare-external dispatch reaches the receiver
 // regardless of metadata population. Doubles as a regression guard for
 // the set_current_event signature change to `event_with_meta_t *`.
+//
+// W3C SCXML 5.10.1: bare-external <send event=foo> leaves the
+// event_with_meta_t.send_id field zero so set_current_event binds
+// `_event.sendid` to nil — the receiving transition is a plain event="foo"
+// match (no sendid cond), confirming the metadata extension path doesn't
+// break non-sendid-bearing events
 
 #include <stdio.h>
 

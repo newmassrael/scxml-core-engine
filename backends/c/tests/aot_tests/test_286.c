@@ -12,8 +12,8 @@
 // the queue. s0's first matching transition is then
 // `event="error.execution" target="pass"`.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(286) invocation.
+// W3C SCXML 5.4: <assign> with an empty location attribute fails the lua
+// chunk and raises error.execution
 
 #include <stdio.h>
 

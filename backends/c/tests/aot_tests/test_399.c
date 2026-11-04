@@ -21,8 +21,12 @@
 // drain reaches `pass` before any external `_tick` poll is ever needed
 // (mirrors test403c's safety-net composition).
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(399) invocation.
+// W3C SCXML 5.9.3: event descriptor matching covers exact match, multi-token
+// (`foo bar`), token-prefix dot boundary (`foo` matches `foo.zoo` but not
+// `foos`), prefix-suffix wildcard (`foo.*`), and universal wildcard (`*`);
+// analyzer.rs precomputes the per-transition matching set so C11 emits
+// codegen-time OR lists in place of cpp/rust's runtime EventMatchingHelper
+// call
 
 #include <stdio.h>
 

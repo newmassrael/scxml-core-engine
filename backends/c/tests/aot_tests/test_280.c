@@ -3,12 +3,13 @@
 //
 // W3C SCXML test280 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(280) invocation. The
-// runner here is the standard C11 boilerplate: init, run, compare the
-// final state against TEST280_STATE_PASS, return 0 on PASS / 1 on
-// FAIL. Per-fixture conditional compilation (lua54 link, etc.) is
-// already handled by the harness CMake rule.
+// W3C SCXML 5.2: late-binding defers data variable initialization until its
+// owning state is entered
+//
+// The runner here is the standard C11 boilerplate: init, run, compare the
+// final state against TEST280_STATE_PASS, return 0 on PASS / 1 on FAIL. What
+// it links beside the machine is what the generator states the machine
+// requires (backends/c/tests/CMakeLists.txt).
 
 #include <stdio.h>
 

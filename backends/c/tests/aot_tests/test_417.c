@@ -3,9 +3,15 @@
 //
 // W3C SCXML test417 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(417) invocation. The
-// runner here is the standard C11 boilerplate; the eventless transition
+// W3C SCXML 3.4 + 3.7.1: when every region of a <parallel> has an active
+// direct <final> child, raise done.state.<parallel> — the s1p1 entry walks
+// regions s1p11/s1p12, eventless transitions move s1p111→s1p11final and
+// s1p121→s1p12final, and the second compound-final entry triggers the
+// codegen-time `_region_final_mask` AND check (mirrors cpp
+// `ParallelCompletionHelper::areAllRegionsInFinal`, T3-inlined), raising
+// done.state.s1p1 → pass; the 1 s safety-net never fires.
+//
+// The runner here is the standard C11 boilerplate; the eventless transition
 // chain (s1p111→s1p11final + s1p121→s1p12final) drains to quiescence
 // before the 1 s safety-net `<send delay="1s" event="timeout"/>` is
 // pumped, so simple `_run` reaches pass without `_tick` polling.

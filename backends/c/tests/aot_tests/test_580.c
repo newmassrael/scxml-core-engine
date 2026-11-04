@@ -18,8 +18,10 @@
 // scheduler that test579 depends on, keeping a single code shape across
 // the success-path-timeout and safety-net-timeout fixtures.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(580) invocation.
+// W3C SCXML 3.10 + 3.4: history pseudo-state never enters the active
+// configuration even across <parallel> regions — `In('sh1')` cond stays false
+// through the entire run, and the 2 s safety-net timeout never fires because
+// the eventless chain reaches `pass` first
 
 #define _POSIX_C_SOURCE 199309L
 

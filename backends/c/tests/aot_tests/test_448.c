@@ -10,6 +10,10 @@
 // must read the same binding. Lua's globals naturally provide single-
 // scope semantics, so this fixture verifies the existing
 // scriptengine.jinja2 init / lua_assign emit shape preserves it.
+//
+// W3C SCXML B.2: ECMAScript single global scope — state-local <data> declared
+// in a child / parallel sibling is reachable from a parent / sibling cond
+// (early binding makes both var1 and var2 globally bound at init)
 
 #include <stdio.h>
 

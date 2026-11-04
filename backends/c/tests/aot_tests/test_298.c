@@ -3,9 +3,16 @@
 //
 // W3C SCXML test298 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(298) invocation. The
-// runner here is the standard C11 boilerplate.
+// W3C SCXML 5.7: <param location=""/> names no location — error.execution,
+// and the pair is ignored; error.execution is queued ahead of done.state.s0,
+// so its transition reaches pass first, and the surrounding `<send
+// event=timeout delay=1s>` schedule is unused because that macrostep reaches
+// pass before the timer fires
+//
+// The runner here is the standard C11 boilerplate: init, run, compare the
+// final state against TEST298_STATE_PASS, return 0 on PASS / 1 on FAIL. What
+// it links beside the machine is what the generator states the machine
+// requires (backends/c/tests/CMakeLists.txt).
 
 #include <stdio.h>
 

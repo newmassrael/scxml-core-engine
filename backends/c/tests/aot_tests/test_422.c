@@ -52,6 +52,27 @@
 // boundary that test226/240/241 don't exercise — those have only one
 // invoke per state, so the cancel-on-eventless-exit path is dead code
 // until this fixture forces it.
+//
+// W3C SCXML 6.4 (test422): three `<invoke>` declarations across compound
+// subtree (s1, s11, s12). `_init`'s macrostep loop runs eventless transitions
+// BEFORE `execute_pending_invokes`, so s11's eventless `<transition
+// target="s12"/>` fires first, s11's onexit cancels s11's pending entry via
+// `sce_invoke_pending_cancel_for_state`, and s12's onentry pushes its own. At
+// macrostep end only s1 + s12 children spawn — their `invokeS1` / `invokeS12`
+// increment Var1 to 2, and the 2s timeout's cond `Var1==2` routes to pass.
+// SCE_MAX_INVOKES=4 covers the three-invoke working set; if the cancel hook
+// were missed s11's `invokeS11` would route parent → fail.
+//
+// W3C SCXML 6.4 invoke cancel-on-eventless-step — `<invoke>` is deferred
+// until macrostep end, but the deferring state's `<onexit>` cancels its
+// pending entry if the state is exited within the same macrostep. The c11
+// onexit hook calls `sce_invoke_pending_cancel_for_state`
+// (backends/c/runtime/include/sce/invoke.h) before destroying any active
+// children — so a state that defers an invoke and is exited via an eventless
+// transition before macrostep end never spawns the child. Fixtures up to
+// test239 carry one invoke per state and never exercise this path; test422
+// forces it with three invokes in one compound subtree where the middle child
+// must be silently cancelled.
 
 #define _POSIX_C_SOURCE 199309L
 

@@ -3,8 +3,15 @@
 //
 // W3C SCXML test558 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(558) invocation.
+// W3C SCXML B.2: inline `<data id="var1">\nthis  is \na string \n</data>`
+// first attempts `var1 = (this  is \na string)` — Lua rejects this
+// (unexpected identifier `is` after `this`), the new fallback path pushes the
+// `normalize_ws`-filtered literal `"this is a string"` and `lua_setglobal`s
+// it. The src= sibling reads `test558.txt` (same raw text) at codegen time
+// and goes through the identical emit. cond `var == 'this is a string'`
+// matches both vars → s0→s1→pass. Mirrors cpp
+// `DataModelInitHelper::initializeVariable`'s eval-then-`normalizeWhitespace`
+// dispatch (sce/src/common/DataModelInitHelper.cpp:121-156).
 
 #include <stdio.h>
 

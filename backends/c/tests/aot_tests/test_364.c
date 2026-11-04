@@ -15,8 +15,8 @@
 // configuration; any single-leaf entry on the multi-target legs would
 // trip a sibling's `<transition target="fail"/>` instead.
 //
-// Spec-mirror parity (cpp tests/CMakeLists.txt:796 registers the same
-// fixture as `sce_generate_static_w3c_test(364)`).
+// Spec-mirror parity (the C++ route runs the same fixture, with the
+// registry's `simple` harness).
 
 #include <stdio.h>
 

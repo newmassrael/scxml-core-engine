@@ -12,6 +12,12 @@
 // the runner cannot rely on `_run` and must poll `_tick` until either
 // the schedulered fire elapses or a top-level final is reached. Mirrors
 // cpp `ScheduledAotTest::runUntilCompletion` cadence.
+//
+// W3C SCXML 3.4 + 5.9.2: in onexit, the exiting state has already been
+// removed from the active configuration — `<if cond="In('s011')">` reads the
+// bitmap **after** s011 was cleared, so event1 is never raised and only the 1
+// s timeout fires (success path); needs polling-driven _tick (test579
+// pattern) because the timeout target=pass is the verdict-deciding event
 
 #define _POSIX_C_SOURCE 199309L
 

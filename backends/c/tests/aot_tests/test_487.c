@@ -12,8 +12,8 @@
 // the queue, and s0's `event="error.execution" target="pass"`
 // transition fires first.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(487) invocation.
+// W3C SCXML 5.4: <assign> targeting an undefined data variable with an
+// illegal expression raises error.execution
 
 #include <stdio.h>
 

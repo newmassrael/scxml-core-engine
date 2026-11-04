@@ -3,8 +3,8 @@
 //
 // W3C SCXML test550 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(550) invocation.
+// W3C SCXML 5.3: explicit binding="early" pre-initialises state-local <data
+// expr> from a sibling state's transition cond
 
 #include <stdio.h>
 

@@ -1504,8 +1504,10 @@ fn a_plan_sent_alone_is_refused_wherever_it_is() {
     );
 }
 
-/// The C11 conformance suite's build, which registers its fixtures through
-/// `sce_generate_static_w3c_c_test` and declares them together
+/// The C11 conformance suite's build, which registers every fixture the
+/// registry lists through `sce_generate_static_w3c_c_test`, in a loop over the
+/// ids `sce_w3c_registry_fixtures` read (`w3c_registry_drives_cmake`), and
+/// declares them together after the last registration
 /// ([`the_routes_ask_every_plan_before_they_declare_one`]).
 const C11_TESTS: &str = include_str!("../../backends/c/tests/CMakeLists.txt");
 

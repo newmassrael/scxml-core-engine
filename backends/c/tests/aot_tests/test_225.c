@@ -24,6 +24,14 @@
 // negative path that lands in `fail`; success means the default
 // (lower-priority) arm wins, which only happens if the two ids
 // differ.
+//
+// W3C SCXML 6.4.1 (test225): two adjacent `<invoke idlocation>` declarations
+// in the same state — the auto-generated ids must differ. C11's `invoke_idx`
+// suffix (loop.index0) provides the distinguishing tail (`.0` vs `.1`), so
+// Var1 !== Var2 even though state and sm pointer are shared.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_247.c.
 
 #define _POSIX_C_SOURCE 199309L
 

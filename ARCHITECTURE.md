@@ -177,6 +177,8 @@ Bare-metal / RTOS consumers opt out of `sce_c_runtime_posix` and supply their ow
 
 **Generated C11 code** consumes these tiers via stable headers (`#include <sce/clock.h>` etc.), never via host-relative paths — the headers and their impls are decoupled by the `sce_c_runtime` INTERFACE include path.
 
+**What a machine links** is the generator's statement, not a list kept in the build. Each generated machine states what it needs beyond the header-only tier — `lua` (the Lua 5.4 engine its data model runs in), `dom` (the Lua binding of the XML DOM, `sce_c_scripting`), `http` (the BasicHTTP client a platform tier implements) — and includes each requirement's header exactly when it states it (`RuntimeRequirement`, `sce-build/src/generator.rs`). A build asks for the statement with the plan it already asks for (`sce-codegen --plan --plan-requires generate`, read into `<PREFIX>_REQUIRES` by `cmake/SCECodegenPlan.cmake`) and links each requirement with the library the runtime registers for it where that library is built (`sce_c_runtime_libraries`, `backends/c/runtime/CMakeLists.txt`); a requirement whose tier a configuration does not build leaves that machine unlinkable there, and one no tier implements is refused. The W3C conformance runner (`backends/c/tests`) registers every fixture of the conformance registry (`tests/w3c/conformance/fixtures.json`, read through `cmake/SCEW3CRegistry.cmake` as the C++ route reads it) and links each from that statement, so a datamodel-less machine links neither Lua nor the DOM binding.
+
 ### C++ Standard Compatibility
 
 `sce_core` and `sce_base` target C++17 minimum for cross-compilation to constrained toolchains (e.g., QNX GCC 8.3). A public header does not choose a definition by language standard, because a consumer's C++17 translation units and SCE's C++20 ones include it in one program (ADR 0059 §3). Logging is no exception: `SCE_LOG_*` has one definition, formats with SCE's own C++17 `{}` substitution, and reaches whatever sink the program installed (ADR 0060).
@@ -321,7 +323,10 @@ Adding a new utility or template group means editing `sce_codegen_assets.cmake` 
 
 A CMake route that generates at build time declares each generation's outputs from the
 generator's own answer, `sce-codegen --plan [--plan-children] generate`, asked when the tree is
-configured (`cmake/SCECodegenPlan.cmake`, the one module that asks it). A plan is the whole
+configured (`cmake/SCECodegenPlan.cmake`, the one module that asks it). The module asks every
+plan with `--plan-requires` too, so the same answer states what the machines of each
+generation need linked (`<PREFIX>_REQUIRES`; see "What a machine links" under C11 Backend
+Layering). A plan is the whole
 generation run in memory, and the test tree with the Mesh fixtures asks several hundred: asked
 one after another they took 207 s of an 8-core machine's configure. The module now asks each
 plan once per state of its inputs, and many at once, without changing an answer:

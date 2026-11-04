@@ -56,12 +56,27 @@ sce-codegen generate resources/XXX/testXXX.scxml -o /tmp/test_verify/ -l cpp
    delayed `<send>` to fire, or `http` for one that sends over
    BasicHTTPEventProcessor. Omitting it means `simple`.
 
-2. **CMake registration — there is none to write.** `tests/CMakeLists.txt`
-   derives it: it asks `sce-codegen list-fixtures` for every id, reads each
-   one's `harness`, and calls `sce_generate_static_w3c_test()` inside a
-   `foreach` over that list, with no filter. A fixture in the registry and
-   absent from the build is therefore not a state this tree can reach, which
-   is why the parity that used to be checked is now a property of the loop.
+2. **CMake registration — there is none to write.** Both CMake routes derive
+   it from the registry through one reading of it,
+   `sce_w3c_registry_fixtures` (`cmake/SCEW3CRegistry.cmake`), which asks
+   `sce-codegen list-fixtures` for every id, in registry order, and the
+   `harness` of each. `tests/CMakeLists.txt` calls
+   `sce_generate_static_w3c_test()` and `backends/c/tests/CMakeLists.txt`
+   calls `sce_generate_static_w3c_c_test()` inside a `foreach` over that
+   list, with no filter. A fixture in the registry and absent from either
+   build is therefore not a state this tree can reach, which is why the
+   parity that used to be checked is now a property of the loops
+   (`sce-build/tests/w3c_registry_drives_cmake.rs` holds both routes to it).
+
+   Nor is there a flag to write for what a C11 fixture links. The C11 route
+   used to carry its own 202 calls, each flagged `NEEDS_LUA`, `NEEDS_DOM` or
+   `NEEDS_HTTP` by hand. What a machine links is the generator's decision:
+   each generated C11 machine states what it requires beyond the header-only
+   runtime (`lua`, `dom`, `http`) in the plan the route asks for
+   (`--plan-requires`), includes each requirement's header exactly when it
+   states it, and the route links the library `backends/c/runtime` registers
+   for each. How a fixture is run is its `harness`: an `http` fixture's ctest
+   requires the BasicHTTP server fixture, on both routes.
 
    Nor is there a list of the files a fixture's generation writes. The route
    asks `sce-codegen --plan --plan-children generate` of the fixture when the
@@ -128,6 +143,42 @@ inline static AotTestRegistrar<TestXXX> registrar_TestXXX;
 `@brief` states one (`sce-codegen check-aot-briefs`, a dependency of
 `w3c_test_cli`). Cite the sections the test touches in the comment's body
 instead — those citations are expected there.
+
+## Step 3b: Create the C11 runner
+
+The C11 route compiles every registered fixture with its runner,
+`backends/c/tests/aot_tests/test_XXX.c`: an `int main(void)` that drives the
+generated machine to completion and returns 0 when it ended in its pass state,
+1 otherwise (CTest reads the exit status as the verdict; the C11 backend links
+no test framework). A registered fixture without a runner fails the build of
+`sce_c_w3c_test_XXX`. What the fixture's machine needs beyond the generated
+code is not written anywhere: the runner links what the generator states the
+machine requires. The runner's header comment is where what the C11 lowering
+of the fixture exercises is written; the registry's `summary` says what the
+fixture tests.
+
+```c
+#include <stdio.h>
+
+#include "testXXX_sm.h"
+
+int main(void) {
+    testXXX_t sm;
+    testXXX_init(&sm);
+    testXXX_run(&sm);
+    int rc = testXXX_ended_in(&sm, TESTXXX_STATE_PASS) ? 0 : 1;
+    if (rc != 0) {
+        fprintf(stderr, "testXXX: FAIL — active = 0x%08x\n", (unsigned)testXXX_active_states(&sm));
+    }
+    testXXX_destroy(&sm);
+    return rc;
+}
+```
+
+A fixture that needs delayed `<send>` to fire (`scheduled`) drives the machine
+with `testXXX_tick` until it ends or a deadline passes, as the existing
+`scheduled` runners do; one of the `http` harness reads the endpoint from
+`basic_http_test_endpoint.h`.
 
 ## Step 4: Verify
 

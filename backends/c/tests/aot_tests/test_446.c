@@ -3,8 +3,15 @@
 //
 // W3C SCXML test446 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(446) invocation.
+// W3C SCXML 5.3.1 + 5.3.2 + B.2: inline `<data id="var1">[1, 2, 3]</data>`
+// already lowered by `to_lua_expr` (array-literal pass) to a Lua table —
+// `var1 = ({1, 2, 3})` evaluates fine. The new `var.src` branch reads
+// `file:test446.txt` (identical content `[1, 2, 3]`) at codegen time via the
+// `read_data_src` filter and threads the content through the same emit shape
+// as inline content, so `var2 = ({1,2,3})` also lands as a Lua table. The
+// cond `var instanceof Array` lowers to `_isArray(var)`
+// (transform_instanceof_patterns at lua_transformer.rs:605) — both vars now
+// satisfy it and the s0→s1→pass chain matches.
 
 #include <stdio.h>
 

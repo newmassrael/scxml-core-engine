@@ -11,6 +11,14 @@
 // live `active` bitmap at the moment the `<if>` fires; the safety-net
 // `<send delay="1s" event="timeout"/>` only fires if the eventless path
 // stalls, so `_run` quiesces well under the cap.
+//
+// W3C SCXML 3.4 + 5.9.2: pure In() predicate inside <if> emit (not just
+// transition cond) — the parser's per-action `is_pure_in_predicate` flag now
+// drives the if/elseif emit's native-lowering branch alongside the transition
+// branch, so the s01 onexit's `<if cond="In('s01')"><raise
+// event=event1/></if>` reads the live bitmap (s01 already cleared) and skips
+// the raise; the safety-net `<send delay=1s event=timeout>` never fires
+// because the eventless path quiesces well under 1 s
 
 #include <stdio.h>
 

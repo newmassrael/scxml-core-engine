@@ -51,6 +51,20 @@
 // (intra-child) → `<transition event="*"/>` to `subFinal` → child
 // raises `done.invoke` to parent → parent's `<transition event="*"/>`
 // matches → fail.
+//
+// W3C SCXML 6.4 invoke autoforward — `<invoke autoforward="true">` requires
+// the parent to ship an exact copy of every external event to the invoked
+// process. cpp `StateMachine::processEvent`
+// (sce/src/runtime/StateMachine.cpp:683) forwards via `getAutoForwardSessions
+// + child->processEvent`; c11 mirrors with a per-SM
+// `forward_to_autoforward_children` helper (state_machine.c.jinja2, gated on
+// `model.has_autoforward_invoke`) that switches on the popped event enum and
+// calls the active child's `_raise_external_by_name` shim with the
+// parent-side event-name string. No event name is filtered (Appendix D
+// forwards whatever the external queue yielded); only the wildcard sentinel
+// and the empty-name placeholder, which carry no name, are skipped. Helper is
+// only emitted when at least one invoke carries `autoforward="true"`, so
+// existing fixtures stay byte-identical.
 
 #define _POSIX_C_SOURCE 199309L
 

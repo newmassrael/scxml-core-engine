@@ -14,8 +14,12 @@
 // entry as its event's JSON `data[]`, so nothing sent in between can
 // replace it.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(186) invocation.
+// W3C SCXML 5.10 + 6.2: delayed <send><param expr="Var1"/></send> snapshots
+// Var1=1 at send time even though the surrounding onentry reassigns Var1=2
+// before the 1 s timer fires — the payload captured at send time is stored on
+// the scheduled entry as its event's JSON `data[]`, and the _tick dispatch
+// raises the event with it, so the receiving transition reads aParam=1,
+// routing to pass
 
 #define _POSIX_C_SOURCE 199309L
 

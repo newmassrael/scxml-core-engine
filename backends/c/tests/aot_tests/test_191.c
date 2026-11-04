@@ -25,6 +25,17 @@
 // queue and parent's `childToParent` transition fires → s0 → pass. Without
 // the stamp the send drops under a NULL guard, child reaches subFinal,
 // done.invoke routes to `*` → fail.
+//
+// W3C SCXML 6.4 invoke — `<onentry><send target="#_parent">` in the child
+// runs during the child's `enter_initial_configuration` inside its `_init`,
+// so parent_dispatch must be live BEFORE the entry walk rather than stamped
+// after it. The codegen now emits `_init_with_parent` (parent_sm + dispatch
+// parameters) for every child SM with `has_parent_communication=true` and
+// removes the plain `_init` symbol for those SMs — the only call site is the
+// parent's `execute_pending_invokes` helper. Child SMs whose only `<send
+// target="#_parent">` lives in transition bodies
+// (test226/240/241/243/244/245/276) take the same code path and behave
+// identically because the post-init macrostep loop still drives those sends.
 
 #define _POSIX_C_SOURCE 199309L
 

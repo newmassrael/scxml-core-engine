@@ -37,6 +37,9 @@
 // transition out of the invoking state's *parent compound*, whereas
 // test237 cancels via the invoking state itself exiting; both routes
 // converge on the same `destroy_active_children` cleanup.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_232.c.
 
 #define _POSIX_C_SOURCE 199309L
 

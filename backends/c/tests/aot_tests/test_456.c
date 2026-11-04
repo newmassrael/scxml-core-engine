@@ -14,6 +14,14 @@
 // that handles `<assign expr="Var1+=1"/>` for non-script sites. The
 // inline-script emit path lives in `state_machine.c.jinja2::emit_action`'s
 // `script` branch (sibling of the `assign` branch).
+//
+// W3C SCXML 5.8 + 5.2: inline `<script>Var1+=1</script>` mutates an existing
+// `<data>` declaration — Var1 starts at 0 (datamodel init), the script's
+// compound `+=` lowers to `Var1 = Var1 + (1)` via
+// `lua_transformer::transform_compound_assignment` (same pass that already
+// handles `<assign expr="Var1+=1"/>`), and the resulting Var1==1 routes
+// through the cond to pass. Confirms the inline-script branch and the
+// assign-expr branch share the same lowering.
 
 #include <stdio.h>
 

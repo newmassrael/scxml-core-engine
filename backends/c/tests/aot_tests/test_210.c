@@ -9,6 +9,11 @@
 // through `lua_eval_eventexpr` (the consumer-agnostic to-string helper)
 // then forwards into the same `scheduled_cancel` static helper used by
 // the literal-sendid arm.
+//
+// W3C SCXML 6.3: <cancel sendidexpr="Var1"> evaluates Var1='foo' at cancel
+// time via lua_eval_eventexpr → forwards the resulting string to
+// scheduled_cancel; same observable shape as test208 (event1 cancelled,
+// event2 fires first → pass). needs polling-driven _tick
 
 #define _POSIX_C_SOURCE 199309L
 

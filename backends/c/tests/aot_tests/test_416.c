@@ -6,6 +6,10 @@
 // W3C SCXML 3.7: top-level final state halts execution — entering a child of the top-level final triggers
 // `is_in_final_state` to return true, so process_event_queues returns immediately without firing the safety-net timeout
 // (target=fail). Routes to pass via eventless chain.
+//
+// W3C SCXML 3.7: done.state.id fires when entering the final state of a
+// compound state — the receiving transition matches done.state.s0 before the
+// safety-net 1 s timeout (target=fail) fires.
 
 #define _POSIX_C_SOURCE 199309L
 

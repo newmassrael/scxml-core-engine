@@ -12,8 +12,12 @@
 // `_event.data.productName == 'bar'` reads the table field via the
 // ECMAScript-via-Lua datamodel and matches pass.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(578) invocation.
+// W3C SCXML 5.10 + B.2:
+// <send><content>{"productName":"bar","size":27}</content></send> parses the
+// JSON body via the lua_send_content_literal JSON-key-syntax shim (`"key":` →
+// `["key"]=`) + pcall(load(...)); the resulting Lua table lands on
+// _event.data so the receiver's cond `_event.data.productName == 'bar'` reads
+// the structured field and routes to pass
 
 #include <stdint.h>
 #include <stdio.h>

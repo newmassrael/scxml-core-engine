@@ -3,9 +3,21 @@
 //
 // W3C SCXML test453 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(453) invocation. The
-// runner here is the standard C11 boilerplate.
+// W3C SCXML B.2 ECMAScript function-expression in value-expression context
+// (test453): `<data id="var1" expr="function(invar) {return invar + 1;}"/>`
+// previously lowered to `var1 = (function(invar) {return invar + 1\n})` — the
+// trailing `}` was left raw, which is invalid Lua. transform_expression now
+// invokes transform_function_syntax (mirroring the script pipeline's order at
+// lua_transformer.rs:1822), so the same anonymous-function lowering that
+// already worked inside `<script>` blocks now applies wherever an ECMAScript
+// value-expression is accepted (cond, location/data/assign expr). Result:
+// `var1 = (function(invar)  return invar + 1\n end)`, then `var1(2)` invokes
+// natively and the cond `var1(2) == 3` matches.
+//
+// The runner here is the standard C11 boilerplate: init, run, compare the
+// final state against TEST453_STATE_PASS, return 0 on PASS / 1 on FAIL. What
+// it links beside the machine is what the generator states the machine
+// requires (backends/c/tests/CMakeLists.txt).
 
 #include <stdio.h>
 

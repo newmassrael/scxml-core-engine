@@ -3,8 +3,24 @@
 //
 // W3C SCXML test557 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(557) invocation.
+// W3C SCXML B.2 (test557): inline `<data id="var1"><books>…</books></data>`
+// and `<data id="var2" src="file:test557.txt"/>` both carry XML — the
+// analyzer flips `needs_dom_helper` on the inline `<` first-char (var1),
+// which gates the lua_init_engine register hook so DOM metatables are
+// installed; the var.content arm and the var.src arm (after `read_data_src`)
+// both detect first-char `<` and emit `sce_lua_dom_push_object +
+// lua_setglobal` instead of the eval+normalize fallback. The s0 transition
+// cond `var1.getElementsByTagName('book')[0].getAttribute('title') ==
+// 'title1'` then dereferences through the DOMDocument metatable's
+// `getElementsByTagName` callback (Lua C API recursion via dom.c's
+// `sce_xml_collect`) and `getAttribute` (linear attribute lookup); s1
+// verifies var2 the same way. Mirrors cpp
+// `DataModelInitHelper::initializeVariable` isXML branch +
+// `LuaDOMBinding::pushDOMObject`
+// (sce/src/common/DataModelInitHelper.cpp:103-118 +
+// sce/src/scripting/LuaDOMBinding.cpp:74-92), reimplemented in pure C in
+// backends/c/runtime/base/dom.c and backends/c/runtime/scripting/
+// lua_dom_binding.c.
 
 #include <stdio.h>
 

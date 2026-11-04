@@ -35,6 +35,20 @@
 // the child's `_tick` (parsed from the child SCXML's `<send delay>`
 // presence) so its scheduler promotes elapsed entries on the same
 // outer poll iteration.
+//
+// W3C SCXML 6.2 (test207): child schedules `event1` (1 s, sendid=foo) and
+// `event2` (1.5 s) then immediately notifies parent via `childToParent`.
+// Parent's `<cancel sendid="foo">` runs in parent's session and MUST NOT
+// touch the child's scheduler — child's `event1` fires at 1 s, drives
+// sub0→subFinal with `<send target="#_parent" event="pass">`, parent reaches
+// pass. Pins per-session scheduler isolation + child `_tick` driven from
+// `_drive_active_children`.
+//
+// W3C SCXML 6.2 invoke — child SCXML carries `<send delay="...">` in its own
+// session. Parser's `parse_child_metadata` walks the child for any delayed
+// send and stamps `child_needs_event_scheduler` on the invoke;
+// `_drive_active_children` calls the child's `_tick` (which promotes elapsed
+// scheduled entries) instead of just `_step` when the flag is on.
 
 #define _POSIX_C_SOURCE 199309L
 

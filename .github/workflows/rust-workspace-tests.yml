@@ -153,8 +153,10 @@ on:
       # The C11 conformance suite's build, which the same suite compiles in
       # and holds to declaring its fixtures after their plans were asked.
       - 'backends/c/tests/CMakeLists.txt'
-      # The conformance registry, whose fixtures the suite generates.
+      # The conformance registry, whose fixtures the suite generates, and the
+      # one reading of it both conformance routes register through.
       - 'tests/w3c/conformance/fixtures.json'
+      - 'cmake/SCEW3CRegistry.cmake'
       # The C11 runtime's build, whose vocabulary of what a machine requires
       # the suite compiles in and holds to what the generator can state.
       - 'backends/c/runtime/CMakeLists.txt'
@@ -274,8 +276,10 @@ on:
       # The C11 conformance suite's build, which the same suite compiles in
       # and holds to declaring its fixtures after their plans were asked.
       - 'backends/c/tests/CMakeLists.txt'
-      # The conformance registry, whose fixtures the suite generates.
+      # The conformance registry, whose fixtures the suite generates, and the
+      # one reading of it both conformance routes register through.
       - 'tests/w3c/conformance/fixtures.json'
+      - 'cmake/SCEW3CRegistry.cmake'
       # The C11 runtime's build, whose vocabulary of what a machine requires
       # the suite compiles in and holds to what the generator can state.
       - 'backends/c/runtime/CMakeLists.txt'

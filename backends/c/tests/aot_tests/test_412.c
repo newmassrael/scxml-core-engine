@@ -17,8 +17,8 @@
 // before the next chain element's onentry), exactly matching cpp
 // enterStates' default-initial branch ordering.
 //
-// Spec-mirror parity (cpp tests/CMakeLists.txt:817 registers the same
-// fixture as `sce_generate_static_w3c_test(412 ... TYPE SCHEDULED)`;
+// Spec-mirror parity (the C++ route runs the same fixture with the
+// registry's `scheduled` harness, as a `ScheduledAotTest`;
 // the C11 _run loop reaches pass via macrostep alone because the
 // safety-net `<send event="timeout" delay="1s"/>` is only scheduled,
 // not fired, by the in-process scheduler when the macrostep drains

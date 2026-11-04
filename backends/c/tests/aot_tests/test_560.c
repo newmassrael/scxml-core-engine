@@ -9,6 +9,12 @@
 // promoted lua table on `_event.data` — fixture exists to verify the C11
 // send-param arm works without a top-level `<datamodel>`, only the
 // `_event.data.aParam` reader path forces `needs_script_engine`.
+//
+// W3C SCXML 5.10 + 6.2: <send event="foo"><param name="aParam"
+// expr="1"/></send> without a top-level <datamodel> — the cond
+// `_event.data.aParam == 1` is what forces needs_script_engine, the
+// param-expr static literal 1 still crosses as JSON on the event's `data[]`
+// so _event.data.aParam is the number 1 at the receiver
 
 #include <stdio.h>
 

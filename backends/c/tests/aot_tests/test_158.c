@@ -13,7 +13,7 @@
 // Fixture-only landing: covered entirely by infrastructure already
 // emitted by 31750729 (raise emit) — the existing emit_action raise
 // branch pushes events in document order and the FIFO event queue
-// preserves it. NEEDS_LUA holds because the document declares
+// preserves it. The machine requires Lua because the document declares
 // `<data expr="0"/>`, which routes through the Lua datamodel.
 
 #include <stdio.h>

@@ -48,6 +48,22 @@
 // invoke would fire done.invoke → fail. If only the inline-content
 // path worked, s02's `done.invoke → pass` would never arrive and
 // timeout2 would route to fail.
+//
+// W3C SCXML 6.4 (test242): src/inline-content parity at parallel scope. One
+// `src="file:test242sub1.scxml"` invoke at s0 + two `<content><scxml>`
+// invokes at s02/s03 — three children share the same shape (initial state IS
+// a top-level `<final>`, done.invoke fires synchronously). Pins parser
+// handling of multiple `<content>` siblings inside one parent SM (test239
+// only has one inline-content child); both synthesized children
+// (`test242__sce_synth_invoke__invoke_{1,2}`) are written by the parent's own
+// generation and declared from its `sce-codegen --plan generate` answer, as
+// test239's single one is. Because s0's src= invoke completes before
+// timeout1, the s03 path is unreachable in the passing run, but the
+// inline-content child for s03 must still parse and codegen for the static
+// binary to link.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_232.c.
 
 #define _POSIX_C_SOURCE 199309L
 

@@ -3,8 +3,12 @@
 //
 // W3C SCXML test513 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(513) invocation.
+// W3C SCXML C.2 (test513): event-only POST; verifies the server replies with
+// HTTP 200 OK (test runner does not inspect the status code, but the
+// reception of the echoed `event` is the implicit verification — the C11
+// client treats only 2xx-with-body as success-equivalent because
+// `sce_test_http_parse_response` requires a JSON object). Same emit shape as
+// test201.
 
 #include <stdio.h>
 

@@ -31,6 +31,9 @@
 // invoke for unknown source), s01 would stall on done.invoke, the 2 s
 // timeout would route to fail. If only one of the two invokes worked,
 // the test would fail — the fixture pins parity between both shapes.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_232.c.
 
 #define _POSIX_C_SOURCE 199309L
 

@@ -28,6 +28,9 @@
 // child's done.invoke reaches the parent before the wildcard catches
 // any divergent event. Any of these failing routes the parent into
 // `fail` via `<transition event="*"/>`.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_178.c.
 
 #define _POSIX_C_SOURCE 199309L
 

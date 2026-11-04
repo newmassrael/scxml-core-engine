@@ -17,6 +17,13 @@
 // W3C 6.4.1 namelist single-value transfer: parent's Var1=1 transfers
 // via namelist to the child's Var1 slot, overriding the child's
 // default. Child's `Var1==1` cond fires, dispatches `success` → pass.
+//
+// W3C SCXML 6.4.1 (test244): single `namelist` value transfer — minimal
+// counterpart isolating the namelist path. Parent's Var1=1 must reach the
+// child's Var1 via name lookup on `sm->L` (parent state) + push to `child.L`.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_226.c.
 
 #define _POSIX_C_SOURCE 199309L
 

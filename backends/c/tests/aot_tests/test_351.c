@@ -3,9 +3,21 @@
 //
 // W3C SCXML test351 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(351) invocation. The
-// runner here is the standard C11 boilerplate.
+// W3C SCXML 5.10.1 (test351): the `<send>` static `id="..."` attribute MUST
+// be propagated as `_event.sendid` to the receiver. The bare-external arm at
+// state_machine.c.jinja2:334 now emits a strncpy when `action.id` is
+// non-empty, mirroring cpp `EventWithMetadata` constructor sendId carry —
+// when the author omitted `id`, the zero-initialised `send_id` field stays
+// empty and `_event.sendid` reads as nil/undefined per the same spec clause's
+// "MUST leave this attribute empty" rule. parser.rs:1153 stores the literal
+// `id` attribute verbatim, so the strncpy operand is the exact string the
+// author wrote. The s2 send (no id) and the s0 send (id="send1") share the
+// same arm, gated by the `{% if action.id %}` jinja2 conditional.
+//
+// The runner here is the standard C11 boilerplate: init, run, compare the
+// final state against TEST351_STATE_PASS, return 0 on PASS / 1 on FAIL. What
+// it links beside the machine is what the generator states the machine
+// requires (backends/c/tests/CMakeLists.txt).
 
 #include <stdio.h>
 

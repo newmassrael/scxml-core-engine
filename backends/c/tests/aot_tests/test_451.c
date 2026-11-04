@@ -10,6 +10,12 @@
 // matches `In\(['"]([^'"]+)['"]\)` regardless of any wrapping group, so
 // the produced `test451_in_state(sm, TEST451_STATE_S1)` chunk matches
 // cpp's `this->isStateActive("s1")` semantics with no runtime resolver.
+//
+// W3C SCXML 5.9.2 + B.2: ECMAScript-syntax pure In() predicate with
+// surrounding parens (e.g. `(In('s1'))`) routes through the same native-lower
+// filter — the `is_pure_in_predicate` parser predicate already strips
+// wrapping parens, and the regex `In\(['"]([^'"]+)['"]\)` matches regardless
+// of the outer grouping, so the produced chunk is identical to test310's
 
 #include <stdio.h>
 

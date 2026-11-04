@@ -11,6 +11,12 @@
 // transition then matches event1 → pass. If the eval used the initial
 // (undefined) value the chunk would fail and fall back to the default
 // SCXMLEventProcessor URI per cpp's line 47, still landing on pass.
+//
+// W3C SCXML 6.2: <send typeexpr> evaluates Var1 at send time (Var1 =
+// SCXMLEventProcessor URI) — supported-type literal compare mirrors cpp
+// `SendHelper::isSupportedSendType`; eval failure falls back to the
+// SCXMLEventProcessor default per cpp line 47, so the unbound initial Var1
+// still lands on pass via the bare-external dispatch
 
 #include <stdio.h>
 

@@ -16,6 +16,13 @@
 // fire because the immediate sends always reach pass first; they
 // remain on the scheduler array and the registry references are
 // reclaimed by destroy.
+//
+// W3C SCXML 5.10 + 6.2 + C.1: <send> with both `namelist` and `<param>`
+// populates the same _event.data table — the namelist entries and the params
+// are gathered into one payload (`send_payload_json`) that rides on the
+// event's `data[]` onto _event.data; the receiving transitions read both
+// `_event.data.Var1` and `_event.data.param1` from the same dispatch and
+// chain s0→s1→s2→s3→pass before either 5 s timeout can fire.
 
 #include <stdio.h>
 

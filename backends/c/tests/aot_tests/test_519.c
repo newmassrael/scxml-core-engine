@@ -3,8 +3,21 @@
 //
 // W3C SCXML test519 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(519) invocation.
+// W3C SCXML C.2 (test519): `<send event="test" target="..."
+// type="BasicHTTP"><param name="param1" expr="1"/></send>` — event +
+// static-literal numeric param. Body = `_scxmleventname=test&param1=1`. The
+// standalone server's test519-specific numeric coercion
+// (`tests/w3c/standalone_http_server.js:65-67`, `Number(value)` ≠ NaN)
+// returns `data: {"param1": 1, "_scxmleventname": "test"}`. The transition
+// `expr="_event.data[\"param1\"] == 1"` is recognised by
+// `parser.rs:1059-1063` as a `cond=` synonym (all backends share the
+// `attribute("cond").or_else("expr")` fall-through), and the codegen lowers
+// it to a `luaL_dostring` returning a boolean — so
+// `model.needs_script_engine` is on and `sce_test_lua_push_json` promotes the
+// JSON object onto `_event.data` before the cond evaluates. Distinct from
+// test567 by reading `_event.data` directly in the transition cond without an
+// intermediate `<assign>`/datamodel hop, exercising the cond+JSON-deref path
+// against numeric truthiness.
 
 #include <stdio.h>
 

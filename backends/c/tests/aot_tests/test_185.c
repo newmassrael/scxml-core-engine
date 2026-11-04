@@ -6,6 +6,11 @@
 // W3C SCXML 6.2: <send> respects the delay specification — onentry sends event2 with delay=1s then event1 immediately;
 // the immediate event1 fires first (routes s0→s1), then the 1s timer fires event2 → pass. If the scheduler ignored
 // delay, event2 would land first against the s0 wildcard → fail. Tests scheduled_push fire_time_ms-keyed sort.
+//
+// W3C SCXML 6.2: <send> respects the delay specification — send event2 with
+// delay=1s and send event1 immediately; the immediate event1 dispatches first
+// (s0→s1 transition), then the 1s timer fires event2 → pass. Reversal
+// (delayed firing first) would hit s0's wildcard fail.
 
 #define _POSIX_C_SOURCE 199309L
 

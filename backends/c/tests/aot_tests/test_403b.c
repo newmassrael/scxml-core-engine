@@ -10,6 +10,10 @@
 // exactly once — pass cond is `Var1 == 1`, fire-twice would route to
 // fail. Pins the §scxml-D-selectTransitions "optimal enabled set is a set"
 // semantics the microstep relies on.
+//
+// W3C SCXML App.D.2: optimal enabled set is a set — same parent transition
+// collected from two converging region leaves dedups via exit-set
+// intersection so body fires exactly once
 
 #include <stdio.h>
 

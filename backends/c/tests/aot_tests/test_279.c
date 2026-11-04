@@ -3,8 +3,8 @@
 //
 // W3C SCXML test279 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(279) invocation.
+// W3C SCXML 5.3: early binding (default) initialises state-local <data expr>
+// at startup before its owning state is entered
 
 #include <stdio.h>
 

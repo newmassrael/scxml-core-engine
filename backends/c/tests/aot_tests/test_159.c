@@ -12,6 +12,11 @@
 // false (Var1 stayed 0), and the unconditional fallback transition
 // routes to pass. Any leak that lets the assign run flips the cond
 // true and the runner ends in fail.
+//
+// W3C SCXML 6.2 + 5.10: <send target="!invalid"> raises error.execution and
+// stops subsequent executable content — the assign immediately after the
+// invalid-target send must be skipped so Var1 stays 0, the cond `Var1==1`
+// transition then misses, and the unconditional fall-through routes to pass
 
 #include <stdio.h>
 

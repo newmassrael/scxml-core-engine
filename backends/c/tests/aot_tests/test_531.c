@@ -3,8 +3,14 @@
 //
 // W3C SCXML test531 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(531) invocation.
+// W3C SCXML C.2 (test531): `<send target="..." type="BasicHTTP"><param
+// name="_scxmleventname" expr="'test'"/></send>` — no `event` attribute, only
+// a `_scxmleventname` param overriding the default event name. The arm's `{%
+// if action.event %}` is false but the params loop runs, emitting a
+// static-literal append (`_scxmleventname=test`) — the `'test'` Lua string
+// literal is parsed by the analyzer as `is_static_literal=true` with
+// `static_value=test`. The standalone server reads the param and returns
+// event="test".
 
 #include <stdio.h>
 

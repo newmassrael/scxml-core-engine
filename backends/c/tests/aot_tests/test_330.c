@@ -10,6 +10,12 @@
 // must round-trip the same name. Any wildcard fall-through to fail
 // indicates the event-name binding (set_current_event) leaked between
 // internal and external pop sites.
+//
+// W3C SCXML 5.10: every dispatched event carries the required `name` field —
+// s0's <raise event=foo> (internal queue) and s1's bare <send event=foo>
+// (external queue) both round-trip the same name through the existing
+// set_current_event lua chunk so the matching event="foo" transitions cover
+// both queue paths
 
 #include <stdio.h>
 

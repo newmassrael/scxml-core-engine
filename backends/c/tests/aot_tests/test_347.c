@@ -14,6 +14,17 @@
 // default no-type send for both `#_parent` (child→parent) and
 // `#_<invokeid>` (parent→child) — the existing send-action lower
 // already accepts this URI in its `send_type` predicate.
+//
+// W3C SCXML C.1 (test347): both directions of `<send>` carry an explicit
+// `type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor"` — child→parent
+// (#_parent) and parent→child (#_<invokeid>). The existing send-action
+// `send_type` predicate already accepts this URI alongside the
+// default-no-type form, so both lowers route normally. Verifies the
+// explicit-type compatibility against the same paths test192/338 exercise
+// without the type attribute.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_236.c.
 
 #define _POSIX_C_SOURCE 199309L
 

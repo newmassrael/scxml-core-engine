@@ -43,6 +43,9 @@
 // execution Var1 stays 1; cond is false; same fail outcome. (c) if
 // finalize ran AFTER transition selection the cond would see Var1=1
 // (pre-finalize); same fail.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_234.c.
 
 #define _POSIX_C_SOURCE 199309L
 

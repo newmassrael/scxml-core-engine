@@ -18,6 +18,16 @@
 // inline scxml is `<scxml version="1.0"><final/></scxml>` — itself an
 // immediate-final machine — so the stub is observationally identical
 // for the W3C contract being tested here.
+//
+// W3C SCXML 6.4.2 (test530):`<invoke><content expr="Var1"/></invoke>` runtime
+// evaluation — Var1 reassigned in onentry from integer 1 to a literal SCXML
+// scriptlet, codegen lowers a luaL_dostring eval-validation gate then spawns
+// the pre-generated `test530_hybrid0` stub child (byte-equivalent to the
+// original inline `<scxml><final/></scxml>`). cpp `test530_sm.inl:166-185` is
+// the equivalent pattern.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_216.c.
 
 #define _POSIX_C_SOURCE 199309L
 

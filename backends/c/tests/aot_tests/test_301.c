@@ -20,6 +20,14 @@
 // branch is unreachable for test301 but kept so a regression that
 // silently emits a real SM header would surface as a link error
 // rather than as a green-but-meaningless test.
+//
+// W3C SCXML 5.8: `<script src="...">` with an unloadable URI rejects the
+// document — `parse_global_scripts` sets `model.document_rejected=true` on
+// `read_to_string` failure, sce_codegen.rs's document_rejected branch emits a
+// stub `_sm.h` carrying `#define SCE_DOCUMENT_REJECTED 1`, and the runner
+// forks via `#ifdef` to PASS without instantiating the SM (mirrors cpp
+// `RejectedDocumentTest` macro). No lua link needed — the stub `_sm.c` is
+// empty.
 
 #include <stdio.h>
 

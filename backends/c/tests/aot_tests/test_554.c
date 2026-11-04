@@ -31,6 +31,29 @@
 // If the codegen-time check were missed, the child would spawn, reach
 // `<final>` immediately during `execute_pending_invokes`, and `done.invoke`
 // would route to fail.
+//
+// W3C SCXML 6.4.1 (test554): `<invoke
+// namelist="__undefined_variable_for_error__">` references a name not in the
+// parent's `<datamodel>`. Codegen-time predicate `loop.first` arm in
+// `c/invoke_methods.jinja2` raises `EVENT_ERROR_EXECUTION` to the parent's
+// internal queue and `continue`s past the spawn — child SM `_init` never
+// runs, no `done.invoke` is raised. Parent's 1 s `timer` fires unopposed → s0
+// → pass. If the static check were missed the child (a top-level `<final>`)
+// would spawn during `execute_pending_invokes` and synthesise `done.invoke`
+// immediately, routing parent → fail.
+//
+// W3C SCXML 6.4 invoke namelist validation — the `<invoke namelist="...">`
+// attribute names must each be declared in the PARENT's `<datamodel>`; if any
+// name is missing, the processor MUST terminate the invocation and raise
+// error.execution (cpp `InvokeExecutor::startInvoke`
+// sce/src/runtime/InvokeExecutor.cpp:425-432 calls `destroySession + return
+// ""` at runtime). c11 folds the membership check to a compile-time
+// predicate: the codegen iterates `invoke_info.namelist.split()` against
+// `model.variables | map(id)` and emits the error.execution raise +
+// `continue` in `execute_pending_invokes` exactly when a name is undeclared.
+// The skip-spawn branch sits before the child SM `_init` call so no resources
+// are allocated. Verified non-regressing against test245 (declared
+// namelist=Var2) — its error.execution emission count is unchanged.
 
 #define _POSIX_C_SOURCE 199309L
 

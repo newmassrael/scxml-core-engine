@@ -3,8 +3,17 @@
 //
 // W3C SCXML test567 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(567) invocation.
+// W3C SCXML C.2 (test567): `<send event="test" target="..."
+// type="BasicHTTP"><param name="param1" expr="2"/></send>` — event +
+// static-literal param. Body = `_scxmleventname=test&param1=2`. The
+// standalone server returns `data: {"param1": 2, "_scxmleventname": "test"}`
+// — a JSON object. The codegen's `model.needs_script_engine` gate is on
+// (because the transition action `<assign location="Var1"
+// expr="_event.data.param1"/>` triggers `AssignAction` cause), so the object
+// span rides on the reply event's `data[]` and its dequeue's
+// `set_current_event` decodes it onto `_event.data`, the assign reads
+// `_event.data.param1` as the Lua integer 2, the s1 cond `Var1 == 2`
+// evaluates true → s1→pass.
 
 #include <stdio.h>
 

@@ -26,6 +26,14 @@
 // from its first sleep. The polling loop is still required because the
 // test harness must still be able to observe the timeout-routes-to-fail
 // path if the success path regresses.
+//
+// W3C SCXML 6.4 invoke — bare `<invoke type="scxml">` + inline
+// `<content><scxml>...</scxml></content>` whose only state is a top-level
+// `<final>`. Child reaches the final state synchronously inside its own
+// `_init`, so the parent's `execute_pending_invokes` raises `done.invoke`
+// immediately and the s0 transition fires before the 2 s safety-net timeout.
+// Pins the per-SM `pending_invokes` queue + child SM struct embed +
+// macrostep-end execute-pending hook + `_destroy` child cleanup walk.
 
 #define _POSIX_C_SOURCE 199309L
 

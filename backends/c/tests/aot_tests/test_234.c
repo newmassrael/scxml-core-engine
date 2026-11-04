@@ -59,6 +59,34 @@
 // and the s1 cond would fail → fail. (b) if p01's finalize ran AFTER
 // transition selection Var1 would still be 1 → first cond fails →
 // matches the unconditional `<transition target="fail"/>`.
+//
+// W3C SCXML 6.4 (test234): parallel parent (p0 with p01+p02 regions) each
+// carrying its own `<invoke>` with its own `<finalize>`. p01's child has
+// `<final>` initial that sends `<send target=#_parent><param aParam=2/>`;
+// p02's child has a 2 s `<send event="timeout">` (intra-child, not to parent)
+// so p02 never raises a `<send target=#_parent>` event. The test233
+// per-invoke_id finalize-arm matches only the p01 invoke when `childToParent`
+// arrives → p01 finalize sets Var1=2, p02 finalize stays unrun → Var2=1.
+// Parent's `cond="Var1==2"` transitions to s1, then s1's eventless
+// `cond="Var2==1"` routes to pass. Pins per-invoke isolation: a sibling
+// invoke's finalize must NOT run on another sibling's events.
+//
+// W3C SCXML 6.4 invoke send-to-parent + finalize — `<send target="#_parent"
+// event="X"><param name="K" expr="V"/></send>` in the child must carry param
+// values to the parent's `_event.data.K`, AND each parent invoke's
+// `<finalize>` body must run BEFORE transition selection so finalize-assigned
+// parent vars are visible to the cond. cpp `StateMachine::processEvent` runs
+// finalize via `InvokeExecutor::executeFinalize(invokeid)`; c11 mirrors via
+// (a) parent_dispatch signature extended with `event_data` arg, (b) child's
+// `<send target=#_parent>` with params codegen branch that builds a
+// Lua-source table literal from each param expr (per-value formatter quotes
+// strings, serialises numbers/booleans verbatim), (c) parent's
+// `dispatch_external_by_name` shim copies `event_data` into
+// `event_with_meta_t.data`, (d) parent's external dequeue runs `_event.data =
+// (<table>)` then iterates registered finalize bodies, executing only those
+// whose owning invoke's id matches `evt.invoke_id`. Per-invoke isolation pins
+// test234's parallel-finalize fixture (each branch's finalize runs only for
+// events from its own child).
 
 #define _POSIX_C_SOURCE 199309L
 

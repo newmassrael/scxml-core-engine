@@ -34,6 +34,9 @@
 // destroy as part of the active-config exit walk) drops at the NULL
 // guard. Parent's 1 s timeout fires unopposed → pass. If the cancel
 // path skipped the NULL stamp, childToParent would route to fail.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_236.c.
 
 #define _POSIX_C_SOURCE 199309L
 

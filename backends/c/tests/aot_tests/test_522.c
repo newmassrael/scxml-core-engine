@@ -3,8 +3,12 @@
 //
 // W3C SCXML test522 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(522) invocation.
+// W3C SCXML C.2 (test522): event-only POST; verifies that BasicHTTP messages
+// land on the external queue (not the internal queue). The fixture
+// interleaves `<raise event="internal"/>` (internal queue) with the BasicHTTP
+// `<send event="test"/>` (external queue) and asserts internal-first
+// ordering. Same emit shape as test201; the queue routing is handled by the
+// existing `_raise_external` vs `_raise` macros.
 
 #include <stdio.h>
 

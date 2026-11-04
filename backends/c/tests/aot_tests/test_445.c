@@ -3,8 +3,8 @@
 //
 // W3C SCXML test445 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(445) invocation.
+// W3C SCXML 5.2: <data id> without expr/content is the ECMAScript value
+// undefined (lua nil after transpile)
 
 #include <stdio.h>
 

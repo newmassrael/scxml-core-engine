@@ -13,6 +13,16 @@
 // (`<raise>`), and timeout onto the external queue (bare `<send>`); the
 // internal-first drain pops event1 → s0→s1, then the external pop yields
 // event2 → s1→pass before the timeout fall-through.
+//
+// W3C SCXML 6.2 + C.1.5 + App.D.2: targetexpr-resolved session URI
+// (`'#_scxml_'`) routes onto the external queue per cpp's fall-through to
+// `engine.raiseExternal` after the invalid/unreachable/internal helper checks
+// — the C11 mirror replaces the prior strict `else { error.communication;
+// return; }` with a two-step (1) explicit `"undefined"`/`"nil"` unreachable
+// arm and (2) raise_external default; the s0 onentry queues event2 (external
+// via targetexpr), event1 (internal via raise), timeout (external bare), and
+// the internal-first drain pops event1 → s0→s1, then external pop yields
+// event2 → s1→pass before timeout's wildcard fail.
 
 #include <stdio.h>
 

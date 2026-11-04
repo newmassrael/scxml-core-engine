@@ -3,9 +3,13 @@
 //
 // W3C SCXML test321 — C11 AOT runner.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(321) invocation. The
-// runner here is the standard C11 boilerplate.
+// W3C SCXML 5.10: _sessionid is bound on startup (typeof Var1 !== 'undefined'
+// after Var1 = _sessionid)
+//
+// The runner here is the standard C11 boilerplate: init, run, compare the
+// final state against TEST321_STATE_PASS, return 0 on PASS / 1 on FAIL. What
+// it links beside the machine is what the generator states the machine
+// requires (backends/c/tests/CMakeLists.txt).
 
 #include <stdio.h>
 

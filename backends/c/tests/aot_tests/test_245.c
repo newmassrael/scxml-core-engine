@@ -25,6 +25,9 @@
 // If the codegen-time filter (child_datamodel_vars membership check)
 // were missing, Var2 would be set to 3 in the child, isBound=true, and
 // the failure path would reach the parent → fail.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_226.c.
 
 #define _POSIX_C_SOURCE 199309L
 

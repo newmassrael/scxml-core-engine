@@ -23,8 +23,12 @@
 // silent-drops to `_trans_pass = false`, and the fall-through transition
 // to `pass` fires.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(459) invocation.
+// W3C SCXML 4.4: <log label="..." expr="..."> is observable side-effect only
+// — pass / fail finals each carry an onentry log call that lowers to a
+// `lua_eval_eventexpr` call (reused as the generic to-string helper) followed
+// by `fprintf(stderr, "label: %s\n", buf)`; the boolean PASS path is
+// independent of the log emit, so the new branch is verified by the C
+// compiler's `-Werror` acceptance of the generated fprintf
 
 #include <stdio.h>
 

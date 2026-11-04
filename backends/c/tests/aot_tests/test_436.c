@@ -11,6 +11,12 @@
 // STATE_S1)` directly against the bitmap, mirroring cpp's `this->
 // isStateActive("s1")` semantics — no lua side trampoline needed
 // (T3 inline-only lock-in for C11).
+//
+// W3C SCXML 3.4 + 5.9.2: pure In() inside a parallel region cross-checks a
+// sibling region's membership — `In('s1')` reads the bitmap of a state in a
+// peer region, validating that <parallel> entry sets every region's leaf bit
+// simultaneously (a617a6b6 single-source bitmap migration) so the predicate
+// evaluates true at the moment the cond runs
 
 #include <stdio.h>
 

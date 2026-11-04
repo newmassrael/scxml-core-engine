@@ -19,6 +19,9 @@
 // the cross-machine routing — child→parent (`#_parent`) and parent→
 // child (`#_foo`) — go through external-queue raises and so receive
 // the same origintype seed; the URI cond holds at both sites.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_236.c.
 
 #define _POSIX_C_SOURCE 199309L
 

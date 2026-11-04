@@ -4,8 +4,8 @@
 #
 # Lifecycle fixture for the W3C SCXML C.2 BasicHTTP corpus' standalone
 # Node server. ctest FIXTURES_SETUP runs the `start` arm before any
-# `w3c_c_aot_<N>` test marked NEEDS_HTTP; FIXTURES_CLEANUP runs the
-# `stop` arm afterwards. Both arms are idempotent so partial-run states
+# `w3c_c_aot_<N>` test whose registry harness is `http`; FIXTURES_CLEANUP
+# runs the `stop` arm afterwards. Both arms are idempotent so partial-run states
 # (server already up, pid file orphaned) do not break the next ctest
 # invocation.
 #

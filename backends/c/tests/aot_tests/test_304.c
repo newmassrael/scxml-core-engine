@@ -10,6 +10,14 @@
 // s0's `cond="Var1 == 1"` transition matches it. The differential
 // against test302 is observability: test304 confirms cond evaluation
 // reads the script-bound Var1 (not just that load-time eval ran).
+//
+// W3C SCXML 5.8: a variable declared by a top-level `<script>` is reachable
+// from the datamodel without a `<data>` declaration — same fixture shape as
+// test302 over a different observable claim (cond reads the script-bound
+// Var1, not just that load-time eval ran). The C11 emit path is identical
+// (global_scripts loop in lua_init_engine), and lua's global-by-default scope
+// means `Var1 = 1` in the script automatically lands as a datamodel-visible
+// global.
 
 #include <stdio.h>
 

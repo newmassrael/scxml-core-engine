@@ -15,6 +15,14 @@
 // slot, overriding the child's default (Var1=0). Each child's
 // eventless `Var1==1` cond fires, dispatching `success` to parent
 // via #_parent → parent advances to next state until pass.
+//
+// W3C SCXML 6.4.1 (test240): two-arm fixture exercising namelist (s01) AND
+// `<param>` (s02) — both mechanisms must transfer Var1=1 from parent to child
+// for the test to reach pass. First arm pins namelist transfer parity with
+// cpp; second arm pins `<param expr>` evaluation in the parent's lua_State.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_226.c.
 
 #define _POSIX_C_SOURCE 199309L
 

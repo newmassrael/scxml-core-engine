@@ -17,6 +17,14 @@
 // error), error.execution is queued but the SM still runs; for the
 // happy path (this fixture) the binding lands cleanly and the
 // guard's `Var1 == 1` reads the bound value.
+//
+// W3C SCXML 5.8: top-level `<script>Var1 = 1</script>` evaluates at document
+// load time before any state entry — the new global_scripts loop in
+// lua_init_engine routes the body through `to_lua_script` + `luaL_dostring`,
+// binding Var1 in the lua datamodel before s0 entry; the s0 cond `Var1 == 1`
+// then matches and routes to pass. Mirrors cpp
+// `scriptengine_helpers.jinja2:165-179` (model.global_scripts loop emit
+// shape).
 
 #include <stdio.h>
 

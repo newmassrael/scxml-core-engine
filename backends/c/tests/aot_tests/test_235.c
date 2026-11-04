@@ -22,6 +22,9 @@
 // arm catches any drift — if the generic `done.invoke` were raised
 // instead, the parent would route to fail because the specific
 // transition would never fire and `event="*"` would catch it first.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_247.c.
 
 #define _POSIX_C_SOURCE 199309L
 

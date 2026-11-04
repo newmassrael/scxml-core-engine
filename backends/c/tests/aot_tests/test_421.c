@@ -13,6 +13,12 @@
 // internalEvent4 fires s12→pass. The `s1 transition event=externalEvent
 // target=fail` would steal pass if external were ever drained before
 // the full internal sequence completes.
+//
+// W3C SCXML 3.12.1 + App.D.2: internal-priority drain past non-matching
+// dequeues — internalEvent1/2 fall through (no matching transition with s11
+// active), internalEvent3 fires s11→s12, internalEvent4 fires s12→pass; the
+// s1-level <transition event=externalEvent target=fail> never runs because
+// the final state is reached before external dequeue
 
 #include <stdio.h>
 

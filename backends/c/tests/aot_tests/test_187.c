@@ -40,6 +40,25 @@
 // for the wrong reason; the dispatch shape mirrors cpp's per-child
 // `parentSendScheduler_` so future async-final fixtures have a real
 // path to fire `_tick`-promoted entries through `parent_dispatch`.
+//
+// W3C SCXML 6.2 (test187): child's onentry schedules `childToParent` to
+// `#_parent` with delay=.5s, then takes the eventless `<transition
+// target="subFinal"/>` straight to `<final>`. Child finalises during init's
+// macrostep loop so `_tick` is never called on the dead child — the .5s entry
+// is silently dropped. Parent's 1s `timeout` fires unopposed → s0→pass. If
+// the delayed send leaked through, parent's `childToParent` transition would
+// route to fail.
+//
+// W3C SCXML 6.2 + 6.4 invoke termination semantics — child's delayed `<send
+// target="#_parent">` lives in the child's own `scheduled_queue` and is
+// dropped silently when the child reaches `<final>` before the timer fires
+// (W3C 6.2: "delayed send not delivered if session terminates"). The codegen
+// lowers `target='#_parent' + delay` to `scheduled_push_parent` (new arm
+// beside the existing immediate `#_parent` branch), and `_tick`'s promote
+// loop reads the entry's `to_parent` discriminator before falling through to
+// the local `raise_external` path. The unified scheduled_queue + flag layout
+// keeps fire-time ordering single-source rather than splitting into a second
+// buffer that would mirror cpp's per-child `parentSendScheduler_` shape.
 
 #define _POSIX_C_SOURCE 199309L
 

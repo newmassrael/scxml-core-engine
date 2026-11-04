@@ -28,6 +28,16 @@
 // parent_dispatch is required. (2) `_event.invokeid` plumbing
 // (test228 surface) — Var2 captures the child's auto-generated id, must
 // equal idlocation-bound Var1.
+//
+// W3C SCXML 6.4 / 5.10.1 (test338): `<onentry>` of `<final id="sub0">` sends
+// `event1` to `#_parent` (carrying the auto-generated invokeid). Parent
+// captures `_event.invokeid` into Var2, compares against idlocation-bound
+// Var1. Combines the onentry-stamp ordering with test228's invokeid plumbing
+// — the send must reach the parent (live parent_dispatch during entry walk)
+// AND carry the same id the parent stored at defer time.
+//
+// The lowering this fixture shares with related fixtures is described in
+// test_191.c.
 
 #define _POSIX_C_SOURCE 199309L
 

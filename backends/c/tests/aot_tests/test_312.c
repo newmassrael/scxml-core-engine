@@ -13,8 +13,8 @@
 // synonym path — `*`, `.*`, `_*` collapse to "match any non-NONE
 // event" in line with analyzer.rs::collect_implicit_event_descriptors.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(312) invocation.
+// W3C SCXML 5.4: <assign> with an illegal expression raises error.execution
+// before the surrounding onentry's later actions queue
 
 #include <stdio.h>
 

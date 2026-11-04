@@ -12,8 +12,10 @@
 // runUntilCompletion` — sleep `pollInterval`, call `_tick`, repeat until
 // a top-level final state is reached or the timeout cap expires.
 //
-// Per-fixture surface description lives in backends/c/tests/CMakeLists.txt
-// alongside the sce_generate_static_w3c_c_test(579) invocation.
+// W3C SCXML 3.10 + 6.2: history default content runs on first entry only (s0
+// re-entry through sh1 restores s03 from snapshot, skipping the default
+// `<raise event3>`); the success path requires the 1 s `<send delay>` timeout
+// to actually fire, forcing the full polling-driven scheduler
 
 #define _POSIX_C_SOURCE 199309L
 

@@ -9,6 +9,11 @@
 // 'scxml'}}` (mirror of cpp `LuaEngine::setupSystemVariables`), the
 // indexed access yields the literal string `"scxml"`, _scxml_truthy
 // classifies a non-empty string as truthy, and s0→pass dispatches.
+//
+// W3C SCXML 5.10 + C.1: ECMAScript datamodel cond
+// `_ioprocessors['scxml'].location` directly — _scxml_truthy classifies the
+// bound `"scxml"` literal string as truthy and routes s0→pass without going
+// through a datamodel intermediate.
 
 #include <stdio.h>
 
