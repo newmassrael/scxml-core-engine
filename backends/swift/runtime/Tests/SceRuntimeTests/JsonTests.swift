@@ -120,10 +120,12 @@ private func typedJSON(_ value: JSONValue) -> String {
     #expect(throws: JSONError.self) { try parseJSON("-") }
 }
 
-@Test func aSurrogatePairIsOneCharacterAndALoneHalfIsTheReplacementCharacter() throws {
+// A half on its own names no character, so the text is no JSON text every runtime
+// reads alike (RFC 8259, section 8.2; tests/json_text/payload_refusal.json).
+@Test func aSurrogatePairIsOneCharacterAndALoneHalfIsNoText() throws {
     #expect(try parseJSON(#""😀""#) == .text("\u{1F600}"))
-    #expect(try parseJSON(#""\ud83d""#) == .text("\u{FFFD}"))
-    #expect(try parseJSON(#""\ude00""#) == .text("\u{FFFD}"))
+    #expect(throws: JSONError.malformed("a \\u escape is half of a character")) { try parseJSON(#""\ud83d""#) }
+    #expect(throws: JSONError.malformed("a \\u escape is half of a character")) { try parseJSON(#""\ude00""#) }
     #expect(try parseJSON(#""é""#) == .text("\u{E9}"))
 }
 
