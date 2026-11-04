@@ -568,7 +568,7 @@ where
     });
     let settled = match held(group) {
         Some(chain) => fill(&mut chain.list).and_then(|()| {
-            let entries = chain.list.as_slice();
+            let entries = SceList::as_slice(&chain.list);
             match entries.len() {
                 n if n < MIN => Err(CodecError::NeedMoreBytes),
                 n if n > MAX => Err(CodecError::TooManyElements),
@@ -611,12 +611,13 @@ where
     });
     let settled = match held(group) {
         Some(placed) => fill(&mut placed.rest).and_then(|()| {
-            if placed.rest.as_slice().len() > MAX {
+            let entries = SceList::as_slice(&placed.rest);
+            if entries.len() > MAX {
                 return Err(CodecError::TooManyElements);
             }
-            match placed.rest.as_slice().iter().position(|e| K::matches(e)) {
+            match entries.iter().position(|e| K::matches(e)) {
                 Some(at) => {
-                    placed.rest.remove_at(at);
+                    SceList::remove_at(&mut placed.rest, at);
                     placed.place = at;
                     Ok(true)
                 }

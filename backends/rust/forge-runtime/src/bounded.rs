@@ -28,6 +28,7 @@
 
 use core::ops::Deref;
 
+use crate::storage::SceList;
 use crate::view::{ListIter, ListView, ListWalk};
 
 /// A list a [`Bounded`] can hold: its entries in order, and how many there are.
@@ -825,21 +826,19 @@ where
         &mut self,
         fill: impl FnOnce(&mut LA) -> Result<(), crate::codec::CodecError>,
     ) -> Result<(), crate::codec::CodecError> {
-        use crate::storage::SceList;
         let filled = self.first.refill::<LA::Entry>(fill).and_then(|()| {
-            let count = self.first.0.as_slice().len();
-            self.second.0.clear();
+            let count = SceList::as_slice(&self.first.0).len();
+            SceList::clear(&mut self.second.0);
             if count > MB {
                 return Err(crate::codec::CodecError::TooManyElements);
             }
             for _ in 0..count {
-                self.second.0.try_push(Default::default())?;
+                SceList::try_push(&mut self.second.0, Default::default())?;
             }
             Ok(())
         });
         if filled.is_err() {
-            self.first.0.clear();
-            self.second.0.clear();
+            self.empty_both();
         }
         filled
     }
@@ -853,25 +852,24 @@ where
         &mut self,
         fill: impl FnOnce(&mut LB) -> Result<(), crate::codec::CodecError>,
     ) -> Result<(), crate::codec::CodecError> {
-        use crate::storage::SceList;
         let filled = self.second.refill::<LB::Entry>(fill).and_then(|()| {
-            match self
-                .second
-                .0
-                .as_slice()
-                .len()
-                .cmp(&self.first.0.as_slice().len())
-            {
+            let first = SceList::as_slice(&self.first.0).len();
+            match SceList::as_slice(&self.second.0).len().cmp(&first) {
                 core::cmp::Ordering::Less => Err(crate::codec::CodecError::NeedMoreBytes),
                 core::cmp::Ordering::Greater => Err(crate::codec::CodecError::TooManyElements),
                 core::cmp::Ordering::Equal => Ok(()),
             }
         });
         if filled.is_err() {
-            self.first.0.clear();
-            self.second.0.clear();
+            self.empty_both();
         }
         filled
+    }
+
+    /// Both lists empty, which are of one count: what a refill leaves on `Err`.
+    fn empty_both(&mut self) {
+        SceList::clear(&mut self.first.0);
+        SceList::clear(&mut self.second.0);
     }
 }
 
