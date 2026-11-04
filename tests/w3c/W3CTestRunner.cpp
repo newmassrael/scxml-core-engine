@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "W3CTestRunner.h"
+#include "BasicHttpTestEndpoint.h"
 #ifndef __EMSCRIPTEN__
 #include "W3CHttpTestServer.h"
 #endif
@@ -19,6 +20,7 @@
 #include "runtime/StateMachineContext.h"
 #include "scripting/ScriptEngineProvider.h"
 #include "scripting/SessionRegistry.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -984,42 +986,7 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
                 continue;
             }
 
-            TestReport report;
-
-#ifndef __EMSCRIPTEN__
-            // Check if test requires HTTP server using cached helper method
-            if (requiresHttpServer(testDir)) {
-                SCE_LOG_INFO("W3C Test {}: Starting HTTP server for BasicHTTPEventProcessor test", testId);
-
-                // Create and start the generic W3C HTTP test server
-                W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
-
-                if (!httpServer.start()) {
-                    SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port {}", testId, basicHttpTestPort());
-                    throw std::runtime_error("Failed to start HTTP server for test " + std::to_string(testId));
-                }
-
-                SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on {}", testId, basicHttpTestAccessUri());
-
-                try {
-                    // Run the test with HTTP server running
-                    report = runSingleTestWithHttpServer(testDir, &httpServer);
-
-                    // Stop the server after test completion
-                    httpServer.stop();
-                    SCE_LOG_INFO("W3C Test {}: HTTP server stopped successfully", testId);
-                } catch (const std::exception &e) {
-                    // Ensure server is stopped even if test fails
-                    httpServer.stop();
-                    SCE_LOG_ERROR("W3C Test {}: Test execution failed, HTTP server stopped: {}", testId, e.what());
-                    throw;
-                }
-            } else {
-                report = runSingleTest(testDir);
-            }
-#else
-            report = runSingleTest(testDir);
-#endif
+            TestReport report = runInterpreterFixture(testDir);
 
             reports.push_back(report);
             reporter_->reportTestResult(report);
@@ -1278,71 +1245,49 @@ void W3CTestRunner::cleanupBetweenTests() {
 }
 
 bool W3CTestRunner::requiresHttpServer(const std::string &testDirectory) const {
-    // Check cache first for performance (avoid redundant file I/O)
-    {
-        std::lock_guard<std::mutex> lock(cacheMutex_);
-        auto it = httpRequirementCache_.find(testDirectory);
-        if (it != httpRequirementCache_.end()) {
-            return it->second;
-        }
+    // §scxml-C-2: the fixtures that need the BasicHTTP listener are the ones
+    // the conformance registry runs under its `http` harness
+    // (tests/w3c/conformance/fixtures.json, generated into W3CTestRegistry).
+    // This read each fixture's metadata and TXML text for a sign of the
+    // processor instead, a second answer that disagreed with the registry on
+    // 577: a `<send>` with no target, which raises error.communication and
+    // posts nothing.
+    //
+    // A directory names its fixture: `.../201`, or `.../403:a` for a variant.
+    std::string fixtureId = std::filesystem::path(testDirectory).filename().string();
+    fixtureId.erase(std::remove(fixtureId.begin(), fixtureId.end(), ':'), fixtureId.end());
+    return W3CTestRegistry::needsHttpEndpoint(fixtureId);
+}
+
+TestReport W3CTestRunner::runInterpreterFixture(const std::string &testDir) {
+    if (!requiresHttpServer(testDir)) {
+        return runSingleTest(testDir);
     }
-
-    // Cache miss - check metadata file and TXML content
-    bool requiresHttp = false;
-    try {
-        std::string metadataPath = testSuite_->getMetadataPath(testDirectory);
-        if (!std::filesystem::exists(metadataPath)) {
-            SCE_LOG_DEBUG("W3CTestRunner: Metadata file not found: {}", metadataPath);
-        } else {
-            std::ifstream metadataFile(metadataPath);
-            if (!metadataFile.is_open()) {
-                SCE_LOG_WARN("W3CTestRunner: Failed to open metadata file: {}", metadataPath);
-            } else {
-                std::string line;
-                while (std::getline(metadataFile, line)) {
-                    // W3C SCXML C.2 BasicHTTPEventProcessor tests require HTTP server
-                    // External events must use EXTERNAL priority queue (test 510 compliance)
-                    // Note: 6.2 is param-related, NOT HTTP (C.2 is HTTP)
-                    if (line.find("specnum:") == 0 && line.find("C.2") != std::string::npos) {
-                        SCE_LOG_DEBUG("W3CTestRunner: Test {} requires HTTP server (spec C.2)", testDirectory);
-                        requiresHttp = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        // W3C SCXML 6.2: Some tests (e.g., test 201) use BasicHTTPEventProcessor but are classified as 6.2
-        // Check TXML content directly for HTTP usage
-        if (!requiresHttp) {
-            std::string txmlPath = testSuite_->getTXMLPath(testDirectory);
-            if (std::filesystem::exists(txmlPath)) {
-                std::ifstream txmlFile(txmlPath);
-                if (txmlFile.is_open()) {
-                    std::string content((std::istreambuf_iterator<char>(txmlFile)), std::istreambuf_iterator<char>());
-                    // Detect BasicHTTPEventProcessor usage in TXML
-                    if (content.find("BasicHTTPEventProcessor") != std::string::npos ||
-                        content.find("basicHTTPAccessURITarget") != std::string::npos) {
-                        SCE_LOG_DEBUG(
-                            "W3CTestRunner: Test {} requires HTTP server (BasicHTTPEventProcessor detected in TXML)",
-                            testDirectory);
-                        requiresHttp = true;
-                    }
-                }
-            }
-        }
-    } catch (const std::exception &e) {
-        SCE_LOG_WARN("W3CTestRunner: Error checking HTTP requirement for {}: {}", testDirectory, e.what());
-        SCE_LOG_WARN("W3CTestRunner: Assuming no HTTP server required, test may fail if HTTP test");
+#ifndef __EMSCRIPTEN__
+    // The listener, in process: started for the fixture and stopped after it,
+    // whether the run returns or throws.
+    W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
+    if (!httpServer.start()) {
+        SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port {}", testDir, basicHttpTestPort());
+        throw std::runtime_error("Failed to start HTTP server for test " + testDir);
     }
+    SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on {}", testDir, basicHttpTestAccessUri());
 
-    // Cache the result
-    {
-        std::lock_guard<std::mutex> lock(cacheMutex_);
-        httpRequirementCache_[testDirectory] = requiresHttp;
-    }
+    struct StopOnExit {
+        W3CHttpTestServer &server;
 
-    return requiresHttp;
+        ~StopOnExit() {
+            server.stop();
+        }
+    } stopOnExit{httpServer};
+
+    return runSingleTestWithHttpServer(testDir, &httpServer);
+#else
+    // The listener, the host's: w3c/wasm_polyfill.js starts it before main()
+    // at the same port and path, and it answers each POST with the event it
+    // made, which the engine's HttpEventTarget raises.
+    return runSingleTestWithHttpServer(testDir, nullptr);
+#endif
 }
 
 std::optional<TestReport> W3CTestRunner::shouldSkipHttpTestUnderTsan(const std::string &testDir, int testId) const {
@@ -1416,41 +1361,7 @@ TestReport W3CTestRunner::runSpecificTest(int testId) {
                 return *skipReport;
             }
 
-#ifndef __EMSCRIPTEN__
-            // Check if test requires HTTP server using cached helper method
-            if (requiresHttpServer(testDir)) {
-                SCE_LOG_INFO("W3C Test {}: Starting HTTP server for BasicHTTPEventProcessor test", testId);
-
-                // Create and start the generic W3C HTTP test server
-                W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
-
-                if (!httpServer.start()) {
-                    SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port {}", testId, basicHttpTestPort());
-                    throw std::runtime_error("Failed to start HTTP server for test " + std::to_string(testId));
-                }
-
-                SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on {}", testId, basicHttpTestAccessUri());
-
-                try {
-                    // Run the test with HTTP server running
-                    TestReport result = runSingleTestWithHttpServer(testDir, &httpServer);
-
-                    // Stop the server after test completion
-                    httpServer.stop();
-                    SCE_LOG_INFO("W3C Test {}: HTTP server stopped successfully", testId);
-
-                    return result;
-                } catch (const std::exception &e) {
-                    // Ensure server is stopped even if test fails
-                    httpServer.stop();
-                    SCE_LOG_ERROR("W3C Test {}: Test execution failed, HTTP server stopped: {}", testId, e.what());
-                    throw;
-                }
-            }
-#else
-            // WASM: HTTP server not supported, run without HTTP
-            return runSingleTest(testDir);
-#endif
+            return runInterpreterFixture(testDir);
         }
     }
 
@@ -1506,36 +1417,7 @@ TestReport W3CTestRunner::runTest(const std::string &testId) {
                 return *skipReport;
             }
 
-#ifndef __EMSCRIPTEN__
-            // Check if test requires HTTP server using cached helper method
-            if (requiresHttpServer(testDir)) {
-                SCE_LOG_INFO("W3C Test {}: Starting HTTP server for BasicHTTPEventProcessor test", testId);
-
-                W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
-
-                if (!httpServer.start()) {
-                    SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port {}", testId, basicHttpTestPort());
-                    throw std::runtime_error("Failed to start HTTP server for test " + testId);
-                }
-
-                SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on {}", testId, basicHttpTestAccessUri());
-
-                try {
-                    TestReport result = runSingleTestWithHttpServer(testDir, &httpServer);
-                    httpServer.stop();
-                    SCE_LOG_INFO("W3C Test {}: HTTP server stopped successfully", testId);
-                    reporter_->reportTestResult(result);
-                    return result;
-                } catch (const std::exception &e) {
-                    httpServer.stop();
-                    SCE_LOG_ERROR("W3C Test {}: Test execution failed, HTTP server stopped: {}", testId, e.what());
-                    throw;
-                }
-            }
-#endif
-
-            // Normal test execution
-            TestReport report = runSingleTest(testDir);
+            TestReport report = runInterpreterFixture(testDir);
             reporter_->reportTestResult(report);
             return report;
         }
@@ -1574,7 +1456,6 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
 
         if (currentTestId == testId) {
             try {
-#ifndef __EMSCRIPTEN__
                 // Check if HTTP test should be skipped under ThreadSanitizer (Interpreter only)
                 // AOT tests will handle TSAN skip logic in HttpAotTest::run()
                 if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
@@ -1582,45 +1463,10 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
                     reporter_->reportTestResult(*skipReport);
                     // Don't continue - still run AOT test below
                 } else {
-                    // Normal Interpreter test execution
-                    // Check if test requires HTTP server using cached helper method
-                    if (requiresHttpServer(testDir)) {
-                        SCE_LOG_INFO("W3C Test {}: Starting HTTP server for BasicHTTPEventProcessor test", testId);
-
-                        W3CHttpTestServer httpServer(basicHttpTestPort(), basicHttpTestPath());
-
-                        if (!httpServer.start()) {
-                            SCE_LOG_ERROR("W3C Test {}: Failed to start HTTP server on port {}", testId,
-                                          basicHttpTestPort());
-                            throw std::runtime_error("Failed to start HTTP server for test " + std::to_string(testId));
-                        }
-
-                        SCE_LOG_INFO("W3C Test {}: HTTP server started successfully on {}", testId,
-                                     basicHttpTestAccessUri());
-
-                        try {
-                            TestReport result = runSingleTestWithHttpServer(testDir, &httpServer);
-                            httpServer.stop();
-                            SCE_LOG_INFO("W3C Test {}: HTTP server stopped successfully", testId);
-                            matchingReports.push_back(result);
-                            reporter_->reportTestResult(result);
-                        } catch (const std::exception &e) {
-                            httpServer.stop();
-                            SCE_LOG_ERROR("W3C Test {}: Test execution failed, HTTP server stopped: {}", testId,
-                                          e.what());
-                            throw;
-                        }
-                    } else {
-                        TestReport report = runSingleTest(testDir);
-                        matchingReports.push_back(report);
-                        reporter_->reportTestResult(report);
-                    }
+                    TestReport report = runInterpreterFixture(testDir);
+                    matchingReports.push_back(report);
+                    reporter_->reportTestResult(report);
                 }
-#else
-                TestReport report = runSingleTest(testDir);
-                matchingReports.push_back(report);
-                reporter_->reportTestResult(report);
-#endif
 
                 // Run AOT engine test (runAotTest will use Interpreter fallback if needed)
                 try {
@@ -1673,7 +1519,6 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
     return matchingReports;
 }
 
-#ifndef __EMSCRIPTEN__
 TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDirectory, W3CHttpTestServer *httpServer) {
     TestReport report;
     report.timestamp = std::chrono::system_clock::now();
@@ -1740,15 +1585,24 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
         try {
             SCE_LOG_DEBUG("StateMachineTestExecutor (HTTP): Starting test execution for test {}", report.metadata.id);
 
+#ifndef __EMSCRIPTEN__
             // Set up HTTP server eventCallback to use the EventRaiser
             // W3C SCXML compliance: HTTP events must use EXTERNAL priority (test 510)
-            httpServer->setEventCallback([eventRaiser = resources->eventRaiser](const std::string &eventName,
-                                                                                const std::string &eventData) {
-                SCE_LOG_INFO("W3CHttpTestServer: Receiving HTTP event '{}' - raising to SCXML with EXTERNAL priority",
-                             eventName);
-                // W3C SCXML 5.10: HTTP events must use external queue (test 510 compliance)
-                eventRaiser->raiseExternalEvent(eventName, eventData);
-            });
+            if (httpServer != nullptr) {
+                httpServer->setEventCallback(
+                    [eventRaiser = resources->eventRaiser](const std::string &eventName, const std::string &eventData) {
+                        SCE_LOG_INFO(
+                            "W3CHttpTestServer: Receiving HTTP event '{}' - raising to SCXML with EXTERNAL priority",
+                            eventName);
+                        // W3C SCXML 5.10: HTTP events must use external queue (test 510 compliance)
+                        eventRaiser->raiseExternalEvent(eventName, eventData);
+                    });
+            }
+#else
+            // The host's listener answers each POST with the event it made,
+            // and the engine's HttpEventTarget raises it.
+            (void)httpServer;
+#endif
 
             // Build StateMachine with resource injection, then wrap in RAII context
             // §scxml-C-2-3: the harness owns the inbound BasicHTTP listener, so
@@ -1860,7 +1714,6 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
         throw;  // Re-throw to be caught by runSpecificTest
     }
 }
-#endif  // !__EMSCRIPTEN__
 
 TestReport W3CTestRunner::runAotTest(int testId) {
     // Check W3CTestRegistry to determine if test should use Interpreter fallback

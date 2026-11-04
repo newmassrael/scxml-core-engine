@@ -128,10 +128,6 @@ private:
     std::unique_ptr<ITestSuite> testSuite_;
     std::unique_ptr<ITestReporter> reporter_;
 
-    // Performance optimization: cache HTTP requirement checks to avoid redundant file I/O
-    mutable std::unordered_map<std::string, bool> httpRequirementCache_;
-    mutable std::mutex cacheMutex_;
-
     // Failed test log directory (empty = disabled)
     std::string failedLogDir_;
 
@@ -151,8 +147,22 @@ private:
 
     /**
      * @brief Run a single test with HTTP server for bidirectional communication
+     *
+     * @param httpServer The in-process listener whose events the run raises,
+     *        or null where the host owns the listener (WASM: the host's answers
+     *        each POST with the event it made, which HttpEventTarget raises).
      */
     TestReport runSingleTestWithHttpServer(const std::string &testDirectory, W3CHttpTestServer *httpServer);
+
+    /**
+     * @brief Run one fixture on the Interpreter, with the BasicHTTP listener
+     *        when the registry says it needs one
+     *
+     * The one place every run mode starts a fixture's listener: natively an
+     * in-process W3CHttpTestServer, stopped after the fixture; under WASM the
+     * host's, started before main().
+     */
+    TestReport runInterpreterFixture(const std::string &testDir);
 
     /**
      * @brief Calculate test run statistics
@@ -160,10 +170,8 @@ private:
     TestRunSummary calculateSummary(const std::vector<TestReport> &reports);
 
     /**
-     * @brief Check if test requires HTTP server by examining metadata (cached)
-     *
-     * W3C SCXML C.2 BasicHTTPEventProcessor tests require bidirectional HTTP communication.
-     * This method checks the metadata for "specnum: C.2" and caches the result for performance.
+     * @brief Whether a fixture needs the BasicHTTP listener: the conformance
+     *        registry runs it under its `http` harness (W3CTestRegistry)
      *
      * @param testDirectory Path to the test directory
      * @return true if HTTP server is required, false otherwise
