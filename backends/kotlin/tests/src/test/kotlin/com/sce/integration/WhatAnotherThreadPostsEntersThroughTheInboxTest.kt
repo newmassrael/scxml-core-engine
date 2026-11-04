@@ -16,7 +16,10 @@
 //     error that names the inbox, and changes nothing;
 //   * an ending posted for a start that was cancelled, or started again, is
 //     refused by the token check, as a direct one is (§scxml-6.4);
-//   * a post is taken before the run starts and refused once the engine stops.
+//   * a post is taken before the run starts and refused once the engine stops;
+//   * what the inbox holds when the engine stops is applied as a direct call
+//     then is: an event joins the queue nothing dequeues and is counted as
+//     unseen, and an ending finds its invocation cancelled by the exit.
 //
 // The machine is written by hand, as the smallest one with a host-run
 // invocation: `working` starts `job` on entry and cancels it on exit, and every
@@ -567,6 +570,79 @@ class WhatAnotherThreadPostsEntersThroughTheInboxTest {
             assertTrue(sm.inbox.post(InboxInput.ExternalEventByName("ping", EventMetadata.external(data = "again"))))
             sm.tick()
             assertEquals(listOf("ping:early", "ping:again"), sm.taken.toList())
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun whatTheInboxHoldsWhenTheRunIsStoppedIsAppliedAsADirectCallThenIs() {
+        val sm = InboxProbeMachine()
+        val log = CopyOnWriteArrayList<String>()
+        serve(sm, log)
+        sm.initialize()
+        try {
+            val token = latestToken(log)
+            // Posted while the owner does not drain: the inbox still holds all four
+            // when the run is stopped.
+            assertTrue(postFromAnotherThread(sm, InboxInput.ExternalEvent(InboxProbeEvent.Ping, EventMetadata.external(data = "held"))))
+            assertTrue(postFromAnotherThread(sm, InboxInput.ExternalEventByName("ping", EventMetadata.external(data = "by-name"))))
+            // An ending of the start that is running now, which the stop's exit cancels.
+            assertTrue(postFromAnotherThread(sm, ending(token, done = true, data = "held-ending")))
+            val raise = MeshCall.Raise("ping", EventMetadata.external(data = "held-mesh"))
+            assertTrue(postFromAnotherThread(sm, InboxInput.MeshDelivery(raise)))
+            assertEquals(0, sm.unseenExternalEvents(), "an event was counted before the run was stopped")
+
+            sm.stop()
+
+            assertEquals(emptyList<String>(), sm.taken.toList(), "a stopped run took an event")
+            // The exit cancelled `job` before the ending was applied: an ending
+            // applied first would have ended it, and the exit would have had
+            // nothing to cancel.
+            assertEquals(listOf("start:$token", "cancel:$token"), log.toList(), "the stop's exit did not cancel `job`")
+            // The three events joined a queue nothing dequeues, and the ending,
+            // refused by the token check, raised no `done.invoke.job` beside them.
+            assertEquals(3, sm.unseenExternalEvents(), "what the inbox held at the stop was not applied as a direct call is")
+            assertEquals(InboxProbeEvent.Ping, sm.lastUnseenEvent())
+
+            assertFalse(
+                sm.inbox.post(InboxInput.ExternalEvent(InboxProbeEvent.Ping, EventMetadata.external(data = "late"))),
+                "a stopped engine's inbox took a post",
+            )
+            assertEquals(3, sm.unseenExternalEvents(), "a refused post was counted")
+
+            // The next run's inbox starts empty: nothing the stopped run held, or
+            // was refused, reaches it.
+            sm.initialize()
+            assertEquals(emptyList<String>(), sm.taken.toList(), "the next run took what the stopped one held")
+            assertTrue(sm.inbox.post(InboxInput.ExternalEvent(InboxProbeEvent.Ping, EventMetadata.external(data = "next"))))
+            sm.tick()
+            assertEquals(listOf("ping:next"), sm.taken.toList())
+            assertEquals(3, sm.unseenExternalEvents(), "the next run counted the stopped run's events again")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun whatAnEngineThatNeverRanHoldsWhenItIsStoppedIsCountedAndNotPostedAgain() {
+        val sm = InboxProbeMachine()
+        serve(sm, CopyOnWriteArrayList())
+        try {
+            assertTrue(sm.inbox.post(InboxInput.ExternalEvent(InboxProbeEvent.Ping, EventMetadata.external(data = "early"))))
+            val raise = MeshCall.Raise("ping", EventMetadata.external(data = "early-mesh"))
+            assertTrue(sm.inbox.post(InboxInput.MeshDelivery(raise)))
+
+            // An engine that never ran has no owner, and a direct `send` on it
+            // posts to the inbox. The stop's drain is the owner's all the same:
+            // both join the queue the stop counts, rather than being offered to
+            // the inbox it has just closed, which would refuse them unsaid.
+            sm.stop()
+            assertEquals(2, sm.unseenExternalEvents(), "what an engine that never ran held at its stop was dropped")
+
+            sm.initialize()
+            assertEquals(emptyList<String>(), sm.taken.toList(), "the first run took what was held at an earlier stop")
+            assertEquals(2, sm.unseenExternalEvents())
         } finally {
             sm.cleanup()
         }

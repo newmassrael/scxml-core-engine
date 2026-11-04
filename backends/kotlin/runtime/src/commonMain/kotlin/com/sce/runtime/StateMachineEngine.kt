@@ -703,7 +703,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * channel is closed ([closeInbox]). In the coroutine mode the loop suspends
      * on it, which is how a post wakes the loop; in the synchronous mode the
      * owner takes what it holds at each macrostep boundary. Either way what is
-     * taken is applied by [drainInbox] before the external queue is consulted.
+     * taken is applied by [drainInbox] before the external queue is consulted,
+     * and what it still holds when it closes is applied then ([closeInbox]).
      *
      * Replaced only when a closed one is opened again ([openInbox]), so what is
      * posted before a run starts is kept for that run. Volatile because the
@@ -810,10 +811,19 @@ abstract class StateMachineEngine<S : State, E : Event>(
         inboxClosed = false
     }
 
-    /** Close the inbox: every post from now on is refused. */
+    /**
+     * Close the inbox and apply what it still holds (ARCHITECTURE.md "Engine
+     * Threading"). A run that ended, or was stopped, takes no more posts; what
+     * was posted before is applied as a direct call on the owner would be now:
+     * an event joins the external queue of a machine that will not dequeue it
+     * and is counted ([unseenExternalEvents]), and an ending finds its
+     * invocation over. A closed channel still yields what it holds to
+     * [drainInbox], so nothing taken is dropped unsaid.
+     */
     private fun closeInbox() {
         eventChannel.close()
         inboxClosed = true
+        drainInbox()
     }
 
     /**
@@ -830,11 +840,18 @@ abstract class StateMachineEngine<S : State, E : Event>(
         }
     }
 
-    /** Apply one posted [input] by the operation a direct call on the owner makes. */
+    /**
+     * Apply one posted [input] by the operation a direct call on the owner makes.
+     *
+     * An event is raised by that operation's body as the owner raises it, onto
+     * the external queue: the drain is the owner's, so it never asks again
+     * whether to post. Asking would answer "post" on an engine that has no
+     * owner yet, and stopping one closes the inbox this drain is emptying.
+     */
     private fun applyInboxInput(input: InboxInput<E>) {
         when (input) {
-            is InboxInput.ExternalEvent -> send(input.event, input.metadata)
-            is InboxInput.ExternalEventByName -> sendEventByName(input.name, input.metadata)
+            is InboxInput.ExternalEvent -> raiseExternal(input.event, input.metadata, onOwner = true)
+            is InboxInput.ExternalEventByName -> raiseExternalByName(input.name, input.metadata, onOwner = true)
             is InboxInput.HostInvokeEnding -> applyHostInvokeEnding(input)
             is InboxInput.MeshDelivery -> applyMeshDelivery(input)
         }
@@ -875,14 +892,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private fun applyMeshDelivery(delivery: InboxInput.MeshDelivery) {
         val sessionId = delivery.sessionId
         if (sessionId == null) {
-            applyMeshCall(delivery.call)
+            applyMeshCallWith(delivery.call, onOwner = true)
             return
         }
         val holder = sessionReached(sessionId) ?: return
         if (holder !== this && holder.runsItsOwnLoop) {
             holder.postToInbox(delivery)
         } else {
-            holder.applyMeshCall(delivery.call)
+            holder.applyMeshCallWith(delivery.call, onOwner = true)
         }
     }
 
@@ -1218,8 +1235,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun applyMeshCall(call: MeshCall) {
         requireOwner("applyMeshCall")
+        applyMeshCallWith(call, raisesOnOwner("applyMeshCall"))
+    }
+
+    /**
+     * The one body of [applyMeshCall], and of a posted [InboxInput.MeshDelivery]
+     * the owner applies: a raise joins the external queue when [onOwner], and
+     * is posted to [inbox] otherwise, as [sendEventByName] decides.
+     */
+    private fun applyMeshCallWith(call: MeshCall, onOwner: Boolean) {
         when (call) {
-            is MeshCall.Raise -> sendEventByName(call.name, call.metadata)
+            is MeshCall.Raise -> raiseExternalByName(call.name, call.metadata, onOwner)
             is MeshCall.EndInvoke -> {
                 val origin = call.source?.let { MESH_ORIGIN_SCHEME + it } ?: ""
                 val originType = if (call.source != null) MESH_RPC_INVOKE_TYPE else ""
@@ -2970,7 +2996,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val endedHere = isFinalState(current) && parentOf(current) == null
         terminalState = if (endedHere) current else null
         isInFinalState = endedHere
-        // A run that has ended takes no input, as one that ends here does.
+        // A run that has ended takes no input, as one that ends here does, and
+        // what was posted before is applied as it would be to that run.
         if (endedHere) closeInbox()
 
         return ConfigurationRejection.NONE
@@ -3999,7 +4026,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /**
      * Empty the external queue into the count above, at the moment the main
-     * event loop ends.
+     * event loop ends: the run reached a top-level final state, or the host
+     * stopped it ([stop]).
      *
      * Drained rather than left in place so each event is counted exactly once:
      * a host that keeps driving a halted machine would otherwise re-count the
@@ -4036,6 +4064,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * writes to a channel that is CLOSED once the machine finishes, so the
      * event does not even reach a queue; the failure was a `trySend` result
      * nobody read.
+     *
+     * A run the host ends with [stop] is counted too: what its external queue
+     * still holds when it stops, with the events its inbox held then.
      *
      * Measured 2026-08-22: a consumer reported a guarded transition that
      * "never fires", and four rewrites of the guard later the guard was still
@@ -4591,9 +4622,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // That is the clause: a machine that reached a top-level final
                 // state has exited the interpreter. Saying nothing about it is
                 // not the clause — see [unseenExternalEvents]. What was posted
-                // before the run ended is applied as a direct call would be now:
-                // an event joins the count, an ending finds its invocation over.
-                drainInbox()
+                // before the run ended was applied when the final state closed
+                // the inbox ([closeInbox]), each event counted there once.
                 recordUnseenExternalEvents()
                 // The last boundary was published when the final state was
                 // reached (flushPendingFinalState), before the exit emptied
@@ -4707,9 +4737,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * Stop the event processing loop.
      *
-     * Cancels the coroutine and closes the inbox: a post after this is refused,
-     * and one taken and not yet applied is discarded with the queues. The engine
-     * has no owner afterwards, and can be restarted with [start] or [initialize].
+     * Cancels the coroutine, exits the run, and closes the inbox after what it
+     * holds is applied as a direct call on the owner would be now ([closeInbox],
+     * ARCHITECTURE.md "Engine Threading"): a post after this is refused, an
+     * ending held finds its invocation over, and an event held joins the
+     * external queue. What that queue still holds is never dequeued, and is
+     * counted ([unseenExternalEvents]) as the queue of a run that ended is. The
+     * engine has no owner afterwards, and can be restarted with [start] or
+     * [initialize]. In the synchronous mode it is the owner's to call: the exit
+     * and what the inbox held are applied by owner-thread operations.
      *
      * It does not return while the coroutine is in the middle of a macrostep:
      * cancelling does not interrupt one, and the teardown below clears the state
@@ -4731,6 +4767,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // already ended has an empty configuration and exits nothing.
             exitInterpreter()
             engineScope = null
+            // After the exit, so a held ending is refused by the token check of
+            // an invocation the exit cancelled (§scxml-6.4).
             closeInbox()
             // §scxml-6.4: Cancel all active invokes
             for ((_, entry) in activeInvokes) {
@@ -4754,7 +4792,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             historyValues.clear()
             pendingFinalState = false
             internalEventQueue.clear()
-            externalEventQueue.clear()
+            // §scxml-D-mainEventLoop: the loop that would dequeue these has ended.
+            // Counted, with what the inbox held, rather than dropped unsaid.
+            recordUnseenExternalEvents()
             scheduledSends.clear()
             syncMode = false
             confinement = Confinement.Unowned
@@ -5371,10 +5411,19 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * a post to [inbox] as [send] is.
      */
     fun sendEventByName(name: String, metadata: EventMetadata = EventMetadata.external()) {
-        val onOwner = raisesOnOwner("sendEventByName")
         // §scxml-5.10: what this machine is told the event is called is a fact about
-        // THIS machine's names — an arrival name the caller's metadata carries was
-        // matched against the caller's, and says nothing here.
+        // THIS machine's names, so the body records the name it arrived under here.
+        raiseExternalByName(name, metadata, raisesOnOwner("sendEventByName"))
+    }
+
+    /**
+     * The one body of every external raise by name, as [raiseExternal] is of one
+     * by event: on the owner ([onOwner]) onto the external queue, off it into the
+     * inbox.
+     */
+    private fun raiseExternalByName(name: String, metadata: EventMetadata, onOwner: Boolean) {
+        // An arrival name the caller's metadata carries was matched against the
+        // caller's names, and says nothing here ([sendEventByName]).
         resolveArrivingEvent(name)?.let { raiseExternal(it, metadata.copy(name = arrivalNameOf(it, name)), onOwner) }
     }
 
@@ -5696,9 +5745,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // a post carried.
             val next = underMacrostepLock(running) {
                 ended = isInFinalState
-                // A run that has ended applies what was posted before it ended
-                // as a direct call would be: an event is counted as unseen, an
-                // ending finds its invocation cancelled.
+                // What other threads posted since the last boundary. A run that
+                // has ended applied what was posted before it ended when its
+                // final state closed the inbox ([closeInbox]), so it finds none.
                 drainInbox()
                 if (ended) null else externalEventQueue.removeFirstOrNull()
             }
@@ -5858,7 +5907,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // §scxml-6.4: Notify invoke monitors that this SM completed
             if (!completion.isCompleted) completion.complete(Unit)
             // §scxml-3.7: close the inbox, which ends the coroutine mode's loop.
-            // After reaching final state, no further input is taken.
+            // After reaching final state, no further input is taken; what was
+            // posted before is applied by the close, after the exit above.
             closeInbox()
         }
     }
