@@ -13,7 +13,12 @@
 // Transport, both the embedding's to supply.
 package hostfeatures
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"log"
+
+	sce "github.com/newmassrael/sce-go-runtime"
+)
 
 // Types is every operation type of the standard host features, in the order the
 // specification lists them.
@@ -29,6 +34,7 @@ var Types = []string{
 	"sce-host-notify-post",
 	"sce-host-notify-cancel",
 	"sce-host-http-fetch",
+	ModelGenerate,
 }
 
 // Params is the request of an operation as the engine hands it to a host: each
@@ -86,6 +92,12 @@ type ReferenceHost struct {
 	monotonicFloor int64
 	monotonicSet   bool
 	starts         []Start
+	// provider is where a generation's text comes from: a scripted provider
+	// until the embedding gives another.
+	provider ModelProvider
+	// answerSchemas is the machine's table of answer schemas, which a
+	// generation's answer_schema is resolved through.
+	answerSchemas []sce.AnswerSchema
 }
 
 // NewReferenceHost is a host reading clock and carrying HTTP over transport, with
@@ -96,6 +108,7 @@ func NewReferenceHost(clock ClockSource, transport Transport) *ReferenceHost {
 		transport: transport,
 		notify:    notifications{permission: "undetermined", userDecision: "none"},
 		faults:    map[string]string{},
+		provider:  NewScriptedProvider(),
 	}
 }
 
@@ -162,11 +175,14 @@ func (h *ReferenceHost) Start(operation, id string, params Params) (Outcome, boo
 		refused = params["id"] == ""
 	case "sce-host-http-fetch":
 		refused = !acceptable(params["method"], params["url"], params["headers"])
+	case ModelGenerate:
+		refused = h.refusesGeneration(id, params)
 	}
 	if refused {
 		return Outcome{Kind: Refuse, Data: invalidArgument}, true
 	}
 	if code, ok := h.faults[operation]; ok {
+		log.Printf("[sce] %s %s: fails %s, injected", operation, id, code)
 		return failure(operation, code), true
 	}
 	switch operation {
@@ -190,6 +206,8 @@ func (h *ReferenceHost) Start(operation, id string, params Params) (Outcome, boo
 		return h.notifyPost(params["id"], params["title"], params["body"], params["at_ms"]), true
 	case "sce-host-notify-cancel":
 		return h.notifyCancel(params["id"]), true
+	case ModelGenerate:
+		return h.modelGenerate(id, params), true
 	default:
 		return h.httpFetch(id, params["method"], params["url"], params["headers"], params["body"]), true
 	}
@@ -235,6 +253,7 @@ func failure(operation, code string) Outcome {
 		"sce-host-notify-request-permission": {"state": ""},
 		"sce-host-notify-post":               {"status": ""},
 		"sce-host-http-fetch":                {"status": 0, "headers": "", "body": ""},
+		ModelGenerate:                        {"text": "", "constrained": false, "model": "", "prompt_tokens": 0, "answer_tokens": 0, "finish": ""},
 	}[operation]
 	fields := map[string]any{}
 	for name, value := range zero {

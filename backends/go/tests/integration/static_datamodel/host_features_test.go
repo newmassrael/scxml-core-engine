@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	hf "github.com/newmassrael/sce-go-host-features"
@@ -28,6 +29,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_clock"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_http"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_kv"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_model"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_notify"
 )
 
@@ -97,7 +99,50 @@ type hostRig struct {
 	host      *hf.ReferenceHost
 	clock     *hf.ScriptedClock
 	transport *scriptTransport
+	model     *hf.ScriptedProvider
 }
+
+// answerText is the text a `model` answer gives: `text`, or `text_repeat` as a
+// text and a count.
+func answerText(answer map[string]any) string {
+	if text, ok := answer["text"].(string); ok {
+		return text
+	}
+	repeat := answer["text_repeat"].([]any)
+	return strings.Repeat(repeat[0].(string), int(repeat[1].(float64)))
+}
+
+// scriptModel applies a `model` directive to the scripted provider: each member
+// it names.
+func scriptModel(provider *hf.ScriptedProvider, d map[string]any) {
+	if answers, ok := d["answers"].([]any); ok {
+		provider.Answers = nil
+		for _, raw := range answers {
+			answer := raw.(map[string]any)
+			finish, ok := answer["finish"].(string)
+			if !ok {
+				finish = "stop"
+			}
+			provider.Answers = append(provider.Answers, hf.ScriptedAnswer{Text: answerText(answer), Finish: finish})
+		}
+	}
+	if constrained, ok := d["constrained"].(bool); ok {
+		provider.Constrained = constrained
+	}
+	if name, ok := d["name"].(string); ok {
+		provider.Name = name
+	}
+	if context, ok := d["context"].(float64); ok {
+		provider.Context = uint64(context)
+	}
+	if hold, ok := d["hold"].(bool); ok {
+		provider.Hold = hold
+	}
+}
+
+// integerFields are the request fields a scenario writes as numbers; every
+// other is text.
+var integerFields = map[string]bool{"at_ms": true, "max_tokens": true, "temperature_milli": true}
 
 // directives applies the `host` object of a step.
 func (r *hostRig) directives(t *testing.T, directives map[string]any) {
@@ -133,6 +178,8 @@ func (r *hostRig) directives(t *testing.T, directives map[string]any) {
 			r.host.SetFaults(faults)
 		case "http":
 			r.transport.directive(value.(map[string]any))
+		case "model":
+			scriptModel(r.model, value.(map[string]any))
 		default:
 			t.Fatalf("`%s` is not a host directive", name)
 		}
@@ -140,13 +187,13 @@ func (r *hostRig) directives(t *testing.T, directives map[string]any) {
 }
 
 // starts are what the host was started with since the last step, as a scenario
-// writes it: the request as its record, `at_ms` being the one integer field.
+// writes it: the request as its record, the integer fields as numbers.
 func (r *hostRig) starts() []any {
 	out := []any{}
 	for _, start := range r.host.TakeStarts() {
 		request := map[string]any{}
 		for name, text := range start.Params {
-			if name == "at_ms" {
+			if integerFields[name] {
 				n, err := strconv.ParseInt(text, 10, 64)
 				if err != nil {
 					panic(err)
@@ -214,6 +261,8 @@ func same(got any, want any) bool {
 			return float64(g) == w
 		case uint16:
 			return float64(g) == w
+		case uint32:
+			return float64(g) == w
 		case int:
 			return float64(g) == w
 		}
@@ -229,7 +278,7 @@ const hostSettleTicks = 5
 func replayHost[S interface {
 	comparable
 	String() string
-}, E comparable](t *testing.T, name string, policy sce.StatePolicy[S, E], variables map[string]func() any) {
+}, E comparable](t *testing.T, name string, policy sce.StatePolicy[S, E], schemas []sce.AnswerSchema, variables map[string]func() any) {
 	path := filepath.Join("..", "..", "..", "..", "..", "tests", "host_features", "scenarios", name+".json")
 	text, err := os.ReadFile(path)
 	if err != nil {
@@ -241,7 +290,9 @@ func replayHost[S interface {
 	}
 	clock := hf.NewScriptedClock()
 	transport := &scriptTransport{}
-	rig := &hostRig{host: hf.NewReferenceHost(clock, transport), clock: clock, transport: transport}
+	rig := &hostRig{host: hf.NewReferenceHost(clock, transport), clock: clock, transport: transport, model: hf.NewScriptedProvider()}
+	rig.host.SetModelProvider(rig.model)
+	rig.host.SetAnswerSchemas(schemas)
 
 	engine := sce.NewEngine[S, E](policy)
 	engine.SetClock(sce.NewManualClock(0))
@@ -327,7 +378,7 @@ func replayHost[S interface {
 func TestAMachineAsksTheKeyValueStoreOfItsHost(t *testing.T) {
 	policy := static_host_kv.NewStaticHostKvPolicy()
 	policy.SessionID = sce.GenerateSessionID()
-	replayHost[static_host_kv.StaticHostKvState, static_host_kv.StaticHostKvEvent](t, "static_host_kv", &policy, map[string]func() any{
+	replayHost[static_host_kv.StaticHostKvState, static_host_kv.StaticHostKvEvent](t, "static_host_kv", &policy, nil, map[string]func() any{
 		"outcome":    func() any { return policy.Outcome() },
 		"found":      func() any { return policy.Found() },
 		"got":        func() any { return policy.Got() },
@@ -341,7 +392,7 @@ func TestAMachineAsksTheKeyValueStoreOfItsHost(t *testing.T) {
 func TestAMachineReadsTheClockOfItsHost(t *testing.T) {
 	policy := static_host_clock.NewStaticHostClockPolicy()
 	policy.SessionID = sce.GenerateSessionID()
-	replayHost[static_host_clock.StaticHostClockState, static_host_clock.StaticHostClockEvent](t, "static_host_clock", &policy, map[string]func() any{
+	replayHost[static_host_clock.StaticHostClockState, static_host_clock.StaticHostClockEvent](t, "static_host_clock", &policy, nil, map[string]func() any{
 		"outcome":      func() any { return policy.Outcome() },
 		"utc_ms":       func() any { return policy.UtcMs() },
 		"monotonic_ms": func() any { return policy.MonotonicMs() },
@@ -353,7 +404,7 @@ func TestAMachineReadsTheClockOfItsHost(t *testing.T) {
 func TestAMachinePostsNotificationsThroughItsHost(t *testing.T) {
 	policy := static_host_notify.NewStaticHostNotifyPolicy()
 	policy.SessionID = sce.GenerateSessionID()
-	replayHost[static_host_notify.StaticHostNotifyState, static_host_notify.StaticHostNotifyEvent](t, "static_host_notify", &policy, map[string]func() any{
+	replayHost[static_host_notify.StaticHostNotifyState, static_host_notify.StaticHostNotifyEvent](t, "static_host_notify", &policy, nil, map[string]func() any{
 		"outcome":    func() any { return policy.Outcome() },
 		"permission": func() any { return policy.Permission() },
 		"status":     func() any { return policy.Status() },
@@ -364,10 +415,190 @@ func TestAMachinePostsNotificationsThroughItsHost(t *testing.T) {
 func TestAMachineMakesAnHTTPExchangeThroughItsHost(t *testing.T) {
 	policy := static_host_http.NewStaticHostHttpPolicy()
 	policy.SessionID = sce.GenerateSessionID()
-	replayHost[static_host_http.StaticHostHttpState, static_host_http.StaticHostHttpEvent](t, "static_host_http", &policy, map[string]func() any{
+	replayHost[static_host_http.StaticHostHttpState, static_host_http.StaticHostHttpEvent](t, "static_host_http", &policy, nil, map[string]func() any{
 		"outcome":          func() any { return policy.Outcome() },
 		"status":           func() any { return policy.Status() },
 		"response_headers": func() any { return policy.ResponseHeaders() },
 		"response_body":    func() any { return policy.ResponseBody() },
 	})
+}
+
+// modelVariables are the readers of what static_host_model publishes, each as a
+// scenario states it: a record by its fields, a 64-bit integer as its digits.
+func modelVariables(t *testing.T, policy *static_host_model.StaticHostModelPolicy) map[string]func() any {
+	return map[string]func() any{
+		"calls":         func() any { return policy.Calls() },
+		"outcome":       func() any { return policy.Outcome() },
+		"finish":        func() any { return policy.Finish() },
+		"constrained":   func() any { return policy.Constrained() },
+		"answered_by":   func() any { return policy.AnsweredBy() },
+		"prompt_tokens": func() any { return policy.PromptTokens() },
+		"answer_tokens": func() any { return policy.AnswerTokens() },
+		"answer": func() any {
+			if a, ok := policy.Answer().Get(); ok {
+				return asJSON(t, map[string]any{
+					"id": a.Id(), "amount": signedDigits(a.Amount()), "title": a.Title(), "kind": a.Kind().String(),
+					"note": a.Note(), "tag": sce.BytesAsPayloadText(a.Tag()), "priority": a.Priority(),
+				})
+			}
+			return nil
+		},
+		"why": func() any {
+			if why, ok := policy.Why().Get(); ok {
+				return asJSON(t, map[string]any{"code": why.Code().String(), "path": why.Path(), "bound": why.Bound()})
+			}
+			return nil
+		},
+	}
+}
+
+func TestAMachineAsksItsHostForATextUnderAnAnswerSchema(t *testing.T) {
+	policy := static_host_model.NewStaticHostModelPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replayHost[static_host_model.StaticHostModelState, static_host_model.StaticHostModelEvent](t, "static_host_model", &policy, static_host_model.AnswerSchemas, modelVariables(t, &policy))
+}
+
+// outcomeClass is what the exhaustive provider answers for a class of the table.
+func outcomeClass(class map[string]any) hf.OutcomeClass {
+	switch class["end"] {
+	case "answer":
+		return hf.OutcomeClass{Kind: hf.Answered, Text: class["text"].(string), Finish: class["finish"].(string)}
+	case "failure":
+		return hf.OutcomeClass{Kind: hf.Failed, Code: class["error"].(string)}
+	case "refusal":
+		return hf.OutcomeClass{Kind: hf.Refused}
+	default:
+		return hf.OutcomeClass{Kind: hf.Held}
+	}
+}
+
+// runSequence runs static_host_model against the exhaustive provider answering
+// the classes sequence names, one call a class, and holds what the machine
+// publishes after each call to what its class says.
+func runSequence(t *testing.T, table map[string]any, sequence []int) {
+	classes := table["classes"].([]any)
+	var provided []hf.OutcomeClass
+	var named []string
+	for _, i := range sequence {
+		class := classes[i].(map[string]any)
+		provided = append(provided, outcomeClass(class))
+		named = append(named, class["class"].(string))
+	}
+	policy := static_host_model.NewStaticHostModelPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	host := hf.NewReferenceHost(hf.NewScriptedClock(), &scriptTransport{})
+	host.SetAnswerSchemas(static_host_model.AnswerSchemas)
+	host.SetModelProvider(hf.NewExhaustiveProvider(provided))
+	engine := sce.NewEngine[static_host_model.StaticHostModelState, static_host_model.StaticHostModelEvent](&policy)
+	engine.SetClock(sce.NewManualClock(0))
+	hf.Serve(engine, host)
+	engine.Initialize()
+	settle := func() {
+		for i := 0; i < hostSettleTicks; i++ {
+			engine.Tick()
+		}
+	}
+	settle()
+	ask := table["ask"].(map[string]any)
+	data, err := json.Marshal(ask["data"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	variables := modelVariables(t, &policy)
+	var answer any
+	for n, i := range sequence {
+		class := classes[i].(map[string]any)
+		engine.RaiseExternalByName(ask["event"].(string), string(data))
+		settle()
+		switch class["then"] {
+		case "advance":
+			engine.AdvanceTimeMs(int64(table["deadline_ms"].(float64)))
+			settle()
+		case "leave":
+			engine.RaiseExternalByName(table["leave"].(string), "")
+			settle()
+		}
+		expect := class["expect"].(map[string]any)
+		if read, ok := expect["answer"]; ok {
+			answer = read
+		}
+		at := fmt.Sprintf("%v, call %d", named, n+1)
+		var atomic []static_host_model.StaticHostModelState
+		for _, state := range engine.GetActiveStates() {
+			if !policy.IsCompoundState(state) {
+				atomic = append(atomic, state)
+			}
+		}
+		if len(atomic) != 1 || atomic[0].String() != "idle" {
+			t.Fatalf("%s: the machine is in %v, not idle", at, atomic)
+		}
+		for _, name := range []string{"outcome", "why", "finish"} {
+			if got := variables[name](); !same(got, expect[name]) {
+				t.Fatalf("%s: `%s` is %v, not %v", at, name, got, expect[name])
+			}
+		}
+		if got := variables["answer"](); !same(got, answer) {
+			t.Fatalf("%s: `answer` is %v, not %v", at, got, answer)
+		}
+		if got := variables["calls"](); !same(got, float64(n+1)) {
+			t.Fatalf("%s: `calls` is %v", at, got)
+		}
+	}
+}
+
+// The machine around a model is tested exhaustively (docs/adr/0087, section 9.4):
+// every sequence of outcome classes up to the table's bound, each call read as its
+// class says, and every refusal code of the library either reached by a class or
+// named as deferred with its reason.
+func TestEverySequenceOfOutcomeClassesIsReadAsItsClassesSay(t *testing.T) {
+	text, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "tests", "host_features", "model_outcome_classes.json"))
+	if err != nil {
+		t.Fatalf("the class table is not readable: %v", err)
+	}
+	var table map[string]any
+	if err := json.Unmarshal(text, &table); err != nil {
+		t.Fatalf("the class table is JSON: %v", err)
+	}
+	if table["machine"] != "static_host_model" || len(static_host_model.AnswerSchemas) == 0 ||
+		table["answer_schema"] != static_host_model.AnswerSchemas[0].ID {
+		t.Fatalf("the table names another machine or answer schema: %v", table["answer_schema"])
+	}
+	classes := len(table["classes"].([]any))
+	bound := int(table["bound"].(float64))
+	if classes == 0 || bound == 0 {
+		t.Fatal("a table that names nothing judges nothing")
+	}
+	runs, expected := 0, 0
+	for count, power := 1, classes; count <= bound; count, power = count+1, power*classes {
+		expected += power
+		sequence := make([]int, count)
+		for {
+			runSequence(t, table, sequence)
+			runs++
+			position := count - 1
+			for position >= 0 && sequence[position] == classes-1 {
+				sequence[position] = 0
+				position--
+			}
+			if position < 0 {
+				break
+			}
+			sequence[position]++
+		}
+	}
+	if runs != expected {
+		t.Fatalf("%d sequences were run, not the %d up to the bound", runs, expected)
+	}
+	codes := map[string]bool{}
+	for _, raw := range table["classes"].([]any) {
+		if why, ok := raw.(map[string]any)["expect"].(map[string]any)["why"].(map[string]any); ok {
+			codes[why["code"].(string)] = true
+		}
+	}
+	for _, raw := range table["deferred"].([]any) {
+		codes[raw.(map[string]any)["code"].(string)] = true
+	}
+	if len(codes) != 13 {
+		t.Fatalf("every code of sce:std/lift/refusal_code.scxml is reached or deferred: %v", codes)
+	}
 }
