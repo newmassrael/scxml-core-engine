@@ -773,6 +773,80 @@ fn variant_context(
     })
 }
 
+/// What an encode writes into the carrier `carrier` besides its stored value, when the arm of an
+/// embedded variant fills flags of it (ADR 0058): the bits of the stored value it keeps, every bit
+/// outside those flags, and, per embedded variant, the tag of the arm it holds shifted into its
+/// flag. Each embedded variant is read by the arm it holds, as every backend reads it, so a
+/// variant that finds its own tag on the wire is driven as one whose caller hands it the tag, and
+/// a body held by the catch-all presents the tag it was read for. The shifted tags are the locals
+/// [`parent_tag_locals`] declares, which an embed that is absent leaves at zero. `null` for a
+/// carrier no embedded variant fills.
+fn parent_tag_derived(derivations: &[ParentTagDerivation], carrier: &str) -> serde_json::Value {
+    let mut keep: u64 = 0xFF;
+    let mut terms = Vec::new();
+    for (index, d) in derivations.iter().enumerate() {
+        if d.carrier_field_id != carrier {
+            continue;
+        }
+        let mask = (1u64 << d.width) - 1;
+        keep &= !((mask << d.bit) & 0xFF);
+        terms.push(parent_tag_local(index));
+    }
+    if terms.is_empty() {
+        return serde_json::Value::Null;
+    }
+    serde_json::json!({
+        "keep": format!("0x{keep:02X}"),
+        "terms": terms.join(" | "),
+    })
+}
+
+/// The local an encode keeps the bits the embedded variant of derivation `index` fills.
+fn parent_tag_local(index: usize) -> String {
+    format!("derived_tag_{index}")
+}
+
+/// The lines an encode opens with, one per derivation: the bits of the flag the arm that the
+/// embedded variant holds names, in place in the carrier's byte, and zero for an embed a gate leaves
+/// off the wire. A switch over the variant's arms declares the local without a value first, so the
+/// compiler holds every arm to give it one.
+fn parent_tag_locals(derivations: &[ParentTagDerivation]) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (index, d) in derivations.iter().enumerate() {
+        let local = parent_tag_local(index);
+        let mask = (1u64 << d.width) - 1;
+        let embed = &d.embed_field_id;
+        lines.push(format!("        let {local}: UInt8"));
+        let (held, pad) = if d.present_if.is_some() {
+            lines.push(format!("        if let held = self.{embed} {{"));
+            ("held".to_string(), "    ")
+        } else {
+            (format!("self.{embed}"), "")
+        };
+        lines.push(format!("{pad}        switch {held}.{VARIANT_FIELD} {{"));
+        for arm in &d.arms {
+            let shifted = ((arm.value & mask) << d.bit) & 0xFF;
+            lines.push(format!(
+                "{pad}        case .{}: {local} = 0x{shifted:02X}",
+                filters::to_camel_case(arm.body_alias.clone())
+            ));
+        }
+        if d.catch_all {
+            lines.push(format!(
+                "{pad}        case .default(let tag, _): {local} = (UInt8(truncatingIfNeeded: tag) & 0x{mask:X}) << {}",
+                d.bit
+            ));
+        }
+        lines.push(format!("{pad}        }}"));
+        if d.present_if.is_some() {
+            lines.push("        } else {".to_string());
+            lines.push(format!("            {local} = 0"));
+            lines.push("        }".to_string());
+        }
+    }
+    lines
+}
+
 /// What the template needs to write the property of one flag: its name, where its bits lie in
 /// the carrier (`mask` is the bits shifted into place, `value_mask` the same bits at zero), and,
 /// for a flag of more than one bit, the unsigned integer type that reads and writes it (the
@@ -803,6 +877,20 @@ fn flag_context(flag: &FlagDef) -> serde_json::Value {
     })
 }
 
+/// What of the import `alias` of `m`, whose arm the importer drives into a flag of its own
+/// (`<sce:variant-dispatch>`), the Swift codec does not lower: the dispatch is written where the
+/// codec is embedded (the carrier of the flag is derived from the arm the embedded value holds), and
+/// not for the entries of a list or a chain of that codec.
+pub(super) fn dispatch_outside_an_embed(m: &CodecModel, alias: &str) -> Option<String> {
+    m.fields
+        .iter()
+        .any(|f| {
+            f.repeat_body_alias.as_deref() == Some(alias)
+                || f.tlv_chain_body_alias.as_deref() == Some(alias)
+        })
+        .then(|| "its arm is driven into a flag of the codec that holds its entries".to_string())
+}
+
 /// The refusal of the codec `m` for the Swift construct `construct` it holds ([`unlowered`]).
 pub(super) fn refusal(m: &CodecModel, construct: &str) -> String {
     format!("codec '{}': {construct} has no Swift lowering yet", m.name)
@@ -822,6 +910,8 @@ pub(super) fn render(
     let sequential = is_sequential(m);
     // The bits of an entry's value that are its identifier, for each chain that leaves flags out of it.
     let masks = chain_identifier_masks(m, imports);
+    // The carriers whose flags an embedded variant's arm fills at encode (ADR 0058).
+    let derivations = collect_parent_tag_derivations(m, imports);
     // The bytes of the frame: for fields at fixed places the end of the last of them, for a frame
     // read field by field the fewest bytes it can have, which is each integer at its width, each
     // variable-length integer at one byte, and the bytes of a variable-length field at none.
@@ -913,8 +1003,16 @@ pub(super) fn render(
                     .embed_length_from
                     .as_deref()
                     .map(|name| format!("Int(clamping: frame.{name})"));
-                let (decode_args, encode_args) =
-                    thread(f.embed_body_alias.as_deref().unwrap_or_default());
+                // The tag a variant takes from its caller is a flag of this frame when the import
+                // declares which, and so is handed to the decode after the flag inputs.
+                let embed_args = embed_parent_flags_thread_args(
+                    f,
+                    f.embed_body_alias.as_deref().unwrap_or_default(),
+                    imports,
+                    m,
+                    Language::Swift,
+                );
+                let (decode_args, encode_args) = (embed_args.decode_arg, embed_args.encode_arg);
                 return serde_json::json!({
                     "id": f.id,
                     "swift_type": format!("{element}{optional}"),
@@ -1134,6 +1232,7 @@ pub(super) fn render(
                 "default": default,
                 "vle": f.is_vle(),
                 "flags": f.flags.iter().map(flag_context).collect::<Vec<_>>(),
+                "derived": parent_tag_derived(&derivations, &f.id),
                 // Where its bits lie in the byte, for a field of bits inside one: `null` for a
                 // field that is the whole of its integer.
                 "bits": bit_field(f).ok().filter(|_| f.bit_offset.is_some()).map(|(shift, mask)| {
@@ -1156,6 +1255,10 @@ pub(super) fn render(
         ctx.insert("variant_enum".into(), parts.arms_enum);
     }
     ctx.insert("fields".into(), fields.into());
+    ctx.insert(
+        "parent_tag_locals".into(),
+        parent_tag_locals(&derivations).into(),
+    );
     // The refusals an encode makes before its first byte: of a field and the gate it is held to that
     // contradict each other, and of a value outside its bound.
     let roles = crate::forge::codec_roles::classify(m, imports);

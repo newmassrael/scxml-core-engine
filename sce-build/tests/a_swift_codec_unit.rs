@@ -499,14 +499,20 @@ fn a_variant_over_a_peeked_byte_reads_the_tag_and_leaves_the_byte_for_the_arm() 
 }
 
 #[test]
-fn an_embedded_variant_whose_arm_the_embedder_drives_is_refused_by_name() {
-    // The importer declares a dispatch that writes the arm into one of its own flags at encode, which
-    // the Swift codec does not do, so the codec is not written rather than written without it.
-    let refusal = swift_of("tests/forge/resources/codec_embed_variant_dispatch.scxml")
-        .expect_err("an embed whose arm is driven into a flag is not written");
+fn an_embedded_variant_whose_arm_the_embedder_drives_is_written_both_ways() {
+    // The importer declares a dispatch that writes the arm into one of its own flags: the encode
+    // writes the tag of the arm the child holds into those bits of the carrier, keeping every other
+    // bit of the stored value, whether the child finds its own tag on the wire (as this one does) or
+    // is handed it.
+    let code = swift_of("tests/forge/resources/codec_embed_variant_dispatch.scxml")
+        .expect("an embed whose arm is driven into a flag is written");
     assert!(
-        refusal.contains("its arm is driven into a flag of the codec that embeds it"),
-        "{refusal}"
+        code.contains("switch self.body.body {"),
+        "the held arm is read by a switch over the arms of the child: {code}"
+    );
+    assert!(
+        code.contains("appendInteger((self.hdr & 0xFC) | derived_tag_0, to: &frame, .big)"),
+        "the encode writes the held arm's tag into the flag: {code}"
     );
 }
 
@@ -897,11 +903,39 @@ fn a_list_is_held_to_its_declared_count_on_decode_and_on_encode() {
 
 #[test]
 fn an_embedded_codec_swift_does_not_write_is_refused_by_name() {
-    // The embedded codec dispatches on a tag, which the Swift codec does not write yet, so the
-    // codec that embeds it names a type that is not there.
-    let refusal = swift_of("tests/forge/resources/codec_embed_variant_dispatch.scxml")
-        .expect_err("an embedded codec Swift does not write is not written");
-    assert!(refusal.contains("which has no Swift lowering"), "{refusal}");
+    // An embedded codec that has no Swift lowering (here one with a DMA alignment) leaves the
+    // codec that embeds it naming a type that is not there.
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::copy(
+        repo_root().join("tests/forge/resources/codec_dma_aligned_basic.scxml"),
+        dir.path().join("codec_dma_aligned_basic.scxml"),
+    )
+    .expect("copy the aligned codec");
+    let document = dir.path().join("codec_embed_aligned.scxml");
+    std::fs::write(
+        &document,
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_embed_aligned">
+  <sce:import src="codec_dma_aligned_basic.scxml" kind="codec" as="codec_dma_aligned_basic"/>
+  <datamodel>
+    <sce:field id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:embed id="inner" type="codec_dma_aligned_basic" sce:byte="1"/>
+  </datamodel>
+</scxml>"#,
+    )
+    .expect("write the embedding codec");
+    let Err(refusal) = compile_forge_file(
+        &document,
+        Language::Swift,
+        &[],
+        &ForgeCompileOptions::default(),
+    ) else {
+        panic!("an embedded codec Swift does not write is not written");
+    };
+    assert!(
+        format!("{refusal:?}").contains("which has no Swift lowering"),
+        "{refusal:?}"
+    );
 }
 
 #[test]
@@ -1086,6 +1120,29 @@ fn a_variant_whose_tag_its_caller_supplies_is_given_the_tag_on_decode() {
             "public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError)"
         ),
         "an encode takes no tag: {code}"
+    );
+}
+
+/// A codec that embeds a variant whose tag its caller supplies says which of its own flags selects
+/// the arm (`<sce:variant-dispatch flag="hdr.kind"/>`), and hands the child that flag, shifted down
+/// and masked, as the `tag` of its decode.
+#[test]
+fn an_embedded_variant_is_handed_its_tag_by_a_flag_of_the_embedding_codec() {
+    let code = swift_of("backends/rust/forge-conformance/fixtures/codec_source_parent_tag.scxml")
+        .expect("a codec that embeds a variant by a dispatch flag is written");
+    assert!(
+        code.contains(
+            "CodecSourceLeaf.decode(&reader, tag: UInt8(truncatingIfNeeded: (frame.hdr >> 0) & 0x1))"
+        ),
+        "the tag is the bit of the carrier's flag: {code}"
+    );
+    assert!(
+        code.contains("appendInteger((self.hdr & 0xFE) | derived_tag_0, to: &frame, .big)"),
+        "the encode derives the flag from the arm that is held: {code}"
+    );
+    assert!(
+        code.contains("case .codecVariantSessionClose: derived_tag_0 = 0x01"),
+        "an arm names the tag it is chosen by: {code}"
     );
 }
 

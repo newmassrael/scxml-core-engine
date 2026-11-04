@@ -278,6 +278,9 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% else %}
         {{ "var" if fields else "let" }} frame = [UInt8](repeating: 0, count: Self.frameLength)
 {% endif %}
+{% for line in parent_tag_locals %}
+{{ line }}
+{% endfor %}
 {% for f in fields %}
 {% set pad = "    " if f.present else "" %}
 {% set src = f.id if f.present else "self." ~ f.id %}
@@ -323,11 +326,19 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% elif f.vle %}
 {{ pad }}        appendVle({{ src }}, to: &frame)
 {% elif sequential %}
+{% if f.derived %}
+{{ pad }}        appendInteger(({{ src }} & {{ f.derived.keep }}) | {{ f.derived.terms }}, to: &frame, .{{ f.order }})
+{% else %}
 {{ pad }}        appendInteger({{ src }}, to: &frame, .{{ f.order }})
+{% endif %}
 {% elif f.bits %}
         frame[{{ f.offset }}] |= (self.{{ f.id }} & {{ f.bits.mask }}) << {{ f.bits.shift }}
 {% else %}
+{% if f.derived %}
+        storeInteger((self.{{ f.id }} & {{ f.derived.keep }}) | {{ f.derived.terms }}, into: &frame, at: {{ f.offset }}, .{{ f.order }})
+{% else %}
         storeInteger(self.{{ f.id }}, into: &frame, at: {{ f.offset }}, .{{ f.order }})
+{% endif %}
 {% endif %}
 {% if f.present %}
         }

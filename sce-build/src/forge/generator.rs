@@ -15261,7 +15261,7 @@ fn caller_tag_arg_decode(
                         // The carrier is a property of the frame being read, and the tag is the
                         // bits of the flag shifted down and masked, in the byte the child takes.
                         Language::Swift => format!(
-                            ", UInt8(truncatingIfNeeded: (frame.{carrier_name} >> {bit}) & 0x{mask:X})"
+                            ", tag: UInt8(truncatingIfNeeded: (frame.{carrier_name} >> {bit}) & 0x{mask:X})"
                         ),
                         Language::Rust => {
                             // Decode-site local is snake_cased per
@@ -15305,7 +15305,7 @@ fn caller_tag_arg_decode(
     if let Some(arms) = imp.codec_variant_arms_for_inversion.as_ref() {
         if let Some(default_value) = arms.iter().find(|arm| arm.is_default).map(|arm| arm.value) {
             return match lang {
-                Language::Swift => format!(", 0x{default_value:X}"),
+                Language::Swift => format!(", tag: 0x{default_value:X}"),
                 Language::Rust => format!(", 0x{default_value:X}u8"),
                 Language::Cpp => format!(", static_cast<std::uint8_t>(0x{default_value:X})"),
                 Language::Kotlin => format!(", 0x{default_value:X}.toUByte()"),
@@ -28143,9 +28143,10 @@ pub fn generate_swift_with_imports(
                 .find(|import| import.alias == alias)
                 .and_then(|import| {
                     import.swift_unlowered.clone().or_else(|| {
-                        import.embed_dispatch.as_ref().map(|_| {
-                            "its arm is driven into a flag of the codec that embeds it".to_string()
-                        })
+                        import
+                            .embed_dispatch
+                            .as_ref()
+                            .and_then(|_| swift_codec::dispatch_outside_an_embed(m, alias))
                     })
                 })
         })
@@ -28533,6 +28534,13 @@ pub(crate) fn swift_codec_unlowered(
     element: &dyn Fn(&str) -> Option<String>,
 ) -> Option<String> {
     swift_codec::element_unlowered(m, element)
+}
+
+/// What of the import `alias` of the codec `m`, whose importer drives its arm into a flag
+/// (`<sce:variant-dispatch>`), the Swift backend does not write: the dispatch is written for a codec
+/// that embeds it, and not for the entries of a list or a chain.
+pub(crate) fn swift_dispatch_outside_an_embed(m: &CodecModel, alias: &str) -> Option<String> {
+    swift_codec::dispatch_outside_an_embed(m, alias)
 }
 
 /// What of the CBOR codec `m` the Swift codec does not lower yet, for the shared refusal

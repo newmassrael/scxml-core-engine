@@ -148,8 +148,16 @@ done
 # reaches it. A kind Swift gains is added here, to the one list. Derived, and a refusal by
 # name (status 7) is listed, as the machines' are.
 UNIT_KINDS='(algorithm|condition|lookup|interpolation|filter|transform|validator|timer|observer|procedure|codec)'
+# The conformance documents of the other backends' oracle that the catalog does not list, whose
+# units a test of the Swift backend reads: a codec that embeds a variant and says which of its own
+# flags selects the arm (ADR 0058), with the variant it embeds.
+CONFORMANCE_UNITS=(
+    backends/rust/forge-conformance/fixtures/codec_source_leaf.scxml
+    backends/rust/forge-conformance/fixtures/codec_source_parent_tag.scxml
+)
 mapfile -t ALGORITHM_CANDIDATES < <(
     {
+        printf '%s\n' "${CONFORMANCE_UNITS[@]}"
         grep -lE "sce:kind=\"$UNIT_KINDS\"" "$INPUT_ROOT"/*.scxml
         grep -rlE "sce:kind=\"$UNIT_KINDS\"" stdlib --include='*.scxml' | sed 's|^stdlib/|sce:std/|'
         # The catalog's documents of the kinds Swift writes: a path under the corpus, or

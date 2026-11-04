@@ -258,9 +258,14 @@ fn swift_codec_through_imports_at(
         let import = imports
             .iter()
             .find(|i| i.alias == alias && i.kind == ForgeKind::Codec)?;
-        // A dispatch the importer declares writes the arm into a flag of its own at encode.
+        // A dispatch the importer declares writes the arm into a flag of its own at encode, which
+        // an embed does and the entries of a list or a chain do not.
         if import.embed_dispatch.is_some() {
-            return Some("its arm is driven into a flag of the codec that embeds it".to_string());
+            if let Some(why) =
+                crate::forge::generator::swift_dispatch_outside_an_embed(codec, alias)
+            {
+                return Some(why);
+            }
         }
         let source = crate::forge::import_source::ImportSource::read(base_dir, import).ok()?;
         let parsed = source.parse().ok()??;
