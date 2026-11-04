@@ -24,6 +24,7 @@
 #include "common/UrlEncodingHelper.h"
 #endif
 #include <map>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -308,6 +309,22 @@ public:
 
     /// The prefix [isReservedHostType] reserves.
     static constexpr const char *RESERVED_HOST_TYPE_PREFIX = "sce:";
+
+    /**
+     * @brief Refuse a host registration under the reserved prefix, naming the
+     * call and the type: the refusal both C++ engines' registrations share.
+     *
+     * @throws std::invalid_argument when [isReservedHostType] holds for
+     * @p processorType
+     */
+    static void refuseReservedHostType(const char *call, const std::string &processorType) {
+        if (isReservedHostType(processorType)) {
+            throw std::invalid_argument(std::string(call) + "(\"" + processorType + "\"): the `" +
+                                        RESERVED_HOST_TYPE_PREFIX +
+                                        "` prefix is reserved for the processors SCE defines itself; "
+                                        "give a host type another prefix, such as `x-`");
+        }
+    }
 
     /// The key a Mesh router is registered under with a target factory, which
     /// creates a target for a `#<peer>` address only through one. The Mesh

@@ -3644,21 +3644,8 @@ public:
      * so there is no router to register here.
      */
     void registerEventProcessor(const std::string &processorType, ::SCE::HostSendHandler handler) {
-        refuseReservedHostType("registerEventProcessor", processorType);
+        ::SCE::SendHelper::refuseReservedHostType("registerEventProcessor", processorType);
         hostProcessors_[processorType] = std::move(handler);
-    }
-
-    /**
-     * @brief Refuse a registration under the reserved `sce:` prefix, naming the
-     * call and the type — the refusal both registrations share.
-     */
-    static void refuseReservedHostType(const char *call, const std::string &processorType) {
-        if (::SCE::SendHelper::isReservedHostType(processorType)) {
-            throw std::invalid_argument(std::string(call) + "(\"" + processorType + "\"): the `" +
-                                        ::SCE::SendHelper::RESERVED_HOST_TYPE_PREFIX +
-                                        "` prefix is reserved for the processors SCE defines itself; "
-                                        "give a host type another prefix, such as `x-`");
-        }
     }
 
     /**
@@ -3735,7 +3722,7 @@ public:
      * session that made it (`HostInvokeRequest::sessionId`).
      */
     void registerInvoker(const std::string &processorType, ::SCE::HostInvokeHandler handler) {
-        refuseReservedHostType("registerInvoker", processorType);
+        ::SCE::SendHelper::refuseReservedHostType("registerInvoker", processorType);
         invokers_->handlers[processorType] = std::move(handler);
     }
 
