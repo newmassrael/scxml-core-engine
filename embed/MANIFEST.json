@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "cc61487b0d",
+  "embed_version": "6f71b4eacd",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 485,
+  "symbol_count": 492,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1017,6 +1017,91 @@
       "kind": "function",
       "name": "SCE::Core::HistoryHelper::recordHistory<T>",
       "signature": "std::vector<StateType> SCE::Core::HistoryHelper::recordHistory<T>(const std::vector<StateType> &, StateType, HistoryType, GetParentFunc)"
+    },
+    {
+      "header": "core/HostInvokeLedger.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Core::HostInvokeLedger"
+    },
+    {
+      "header": "core/HostInvokeLedger.h",
+      "kind": "struct",
+      "members": [
+        "field bool failed",
+        "field std::string data",
+        "field std::string invokeId",
+        "field std::string origin",
+        "field std::string originType",
+        "field uint64_t token",
+        "method HostInvokeEnded &(HostInvokeEnded &&) noexcept operator=",
+        "method HostInvokeEnded &(const HostInvokeEnded &) noexcept(false) operator=",
+        "method std::string () const eventName",
+        "method void () noexcept HostInvokeEnded",
+        "method void () noexcept ~HostInvokeEnded",
+        "method void (HostInvokeEnded &&) noexcept HostInvokeEnded",
+        "method void (const HostInvokeEnded &) noexcept(false) HostInvokeEnded"
+      ],
+      "name": "SCE::Core::HostInvokeEnded"
+    },
+    {
+      "header": "core/HostInvokeLedger.h",
+      "kind": "struct",
+      "members": [
+        "field std::string doneData",
+        "field std::string invokeId",
+        "field std::string processorType",
+        "field uint64_t token",
+        "method HostInvokeCompletedAtOnce &(HostInvokeCompletedAtOnce &&) noexcept operator=",
+        "method HostInvokeCompletedAtOnce &(const HostInvokeCompletedAtOnce &) noexcept(false) operator=",
+        "method void () HostInvokeCompletedAtOnce",
+        "method void () noexcept ~HostInvokeCompletedAtOnce",
+        "method void (HostInvokeCompletedAtOnce &&) noexcept HostInvokeCompletedAtOnce",
+        "method void (const HostInvokeCompletedAtOnce &) noexcept(false) HostInvokeCompletedAtOnce"
+      ],
+      "name": "SCE::Core::HostInvokeCompletedAtOnce"
+    },
+    {
+      "header": "core/HostInvokeLedger.h",
+      "kind": "struct",
+      "members": [
+        "field std::string invokeId",
+        "method HostInvokeTimedOut &(HostInvokeTimedOut &&) noexcept operator=",
+        "method HostInvokeTimedOut &(const HostInvokeTimedOut &) noexcept(false) operator=",
+        "method std::string () const eventName",
+        "method std::string () data",
+        "method void () HostInvokeTimedOut",
+        "method void () noexcept ~HostInvokeTimedOut",
+        "method void (HostInvokeTimedOut &&) noexcept HostInvokeTimedOut",
+        "method void (const HostInvokeTimedOut &) noexcept(false) HostInvokeTimedOut"
+      ],
+      "name": "SCE::Core::HostInvokeTimedOut"
+    },
+    {
+      "header": "core/HostInvokeLedger.h",
+      "kind": "struct",
+      "members": [
+        "field std::string reason",
+        "method HostInvokeNotStarted &(HostInvokeNotStarted &&) noexcept operator=",
+        "method HostInvokeNotStarted &(const HostInvokeNotStarted &) noexcept(false) operator=",
+        "method void () HostInvokeNotStarted",
+        "method void () noexcept ~HostInvokeNotStarted",
+        "method void (HostInvokeNotStarted &&) noexcept HostInvokeNotStarted",
+        "method void (const HostInvokeNotStarted &) noexcept(false) HostInvokeNotStarted"
+      ],
+      "name": "SCE::Core::HostInvokeNotStarted"
+    },
+    {
+      "header": "core/HostInvokeLedger.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::HostInvokeDeadlineSchedulerTrait<T>"
+    },
+    {
+      "header": "core/HostInvokeLedger.h",
+      "kind": "typedef",
+      "name": "SCE::Core::HostInvokeReport",
+      "type": "std::variant<std::monostate, HostInvokeNotStarted, HostInvokeCompletedAtOnce, HostInvokeTimedOut>"
     },
     {
       "header": "core/HostProcessor.h",
