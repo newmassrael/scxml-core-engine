@@ -52,6 +52,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-scenario-set.v1.schema.json",
     "schemas/sce-observation-trace.v1.schema.json",
     "schemas/sce-transition-table.v1.schema.json",
+    "schemas/sce-payload-schema.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -243,6 +244,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "every_stream_the_product_writes_validates_against_the_wire_schema",
         "sce-build/src/transition_table.rs",
     ),
+    (
+        "schemas/sce-payload-schema.v1.schema.json",
+        "every_schema_the_product_writes_validates_against_the_wire_schema",
+        "sce-build/src/forge/payload_schema.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -327,6 +333,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "schemas/sce-transition-table.v1.schema.json",
         "the_wire_schema_rejects_what_the_producer_does_not_write",
         "sce-build/src/transition_table.rs",
+    ),
+    (
+        "schemas/sce-payload-schema.v1.schema.json",
+        "the_wire_schema_rejects_what_the_producer_does_not_write",
+        "sce-build/src/forge/payload_schema.rs",
     ),
 ];
 
@@ -420,6 +431,15 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          ties an export to a machine; its `source_hash` identifies the \
          inputs.",
         "transition table deliberately does",
+    ),
+    (
+        "schemas/sce-payload-schema.v1.schema.json",
+        "a constant of committed generated units: a commit stamp would \
+         change every committed tree on every commit. Its \
+         `x-sce-source-hash`, the source-hash of the files it is written \
+         into, names its inputs instead, as the sourcemap sidecar's \
+         `source_hash` does.",
+        "payload schema deliberately does",
     ),
 ];
 

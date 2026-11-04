@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The schema docs/adr/0087 section 1.1 writes out as its example: a title of at
+  most 16 bytes, a slot, what the answer is about, and a note of at most 8 bytes
+  that may be absent. Its unit declares the payload's JSON Schema and GBNF
+  grammar, which `sce-codegen payload-schema` prints byte for byte; it stands in
+  a directory of its own, so the source hash those texts carry is of this
+  directory alone.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="answer_slot"
+       sce:event-name="answer.slot">
+  <sce:import src="answer_kind.scxml" kind="enum" as="Kind"/>
+  <datamodel>
+    <data id="title" sce:type="string[16]" sce:direction="in"/>
+    <data id="slot" sce:type="uint16" sce:direction="in"/>
+    <data id="kind" sce:type="enum:Kind" sce:direction="in"/>
+    <data id="note" sce:type="optional&lt;string[8]&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>

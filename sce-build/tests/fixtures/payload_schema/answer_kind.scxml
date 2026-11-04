@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What an answer is about: a closed enum, which the payload schema of
+  `answer_slot.scxml` spells by its names (docs/adr/0087, section 1.1).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="answer_kind"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="meeting" value="0"/>
+      <sce:variant name="task" value="1"/>
+    </data>
+  </datamodel>
+</scxml>

@@ -1,0 +1,195 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-payload-schema.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE payload schema (wire schema v1)",
+  "description": "The JSON Schema (2020-12) of the payload of an event schema, which every schema unit declares as JSON_SCHEMA and `sce-codegen payload-schema` prints byte for byte (docs/adr/0087, section 1). This file states the subset of 2020-12 SCE writes: one spelling of each value of the payload's type, a record with every key required and no other, a 64-bit integer as the quoted text of its digits, every bound as the build resolved it. A text's maxLength counts characters and x-sce-max-bytes the UTF-8 bytes the type bounds. The text is compact with its keys in ascending order. It carries no generator stamp: it is a constant of committed generated units, and x-sce-source-hash, the source-hash of the files it is written into, names its inputs instead. Its second spelling, the GBNF grammar of the same type, has no schema file. Authoritative producer is sce-build/src/forge/payload_schema.rs over the folds of sce-build/src/forge/value_type.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md for the shared policy.",
+  "type": "object",
+  "required": ["$schema", "$id", "description", "type", "properties", "required", "additionalProperties"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "description": "The dialect: JSON Schema 2020-12.",
+      "const": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "$id": {
+      "description": "urn:sce:schema:<document name>:<revision>, the SCHEMA_ID of the unit.",
+      "type": "string",
+      "pattern": "^urn:sce:schema:.+:[1-9][0-9]*$"
+    },
+    "x-sce-source-hash": {
+      "description": "The source-hash of the files the schema is written into, when it is written into files that carry one.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "description": {
+      "description": "What the schema says of its texts' bounds.",
+      "type": "string"
+    },
+    "type": { "const": "object" },
+    "properties": { "$ref": "#/definitions/properties" },
+    "required": { "$ref": "#/definitions/keys" },
+    "additionalProperties": { "const": false },
+    "$defs": {
+      "description": "Each record the payload holds, once, under its document's name.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/record" }
+    }
+  },
+  "definitions": {
+    "properties": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/value" }
+    },
+    "keys": {
+      "description": "Every key of the record, in ascending order.",
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "record": {
+      "type": "object",
+      "required": ["type", "properties", "required", "additionalProperties"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "object" },
+        "properties": { "$ref": "#/definitions/properties" },
+        "required": { "$ref": "#/definitions/keys" },
+        "additionalProperties": { "const": false }
+      }
+    },
+    "value": {
+      "description": "The schema of one value: each form is told apart by the keywords it holds.",
+      "oneOf": [
+        { "$ref": "#/definitions/integer" },
+        { "$ref": "#/definitions/digits" },
+        { "$ref": "#/definitions/number" },
+        { "$ref": "#/definitions/boolean" },
+        { "$ref": "#/definitions/enum" },
+        { "$ref": "#/definitions/text" },
+        { "$ref": "#/definitions/bytes" },
+        { "$ref": "#/definitions/optional" },
+        { "$ref": "#/definitions/reference" },
+        { "$ref": "#/definitions/array" }
+      ]
+    },
+    "integer": {
+      "description": "A number of at most 32 bits, between its type's ends.",
+      "type": "object",
+      "required": ["type", "minimum", "maximum"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "integer" },
+        "minimum": { "type": "integer" },
+        "maximum": { "type": "integer" }
+      }
+    },
+    "digits": {
+      "description": "A 64-bit integer: the quoted text of its digits, the pattern exactly its type's range.",
+      "type": "object",
+      "required": ["type", "pattern"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "string" },
+        "pattern": { "type": "string", "pattern": "^\\^\\(.*\\)\\$$" }
+      }
+    },
+    "number": {
+      "description": "A real; a float32 between its largest finite values.",
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "number" },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" }
+      }
+    },
+    "boolean": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "boolean" } }
+    },
+    "enum": {
+      "description": "A closed enum: the names of its variants.",
+      "type": "object",
+      "required": ["enum"],
+      "additionalProperties": false,
+      "properties": {
+        "enum": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "text": {
+      "description": "A text: maxLength counts characters, x-sce-max-bytes the UTF-8 bytes its type bounds.",
+      "type": "object",
+      "required": ["type", "maxLength", "x-sce-max-bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "string" },
+        "maxLength": { "type": "integer", "minimum": 0 },
+        "x-sce-max-bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "bytes": {
+      "description": "A byte string: the Latin-1 text of its bytes, each character one byte.",
+      "type": "object",
+      "required": ["type", "maxLength", "pattern"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "string" },
+        "maxLength": { "type": "integer", "minimum": 0 },
+        "pattern": { "const": "^[\\u0000-\\u00ff]*$" }
+      }
+    },
+    "optional": {
+      "description": "A value that may be absent: its element, or null. Its key stays required.",
+      "type": "object",
+      "required": ["anyOf"],
+      "additionalProperties": false,
+      "properties": {
+        "anyOf": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": [
+            { "$ref": "#/definitions/value" },
+            { "$ref": "#/definitions/null" }
+          ],
+          "additionalItems": false
+        }
+      }
+    },
+    "null": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "null" } }
+    },
+    "reference": {
+      "description": "A record: its definition in $defs.",
+      "type": "object",
+      "required": ["$ref"],
+      "additionalProperties": false,
+      "properties": {
+        "$ref": { "type": "string", "pattern": "^#/\\$defs/.+$" }
+      }
+    },
+    "array": {
+      "description": "A list of at most its bound.",
+      "type": "object",
+      "required": ["type", "items", "maxItems"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "array" },
+        "items": { "$ref": "#/definitions/value" },
+        "maxItems": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

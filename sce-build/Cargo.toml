@@ -133,8 +133,12 @@ schemars = "0.8"
 # would use — catches issues that serde_json::Value structural
 # inspection misses (e.g. const mismatch, type narrowing on an
 # optional field, ref resolution failure). Dev-only — production
-# emit paths never validate, only produce.
-jsonschema = { version = "0.18", default-features = false }
+# emit paths never validate, only produce. Its 2020-12 draft is on for the
+# payload schema (docs/adr/0087, section 9): every schema a unit declares is
+# compiled by it, which validates it against the official 2020-12 meta-schema,
+# and every value a test writes is judged by it, an implementation that is
+# not the generator.
+jsonschema = { version = "0.18", default-features = false, features = ["draft202012"] }
 # Lua 5.4 — the very interpreter the Rust and Go backends emit for. Those
 # backends embed a Lua table constructor inside a host string literal, so
 # an author value crosses two literal boundaries and a host-only escape
