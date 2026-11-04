@@ -52,6 +52,22 @@ public enum CodecError: Error, Equatable, Sendable {
     /// A value does not fit its entry's type or `sce:max-size`: on a decode, the number or the length
     /// the map says; on an encode, the value, refused before the first byte is written.
     case cborOutOfRange
+    /// A `sce:encoding="content-line"` codec (SCE_FORGE.md §4.6.4) read a line, a parameter or an
+    /// `END:` the grammar does not admit.
+    case lineMalformed
+    /// A content-line component lacked a property or parameter of a bare type, one that is not
+    /// `optional<T>`; on an encode, a parameter was given without the property it belongs to.
+    case lineRequiredMissing
+    /// A content-line property that holds one value occurred twice, a parameter was given twice in
+    /// one line, or a list passed its `sce:max-count`.
+    case lineTooMany
+    /// A content-line value passed its `sce:max-size`.
+    case lineTooLong
+    /// A content-line TEXT carried an escape other than `\\`, `\;`, `\,`, `\n` and `\N`.
+    case lineBadEscape
+    /// A content-line value its entry cannot hold: a control character, invalid UTF-8, an integer or
+    /// `bool` out of its type, a parameter of more values than one, a `"` in a parameter value.
+    case lineBadValue
 }
 
 /// The byte order of one field on the wire.
