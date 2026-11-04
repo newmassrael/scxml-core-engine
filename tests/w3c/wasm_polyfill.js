@@ -125,8 +125,19 @@ if (ENVIRONMENT_IS_NODE && !SCE_W3C_ON_A_PTHREAD) {
         FS.chdir(process.cwd());
     }
 
+    // The program reads its environment from Emscripten's `ENV`, not Node's.
+    // A port named for this checkout (SCE_W3C_HTTP_PORT, which
+    // http_endpoint.js reads for the listener) is handed on, so the location
+    // the fixtures post to and the listener are the same port.
+    const SHARED_ENVIRONMENT = ['SCE_W3C_HTTP_PORT'];
+
     Module.preRun = Module.preRun || [];
     Module.preRun.push(function() {
+        for (const name of SHARED_ENVIRONMENT) {
+            if (process.env[name] !== undefined) {
+                ENV[name] = process.env[name];
+            }
+        }
         mountHostDirectories();
 
         if (needsHttpServer) {

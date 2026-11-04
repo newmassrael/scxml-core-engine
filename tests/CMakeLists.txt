@@ -3173,9 +3173,10 @@ if(EMSCRIPTEN)
         "SHELL:--pre-js ${W3C_REGISTRY_PRE_JS}"  # The registry's BasicHTTP fixtures, read by the polyfill
         "SHELL:--pre-js ${POLYFILL_PRE_JS}"      # Inject XMLHttpRequest polyfill and NODEFS for Node.js
         -lnodefs.js                     # Enable NODEFS for Node.js filesystem access
-        # The polyfill holds main() until the fixture server is ready, through
-        # library functions a pre-js has to name to the link.
-        "-sEXPORTED_RUNTIME_METHODS=[addRunDependency,removeRunDependency]"
+        # The polyfill holds main() until the fixture server is ready, and
+        # hands the program the endpoint's port in its environment, through
+        # runtime symbols a pre-js has to name to the link.
+        "-sEXPORTED_RUNTIME_METHODS=[addRunDependency,removeRunDependency,ENV]"
         "-sEXPORTED_FUNCTIONS=['_main','_dom_getElementsByTagName_wrapper','_dom_getAttribute_wrapper']"  # Export main + DOM wrapper functions
     )
     # A pre-js is read at link time, which does not otherwise depend on it.
@@ -3299,7 +3300,7 @@ if(EMSCRIPTEN)
         "SHELL:--pre-js ${W3C_REGISTRY_PRE_JS}"  # The registry's BasicHTTP fixtures, read by the polyfill
         "SHELL:--pre-js ${POLYFILL_PRE_JS}"      # Inject XMLHttpRequest polyfill and NODEFS for Node.js
         -lnodefs.js                     # Enable NODEFS for Node.js filesystem access
-        "-sEXPORTED_RUNTIME_METHODS=[addRunDependency,removeRunDependency]"
+        "-sEXPORTED_RUNTIME_METHODS=[addRunDependency,removeRunDependency,ENV]"
     )
     set_property(TARGET comprehensive_interactive_test APPEND PROPERTY
         LINK_DEPENDS "${W3C_REGISTRY_PRE_JS}" "${POLYFILL_PRE_JS}")

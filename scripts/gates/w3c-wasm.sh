@@ -32,16 +32,8 @@ sce_gate_requires_tool node emsdk || exit 0
 # The fixture listener is started by the program's own Node host
 # (tests/w3c/wasm_polyfill.js) on the endpoint's port, for both programs, so a
 # listener already there makes the BasicHTTP fixtures fail against somebody
-# else's server.
-#
-# A port named in SCE_W3C_HTTP_PORT cannot be honoured here. The host binds the
-# port the variable names, but the program reads its environment through
-# emscripten, which hands it a fixed set of variables and not Node's, so the
-# location the fixtures post to is the header's default whatever the variable
-# says: the listener and the fixtures would sit on two ports.
-if [[ -n "${SCE_W3C_HTTP_PORT:-}" ]]; then
-    sce_gate_cannot_run "SCE_W3C_HTTP_PORT=${SCE_W3C_HTTP_PORT} is set, and the WASM program cannot read it: its fixtures would post to the default port while the listener holds this one. Unset it, and free the default port."
-fi
+# else's server. A port named in SCE_W3C_HTTP_PORT is the one both sides use:
+# the host binds it and hands it to the program's environment.
 sce_gate_requires_free_http_port
 
 # The configure asks the generator for its plans and refuses a stale one.
