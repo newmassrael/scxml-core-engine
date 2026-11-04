@@ -114,6 +114,11 @@ class StateRefusal(message: String) : Exception(message) {
  *   when every record schema the machine holds is in its first revision, which
  *   is every state saved before schemas had revisions; [upgrade] reads a state
  *   saved at an earlier revision as the machine's own.
+ * @property features the configuration of a product line the machine was built
+ *   for (docs/adr/0057 §7): the features it turns on, sorted, each once; empty
+ *   for the configuration that turns none on. `null` for a machine of no product
+ *   line, whose text carries no `features`. A restore judges it before the shape
+ *   ([checkFeatures]).
  */
 class SavedState(
     val shape: String,
@@ -130,6 +135,7 @@ class SavedState(
     val revisions: Map<String, SavedRevision> = emptyMap(),
     val sessionId: String = "",
     val invokeStarts: Map<String, Long> = emptyMap(),
+    val features: List<String>? = null,
 ) {
     /** The variable [id], or a refusal naming it. */
     fun variable(id: String): Any? {
@@ -201,6 +207,11 @@ class SavedState(
         if (revisions.isNotEmpty()) {
             members["revisions"] = revisions.mapValuesTo(LinkedHashMap()) { (_, saved) -> saved.toJsonValue() }
         }
+        // Absent for a machine of no product line, so the text of every other
+        // machine is the text it was before configurations were recorded.
+        if (features != null) {
+            members["features"] = features
+        }
         return members
     }
 
@@ -210,12 +221,12 @@ class SavedState(
             other.pending == pending && other.invokes == invokes && other.hostInvokes == hostInvokes &&
             other.hostInvokeToken == hostInvokeToken && other.autoSendSeq == autoSendSeq &&
             other.external == external && other.revisions == revisions && other.sessionId == sessionId &&
-            other.invokeStarts == invokeStarts
+            other.invokeStarts == invokeStarts && other.features == features
 
     override fun hashCode(): Int =
         listOf(
             shape, configuration, current, variables, history, pending, invokes, hostInvokes, hostInvokeToken,
-            autoSendSeq, external, revisions, sessionId, invokeStarts,
+            autoSendSeq, external, revisions, sessionId, invokeStarts, features,
         ).hashCode()
 
     companion object {
@@ -332,6 +343,18 @@ class SavedState(
                     revisions[event as String] = SavedRevision.fromJsonValue(value, "revisions.$event")
                 }
             }
+            // Optional too: only a machine of a product line records the features
+            // it was built with, as a set, so each is named once and in order.
+            val features = if (members.containsKey("features")) {
+                val named = (members["features"] as? List<*> ?: throw StateRefusal("'features' is not an array"))
+                    .map { text(it, "features") }
+                if (named.zipWithNext().any { (left, right) -> Json.compareKeys(left, right) >= 0 }) {
+                    throw StateRefusal("'features' is not in order or names a feature twice; it is a set, sorted")
+                }
+                named
+            } else {
+                null
+            }
             return SavedState(
                 shape = text(field("shape"), "shape"),
                 configuration = configuration,
@@ -347,6 +370,7 @@ class SavedState(
                 revisions = revisions,
                 sessionId = sessionId,
                 invokeStarts = invokeStarts,
+                features = features,
             )
         }
 
@@ -368,6 +392,44 @@ class SavedState(
                 throw StateRefusal(
                     "the saved state is of a document of shape ${saved.shape}, and this machine's is $shape")
             }
+        }
+
+        /**
+         * Refuse [saved] unless it was taken in the configuration [features] of a
+         * product line, or both are of none (docs/adr/0057 §7) — judged before the
+         * shape, which differs too between builds that differ in states or
+         * variables, so a state of another build is refused by the features that
+         * differ and not by a digest. A build with fewer features lacks states or
+         * data the state may hold, and one with more has data and invocations the
+         * saved run never initialised or started: either is refused. Carrying a
+         * state across configurations is a migration, which a restore does not do.
+         *
+         * Cross-language sibling: `sce_rust_runtime::saved_state::check_features`.
+         */
+        fun checkFeatures(saved: SavedState, features: List<String>?) {
+            fun list(names: List<String>): String = names.joinToString(", ", "[", "]")
+            val taken = saved.features ?: run {
+                if (features != null) {
+                    throw StateRefusal(
+                        "the saved state records no features, and this machine is built with the features " +
+                            "${list(features)} on")
+                }
+                return
+            }
+            if (features == null) {
+                throw StateRefusal(
+                    "the saved state was taken with the features ${list(taken)} on, and this machine is " +
+                        "built from a document of no feature model")
+            }
+            if (taken == features) return
+            val onlySaved = taken.filter { it !in features }
+            val onlyBuilt = features.filter { it !in taken }
+            val differ = mutableListOf<String>()
+            if (onlySaved.isNotEmpty()) differ += "${list(onlySaved)} on only where it was saved"
+            if (onlyBuilt.isNotEmpty()) differ += "${list(onlyBuilt)} on only in this build"
+            throw StateRefusal(
+                "the saved state was taken with the features ${list(taken)} on, and this machine is " +
+                    "built with ${list(features)}: ${differ.joinToString(", ")}")
         }
 
         /**
@@ -394,9 +456,13 @@ class SavedState(
          * data as the wire carried it, and the lift reads it with the defaults
          * when each is delivered, so nothing of them is grown here.
          *
+         * The configuration [saved] was taken in is judged first, before the
+         * shape ([checkFeatures]).
+         *
          * Cross-language sibling: `sce_rust_runtime::saved_state::upgrade`.
          */
         fun upgrade(saved: SavedState, shape: SavedShape): SavedState {
+            checkFeatures(saved, shape.features)
             // A format-2 state names an enum by its document and a format-1 state by
             // the alias it is imported under, so each is judged against its own
             // shape (docs/adr/0045, section 2).
@@ -479,6 +545,7 @@ class SavedState(
                 revisions = saved.revisions,
                 sessionId = saved.sessionId,
                 invokeStarts = saved.invokeStarts,
+                features = saved.features,
             )
         }
 
@@ -752,6 +819,11 @@ data class SavedRevision(val revision: Int, val fields: String) {
  *   declares, ordered by it.
  * @property enums each enum a value of the state is of, by its key, ordered by
  *   it.
+ * @property features the configuration the machine was generated for
+ *   (docs/adr/0057 §7): the features it turns on, sorted, each once. A saved
+ *   state records it as [SavedState.features], and a restore judges it before
+ *   the shape ([SavedState.checkFeatures]). `null` for a machine of no product
+ *   line.
  */
 class SavedShape(
     val first: String,
@@ -760,6 +832,7 @@ class SavedShape(
     val format2Revised: String,
     val records: List<RecordLineage>,
     val enums: List<EnumLineage> = emptyList(),
+    val features: List<String>? = null,
 )
 
 /**

@@ -408,6 +408,12 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
             ),
 {% endfor %}
         ),
+{% if static_saved_shape.features is not none %}
+{# docs/adr/0057 §7: the configuration a machine of a product line was generated
+   for, which its saved state records and a restore judges before the shape. Left
+   out for a machine of no product line, whose shape holds none. #}
+        features = listOf({% for feature in static_saved_shape.features %}"{{ feature | escape_kotlin }}"{{ ", " if not loop.last }}{% endfor %}),
+{% endif %}
     )
 
     /**

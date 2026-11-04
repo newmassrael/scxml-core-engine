@@ -3061,6 +3061,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // The shape of the format this writes, 2: an enum is named by its document.
             shape = if (revisions.isEmpty()) shape.format2First else shape.format2Revised,
             revisions = revisions,
+            // The configuration this machine was generated for, none for a
+            // machine of no product line (docs/adr/0057 §7).
+            features = shape.features,
             sessionId = session,
             invokeStarts = staticInvokes.mapNotNull { (id, _) -> invokeStarts[id]?.let { id to it } }
                 .toMap(LinkedHashMap()),
