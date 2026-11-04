@@ -897,10 +897,20 @@ fn a_payload_enum_field_is_held_in_the_machines_own_enum_on_every_backend_that_l
 "##;
     for (language, extension, held) in [
         ("kotlin", "kt", "declaredName == name"),
-        ("rust", "rs", "is not a variant of ViewMode"),
+        // A name no variant declares is refused with its code and pointer
+        // beside the sentence (docs/adr/0087, section 2.5).
+        (
+            "rust",
+            "rs",
+            "unknown_variant(\"layout\", other, \"ViewMode\")",
+        ),
         // The policy's members, the lift among them, are in the header.
         ("cpp", "h", "is not a variant of ViewMode"),
-        ("go", "go", "is not a variant of ViewMode"),
+        (
+            "go",
+            "go",
+            "PayloadUnknownVariant(\"layout\", name, \"ViewMode\")",
+        ),
         ("python", "py", "ViewModeEnum), (\"zoom\", int, 0, 255)"),
         // The lift is in the machine's own file, beside the header that declares
         // the enum before the channel names it.
