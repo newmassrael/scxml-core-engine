@@ -129,7 +129,7 @@ func readCross(t crossType, v PayloadValue) (any, error) {
 				return name, nil
 			}
 		}
-		return nil, v.Refuse(fmt.Sprintf("(%s) is not a variant of Level", name))
+		return nil, v.UnknownVariant(name, "Level")
 	case kText:
 		return v.Text(textBound)
 	case kBytes:

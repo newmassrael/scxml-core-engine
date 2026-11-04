@@ -5,7 +5,9 @@ package sce
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"strconv"
@@ -35,12 +37,148 @@ import (
 // constructors that hold other values, each calling the reader of its part:
 // ReadList, PayloadValue.Record and the optional package's Read. A value
 // outside its type is refused before anything of it is kept, and the refusal
-// names the path through every depth as a JSON Pointer (RFC 6901):
-// `'items/2/tags/0' is 9 bytes, past the 8 its type declares`. A key a
-// record's schema does not declare is stepped over.
+// names the path through every depth: `'items/2/tags/0' is 9 bytes, past the
+// 8 its type declares`. A key a record's schema does not declare is stepped
+// over.
+//
+// A refusal is a *PayloadRefusal: the sentence the delivery's error.execution
+// carries, and beside it what a statechart reads as data (docs/adr/0087,
+// section 2.4): a RefusalCode, the place as a strict RFC 6901 pointer
+// (`/items/2/tags/0`, `~` written `~0` and `/` written `~1`, empty for the
+// whole text) and the bound the value broke. A repeated name anywhere in the
+// text, and a text holding U+0000, are refused, so every runtime's reader
+// holds one set of texts (tests/json_text/payload_refusal.json).
 //
 // Cross-language siblings: `sce_runtime.event_payload` (Python),
 // `SCE::EventPayload` (C++), `com.sce.runtime.EventPayload` (Kotlin).
+
+// RefusalCode is the class of a refusal: the enum
+// `sce:std/lift/refusal_code.scxml` declares, each code at the number that
+// document gives it (docs/adr/0087, section 2.3).
+type RefusalCode uint8
+
+// The codes, in the order of their numbers.
+const (
+	// RefusalNotJSON: the text is empty, is not JSON, carries more than one
+	// JSON value, or holds an object that repeats a name.
+	RefusalNotJSON RefusalCode = iota + 1
+	// RefusalNotObject: the text is one JSON value that is not an object.
+	RefusalNotObject
+	// RefusalTooDeep: a container is opened deeper than any a value of the
+	// schema holds.
+	RefusalTooDeep
+	// RefusalMissing: a field of a record is absent and no revision default
+	// fills it.
+	RefusalMissing
+	// RefusalNullNotOptional: `null` stands where the type is not optional.
+	RefusalNullNotOptional
+	// RefusalWrongKind: a value of another JSON kind.
+	RefusalWrongKind
+	// RefusalBadNumber: a number not in its type's spelling.
+	RefusalBadNumber
+	// RefusalOutOfRange: a whole number past its type's width, or a real past
+	// a float32's range.
+	RefusalOutOfRange
+	// RefusalTooLong: a text or byte string past its bound.
+	RefusalTooLong
+	// RefusalTooMany: a list past its bound.
+	RefusalTooMany
+	// RefusalUnknownVariant: a name the enum does not declare.
+	RefusalUnknownVariant
+	// RefusalNotByteText: a byte string's text holding a character above
+	// U+00FF.
+	RefusalNotByteText
+	// RefusalNulInText: a text holding U+0000.
+	RefusalNulInText
+)
+
+// refusalCodeNames are the names the enum declares the codes by, indexed by
+// number.
+var refusalCodeNames = [...]string{
+	RefusalNotJSON:         "notJson",
+	RefusalNotObject:       "notObject",
+	RefusalTooDeep:         "tooDeep",
+	RefusalMissing:         "missing",
+	RefusalNullNotOptional: "nullNotOptional",
+	RefusalWrongKind:       "wrongKind",
+	RefusalBadNumber:       "badNumber",
+	RefusalOutOfRange:      "outOfRange",
+	RefusalTooLong:         "tooLong",
+	RefusalTooMany:         "tooMany",
+	RefusalUnknownVariant:  "unknownVariant",
+	RefusalNotByteText:     "notByteText",
+	RefusalNulInText:       "nulInText",
+}
+
+// Name is the name the enum declares the code by; "" for a number it does not
+// declare.
+func (c RefusalCode) Name() string {
+	if int(c) < len(refusalCodeNames) {
+		return refusalCodeNames[c]
+	}
+	return ""
+}
+
+// RefusalCodeNamed is the code the enum declares by name, and whether it
+// declares one.
+func RefusalCodeNamed(name string) (RefusalCode, bool) {
+	for code, declared := range refusalCodeNames {
+		if declared != "" && declared == name {
+			return RefusalCode(code), true
+		}
+	}
+	return 0, false
+}
+
+// PayloadRefusal is why an event's data cannot be read as its schema's fields:
+// the sentence Error answers, and beside it the code, the strict RFC 6901
+// pointer to the place refused and, for a text, a byte string or a list past
+// its bound, the bound it broke.
+type PayloadRefusal struct {
+	reason   string
+	code     RefusalCode
+	pointer  string
+	bound    uint32
+	hasBound bool
+}
+
+// Error is the sentence the delivery's error.execution carries.
+func (r *PayloadRefusal) Error() string { return r.reason }
+
+// Code is the class of the refusal.
+func (r *PayloadRefusal) Code() RefusalCode { return r.code }
+
+// Pointer is the place refused, as a strict RFC 6901 pointer: "" for the whole
+// text.
+func (r *PayloadRefusal) Pointer() string { return r.pointer }
+
+// Bound is the bound the value broke, and whether the refusal names one.
+func (r *PayloadRefusal) Bound() (uint32, bool) { return r.bound, r.hasBound }
+
+// refuseAt is a refusal of class code at pointer, saying reason.
+func refuseAt(code RefusalCode, pointer, reason string) *PayloadRefusal {
+	return &PayloadRefusal{reason: reason, code: code, pointer: pointer}
+}
+
+// withBound is the refusal naming the bound the value broke; a bound no uint32
+// holds is no bound a type declares, and is held at the largest one.
+func (r *PayloadRefusal) withBound(bound int) *PayloadRefusal {
+	r.hasBound = true
+	if bound < 0 || uint64(bound) > math.MaxUint32 {
+		r.bound = math.MaxUint32
+	} else {
+		r.bound = uint32(bound)
+	}
+	return r
+}
+
+// PointerBelow is token below the strict RFC 6901 pointer prefix ("" for the
+// whole text): `/` and the token with `~` written `~0` and `/` written `~1`
+// (RFC 6901, section 3).
+func PointerBelow(prefix, token string) string {
+	escaped := strings.NewReplacer("~", "~0", "/", "~1").Replace(token)
+	return prefix + "/" + escaped
+}
 
 // PayloadFields is a decoded `_event.data`: the fields an event carries, each
 // value still in the spelling it was written in, so a whole number stays exact
@@ -54,31 +192,98 @@ type PayloadFields map[string]any
 func LiftPayload(data string) (PayloadFields, error) {
 	trimmed := strings.TrimSpace(data)
 	if trimmed == "" {
-		return nil, fmt.Errorf("the event carries no data")
+		return nil, refuseAt(RefusalNotJSON, "", "the event carries no data")
 	}
 	decoded, err := decodeJSON(trimmed)
 	if err != nil {
-		return nil, fmt.Errorf("the event's data is not JSON: %w", err)
+		return nil, refuseAt(RefusalNotJSON, "", "the event's data is not JSON: "+err.Error())
 	}
 	obj, ok := decoded.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf(
+		return nil, refuseAt(RefusalNotObject, "",
 			"the event's data is a bare value, and this event's schema declares named fields")
 	}
 	return PayloadFields(obj), nil
 }
 
-// decodeJSON reads one JSON value, a whole number kept in its written spelling.
+// errMoreThanOneValue is why a text that holds one JSON value and then more is
+// not one JSON value.
+var errMoreThanOneValue = errors.New("it carries more than one JSON value")
+
+// decodeJSON reads exactly one JSON value, a whole number kept in its written
+// spelling.
+//
+// An object whose names repeat has no single meaning: encoding/json keeps the
+// last value, a reader that takes the first would read another, so it is
+// refused, at any depth, as the other runtimes' readers refuse it
+// (docs/adr/0087, section 2.3). The text is read token by token for that, since
+// a map decoded whole no longer shows the name twice.
 func decodeJSON(text string) (any, error) {
 	dec := json.NewDecoder(strings.NewReader(text))
 	// A whole number that does not fit a float64 must survive the decode, so
 	// numbers are kept in their written spelling and converted per field.
 	dec.UseNumber()
-	var decoded any
-	if err := dec.Decode(&decoded); err != nil {
+	decoded, err := decodeValue(dec)
+	if err != nil {
 		return nil, err
 	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, errMoreThanOneValue
+	}
 	return decoded, nil
+}
+
+// decodeValue reads the value whose first token dec reads next.
+func decodeValue(dec *json.Decoder) (any, error) {
+	token, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		// A text, a json.Number, a truth value or nil.
+		return token, nil
+	}
+	switch delim {
+	case '{':
+		members := map[string]any{}
+		for dec.More() {
+			nameToken, err := dec.Token()
+			if err != nil {
+				return nil, err
+			}
+			name, ok := nameToken.(string)
+			if !ok {
+				return nil, errors.New("a field name was expected")
+			}
+			if _, seen := members[name]; seen {
+				return nil, fmt.Errorf("the field %q appears twice", name)
+			}
+			value, err := decodeValue(dec)
+			if err != nil {
+				return nil, err
+			}
+			members[name] = value
+		}
+		if _, err := dec.Token(); err != nil {
+			return nil, err
+		}
+		return members, nil
+	case '[':
+		items := []any{}
+		for dec.More() {
+			item, err := decodeValue(dec)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+		}
+		if _, err := dec.Token(); err != nil {
+			return nil, err
+		}
+		return items, nil
+	}
+	return nil, fmt.Errorf("unexpected %q", rune(delim))
 }
 
 // LiftPayloadWithDefaults is LiftPayload for a schema a later revision of which
@@ -112,12 +317,13 @@ func LiftPayloadWithDefaults(data, defaults string) (PayloadFields, error) {
 }
 
 // defaultsOf is a schema's defaults, which the generator spells as one JSON
-// object.
+// object. A text that is none is the generator's, not a sender's, and is
+// refused as no JSON object of the whole.
 func defaultsOf(defaults string) (map[string]any, error) {
 	decoded, err := decodeJSON(strings.TrimSpace(defaults))
 	obj, ok := decoded.(map[string]any)
 	if err != nil || !ok {
-		return nil, fmt.Errorf(
+		return nil, refuseAt(RefusalNotJSON, "",
 			"the schema's defaults are not a JSON object, which the generator never writes")
 	}
 	return obj, nil
@@ -129,6 +335,15 @@ func (obj PayloadFields) Field(name string) (PayloadValue, error) {
 	return PayloadRecord{members: obj}.Field(name)
 }
 
+// PayloadUnknownVariant is the refusal of the text variant the payload's field
+// name carries, which the enum alias does not declare a variant by: what a
+// generated reader of an enum field answers once it has matched every name
+// the enum declares.
+func PayloadUnknownVariant(name, variant, alias string) error {
+	return refuseAt(RefusalUnknownVariant, PointerBelow("", name),
+		fmt.Sprintf("%q (%s) is not a variant of %s", name, variant, alias))
+}
+
 // PayloadRecord is the members of an object a record type is read from, at the
 // path that names the record, and the defaults of the fields a later revision
 // of its schema added.
@@ -136,6 +351,7 @@ type PayloadRecord struct {
 	members  map[string]any
 	defaults map[string]any
 	prefix   string
+	pointer  string
 }
 
 // Field is the value of the field name: the delivered one, else the default a
@@ -144,13 +360,15 @@ type PayloadRecord struct {
 // stepped over.
 func (r PayloadRecord) Field(name string) (PayloadValue, error) {
 	path := joinPath(r.prefix, name)
+	pointer := PointerBelow(r.pointer, name)
 	if v, ok := r.members[name]; ok {
-		return PayloadValue{value: v, path: path}, nil
+		return PayloadValue{value: v, path: path, pointer: pointer}, nil
 	}
 	if v, ok := r.defaults[name]; ok {
-		return PayloadValue{value: v, path: path}, nil
+		return PayloadValue{value: v, path: path, pointer: pointer}, nil
 	}
-	return PayloadValue{}, fmt.Errorf("the event's data has no '%s'", path)
+	return PayloadValue{}, refuseAt(RefusalMissing, pointer,
+		fmt.Sprintf("the event's data has no '%s'", path))
 }
 
 // joinPath is segment below prefix, as a JSON Pointer's reference tokens are
@@ -164,32 +382,62 @@ func joinPath(prefix, segment string) string {
 
 // PayloadValue is one value of an event's data, at the path through every
 // depth that names it: a field's name, then each index and field name below
-// it, joined by `/`.
+// it, joined by `/`; and at the strict RFC 6901 pointer to the same place,
+// which a refusal carries beside its sentence.
 type PayloadValue struct {
-	value any
-	path  string
+	value   any
+	path    string
+	pointer string
 }
 
 // Path is the path that names the value.
 func (v PayloadValue) Path() string { return v.path }
 
+// Pointer is the strict RFC 6901 pointer to the value (`/items/2`).
+func (v PayloadValue) Pointer() string { return v.pointer }
+
 // IsNull reports whether the value is `null`, the one spelling of an absent
 // value: what the optional package's Read asks.
 func (v PayloadValue) IsNull() bool { return v.value == nil }
 
-// Refuse is a refusal of the value, saying what of it after its path:
-// `'items/1/level' (x) is not a variant of Level`.
-func (v PayloadValue) Refuse(what string) error {
-	return fmt.Errorf("'%s' %s", v.path, what)
+// Refuse is a refusal of the value, of class code, saying what of it after its
+// path: `'items/1/level' (x) is not a variant of Level`.
+func (v PayloadValue) Refuse(code RefusalCode, what string) error {
+	return v.refuse(code, what)
+}
+
+// UnknownVariant is the refusal of the text name the value carries, which the
+// enum alias does not declare a variant by.
+func (v PayloadValue) UnknownVariant(name, alias string) error {
+	return v.refuse(RefusalUnknownVariant, fmt.Sprintf("(%s) is not a variant of %s", name, alias))
+}
+
+func (v PayloadValue) refuse(code RefusalCode, what string) *PayloadRefusal {
+	return refuseAt(code, v.pointer, fmt.Sprintf("'%s' %s", v.path, what))
 }
 
 // wrongKind is the refusal of `null` where the type is not optional, or the
 // refusal otherwise of any other value of the wrong kind.
 func (v PayloadValue) wrongKind(otherwise string) error {
 	if v.IsNull() {
-		return v.Refuse("is null, and its type is not optional")
+		return v.refuse(RefusalNullNotOptional, "is null, and its type is not optional")
 	}
-	return v.Refuse(otherwise)
+	return v.refuse(RefusalWrongKind, otherwise)
+}
+
+// spellsWhole reports whether text spells a whole number: digits, after a `-`
+// or not.
+func spellsWhole(text string) bool {
+	digits := strings.TrimPrefix(text, "-")
+	if digits == "" {
+		return false
+	}
+	for i := 0; i < len(digits); i++ {
+		if digits[i] < '0' || digits[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // number is the value as the JSON number it was written as.
@@ -245,16 +493,17 @@ func (v PayloadValue) wide(signed bool) (string, error) {
 	switch x := v.value.(type) {
 	case string:
 		if !isDecimal(x, signed) {
-			return "", v.Refuse(fmt.Sprintf("is not a whole number written as digits (%s)", x))
+			return "", v.refuse(RefusalBadNumber,
+				fmt.Sprintf("is not a whole number written as digits (%s)", x))
 		}
 		return x, nil
 	case json.Number:
 		n, err := strconv.ParseInt(x.String(), 10, 64)
 		if err != nil {
-			return "", v.Refuse(fmt.Sprintf("is not a whole number (%s)", x.String()))
+			return "", v.refuse(RefusalBadNumber, fmt.Sprintf("is not a whole number (%s)", x.String()))
 		}
 		if n > exactInADouble || n < -exactInADouble {
-			return "", v.Refuse(fmt.Sprintf(
+			return "", v.refuse(RefusalBadNumber, fmt.Sprintf(
 				"is a number past 2^53 - 1, which is not exact everywhere (%s); a 64-bit integer "+
 					"that large is written as a text of its digits", x.String()))
 		}
@@ -262,6 +511,11 @@ func (v PayloadValue) wide(signed bool) (string, error) {
 	default:
 		return "", v.wrongKind(fmt.Sprintf("is not a number (%v)", v.value))
 	}
+}
+
+// pastWidth is the refusal of a number past the width its type declares.
+func (v PayloadValue) pastWidth(text string) error {
+	return v.refuse(RefusalOutOfRange, fmt.Sprintf("does not fit the width its schema declares (%s)", text))
 }
 
 // ValueSigned64 reads a 64-bit signed value (see wide).
@@ -272,7 +526,7 @@ func ValueSigned64(v PayloadValue) (int64, error) {
 	}
 	n, err := strconv.ParseInt(text, 10, 64)
 	if err != nil {
-		return 0, v.Refuse(fmt.Sprintf("does not fit the width its schema declares (%s)", text))
+		return 0, v.pastWidth(text)
 	}
 	return n, nil
 }
@@ -285,7 +539,7 @@ func ValueUnsigned64(v PayloadValue) (uint64, error) {
 	}
 	n, err := strconv.ParseUint(text, 10, 64)
 	if err != nil {
-		return 0, v.Refuse(fmt.Sprintf("does not fit the width its schema declares (%s)", text))
+		return 0, v.pastWidth(text)
 	}
 	return n, nil
 }
@@ -301,11 +555,17 @@ func ValueSigned[T int8 | int16 | int32 | int64](v PayloadValue) (T, error) {
 	}
 	whole, err := n.Int64()
 	if err != nil {
-		return 0, v.Refuse(fmt.Sprintf("is not a whole number (%s)", n.String()))
+		// A whole number no int64 holds is past every signed width; any other
+		// spelling is no whole number at all.
+		code := RefusalBadNumber
+		if spellsWhole(n.String()) {
+			code = RefusalOutOfRange
+		}
+		return 0, v.refuse(code, fmt.Sprintf("is not a whole number (%s)", n.String()))
 	}
 	narrowed := T(whole)
 	if int64(narrowed) != whole {
-		return 0, v.Refuse(fmt.Sprintf("does not fit the width its schema declares (%s)", n.String()))
+		return 0, v.pastWidth(n.String())
 	}
 	return narrowed, nil
 }
@@ -318,11 +578,17 @@ func ValueUnsigned[T uint8 | uint16 | uint32 | uint64](v PayloadValue) (T, error
 	}
 	whole, err := n.Int64()
 	if err != nil || whole < 0 {
-		return 0, v.Refuse(fmt.Sprintf("is not a whole number at or above zero (%s)", n.String()))
+		// Below zero is no spelling of an unsigned number; a whole number no
+		// int64 holds is past every width this reads.
+		code := RefusalBadNumber
+		if err != nil && spellsWhole(n.String()) && !strings.HasPrefix(n.String(), "-") {
+			code = RefusalOutOfRange
+		}
+		return 0, v.refuse(code, fmt.Sprintf("is not a whole number at or above zero (%s)", n.String()))
 	}
 	narrowed := T(whole)
 	if int64(narrowed) != whole {
-		return 0, v.Refuse(fmt.Sprintf("does not fit the width its schema declares (%s)", n.String()))
+		return 0, v.pastWidth(n.String())
 	}
 	return narrowed, nil
 }
@@ -340,10 +606,16 @@ func ValueFloat[T float32 | float64](v PayloadValue) (T, error) {
 	}
 	wide, err := n.Float64()
 	if err != nil {
-		return 0, v.Refuse(fmt.Sprintf("is not a number (%s)", n.String()))
+		// A number past every double's range is past every real width; any
+		// other failure is a spelling no real is read from.
+		code := RefusalBadNumber
+		if errors.Is(err, strconv.ErrRange) {
+			code = RefusalOutOfRange
+		}
+		return 0, v.refuse(code, fmt.Sprintf("is not a number (%s)", n.String()))
 	}
 	if _, single := any(T(0)).(float32); single && math.Abs(wide) > math.MaxFloat32 {
-		return 0, v.Refuse(fmt.Sprintf("does not fit the width its schema declares (%s)", n.String()))
+		return 0, v.pastWidth(n.String())
 	}
 	return T(wide), nil
 }
@@ -360,10 +632,18 @@ func (v PayloadValue) Bool() (bool, error) {
 // Name reads the text the value carries, held to no bound: what an enum's
 // variant is named by, which its reader matches against the names its enum
 // declares.
+//
+// A text holding U+0000 is refused: a runtime that holds a text NUL-terminated
+// would end it there, so no runtime holds one, and every reader refuses the
+// same texts (docs/adr/0087, section 2.3). A byte string may hold the byte
+// zero (Bytes).
 func (v PayloadValue) Name() (string, error) {
 	s, ok := v.value.(string)
 	if !ok {
 		return "", v.wrongKind(fmt.Sprintf("is not a text (%v)", v.value))
+	}
+	if strings.ContainsRune(s, 0) {
+		return "", v.refuse(RefusalNulInText, "carries U+0000, which no text holds")
 	}
 	return s, nil
 }
@@ -395,7 +675,8 @@ func (v PayloadValue) Bytes(bound int) ([]byte, error) {
 	out := make([]byte, 0, len(s))
 	for _, r := range s {
 		if r > 0xFF {
-			return nil, v.Refuse("carries a character above U+00FF, which no single byte spells")
+			return nil, v.refuse(RefusalNotByteText,
+				"carries a character above U+00FF, which no single byte spells")
 		}
 		out = append(out, byte(r))
 	}
@@ -406,7 +687,8 @@ func (v PayloadValue) Bytes(bound int) ([]byte, error) {
 }
 
 func (v PayloadValue) pastBytes(held, bound int) error {
-	return v.Refuse(fmt.Sprintf("is %d bytes, past the %d its type declares", held, bound))
+	return v.refuse(RefusalTooLong,
+		fmt.Sprintf("is %d bytes, past the %d its type declares", held, bound)).withBound(bound)
 }
 
 // ReadList reads a value of `list<T>[bound]`: an array of at most bound
@@ -420,11 +702,17 @@ func ReadList[T any](v PayloadValue, bound int, read func(PayloadValue) (T, erro
 		return nil, v.wrongKind("is not a list")
 	}
 	if len(items) > bound {
-		return nil, v.Refuse(fmt.Sprintf("holds %d elements, past the %d its type declares", len(items), bound))
+		return nil, v.refuse(RefusalTooMany,
+			fmt.Sprintf("holds %d elements, past the %d its type declares", len(items), bound)).withBound(bound)
 	}
 	out := make([]T, 0, len(items))
 	for index, item := range items {
-		element, err := read(PayloadValue{value: item, path: joinPath(v.path, strconv.Itoa(index))})
+		token := strconv.Itoa(index)
+		element, err := read(PayloadValue{
+			value:   item,
+			path:    joinPath(v.path, token),
+			pointer: PointerBelow(v.pointer, token),
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -443,7 +731,7 @@ func (v PayloadValue) Record(defaults string) (PayloadRecord, error) {
 	if !ok {
 		return PayloadRecord{}, v.wrongKind("is not a record")
 	}
-	record := PayloadRecord{members: members, prefix: v.path}
+	record := PayloadRecord{members: members, prefix: v.path, pointer: v.pointer}
 	if defaults != "" {
 		fallback, err := defaultsOf(defaults)
 		if err != nil {

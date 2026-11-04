@@ -5464,7 +5464,9 @@ fn go_payload_present_reader(
         SceType::Bytes => format!("sce.PayloadBytes({obj}, \"{id}\")"),
         // An enum is the machine's own, lifted from the variant's declared
         // name; a name the enum does not declare is a payload that does not
-        // fit its schema, refused as a number out of range is.
+        // fit its schema, refused as a number out of range is, with the code
+        // and pointer of the refusal beside its sentence (docs/adr/0087,
+        // section 2.5).
         SceType::Enum(r) => {
             let e = static_enum_of(static_enums, &r.alias);
             let arms: String = e
@@ -5481,7 +5483,7 @@ fn go_payload_present_reader(
             format!(
                 "func() ({ty}, error) {{ name, err := sce.PayloadString({obj}, \"{id}\"); \
                  if err != nil {{ return 0, err }}; switch name {{ {arms}}}; \
-                 return 0, fmt.Errorf(\"%q (%s) is not a variant of {alias}\", \"{id}\", name) }}()",
+                 return 0, sce.PayloadUnknownVariant(\"{id}\", name, \"{alias}\") }}()",
                 ty = e.ty,
                 alias = r.alias
             )
