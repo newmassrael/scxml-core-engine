@@ -449,7 +449,7 @@ public final class StaticWireEnumPolicy: InvocablePolicy {
         case .viewShown:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticWireEnumViewShownPayload()
-            payload.layout = try { () throws -> StaticWireEnumViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticWireEnumViewModeEnum(declaredName: name) else { throw PayloadRefusal("'layout' (\(name)) is not a variant of ViewMode") }; return variant }()
+            payload.layout = try { () throws -> StaticWireEnumViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticWireEnumViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
             payload.zoom = try fields.unsigned("zoom")
             pendingViewShownPayload = payload
             pendingPayloadTag = .viewShown

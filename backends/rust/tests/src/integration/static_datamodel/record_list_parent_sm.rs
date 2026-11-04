@@ -2062,9 +2062,7 @@ impl StatePolicy for RecordListParentPolicy {
                             "clear" => RecordListParentRecordCommandEnum::Clear,
                             "retire" => RecordListParentRecordCommandEnum::Retire,
                             other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("kind ({other}) is not a variant of record_command"),
-                                ))
+                                return Err(fields.unknown_variant("kind", other, "record_command"))
                             }
                         },
                         reason: match fields.text("reason")?.as_str() {
@@ -2081,8 +2079,10 @@ impl StatePolicy for RecordListParentPolicy {
                             }
                             "clockExhausted" => RecordListParentRecordRefusalEnum::ClockExhausted,
                             other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("reason ({other}) is not a variant of record_refusal"),
+                                return Err(fields.unknown_variant(
+                                    "reason",
+                                    other,
+                                    "record_refusal",
                                 ))
                             }
                         },

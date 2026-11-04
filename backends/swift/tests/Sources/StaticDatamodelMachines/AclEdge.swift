@@ -21,6 +21,14 @@ public enum AclEdge {
     /// The most bytes the event's `_event.data` JSON text takes: every list full, every text at its
     /// bound, every number at its longest spelling.
     public static let dataMaxLen: UInt64 = 40
+
+    /// The id of the payload's schema, `urn:sce:schema:<document>:<revision>`: the `$id` of
+    /// `jsonSchema`.
+    public static let schemaID: String = "urn:sce:schema:acl_edge:1"
+
+    /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
+    /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
+    public static let jsonSchema: String = "{\"$id\":\"urn:sce:schema:acl_edge:1\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"properties\":{\"group\":{\"maximum\":4294967295,\"minimum\":0,\"type\":\"integer\"},\"member\":{\"maximum\":4294967295,\"minimum\":0,\"type\":\"integer\"}},\"required\":[\"group\",\"member\"],\"type\":\"object\",\"x-sce-source-hash\":\"c59281ae7be4758cbffb01ac828a80a4489cab0ae77d7577e991e823091b27bc\"}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order,

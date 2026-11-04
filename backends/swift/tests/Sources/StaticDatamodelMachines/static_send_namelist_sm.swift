@@ -445,7 +445,7 @@ public final class StaticSendNamelistPolicy: InvocablePolicy {
         case .viewShown:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticSendNamelistViewShownPayload()
-            payload.layout = try { () throws -> StaticSendNamelistViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSendNamelistViewModeEnum(declaredName: name) else { throw PayloadRefusal("'layout' (\(name)) is not a variant of ViewMode") }; return variant }()
+            payload.layout = try { () throws -> StaticSendNamelistViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSendNamelistViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
             payload.zoom = try fields.unsigned("zoom")
             pendingViewShownPayload = payload
             pendingPayloadTag = .viewShown

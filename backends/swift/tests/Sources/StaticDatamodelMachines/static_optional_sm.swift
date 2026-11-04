@@ -678,7 +678,7 @@ public final class StaticOptionalPolicy: InvocablePolicy {
             var payload = StaticOptionalDueSentPayload()
             payload.due = try fields.optional("due") { fields in try fields.signed64("due") }
             payload.title = try fields.optional("title") { fields in try fields.text("title") }
-            payload.status = try fields.optional("status") { fields in try { () throws -> StaticOptionalStatusEnum in let name = try fields.text("status"); guard let variant = StaticOptionalStatusEnum(declaredName: name) else { throw PayloadRefusal("'status' (\(name)) is not a variant of Status") }; return variant }() }
+            payload.status = try fields.optional("status") { fields in try { () throws -> StaticOptionalStatusEnum in let name = try fields.text("status"); guard let variant = StaticOptionalStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }() }
             pendingDueSentPayload = payload
             pendingPayloadTag = .dueSent
         case .dueSet:
@@ -687,7 +687,7 @@ public final class StaticOptionalPolicy: InvocablePolicy {
             payload.id = try fields.unsigned("id")
             payload.due = try fields.optional("due") { fields in try fields.signed64("due") }
             payload.title = try fields.optional("title") { fields in try fields.text("title") }
-            payload.status = try fields.optional("status") { fields in try { () throws -> StaticOptionalStatusEnum in let name = try fields.text("status"); guard let variant = StaticOptionalStatusEnum(declaredName: name) else { throw PayloadRefusal("'status' (\(name)) is not a variant of Status") }; return variant }() }
+            payload.status = try fields.optional("status") { fields in try { () throws -> StaticOptionalStatusEnum in let name = try fields.text("status"); guard let variant = StaticOptionalStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }() }
             pendingDueSetPayload = payload
             pendingPayloadTag = .dueSet
         default:

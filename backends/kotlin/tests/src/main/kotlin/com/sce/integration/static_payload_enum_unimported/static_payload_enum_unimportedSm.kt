@@ -363,7 +363,7 @@ class StaticPayloadEnumUnimportedStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticPayloadEnumUnimportedEvent.RecordList.Refused) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingRecordListRefusedPayload = StaticPayloadEnumUnimportedRecordListRefusedPayload(fields.uint32("id"), fields.uint16("field"), fields.string("kind").let { name -> StaticPayloadEnumUnimportedRecordCommandEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'kind' ($name) is not a variant of record_command") }, fields.string("reason").let { name -> StaticPayloadEnumUnimportedWhyEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'reason' ($name) is not a variant of Why") })
+                    pendingRecordListRefusedPayload = StaticPayloadEnumUnimportedRecordListRefusedPayload(fields.uint32("id"), fields.uint16("field"), fields.string("kind").let { name -> StaticPayloadEnumUnimportedRecordCommandEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("kind").unknownVariant(name, "record_command") }, fields.string("reason").let { name -> StaticPayloadEnumUnimportedWhyEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("reason").unknownVariant(name, "Why") })
                 }
             }
         }

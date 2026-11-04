@@ -4829,6 +4829,39 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(returned == expected, "weekday_from_days")
     }}
 
+// MARK: - algorithm: resolve_date
+
+@Test func resolveDateMatchesReference() throws {
+
+    for testCase in try oracleCases("pure_functions", "resolve_date") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: Int64.self)
+        let arg1 = try { () throws -> DateKind in switch try oracleText(args[1]) { case "none": return DateKind.none; case "absolute": return DateKind.absolute; case "monthDay": return DateKind.monthDay; case "relativeDays": return DateKind.relativeDays; case "relativeWeeks": return DateKind.relativeWeeks; case "relativeMonths": return DateKind.relativeMonths; case "relativeYears": return DateKind.relativeYears; case "comingWeekday": return DateKind.comingWeekday; case "previousWeekday": return DateKind.previousWeekday; case "weekdayOfWeek": return DateKind.weekdayOfWeek; default: throw OracleError(description: "resolve_date arg1: no variant is declared as the name the case writes") } }()
+        let arg2 = try oracleOptional(args[2]) { try oracleInteger($0, as: Int32.self) }
+        let arg3 = try oracleOptional(args[3]) { try oracleInteger($0, as: UInt8.self) }
+        let arg4 = try oracleOptional(args[4]) { try oracleInteger($0, as: UInt8.self) }
+        let arg5 = try oracleOptional(args[5]) { try oracleInteger($0, as: UInt8.self) }
+        let arg6 = try oracleOptional(args[6]) { try oracleInteger($0, as: Int32.self) }
+        let outcome = Result { try ResolveDate.resolveDate(arg0, arg1, arg2, arg3, arg4, arg5, arg6) }
+        if case .text(let fails)? = testCase.member("fails") {
+            switch outcome {
+            case .failure(let error as AlgorithmError):
+                #expect(error.contractName == fails, "resolve_date")
+            case .failure(let error):
+                Issue.record("resolve_date: the case expects the failure \(fails), got \(error)")
+            case .success(let value):
+                Issue.record("resolve_date: the case expects a failure, got \(value)")
+            }
+            continue
+        }
+        guard case .success(let returned) = outcome else {
+            Issue.record("resolve_date: the case expects a value, got \(outcome)")
+            continue
+        }
+        let expected = try oracleOptional(testCase.member("expected")) { try oracleInteger($0, as: Int64.self) }
+        #expect(returned == expected, "resolve_date")
+    }}
+
 // MARK: - codec: codec_declared_bounds
 
 @Test func codecDeclaredBoundsMatchesReference() throws {
@@ -6036,6 +6069,92 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     )
     // The name the declaration answers is the one the document wrote.
     #expect(PayloadCodec.raw.declaredName == "raw", "payload_codec.raw declared name")
+}
+
+// MARK: - enum: date_kind
+
+@Test func dateKindMatchesReference() throws {
+
+    let spec = try oracleSpec("enums", "date_kind")
+    let variants = try oracleArray(spec.member("variants"))
+
+    // Count first: a vocabulary that gained or lost a variant without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(variants.count == 10, "date_kind: oracle variant count")
+    guard variants.count == 10 else {
+        return
+    }
+
+    #expect(try oracleText(variants[0].member("name")) == "none", "date_kind variant 0 name")
+    #expect(
+        try oracleNumberText(variants[0].member("value")) == String(DateKind.none.rawValue),
+        "date_kind.none"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(DateKind.none.declaredName == "none", "date_kind.none declared name")
+    #expect(try oracleText(variants[1].member("name")) == "absolute", "date_kind variant 1 name")
+    #expect(
+        try oracleNumberText(variants[1].member("value")) == String(DateKind.absolute.rawValue),
+        "date_kind.absolute"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(DateKind.absolute.declaredName == "absolute", "date_kind.absolute declared name")
+    #expect(try oracleText(variants[2].member("name")) == "monthDay", "date_kind variant 2 name")
+    #expect(
+        try oracleNumberText(variants[2].member("value")) == String(DateKind.monthDay.rawValue),
+        "date_kind.monthDay"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(DateKind.monthDay.declaredName == "monthDay", "date_kind.monthDay declared name")
+    #expect(try oracleText(variants[3].member("name")) == "relativeDays", "date_kind variant 3 name")
+    #expect(
+        try oracleNumberText(variants[3].member("value")) == String(DateKind.relativeDays.rawValue),
+        "date_kind.relativeDays"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(DateKind.relativeDays.declaredName == "relativeDays", "date_kind.relativeDays declared name")
+    #expect(try oracleText(variants[4].member("name")) == "relativeWeeks", "date_kind variant 4 name")
+    #expect(
+        try oracleNumberText(variants[4].member("value")) == String(DateKind.relativeWeeks.rawValue),
+        "date_kind.relativeWeeks"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(DateKind.relativeWeeks.declaredName == "relativeWeeks", "date_kind.relativeWeeks declared name")
+    #expect(try oracleText(variants[5].member("name")) == "relativeMonths", "date_kind variant 5 name")
+    #expect(
+        try oracleNumberText(variants[5].member("value")) == String(DateKind.relativeMonths.rawValue),
+        "date_kind.relativeMonths"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(DateKind.relativeMonths.declaredName == "relativeMonths", "date_kind.relativeMonths declared name")
+    #expect(try oracleText(variants[6].member("name")) == "relativeYears", "date_kind variant 6 name")
+    #expect(
+        try oracleNumberText(variants[6].member("value")) == String(DateKind.relativeYears.rawValue),
+        "date_kind.relativeYears"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(DateKind.relativeYears.declaredName == "relativeYears", "date_kind.relativeYears declared name")
+    #expect(try oracleText(variants[7].member("name")) == "comingWeekday", "date_kind variant 7 name")
+    #expect(
+        try oracleNumberText(variants[7].member("value")) == String(DateKind.comingWeekday.rawValue),
+        "date_kind.comingWeekday"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(DateKind.comingWeekday.declaredName == "comingWeekday", "date_kind.comingWeekday declared name")
+    #expect(try oracleText(variants[8].member("name")) == "previousWeekday", "date_kind variant 8 name")
+    #expect(
+        try oracleNumberText(variants[8].member("value")) == String(DateKind.previousWeekday.rawValue),
+        "date_kind.previousWeekday"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(DateKind.previousWeekday.declaredName == "previousWeekday", "date_kind.previousWeekday declared name")
+    #expect(try oracleText(variants[9].member("name")) == "weekdayOfWeek", "date_kind variant 9 name")
+    #expect(
+        try oracleNumberText(variants[9].member("value")) == String(DateKind.weekdayOfWeek.rawValue),
+        "date_kind.weekdayOfWeek"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(DateKind.weekdayOfWeek.declaredName == "weekdayOfWeek", "date_kind.weekdayOfWeek declared name")
 }
 
 // MARK: - enum: rpc_status

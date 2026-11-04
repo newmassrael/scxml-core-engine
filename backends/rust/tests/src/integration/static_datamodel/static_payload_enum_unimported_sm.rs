@@ -1165,9 +1165,7 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
                             "clear" => StaticPayloadEnumUnimportedRecordCommandEnum::Clear,
                             "retire" => StaticPayloadEnumUnimportedRecordCommandEnum::Retire,
                             other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("kind ({other}) is not a variant of record_command"),
-                                ))
+                                return Err(fields.unknown_variant("kind", other, "record_command"))
                             }
                         },
                         reason: match fields.text("reason")?.as_str() {
@@ -1185,11 +1183,7 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
                                 StaticPayloadEnumUnimportedWhyEnum::RegisterNamedTwice
                             }
                             "clockExhausted" => StaticPayloadEnumUnimportedWhyEnum::ClockExhausted,
-                            other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("reason ({other}) is not a variant of Why"),
-                                ))
-                            }
+                            other => return Err(fields.unknown_variant("reason", other, "Why")),
                         },
                     },
                 );

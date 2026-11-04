@@ -431,7 +431,7 @@ public final class StaticSchemaRevisionPolicy: InvocablePolicy {
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"layout\":\"week\",\"urgent\":true}")
             var payload = StaticSchemaRevisionReadingRevisedPayload()
             payload.level = try fields.unsigned("level")
-            payload.layout = try { () throws -> StaticSchemaRevisionViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSchemaRevisionViewModeEnum(declaredName: name) else { throw PayloadRefusal("'layout' (\(name)) is not a variant of ViewMode") }; return variant }()
+            payload.layout = try { () throws -> StaticSchemaRevisionViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSchemaRevisionViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
             payload.urgent = try fields.truth("urgent")
             pendingReadingRevisedPayload = payload
             pendingPayloadTag = .readingRevised

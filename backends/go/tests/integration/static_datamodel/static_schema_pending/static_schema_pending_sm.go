@@ -899,7 +899,7 @@ func (p *StaticSchemaPendingPolicy) LiftTypedPayload(event StaticSchemaPendingEv
 			return err
 		}
 		var payload StaticSchemaPendingSignalRaisedPayload
-		if payload.level, err = func() (StaticSchemaPendingSignalLevelEnum, error) { name, err := sce.PayloadString(fields, "level"); if err != nil { return 0, err }; switch name { case "low": return StaticSchemaPendingSignalLevelEnumLow, nil; case "high": return StaticSchemaPendingSignalLevelEnumHigh, nil; case "critical": return StaticSchemaPendingSignalLevelEnumCritical, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of SignalLevel", "level", name) }(); err != nil {
+		if payload.level, err = func() (StaticSchemaPendingSignalLevelEnum, error) { name, err := sce.PayloadString(fields, "level"); if err != nil { return 0, err }; switch name { case "low": return StaticSchemaPendingSignalLevelEnumLow, nil; case "high": return StaticSchemaPendingSignalLevelEnumHigh, nil; case "critical": return StaticSchemaPendingSignalLevelEnumCritical, nil; }; return 0, sce.PayloadUnknownVariant("level", name, "SignalLevel") }(); err != nil {
 			return err
 		}
 		if payload.count, err = sce.PayloadUnsigned[uint16](fields, "count"); err != nil {

@@ -934,7 +934,7 @@ func (p *StaticWholePayloadPolicy) LiftTypedPayload(event StaticWholePayloadEven
 			return err
 		}
 		var payload StaticWholePayloadViewShownPayload
-		if payload.layout, err = func() (StaticWholePayloadViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticWholePayloadViewModeEnumMonth, nil; case "week": return StaticWholePayloadViewModeEnumWeek, nil; case "day": return StaticWholePayloadViewModeEnumDay, nil; case "agenda_list": return StaticWholePayloadViewModeEnumAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
+		if payload.layout, err = func() (StaticWholePayloadViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticWholePayloadViewModeEnumMonth, nil; case "week": return StaticWholePayloadViewModeEnumWeek, nil; case "day": return StaticWholePayloadViewModeEnumDay, nil; case "agenda_list": return StaticWholePayloadViewModeEnumAgendaList, nil; }; return 0, sce.PayloadUnknownVariant("layout", name, "ViewMode") }(); err != nil {
 			return err
 		}
 		if payload.zoom, err = sce.PayloadUnsigned[uint8](fields, "zoom"); err != nil {

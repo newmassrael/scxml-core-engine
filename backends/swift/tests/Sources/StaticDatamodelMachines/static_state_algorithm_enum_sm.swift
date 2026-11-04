@@ -510,14 +510,14 @@ public final class StaticStateAlgorithmEnumPolicy: InvocablePolicy {
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticStateAlgorithmEnumItemAddedPayload()
             payload.id = try fields.unsigned("id")
-            payload.status = try { () throws -> StaticStateAlgorithmEnumStatusEnum in let name = try fields.text("status"); guard let variant = StaticStateAlgorithmEnumStatusEnum(declaredName: name) else { throw PayloadRefusal("'status' (\(name)) is not a variant of Status") }; return variant }()
+            payload.status = try { () throws -> StaticStateAlgorithmEnumStatusEnum in let name = try fields.text("status"); guard let variant = StaticStateAlgorithmEnumStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
             pendingItemAddedPayload = payload
             pendingPayloadTag = .itemAdded
         case .itemMoved:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticStateAlgorithmEnumItemMovedPayload()
             payload.id = try fields.unsigned("id")
-            payload.status = try { () throws -> StaticStateAlgorithmEnumStatusEnum in let name = try fields.text("status"); guard let variant = StaticStateAlgorithmEnumStatusEnum(declaredName: name) else { throw PayloadRefusal("'status' (\(name)) is not a variant of Status") }; return variant }()
+            payload.status = try { () throws -> StaticStateAlgorithmEnumStatusEnum in let name = try fields.text("status"); guard let variant = StaticStateAlgorithmEnumStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
             pendingItemMovedPayload = payload
             pendingPayloadTag = .itemMoved
         default:

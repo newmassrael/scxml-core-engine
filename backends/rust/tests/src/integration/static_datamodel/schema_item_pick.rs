@@ -21,6 +21,14 @@ pub const TITLE_MAX_SIZE: u32 = 16;
 /// text at its bound, every number at its longest spelling.
 #[allow(dead_code)]
 pub const DATA_MAX_LEN: u64 = 144;
+/// The id of the payload's schema, `urn:sce:schema:<document>:<revision>`: the
+/// `$id` of `JSON_SCHEMA`.
+#[allow(dead_code)]
+pub const SCHEMA_ID: &str = "urn:sce:schema:schema_item_pick:1";
+/// The payload as a JSON Schema (2020-12): one spelling of each value, every
+/// bound as this build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
+#[allow(dead_code)]
+pub const JSON_SCHEMA: &str = "{\"$id\":\"urn:sce:schema:schema_item_pick:1\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"properties\":{\"count\":{\"maximum\":2147483647,\"minimum\":-2147483648,\"type\":\"integer\"},\"id\":{\"maximum\":4294967295,\"minimum\":0,\"type\":\"integer\"},\"title\":{\"maxLength\":16,\"type\":\"string\",\"x-sce-max-bytes\":16}},\"required\":[\"count\",\"id\",\"title\"],\"type\":\"object\",\"x-sce-source-hash\":\"c4657e911a812ec796ce0b3c5be3eeef2b66326118a66c11d56342e555c6a85c\"}";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SchemaItemPickPayload {

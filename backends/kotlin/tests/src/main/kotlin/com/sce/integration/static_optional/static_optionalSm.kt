@@ -586,10 +586,10 @@ class StaticOptionalStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticOptionalEvent.Due.Sent) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDueSentPayload = StaticOptionalDueSentPayload(fields.optional("due") { _ -> fields.int64("due") }, fields.optional("title") { _ -> fields.string("title") }, fields.optional("status") { _ -> fields.string("status").let { name -> StaticOptionalStatusEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'status' ($name) is not a variant of Status") } })
+                    pendingDueSentPayload = StaticOptionalDueSentPayload(fields.optional("due") { _ -> fields.int64("due") }, fields.optional("title") { _ -> fields.string("title") }, fields.optional("status") { _ -> fields.string("status").let { name -> StaticOptionalStatusEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("status").unknownVariant(name, "Status") } })
                 } else if (event == StaticOptionalEvent.Due.Set) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDueSetPayload = StaticOptionalDueSetPayload(fields.uint32("id"), fields.optional("due") { _ -> fields.int64("due") }, fields.optional("title") { _ -> fields.string("title") }, fields.optional("status") { _ -> fields.string("status").let { name -> StaticOptionalStatusEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'status' ($name) is not a variant of Status") } })
+                    pendingDueSetPayload = StaticOptionalDueSetPayload(fields.uint32("id"), fields.optional("due") { _ -> fields.int64("due") }, fields.optional("title") { _ -> fields.string("title") }, fields.optional("status") { _ -> fields.string("status").let { name -> StaticOptionalStatusEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("status").unknownVariant(name, "Status") } })
                 }
             }
         }

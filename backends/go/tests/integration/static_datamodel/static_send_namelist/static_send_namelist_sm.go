@@ -888,7 +888,7 @@ func (p *StaticSendNamelistPolicy) LiftTypedPayload(event StaticSendNamelistEven
 			return err
 		}
 		var payload StaticSendNamelistViewShownPayload
-		if payload.layout, err = func() (StaticSendNamelistViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticSendNamelistViewModeEnumMonth, nil; case "week": return StaticSendNamelistViewModeEnumWeek, nil; case "day": return StaticSendNamelistViewModeEnumDay, nil; case "agenda_list": return StaticSendNamelistViewModeEnumAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
+		if payload.layout, err = func() (StaticSendNamelistViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticSendNamelistViewModeEnumMonth, nil; case "week": return StaticSendNamelistViewModeEnumWeek, nil; case "day": return StaticSendNamelistViewModeEnumDay, nil; case "agenda_list": return StaticSendNamelistViewModeEnumAgendaList, nil; }; return 0, sce.PayloadUnknownVariant("layout", name, "ViewMode") }(); err != nil {
 			return err
 		}
 		if payload.zoom, err = sce.PayloadUnsigned[uint8](fields, "zoom"); err != nil {

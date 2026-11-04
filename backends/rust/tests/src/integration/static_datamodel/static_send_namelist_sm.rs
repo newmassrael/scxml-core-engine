@@ -1029,9 +1029,7 @@ impl StatePolicy for StaticSendNamelistPolicy {
                             "day" => StaticSendNamelistViewModeEnum::Day,
                             "agenda_list" => StaticSendNamelistViewModeEnum::AgendaList,
                             other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("layout ({other}) is not a variant of ViewMode"),
-                                ))
+                                return Err(fields.unknown_variant("layout", other, "ViewMode"))
                             }
                         },
                         zoom: fields.unsigned::<u8>("zoom")?,

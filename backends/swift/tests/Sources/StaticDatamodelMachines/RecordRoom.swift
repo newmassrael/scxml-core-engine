@@ -21,6 +21,14 @@ public enum RecordRoom {
     /// The most bytes the event's `_event.data` JSON text takes: every list full, every text at its
     /// bound, every number at its longest spelling.
     public static let dataMaxLen: UInt64 = 62
+
+    /// The id of the payload's schema, `urn:sce:schema:<document>:<revision>`: the `$id` of
+    /// `jsonSchema`.
+    public static let schemaID: String = "urn:sce:schema:record_room:1"
+
+    /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
+    /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
+    public static let jsonSchema: String = "{\"$id\":\"urn:sce:schema:record_room:1\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"properties\":{\"digest\":{\"maximum\":4294967295,\"minimum\":0,\"type\":\"integer\"},\"history\":{\"maximum\":4294967295,\"minimum\":0,\"type\":\"integer\"},\"values\":{\"maximum\":4294967295,\"minimum\":0,\"type\":\"integer\"}},\"required\":[\"digest\",\"history\",\"values\"],\"type\":\"object\",\"x-sce-source-hash\":\"26e5bf730b3c2b04bc64b3f3339bd11d68362c63297741a6a051afa4c6cd0d1b\"}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order,

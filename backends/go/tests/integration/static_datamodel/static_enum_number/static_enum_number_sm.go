@@ -888,7 +888,7 @@ func (p *StaticEnumNumberPolicy) LiftTypedPayload(event StaticEnumNumberEvent, m
 		if payload.id, err = sce.PayloadUnsigned[uint32](fields, "id"); err != nil {
 			return err
 		}
-		if payload.status, err = func() (StaticEnumNumberStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return StaticEnumNumberStatusEnumOpen, nil; case "in_progress": return StaticEnumNumberStatusEnumInProgress, nil; case "done": return StaticEnumNumberStatusEnumDone, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Status", "status", name) }(); err != nil {
+		if payload.status, err = func() (StaticEnumNumberStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return StaticEnumNumberStatusEnumOpen, nil; case "in_progress": return StaticEnumNumberStatusEnumInProgress, nil; case "done": return StaticEnumNumberStatusEnumDone, nil; }; return 0, sce.PayloadUnknownVariant("status", name, "Status") }(); err != nil {
 			return err
 		}
 		p.pendingItemMovedPayload = payload

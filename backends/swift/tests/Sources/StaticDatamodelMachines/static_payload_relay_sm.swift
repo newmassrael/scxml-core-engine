@@ -442,14 +442,14 @@ public final class StaticPayloadRelayPolicy: InvocablePolicy {
         case .viewRelayed:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticPayloadRelayViewRelayedPayload()
-            payload.layout = try { () throws -> StaticPayloadRelayViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticPayloadRelayViewModeEnum(declaredName: name) else { throw PayloadRefusal("'layout' (\(name)) is not a variant of ViewMode") }; return variant }()
+            payload.layout = try { () throws -> StaticPayloadRelayViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticPayloadRelayViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
             payload.zoom = try fields.unsigned("zoom")
             pendingViewRelayedPayload = payload
             pendingPayloadTag = .viewRelayed
         case .viewShown:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticPayloadRelayViewShownPayload()
-            payload.layout = try { () throws -> StaticPayloadRelayViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticPayloadRelayViewModeEnum(declaredName: name) else { throw PayloadRefusal("'layout' (\(name)) is not a variant of ViewMode") }; return variant }()
+            payload.layout = try { () throws -> StaticPayloadRelayViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticPayloadRelayViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
             payload.zoom = try fields.unsigned("zoom")
             pendingViewShownPayload = payload
             pendingPayloadTag = .viewShown

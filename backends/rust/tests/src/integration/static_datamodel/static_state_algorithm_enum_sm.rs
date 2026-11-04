@@ -1293,11 +1293,7 @@ impl StatePolicy for StaticStateAlgorithmEnumPolicy {
                             "open" => StaticStateAlgorithmEnumStatusEnum::Open,
                             "in_progress" => StaticStateAlgorithmEnumStatusEnum::InProgress,
                             "done" => StaticStateAlgorithmEnumStatusEnum::Done,
-                            other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("status ({other}) is not a variant of Status"),
-                                ))
-                            }
+                            other => return Err(fields.unknown_variant("status", other, "Status")),
                         },
                     },
                 );
@@ -1311,11 +1307,7 @@ impl StatePolicy for StaticStateAlgorithmEnumPolicy {
                             "open" => StaticStateAlgorithmEnumStatusEnum::Open,
                             "in_progress" => StaticStateAlgorithmEnumStatusEnum::InProgress,
                             "done" => StaticStateAlgorithmEnumStatusEnum::Done,
-                            other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("status ({other}) is not a variant of Status"),
-                                ))
-                            }
+                            other => return Err(fields.unknown_variant("status", other, "Status")),
                         },
                     },
                 );

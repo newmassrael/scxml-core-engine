@@ -397,10 +397,10 @@ class StaticStateAlgorithmEnumStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticStateAlgorithmEnumEvent.Item.Added) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingItemAddedPayload = StaticStateAlgorithmEnumItemAddedPayload(fields.uint32("id"), fields.string("status").let { name -> StaticStateAlgorithmEnumStatusEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'status' ($name) is not a variant of Status") })
+                    pendingItemAddedPayload = StaticStateAlgorithmEnumItemAddedPayload(fields.uint32("id"), fields.string("status").let { name -> StaticStateAlgorithmEnumStatusEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("status").unknownVariant(name, "Status") })
                 } else if (event == StaticStateAlgorithmEnumEvent.Item.Moved) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingItemMovedPayload = StaticStateAlgorithmEnumItemMovedPayload(fields.uint32("id"), fields.string("status").let { name -> StaticStateAlgorithmEnumStatusEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'status' ($name) is not a variant of Status") })
+                    pendingItemMovedPayload = StaticStateAlgorithmEnumItemMovedPayload(fields.uint32("id"), fields.string("status").let { name -> StaticStateAlgorithmEnumStatusEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("status").unknownVariant(name, "Status") })
                 }
             }
         }

@@ -1096,7 +1096,7 @@ func (p *StaticStateAlgorithmEnumPolicy) LiftTypedPayload(event StaticStateAlgor
 		if payload.id, err = sce.PayloadUnsigned[uint32](fields, "id"); err != nil {
 			return err
 		}
-		if payload.status, err = func() (StaticStateAlgorithmEnumStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return StaticStateAlgorithmEnumStatusEnumOpen, nil; case "in_progress": return StaticStateAlgorithmEnumStatusEnumInProgress, nil; case "done": return StaticStateAlgorithmEnumStatusEnumDone, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Status", "status", name) }(); err != nil {
+		if payload.status, err = func() (StaticStateAlgorithmEnumStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return StaticStateAlgorithmEnumStatusEnumOpen, nil; case "in_progress": return StaticStateAlgorithmEnumStatusEnumInProgress, nil; case "done": return StaticStateAlgorithmEnumStatusEnumDone, nil; }; return 0, sce.PayloadUnknownVariant("status", name, "Status") }(); err != nil {
 			return err
 		}
 		p.pendingItemAddedPayload = payload
@@ -1110,7 +1110,7 @@ func (p *StaticStateAlgorithmEnumPolicy) LiftTypedPayload(event StaticStateAlgor
 		if payload.id, err = sce.PayloadUnsigned[uint32](fields, "id"); err != nil {
 			return err
 		}
-		if payload.status, err = func() (StaticStateAlgorithmEnumStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return StaticStateAlgorithmEnumStatusEnumOpen, nil; case "in_progress": return StaticStateAlgorithmEnumStatusEnumInProgress, nil; case "done": return StaticStateAlgorithmEnumStatusEnumDone, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Status", "status", name) }(); err != nil {
+		if payload.status, err = func() (StaticStateAlgorithmEnumStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return StaticStateAlgorithmEnumStatusEnumOpen, nil; case "in_progress": return StaticStateAlgorithmEnumStatusEnumInProgress, nil; case "done": return StaticStateAlgorithmEnumStatusEnumDone, nil; }; return 0, sce.PayloadUnknownVariant("status", name, "Status") }(); err != nil {
 			return err
 		}
 		p.pendingItemMovedPayload = payload

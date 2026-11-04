@@ -1009,9 +1009,7 @@ impl StatePolicy for StaticSchemaPendingPolicy {
                             "high" => StaticSchemaPendingSignalLevelEnum::High,
                             "critical" => StaticSchemaPendingSignalLevelEnum::Critical,
                             other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("level ({other}) is not a variant of SignalLevel"),
-                                ))
+                                return Err(fields.unknown_variant("level", other, "SignalLevel"))
                             }
                         },
                         count: fields.unsigned::<u16>("count")?,

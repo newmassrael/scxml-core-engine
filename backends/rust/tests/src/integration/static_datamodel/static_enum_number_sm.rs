@@ -1002,11 +1002,7 @@ impl StatePolicy for StaticEnumNumberPolicy {
                             "open" => StaticEnumNumberStatusEnum::Open,
                             "in_progress" => StaticEnumNumberStatusEnum::InProgress,
                             "done" => StaticEnumNumberStatusEnum::Done,
-                            other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("status ({other}) is not a variant of Status"),
-                                ))
-                            }
+                            other => return Err(fields.unknown_variant("status", other, "Status")),
                         },
                     });
             }

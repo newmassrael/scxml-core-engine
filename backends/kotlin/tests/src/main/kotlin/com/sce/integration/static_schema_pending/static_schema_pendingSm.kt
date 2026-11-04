@@ -309,7 +309,7 @@ class StaticSchemaPendingStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticSchemaPendingEvent.Signal.Raised) {
                     val fields = EventPayload.decode(metadata.data, "{\"urgent\":true}")
-                    pendingSignalRaisedPayload = StaticSchemaPendingSignalRaisedPayload(fields.string("level").let { name -> StaticSchemaPendingSignalLevelEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'level' ($name) is not a variant of SignalLevel") }, fields.uint16("count"), fields.boolean("urgent"))
+                    pendingSignalRaisedPayload = StaticSchemaPendingSignalRaisedPayload(fields.string("level").let { name -> StaticSchemaPendingSignalLevelEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("level").unknownVariant(name, "SignalLevel") }, fields.uint16("count"), fields.boolean("urgent"))
                 }
             }
         }

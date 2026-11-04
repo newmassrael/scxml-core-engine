@@ -310,7 +310,7 @@ class StaticSchemaRevisionStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticSchemaRevisionEvent.Reading.Revised) {
                     val fields = EventPayload.decode(metadata.data, "{\"layout\":\"week\",\"urgent\":true}")
-                    pendingReadingRevisedPayload = StaticSchemaRevisionReadingRevisedPayload(fields.uint8("level"), fields.string("layout").let { name -> StaticSchemaRevisionViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'layout' ($name) is not a variant of ViewMode") }, fields.boolean("urgent"))
+                    pendingReadingRevisedPayload = StaticSchemaRevisionReadingRevisedPayload(fields.uint8("level"), fields.string("layout").let { name -> StaticSchemaRevisionViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("layout").unknownVariant(name, "ViewMode") }, fields.boolean("urgent"))
                 }
             }
         }

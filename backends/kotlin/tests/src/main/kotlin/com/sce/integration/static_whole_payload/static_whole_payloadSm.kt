@@ -332,7 +332,7 @@ class StaticWholePayloadStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticWholePayloadEvent.View.Shown) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingViewShownPayload = StaticWholePayloadViewShownPayload(fields.string("layout").let { name -> StaticWholePayloadViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'layout' ($name) is not a variant of ViewMode") }, fields.uint8("zoom"))
+                    pendingViewShownPayload = StaticWholePayloadViewShownPayload(fields.string("layout").let { name -> StaticWholePayloadViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("layout").unknownVariant(name, "ViewMode") }, fields.uint8("zoom"))
                 }
             }
         }

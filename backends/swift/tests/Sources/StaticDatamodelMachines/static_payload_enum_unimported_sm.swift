@@ -485,8 +485,8 @@ public final class StaticPayloadEnumUnimportedPolicy: InvocablePolicy {
             var payload = StaticPayloadEnumUnimportedRecordListRefusedPayload()
             payload.id = try fields.unsigned("id")
             payload.field = try fields.unsigned("field")
-            payload.kind = try { () throws -> StaticPayloadEnumUnimportedRecordCommandEnum in let name = try fields.text("kind"); guard let variant = StaticPayloadEnumUnimportedRecordCommandEnum(declaredName: name) else { throw PayloadRefusal("'kind' (\(name)) is not a variant of record_command") }; return variant }()
-            payload.reason = try { () throws -> StaticPayloadEnumUnimportedWhyEnum in let name = try fields.text("reason"); guard let variant = StaticPayloadEnumUnimportedWhyEnum(declaredName: name) else { throw PayloadRefusal("'reason' (\(name)) is not a variant of Why") }; return variant }()
+            payload.kind = try { () throws -> StaticPayloadEnumUnimportedRecordCommandEnum in let name = try fields.text("kind"); guard let variant = StaticPayloadEnumUnimportedRecordCommandEnum(declaredName: name) else { throw try fields.field("kind").unknownVariant(name, alias: "record_command") }; return variant }()
+            payload.reason = try { () throws -> StaticPayloadEnumUnimportedWhyEnum in let name = try fields.text("reason"); guard let variant = StaticPayloadEnumUnimportedWhyEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "Why") }; return variant }()
             pendingRecordListRefusedPayload = payload
             pendingPayloadTag = .recordListRefused
         default:

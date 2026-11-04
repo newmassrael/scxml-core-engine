@@ -1701,11 +1701,7 @@ impl StatePolicy for StaticOptionalPolicy {
                                 "in_progress" => StaticOptionalStatusEnum::InProgress,
                                 "done" => StaticOptionalStatusEnum::Done,
                                 other => {
-                                    return Err(
-                                        ::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                            format!("status ({other}) is not a variant of Status"),
-                                        ),
-                                    )
+                                    return Err(fields.unknown_variant("status", other, "Status"))
                                 }
                             })
                         })?,
@@ -1722,11 +1718,7 @@ impl StatePolicy for StaticOptionalPolicy {
                             "open" => StaticOptionalStatusEnum::Open,
                             "in_progress" => StaticOptionalStatusEnum::InProgress,
                             "done" => StaticOptionalStatusEnum::Done,
-                            other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("status ({other}) is not a variant of Status"),
-                                ))
-                            }
+                            other => return Err(fields.unknown_variant("status", other, "Status")),
                         })
                     })?,
                 });

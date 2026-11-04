@@ -886,7 +886,7 @@ func (p *StaticPayloadRelayPolicy) LiftTypedPayload(event StaticPayloadRelayEven
 			return err
 		}
 		var payload StaticPayloadRelayViewRelayedPayload
-		if payload.layout, err = func() (StaticPayloadRelayViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticPayloadRelayViewModeEnumMonth, nil; case "week": return StaticPayloadRelayViewModeEnumWeek, nil; case "day": return StaticPayloadRelayViewModeEnumDay, nil; case "agenda_list": return StaticPayloadRelayViewModeEnumAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
+		if payload.layout, err = func() (StaticPayloadRelayViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticPayloadRelayViewModeEnumMonth, nil; case "week": return StaticPayloadRelayViewModeEnumWeek, nil; case "day": return StaticPayloadRelayViewModeEnumDay, nil; case "agenda_list": return StaticPayloadRelayViewModeEnumAgendaList, nil; }; return 0, sce.PayloadUnknownVariant("layout", name, "ViewMode") }(); err != nil {
 			return err
 		}
 		if payload.zoom, err = sce.PayloadUnsigned[uint8](fields, "zoom"); err != nil {
@@ -900,7 +900,7 @@ func (p *StaticPayloadRelayPolicy) LiftTypedPayload(event StaticPayloadRelayEven
 			return err
 		}
 		var payload StaticPayloadRelayViewShownPayload
-		if payload.layout, err = func() (StaticPayloadRelayViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticPayloadRelayViewModeEnumMonth, nil; case "week": return StaticPayloadRelayViewModeEnumWeek, nil; case "day": return StaticPayloadRelayViewModeEnumDay, nil; case "agenda_list": return StaticPayloadRelayViewModeEnumAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
+		if payload.layout, err = func() (StaticPayloadRelayViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticPayloadRelayViewModeEnumMonth, nil; case "week": return StaticPayloadRelayViewModeEnumWeek, nil; case "day": return StaticPayloadRelayViewModeEnumDay, nil; case "agenda_list": return StaticPayloadRelayViewModeEnumAgendaList, nil; }; return 0, sce.PayloadUnknownVariant("layout", name, "ViewMode") }(); err != nil {
 			return err
 		}
 		if payload.zoom, err = sce.PayloadUnsigned[uint8](fields, "zoom"); err != nil {

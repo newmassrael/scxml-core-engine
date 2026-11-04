@@ -309,7 +309,7 @@ class StaticEnumNumberStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticEnumNumberEvent.Item.Moved) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingItemMovedPayload = StaticEnumNumberItemMovedPayload(fields.uint32("id"), fields.string("status").let { name -> StaticEnumNumberStatusEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'status' ($name) is not a variant of Status") })
+                    pendingItemMovedPayload = StaticEnumNumberItemMovedPayload(fields.uint32("id"), fields.string("status").let { name -> StaticEnumNumberStatusEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("status").unknownVariant(name, "Status") })
                 } else if (event == StaticEnumNumberEvent.Status.Number) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingStatusNumberPayload = StaticEnumNumberStatusNumberPayload(fields.int64("number"))

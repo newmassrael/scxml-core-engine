@@ -333,10 +333,10 @@ class StaticSendContentStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticSendContentEvent.View.Relayed) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingViewRelayedPayload = StaticSendContentViewRelayedPayload(fields.string("layout").let { name -> StaticSendContentViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'layout' ($name) is not a variant of ViewMode") }, fields.uint8("zoom"))
+                    pendingViewRelayedPayload = StaticSendContentViewRelayedPayload(fields.string("layout").let { name -> StaticSendContentViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("layout").unknownVariant(name, "ViewMode") }, fields.uint8("zoom"))
                 } else if (event == StaticSendContentEvent.View.Shown) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingViewShownPayload = StaticSendContentViewShownPayload(fields.string("layout").let { name -> StaticSendContentViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'layout' ($name) is not a variant of ViewMode") }, fields.uint8("zoom"))
+                    pendingViewShownPayload = StaticSendContentViewShownPayload(fields.string("layout").let { name -> StaticSendContentViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("layout").unknownVariant(name, "ViewMode") }, fields.uint8("zoom"))
                 }
             }
         }

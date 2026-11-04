@@ -444,7 +444,7 @@ public final class StaticEnumNumberPolicy: InvocablePolicy {
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticEnumNumberItemMovedPayload()
             payload.id = try fields.unsigned("id")
-            payload.status = try { () throws -> StaticEnumNumberStatusEnum in let name = try fields.text("status"); guard let variant = StaticEnumNumberStatusEnum(declaredName: name) else { throw PayloadRefusal("'status' (\(name)) is not a variant of Status") }; return variant }()
+            payload.status = try { () throws -> StaticEnumNumberStatusEnum in let name = try fields.text("status"); guard let variant = StaticEnumNumberStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
             pendingItemMovedPayload = payload
             pendingPayloadTag = .itemMoved
         case .statusNumber:

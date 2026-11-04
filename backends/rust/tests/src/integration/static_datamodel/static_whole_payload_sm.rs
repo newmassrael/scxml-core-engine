@@ -1065,9 +1065,7 @@ impl StatePolicy for StaticWholePayloadPolicy {
                             "day" => StaticWholePayloadViewModeEnum::Day,
                             "agenda_list" => StaticWholePayloadViewModeEnum::AgendaList,
                             other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("layout ({other}) is not a variant of ViewMode"),
-                                ))
+                                return Err(fields.unknown_variant("layout", other, "ViewMode"))
                             }
                         },
                         zoom: fields.unsigned::<u8>("zoom")?,

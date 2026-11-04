@@ -308,10 +308,10 @@ class StaticPayloadRelayStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticPayloadRelayEvent.View.Relayed) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingViewRelayedPayload = StaticPayloadRelayViewRelayedPayload(fields.string("layout").let { name -> StaticPayloadRelayViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'layout' ($name) is not a variant of ViewMode") }, fields.uint8("zoom"))
+                    pendingViewRelayedPayload = StaticPayloadRelayViewRelayedPayload(fields.string("layout").let { name -> StaticPayloadRelayViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("layout").unknownVariant(name, "ViewMode") }, fields.uint8("zoom"))
                 } else if (event == StaticPayloadRelayEvent.View.Shown) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingViewShownPayload = StaticPayloadRelayViewShownPayload(fields.string("layout").let { name -> StaticPayloadRelayViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'layout' ($name) is not a variant of ViewMode") }, fields.uint8("zoom"))
+                    pendingViewShownPayload = StaticPayloadRelayViewShownPayload(fields.string("layout").let { name -> StaticPayloadRelayViewModeEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("layout").unknownVariant(name, "ViewMode") }, fields.uint8("zoom"))
                 }
             }
         }

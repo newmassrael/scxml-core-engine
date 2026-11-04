@@ -798,8 +798,8 @@ public final class RecordListParentPolicy: InvocablePolicy {
             var payload = RecordListParentRecordListRefusedPayload()
             payload.id = try fields.unsigned("id")
             payload.field = try fields.unsigned("field")
-            payload.kind = try { () throws -> RecordListParentRecordCommandEnum in let name = try fields.text("kind"); guard let variant = RecordListParentRecordCommandEnum(declaredName: name) else { throw PayloadRefusal("'kind' (\(name)) is not a variant of record_command") }; return variant }()
-            payload.reason = try { () throws -> RecordListParentRecordRefusalEnum in let name = try fields.text("reason"); guard let variant = RecordListParentRecordRefusalEnum(declaredName: name) else { throw PayloadRefusal("'reason' (\(name)) is not a variant of record_refusal") }; return variant }()
+            payload.kind = try { () throws -> RecordListParentRecordCommandEnum in let name = try fields.text("kind"); guard let variant = RecordListParentRecordCommandEnum(declaredName: name) else { throw try fields.field("kind").unknownVariant(name, alias: "record_command") }; return variant }()
+            payload.reason = try { () throws -> RecordListParentRecordRefusalEnum in let name = try fields.text("reason"); guard let variant = RecordListParentRecordRefusalEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "record_refusal") }; return variant }()
             pendingRecordListRefusedPayload = payload
             pendingPayloadTag = .recordListRefused
         case .recordListRegister:

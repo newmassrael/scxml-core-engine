@@ -902,7 +902,7 @@ func (p *StaticSchemaRevisionPolicy) LiftTypedPayload(event StaticSchemaRevision
 		if payload.level, err = sce.PayloadUnsigned[uint8](fields, "level"); err != nil {
 			return err
 		}
-		if payload.layout, err = func() (StaticSchemaRevisionViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticSchemaRevisionViewModeEnumMonth, nil; case "week": return StaticSchemaRevisionViewModeEnumWeek, nil; case "day": return StaticSchemaRevisionViewModeEnumDay, nil; case "agenda_list": return StaticSchemaRevisionViewModeEnumAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
+		if payload.layout, err = func() (StaticSchemaRevisionViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticSchemaRevisionViewModeEnumMonth, nil; case "week": return StaticSchemaRevisionViewModeEnumWeek, nil; case "day": return StaticSchemaRevisionViewModeEnumDay, nil; case "agenda_list": return StaticSchemaRevisionViewModeEnumAgendaList, nil; }; return 0, sce.PayloadUnknownVariant("layout", name, "ViewMode") }(); err != nil {
 			return err
 		}
 		if payload.urgent, err = sce.PayloadBool(fields, "urgent"); err != nil {

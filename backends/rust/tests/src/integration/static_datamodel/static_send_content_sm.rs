@@ -1075,9 +1075,7 @@ impl StatePolicy for StaticSendContentPolicy {
                             "day" => StaticSendContentViewModeEnum::Day,
                             "agenda_list" => StaticSendContentViewModeEnum::AgendaList,
                             other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("layout ({other}) is not a variant of ViewMode"),
-                                ))
+                                return Err(fields.unknown_variant("layout", other, "ViewMode"))
                             }
                         },
                         zoom: fields.unsigned::<u8>("zoom")?,
@@ -1093,9 +1091,7 @@ impl StatePolicy for StaticSendContentPolicy {
                             "day" => StaticSendContentViewModeEnum::Day,
                             "agenda_list" => StaticSendContentViewModeEnum::AgendaList,
                             other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("layout ({other}) is not a variant of ViewMode"),
-                                ))
+                                return Err(fields.unknown_variant("layout", other, "ViewMode"))
                             }
                         },
                         zoom: fields.unsigned::<u8>("zoom")?,

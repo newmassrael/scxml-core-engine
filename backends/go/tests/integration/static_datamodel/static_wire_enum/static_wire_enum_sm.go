@@ -922,7 +922,7 @@ func (p *StaticWireEnumPolicy) LiftTypedPayload(event StaticWireEnumEvent, meta 
 			return err
 		}
 		var payload StaticWireEnumViewShownPayload
-		if payload.layout, err = func() (StaticWireEnumViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticWireEnumViewModeEnumMonth, nil; case "week": return StaticWireEnumViewModeEnumWeek, nil; case "day": return StaticWireEnumViewModeEnumDay, nil; case "agenda_list": return StaticWireEnumViewModeEnumAgendaList, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of ViewMode", "layout", name) }(); err != nil {
+		if payload.layout, err = func() (StaticWireEnumViewModeEnum, error) { name, err := sce.PayloadString(fields, "layout"); if err != nil { return 0, err }; switch name { case "month": return StaticWireEnumViewModeEnumMonth, nil; case "week": return StaticWireEnumViewModeEnumWeek, nil; case "day": return StaticWireEnumViewModeEnumDay, nil; case "agenda_list": return StaticWireEnumViewModeEnumAgendaList, nil; }; return 0, sce.PayloadUnknownVariant("layout", name, "ViewMode") }(); err != nil {
 			return err
 		}
 		if payload.zoom, err = sce.PayloadUnsigned[uint8](fields, "zoom"); err != nil {

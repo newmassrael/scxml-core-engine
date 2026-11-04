@@ -1563,7 +1563,7 @@ func (p *StaticOptionalPolicy) LiftTypedPayload(event StaticOptionalEvent, meta 
 		if payload.title, err = optional.Lift(fields, "title", func() (string, error) { return sce.PayloadString(fields, "title") }); err != nil {
 			return err
 		}
-		if payload.status, err = optional.Lift(fields, "status", func() (StaticOptionalStatusEnum, error) { return func() (StaticOptionalStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return StaticOptionalStatusEnumOpen, nil; case "in_progress": return StaticOptionalStatusEnumInProgress, nil; case "done": return StaticOptionalStatusEnumDone, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Status", "status", name) }() }); err != nil {
+		if payload.status, err = optional.Lift(fields, "status", func() (StaticOptionalStatusEnum, error) { return func() (StaticOptionalStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return StaticOptionalStatusEnumOpen, nil; case "in_progress": return StaticOptionalStatusEnumInProgress, nil; case "done": return StaticOptionalStatusEnumDone, nil; }; return 0, sce.PayloadUnknownVariant("status", name, "Status") }() }); err != nil {
 			return err
 		}
 		p.pendingDueSentPayload = payload
@@ -1583,7 +1583,7 @@ func (p *StaticOptionalPolicy) LiftTypedPayload(event StaticOptionalEvent, meta 
 		if payload.title, err = optional.Lift(fields, "title", func() (string, error) { return sce.PayloadString(fields, "title") }); err != nil {
 			return err
 		}
-		if payload.status, err = optional.Lift(fields, "status", func() (StaticOptionalStatusEnum, error) { return func() (StaticOptionalStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return StaticOptionalStatusEnumOpen, nil; case "in_progress": return StaticOptionalStatusEnumInProgress, nil; case "done": return StaticOptionalStatusEnumDone, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Status", "status", name) }() }); err != nil {
+		if payload.status, err = optional.Lift(fields, "status", func() (StaticOptionalStatusEnum, error) { return func() (StaticOptionalStatusEnum, error) { name, err := sce.PayloadString(fields, "status"); if err != nil { return 0, err }; switch name { case "open": return StaticOptionalStatusEnumOpen, nil; case "in_progress": return StaticOptionalStatusEnumInProgress, nil; case "done": return StaticOptionalStatusEnumDone, nil; }; return 0, sce.PayloadUnknownVariant("status", name, "Status") }() }); err != nil {
 			return err
 		}
 		p.pendingDueSetPayload = payload

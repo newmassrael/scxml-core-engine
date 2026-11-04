@@ -1022,9 +1022,7 @@ impl StatePolicy for StaticSchemaRevisionPolicy {
                             "day" => StaticSchemaRevisionViewModeEnum::Day,
                             "agenda_list" => StaticSchemaRevisionViewModeEnum::AgendaList,
                             other => {
-                                return Err(::sce_rust_runtime::event_payload::PayloadRefusal::new(
-                                    format!("layout ({other}) is not a variant of ViewMode"),
-                                ))
+                                return Err(fields.unknown_variant("layout", other, "ViewMode"))
                             }
                         },
                         urgent: fields.truth("urgent")?,
