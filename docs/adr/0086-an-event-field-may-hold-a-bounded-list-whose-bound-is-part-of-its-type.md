@@ -447,12 +447,9 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    assignment, reopening the atomicity of a record list's change. Those records move to the bounded types with
    section 4.4 on every lane at once, at ADR 0085 landing 4 (one change, one event), beside the lift that holds a
    top-level payload text to its bound (commit `509061aded`, parked for the same reason). A composed payload's
-   text is held at the lift already (section 4.1), on every lane that reads one. Until then, where such a
-   payload is handed to an algorithm as a record, whose text the algorithm's record holds in its bounded type,
-   the text is held where it crosses: past the bound the call fails as an assignment past a bound fails
-   (error.execution once, nothing written, the block ended), whether or not the algorithm declares `may-fail`;
-   the adapter then answers a `Result` and the statement is received as one that can fail
-   (`static_payload_text_call.scxml`).
+   text is held at the lift already (section 4.1), on every lane that reads one. Until section 4.4 lands, a call
+   that hands an algorithm `_event.data` whose schema holds text stays refused at check on every lane
+   (docs/SCE_ACCEPTED_SUBSET.md section 2.15, "State an algorithm takes and gives back").
 
    The bound refusal stays where the language puts it: an assignment or an `<sce:append>` that would pass a place's
    bound is refused at that statement and raises `error.execution` (section 5, docs/SCE_ACCEPTED_SUBSET.md
