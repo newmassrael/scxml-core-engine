@@ -40,7 +40,7 @@
 //!
 //! The sentence is what the delivery's `error.execution` carries. Beside it a
 //! refusal carries what a statechart acts on (docs/adr/0087, section 2.4): a
-//! [`RefusalCode`], the place as a strict RFC 6901 pointer (`/items/2/tags/0`,
+//! [`RefusalCode`](crate::event_payload::RefusalCode), the place as a strict RFC 6901 pointer (`/items/2/tags/0`,
 //! `~` written `~0` and `/` written `~1`, empty for the whole text), and the
 //! bound the value broke. The sentence's path keeps the spelling it always had,
 //! the reference tokens joined by `/` with nothing escaped. A repeated name
