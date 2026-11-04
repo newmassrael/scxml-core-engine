@@ -828,9 +828,12 @@ pub enum RuntimeRequirement {
     /// ([`SCXMLModel::needs_script_engine`]).
     Lua,
     /// The Lua binding of the XML DOM (`sce/lua_dom_binding.h`), over the
-    /// freestanding DOM parser: the machine can hand its data model an XML
-    /// document, from its own text or in an arriving event's data
-    /// ([`SCXMLModel::needs_dom_helper`]).
+    /// freestanding DOM parser: the machine embeds the Lua state and can hand
+    /// it an XML document, from its own text or in an arriving event's data
+    /// ([`SCXMLModel::needs_dom_helper`] of a machine that
+    /// [`SCXMLModel::needs_script_engine`]). Every call into the binding
+    /// pushes onto that state, so a machine with no engine states none,
+    /// whatever XML its document carries.
     Dom,
     /// The BasicHTTP client (`sce/http_client.h`), which a platform tier of
     /// the runtime implements: the machine sends over the BasicHTTP Event
@@ -881,7 +884,11 @@ pub fn c11_runtime_requirements(model: &SCXMLModel) -> BTreeSet<RuntimeRequireme
     if model.needs_script_engine {
         requires.insert(RuntimeRequirement::Lua);
     }
-    if model.needs_dom_helper == Some(true) {
+    // The binding is Lua's: every call into it pushes onto the machine's Lua
+    // state (`sce_lua_dom_*`, scriptengine.jinja2), so a machine with no
+    // engine never calls it, whatever its document's XML. Stating it there
+    // linked the Lua tier into programs whose machines embed no Lua.
+    if model.needs_script_engine && model.needs_dom_helper == Some(true) {
         requires.insert(RuntimeRequirement::Dom);
     }
     if model.needs_http_send {

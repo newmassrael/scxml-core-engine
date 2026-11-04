@@ -80,6 +80,18 @@ const TIMED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// A machine with no data model that sends itself an XML document: it has no
+/// Lua state to hand a DOM to, so it links no DOM binding.
+const XML_SENDER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0" name="xml_sender">
+    <state id="s0">
+        <onentry><send event="carried"><content><item kind="a"/></content></send></onentry>
+        <transition event="carried" target="done"/>
+    </state>
+    <final id="done"/>
+</scxml>
+"#;
+
 /// A machine with no data model that starts the scripted one by `src`.
 const PARENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="running" name="parent">
@@ -101,6 +113,7 @@ fn authored() -> (tempfile::TempDir, PathBuf) {
         ("poster.scxml", POSTER),
         ("parent.scxml", PARENT),
         ("timed.scxml", TIMED),
+        ("xml_sender.scxml", XML_SENDER),
     ] {
         std::fs::write(root.join(name), text).expect("write a document");
     }
@@ -261,6 +274,30 @@ fn a_machine_that_schedules_states_the_clock_and_nothing_else() {
         stated_for(&stated, ""),
         vec!["clock"],
         "a machine with no data model that schedules an event states {stated:?}"
+    );
+}
+
+/// The DOM binding is Lua's, so a machine with no engine states none of it
+/// though its document carries XML; the static C11 integration programs link
+/// no Lua tier on that statement.
+#[test]
+fn a_machine_with_no_engine_states_no_dom_binding_for_its_xml() {
+    let (dir, root) = authored();
+    let out = dir.path().join("out");
+    let lines = succeeded(
+        &run(
+            &["--plan", "--plan-requires"],
+            &root,
+            "xml_sender.scxml",
+            "c11",
+            &out,
+        ),
+        "the plan of the machine that sends XML",
+    );
+    let (stated, _) = split(&lines);
+    assert!(
+        stated.is_empty(),
+        "a machine with no data model that sends itself XML states {stated:?}"
     );
 }
 
