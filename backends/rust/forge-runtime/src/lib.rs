@@ -60,6 +60,9 @@ pub mod observer;
 pub mod optional;
 pub mod queue;
 pub mod storage;
+/// The fence of a text template's untrusted hole (docs/adr/0087, section 3.1):
+/// every marker removed from the value, in place, with no allocator.
+pub mod text_template;
 pub mod timer;
 /// The type of a value as generated code declares it, a constant of no heap: the runtime's
 /// mirror of the build's one value type (docs/adr/0086, section 1).

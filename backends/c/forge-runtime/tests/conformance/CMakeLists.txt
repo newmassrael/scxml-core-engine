@@ -248,6 +248,14 @@ target_include_directories(content_line_runtime_test_c PRIVATE "${RUNTIME_INCLUD
 target_compile_options(content_line_runtime_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME content_line_runtime_c COMMAND content_line_runtime_test_c)
 
+# The writer a text-template unit renders into, and the removal of its fence
+# markers (sce/forge/text_template.h, docs/adr/0087 section 3.1), under the
+# same -Werror bar.
+add_executable(text_template_runtime_test_c "${CMAKE_CURRENT_SOURCE_DIR}/text_template_runtime_test.c")
+target_include_directories(text_template_runtime_test_c PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_compile_options(text_template_runtime_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME text_template_runtime_c COMMAND text_template_runtime_test_c)
+
 # The runtime's wrapping and saturating integer helpers on their own
 # (sce/forge/algorithm.h, docs/adr/0063) against their definition, under the
 # same -Werror bar and the conversion warnings a bare-metal consumer builds

@@ -272,6 +272,15 @@ target_include_directories(content_line_runtime_test PRIVATE "${RUNTIME_INCLUDE_
 target_compile_options(content_line_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME content_line_runtime COMMAND content_line_runtime_test)
 
+# The removal of a text template's fence markers on its own
+# (sce/forge/text_template.h, docs/adr/0087 section 3.1), under the same
+# blanket -Werror; what a generated template unit does with it is judged by the
+# rendering goldens of sce-build and the lane's scenario.
+add_executable(text_template_runtime_test "${CMAKE_CURRENT_SOURCE_DIR}/text_template_runtime_test.cpp")
+target_include_directories(text_template_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_compile_options(text_template_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME text_template_runtime COMMAND text_template_runtime_test)
+
 # The runtime's span on its own (sce/forge/span.h, docs/adr/0059 section 4),
 # at C++17, the standard it is for, and under the same blanket -Werror: what
 # converts to a view is asserted at compile time, what a view reads at run
