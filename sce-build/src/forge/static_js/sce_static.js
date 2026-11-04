@@ -457,24 +457,39 @@
     if (data === null || typeof data !== 'object' || Array.isArray(data) || data instanceof JsonNumber) {
       refuse('notObject', '', 'the text is one JSON value, and its schema declares named fields');
     }
-    return readValue(data, type, '', '');
+    var value = readValue(data, type, '', '');
+    held(value, '');
+    return value;
   }
 
-  /* <sce:lift>: {value, refusal}, one of them null. A value the data model
-     cannot hold (a 64-bit integer past what a Number holds exactly) fails as
-     unrepresentable, as a variable's does. */
+  /* Refuses the first integer of value the data model cannot hold: a 64-bit one
+     past 2^53 - 1, which a delivery's reader answers as a BigInt for the
+     expressions that compute with it, and which no variable of this engine
+     holds. It is a whole number past the width this engine gives the type, so
+     it is refused as one is (outOfRange) at its pointer, where a generated
+     backend, whose int64 holds it, reads it. A lift raises nothing, so it
+     answers the refusal rather than failing as unrepresentable. */
+  function held(value, pointer) {
+    if (typeof value === 'bigint') {
+      refuse('outOfRange', pointer, '\'' + pointer + '\' is ' + String(value) + ', past the integers a Number holds exactly (2^53 - 1), which a variable of this engine holds');
+    }
+    if (value !== null && typeof value === 'object') {
+      Object.keys(value).forEach(function (key) { held(value[key], pointerBelow(pointer, key)); });
+    }
+  }
+
+  /* <sce:lift>: {value, refusal}, one of them null. It throws nothing: every
+     text is a record of the type or a refusal of one, an integer the data model
+     cannot hold included (held()). */
   function lift(text, type, depth, pathBound) {
-    var value;
     try {
-      value = liftValue(text, type, depth, pathBound);
+      return { value: liftValue(text, type, depth, pathBound), refusal: null };
     } catch (e) {
       if (e.sceRefusal === undefined) {
         throw e;
       }
       return { value: null, refusal: e.sceRefusal };
     }
-    check(value);
-    return { value: value, refusal: null };
   }
 
   function exact(value) {

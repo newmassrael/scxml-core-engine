@@ -702,8 +702,9 @@ impl StaticTarget for JsTarget {
     // library's `field` takes a type (`{record: …, defaults: …}`), and writes the
     // record or the refusal into the two variables. The library answers rather
     // than throws, so the script raises nothing, as the generated backends' lift
-    // does not; a value the data model cannot hold is the one exception, and fails
-    // as an assignment of it would.
+    // does not: a 64-bit integer past what the data model holds exactly is
+    // refused as past its width here (`outOfRange`), where a backend whose int64
+    // holds it reads it.
     fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
         let kind = |ty: &SceType, max: Option<u32>| -> Option<String> {
             Some(match ty {

@@ -4484,7 +4484,9 @@ JSON object, as a delivery is refused. A `tooDeep` refusal names the container i
 refused, by the index of each element and the name of each member it stands in, held
 to the bound of the refusal's `path` by whole tokens: the pointer stops before the first
 place it cannot write (a member with no name before its colon, a name that is no text,
-or a token past the bound), so it names an enclosing place rather than a cut one. Every reader holds the text to RFC
+or a token past the bound), so it names an enclosing place rather than a cut one. The
+Interpreter's data model holds an integer only up to 2^53 - 1, so there a 64-bit field
+past that is refused as `outOfRange`, and the lift still raises nothing. Every reader holds the text to RFC
 8259 alone (tests/json_text/payload_refusal.json): whitespace of the four kinds between
 tokens, a number in its grammar (no leading zero, no `+`, a digit on each side of `.`
 and after an exponent), no raw control character in a text, no half of a UTF-16 pair

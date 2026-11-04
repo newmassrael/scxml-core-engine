@@ -1524,6 +1524,66 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryNamesEachRe
     engine_->destroySession(session);
 }
 
+// A lift raises nothing (docs/adr/0087, section 2.1), and this engine's data model holds
+// an integer only up to 2^53 - 1: a 64-bit integer past that, which a generated backend's
+// int64 holds and its lift reads, is refused here as a whole number past the width the
+// engine gives the type (`outOfRange`, at the field), and never thrown as unrepresentable.
+// The answer is this engine's own, so it is pinned here and not in the shared table.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ALiftOfAnIntegerTheDataModelCannotHoldIsRefusedNotThrown) {
+    const char *bin = std::getenv("SCE_CODEGEN_BIN");
+    ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN must be set by CMake add_test ENVIRONMENT";
+    const Ran ran =
+        capture(std::string("\"") + bin + "\" lower-algorithm sce:std/time/second_of_day.scxml 2>/dev/null");
+    ASSERT_EQ(0, ran.status);
+    const auto line = nlohmann::json::parse(ran.output, nullptr, false);
+    ASSERT_TRUE(line.is_object()) << ran.output.substr(0, 200);
+
+    const std::string session = "lift_unheld_integer";
+    ASSERT_TRUE(engine_->createSession(session, ""));
+    const auto installed = engine_->executeScript(session, line.at("install").get<std::string>()).get();
+    ASSERT_TRUE(installed.isSuccess()) << installed.getErrorMessage();
+
+    struct Case {
+        const char *text;
+        const char *type;  // the type of the record's one field `v`, as the library writes it
+        const char *code;  // nullptr: read, `v` the value `read`
+        const char *read;
+    };
+
+    const Case cases[] = {
+        {R"({"v":"9007199254740991"})", "'int64'", nullptr, "9007199254740991"},
+        {R"({"v":"-9007199254740991"})", "'int64'", nullptr, "-9007199254740991"},
+        {R"({"v":"9007199254740992"})", "'int64'", "outOfRange", nullptr},
+        {R"({"v":"9007199254740993"})", "'int64'", "outOfRange", nullptr},
+        {R"({"v":"9223372036854775807"})", "'int64'", "outOfRange", nullptr},
+        {R"({"v":"-9223372036854775808"})", "'int64'", "outOfRange", nullptr},
+        {R"({"v":"18446744073709551615"})", "'uint64'", "outOfRange", nullptr},
+        {R"({"v":"9223372036854775807"})", "{optional: 'int64'}", "outOfRange", nullptr},
+        {R"({"v":9007199254740993})", "'int64'", "badNumber", nullptr},
+    };
+    for (const Case &c : cases) {
+        const std::string program = std::string("(function () { var text = ") + nlohmann::json(c.text).dump() +
+                                    "; try { var lifted = SceStatic.lift(text, {record: {'v': " + c.type +
+                                    "}}, 1, 256); return JSON.stringify(lifted.refusal !== null ? {refusal: "
+                                    "lifted.refusal} : {read: String(lifted.value.v)}); } catch (e) { return "
+                                    "JSON.stringify({threw: String(e.message)}); } })()";
+        const auto answered = engine_->evaluateExpression(session, program).get();
+        ASSERT_TRUE(answered.isSuccess()) << c.text << ": " << answered.getErrorMessage();
+        const auto got = nlohmann::json::parse(answered.getValue<std::string>(), nullptr, false);
+        ASSERT_TRUE(got.is_object()) << c.text << ": " << answered.getValue<std::string>();
+        EXPECT_FALSE(got.contains("threw")) << c.text << ": the lift threw: " << got.dump();
+        if (c.code == nullptr) {
+            EXPECT_EQ(got.value("read", std::string()), c.read) << c.text << ": " << got.dump();
+            continue;
+        }
+        ASSERT_TRUE(got.contains("refusal")) << c.text << ": " << got.dump();
+        EXPECT_EQ(got.at("refusal").at("code"), c.code) << c.text << ": " << got.dump();
+        EXPECT_EQ(got.at("refusal").at("pointer"), "/v") << c.text << ": " << got.dump();
+        EXPECT_TRUE(got.at("refusal").at("bound").is_null()) << c.text << ": " << got.dump();
+    }
+    engine_->destroySession(session);
+}
+
 // SCE_MESH.md, Errors: a send to a peer from a machine whose host registered no Mesh
 // router is a configuration fault of the host and raises error.execution, as it does
 // on every other backend. It is not an event the sender takes from itself:
