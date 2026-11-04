@@ -320,16 +320,6 @@ fn spelled(plan: &EncodePlan<'_>) -> Result<(), String> {
             ));
         }
     }
-    if let Some(element) = plan
-        .elements
-        .iter()
-        .find(|e| matches!(&e.value, Value::List { law, .. } if !law.is_none()))
-    {
-        return Err(format!(
-            "the list `{}` is held to a law, which is not spelled as a literal yet",
-            element.field.id
-        ));
-    }
     Ok(())
 }
 
@@ -749,6 +739,27 @@ fn literal_value(
             })?;
             Ok(format!("&{}", bind(bindings, None, body)))
         }
+        Value::List { codec, law, .. } if !law.is_none() => {
+            // A list held to a law (docs/adr/0065 §6 R8) is its start and its
+            // entries, `{"start": {input: 0|1}, "entries": [..]}`; the runtime's
+            // constructor runs the law over them.
+            let object = json.as_object().filter(|o| o.len() == 2).ok_or_else(|| {
+                "a list held to a law is `{\"start\": .., \"entries\": ..}`".to_string()
+            })?;
+            let start = object
+                .get("start")
+                .ok_or_else(|| "the list states no `start`".to_string())?;
+            let entries = object
+                .get("entries")
+                .ok_or_else(|| "the list states no `entries`".to_string())?;
+            let start = law_start_literal(law, start)?;
+            let array = entries_binding(codec, entries, held, bindings)?;
+            Ok(format!(
+                "{RUNTIME_CODEC}::Lawful::new({start}, {}).expect(\"the case's entries follow \
+                 their law\")",
+                bounded(format!("&{array}[..]"))
+            ))
+        }
         Value::List { codec, .. } => {
             let array = entries_binding(codec, json, held, bindings)?;
             Ok(bounded(format!("&{array}[..]")))
@@ -793,9 +804,78 @@ fn literal_value(
     }
 }
 
+/// The start of a list's law as a byte case's literal (docs/adr/0065 §6 R8),
+/// from the case's `{input: 0|1}`: for each input in the law's order, the bool
+/// the value gives a Uniform input and `()` for an input the entry before
+/// decides; a tuple where the law runs more than one. ([`law_start`] is the
+/// other direction: the value one input starts from, read off a lawful list.)
+fn law_start_literal(law: &Law, json: &serde_json::Value) -> Result<String, String> {
+    let object = json.as_object().ok_or_else(|| {
+        "a law's start is a JSON object, one bit for each input it gives".to_string()
+    })?;
+    let given: Vec<&str> = law
+        .inputs
+        .iter()
+        .filter(|i| matches!(i.automaton, Automaton::Uniform))
+        .map(|i| i.input.as_str())
+        .collect();
+    if let Some(extra) = object.keys().find(|k| !given.contains(&k.as_str())) {
+        return Err(format!(
+            "the start gives `{extra}`, which the law takes from no start"
+        ));
+    }
+    let parts = law
+        .inputs
+        .iter()
+        .map(|i| match i.automaton {
+            Automaton::Uniform => object
+                .get(&i.input)
+                .and_then(serde_json::Value::as_u64)
+                .filter(|v| *v <= 1)
+                .map(|v| (v == 1).to_string())
+                .ok_or_else(|| format!("the start gives `{}` as 0 or 1", i.input)),
+            Automaton::AfterKey { .. } => Ok("()".to_string()),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(match parts.as_slice() {
+        [one] => one.clone(),
+        many => format!("({})", many.join(", ")),
+    })
+}
+
+/// A `bool` expression that holds when `x` and `y`, two walks of the entries
+/// of the codec imported as `codec`, hold the same entries in order.
+fn entries_same(
+    codec: &str,
+    x: &str,
+    y: &str,
+    held: &mut dyn HeldCodecs,
+    fresh: &mut usize,
+) -> Result<String, String> {
+    let (ea, eb) = (format!("{x}_entry"), format!("{y}_entry"));
+    let entry = {
+        let (ea, eb) = (format!("&{ea}"), format!("&{eb}"));
+        held.read(codec, &mut |plan, path, held| {
+            body_equal(plan, path, &ea, &eb, held, fresh)
+        })?
+    };
+    // An entry of no element binds nothing it reads.
+    let (ea, eb) = if entry == "true" {
+        ("_".to_string(), "_".to_string())
+    } else {
+        (ea, eb)
+    };
+    Ok(format!(
+        "{{ let (mut {x}, mut {y}) = ({x}, {y}); loop {{ match ({x}.next(), {y}.next()) {{ \
+         (Some({ea}), Some({eb})) => {{ let same = {entry}; if !same {{ break false; }} }}, \
+         (None, None) => break true, _ => break false }} }} }}"
+    ))
+}
+
 /// A `bool` expression that holds when `x` and `y`, two values of the abstract
 /// type `value` as a source presents them, are the same: a body's elements
-/// each, a list's entries each in order, any other value whole.
+/// each, a list's entries each in order and a lawful list's start, any other
+/// value whole.
 fn value_same(
     value: &Value<'_>,
     x: &str,
@@ -807,26 +887,15 @@ fn value_same(
         Value::Body { codec } => held.read(codec, &mut |plan, path, held| {
             body_equal(plan, path, x, y, held, fresh)
         }),
-        Value::List { codec, .. } => {
-            let (ea, eb) = (format!("{x}_entry"), format!("{y}_entry"));
-            let entry = {
-                let (ea, eb) = (format!("&{ea}"), format!("&{eb}"));
-                held.read(codec, &mut |plan, path, held| {
-                    body_equal(plan, path, &ea, &eb, held, fresh)
-                })?
-            };
-            // An entry of no element binds nothing it reads.
-            let (ea, eb) = if entry == "true" {
-                ("_".to_string(), "_".to_string())
-            } else {
-                (ea, eb)
-            };
+        Value::List { codec, law, .. } if !law.is_none() => {
+            let (lx, ly) = (format!("{x}_list"), format!("{y}_list"));
+            let entries = entries_same(codec, &lx, &ly, held, fresh)?;
             Ok(format!(
-                "{{ let (mut {x}, mut {y}) = ({x}, {y}); loop {{ match ({x}.next(), {y}.next()) {{ \
-                 (Some({ea}), Some({eb})) => {{ let same = {entry}; if !same {{ break false; }} }}, \
-                 (None, None) => break true, _ => break false }} }} }}"
+                "{{ let (({x}_start, {lx}), ({y}_start, {ly})) = ({x}.into_parts(), \
+                 {y}.into_parts()); {x}_start == {y}_start && {entries} }}"
             ))
         }
+        Value::List { codec, .. } => entries_same(codec, x, y, held, fresh),
         _ => Ok(format!("{x} == {y}")),
     }
 }

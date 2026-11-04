@@ -284,6 +284,17 @@ the harness compares the place and the entries. Three codecs gain 13 cases: an e
 first, among others and alone, and two kinds and a flag over eight arms. A chain whose entries take flag inputs (a
 law) stays refused by name.
 
+*Landed (step 3, thirteenth part, 2026-11-04): lists held to a law.* The model reads a list whose entries take flag
+inputs (docs/adr/0065 §6 R8): an input the list's import binds, which every entry is handed from the list's start, and
+one a chain supplies (`<sce:entry-flag-bind previous-entry-id>`), which each entry is handed as whether the entry
+before is of that kind, the first clear. Such a list is stated as `{"start": {input: 0|1}, "entries": [..]}`, the
+start giving each input the list binds; a flag bound to it is derived from the start where the list is there and is
+the value's own where it is not, and a codec's own input bound to it is said by it. An entry that says other than it
+is handed is refused, as a start that contradicts the input the codec is handed. The literal holds the list as the
+runtime's `Lawful::new`, the start a bool for each input the list binds and `()` for each a chain supplies, a tuple
+where the law runs several, and the harness compares the start and the entries. Nine codecs gain 20 cases, the Zenoh
+query value among them, whose shared-memory marker hands the entry after it `after_shm`.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.

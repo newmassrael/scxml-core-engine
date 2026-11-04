@@ -68,7 +68,11 @@ What the model reads so far, and refuses by name past it:
   each as its import binds it (`<sce:flag-bind>`): the parent's own input, or
   a flag of a carrier, which is then derived from what the held codec says
   (docs/adr/0065 §6 R4a) and is the value's own where nothing held says it.
-  The entries of a list that take inputs are not read yet;
+  The entries of a list that take inputs follow a law (R8): the list is
+  `{"start": {input: 0|1}, "entries": [..]}`, each entry handed the start for
+  an input the list binds, and, for one a chain supplies
+  (`<sce:entry-flag-bind previous-entry-id>`), whether the entry before is
+  of that kind, the first clear; a flag bound to the start is derived from it;
 * a variant (`<sce:variant>`), stated as its member `body`: the arm's codec
   and its value, its tag derived from the arm where a field or a carrier's
   flag holds it; where a peeked byte holds it (`<sce:peek-byte>`), the tag is
@@ -311,6 +315,28 @@ class Field:
     #: a whole carrier it leaves out (`entry-id-except`).
     entry_id: str | None = None
     entry_except: list[str] = field(default_factory=list)
+    #: Of a chain: each input its entries take as whether the entry before is
+    #: of a kind (`<sce:entry-flag-bind previous-entry-id>`), the first clear.
+    after_key: dict[str, int] = field(default_factory=dict)
+
+    def lawful(self) -> bool:
+        """Whether this is a list held to a law (docs/adr/0065 §6 R8): its
+        entries take inputs, each one they say. Its value is then
+        `{"start": {..}, "entries": [..]}`, the start giving each input the
+        list hands all its entries."""
+        return self.size == "list" and bool(self.binds or self.after_key)
+
+    def handed_entries(self, start: dict[str, int], entries: list[dict]) -> list[dict[str, int]]:
+        """What each entry of this lawful list is handed: the start for an
+        input the list hands every entry, and for one the chain supplies
+        whether the entry before is of its kind."""
+        out = []
+        for i, _ in enumerate(entries):
+            handed = dict(start)
+            for name, key in self.after_key.items():
+                handed[name] = int(i > 0 and self.kind_of(entries[i - 1]) == key)
+            out.append(handed)
+        return out
 
     def kind_of(self, entry: dict) -> int:
         """The kind of an entry of this chain, as the entry's value states the
@@ -675,12 +701,14 @@ def bound_inputs(
     child: Codec,
     binds: dict[str, dict[str, str]],
     inputs: list[str],
+    supplied: set[str] = frozenset(),
 ) -> dict[str, str]:
     """What the parent hands each flag input of the codec imported as `alias`,
     which `what` holds: every input bound, each to an input of the parent or a
-    flag of one of its carriers (`carrier.flag`)."""
+    flag of one of its carriers (`carrier.flag`), but those the holder
+    `supplied` otherwise (a chain's entry from the entry before)."""
     bound = binds.get(alias, {})
-    if sorted(bound) != sorted(child.inputs):
+    if set(bound) & supplied or sorted([*bound, *supplied]) != sorted(child.inputs):
         raise Unread(f"{stem}: {what} binds {sorted(bound)}, not every input of `{alias}`")
     for source in bound.values():
         _, _, flag = source.partition(".")
@@ -698,18 +726,28 @@ def read_held(
     binds: dict[str, dict[str, str]],
 ) -> Field:
     """An embedded body, a `<sce:repeat>` or a `<sce:tlv-chain>`: a field
-    holding the codec imported as its `type`, and for a body, what the parent
-    hands each flag input of it."""
+    holding the codec imported as its `type`, and what the parent hands each
+    flag input of it: as its import binds it, or, for an entry of a chain, as
+    the entry before it is or is not of a kind (`<sce:entry-flag-bind>`)."""
     id = node.get("id")
-    if len(node):
-        raise Unread(f"{stem}: `{id}` has children, which are not read yet")
+    after_key: dict[str, int] = {}
+    for child_node in node:
+        if (kind == "tlv-chain" and child_node.tag == f"{SCE}entry-flag-bind"
+                and set(child_node.attrib) == {"input", "previous-entry-id"}):
+            after_key[child_node.get("input")] = int(child_node.get("previous-entry-id"), 0)
+        else:
+            raise Unread(f"{stem}: `{id}` holds <{child_node.tag}>, which is not read yet")
     alias = node.get("type")
     child = imports.get(alias)
     if child is None:
         raise Unread(f"{stem}: `{id}` holds `{alias}`, which is not imported")
-    if child.inputs and kind != "embed":
-        raise Unread(f"{stem}: the entries of `{id}` take flag inputs, a law not read yet")
-    bound = bound_inputs(stem, f"`{id}`", alias, child, binds, inputs)
+    bound = bound_inputs(stem, f"`{id}`", alias, child, binds, inputs, supplied=set(after_key))
+    if kind != "embed":
+        # The entries of a list are held to a law over each input they take
+        # (docs/adr/0065 §6 R8), so each one is an input they say.
+        for name in [*bound, *after_key]:
+            if not codec_says(child, name):
+                raise Unread(f"{stem}: the entries of `{id}` take `{name}`, which they do not say")
     if kind == "embed":
         size, measured_by, most = "body", node.get(f"{SCE}length-from"), None
     elif kind == "repeat":
@@ -750,6 +788,8 @@ def read_held(
             entry_except.append(except_flag)
     elif node.get("entry-id-except") is not None:
         raise Unread(f"{stem}: `{id}` leaves a flag out of a kind it does not declare")
+    if after_key and entry_id is None:
+        raise Unread(f"{stem}: `{id}` hands an input by the entry before's kind, and has none")
     return Field(
         id=id,
         sce_type=kind,
@@ -766,6 +806,7 @@ def read_held(
         binds=bound,
         entry_id=entry_id,
         entry_except=entry_except,
+        after_key=after_key,
     )
 
 
@@ -980,7 +1021,7 @@ def gate_holds(
     for clause in gate.clauses:
         if clause.is_member():
             chain = codec.field(clause.carrier)
-            set_ = any(chain.kind_of(e) == clause.key for e in values.get(chain.id) or [])
+            set_ = any(chain.kind_of(e) == clause.key for e in entries_of(values.get(chain.id)))
         elif clause.is_input():
             set_ = inputs[clause.flag] == 1
         else:
@@ -1028,7 +1069,50 @@ def said_input(codec: Codec, source: dict, name: str) -> int | None:
                     said = said_input(f.child, source[f.id], child_input)
                     if said is not None:
                         return said
+    # The start of a list that hands the input to its entries (R8), where the
+    # value holds the list, and the arm of a variant the input is handed to.
+    for f in codec.fields:
+        if f.lawful() and source.get(f.id) is not None:
+            for child_input, bound in f.binds.items():
+                if bound == name:
+                    return source[f.id]["start"][child_input]
+        if f.size == "variant":
+            arm = arm_held(codec, f, source[f.id])
+            for child_input, bound in arm.binds.items():
+                if bound == name:
+                    said = said_input(arm.codec, source[f.id]["body"], child_input)
+                    if said is not None:
+                        return said
     return None
+
+
+def codec_says(codec: Codec, name: str) -> bool:
+    """Whether some value of `codec` says its flag input `name` (R4a): a group
+    the input decides, a field gated on it alone, or a body, a list or an arm
+    the input is handed to whose codec says it."""
+    if any([c.label() for c in g.clauses] == [name] and g.clauses[0].is_input()
+           for g in codec.groups()):
+        return True
+    for f in codec.fields:
+        clause = f.gate.one() if f.gate is not None else None
+        if clause is not None and clause.is_input() and clause.flag == name and codec.presented(f):
+            return True
+        holders = [(f.child, f.binds)] if f.child is not None else []
+        if f.size == "variant":
+            holders = [(a.codec, a.binds) for a in [*f.arms, f.default_arm] if a is not None]
+        for child, binds in holders:
+            if any(bound == name and codec_says(child, child_input)
+                   for child_input, bound in binds.items()):
+                return True
+    return False
+
+
+def entries_of(value) -> list[dict]:
+    """The entries of a list's value: the array itself, or a lawful list's
+    `entries`; none where the list is absent."""
+    if value is None:
+        return []
+    return value["entries"] if isinstance(value, dict) else value
 
 
 def handed_to(
@@ -1096,6 +1180,14 @@ def bound_flags(codec: Codec, source: dict) -> dict[tuple[str, str], int]:
                 said = said_input(child, value, child_input)
                 if said is not None:
                     out[(carrier, flag)] = said
+    # A flag bound to the entries of a list held to a law is its start, where
+    # the value holds the list (R8, the plan's `Start` measure).
+    for f in codec.fields:
+        if f.lawful() and source.get(f.id) is not None:
+            for child_input, bound in f.binds.items():
+                carrier, _, flag = bound.partition(".")
+                if flag:
+                    out[(carrier, flag)] = source[f.id]["start"][child_input]
     return out
 
 
@@ -1116,12 +1208,22 @@ def held(f: Field, value, handed: dict[str, int] | None = None) -> bytes | list[
             raise ValueError(f"`{f.id}` is a body, a JSON object")
         return encode(f.child, value, handed)
     else:
+        handed_each = None
+        if f.lawful():
+            # A list held to a law (R8) is its start and its entries; each
+            # entry is handed the start, or whether the entry before is of a
+            # kind, and its encode refuses a value that says otherwise.
+            if not isinstance(value, dict) or sorted(value) != ["entries", "start"]:
+                raise ValueError(f"`{f.id}` is held to a law: {{\"start\": .., \"entries\": ..}}")
+            start, value = value["start"], value["entries"]
+            if sorted(start) != sorted(f.binds) or any(v not in (0, 1) for v in start.values()):
+                raise ValueError(f"`{f.id}`'s start gives each of {sorted(f.binds)} as 0 or 1")
+            handed_each = f.handed_entries(start, value)
         if not isinstance(value, list):
             raise ValueError(f"`{f.id}` is a list, a JSON array")
         if f.end_flag is not None:
             # The chain ends on its entries' flag: it is set on every entry
             # but the last, so the chain holds one entry or more.
-            # (Entries that take inputs are refused when the codec is read.)
             if not value:
                 raise ValueError(f"`{f.id}` ends on an entry's flag, so it holds one or more")
             carrier, name = f.end_flag
@@ -1131,7 +1233,10 @@ def held(f: Field, value, handed: dict[str, int] | None = None) -> bytes | list[
                          else (entry[carrier] & ~mask)}
                 for i, entry in enumerate(value)
             ]
-        data = [encode(f.child, entry) for entry in value]
+        data = [
+            encode(f.child, entry, handed_each[i] if handed_each is not None else None)
+            for i, entry in enumerate(value)
+        ]
     if f.most is not None and len(data) > f.most:
         raise ValueError(f"`{f.id}` holds {len(data)}, past its bound of {f.most}")
     return data
@@ -1260,7 +1365,10 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
         f.id: held(
             f,
             source[f.id],
-            handed_to(codec, f.child, f.binds, source[f.id], source, inputs) if f.binds else None,
+            # A body is handed its inputs here; a lawful list hands each of its
+            # entries theirs from its start (`held`).
+            handed_to(codec, f.child, f.binds, source[f.id], source, inputs)
+            if f.binds and f.size == "body" else None,
         )
         for f in codec.fields
         if holds_bytes(f) and source[f.id] is not None
@@ -1436,11 +1544,17 @@ def decode_at(
             count = None
             if f.measured_by is not None:
                 count = measure_on_wire(codec, f.measured_by, raw, carriers)
+            # A lawful list's start is what the parent hands its entries: its
+            # own input, or a flag of a carrier read before the list.
+            start = handed_on(codec, f.binds, carriers, inputs)
             more = True
             while more and ((len(entries) < count) if count is not None else (at < end)):
                 if f.most is not None and len(entries) == f.most:
                     raise ValueError(f"{codec.name}: `{f.id}` holds more than {f.most} entries")
-                entry, stop = decode_at(f.child, frame, at, end, {})
+                handed = dict(start)
+                for name, key in f.after_key.items():
+                    handed[name] = int(bool(entries) and f.kind_of(entries[-1]) == key)
+                entry, stop = decode_at(f.child, frame, at, end, handed)
                 if stop == at:
                     raise ValueError(f"{codec.name}: an entry of `{f.id}` reads no byte")
                 entries.append(entry)
@@ -1451,7 +1565,7 @@ def decode_at(
                     more = (entry[carrier] >> f.child.flag(carrier, name).bit) & 1 == 1
             if f.end_flag is not None and (not entries or more):
                 raise ValueError(f"{codec.name}: the frame ends inside `{f.id}`")
-            raw[f.id] = entries
+            raw[f.id] = {"start": start, "entries": entries} if f.lawful() else entries
             continue
         if f.size == "vle":
             within(1, f.id)
@@ -1560,6 +1674,21 @@ def ext_zbuf(ext_id: int, value: list, more: bool) -> dict:
     """A Zenoh zbuf extension: `enc` 2 is its arm's tag."""
     return {"header": ext_id | 0x40 | (0x80 if more else 0),
             "body": {"arm": "codec_zenoh_ext_zbuf", "body": {"value": value}}}
+
+
+def flag_entry(kind: int, value: int, wide: int, more: bool) -> dict:
+    """An entry of `codec_chain_flag_entry` handed `wide`: the long value
+    where it is set, the short one where it is not; `Z` set where another
+    entry follows."""
+    arm = {"arm": 0, "long_value": value} if wide else {"arm": 1, "short_value": value}
+    return {"header": kind | (0x80 if more else 0), "wide": arm}
+
+
+def prev_entry(ext_id: int, value: int, after: int, tag: int | None, more: bool) -> dict:
+    """An entry of `codec_chain_prev_entry` handed `after_marker` (whether the
+    entry before is of kind 4) and `tagged` (whether it has a tag)."""
+    arm = {"arm": 0, "long_value": value} if after else {"arm": 1, "short_value": value}
+    return {"header": ext_id | (0x80 if more else 0), "after_marker": arm, "tag": tag}
 
 
 #: Each fixture this model writes, with its hand-chosen sources: every edge of
@@ -1901,6 +2030,108 @@ FIXTURES = {
              "both flags and Z: the body, then one extension"),
         ],
         "a body a disjunction of two flags decides, each arm setting the flags it names.",
+    ),
+    "codec_chain_flag_carrier": Fixture(
+        [
+            ({"head": 0x00, "entries": {"start": {"wide": 0},
+                                        "entries": [flag_entry(1, 5, 0, True),
+                                                    flag_entry(2, 6, 0, False)]}},
+             "the start clear: every entry short, W derived clear"),
+            ({"head": 0x01, "entries": {"start": {"wide": 1},
+                                        "entries": [flag_entry(3, 0x1234, 1, False)]}},
+             "the start set: the entry long, W derived set"),
+        ],
+        "a flag bound to every entry of a chain is its law's start (R8, Uniform).",
+    ),
+    "codec_chain_flag_forward": Fixture(
+        [
+            ({"head": 0x01, "entries": {"start": {"wide": 1},
+                                        "entries": [flag_entry(1, 0x0102, 1, False)]}},
+             "the codec's own input handed on: the start says it", {"wide": 1}),
+            ({"head": 0x01, "entries": {"start": {"wide": 0},
+                                        "entries": [flag_entry(1, 9, 0, True),
+                                                    flag_entry(2, 8, 0, False)]}},
+             "the input clear, two short entries", {"wide": 0}),
+            ({"head": 0x00, "entries": None},
+             "no chain: E clear, and the value says nothing of the input", {"wide": 1}),
+        ],
+        "the codec's own input bound to every entry: the list's start says it.",
+    ),
+    "codec_repeat_flag_carrier": Fixture(
+        [
+            ({"head": 0x01, "entries": {"start": {"wide": 1},
+                                        "entries": [flag_entry(1, 0x10, 1, False),
+                                                    flag_entry(2, 0x20, 1, False)]}},
+             "two long entries, counted"),
+            ({"head": 0x00, "entries": {"start": {"wide": 0}, "entries": []}},
+             "no entry: the start is the value's, W clear"),
+            ({"head": 0x01, "entries": {"start": {"wide": 1}, "entries": []}},
+             "no entry and the start set: W follows the start, not the entries"),
+        ],
+        "a counted list's law: its start is the value's even where it holds no entry.",
+    ),
+    "codec_repeat_flag_gated": Fixture(
+        [
+            ({"head": 0x03, "entries": {"start": {"wide": 1},
+                                        "entries": [flag_entry(1, 7, 1, False)]}},
+             "L set by the list, W by its start"),
+            ({"head": 0x00, "entries": None}, "no list: L clear, W the value's own"),
+            ({"head": 0x01, "entries": None}, "no list and W set: nothing derives it"),
+        ],
+        "a gated list's law: the bound flag is its start where the list is there.",
+    ),
+    "codec_chain_prev_carrier": Fixture(
+        [
+            ({"head": 0x00, "entries": {"start": {"tagged": 0}, "entries": [
+                prev_entry(4, 1, 0, None, True), prev_entry(2, 0x0203, 1, None, False)]}},
+             "after an entry of kind 4 the next is handed after_marker set"),
+            ({"head": 0x01, "entries": {"start": {"tagged": 1}, "entries": [
+                prev_entry(1, 5, 0, 9, False)]}},
+             "the start sets tagged, so the entry has its tag; the first is never after"),
+        ],
+        "two laws run together: tagged from the start (T), after_marker from the entry before.",
+    ),
+    "codec_chain_prev_gated": Fixture(
+        [
+            ({"head": 0x03, "entries": {"start": {"tagged": 1}, "entries": [
+                prev_entry(4, 1, 0, 1, True), prev_entry(4, 0x0506, 1, 2, True),
+                prev_entry(1, 7, 1, 3, False)]}},
+             "two of kind 4 in a row: each entry after one is handed after_marker"),
+            ({"head": 0x00, "entries": None}, "no chain: E clear, T the value's own"),
+        ],
+        "the kind is the whole header less the chain's own Z.",
+    ),
+    "codec_chain_prev_tail": Fixture(
+        [
+            ({"head": 0x00, "entries": {"start": {"tagged": 0}, "entries": [
+                prev_entry(4, 1, 0, None, False), prev_entry(5, 2, 1, None, False)]}},
+             "a chain read to the end: Z is each entry's own"),
+        ],
+        "the entry before's kind, in a chain that ends with the frame.",
+    ),
+    "codec_chain_prev_tail_gated": Fixture(
+        [
+            ({"head": 0x02, "entries": {"start": {"tagged": 0}, "entries": [
+                prev_entry(4, 9, 0, None, False)]}},
+             "one entry: E set by the chain"),
+            ({"head": 0x00, "entries": None}, "no chain"),
+        ],
+        "a gated chain read to the end, its law as an ungated one's.",
+    ),
+    "codec_zenoh_query_value": Fixture(
+        [
+            ({"exts": {"start": {}, "entries": [
+                {"header": 0x84, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}},
+                {"header": 0x43, "body": {"arm": "codec_zenoh_value_zbuf", "body": {
+                    "after_shm": {"arm": 0, "value_len": 1, "encoding": 2,
+                                  "slices": [{"kind": 0, "data": [1]}]}}}}]}},
+             "the shared-memory marker (kind 4), then a zbuf handed after_shm"),
+            ({"exts": {"start": {}, "entries": [
+                {"header": 0x43, "body": {"arm": "codec_zenoh_value_zbuf", "body": {
+                    "after_shm": {"arm": 1, "value": [7]}}}}]}},
+             "a zbuf first: nothing before it, so its value inline"),
+        ],
+        "a law with no start: each entry is handed whether the one before is the marker.",
     ),
     "codec_chain_has_envelope": Fixture(
         [

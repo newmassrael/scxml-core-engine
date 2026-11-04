@@ -43890,6 +43890,80 @@
         {"source": {"header": 1, "entries.has(0x7) || entries.has(0x9) || header.wide": {"arm": 6, "entries": [{"entry_type": 2, "ctl": 0, "body": 0}], "priority": 1, "checksum": 2}}, "encoded": [1, 2, 0, 0, 1, 0, 2], "note": "wide alone: the flag derived from the arm"},
         {"source": {"header": 1, "entries.has(0x7) || entries.has(0x9) || header.wide": {"arm": 0, "entries": [{"entry_type": 9, "ctl": 1, "body": 0}, {"entry_type": 7, "ctl": 0, "body": 0}], "priority": 4}}, "encoded": [1, 9, 1, 0, 7, 0, 0, 4], "note": "every atom set: the priority, no checksum"}
       ]
+    },
+    "codec_chain_flag_carrier": {
+      "fixture": "CodecChainFlagCarrier",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a flag bound to every entry of a chain is its law's start (R8, Uniform).",
+      "sources": [
+        {"source": {"head": 0, "entries": {"start": {"wide": 0}, "entries": [{"header": 129, "wide": {"arm": 1, "short_value": 5}}, {"header": 2, "wide": {"arm": 1, "short_value": 6}}]}}, "encoded": [0, 129, 5, 2, 6], "note": "the start clear: every entry short, W derived clear"},
+        {"source": {"head": 1, "entries": {"start": {"wide": 1}, "entries": [{"header": 3, "wide": {"arm": 0, "long_value": 4660}}]}}, "encoded": [1, 3, 18, 52], "note": "the start set: the entry long, W derived set"}
+      ]
+    },
+    "codec_chain_flag_forward": {
+      "fixture": "CodecChainFlagForward",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. the codec's own input bound to every entry: the list's start says it.",
+      "sources": [
+        {"source": {"head": 1, "entries": {"start": {"wide": 1}, "entries": [{"header": 1, "wide": {"arm": 0, "long_value": 258}}]}}, "inputs": {"wide": 1}, "encoded": [1, 1, 1, 2], "note": "the codec's own input handed on: the start says it"},
+        {"source": {"head": 1, "entries": {"start": {"wide": 0}, "entries": [{"header": 129, "wide": {"arm": 1, "short_value": 9}}, {"header": 2, "wide": {"arm": 1, "short_value": 8}}]}}, "inputs": {"wide": 0}, "encoded": [1, 129, 9, 2, 8], "note": "the input clear, two short entries"},
+        {"source": {"head": 0, "entries": null}, "inputs": {"wide": 1}, "encoded": [0], "note": "no chain: E clear, and the value says nothing of the input"}
+      ]
+    },
+    "codec_repeat_flag_carrier": {
+      "fixture": "CodecRepeatFlagCarrier",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a counted list's law: its start is the value's even where it holds no entry.",
+      "sources": [
+        {"source": {"head": 1, "entries": {"start": {"wide": 1}, "entries": [{"header": 1, "wide": {"arm": 0, "long_value": 16}}, {"header": 2, "wide": {"arm": 0, "long_value": 32}}]}}, "encoded": [1, 2, 1, 0, 16, 2, 0, 32], "note": "two long entries, counted"},
+        {"source": {"head": 0, "entries": {"start": {"wide": 0}, "entries": []}}, "encoded": [0, 0], "note": "no entry: the start is the value's, W clear"},
+        {"source": {"head": 1, "entries": {"start": {"wide": 1}, "entries": []}}, "encoded": [1, 0], "note": "no entry and the start set: W follows the start, not the entries"}
+      ]
+    },
+    "codec_repeat_flag_gated": {
+      "fixture": "CodecRepeatFlagGated",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a gated list's law: the bound flag is its start where the list is there.",
+      "sources": [
+        {"source": {"head": 3, "entries": {"start": {"wide": 1}, "entries": [{"header": 1, "wide": {"arm": 0, "long_value": 7}}]}}, "encoded": [3, 1, 1, 0, 7], "note": "L set by the list, W by its start"},
+        {"source": {"head": 0, "entries": null}, "encoded": [0], "note": "no list: L clear, W the value's own"},
+        {"source": {"head": 1, "entries": null}, "encoded": [1], "note": "no list and W set: nothing derives it"}
+      ]
+    },
+    "codec_chain_prev_carrier": {
+      "fixture": "CodecChainPrevCarrier",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. two laws run together: tagged from the start (T), after_marker from the entry before.",
+      "sources": [
+        {"source": {"head": 0, "entries": {"start": {"tagged": 0}, "entries": [{"header": 132, "after_marker": {"arm": 1, "short_value": 1}, "tag": null}, {"header": 2, "after_marker": {"arm": 0, "long_value": 515}, "tag": null}]}}, "encoded": [0, 132, 1, 2, 2, 3], "note": "after an entry of kind 4 the next is handed after_marker set"},
+        {"source": {"head": 1, "entries": {"start": {"tagged": 1}, "entries": [{"header": 1, "after_marker": {"arm": 1, "short_value": 5}, "tag": 9}]}}, "encoded": [1, 1, 5, 9], "note": "the start sets tagged, so the entry has its tag; the first is never after"}
+      ]
+    },
+    "codec_chain_prev_gated": {
+      "fixture": "CodecChainPrevGated",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. the kind is the whole header less the chain's own Z.",
+      "sources": [
+        {"source": {"head": 3, "entries": {"start": {"tagged": 1}, "entries": [{"header": 132, "after_marker": {"arm": 1, "short_value": 1}, "tag": 1}, {"header": 132, "after_marker": {"arm": 0, "long_value": 1286}, "tag": 2}, {"header": 1, "after_marker": {"arm": 0, "long_value": 7}, "tag": 3}]}}, "encoded": [3, 132, 1, 1, 132, 5, 6, 2, 1, 0, 7, 3], "note": "two of kind 4 in a row: each entry after one is handed after_marker"},
+        {"source": {"head": 0, "entries": null}, "encoded": [0], "note": "no chain: E clear, T the value's own"}
+      ]
+    },
+    "codec_chain_prev_tail": {
+      "fixture": "CodecChainPrevTail",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. the entry before's kind, in a chain that ends with the frame.",
+      "sources": [
+        {"source": {"head": 0, "entries": {"start": {"tagged": 0}, "entries": [{"header": 4, "after_marker": {"arm": 1, "short_value": 1}, "tag": null}, {"header": 5, "after_marker": {"arm": 0, "long_value": 2}, "tag": null}]}}, "encoded": [0, 4, 1, 5, 0, 2], "note": "a chain read to the end: Z is each entry's own"}
+      ]
+    },
+    "codec_chain_prev_tail_gated": {
+      "fixture": "CodecChainPrevTailGated",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a gated chain read to the end, its law as an ungated one's.",
+      "sources": [
+        {"source": {"head": 2, "entries": {"start": {"tagged": 0}, "entries": [{"header": 4, "after_marker": {"arm": 1, "short_value": 9}, "tag": null}]}}, "encoded": [2, 4, 9], "note": "one entry: E set by the chain"},
+        {"source": {"head": 0, "entries": null}, "encoded": [0], "note": "no chain"}
+      ]
+    },
+    "codec_zenoh_query_value": {
+      "fixture": "CodecZenohQueryValue",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a law with no start: each entry is handed whether the one before is the marker.",
+      "sources": [
+        {"source": {"exts": {"start": {}, "entries": [{"header": 132, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}, {"header": 67, "body": {"arm": "codec_zenoh_value_zbuf", "body": {"after_shm": {"arm": 0, "value_len": 1, "encoding": 2, "slices": [{"kind": 0, "data": [1]}]}}}}]}}, "encoded": [132, 67, 1, 2, 1, 0, 1, 1], "note": "the shared-memory marker (kind 4), then a zbuf handed after_shm"},
+        {"source": {"exts": {"start": {}, "entries": [{"header": 67, "body": {"arm": "codec_zenoh_value_zbuf", "body": {"after_shm": {"arm": 1, "value": [7]}}}}]}}, "encoded": [67, 1, 7], "note": "a zbuf first: nothing before it, so its value inline"}
+      ]
     }
   },
   "string_lookups": {
