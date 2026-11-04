@@ -1990,8 +1990,10 @@ fn the_commit_hook_fails_the_commit_when_the_citation_stage_fails() {
     let terms = a_term_list_outside_any_repository("SYNTHETIC_TERM_NO_FIXTURE_CARRIES");
     let out = hook_with_terms(dir.path(), &terms);
     let err = String::from_utf8_lossy(&out.stderr);
+    // The stage by its name, not its number: a stage added after it renumbers
+    // the count, and a test pinned to `3/3` failed on that alone.
     assert!(
-        err.contains("Stage 3/3"),
+        err.contains("staged citation existence and form"),
         "the hook did not reach the citation stage — the fixture no longer \
          satisfies an earlier stage, so this test would pass without \
          exercising anything: {err}"
@@ -2111,8 +2113,10 @@ fn the_hook_refuses_when_it_cannot_read_the_term_list() {
         "the refusal does not say it is a fail-closed one, so it reads as a \
          broken hook rather than a working guard: {err}"
     );
+    // Any numbered stage, whatever the count: pinned to `0/3`, this assertion
+    // held vacuously once a stage was added and the label read `0/4`.
     assert!(
-        !err.contains("Stage 0/3"),
+        !err.contains("pre-commit: Stage "),
         "the gate let the numbered stages start before it had judged \
          anything, so a commit reaches them on a machine with no list: {err}"
     );

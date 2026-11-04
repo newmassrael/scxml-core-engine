@@ -1923,7 +1923,7 @@ UNMIRRORED_WORKFLOWS: dict[str, str] = {
 }
 
 
-# Lines that report rather than run. A hook's `log_step "Stage 0/3 — cargo fmt
+# Lines that report rather than run. A hook's `log_step "Stage 0/4 — cargo fmt
 # --all -- --check"` names the command it is about to run, and searching the
 # file as text cannot tell that line from the invocation on the next one — so
 # deleting the invocation left the claim satisfied by its own announcement.
