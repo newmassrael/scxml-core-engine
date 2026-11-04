@@ -85,6 +85,7 @@ has none.
 from __future__ import annotations
 
 import json
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -122,6 +123,8 @@ READ_ATTRIBUTES = {
         "max-depth",
         "terminate-on",
         "entry-flag-name",
+        "entry-id",
+        "entry-id-except",
         f"{SCE}present-if",
     },
     "variant": {"tag"},
@@ -152,19 +155,30 @@ class Flag:
 
 @dataclass
 class Clause:
-    """One flag a gate reads, or its negation: a flag of a carrier
-    (`carrier.flag`), or a flag input the parent hands the codec (`flag`,
-    `carrier` empty)."""
+    """One atom a gate reads, or its negation: a flag of a carrier
+    (`carrier.flag`), a flag input the parent hands the codec (`flag`,
+    `carrier` empty), or whether a chain holds an entry of the kind `key`
+    (`carrier.has(key)`, `carrier` the chain, `SCE_FORGE.md` §4.6.2)."""
 
     carrier: str
     flag: str
     when_clear: bool
+    key: int | None = None
 
     def label(self) -> str:
+        if self.is_member():
+            return f"{self.carrier}.has(0x{self.key:X})"
         return f"{self.carrier}.{self.flag}" if self.carrier else self.flag
 
     def is_input(self) -> bool:
         return not self.carrier
+
+    def is_member(self) -> bool:
+        return self.key is not None
+
+    def atom(self) -> Clause:
+        """The clause read as it is, not negated: the atom it reads."""
+        return Clause(self.carrier, self.flag, False, self.key)
 
 
 @dataclass
@@ -217,6 +231,14 @@ class Group:
     clauses: list[Clause]
     arms: list[tuple[tuple[bool, ...], list[Field]]]
     optional: bool
+    #: Of a group the kinds a chain holds decide (docs/adr/0065 §6 R6): the
+    #: chain, which every arm holds refined by the kinds it sets and clears.
+    chain: Field | None = None
+    #: Where that group has one atom, a kind whose entry is its kind alone (a
+    #: bare entry): the kind. The arm that holds it states the chain as the
+    #: other entries and the place of the first of the kind among them,
+    #: `{"rest": [..], "place": n}`, and the encode derives the entry.
+    placed: int | None = None
 
     def members(self) -> list[Field]:
         """Each element any arm holds, once, in the order the arms hold them."""
@@ -284,6 +306,24 @@ class Field:
     #: codec (`<sce:flag-bind input source>` on its import), a flag input of
     #: the parent or a flag of its carrier (`carrier.flag`).
     binds: dict[str, str] = field(default_factory=dict)
+    #: Of a chain whose entries carry a kind (`entry-id`): the element of the
+    #: entry the kind is, a field, a carrier or `carrier.flag`, and the flags of
+    #: a whole carrier it leaves out (`entry-id-except`).
+    entry_id: str | None = None
+    entry_except: list[str] = field(default_factory=list)
+
+    def kind_of(self, entry: dict) -> int:
+        """The kind of an entry of this chain, as the entry's value states the
+        element it is in."""
+        carrier, _, flag = self.entry_id.partition(".")
+        value = entry[carrier]
+        if flag:
+            bits = self.child.flag(carrier, flag)
+            return (value >> bits.bit) & ((1 << bits.width) - 1)
+        for name in self.entry_except:
+            bits = self.child.flag(carrier, name)
+            value &= ~(((1 << bits.width) - 1) << bits.bit)
+        return value
 
     def shares_a_byte(self) -> bool:
         return self.size == "fixed" and (self.bit_offset is not None or self.bits < 8)
@@ -340,11 +380,90 @@ class Codec:
 
     def one_flag_gated(self) -> dict[tuple[str, str], list[Field]]:
         """Each flag a gate of one flag names, a carrier's or a flag input
-        (carrier empty), and the presented fields it gates."""
+        (carrier empty), and the presented fields it gates; a gate a chain's
+        kinds decide belongs to their group."""
+        held = self.by_kind()
         out: dict[tuple[str, str], list[Field]] = {}
         for f in self.fields:
-            if f.gate is not None and f.gate.one() is not None and self.presented(f):
+            if (f.gate is not None and f.gate.one() is not None and self.presented(f)
+                    and f.id not in held):
                 out.setdefault((f.gate.carrier, f.gate.flag), []).append(f)
+        return out
+
+    def by_kind(self) -> set[str]:
+        """Each element a group of a chain's kinds decides (R6): the chain's
+        own gate, if it has one, stays its own."""
+        return {m.id for g in self.membership_groups() for m in g.members() if m is not g.chain}
+
+    def membership_groups(self) -> list[Group]:
+        """The groups the kinds a chain holds decide (docs/adr/0065 §6 R6,
+        `codec_roles::membership_groups`): for each chain a gate reads the kinds
+        of, the least set of atoms closed under the gates that read one, the
+        chain's kinds first and then the flags joined with them, each in the
+        order the gates first name them, and an arm for every assignment of
+        them, the ones setting more first and among those the one setting the
+        earlier atoms. Each arm holds the chain, the fields whose gates hold
+        and a stated length where its content is absent; a flag among the atoms
+        is derived from the arm."""
+        gated = [(f, [c.atom() for c in f.gate.clauses]) for f in self.fields
+                 if f.gate is not None and self.presented(f)]
+        out = []
+        for chain in self.fields:
+            atoms: list[Clause] = []
+            for _, read in gated:
+                atoms += [a for a in read
+                          if a.is_member() and a.carrier == chain.id and a not in atoms]
+            if not atoms:
+                continue
+            if chain.entry_id is None:
+                raise Unread(f"{self.name}: a gate reads the kinds of `{chain.id}`, which has none")
+            while True:
+                more = [a for _, read in gated if any(x in atoms for x in read)
+                        for a in read if a not in atoms]
+                if not more:
+                    break
+                atoms += [a for i, a in enumerate(more) if a not in more[:i]]
+            for a in atoms:
+                if a.is_input() or (a.is_member() and a.carrier != chain.id):
+                    raise Unread(f"{self.name}: a gate joins `{a.label()}` with a chain's kinds")
+                if a.is_member() and not kind_fits(chain, a.key):
+                    raise Unread(f"{self.name}: `{a.label()}` names a kind no entry can be")
+                if not a.is_member() and self.flag(a.carrier, a.flag).width != 1:
+                    raise Unread(f"{self.name}: `{a.label()}` is wider than one bit")
+            if len(atoms) > 8:
+                raise Unread(f"{self.name}: `{chain.id}`'s gates read more than eight atoms")
+            atoms = [a for a in atoms if a.is_member()] + [a for a in atoms if not a.is_member()]
+            reached = [f for f, read in gated if any(x in atoms for x in read)]
+
+            def holds(gate: Gate, values: tuple[bool, ...]) -> bool:
+                return any(values[atoms.index(c.atom())] != c.when_clear for c in gate.clauses)
+
+            stated = {}
+            for f in self.fields:
+                contents = self.measured().get(f.id, [])
+                if (self.stated(f) and all(c in reached for c in contents)
+                        and len({c.gate.text for c in contents}) == 1):
+                    stated[f.id] = contents[0].gate
+            k = len(atoms)
+            assignments = [tuple(bool(mask >> (k - 1 - i) & 1) for i in range(k))
+                           for mask in range(1 << k)]
+            assignments.sort(key=lambda values: (-sum(values), tuple(not v for v in values)))
+            arms = [
+                (values, [f for f in self.fields
+                          if f is chain or (f in reached and holds(f.gate, values))
+                          or (f.id in stated and not holds(stated[f.id], values))])
+                for values in assignments
+            ]
+            group = Group(
+                label=" || ".join(a.label() for a in atoms),
+                clauses=atoms,
+                arms=arms,
+                optional=False,
+                chain=chain,
+            )
+            if k == 1 and bare(chain, atoms[0].key):
+                group.placed = atoms[0].key
+            out.append(group)
         return out
 
     def gate_flags(self) -> dict[tuple[str, str], list[Field]]:
@@ -362,8 +481,9 @@ class Codec:
         out: dict[tuple[str, str], list[tuple[Field, bool]]] = {}
         for key, gated in self.one_flag_gated().items():
             out[key] = [(f, not f.gate.when_clear) for f in gated]
+        held = self.by_kind()
         for f in self.fields:
-            if self.stated(f):
+            if self.stated(f) and f.id not in held:
                 for c in self.measured()[f.id]:
                     if c.gate.one() is None:
                         raise Unread(f"{self.name}: `{f.id}` measures content a disjunction gates")
@@ -373,8 +493,9 @@ class Codec:
         return out
 
     def groups(self) -> list[Group]:
-        """The gate groups of the codec (`SCE_FORGE.md` §4.6, R4b, R4c)."""
-        out = []
+        """The gate groups of the codec (`SCE_FORGE.md` §4.6, R4b, R4c, R6)."""
+        out = self.membership_groups()
+        held = {m.id for g in out for m in g.members()}
         for (carrier, name), decided in self.decided().items():
             if len(decided) < 2:
                 continue
@@ -393,7 +514,7 @@ class Codec:
             )
         disjunctions: dict[str, list[Field]] = {}
         for f in self.fields:
-            if f.gate is not None and f.gate.one() is None:
+            if f.gate is not None and f.gate.one() is None and f.id not in held:
                 disjunctions.setdefault(f.gate.text, []).append(f)
         for label, fields in disjunctions.items():
             clauses = fields[0].gate.clauses
@@ -411,8 +532,9 @@ class Codec:
                 raise Unread(f"{self.name}: a gate on the {name} flag, wider than one bit")
         one_flag = {(c.carrier, c.flag) for f in self.fields if f.gate for c in f.gate.clauses
                     if f.gate.one() is not None}
+        held = self.by_kind()
         for f in self.fields:
-            if f.gate is None or f.gate.one() is not None:
+            if f.gate is None or f.gate.one() is not None or f.id in held:
                 continue
             for c in f.gate.clauses:
                 if c.is_input():
@@ -443,6 +565,61 @@ class Codec:
                 raise Unread(f"{self.name}: {name} counts two lists, which is not read yet")
 
 
+def kind_fits(chain: Field, key: int) -> bool:
+    """Whether an entry's kind can be `key` (`codec_roles::named_key_fits`):
+    no wider than the element it is, and no bit of a flag it leaves out."""
+    carrier, _, flag = chain.entry_id.partition(".")
+    width = chain.child.flag(carrier, flag).width if flag else chain.child.field(carrier).bits
+    left_out = 0
+    for name in chain.entry_except:
+        bits = chain.child.flag(carrier, name)
+        left_out |= ((1 << bits.width) - 1) << bits.bit
+    return key < 1 << width and not key & left_out
+
+
+def bare(chain: Field, key: int) -> bool:
+    """Whether the entry of the kind `key` in `chain` is its kind alone
+    (docs/adr/0065 §6 R6a, `codec_roles::named_entry_is_bare`): the kind is a
+    whole carrier, the entry's one field besides its variant, the flags it
+    leaves out are the chain's own, and the known arm the kind's tag selects
+    presents nothing."""
+    carrier, _, flag = chain.entry_id.partition(".")
+    entry = chain.child
+    held_in = entry.field(carrier)
+    if flag or not held_in.carrier:
+        return False
+    if [f.id for f in entry.fields if f.size != "variant"] != [carrier]:
+        return False
+    if any(chain.end_flag is None or name != chain.end_flag[1] for name in chain.entry_except):
+        return False
+    variant = entry.variant()
+    if variant is None:
+        return True
+    tag_carrier, _, tag_flag = variant.tag_ref.partition(".")
+    if tag_carrier != carrier or not tag_flag or tag_flag in chain.entry_except:
+        return False
+    bits = entry.flag(carrier, tag_flag)
+    tag = (key >> bits.bit) & ((1 << bits.width) - 1)
+    arm = next((a for a in variant.arms if a.tag == tag), None)
+    return arm is not None and not any(arm.codec.presented(f) for f in arm.codec.fields)
+
+
+def named_entry(chain: Field, key: int) -> dict:
+    """The value of the bare entry of the kind `key` in `chain`: its carrier
+    the kind, the chain's own flag clear (the chain sets it where the entry
+    stands), and the empty arm its tag selects."""
+    carrier, _, _ = chain.entry_id.partition(".")
+    entry = {carrier: key}
+    variant = chain.child.variant()
+    if variant is not None:
+        _, _, tag_flag = variant.tag_ref.partition(".")
+        bits = chain.child.flag(carrier, tag_flag)
+        tag = (key >> bits.bit) & ((1 << bits.width) - 1)
+        arm = next(a for a in variant.arms if a.tag == tag)
+        entry[variant.id] = {"arm": arm.alias, "body": {}}
+    return entry
+
+
 def attribute_int(node, name: str, namespace: str = SCE) -> int | None:
     value = node.get(f"{namespace}{name}")
     return int(value, 0) if value is not None else None
@@ -458,12 +635,16 @@ def read_gate(stem: str, node, inputs: list[str]) -> Gate | None:
     if present_if is None:
         return None
     text = present_if.strip()
-    if "&" in text or "(" in text:
-        raise Unread(f"{stem}: gate {present_if!r} is not flags joined by ||")
+    if "&" in text or "(" in re.sub(r"\.has\([^()]*\)", "", text):
+        raise Unread(f"{stem}: gate {present_if!r} is not atoms joined by ||")
     clauses = []
     for part in text.split("||"):
         part = part.strip()
         when_clear = part.startswith("!")
+        member = re.fullmatch(r"(\w+)\.has\((0[xX][0-9a-fA-F]+|\d+)\)", part.lstrip("!"))
+        if member is not None:
+            clauses.append(Clause(member[1], "", when_clear, int(member[2], 0)))
+            continue
         carrier, _, flag = part.lstrip("!").partition(".")
         if not flag:
             name = carrier.strip()
@@ -550,6 +731,25 @@ def read_held(
         end_flag = (carrier.id, name)
     elif node.get("entry-flag-name") is not None:
         raise Unread(f"{stem}: `{id}` names an entry flag and does not end on it")
+    entry_id = node.get("entry-id")
+    entry_except: list[str] = []
+    if entry_id is not None:
+        carrier, _, flag = entry_id.partition(".")
+        held_in = next((f for f in child.fields if f.id == carrier), None)
+        # The kind is read from what the entry's value states, so it is an
+        # element the value presents: a number, or a carrier stated whole.
+        if held_in is None or held_in.sce_type not in WIDTH or not child.presented(held_in):
+            raise Unread(f"{stem}: the kind `{entry_id}` of `{id}` is no number an entry states")
+        if flag:
+            child.flag(carrier, flag)
+        for name in filter(None, (n.strip() for n in node.get("entry-id-except", "").split(","))):
+            except_carrier, _, except_flag = name.partition(".")
+            if flag or except_carrier != carrier:
+                raise Unread(f"{stem}: `{id}` leaves `{name}` out of a kind it is not in")
+            child.flag(carrier, except_flag)
+            entry_except.append(except_flag)
+    elif node.get("entry-id-except") is not None:
+        raise Unread(f"{stem}: `{id}` leaves a flag out of a kind it does not declare")
     return Field(
         id=id,
         sce_type=kind,
@@ -564,6 +764,8 @@ def read_held(
         child=child,
         end_flag=end_flag,
         binds=bound,
+        entry_id=entry_id,
+        entry_except=entry_except,
     )
 
 
@@ -741,11 +943,45 @@ def read_vle(frame: bytes, at: int) -> tuple[int, int]:
     raise AssertionError("unreachable")
 
 
-def gate_holds(codec: Codec, gate: Gate, carriers: dict[str, int], inputs: dict[str, int]) -> bool:
-    """Whether some clause of `gate` holds of the carriers read so far and the
-    flag inputs the parent hands the codec."""
+def chain_of(codec: Codec, group: Group, values: tuple[bool, ...], stated) -> list | None:
+    """The entries of the chain an arm of a group of its kinds holds (R6): as
+    the arm states them, or for a bare entry's arm the others with the entry
+    derived at its place; refused where they disagree with the kinds the arm
+    sets and clears."""
+    chain = group.chain
+    if group.placed is not None and values[0]:
+        if not isinstance(stated, dict) or sorted(stated) != ["place", "rest"]:
+            raise ValueError(f"{codec.name}: `{chain.id}` is stated as its rest and the place")
+        rest, place = stated["rest"], stated["place"]
+        if not 0 <= place <= len(rest) or any(
+            chain.kind_of(e) == group.placed for e in rest[:place]
+        ):
+            raise ValueError(f"{codec.name}: the place {place} of `{chain.id}` is not its first")
+        entries = rest[:place] + [named_entry(chain, group.placed)] + rest[place:]
+    else:
+        entries = stated
+    kinds = {chain.kind_of(e) for e in entries or []}
+    for clause, value in zip(group.clauses, values):
+        if clause.is_member() and (clause.key in kinds) != value:
+            raise ValueError(f"{codec.name}: `{chain.id}` disagrees with `{clause.label()}`")
+    return entries
+
+
+def gate_holds(
+    codec: Codec,
+    gate: Gate,
+    carriers: dict[str, int],
+    inputs: dict[str, int],
+    values: dict,
+) -> bool:
+    """Whether some clause of `gate` holds of the carriers read so far, the
+    flag inputs the parent hands the codec, and the kinds of the entries of a
+    chain among `values`, the elements so far."""
     for clause in gate.clauses:
-        if clause.is_input():
+        if clause.is_member():
+            chain = codec.field(clause.carrier)
+            set_ = any(chain.kind_of(e) == clause.key for e in values.get(chain.id) or [])
+        elif clause.is_input():
             set_ = inputs[clause.flag] == 1
         else:
             flag = codec.flag(clause.carrier, clause.flag)
@@ -1014,9 +1250,12 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
                                  f"states {sorted(held_arm)}")
             for m in fields:
                 source[m.id] = held_arm[m.id]
-        if len(group.clauses) > 1:
+        if group.chain is not None:
+            source[group.chain.id] = chain_of(codec, group, values, source[group.chain.id])
+        if len(group.clauses) > 1 or group.chain is not None:
             for clause, value in zip(group.clauses, values):
-                forced[(clause.carrier, clause.flag)] = value
+                if not clause.is_member():
+                    forced[(clause.carrier, clause.flag)] = value
     contents = {
         f.id: held(
             f,
@@ -1068,7 +1307,7 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
     packed: dict[int, int] = {}
     for f in codec.fields:
         if f.gate is not None:
-            holds = gate_holds(codec, f.gate, carriers, inputs)
+            holds = gate_holds(codec, f.gate, carriers, inputs, source)
             if codec.presented(f) and holds != (source[f.id] is not None):
                 raise ValueError(f"{codec.name}: `{f.id}` disagrees with its gate")
             if not holds:
@@ -1148,7 +1387,7 @@ def decode_at(
             raise ValueError(f"{codec.name}: the frame ends inside `{what}`")
 
     for f in codec.fields:
-        if f.gate is not None and not gate_holds(codec, f.gate, carriers, inputs):
+        if f.gate is not None and not gate_holds(codec, f.gate, carriers, inputs, raw):
             raw[f.id] = None
             continue
         if f.sce_type in SEQUENCE:
@@ -1238,19 +1477,25 @@ def decode_at(
             source[f.id] = None
         else:
             source[f.id] = raw[f.id]
-    # A group is the arm its flags say, holding its members; none where every
-    # flag of an optional group says no arm.
+    # A group is the arm its flags and its chain's kinds say, holding its
+    # members; none where every flag of an optional group says no arm. A bare
+    # entry's arm holds the chain as the others and the place of the first.
     for group in codec.groups():
         values = tuple(
-            gate_holds(codec, Gate([clause], clause.label()), carriers, inputs)
+            gate_holds(codec, Gate([clause], clause.label()), carriers, inputs, raw)
             for clause in group.clauses
         )
         read = {m.id: source.pop(m.id) for m in group.members()}
         arm = next((i for i, (v, _) in enumerate(group.arms) if v == values), None)
         if arm is None:
             source[group.label] = None
-        else:
-            source[group.label] = {"arm": arm} | {m.id: read[m.id] for m in group.arms[arm][1]}
+            continue
+        if group.placed is not None and values[0]:
+            chain = group.chain
+            entries = read[chain.id]
+            place = next(i for i, e in enumerate(entries) if chain.kind_of(e) == group.placed)
+            read[chain.id] = {"rest": entries[:place] + entries[place + 1:], "place": place}
+        source[group.label] = {"arm": arm} | {m.id: read[m.id] for m in group.arms[arm][1]}
     return source, at
 
 
@@ -1656,6 +1901,71 @@ FIXTURES = {
              "both flags and Z: the body, then one extension"),
         ],
         "a body a disjunction of two flags decides, each arm setting the flags it names.",
+    ),
+    "codec_chain_has_envelope": Fixture(
+        [
+            ({"header": 0x80, "extensions.has(0x2)": {
+                "arm": 0, "extensions": [ext_zbuf(2, [1, 2], False)],
+                "slices": [{"kind": 4, "bytes": [7]}]}},
+             "an entry of kind 2: the slices, counted; E set by the chain"),
+            ({"header": 0x80, "extensions.has(0x2)": {
+                "arm": 0, "extensions": [ext_unit(1, True), ext_zbuf(2, [], False)],
+                "slices": []}},
+             "kind 2 second in the chain, no slice"),
+            ({"header": 0x00, "extensions.has(0x2)": {
+                "arm": 1, "extensions": None, "payload": [9]}},
+             "no chain: E clear, the payload and its length"),
+            ({"header": 0x80, "extensions.has(0x2)": {
+                "arm": 1, "extensions": [ext_unit(1, False)], "payload": []}},
+             "a chain with no entry of kind 2: the payload"),
+        ],
+        "the fields a chain's kind 2 decides, the chain in each arm: an entry with content.",
+    ),
+    "codec_chain_has_marker": Fixture(
+        [
+            ({"header": 0x80, "extensions.has(0x12)": {
+                "arm": 0, "extensions": {"rest": [], "place": 0},
+                "slices": [{"kind": 4, "data": [1]}]}},
+             "the marker alone: derived from its kind, its Z clear as the last"),
+            ({"header": 0x80, "extensions.has(0x12)": {
+                "arm": 0, "extensions": {"rest": [ext_zint(1, 5, True)], "place": 1},
+                "slices": []}},
+             "the marker second, after a zint"),
+            ({"header": 0x80, "extensions.has(0x12)": {
+                "arm": 0, "extensions": {"rest": [ext_unit(3, False)], "place": 0},
+                "slices": []}},
+             "the marker first: the chain sets its Z, another entry following"),
+            ({"header": 0x00, "extensions.has(0x12)": {
+                "arm": 1, "extensions": None, "payload": [1, 2]}},
+             "no chain: the payload"),
+        ],
+        "a bare marker (kind 0x12: id 2, M set, unit) is held as its place among the others.",
+    ),
+    "codec_chain_has_tagged": Fixture(
+        [
+            ({"header": 0x00, "entries.has(0x7) || entries.has(0x9) || header.wide": {
+                "arm": 7, "entries": [{"entry_type": 1, "ctl": 0, "body": 5}],
+                "checksum": 0x1234}},
+             "no kind 7 or 9 and not wide: the checksum alone"),
+            ({"header": 0x00, "entries.has(0x7) || entries.has(0x9) || header.wide": {
+                "arm": 4, "entries": [{"entry_type": 7, "ctl": 1, "body": 1},
+                                      {"entry_type": 1, "ctl": 0, "body": 2}],
+                "priority": 3, "checksum": 0xABCD}},
+             "kind 7: the priority and the checksum"),
+            ({"header": 0x00, "entries.has(0x7) || entries.has(0x9) || header.wide": {
+                "arm": 5, "entries": [{"entry_type": 9, "ctl": 0, "body": 0}]}},
+             "kind 9 alone: neither field"),
+            ({"header": 0x01, "entries.has(0x7) || entries.has(0x9) || header.wide": {
+                "arm": 6, "entries": [{"entry_type": 2, "ctl": 0, "body": 0}],
+                "priority": 1, "checksum": 2}},
+             "wide alone: the flag derived from the arm"),
+            ({"header": 0x01, "entries.has(0x7) || entries.has(0x9) || header.wide": {
+                "arm": 0, "entries": [{"entry_type": 9, "ctl": 1, "body": 0},
+                                      {"entry_type": 7, "ctl": 0, "body": 0}],
+                "priority": 4}},
+             "every atom set: the priority, no checksum"),
+        ],
+        "two kinds and a flag: an arm for each of their eight assignments, the chain in each.",
     ),
     "codec_variant_peek_basic": Fixture(
         [

@@ -272,6 +272,18 @@ gain 18 cases: a two-arm variant, and the Zenoh request, response and network me
 interest, final response, response, request, push, declare and OAM. A variant whose caller supplies its tag stays
 refused by name.
 
+*Landed (step 3, twelfth part, 2026-11-04): groups a chain's kinds decide.* The model reads a chain's `entry-id` and
+`entry-id-except` and a gate `chain.has(k)`, and builds the group of docs/adr/0065 §6 R6 as the plan does: the atoms
+closed under the gates that read one, the chain's kinds first and then the flags joined with them, and an arm for
+every assignment, the ones setting more first. The group is keyed by its atoms joined with ` || `, each kind as
+`chain.has(0xK)`. Every arm holds the chain, stated as its entries, `null` where it is gated and the arm holds no kind;
+where a bare entry is the group's one atom, the arm that holds it states the chain as `{"rest": [..], "place": n}`, and
+the model derives the entry. A chain whose entries disagree with the kinds the arm sets and clears, or a place that is
+not the first of its kind, is refused. The literal holds the chain as the runtime's `Chain::new` or `Placed::new`, and
+the harness compares the place and the entries. Three codecs gain 13 cases: an entry with content, a bare marker
+first, among others and alone, and two kinds and a flag over eight arms. A chain whose entries take flag inputs (a
+law) stays refused by name.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.

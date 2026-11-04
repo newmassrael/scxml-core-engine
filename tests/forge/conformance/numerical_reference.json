@@ -41660,6 +41660,37 @@
         {"source": {"body": {"arm": "codec_zenoh_oam", "body": {"header": 31, "id": 1, "extensions": null, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}}}, "encoded": [31, 1], "note": "an OAM, mid 0x1f"},
         {"source": {"body": {"tag": 16, "body": {"header": 16, "id": 2, "extensions": null, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}}}, "encoded": [16, 2], "note": "a mid no arm names: the default OAM keeps it, its header stating it"}
       ]
+    },
+    "codec_chain_has_envelope": {
+      "fixture": "CodecChainHasEnvelope",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. the fields a chain's kind 2 decides, the chain in each arm: an entry with content.",
+      "sources": [
+        {"source": {"header": 128, "extensions.has(0x2)": {"arm": 0, "extensions": [{"header": 66, "body": {"arm": "codec_zenoh_ext_zbuf", "body": {"value": [1, 2]}}}], "slices": [{"kind": 4, "bytes": [7]}]}}, "encoded": [128, 66, 2, 1, 2, 1, 4, 1, 7], "note": "an entry of kind 2: the slices, counted; E set by the chain"},
+        {"source": {"header": 128, "extensions.has(0x2)": {"arm": 0, "extensions": [{"header": 129, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}, {"header": 66, "body": {"arm": "codec_zenoh_ext_zbuf", "body": {"value": []}}}], "slices": []}}, "encoded": [128, 129, 66, 0, 0], "note": "kind 2 second in the chain, no slice"},
+        {"source": {"header": 0, "extensions.has(0x2)": {"arm": 1, "extensions": null, "payload": [9]}}, "encoded": [0, 1, 9], "note": "no chain: E clear, the payload and its length"},
+        {"source": {"header": 128, "extensions.has(0x2)": {"arm": 1, "extensions": [{"header": 1, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}], "payload": []}}, "encoded": [128, 1, 0], "note": "a chain with no entry of kind 2: the payload"}
+      ]
+    },
+    "codec_chain_has_marker": {
+      "fixture": "CodecChainHasMarker",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a bare marker (kind 0x12: id 2, M set, unit) is held as its place among the others.",
+      "sources": [
+        {"source": {"header": 128, "extensions.has(0x12)": {"arm": 0, "extensions": {"rest": [], "place": 0}, "slices": [{"kind": 4, "data": [1]}]}}, "encoded": [128, 18, 1, 4, 1, 1], "note": "the marker alone: derived from its kind, its Z clear as the last"},
+        {"source": {"header": 128, "extensions.has(0x12)": {"arm": 0, "extensions": {"rest": [{"header": 161, "body": {"arm": "codec_zenoh_ext_zint", "body": {"value": 5}}}], "place": 1}, "slices": []}}, "encoded": [128, 161, 5, 18, 0], "note": "the marker second, after a zint"},
+        {"source": {"header": 128, "extensions.has(0x12)": {"arm": 0, "extensions": {"rest": [{"header": 3, "body": {"arm": "codec_zenoh_ext_unit", "body": {}}}], "place": 0}, "slices": []}}, "encoded": [128, 146, 3, 0], "note": "the marker first: the chain sets its Z, another entry following"},
+        {"source": {"header": 0, "extensions.has(0x12)": {"arm": 1, "extensions": null, "payload": [1, 2]}}, "encoded": [0, 2, 1, 2], "note": "no chain: the payload"}
+      ]
+    },
+    "codec_chain_has_tagged": {
+      "fixture": "CodecChainHasTagged",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. two kinds and a flag: an arm for each of their eight assignments, the chain in each.",
+      "sources": [
+        {"source": {"header": 0, "entries.has(0x7) || entries.has(0x9) || header.wide": {"arm": 7, "entries": [{"entry_type": 1, "ctl": 0, "body": 5}], "checksum": 4660}}, "encoded": [0, 1, 0, 5, 18, 52], "note": "no kind 7 or 9 and not wide: the checksum alone"},
+        {"source": {"header": 0, "entries.has(0x7) || entries.has(0x9) || header.wide": {"arm": 4, "entries": [{"entry_type": 7, "ctl": 1, "body": 1}, {"entry_type": 1, "ctl": 0, "body": 2}], "priority": 3, "checksum": 43981}}, "encoded": [0, 7, 1, 1, 1, 0, 2, 3, 171, 205], "note": "kind 7: the priority and the checksum"},
+        {"source": {"header": 0, "entries.has(0x7) || entries.has(0x9) || header.wide": {"arm": 5, "entries": [{"entry_type": 9, "ctl": 0, "body": 0}]}}, "encoded": [0, 9, 0, 0], "note": "kind 9 alone: neither field"},
+        {"source": {"header": 1, "entries.has(0x7) || entries.has(0x9) || header.wide": {"arm": 6, "entries": [{"entry_type": 2, "ctl": 0, "body": 0}], "priority": 1, "checksum": 2}}, "encoded": [1, 2, 0, 0, 1, 0, 2], "note": "wide alone: the flag derived from the arm"},
+        {"source": {"header": 1, "entries.has(0x7) || entries.has(0x9) || header.wide": {"arm": 0, "entries": [{"entry_type": 9, "ctl": 1, "body": 0}, {"entry_type": 7, "ctl": 0, "body": 0}], "priority": 4}}, "encoded": [1, 9, 1, 0, 7, 0, 0, 4], "note": "every atom set: the priority, no checksum"}
+      ]
     }
   },
   "string_lookups": {

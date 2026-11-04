@@ -303,16 +303,6 @@ fn spelled(plan: &EncodePlan<'_>) -> Result<(), String> {
                  literal yet"
             ));
         }
-        if group
-            .gates
-            .iter()
-            .any(|g| matches!(g, GateVar::Member { .. }))
-        {
-            return Err(format!(
-                "the group `{label}` is decided by a chain's membership, which is not spelled \
-                 as a literal yet"
-            ));
-        }
     }
     if let Some(variant) = &plan.model.variant {
         // A peeked byte's tag is the arm's own first byte, which the arm's value
@@ -570,8 +560,13 @@ fn group_literal(
         let value = object
             .get(id)
             .ok_or_else(|| format!("the arm states no `{id}`"))?;
-        let one = literal_value(&plan.value(field), value, held, bindings)
-            .map_err(|e| format!("`{id}`: {e}"))?;
+        let one = if holds_chain(group, field) {
+            let chain = ChainInArm { group, arm, field };
+            chain_literal(plan, &chain, value, held, bindings)
+        } else {
+            literal_value(&plan.value(field), value, held, bindings)
+        }
+        .map_err(|e| format!("`{id}`: {e}"))?;
         members.push(format!("{}: {one}", filters::to_snake_case(id.clone())));
     }
     let ty = format!("{}::{}", path.module, group_type(&path.type_name, group));
@@ -601,6 +596,141 @@ fn bind(bindings: &mut Vec<String>, ty: Option<String>, value: String) -> String
     name
 }
 
+/// The binding of an array of the entries `json` states, each a `{Codec}Parts`
+/// of the codec imported as `codec`: a list's, or a chain's an arm of a group
+/// of its kinds holds.
+fn entries_binding(
+    codec: &str,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+    bindings: &mut Vec<String>,
+) -> Result<String, String> {
+    let rows = json
+        .as_array()
+        .ok_or_else(|| "a list is a JSON array".to_string())?;
+    let mut entries = Vec::new();
+    let mut parts = String::new();
+    for (i, row) in rows.iter().enumerate() {
+        entries.push(
+            held.read(codec, &mut |plan, path, held| {
+                parts = path.parts();
+                parts_literal(plan, path, row, held, bindings)
+            })
+            .map_err(|e| format!("entry {i}: {e}"))?,
+        );
+    }
+    if rows.is_empty() {
+        held.read(codec, &mut |_, path, _| {
+            parts = path.parts();
+            Ok(String::new())
+        })?;
+    }
+    Ok(bind(
+        bindings,
+        Some(format!("[{parts}; {}]", entries.len())),
+        format!("[{}]", entries.join(", ")),
+    ))
+}
+
+/// A chain as an arm of a group of its kinds holds it (docs/adr/0065 §6 R6).
+struct ChainInArm<'g> {
+    group: &'g GateGroup,
+    arm: &'g GroupArm,
+    field: &'g CodecField,
+}
+
+impl ChainInArm<'_> {
+    /// Whether the arm holds the chain as a bare entry's place among the
+    /// others (R6a).
+    fn placed(&self) -> bool {
+        self.group.member_is_bare() && !self.group.kinds_in(self.arm).0.is_empty()
+    }
+
+    /// Whether the arm may hold no chain: it is gated, and the arm holds no
+    /// kind.
+    fn optional(&self) -> bool {
+        chain_optional_in(self.group, self.field, self.arm)
+    }
+}
+
+/// The chain as an arm of a group of its kinds holds it (ADR 0081 §5): where
+/// the arm holds a bare entry, the others and the entry's place, `{"rest":
+/// [..], "place": n}`, as a `Placed`; otherwise the entries whole as a
+/// `Chain`, `null` where the arm may hold none. The runtime's constructor
+/// checks the kinds the arm sets and clears.
+fn chain_literal(
+    plan: &EncodePlan<'_>,
+    chain: &ChainInArm<'_>,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+    bindings: &mut Vec<String>,
+) -> Result<String, String> {
+    let Value::List { codec, .. } = plan.value(chain.field) else {
+        return Err(format!("`{}` is no chain", chain.field.id));
+    };
+    if chain.placed() {
+        let object = json.as_object().filter(|o| o.len() == 2).ok_or_else(|| {
+            "a bare entry's chain is `{\"rest\": [..], \"place\": n}`".to_string()
+        })?;
+        let place = object
+            .get("place")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| "`place` is the index of the bare entry".to_string())?;
+        let rest = object
+            .get("rest")
+            .ok_or_else(|| "`rest` holds the other entries".to_string())?;
+        let name = entries_binding(codec, rest, held, bindings)?;
+        return Ok(format!(
+            "{RUNTIME_CODEC}::Placed::new(&{name}[..], {place}).expect(\"the case's place is \
+             the first of its kind\")"
+        ));
+    }
+    let optional = chain.optional();
+    if json.is_null() {
+        return if optional {
+            Ok("None".to_string())
+        } else {
+            Err("the arm holds the chain always".to_string())
+        };
+    }
+    let name = entries_binding(codec, json, held, bindings)?;
+    let chain = format!(
+        "{RUNTIME_CODEC}::Chain::new(&{name}[..]).expect(\"the case's chain holds the arm's kinds\")"
+    );
+    Ok(if optional {
+        format!("Some({chain})")
+    } else {
+        chain
+    })
+}
+
+/// A `bool` expression that holds when `x` and `y`, the chain as two sources
+/// present it in its arm, are the same: the place of a bare entry and the
+/// others, or the entries whole, or both absent.
+fn chain_same(
+    plan: &EncodePlan<'_>,
+    chain: &ChainInArm<'_>,
+    x: &str,
+    y: &str,
+    held: &mut dyn HeldCodecs,
+    fresh: &mut usize,
+) -> Result<String, String> {
+    let (rx, ry) = (format!("{x}_rest"), format!("{y}_rest"));
+    let entries = value_same(&plan.value(chain.field), &rx, &ry, held, fresh)?;
+    if chain.placed() {
+        return Ok(format!(
+            "{{ let (({rx}, {x}_at), ({ry}, {y}_at)) = ({x}.into_parts(), {y}.into_parts()); \
+             {x}_at == {y}_at && {entries} }}"
+        ));
+    }
+    let whole = format!("{{ let ({rx}, {ry}) = ({x}.into_inner(), {y}.into_inner()); {entries} }}");
+    Ok(if chain.optional() {
+        format!("match ({x}, {y}) {{ (Some({x}), Some({y})) => {whole}, (None, None) => true, _ => false }}")
+    } else {
+        whole
+    })
+}
+
 /// One value of the abstract type `value`, as a Rust expression of the type the
 /// ready-made source holds it in.
 fn literal_value(
@@ -620,31 +750,7 @@ fn literal_value(
             Ok(format!("&{}", bind(bindings, None, body)))
         }
         Value::List { codec, .. } => {
-            let rows = json
-                .as_array()
-                .ok_or_else(|| "a list is a JSON array".to_string())?;
-            let mut entries = Vec::new();
-            let mut parts = String::new();
-            for (i, row) in rows.iter().enumerate() {
-                entries.push(
-                    held.read(codec, &mut |plan, path, held| {
-                        parts = path.parts();
-                        parts_literal(plan, path, row, held, bindings)
-                    })
-                    .map_err(|e| format!("entry {i}: {e}"))?,
-                );
-            }
-            if rows.is_empty() {
-                held.read(codec, &mut |_, path, _| {
-                    parts = path.parts();
-                    Ok(String::new())
-                })?;
-            }
-            let array = bind(
-                bindings,
-                Some(format!("[{parts}; {}]", entries.len())),
-                format!("[{}]", entries.join(", ")),
-            );
+            let array = entries_binding(codec, json, held, bindings)?;
             Ok(bounded(format!("&{array}[..]")))
         }
         Value::Scalar(SceType::Bool) => json
@@ -808,7 +914,12 @@ fn group_equal(
                 .ok_or_else(|| format!("the codec has no field `{id}`"))?;
             *fresh += 1;
             let (x, y) = (format!("a{fresh}"), format!("b{fresh}"));
-            let one = value_same(&plan.value(field), &x, &y, held, fresh)?;
+            let one = if holds_chain(group, field) {
+                let chain = ChainInArm { group, arm, field };
+                chain_same(plan, &chain, &x, &y, held, fresh)?
+            } else {
+                value_same(&plan.value(field), &x, &y, held, fresh)?
+            };
             let member = filters::to_snake_case(id.clone());
             // A body of no element binds nothing it reads.
             if one == "true" {
