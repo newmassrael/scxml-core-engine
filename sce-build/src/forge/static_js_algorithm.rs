@@ -152,21 +152,11 @@ pub(crate) fn symbol(document_name: &str) -> String {
         .collect()
 }
 
-/// `text` as a single-quoted ECMAScript string.
+/// `text` as a single-quoted ECMAScript string: the one ECMAScript quoter
+/// ([`crate::filters::ecmascript_string_literal`]), which the expression emitter
+/// writes a string literal for the Interpreter through too.
 fn quoted(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() + 2);
-    out.push('\'');
-    for c in text.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '\'' => out.push_str("\\'"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            other => out.push(other),
-        }
-    }
-    out.push('\'');
-    out
+    crate::filters::ecmascript_string_literal(text)
 }
 
 fn refuse(algorithm: &str, what: impl std::fmt::Display) -> GenerateError {
@@ -1226,5 +1216,8 @@ mod tests {
         assert_eq!(symbol("days_in_month"), "days_in_month");
         assert_eq!(symbol("sync-failure.v2"), "sync_failure_v2");
         assert_eq!(quoted("it's a\\b"), r"'it\'s a\\b'");
+        // The one quoter writes a line separator and a control character as
+        // escapes, which this module's own quoter had left raw.
+        assert_eq!(quoted("a\u{2028}b\u{1}"), r"'a b\u0001'");
     }
 }
