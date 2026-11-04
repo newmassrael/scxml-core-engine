@@ -48,46 +48,40 @@ EM_ASYNC_JS(int, em_nodejs_http_request_async,
                 const urlModule = require("url");
                 const parsedUrl = new urlModule.URL(urlStr);
 
+                // One connection per request (`agent: false`), closed when
+                // the answer has been read. A BasicHTTP send is one POST, and
+                // Node's shared agent keeps connections alive (Node 19 and
+                // later): tearing a pooled socket down by hand left the agent
+                // holding it, and the next send went out on a dead socket and
+                // read `socket hang up`.
                 const options = {
                     method : methodStr,
                     hostname : parsedUrl.hostname,
                     port : parsedUrl.port || (isHttps ? 443 : 80),
                     path : parsedUrl.pathname + parsedUrl.search,
-                    headers : headers
+                    headers : headers,
+                    agent : false
                 };
 
-                // Return Promise for HTTP request - EM_ASYNC_JS automatically awaits it
-                const result = await new Promise((resolve, reject) => {
+                // §scxml-C-2: a POST that fails in transport is answered with
+                // status 0, which the caller reads as a failed send (the
+                // processor raises error.communication). A rejected promise
+                // would leave this function as a JavaScript exception, which
+                // no C++ caller can catch, and end the program.
+                const result = await new Promise((resolve) => {
                     const req = http.request(
                         options, (res) => {
                             let responseBody = "";
 
                             res.setEncoding("utf8");
                             res.on("data", (chunk) => { responseBody += chunk; });
-
-                            res.on(
-                                "end", () => {
-                                    console.log("[DEBUG] EM_ASYNC_JS: HTTP response:", res.statusCode,
-                                                "body length:", responseBody.length);
-
-                                    // MEMORY LEAK FIX: Clean up event listeners to prevent memory accumulation
-                                    res.removeAllListeners();
-                                    req.removeAllListeners();
-                                    req.destroy();  // Close socket connection
-
-                                    resolve({statusCode : res.statusCode, body : responseBody});
-                                });
+                            res.on("end", () => { resolve({statusCode : res.statusCode, body : responseBody}); });
                         });
 
                     req.on(
                         "error", (error) => {
                             console.error("[ERROR] EM_ASYNC_JS: HTTP request failed:", error.message);
-
-                            // MEMORY LEAK FIX: Clean up on error
-                            req.removeAllListeners();
-                            req.destroy();
-
-                            reject(error);
+                            resolve({statusCode : 0, body : ""});
                         });
 
                     if (body_length > 0) {

@@ -18,6 +18,7 @@
 #include "events/IHttpClient.h"
 #include "runtime/IEventRaiser.h"
 #include <emscripten.h>
+#include <nlohmann/json.hpp>
 #endif
 
 namespace SCE {
@@ -93,27 +94,26 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
                                          SendResult::ErrorType::NETWORK_ERROR);
             }
 
-            // §scxml-C-2: Parse response JSON to extract event name and data
-            // Expected format: {"status":"success","event":"eventName","sendId":"...","timestamp":...}
+            // §scxml-C-2: the listener answers with the event it made of the
+            // POST: {"event": <name>, "data": <the POST's parameters as an
+            // object, or its body as text>, ...}. The data is handed on as
+            // the in-process listener hands it: an object as its JSON text, a
+            // text as itself. It was dropped before, and every fixture that
+            // reads `_event.data` of the answer (519, 534) failed.
             SCE_LOG_DEBUG("HttpEventTarget: HTTP response body: {}", response.body);
 
             std::string responseEventName;
             std::string responseEventData;
-
-            // Simple JSON parsing for event name
-            size_t eventPos = response.body.find("\"event\"");
-            if (eventPos != std::string::npos) {
-                size_t colonPos = response.body.find(":", eventPos);
-                if (colonPos != std::string::npos) {
-                    size_t valueStart = response.body.find("\"", colonPos);
-                    if (valueStart != std::string::npos) {
-                        valueStart++;
-                        size_t valueEnd = response.body.find("\"", valueStart);
-                        if (valueEnd != std::string::npos) {
-                            responseEventName = response.body.substr(valueStart, valueEnd - valueStart);
-                        }
-                    }
+            const auto answer = nlohmann::json::parse(response.body, nullptr, /*allow_exceptions=*/false);
+            if (answer.is_object()) {
+                if (const auto name = answer.find("event"); name != answer.end() && name->is_string()) {
+                    responseEventName = name->get<std::string>();
                 }
+                if (const auto data = answer.find("data"); data != answer.end() && !data->is_null()) {
+                    responseEventData = data->is_string() ? data->get<std::string>() : data->dump();
+                }
+            } else {
+                SCE_LOG_WARN("HttpEventTarget: the listener's answer is not a JSON object: {}", response.body);
             }
 
             if (responseEventName.empty()) {
