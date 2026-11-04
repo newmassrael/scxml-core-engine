@@ -518,7 +518,7 @@ which every generated state machine includes — changed GCC 13's inlining and
 surfaced the known `-Wmaybe-uninitialized` false positive in `std::variant`'s
 move constructor, failing `W3CTestRunner_Test561.cpp` under `-Werror` when it
 had compiled clean at `a9ce6578b0`. The repo already names that false positive
-at `tests/CMakeLists.txt:221`; suppressing it on one more target would have
+in `cmake/SCETestWarnings.cmake`; suppressing it on one more target would have
 hidden a header that had simply grown code it did not need to carry.
 
 `tests/engine/ScriptLanguageSeamTest.cpp` (ctest `ScriptLanguageSeam`, 7 cases)

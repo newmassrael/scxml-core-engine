@@ -100,6 +100,14 @@ endif()
 # with the build command when no profile holds a binary.
 include("${REPO_ROOT}/cmake/SCECodegenPlan.cmake")
 
+# Every program this project builds is a test program, and takes the warning
+# classes every test program turns off from the one definition the C++ test tree
+# reads too (cmake/SCETestWarnings.cmake, which says why each is off). Set for
+# the directory, before the first target, so no target below can miss it; each
+# target's blanket -Werror stays as it sets it.
+include("${REPO_ROOT}/cmake/SCETestWarnings.cmake")
+add_compile_options(${SCE_TEST_WARNING_OPTIONS})
+
 if(NOT EXISTS "${REFERENCE_JSON}")
     message(FATAL_ERROR "reference JSON not found at ${REFERENCE_JSON}")
 endif()

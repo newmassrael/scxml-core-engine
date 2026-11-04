@@ -47,6 +47,9 @@ on:
       - 'cmake/SCECodegenPlan.cmake'
       - 'cmake/SCEFindCodegen.cmake'
       - 'cmake/SCEClangFormat.cmake'
+      # The warning classes the C++ arm's test programs turn off, from the one
+      # definition the C++ test tree reads too.
+      - 'cmake/SCETestWarnings.cmake'
       # The Kotlin arm's build, which lives at the root rather than under
       # backends/kotlin/: the version catalog, the wrapper and the settings.
       # Without these a dependency bump classified to no gate at all.
@@ -85,6 +88,9 @@ on:
       - 'cmake/SCECodegenPlan.cmake'
       - 'cmake/SCEFindCodegen.cmake'
       - 'cmake/SCEClangFormat.cmake'
+      # The warning classes the C++ arm's test programs turn off, from the one
+      # definition the C++ test tree reads too.
+      - 'cmake/SCETestWarnings.cmake'
       # The Kotlin arm's build, which lives at the root rather than under
       # backends/kotlin/: the version catalog, the wrapper and the settings.
       # Without these a dependency bump classified to no gate at all.

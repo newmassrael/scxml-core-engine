@@ -1225,9 +1225,11 @@ GATES: dict[str, dict] = {
         # the mirror is for.
         "runner_workflow": True,
         # The modules its projects declare every generation through, resolve
-        # the generator through, and format generated C++ by.
+        # the generator through, and format generated C++ by, and the one that
+        # says which warning classes its test programs turn off.
         "extra": ["backends/cpp/**", "sce/**", "cmake/SCECodegenPlan.cmake",
-                  "cmake/SCEFindCodegen.cmake", "cmake/SCEClangFormat.cmake"],
+                  "cmake/SCEFindCodegen.cmake", "cmake/SCEClangFormat.cmake",
+                  "cmake/SCETestWarnings.cmake"],
         "deps": ["codegen-build"],
         "ci_only": "59s, the last move needed to fit the ceiling. "
                    "forge-conformance.yml runs it beside the other arms.",
@@ -1771,9 +1773,10 @@ GATES: dict[str, dict] = {
                   "resources/**", "tools/codegen/templates/**",
                   "sce-build/src/**",
                   # The modules the route registers and plans its fixtures
-                  # through.
+                  # through, and the one the test tree takes the warning
+                  # classes its test programs turn off from.
                   "cmake/SCEW3CRegistry.cmake", "cmake/SCEStaticW3CTest.cmake",
-                  "cmake/SCECodegenPlan.cmake"],
+                  "cmake/SCECodegenPlan.cmake", "cmake/SCETestWarnings.cmake"],
         "deps": ["codegen-build"],
         "ci_only": "55s, and it is the gate that decides whether the budget "
                    "is met on a good run or on every run. Without it the set "
