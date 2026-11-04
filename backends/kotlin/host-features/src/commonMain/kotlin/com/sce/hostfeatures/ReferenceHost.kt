@@ -3,6 +3,8 @@
 
 package com.sce.hostfeatures
 
+import com.sce.runtime.AnswerSchema
+
 /** Every operation type of the standard host features, in the order the specification lists them. */
 val TYPES: List<String> = listOf(
     "sce-host-clock-now",
@@ -16,6 +18,7 @@ val TYPES: List<String> = listOf(
     "sce-host-notify-post",
     "sce-host-notify-cancel",
     "sce-host-http-fetch",
+    MODEL_GENERATE,
 )
 
 /** What a host answers a start with. */
@@ -61,6 +64,26 @@ class ReferenceHost(internal val clock: ClockSource, internal val transport: Tra
     /** The highest monotonic reading answered, which no answer goes below. */
     internal var monotonicFloor: Long? = null
     private var starts = mutableListOf<Start>()
+
+    /** Where a generation's text comes from: a scripted provider until the embedding gives another. */
+    internal var provider: ModelProvider = ScriptedProvider()
+
+    /** The machine's table of answer schemas, which a generation's `answer_schema` is resolved through. */
+    internal var answerSchemas: List<AnswerSchema> = emptyList()
+
+    /** Generate texts with [provider] from here on. */
+    fun setModelProvider(provider: ModelProvider) {
+        this.provider = provider
+    }
+
+    /**
+     * Resolve a generation's `answer_schema` through [schemas], the table of the machine
+     * this host serves (its generated `<Machine>AnswerSchemas.all`). A request that names
+     * an id the table does not hold is refused.
+     */
+    fun setAnswerSchemas(schemas: List<AnswerSchema>) {
+        answerSchemas = schemas.toList()
+    }
 
     /** Inject failures: each operation type named fails with the code it maps to, once the request has been accepted. */
     fun setFaults(faults: Map<String, String>) {
@@ -116,6 +139,7 @@ class ReferenceHost(internal val clock: ClockSource, internal val transport: Tra
             "sce-host-kv-get", "sce-host-kv-delete", "sce-host-kv-put" -> !validKey(argument("key"))
             "sce-host-notify-post", "sce-host-notify-cancel" -> argument("id").isEmpty()
             "sce-host-http-fetch" -> !acceptable(argument("method"), argument("url"), argument("headers"))
+            MODEL_GENERATE -> judgeGeneration(answerSchemas, params) == null
             else -> false
         }
         if (refused) return Outcome.Refuse(INVALID_ARGUMENT)
@@ -132,6 +156,7 @@ class ReferenceHost(internal val clock: ClockSource, internal val transport: Tra
             "sce-host-notify-post" ->
                 notifyPost(argument("id"), argument("title"), argument("body"), argument("at_ms"))
             "sce-host-notify-cancel" -> notifyCancel(argument("id"))
+            MODEL_GENERATE -> modelGenerate(id, params)
             else -> httpFetch(id, argument("method"), argument("url"), argument("headers"), argument("body"))
         }
     }
@@ -191,6 +216,14 @@ internal fun failure(operation: String, code: String): Outcome {
         "sce-host-notify-permission", "sce-host-notify-request-permission" -> listOf("state" to "")
         "sce-host-notify-post" -> listOf("status" to "")
         "sce-host-http-fetch" -> listOf("status" to 0, "headers" to "", "body" to "")
+        MODEL_GENERATE -> listOf(
+            "text" to "",
+            "constrained" to false,
+            "model" to "",
+            "prompt_tokens" to 0,
+            "answer_tokens" to 0,
+            "finish" to "",
+        )
         else -> error("`$operation` is not a standard host operation")
     }
     return Outcome.Done(json(zero + ("error" to code)))

@@ -119,4 +119,64 @@ class ReferenceHostJvmTest {
         )
         assertTrue("\"error\":\"network\"" in gone, gone)
     }
+
+    private fun ask(prompt: String, schema: String = "", maxTokens: String = "8", temperature: String = "0") =
+        mapOf("prompt" to prompt, "answer_schema" to schema, "max_tokens" to maxTokens, "temperature_milli" to temperature)
+
+    private fun modelHost(provider: ModelProvider): ReferenceHost =
+        ReferenceHost(ScriptedClock(), Unreachable()).apply {
+            setAnswerSchemas(listOf(com.sce.runtime.AnswerSchema("urn:sce:schema:answer:1", "{}", "root ::= \"{}\"")))
+            setModelProvider(provider)
+        }
+
+    /** Each argument the operation does not accept is refused before the provider is asked. */
+    @Test
+    fun aGenerationTheOperationDoesNotAcceptIsRefused() {
+        val provider = ScriptedProvider().apply {
+            constrained = true
+            answers.addLast(ScriptedAnswer("kept"))
+        }
+        val host = modelHost(provider)
+        for (params in listOf(ask(""), ask("p", maxTokens = "0"), ask("p", temperature = "2001"), ask("p", "urn:sce:schema:other:1"))) {
+            assertTrue(host.start(MODEL_GENERATE, "gen", params) is Outcome.Refuse, "$params was not refused")
+        }
+        val kept = done(host.start(MODEL_GENERATE, "gen", ask("abc", "urn:sce:schema:answer:1")))
+        assertTrue("\"text\":\"kept\"" in kept && "\"constrained\":true" in kept && "\"prompt_tokens\":3" in kept, kept)
+        assertTrue("\"error\":\"unavailable\"" in done(host.start(MODEL_GENERATE, "gen", ask("p"))))
+    }
+
+    /** An answer past the bound of `text` is never cut; a request past the context takes no answer. */
+    @Test
+    fun anAnswerPastItsBoundOrItsContextFailsWhole() {
+        val provider = ScriptedProvider().apply {
+            context = 10
+            answers.addLast(ScriptedAnswer("a".repeat(ANSWER_MAX_BYTES + 1)))
+            answers.addLast(ScriptedAnswer("kept"))
+        }
+        val host = modelHost(provider)
+        assertTrue("\"error\":\"answer_too_large\"" in done(host.start(MODEL_GENERATE, "gen", ask("p"))))
+        assertTrue("\"error\":\"context_exceeded\"" in done(host.start(MODEL_GENERATE, "gen", ask("abc"))))
+        assertTrue("\"text\":\"kept\"" in done(host.start(MODEL_GENERATE, "gen", ask("abc", maxTokens = "7"))))
+    }
+
+    /** The exhaustive provider answers each class it is named, in order. */
+    @Test
+    fun theExhaustiveProviderAnswersEachClassInTurn() {
+        val host = modelHost(
+            ExhaustiveProvider(
+                listOf(
+                    OutcomeClass.Answer("t", "length"),
+                    OutcomeClass.Failure("busy"),
+                    OutcomeClass.Refusal,
+                    OutcomeClass.Hold,
+                ),
+            ),
+        )
+        val answer = done(host.start(MODEL_GENERATE, "gen", ask("p")))
+        assertTrue("\"finish\":\"length\"" in answer && "\"model\":\"exhaustive\"" in answer, answer)
+        assertTrue("\"error\":\"busy\"" in done(host.start(MODEL_GENERATE, "gen", ask("p"))))
+        assertTrue(host.start(MODEL_GENERATE, "gen", ask("p")) is Outcome.Refuse)
+        assertEquals(Outcome.Hold, host.start(MODEL_GENERATE, "gen", ask("p")))
+        assertTrue("\"error\":\"unavailable\"" in done(host.start(MODEL_GENERATE, "gen", ask("p"))))
+    }
 }

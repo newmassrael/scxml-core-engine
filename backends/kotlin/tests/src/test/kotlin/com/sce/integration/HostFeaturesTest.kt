@@ -14,12 +14,16 @@
 
 package com.sce.integration
 
+import com.sce.hostfeatures.ExhaustiveProvider
 import com.sce.hostfeatures.HttpHeader
 import com.sce.hostfeatures.HttpRequest
 import com.sce.hostfeatures.HttpResponse
+import com.sce.hostfeatures.OutcomeClass
 import com.sce.hostfeatures.Reading
 import com.sce.hostfeatures.ReferenceHost
+import com.sce.hostfeatures.ScriptedAnswer
 import com.sce.hostfeatures.ScriptedClock
+import com.sce.hostfeatures.ScriptedProvider
 import com.sce.hostfeatures.Transport
 import com.sce.hostfeatures.TransportFailure
 import com.sce.hostfeatures.Zone
@@ -27,7 +31,10 @@ import com.sce.hostfeatures.serve
 import com.sce.integration.static_host_clock.StaticHostClockStateMachine
 import com.sce.integration.static_host_http.StaticHostHttpStateMachine
 import com.sce.integration.static_host_kv.StaticHostKvStateMachine
+import com.sce.integration.static_host_model.StaticHostModelAnswerSchemas
+import com.sce.integration.static_host_model.StaticHostModelStateMachine
 import com.sce.integration.static_host_notify.StaticHostNotifyStateMachine
+import com.sce.runtime.AnswerSchema
 import com.sce.runtime.Event
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.ManualClock
@@ -37,6 +44,7 @@ import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
@@ -106,6 +114,25 @@ class HostFeaturesTest {
         val clock = ScriptedClock()
         val transport = ScriptTransport()
         val host = ReferenceHost(clock, transport)
+        val model = ScriptedProvider().also { host.setModelProvider(it) }
+
+        /** Apply a `model` directive to the scripted provider: each member it names. */
+        fun scriptModel(d: JsonObject) {
+            d["answers"]?.jsonArray?.let { answers ->
+                model.answers.clear()
+                for (raw in answers) {
+                    val answer = raw.jsonObject
+                    val text = answer["text"]?.jsonPrimitive?.content ?: answer.getValue("text_repeat").jsonArray.let {
+                        it[0].jsonPrimitive.content.repeat(it[1].jsonPrimitive.int)
+                    }
+                    model.answers.addLast(ScriptedAnswer(text, answer["finish"]?.jsonPrimitive?.content ?: "stop"))
+                }
+            }
+            d["constrained"]?.let { model.constrained = it.jsonPrimitive.boolean }
+            d["name"]?.let { model.name = it.jsonPrimitive.content }
+            d["context"]?.let { model.context = it.jsonPrimitive.long }
+            d["hold"]?.let { model.hold = it.jsonPrimitive.boolean }
+        }
 
         fun directives(directives: JsonObject) {
             for ((name, value) in directives) {
@@ -128,6 +155,7 @@ class HostFeaturesTest {
                     "quota" -> host.setQuota(value.jsonPrimitive.int)
                     "fail" -> host.setFaults(value.jsonObject.mapValues { it.value.jsonPrimitive.content })
                     "http" -> transport.directive(value.jsonObject)
+                    "model" -> scriptModel(value.jsonObject)
                     else -> error("`$name` is not a host directive")
                 }
             }
@@ -135,7 +163,7 @@ class HostFeaturesTest {
 
         /**
          * What the host was started with since the last step, as a scenario writes it:
-         * the request as its record, `at_ms` being the one integer field.
+         * the request as its record, the integer fields as numbers.
          */
         fun starts(): JsonArray =
             JsonArray(
@@ -147,7 +175,7 @@ class HostFeaturesTest {
                             "request",
                             buildJsonObject {
                                 for ((name, text) in start.params) {
-                                    if (name == "at_ms") put(name, text.toLong()) else put(name, text)
+                                    if (name in INTEGER_FIELDS) put(name, text.toLong()) else put(name, text)
                                 }
                             },
                         )
@@ -203,10 +231,16 @@ class HostFeaturesTest {
         return got == want
     }
 
-    private fun <S : State, E : Event> replay(machine: String, sm: StateMachineEngine<S, E>, save: () -> String) {
+    private fun <S : State, E : Event> replay(
+        machine: String,
+        sm: StateMachineEngine<S, E>,
+        schemas: List<AnswerSchema> = emptyList(),
+        save: () -> String,
+    ) {
         val scenario = scenario(machine)
         assertEquals(machine, scenario.getValue("machine").jsonPrimitive.content)
         val rig = Rig()
+        rig.host.setAnswerSchemas(schemas)
         serve(sm, rig.host)
         sm.clock = ManualClock(0)
         sm.initialize()
@@ -273,9 +307,127 @@ class HostFeaturesTest {
     }
 
     @Test
+    fun aMachineAsksItsHostForATextUnderAnAnswerSchema() {
+        val sm = StaticHostModelStateMachine()
+        replay("static_host_model", sm, StaticHostModelAnswerSchemas.all) { sm.save().toJson() }
+    }
+
+    /** What the exhaustive provider answers for a class of the table. */
+    private fun outcomeClass(cls: JsonObject): OutcomeClass =
+        when (val end = cls.getValue("end").jsonPrimitive.content) {
+            "answer" -> OutcomeClass.Answer(
+                cls.getValue("text").jsonPrimitive.content,
+                cls.getValue("finish").jsonPrimitive.content,
+            )
+            "failure" -> OutcomeClass.Failure(cls.getValue("error").jsonPrimitive.content)
+            "refusal" -> OutcomeClass.Refusal
+            "hold" -> OutcomeClass.Hold
+            else -> error("`$end` is not an end")
+        }
+
+    /**
+     * Run static_host_model against the exhaustive provider answering the classes
+     * [sequence] names, one call a class, and hold what the machine publishes after each
+     * call to what its class says.
+     */
+    private fun runSequence(table: JsonObject, sequence: List<Int>) {
+        val classes = table.getValue("classes").jsonArray.map { it.jsonObject }
+        val named = sequence.map { classes[it].getValue("class").jsonPrimitive.content }
+        val sm = StaticHostModelStateMachine()
+        val host = ReferenceHost(ScriptedClock(), ScriptTransport())
+        host.setAnswerSchemas(StaticHostModelAnswerSchemas.all)
+        host.setModelProvider(ExhaustiveProvider(sequence.map { outcomeClass(classes[it]) }))
+        serve(sm, host)
+        sm.clock = ManualClock(0)
+        sm.initialize()
+        try {
+            sm.tick()
+            val ask = table.getValue("ask").jsonObject
+            val event = ask.getValue("event").jsonPrimitive.content
+            var answer: JsonElement = JsonNull
+            sequence.forEachIndexed { n, i ->
+                val cls = classes[i]
+                sm.sendEventByName(event, EventMetadata(data = ask.getValue("data").toString()))
+                sm.tick()
+                when (cls["then"]?.jsonPrimitive?.content) {
+                    "advance" -> {
+                        sm.advanceTimeMs(table.getValue("deadline_ms").jsonPrimitive.long)
+                        sm.tick()
+                    }
+                    "leave" -> {
+                        sm.sendEventByName(table.getValue("leave").jsonPrimitive.content, EventMetadata(data = ""))
+                        sm.tick()
+                    }
+                }
+                val expect = cls.getValue("expect").jsonObject
+                expect["answer"]?.let { answer = it }
+                val at = "$named, call ${n + 1}"
+                val saved = Json.parseToJsonElement(sm.save().toJson()).jsonObject
+                assertEquals(JsonPrimitive("idle"), saved["current"], "$at: the machine is idle")
+                val variables = saved.getValue("variables").jsonObject
+                for (name in listOf("outcome", "why", "finish")) {
+                    assertTrue(holds(variables[name], expect.getValue(name)), "$at: `$name` is ${variables[name]}")
+                }
+                assertTrue(holds(variables["answer"], answer), "$at: `answer` is ${variables["answer"]}, not $answer")
+                assertTrue(holds(variables["calls"], JsonPrimitive(n + 1)), "$at: `calls` is ${variables["calls"]}")
+            }
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * The machine around a model is tested exhaustively (docs/adr/0087, section 9.4):
+     * every sequence of outcome classes up to the table's bound, each call read as its
+     * class says, and every refusal code of the library either reached by a class or
+     * named as deferred with its reason.
+     */
+    @Test
+    fun everySequenceOfOutcomeClassesIsReadAsItsClassesSay() {
+        val table = Json.parseToJsonElement(
+            File(repoRoot(), "tests/host_features/model_outcome_classes.json").readText(),
+        ).jsonObject
+        assertEquals("static_host_model", table.getValue("machine").jsonPrimitive.content)
+        assertEquals(
+            table.getValue("answer_schema").jsonPrimitive.content,
+            StaticHostModelAnswerSchemas.all.first().id,
+        )
+        val classes = table.getValue("classes").jsonArray
+        val bound = table.getValue("bound").jsonPrimitive.int
+        assertTrue(classes.isNotEmpty() && bound > 0, "a table that names nothing judges nothing")
+        var runs = 0
+        var expected = 0
+        var sequences = listOf(emptyList<Int>())
+        for (length in 1..bound) {
+            sequences = sequences.flatMap { prefix -> classes.indices.map { prefix + it } }
+            expected += sequences.size
+            for (sequence in sequences) {
+                runSequence(table, sequence)
+                runs++
+            }
+        }
+        var power = 1
+        assertEquals((1..bound).sumOf { power *= classes.size; power }, expected)
+        assertEquals(expected, runs, "every sequence up to the bound was run")
+        val codes = classes.mapNotNull { cls ->
+            (cls.jsonObject.getValue("expect").jsonObject["why"] as? JsonObject)?.getValue("code")?.jsonPrimitive?.content
+        }.toMutableSet()
+        table.getValue("deferred").jsonArray.forEach { codes.add(it.jsonObject.getValue("code").jsonPrimitive.content) }
+        assertEquals(13, codes.size, "every refusal code is reached or deferred: $codes")
+    }
+
+    @Test
     fun everyScenarioOfTheDirectoryIsReplayedHere() {
         val names = File(repoRoot(), "tests/host_features/scenarios").listFiles()!!
             .filter { it.extension == "json" }.map { it.nameWithoutExtension }.sorted()
-        assertEquals(listOf("static_host_clock", "static_host_http", "static_host_kv", "static_host_notify"), names)
+        assertEquals(
+            listOf("static_host_clock", "static_host_http", "static_host_kv", "static_host_model", "static_host_notify"),
+            names,
+        )
+    }
+
+    private companion object {
+        /** The request fields a scenario writes as numbers; every other is text. */
+        val INTEGER_FIELDS = setOf("at_ms", "max_tokens", "temperature_milli")
     }
 }
