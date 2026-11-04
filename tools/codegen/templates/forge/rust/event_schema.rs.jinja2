@@ -40,11 +40,8 @@ pub const SCHEMA_ID: &str = "{{ schema_id }}";
 /// bound as this build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
 #[allow(dead_code)]
 pub const JSON_SCHEMA: &str = "{{ json_schema }}";
-/// The payload as a GBNF grammar: the same spelling, each text's bytes counted.
-#[allow(dead_code)]
-pub const GBNF: &str = "{{ gbnf }}";
 {% else %}
-// No JSON_SCHEMA or GBNF: {{ payload_grammar_absent }}.
+// No JSON_SCHEMA: {{ payload_grammar_absent }}.
 {% endif %}
 
 {% if fields %}

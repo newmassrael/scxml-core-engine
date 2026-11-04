@@ -2,10 +2,10 @@
 <!--
   The schema docs/adr/0087 section 1.1 writes out as its example: a title of at
   most 16 bytes, a slot, what the answer is about, and a note of at most 8 bytes
-  that may be absent. Its unit declares the payload's JSON Schema and GBNF
-  grammar, which `sce-codegen payload-schema` prints byte for byte; it stands in
-  a directory of its own, so the source hash those texts carry is of this
-  directory alone.
+  that may be absent. Its unit declares the payload's JSON Schema, which
+  `sce-codegen payload-schema` prints byte for byte, and which prints its
+  grammar as well; it stands in a directory of its own, so the source hash the
+  JSON Schema carries is of this directory alone.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

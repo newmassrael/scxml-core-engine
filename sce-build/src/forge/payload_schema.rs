@@ -7,15 +7,20 @@
 //! sizes it ([`crate::forge::value_type::json_schema_of`],
 //! [`crate::forge::value_type::gbnf_of`]).
 //!
-//! Every schema unit declares both texts beside `EVENT_NAME`, `REVISION` and
-//! `DATA_MAX_LEN`, with `SCHEMA_ID`, each bound as the build resolved it, so a
-//! host hands them to whatever writes an answer with no file to read; `sce-codegen
-//! payload-schema` prints the same text, byte for byte, for a host that is not
-//! generated. The JSON Schema is a wire surface (SCE_WIRE_CONTRACTS.md, the
-//! "Payload schema" row), whose subset of 2020-12 is
-//! `schemas/sce-payload-schema.v1.schema.json`; the GBNF grammar is its second
-//! spelling, in a format SCE does not own, held by the goldens of
+//! The JSON Schema is the canonical form, compact, its size that of the type
+//! and not of its bounds: every schema unit declares it, `JSON_SCHEMA`, beside
+//! `EVENT_NAME`, `REVISION`, `DATA_MAX_LEN` and `SCHEMA_ID`, each bound as the
+//! build resolved it. The GBNF grammar counts every text's bytes exactly, so
+//! its size is linear in the largest text bound; it is a compilation target
+//! written only where a grammar is used: `sce-codegen payload-schema --format
+//! gbnf`, and the table of the answer schemas a machine names
+//! (docs/adr/0087, "Owner's answers", item 4). `sce-codegen payload-schema`
+//! prints the unit's JSON Schema byte for byte. The JSON Schema is a wire
+//! surface (SCE_WIRE_CONTRACTS.md, the "Payload schema" row), whose subset of
+//! 2020-12 is `schemas/sce-payload-schema.v1.schema.json`; the GBNF grammar is
+//! its second spelling, in a format SCE does not own, held by the goldens of
 //! [`crate::forge::value_type`] and by the recognizer of this module's tests.
+//! Both texts are ASCII: a character past it is escaped.
 //!
 //! Both describe the answer to write; the reader of a payload decides what is
 //! accepted, and accepts every text of their languages and more.
@@ -24,7 +29,8 @@ use std::path::Path;
 
 use crate::forge::model::{EventSchemaModel, ForgeImport};
 use crate::forge::value_type::{
-    gbnf_object, json_schema_object, GbnfRules, GrammarError, SchemaDefs, TypeEnv, ValueType,
+    ascii_json, gbnf_object, json_schema_object, GbnfRules, GrammarError, SchemaDefs, TypeEnv,
+    ValueType,
 };
 
 /// The stability status of `schemas/sce-payload-schema.v1.schema.json`, held to
@@ -65,12 +71,73 @@ pub struct PayloadSchema {
     pub gbnf: String,
 }
 
+/// The JSON Schema of the payload of the schema `name` at `revision`, a record
+/// of `fields` read in `env`: what every schema unit declares as
+/// `JSON_SCHEMA`. `source_hash` is the `source-hash` of the files the schema
+/// is written into (`forge::drift`), carried as `x-sce-source-hash`; a run
+/// that writes no headed file has none, and the key is left out. The text is
+/// ASCII, every other character escaped.
+pub fn json_schema(
+    name: &str,
+    revision: u32,
+    fields: &[(String, ValueType)],
+    env: &dyn TypeEnv,
+    source_hash: Option<&str>,
+) -> Result<String, GrammarError> {
+    let mut defs = SchemaDefs::default();
+    let mut root = json_schema_object(fields, env, &mut defs)?;
+    root.insert("$schema".to_string(), DIALECT.into());
+    root.insert("$id".to_string(), schema_id(name, revision).into());
+    if let Some(hash) = source_hash {
+        root.insert("x-sce-source-hash".to_string(), hash.into());
+    }
+    root.insert("description".to_string(), BOUND_NOTE.into());
+    if let Some(defs) = defs.into_object() {
+        root.insert("$defs".to_string(), defs.into());
+    }
+    Ok(ascii_json(&serde_json::Value::Object(root)))
+}
+
+/// The GBNF grammar of the payload, a record of `fields` read in `env`: a
+/// compilation target of the type, written where a grammar is used
+/// (`sce-codegen payload-schema --format gbnf`, an answer schema's table), not
+/// by every unit, since its size is linear in its largest text bound. The text
+/// is ASCII, every other character escaped.
+pub fn gbnf(fields: &[(String, ValueType)], env: &dyn TypeEnv) -> Result<String, GrammarError> {
+    let mut rules = GbnfRules::default();
+    let body = gbnf_object(fields, env, &mut rules)?;
+    Ok(rules.grammar(&body))
+}
+
+/// The text of `format` of the payload of `schema`, whose imports `imports`
+/// are written relative to `base_dir`, the schema's directory: what
+/// `sce-codegen payload-schema` prints, read in the scope a unit's sizes are
+/// read in ([`crate::forge::import_source::type_scope`]).
+pub fn text_of_event_schema(
+    schema: &EventSchemaModel,
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    format: PayloadFormat,
+    source_hash: Option<&str>,
+) -> Result<String, GrammarError> {
+    let scope = crate::forge::import_source::type_scope(imports, base_dir);
+    let fields = schema.typed_fields();
+    match format {
+        PayloadFormat::JsonSchema => json_schema(
+            &schema.name,
+            schema.revision(),
+            &fields,
+            &scope,
+            source_hash,
+        ),
+        PayloadFormat::Gbnf => gbnf(&fields, &scope),
+    }
+}
+
 impl PayloadSchema {
-    /// The payload schema of the schema `name` at `revision`, whose payload is
-    /// a record of `fields` read in `env`. `source_hash` is the `source-hash`
-    /// of the files the schema is written into (`forge::drift`), which the JSON
-    /// Schema carries as `x-sce-source-hash`; a run that writes no headed file
-    /// has none, and the key is left out.
+    /// Both texts of the payload schema of the schema `name` at `revision`
+    /// ([`json_schema`], [`gbnf`]): what a table of the answer schemas a
+    /// machine names holds for each.
     pub fn of(
         name: &str,
         revision: u32,
@@ -78,32 +145,15 @@ impl PayloadSchema {
         env: &dyn TypeEnv,
         source_hash: Option<&str>,
     ) -> Result<Self, GrammarError> {
-        let id = schema_id(name, revision);
-        let mut defs = SchemaDefs::default();
-        let mut root = json_schema_object(fields, env, &mut defs)?;
-        root.insert("$schema".to_string(), DIALECT.into());
-        root.insert("$id".to_string(), id.clone().into());
-        if let Some(hash) = source_hash {
-            root.insert("x-sce-source-hash".to_string(), hash.into());
-        }
-        root.insert("description".to_string(), BOUND_NOTE.into());
-        if let Some(defs) = defs.into_object() {
-            root.insert("$defs".to_string(), defs.into());
-        }
-        let json_schema = serde_json::Value::Object(root).to_string();
-        let mut rules = GbnfRules::default();
-        let body = gbnf_object(fields, env, &mut rules)?;
         Ok(Self {
-            id,
-            json_schema,
-            gbnf: rules.grammar(&body),
+            id: schema_id(name, revision),
+            json_schema: json_schema(name, revision, fields, env, source_hash)?,
+            gbnf: gbnf(fields, env)?,
         })
     }
 
-    /// The payload schema of `schema`, whose imports `imports` are written
-    /// relative to `base_dir`, the schema's directory: what
-    /// `sce-codegen payload-schema` prints, read in the scope a unit's sizes
-    /// are read in ([`crate::forge::import_source::type_scope`]).
+    /// Both texts of the payload schema of `schema`, read as
+    /// [`text_of_event_schema`] reads it.
     pub fn of_event_schema(
         schema: &EventSchemaModel,
         imports: &[ForgeImport],
@@ -268,6 +318,36 @@ mod tests {
         );
         assert_eq!(schema.text(PayloadFormat::Gbnf), schema.gbnf);
         assert_eq!(schema.text(PayloadFormat::JsonSchema), schema.json_schema);
+        // The one text each spelling asked for is the text of both.
+        let path = manifest_dir().join("tests/fixtures/payload_schema/answer_slot.scxml");
+        let content = std::fs::read_to_string(&path).unwrap();
+        let label = path.to_string_lossy().into_owned();
+        let parsed = crate::forge::parser::parse_forge_with_imports(
+            &content,
+            crate::DocumentLabel::for_input_path(&label),
+        )
+        .unwrap()
+        .unwrap();
+        let ForgeDocument::EventSchema(model) = &parsed.document else {
+            unreachable!("an event schema");
+        };
+        for (format, text) in [
+            (PayloadFormat::JsonSchema, &schema.json_schema),
+            (PayloadFormat::Gbnf, &schema.gbnf),
+        ] {
+            assert_eq!(
+                text_of_event_schema(
+                    model,
+                    &parsed.imports,
+                    path.parent().unwrap(),
+                    format,
+                    Some(HASH)
+                )
+                .as_ref(),
+                Ok(text),
+                "{format:?}"
+            );
+        }
     }
 
     #[test]
@@ -351,8 +431,12 @@ mod tests {
             assert_eq!(wire_violations(&parsed), Vec::<String>::new(), "{name}");
             // And against the official 2020-12 meta-schema, by compiling it.
             compiled(&schema.json_schema);
-            // Compact, its keys in ascending order at every depth.
-            assert_eq!(schema.json_schema, parsed.to_string(), "{name}");
+            // Compact, its keys in ascending order at every depth, ASCII.
+            assert_eq!(schema.json_schema, ascii_json(&parsed), "{name}");
+            assert!(
+                schema.json_schema.is_ascii() && schema.gbnf.is_ascii(),
+                "{name}"
+            );
         }
     }
 

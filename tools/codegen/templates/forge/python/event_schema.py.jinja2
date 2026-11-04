@@ -33,10 +33,8 @@ SCHEMA_ID: Final[str] = "{{ schema_id }}"
 # The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
 # build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
 JSON_SCHEMA: Final[str] = "{{ json_schema }}"
-# The payload as a GBNF grammar: the same spelling, each text's bytes counted.
-GBNF: Final[str] = "{{ gbnf }}"
 {% else %}
-# No JSON_SCHEMA or GBNF: {{ payload_grammar_absent }}.
+# No JSON_SCHEMA: {{ payload_grammar_absent }}.
 {% endif %}
 
 

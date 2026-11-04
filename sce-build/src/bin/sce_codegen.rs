@@ -3573,9 +3573,12 @@ enum Commands {
         scxml: String,
     },
     /// Print the payload schema of an event schema (docs/adr/0087, section 1):
-    /// the JSON Schema (2020-12) of a value of its payload, or its GBNF grammar,
-    /// as the schema's unit declares them (`JSON_SCHEMA`, `GBNF`), byte for
-    /// byte, every bound as this build resolves it (`--limit`).
+    /// the JSON Schema (2020-12) of a value of its payload, as the schema's unit
+    /// declares it (`JSON_SCHEMA`), byte for byte, or with `--format gbnf` its
+    /// GBNF grammar, which no unit declares: a grammar counts each text's bytes
+    /// exactly, so its size is linear in the largest text bound, and it is
+    /// written only where it is used. Every bound is as this build resolves it
+    /// (`--limit`).
     ///
     /// For a host that is not generated, or a tool. The JSON Schema names the
     /// `source-hash` `generate` writes for the same document, computed over the
@@ -14185,10 +14188,17 @@ fn cmd_payload_schema(
     {
         error_format.emit_forge_and_exit(&positions.authored(e));
     }
-    let payload = sce_build::forge::payload_schema::PayloadSchema::of_event_schema(
+    let format = match format {
+        PayloadSchemaFormat::JsonSchema => {
+            sce_build::forge::payload_schema::PayloadFormat::JsonSchema
+        }
+        PayloadSchemaFormat::Gbnf => sce_build::forge::payload_schema::PayloadFormat::Gbnf,
+    };
+    let text = sce_build::forge::payload_schema::text_of_event_schema(
         schema,
         &parsed.imports,
         base_dir,
+        format,
         Some(&drift_ctx.header.source_hex()),
     )
     .unwrap_or_else(|why| {
@@ -14201,16 +14211,7 @@ fn cmd_payload_schema(
             doc_label.diagnostic_label,
         ))
     });
-    out_bytes(
-        payload
-            .text(match format {
-                PayloadSchemaFormat::JsonSchema => {
-                    sce_build::forge::payload_schema::PayloadFormat::JsonSchema
-                }
-                PayloadSchemaFormat::Gbnf => sce_build::forge::payload_schema::PayloadFormat::Gbnf,
-            })
-            .as_bytes(),
-    );
+    out_bytes(text.as_bytes());
 }
 
 /// Report every bound `content` writes as an attribute

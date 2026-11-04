@@ -3606,8 +3606,8 @@ fn composed_schema_field(
 /// (5.2.4.1) promises 4095 characters in one, `-Woverlength-strings`, on under
 /// `-Wpedantic`, refuses a longer one in C and Clang refuses one past 65536 in
 /// C++, and MSVC holds none past 65535 bytes. An initializer of characters is
-/// held to no such limit, so a payload's grammar, as long as its largest text
-/// bound, compiles at every bound.
+/// held to no such limit, so a payload's JSON Schema compiles whatever the
+/// size of its type.
 fn c_text_initializer(text: &str) -> String {
     let constants: Vec<String> = text
         .bytes()
@@ -3910,27 +3910,28 @@ fn render_event_schema(
             )))
         })?;
     ctx.insert("data_max_len".into(), data_max_len.into());
-    // The payload's grammar in its two spellings, a JSON Schema and a GBNF
-    // grammar, every bound as this build resolved it, and the id a host names
-    // them by (docs/adr/0087, section 1.1, item 5). The JSON Schema names the
-    // source hash of the files this run writes, which a run that writes none
-    // has not. A schema whose type has no grammar (an open enum, two records
-    // under one name) declares neither text, and says why where they would
-    // stand.
+    // The payload's JSON Schema, every bound as this build resolved it, and
+    // the id a host names it by (docs/adr/0087, section 1.1, item 5). The
+    // canonical form, as compact as the type; the GBNF grammar, as long as the
+    // largest text bound, is written only where a grammar is used ("Owner's
+    // answers", item 4). It names the source hash of the files this run
+    // writes, which a run that writes none has not. A schema whose type has no
+    // grammar (an open enum, two records under one name) declares no
+    // JSON_SCHEMA, and says why where it would stand.
     ctx.insert(
         "schema_id".into(),
         crate::forge::payload_schema::schema_id(&m.name, m.revision()).into(),
     );
-    match crate::forge::payload_schema::PayloadSchema::of(
+    match crate::forge::payload_schema::json_schema(
         &m.name,
         m.revision(),
         &typed,
         &scope,
         options.source_hash.as_deref(),
     ) {
-        Ok(grammar) => {
+        Ok(json_schema) => {
             ctx.insert("payload_grammar".into(), true.into());
-            // C and C++ hold each text in a `char` array, since no string
+            // C and C++ hold the text in a `char` array, since no string
             // literal of either holds a text of any length.
             if matches!(
                 l.lang,
@@ -3938,15 +3939,10 @@ fn render_event_schema(
             ) {
                 ctx.insert(
                     "json_schema_chars".into(),
-                    c_text_initializer(&grammar.json_schema).into(),
-                );
-                ctx.insert(
-                    "gbnf_chars".into(),
-                    c_text_initializer(&grammar.gbnf).into(),
+                    c_text_initializer(&json_schema).into(),
                 );
             }
-            ctx.insert("json_schema".into(), grammar.json_schema.into());
-            ctx.insert("gbnf".into(), grammar.gbnf.into());
+            ctx.insert("json_schema".into(), json_schema.into());
         }
         Err(why) => {
             ctx.insert("payload_grammar".into(), false.into());

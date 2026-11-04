@@ -43,10 +43,8 @@ inline constexpr const char *SCHEMA_ID = "{{ schema_id }}";
 /// it, a text's in UTF-8 bytes in `x-sce-max-bytes`. Held as its characters, since no string literal holds a
 /// text of any length.
 inline constexpr char JSON_SCHEMA[] = {{ json_schema_chars }};
-/// The payload as a GBNF grammar: the same spelling, each text's bytes counted.
-inline constexpr char GBNF[] = {{ gbnf_chars }};
 {% else %}
-// No JSON_SCHEMA or GBNF: {{ payload_grammar_absent }}.
+// No JSON_SCHEMA: {{ payload_grammar_absent }}.
 {% endif %}
 
 {% if fields %}

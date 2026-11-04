@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-//! The unit an event schema generates declares the payload's schema id, its
-//! JSON Schema and its GBNF grammar on every backend, and `sce-codegen
-//! payload-schema` prints the same two texts, byte for byte, for a host that has
-//! no unit (docs/adr/0087, section 1.1, item 5).
+//! The unit an event schema generates declares the payload's schema id and its
+//! JSON Schema on every backend, and `sce-codegen payload-schema` prints the same
+//! JSON Schema, byte for byte, for a host that has no unit (docs/adr/0087,
+//! section 1.1, item 5). The GBNF grammar, as long as the largest text bound, is
+//! written only where a grammar is used: `payload-schema --format gbnf` prints
+//! it, and no unit declares it ("Owner's answers", item 4).
 //!
 //! The fixture is `fixtures/payload_schema/answer_slot.scxml`, the schema the
 //! decision writes out, in a directory of its own: `generate` and `payload-schema`
@@ -33,21 +35,24 @@ fn codegen() -> Command {
     command
 }
 
-/// What `payload-schema` prints for `document` with `args` before it.
-fn payload_schema(args: &[&str], document: &Path) -> Output {
+/// What `payload-schema` prints for `document`: `global` stands before the
+/// subcommand (`--limit`, `--error-format`), `own` after the document
+/// (`--format`).
+fn payload_schema(global: &[&str], document: &Path, own: &[&str]) -> Output {
     codegen()
-        .args(args)
+        .args(global)
         .arg("payload-schema")
         .arg(document)
+        .args(own)
         .output()
         .expect("invoke sce-codegen")
 }
 
-fn printed(args: &[&str], document: &Path) -> String {
-    let out = payload_schema(args, document);
+fn printed(global: &[&str], document: &Path, own: &[&str]) -> String {
+    let out = payload_schema(global, document, own);
     assert!(
         out.status.success(),
-        "payload-schema {}:\n{}",
+        "payload-schema {} {own:?}:\n{}",
         document.display(),
         String::from_utf8_lossy(&out.stderr)
     );
@@ -93,7 +98,8 @@ fn generated(document: &Path, language: &str) -> String {
 
 /// The text of the string literal that follows `declaration` on its line,
 /// its escapes read: `\\`, `\"`, `\n`, `\r`, `\t` and Kotlin's `\$`, the only
-/// ones a payload schema's texts take in Rust, Kotlin, Go, Python and Swift.
+/// ones a payload schema's ASCII text takes in Rust, Kotlin, Go, Python and
+/// Swift.
 fn literal_after(unit: &str, declaration: &str) -> String {
     let at = unit
         .find(declaration)
@@ -153,12 +159,11 @@ fn char_array_after(unit: &str, declaration: &str) -> String {
 }
 
 #[test]
-fn every_unit_declares_what_payload_schema_prints() {
+fn every_unit_declares_the_json_schema_payload_schema_prints() {
     let document = answer_slot();
-    let json_schema = printed(&[], &document);
-    let gbnf = printed(&["--format", "gbnf"], &document);
+    let json_schema = printed(&[], &document, &[]);
     assert_eq!(
-        printed(&["--format", "json-schema"], &document),
+        printed(&[], &document, &["--format", "json-schema"]),
         json_schema,
         "the JSON Schema is the default"
     );
@@ -166,7 +171,7 @@ fn every_unit_declares_what_payload_schema_prints() {
         json_schema.starts_with("{\"$id\":\"urn:sce:schema:answer_slot:1\","),
         "{json_schema}"
     );
-    assert!(gbnf.starts_with("root ::= "), "{gbnf}");
+    assert!(json_schema.is_ascii(), "{json_schema}");
     // The hash `generate` stamps on the files of the same document.
     let rust = generated(&document, "rust");
     let header = rust
@@ -183,31 +188,31 @@ fn every_unit_declares_what_payload_schema_prints() {
             "rust",
             "pub const SCHEMA_ID: &str = \"",
             "pub const JSON_SCHEMA: &str = \"",
-            "pub const GBNF: &str = \"",
+            "GBNF",
         ),
         (
             "kotlin",
             "const val SCHEMA_ID: String = \"",
             "const val JSON_SCHEMA: String = \"",
-            "const val GBNF: String = \"",
+            "GBNF",
         ),
         (
             "go",
             "const SchemaID string = \"",
             "const JSONSchema string = \"",
-            "const GBNF string = \"",
+            "GBNF",
         ),
         (
             "python",
             "SCHEMA_ID: Final[str] = \"",
             "JSON_SCHEMA: Final[str] = \"",
-            "GBNF: Final[str] = \"",
+            "GBNF",
         ),
         (
             "swift",
             "public static let schemaID: String = \"",
             "public static let jsonSchema: String = \"",
-            "public static let gbnf: String = \"",
+            "gbnf",
         ),
     ] {
         let unit = generated(&document, language);
@@ -217,7 +222,10 @@ fn every_unit_declares_what_payload_schema_prints() {
             "{language}"
         );
         assert_eq!(literal_after(&unit, json), json_schema, "{language}");
-        assert_eq!(literal_after(&unit, grammar), gbnf, "{language}");
+        assert!(
+            !unit.contains(grammar),
+            "{language}: no unit declares a grammar:\n{unit}"
+        );
     }
 
     let cpp = generated(&document, "cpp");
@@ -226,7 +234,7 @@ fn every_unit_declares_what_payload_schema_prints() {
         "{cpp}"
     );
     assert_eq!(char_array_after(&cpp, "JSON_SCHEMA[] ="), json_schema);
-    assert_eq!(char_array_after(&cpp, "GBNF[] ="), gbnf);
+    assert!(!cpp.contains("GBNF"), "{cpp}");
     let c = generated(&document, "c");
     assert!(
         c.contains("#define ANSWER_SLOT_SCHEMA_ID \"urn:sce:schema:answer_slot:1\""),
@@ -236,7 +244,25 @@ fn every_unit_declares_what_payload_schema_prints() {
         char_array_after(&c, "ANSWER_SLOT_JSON_SCHEMA[] ="),
         json_schema
     );
-    assert_eq!(char_array_after(&c, "ANSWER_SLOT_GBNF[] ="), gbnf);
+    assert!(!c.contains("GBNF"), "{c}");
+}
+
+/// The GBNF grammar is the CLI's alone: the type's, counted in bytes, with no
+/// source hash, and ASCII.
+#[test]
+fn payload_schema_prints_the_grammar_no_unit_declares() {
+    let document = answer_slot();
+    let gbnf = printed(&[], &document, &["--format", "gbnf"]);
+    assert!(
+        gbnf.starts_with("root ::= \"{\\\"kind\\\":\" ( \"\\\"meeting\\\"\" | \"\\\"task\\\"\" ) "),
+        "{gbnf}"
+    );
+    assert!(gbnf.contains("\nuint16 ::= \"0\" | "), "{gbnf}");
+    assert!(
+        gbnf.ends_with("t16 ::= \"\" | c1 t15 | c2 t14 | c3 t13 | c4 t12\n"),
+        "{gbnf}"
+    );
+    assert!(gbnf.is_ascii() && !gbnf.contains("source-hash"), "{gbnf}");
 }
 
 /// A bound a build moves (`--limit`) moves in both texts, as it moves the
@@ -245,16 +271,17 @@ fn every_unit_declares_what_payload_schema_prints() {
 #[test]
 fn a_limit_moves_the_bound_in_both_texts() {
     let document = repo_root().join("stdlib/shared/record_edit.scxml");
-    let written = printed(&[], &document);
+    let written = printed(&[], &document, &[]);
     assert!(written.contains("\"maxLength\":32,"), "{written}");
-    let moved = printed(&["--limit", "shared_typed_text=48"], &document);
+    let moved = printed(&["--limit", "shared_typed_text=48"], &document, &[]);
     assert!(
         moved.contains("\"maxLength\":48,") && moved.contains("\"x-sce-max-bytes\":48"),
         "{moved}"
     );
     let grammar = printed(
-        &["--limit", "shared_typed_text=48", "--format", "gbnf"],
+        &["--limit", "shared_typed_text=48"],
         &document,
+        &["--format", "gbnf"],
     );
     assert!(grammar.contains("\"\\\"\" t48 \"\\\"\""), "{grammar}");
     assert!(
@@ -263,33 +290,39 @@ fn a_limit_moves_the_bound_in_both_texts() {
     );
 }
 
-/// A schema whose type has no grammar is refused by name, and its unit declares
-/// its id and says why it declares no grammar.
+/// A schema whose type has no grammar is refused by name in either format, and
+/// its unit declares its id and says why it declares no JSON Schema. A schema
+/// is named by its document's file (`schema_uds_response_open`).
 #[test]
 fn a_schema_with_an_open_enum_has_no_grammar_and_says_why() {
     let document =
         repo_root().join("sce-build/tests/fixtures/event_schema/schema_uds_response_open.scxml");
-    let out = payload_schema(&["--error-format=json"], &document);
-    assert!(!out.status.success(), "an open enum has no grammar");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    let record: serde_json::Value = stderr
-        .lines()
-        .find_map(|line| serde_json::from_str(line.trim()).ok())
-        .unwrap_or_else(|| panic!("a diagnostic record:\n{stderr}"));
-    assert_eq!(record["code"], "generate/unsupported-feature", "{record}");
-    let message = record["message"].as_str().unwrap_or_default();
-    assert!(
-        message.contains("the payload of `uds_response_schema_open` has no grammar")
-            && message.contains("the enum `UdsNrc` is open"),
-        "{record}"
-    );
+    for own in [&[][..], &["--format", "gbnf"][..]] {
+        let out = payload_schema(&["--error-format=json"], &document, own);
+        assert!(
+            !out.status.success(),
+            "an open enum has no grammar: {own:?}"
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let record: serde_json::Value = stderr
+            .lines()
+            .find_map(|line| serde_json::from_str(line.trim()).ok())
+            .unwrap_or_else(|| panic!("a diagnostic record:\n{stderr}"));
+        assert_eq!(record["code"], "generate/unsupported-feature", "{record}");
+        let message = record["message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains("the payload of `schema_uds_response_open` has no grammar")
+                && message.contains("the enum `UdsNrc` is open"),
+            "{record}"
+        );
+    }
     let unit = generated(&document, "rust");
     assert!(
-        unit.contains("pub const SCHEMA_ID: &str = \"urn:sce:schema:uds_response_schema_open:1\";"),
+        unit.contains("pub const SCHEMA_ID: &str = \"urn:sce:schema:schema_uds_response_open:1\";"),
         "{unit}"
     );
     assert!(
-        unit.contains("// No JSON_SCHEMA or GBNF: the enum `UdsNrc` is open"),
+        unit.contains("// No JSON_SCHEMA: the enum `UdsNrc` is open"),
         "{unit}"
     );
     assert!(!unit.contains("pub const JSON_SCHEMA"), "{unit}");
@@ -302,7 +335,7 @@ fn a_document_that_is_no_event_schema_has_no_payload_schema() {
         repo_root().join("sce-build/tests/fixtures/payload_schema/answer_kind.scxml"),
         repo_root().join("sce-build/tests/fixtures/static_datamodel/static_counter.scxml"),
     ] {
-        let out = payload_schema(&[], &document);
+        let out = payload_schema(&[], &document, &[]);
         assert!(!out.status.success(), "{}", document.display());
         assert!(
             String::from_utf8_lossy(&out.stderr)

@@ -169,7 +169,8 @@ never a condition of correctness.
 ## Decision
 
 **Every event schema states the wire form of its values twice, as a JSON Schema and as a GBNF grammar, written by
-the same structural recursion as its sizes and declared by its unit. A statement `<sce:lift>` reads a text the
+the same structural recursion as its sizes; its unit declares the JSON Schema, and the GBNF grammar is written where a
+grammar is used (Owner's answers, item 4). A statement `<sce:lift>` reads a text the
 statechart holds into a record of a schema or, when the text is not one, writes a refusal record (a code, a strict
 JSON Pointer, a bound) and raises nothing. A prompt is a `text-template` document with typed holes, an untrusted
 hole fenced and stripped of its fence, rendered by `<sce:render>` into a variable whose bound the build proves. A
@@ -268,12 +269,19 @@ where `examples/ai_loop/ai_loop.scxml` already stands:
    t16 ::= "" | c1 t15 | c2 t14 | c3 t13 | c4 t12
    ```
 5. **Where it is emitted.** (a) Every schema unit declares, beside `EVENT_NAME`, `REVISION` and `DATA_MAX_LEN`,
-   `SCHEMA_ID` (the `$id`, `urn:sce:schema:<document name>:<revision>`), `JSON_SCHEMA` and `GBNF` as text constants of
-   the language (Rust `&str`, Kotlin `const val`, C++ `inline constexpr const char *`, Go `string`, Python
-   `Final[str]`, Swift `static let`, C11 `<SCHEMA>_JSON_SCHEMA` as a `static const char[]`), each with every bound as
-   the build resolved it (`--limit` moves them with the buffers, ADR 0050). A host hands a model the grammar with no
-   file to read. (b) `sce-codegen payload-schema <document> [--format json-schema|gbnf] [--limit name=N]...` prints the
-   same text, byte for byte, for a host that is not generated (the Interpreter's) or a tool.
+   `SCHEMA_ID` (the `$id`, `urn:sce:schema:<document name>:<revision>`, the document named by its file) and
+   `JSON_SCHEMA` as text constants of the language (Rust `&str`, Kotlin `const val` while the text fits one class-file
+   constant and a `val` built at class init past it, C++ `inline constexpr const char *` for the id and `inline
+   constexpr char[]` for the schema, Go `string`, Python `Final[str]`, Swift `static let`, C11 `<SCHEMA>_SCHEMA_ID` and
+   `<SCHEMA>_JSON_SCHEMA` as a `static const char[]`), with every bound as the build resolved it (`--limit` moves them
+   with the buffers, ADR 0050). The JSON Schema is the canonical form: compact, as large as the type and not as its
+   bounds, its byte bounds exact in `x-sce-max-bytes`, ASCII (every other character escaped). (b) The GBNF grammar is
+   a compilation target of the same type, written only where a grammar is used, since counting a text's bytes exactly
+   makes it as long as the largest text bound: `sce-codegen payload-schema <document> --format gbnf` prints it for
+   any schema, and the table of the answer schemas a machine names (section 4.1, item 2) holds it for each schema a
+   document names as an answer. (c) `sce-codegen payload-schema <document> [--format json-schema|gbnf] [--limit
+   name=N]...` prints the unit's JSON Schema byte for byte, for a host that is not generated (the Interpreter's) or a
+   tool.
 6. **The wire surface.** The emitted JSON Schema is registered in SCE_WIRE_CONTRACTS.md as one row, "Payload schema",
    status `pre-release`, with a meta-schema `schemas/sce-payload-schema.v1.schema.json` that states the subset of
    2020-12 SCE emits (the keywords of the table above, `$schema`, `$id`, `$defs`, `$ref`, `description` and the
@@ -291,8 +299,10 @@ The schema's type already holds everything a grammar needs: every bound is in th
 type is a finite tree, and the size calculus walks it. A grammar written by hand beside a schema is a second
 statement of the type that can drift from it; one folded from the type cannot. Two forms are emitted because the two
 families of decoders take two inputs: llama.cpp and the runtimes built on it take GBNF, others take JSON Schema, and
-XGrammar takes both. The constants are in the unit because the host that calls a model is the host that links the
-generated machine; a grammar that had to be read from a file would be a deployment step that can be forgotten.
+XGrammar takes both. The JSON Schema is in every unit because the host that calls a model is the host that links the
+generated machine; a schema that had to be read from a file would be a deployment step that can be forgotten. The
+GBNF grammar is in the machine that names its schema as an answer, for the same reason, and nowhere else, since its
+size is paid in every tree that holds it (Owner's answers, item 4).
 
 #### 1.3 Alternatives rejected
 
@@ -532,8 +542,9 @@ The name `text-template` and not `template`: `<sce:template>` already names XML 
    an imported event schema, and the build writes the request's `answer_schema` from it: the unit's `SCHEMA_ID`
    (section 1.1 item 5). A `<param name="answer_schema">` is refused, as a name given twice is. Without
    `sce:answer` the field is empty and the host generates freely. For each machine the generator declares a table of
-   the answer schemas its invocations name, from `SCHEMA_ID` to the unit's `JSON_SCHEMA` and `GBNF`, so a host resolves
-   the id with no file and no second copy of a grammar. Two answer schemas of one machine with one id are refused.
+   the answer schemas its invocations name, from `SCHEMA_ID` to the unit's `JSON_SCHEMA` and the schema's GBNF grammar,
+   which the build writes there and only there (section 1.1, item 5), so a host resolves the id with no file and no
+   second copy of a grammar. Two answer schemas of one machine with one id are refused.
 3. **The host maps the request to the provider it has.** A provider that decodes under a grammar is given the form it
    takes and the result says `constrained` true; one that cannot ignores the schema and says false. `model` names
    what answered (the model, its variant and its runtime, as the host spells them). `temperature_milli` is the
@@ -850,14 +861,17 @@ bound. A scenario that compares the record across eight lanes is the only place 
    the readers that accepted it.
 2. **`<sce:lift>`** with its depth bound, checks, codes and lowering on eight lanes, and the lift scenario over
    scalar-only schemas.
-3. **The payload grammar**: the two folds, the unit constants, `sce-codegen payload-schema`, the meta-schema and its
-   row, the goldens and the validator tests; every committed generated tree that holds a schema unit is regenerated
-   (Rust, Go, Kotlin and Swift `static_datamodel`; the Go round-trip tree where its source set holds a schema), since
-   every schema unit gains three constants.
+3. **The payload grammar**: the two folds, the unit constants `SCHEMA_ID` and `JSON_SCHEMA`, `sce-codegen
+   payload-schema` with both formats, the meta-schema and its row, the goldens, the validator tests and the GBNF
+   recognizer, and the Kotlin rule for a text constant past one class-file constant; every committed generated tree
+   that holds a schema unit is regenerated (Rust, Go, Kotlin and Swift `static_datamodel`, the committed Mesh units;
+   the Go round-trip tree where its source set holds a schema), since every schema unit gains two constants. No unit
+   declares a GBNF grammar.
 4. **`text-template` and `<sce:render>`**, with their codes, units and goldens.
 5. **The date expression and `resolve_date`** in `stdlib/time`, with the calendar table; independent of 2 to 4.
 6. **`sce-host-model-generate`**: the records in `stdlib/host`, the table in `standard_host.rs`, `sce:answer` and the
-   answer-schema table, docs/SCE_HOST_FEATURES.md's fifth feature, the scripted provider in seven reference hosts, the
+   answer-schema table, which holds the GBNF grammar of each schema a document names as an answer, written by the
+   fold of step 3, docs/SCE_HOST_FEATURES.md's fifth feature, the scripted provider in seven reference hosts, the
    scenario.
 7. **The reference harness**, its scenario and `examples/model_harness/`.
 8. **After ADR 0086 step 3**: the lift, the grammar and the harness over records holding lists and records, with
@@ -867,8 +881,8 @@ bound. A scenario that compares the record across eight lanes is the only place 
 
 - A statechart can ask a model for a value of a schema and act on either outcome as data, on every lane, with no
   engine change and no script engine.
-- Every schema unit carries its grammar in two forms; a host gives a model the grammar the lift will hold the answer
-  to, by an id the build wrote.
+- Every schema unit carries its JSON Schema, and a machine that names a schema as an answer carries its GBNF grammar
+  too; a host gives a model the grammar the lift will hold the answer to, by an id the build wrote.
 - A model's text is never executed: it is lifted into a type, checked and used as a value, and the text it saw from
   outside was fenced. Fencing lowers the risk of injected instructions and does not remove it; the type does.
 - Every payload reader gains a code, a strict pointer and a bound; the delivery's sentence and its `error.execution`
@@ -877,8 +891,11 @@ bound. A scenario that compares the record across eight lanes is the only place 
 - The delivery lift keeps a reader without a depth bound for a delivery's text. Bounding it needs a rule that does not
   refuse a later revision's deeper field under a key an older reader steps over; it is recorded here and left to a
   decision of its own.
-- Every committed generated tree changes once (three constants per schema unit), and the grammar of a schema with a
-  large text bound is as large as that bound (open question 1).
+- Every committed generated tree changes once (two constants per schema unit, each as large as its type). The GBNF
+  grammar of a schema with a large text bound is as large as that bound (open question 1), and is paid only by a
+  machine that names that schema as an answer, or a host that asks `payload-schema` for it.
+- A Kotlin text constant the generator writes holds a text of any length: past the 65,535 bytes of modified UTF-8 a
+  class-file constant holds, it is built at class init from pieces that each fit.
 - An application's evaluation keys move whenever its harness, templates or schemas move, which is the intent.
 
 ## Alternatives rejected
@@ -919,3 +936,18 @@ The owner accepted this ADR on 2026-11-04 ("accept"), with each open question an
 2. The kind is named `text-template` (open question 2).
 3. The reference harness is not a standard fragment; it is a reference statechart an application copies and owns
    (open question 3).
+4. On 2026-11-04, while step 3 landed, the owner revised decision 1, taking the recommendation: every schema unit
+   declares `SCHEMA_ID` and `JSON_SCHEMA` only, and the GBNF grammar is a compilation target written where it is
+   used: by `sce-codegen payload-schema --format gbnf` for any schema, and from step 6 into a machine's answer-schema
+   table for each schema a document names as an answer (`<invoke sce:answer="R">`). The reasons:
+   - the canonical form of a payload is its type, and the JSON Schema states it compactly, as large as the type and
+     not as its bounds, its byte bounds exact in `x-sce-max-bytes`;
+   - exact byte counting in GBNF is linear in the largest text bound (a `string[16384]` field is a chain of 16385
+     rules, about a megabyte), and it is paid only where a grammar is used, as a machine keeps a queue only when it
+     uses one (ADR 0075);
+   - the engines that decode under a constraint compile a JSON Schema themselves, and lose its byte bounds in doing
+     so (section 1.1, item 3), so SCE supplies the exact GBNF grammar where it is used.
+   
+   With it, a general rule of the generator, independent of grammars: a Kotlin text constant past the 65,535 bytes of
+   modified UTF-8 one class-file constant holds is written as a `val` built at class init from pieces that each fit,
+   so every text constant the generator writes compiles whatever its length.
