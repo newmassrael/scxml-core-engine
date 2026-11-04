@@ -1,0 +1,99 @@
+{
+  "machine": "static_host_model",
+  "about": "The generation of a text of docs/SCE_HOST_FEATURES.md, section 6, as a machine sees it through its host's scripted provider. A `model` directive sets what the provider is like: `answers` (one a start, in order, each `text` or `text_repeat` with `finish`, `stop` when not written), `constrained`, `name`, `context` (the most tokens a prompt and `max_tokens` may take together, 0 for none) and `hold`; the scripted provider counts a token as one byte. The request's `answer_schema` is the id the build wrote from `sce:answer`, never the document's. `cancelled` is the operations the host was told to stop. Expected values are derived from the specification, not observed from a host.",
+  "steps": [
+    { "note": "nothing is asked yet",
+      "expect": {"state": "idle", "variables": {"calls": 0, "outcome": "", "answer": null, "why": null}} },
+
+    { "note": "a constrained provider answers a record: the request carries the build's answer schema, the machine reads the record",
+      "host": {"model": {"answers": [{"text": "{\"amount\":-42,\"id\":7,\"kind\":\"task\",\"note\":null,\"priority\":1,\"tag\":\"ab\",\"title\":\"Plan\"}"}], "constrained": true, "name": "scripted-1"}},
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 64, "temperature_milli": 0},
+      "expect": {
+        "state": "idle",
+        "host_invokes": [{"type": "sce-host-model-generate", "id": "gen", "request": {"prompt": "Plan my day", "answer_schema": "urn:sce:schema:lift_answer:2", "max_tokens": 64, "temperature_milli": 0}}],
+        "variables": {"calls": 1, "outcome": "read", "finish": "stop", "constrained": true, "answered_by": "scripted-1", "prompt_tokens": 11, "answer_tokens": 86,
+                      "answer": {"id": 7, "amount": "-42", "title": "Plan", "kind": "task", "note": null, "tag": "ab", "priority": 1}, "why": null}} },
+
+    { "note": "an answer cut by `length` is a completion, and its lift refuses it; the record read before stays",
+      "host": {"model": {"answers": [{"text": "{\"id\":7,\"amount\":", "finish": "length"}]}},
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 4, "temperature_milli": 0},
+      "expect": {
+        "state": "idle",
+        "variables": {"calls": 2, "outcome": "refused", "finish": "length", "constrained": true, "answer_tokens": 17,
+                      "answer": {"id": 7, "amount": "-42", "title": "Plan", "kind": "task", "note": null, "tag": "ab", "priority": 1},
+                      "why": {"code": "notJson", "path": "", "bound": null}}} },
+
+    { "note": "an unconstrained provider answers a title past its bound in bytes, within it in characters",
+      "host": {"model": {"answers": [{"text": "{\"id\":7,\"amount\":-42,\"title\":\"abcdefghijklmnoé\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}], "constrained": false, "name": "scripted-2"}},
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 64, "temperature_milli": 700},
+      "expect": {
+        "host_invokes": [{"type": "sce-host-model-generate", "id": "gen", "request": {"prompt": "Plan my day", "answer_schema": "urn:sce:schema:lift_answer:2", "max_tokens": 64, "temperature_milli": 700}}],
+        "variables": {"calls": 3, "outcome": "refused", "finish": "stop", "constrained": false, "answered_by": "scripted-2", "answer_tokens": 99,
+                      "why": {"code": "tooLong", "path": "/title", "bound": 16}}} },
+
+    { "note": "a provider with no answer left is a host with no model loaded",
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 64, "temperature_milli": 0},
+      "expect": {"state": "idle", "variables": {"calls": 4, "outcome": "unavailable", "finish": "", "answered_by": "", "why": null}} },
+
+    { "note": "an injected failure: the provider is busy",
+      "host": {"fail": {"sce-host-model-generate": "busy"}},
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 64, "temperature_milli": 0},
+      "expect": {"variables": {"calls": 5, "outcome": "busy"}} },
+
+    { "note": "an injected failure: a remote provider sent no response",
+      "host": {"fail": {"sce-host-model-generate": "network"}},
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 64, "temperature_milli": 0},
+      "expect": {"variables": {"calls": 6, "outcome": "network"}} },
+
+    { "note": "an injected failure: the provider declined",
+      "host": {"fail": {"sce-host-model-generate": "declined"}},
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 64, "temperature_milli": 0},
+      "expect": {"variables": {"calls": 7, "outcome": "declined"}} },
+
+    { "note": "the prompt's 11 tokens and 64 more do not fit a context of 70; the answer waiting is not taken",
+      "host": {"fail": {}, "model": {"context": 70, "answers": [{"text": "{\"id\":8,\"amount\":5,\"title\":\"Two\",\"kind\":\"meeting\",\"note\":\"hi\",\"tag\":\"abcd\",\"priority\":2}"}]}},
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 64, "temperature_milli": 0},
+      "expect": {"variables": {"calls": 8, "outcome": "context_exceeded"}} },
+
+    { "note": "the same answer, asked for within the context: a second record replaces the first",
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 59, "temperature_milli": 0},
+      "expect": {"variables": {"calls": 9, "outcome": "read", "prompt_tokens": 11, "answer_tokens": 88,
+                               "answer": {"id": 8, "amount": "5", "title": "Two", "kind": "meeting", "note": "hi", "tag": "abcd", "priority": 2}, "why": null}} },
+
+    { "note": "an answer past the 4096 bytes of `text` is never cut: it fails",
+      "host": {"model": {"context": 0, "answers": [{"text_repeat": ["a", 4097]}]}},
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 64, "temperature_milli": 0},
+      "expect": {"variables": {"calls": 10, "outcome": "answer_too_large", "finish": ""}} },
+
+    { "note": "an empty prompt is refused, and the host is told the start all the same",
+      "event": "host.model.generate.request", "data": {"prompt": "", "answer_schema": "", "max_tokens": 64, "temperature_milli": 0},
+      "expect": {
+        "host_invokes": [{"type": "sce-host-model-generate", "id": "gen", "request": {"prompt": "", "answer_schema": "urn:sce:schema:lift_answer:2", "max_tokens": 64, "temperature_milli": 0}}],
+        "variables": {"calls": 11, "outcome": "invalid_argument"}} },
+
+    { "note": "max_tokens zero is refused",
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 0, "temperature_milli": 0},
+      "expect": {"variables": {"calls": 12, "outcome": "invalid_argument"}} },
+
+    { "note": "a temperature above 2000 thousandths is refused",
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 64, "temperature_milli": 2001},
+      "expect": {"variables": {"calls": 13, "outcome": "invalid_argument"}} },
+
+    { "note": "a provider that holds: the machine waits",
+      "host": {"model": {"hold": true}},
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 64, "temperature_milli": 0},
+      "expect": {"state": "generating", "variables": {"calls": 14, "outcome": ""}} },
+
+    { "note": "the deadline passes: the machine is told, and the host is told to stop",
+      "advance_ms": 1000,
+      "expect": {"state": "idle", "variables": {"outcome": "deadline"}, "host_state": {"cancelled": ["gen"]}} },
+
+    { "note": "a generation the machine leaves first is cancelled",
+      "event": "host.model.generate.request", "data": {"prompt": "Plan my day", "answer_schema": "", "max_tokens": 64, "temperature_milli": 0},
+      "expect": {"state": "generating", "variables": {"calls": 15}} },
+
+    { "note": "leaving the state",
+      "event": "model.leave",
+      "expect": {"state": "idle", "variables": {"outcome": "left"}, "host_state": {"cancelled": ["gen", "gen"]}} }
+  ]
+}

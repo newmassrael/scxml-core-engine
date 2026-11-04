@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_HOST_FEATURES.md, "Generated text";
+  docs/adr/0087, section 4): one machine that asks its host for one generated
+  text at a time, under the answer schema `lift_answer.scxml`, and reads the
+  answer into a record of it or keeps the refusal of it as a record.
+
+  `host.model.generate.request` is the library's request record itself: its
+  `answer_schema` is read by nobody, since the build writes the request's from
+  `sce:answer`. The invoke carries the engine's deadline (`_sce_deadline_ms`), so
+  a generation that has not answered in one second of the engine's clock ends
+  with `outcome` `deadline`, and a host that has not finished it is told to stop.
+  `model.leave` leaves the state while a generation runs, which cancels it.
+
+    outcome   `read` when the answer is a record of the schema, `refused` when
+              its text is not (`why` says why), the failure code when the
+              host's answer is a failure, `invalid_argument` when the host
+              declined to start it, `deadline` when the deadline passed, `left`
+              when the machine left the state first
+    finish, constrained, answered_by, prompt_tokens, answer_tokens
+              the completion's fields, reset at each request
+    answer    the last record read; a refusal leaves it as it was
+    why       the refusal of the last answer's text, absent otherwise
+
+  `calls` counts the requests. Expected values are derived from the
+  specification, not observed from a host: tests/host_features/scenarios/
+  static_host_model.json replays the scripted provider, and every sequence of
+  the outcome classes of tests/host_features/model_outcome_classes.json up to
+  its bound is replayed against the exhaustive provider, on every lane.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_host_model">
+  <sce:import kind="event-schema" src="sce:std/host/model_generate_request.scxml" as="GenerateRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/model_generate_result.scxml" as="GenerateResult"/>
+  <sce:import kind="event-schema" src="sce:std/lift/refusal.scxml" as="LiftRefusal"/>
+  <sce:import kind="event-schema" src="lift_answer.scxml" as="Answer"/>
+  <datamodel>
+    <data id="prompt" sce:type="string[8192]" expr="''"/>
+    <data id="max_tokens" sce:type="uint32" expr="0"/>
+    <data id="temperature_milli" sce:type="uint16" expr="0"/>
+    <data id="calls" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="outcome" sce:type="string[24]" expr="''" sce:direction="out"/>
+    <data id="finish" sce:type="string[16]" expr="''" sce:direction="out"/>
+    <data id="constrained" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="answered_by" sce:type="string[128]" expr="''" sce:direction="out"/>
+    <data id="prompt_tokens" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="answer_tokens" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="answer" sce:type="optional&lt;record:Answer&gt;" expr="null" sce:direction="out"/>
+    <data id="why" sce:type="optional&lt;record:LiftRefusal&gt;" expr="null" sce:direction="out"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="host.model.generate.request" target="generating">
+      <assign location="prompt" expr="_event.data.prompt"/>
+      <assign location="max_tokens" expr="_event.data.max_tokens"/>
+      <assign location="temperature_milli" expr="_event.data.temperature_milli"/>
+      <assign location="calls" expr="calls + 1"/>
+      <assign location="outcome" expr="''"/>
+      <assign location="finish" expr="''"/>
+      <assign location="constrained" expr="false"/>
+      <assign location="answered_by" expr="''"/>
+      <assign location="prompt_tokens" expr="0"/>
+      <assign location="answer_tokens" expr="0"/>
+      <assign location="why" expr="null"/>
+    </transition>
+  </state>
+
+  <state id="generating">
+    <invoke type="sce-host-model-generate" id="gen" sce:answer="Answer"
+            sce:request="GenerateRequest" sce:result="GenerateResult">
+      <param name="prompt" expr="prompt"/>
+      <param name="max_tokens" expr="max_tokens"/>
+      <param name="temperature_milli" expr="temperature_milli"/>
+      <param name="_sce_deadline_ms" expr="1000"/>
+    </invoke>
+    <transition event="done.invoke.gen" cond="_event.data.error === ''" target="idle">
+      <assign location="finish" expr="_event.data.finish"/>
+      <assign location="constrained" expr="_event.data.constrained"/>
+      <assign location="answered_by" expr="_event.data.model"/>
+      <assign location="prompt_tokens" expr="_event.data.prompt_tokens"/>
+      <assign location="answer_tokens" expr="_event.data.answer_tokens"/>
+      <sce:lift text="_event.data.text" schema="Answer" location="answer" refusal="why"/>
+      <if cond="why === null">
+        <assign location="outcome" expr="'read'"/>
+      <else/>
+        <assign location="outcome" expr="'refused'"/>
+      </if>
+    </transition>
+    <transition event="done.invoke.gen" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.invoke.gen" target="idle">
+      <assign location="outcome" expr="'deadline'"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'invalid_argument'"/>
+    </transition>
+    <transition event="model.leave" target="idle">
+      <assign location="outcome" expr="'left'"/>
+    </transition>
+  </state>
+</scxml>
