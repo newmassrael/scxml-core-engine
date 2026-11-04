@@ -21,9 +21,12 @@ import (
 
 // refusalCase is one case of the shared table.
 type refusalCase struct {
-	Name    string `json:"name"`
-	Data    string `json:"data"`
-	Type    any    `json:"type"`
+	Name string `json:"name"`
+	Data string `json:"data"`
+	Type any    `json:"type"`
+	// Depth, where a case gives one, has the case read as a `<sce:lift>` of the
+	// record of the one field `v` reads it (docs/adr/0087, section 2.1).
+	Depth   *uint32 `json:"depth"`
 	Refusal *struct {
 		Code    string  `json:"code"`
 		Pointer string  `json:"pointer"`
@@ -135,7 +138,13 @@ func TestEveryCaseOfTheSharedTableIsRefusedWithItsCodePointerAndBound(t *testing
 	}
 	for _, c := range table.Cases {
 		read := func() error {
-			fields, err := LiftPayload(c.Data)
+			var fields PayloadFields
+			var err error
+			if c.Depth != nil {
+				fields, err = LiftText(c.Data, *c.Depth, []string{"v"}, "")
+			} else {
+				fields, err = LiftPayload(c.Data)
+			}
 			if err != nil {
 				return err
 			}
@@ -206,6 +215,72 @@ func TestAPointerEscapesTildeAndSolidusInEachToken(t *testing.T) {
 	} {
 		if got := PointerBelow(c.prefix, c.token); got != c.want {
 			t.Errorf("PointerBelow(%q, %q) = %q, want %q", c.prefix, c.token, got, c.want)
+		}
+	}
+}
+
+// A lift refuses a container past its depth over the brackets alone, before the
+// text is read as JSON, and names the declared member it stands under or the
+// whole text (docs/adr/0087, section 2.1, item 4).
+func TestALiftRefusesAContainerPastItsDepthBeforeItReadsTheText(t *testing.T) {
+	declared := []string{"title", "count"}
+	for _, c := range []struct {
+		text    string
+		depth   uint32
+		pointer string
+		refused bool
+	}{
+		{`{"title":"a","count":1}`, 1, "", false},
+		{`{"title":["a"]}`, 1, "/title", true},
+		{`{"extra":{"a":1}}`, 1, "", true},
+		{`{"title":[1]}`, 1, "/title", true},
+		{`[[1]]`, 1, "", true},
+		{`{"extra":[[[[[[[`, 1, "", true},
+		{`{"title":"[[{\"[","count":1}`, 1, "", false},
+		{`{"title":{"a":1}}`, 2, "", false},
+		{`{"title":"[[`, 1, "", false},
+		{`{"title":"x","extra":[1]}`, 1, "", true},
+	} {
+		refusal := LiftTooDeep(c.text, c.depth, declared)
+		if (refusal != nil) != c.refused {
+			t.Errorf("%s: refused %v, want %v", c.text, refusal, c.refused)
+			continue
+		}
+		if refusal == nil {
+			continue
+		}
+		bound, hasBound := refusal.Bound()
+		if refusal.Code() != RefusalTooDeep || refusal.Pointer() != c.pointer || !hasBound || bound != c.depth {
+			t.Errorf("%s: refused %s at %q bound %d/%v", c.text, refusal.Code().Name(), refusal.Pointer(), bound, hasBound)
+		}
+	}
+}
+
+// A lift reads its record through the readers a delivery reads one by, a field
+// the text lacks taken from the defaults, and answers a refusal as data.
+func TestALiftReadsARecordOrAnswersItsRefusal(t *testing.T) {
+	read := func(r PayloadRecord) ([2]uint8, error) {
+		v, err := LiftField(r, "v", ValueUnsigned[uint8])
+		if err != nil {
+			return [2]uint8{}, err
+		}
+		w, err := LiftField(r, "w", ValueUnsigned[uint8])
+		return [2]uint8{v, w}, err
+	}
+	got, refusal := LiftRecord(`{"v":1}`, "Pair", 1, []string{"v", "w"}, `{"w":7}`, read)
+	if refusal != nil || got != [2]uint8{1, 7} {
+		t.Fatalf("read %v, refused %v", got, refusal)
+	}
+	for text, code := range map[string]RefusalCode{
+		" \t":             RefusalNotJSON,
+		"[[":              RefusalTooDeep,
+		"[1]":             RefusalNotObject,
+		`{"v":1,"v":2}`:   RefusalNotJSON,
+		`{"v":256,"w":1}`: RefusalOutOfRange,
+		`{"w":1}`:         RefusalMissing,
+	} {
+		if _, refusal := LiftRecord(text, "Pair", 1, []string{"v", "w"}, "", read); refusal == nil || refusal.Code() != code {
+			t.Errorf("%q: refused %v, want %s", text, refusal, code.Name())
 		}
 	}
 }

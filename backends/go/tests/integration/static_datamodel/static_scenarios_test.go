@@ -65,6 +65,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_tree"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_string"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_lift"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_assign"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_index"
@@ -1706,6 +1707,37 @@ func TestThePayloadOfAnEventIsTakenWholeAsARecord(t *testing.T) {
 		"updates": func() any { return policy.Updates() },
 		"agendas": func() any { return policy.Agendas() },
 		"others":  func() any { return policy.Others() },
+	}))
+}
+
+// A text read into a record of a schema, or its refusal kept as a record of the
+// standard refusal document, the same code, pointer and bound on every lane
+// (docs/adr/0087, section 9.1).
+func TestALiftReadsATextIntoARecordOrKeepsItsRefusal(t *testing.T) {
+	policy := static_lift.NewStaticLiftPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	answerJSON := func(a static_lift.StaticLiftAnswerRecord) any {
+		return map[string]any{
+			"id": a.Id(), "amount": a.Amount(), "title": a.Title(), "kind": a.Kind().String(),
+			"note": a.Note(), "tag": sce.BytesAsPayloadText(a.Tag()), "priority": a.Priority(),
+		}
+	}
+	replay(t, "static_lift", drive[static_lift.StaticLiftState, static_lift.StaticLiftEvent](&policy, map[string]func() any{
+		"answer": func() any {
+			if answer, ok := policy.Answer().Get(); ok {
+				return answerJSON(answer)
+			}
+			return nil
+		},
+		"why": func() any {
+			if why, ok := policy.Why().Get(); ok {
+				return map[string]any{"code": why.Code().String(), "path": why.Path(), "bound": why.Bound()}
+			}
+			return nil
+		},
+		"said":   func() any { return policy.Said() },
+		"lifts":  func() any { return policy.Lifts() },
+		"errors": func() any { return policy.Errors() },
 	}))
 }
 

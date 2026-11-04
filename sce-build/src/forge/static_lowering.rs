@@ -9295,6 +9295,143 @@ impl StaticTarget for GoTarget<'_> {
             filters::escape_go(label.to_string())
         )
     }
+    // The runtime's `LiftRecord` reads the text and hands the record to a function
+    // literal that reads each field through `LiftField` and the reader a delivery's
+    // value of its type is read by (`ValueUnsigned`, `PayloadValue.Text`, ...). A
+    // refusal is the record of the standard refusal document, its code matched
+    // number by number onto the machine's enum of it.
+    fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
+        let go_type = |ty: &SceType| crate::forge::generator::go_type(ty).to_string();
+        let enum_reader = |alias: &str| -> Option<(String, String)> {
+            let model = lift.enums.get(alias)?;
+            let ty = self.enum_type(lift.machine, alias)?;
+            let arms: String = model
+                .variants
+                .iter()
+                .map(|v| {
+                    format!(
+                        "case \"{}\": return {}, nil; ",
+                        filters::escape_go(v.name.clone()),
+                        self.enum_variant(&ty, &model.name, &v.name)
+                    )
+                })
+                .collect();
+            let reader = format!(
+                "func(v sce.PayloadValue) ({ty}, error) {{ name, err := v.Name(); if err != nil \
+                 {{ return 0, err }}; switch name {{ {arms}}}; return 0, \
+                 v.UnknownVariant(name, \"{}\") }}",
+                filters::escape_go(alias.to_string())
+            );
+            Some((ty, reader))
+        };
+        // The reader of a present value of `ty`, and the Go type it answers.
+        let read = |ty: &SceType, max: Option<u32>| -> Option<(String, String)> {
+            Some(match ty {
+                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
+                    (go_type(ty), format!("sce.ValueUnsigned[{}]", go_type(ty)))
+                }
+                SceType::Int8 | SceType::Int16 | SceType::Int32 => {
+                    (go_type(ty), format!("sce.ValueSigned[{}]", go_type(ty)))
+                }
+                SceType::Uint64 => (go_type(ty), "sce.ValueUnsigned64".to_string()),
+                SceType::Int64 => (go_type(ty), "sce.ValueSigned64".to_string()),
+                SceType::Float32 | SceType::Float64 => {
+                    (go_type(ty), format!("sce.ValueFloat[{}]", go_type(ty)))
+                }
+                SceType::Bool => (go_type(ty), "sce.PayloadValue.Bool".to_string()),
+                SceType::String => (
+                    "string".to_string(),
+                    format!(
+                        "func(v sce.PayloadValue) (string, error) {{ return v.Text({}) }}",
+                        max?
+                    ),
+                ),
+                SceType::Bytes => (
+                    "[]byte".to_string(),
+                    format!(
+                        "func(v sce.PayloadValue) ([]byte, error) {{ return v.Bytes({}) }}",
+                        max?
+                    ),
+                ),
+                SceType::Enum(reference) => enum_reader(&reference.alias)?,
+            })
+        };
+        let record_ty = self.record_type(lift.machine, lift.alias);
+        let mut reads = String::new();
+        let mut members = Vec::with_capacity(lift.schema.fields.len());
+        for (index, field) in lift.schema.fields.iter().enumerate() {
+            let reader = match &field.sce_type {
+                EntryType::Scalar(ty) => read(ty, field.max_size)?.1,
+                EntryType::Optional { elem } => {
+                    let (present, inner) = read(elem, field.max_size)?;
+                    format!(
+                        "func(v sce.PayloadValue) (optional.Of[{present}], error) {{ return \
+                         optional.Read(v, {inner}) }}"
+                    )
+                }
+            };
+            reads.push_str(&format!(
+                "sceField{index}, err := sce.LiftField(r, \"{}\", {reader}); if err != nil {{ \
+                 return {record_ty}{{}}, err }}; ",
+                field.id
+            ));
+            members.push((self.record_field(&field.id), format!("sceField{index}")));
+        }
+        let declared: Vec<String> = lift
+            .field_ids()
+            .iter()
+            .map(|id| format!("\"{id}\""))
+            .collect();
+        let defaults = lift
+            .defaults
+            .as_ref()
+            .map(|json| filters::escape_go(json.clone()))
+            .unwrap_or_default();
+        // The refusal, as a record of the standard refusal document.
+        let (code_alias, code_model) = lift.refusal_code()?;
+        let code_ty = self.enum_type(lift.machine, code_alias)?;
+        let mut code_arms = String::new();
+        let mut first = None;
+        for variant in &code_model.variants {
+            let ident = self.enum_variant(&code_ty, &code_model.name, &variant.name);
+            code_arms.push_str(&format!("case {}: return {ident}; ", variant.value));
+            first.get_or_insert(ident);
+        }
+        // Every code the runtime answers is a variant of the standard document,
+        // the judge having held the refusal to it; the last return is not taken.
+        let code = format!(
+            "func() {code_ty} {{ switch sceRefusal.Code() {{ {code_arms}}}; return {} }}()",
+            first?
+        );
+        let bound = "func() optional.Of[uint32] { if sceBound, ok := sceRefusal.Bound(); ok { \
+                     return optional.Some[uint32](sceBound) }; return optional.None[uint32]() }()";
+        let refusal_ty = self.record_type(lift.machine, lift.refusal_alias);
+        let members_of_refusal =
+            lift.refusal_members(self, &code, "sceRefusal.Pointer()", bound)?;
+        let refusal_record = self.record_value(&refusal_ty, &members_of_refusal);
+        let lifted = if lift.location_optional {
+            self.optional_some(&record_ty, "sceLifted")?
+        } else {
+            "sceLifted".to_string()
+        };
+        Some(format!(
+            "if sceLifted, sceRefusal := sce.LiftRecord({text}, \"{schema}\", {depth}, \
+             []string{{{declared}}}, \"{defaults}\", func(r sce.PayloadRecord) ({record_ty}, error) \
+             {{ {reads}return {record}, nil }}); sceRefusal == nil {{ {write}; {absent} }} else \
+             {{ {refused} }}",
+            text = lift.text,
+            schema = filters::escape_go(lift.alias.to_string()),
+            depth = lift.depth,
+            declared = declared.join(", "),
+            record = self.record_value(&record_ty, &members),
+            write = self.assign(lift.location, &lifted),
+            absent = self.assign(lift.refusal, &self.optional_none(&refusal_ty)?),
+            refused = self.assign(
+                lift.refusal,
+                &self.optional_some(&refusal_ty, &refusal_record)?
+            ),
+        ))
+    }
     // An expression that is `true` when the append failed: the list is full, or
     // the value could not be computed. The room is checked first, so a full
     // list computes nothing, and the value is computed into a local before it

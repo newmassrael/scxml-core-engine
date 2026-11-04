@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"sort"
 	"strconv"
@@ -190,7 +191,8 @@ type PayloadFields map[string]any
 // The JSON read is §scxml-B-2-8-1's second rung, the same one the script
 // engine takes for the same string.
 func LiftPayload(data string) (PayloadFields, error) {
-	trimmed := strings.TrimSpace(data)
+	// Only the whitespace RFC 8259 has: any other is a text that is not JSON.
+	trimmed := strings.Trim(data, jsonWhitespace)
 	if trimmed == "" {
 		return nil, refuseAt(RefusalNotJSON, "", "the event carries no data")
 	}
@@ -210,6 +212,80 @@ func LiftPayload(data string) (PayloadFields, error) {
 // not one JSON value.
 var errMoreThanOneValue = errors.New("it carries more than one JSON value")
 
+// jsonWhitespace is the whitespace RFC 8259 has between tokens (section 2):
+// space, tab, line feed and carriage return, and no other.
+const jsonWhitespace = " \t\n\r"
+
+// errHalfOfACharacter is why a text whose `\u` escape is half of a UTF-16 pair
+// is not JSON every runtime reads alike: encoding/json reads a lone half as
+// U+FFFD, which the text did not say.
+var errHalfOfACharacter = errors.New("a \\u escape is half of a character")
+
+// pairedEscapes reports a `\u` escape of text that names half of a UTF-16 pair
+// with no other half beside it (RFC 8259, sections 7 and 8.2): a high half not
+// followed at once by an escape of a low one, or a low half alone. Every other
+// rule of a text's grammar is encoding/json's, which holds them.
+func pairedEscapes(text string) error {
+	inText := false
+	for at := 0; at < len(text); at++ {
+		switch c := text[at]; {
+		case !inText:
+			inText = c == '"'
+		case c == '"':
+			inText = false
+		case c == '\\' && at+1 < len(text) && text[at+1] == 'u':
+			code, ok := hex4(text, at+2)
+			if !ok {
+				// The grammar's to refuse.
+				at++
+				continue
+			}
+			switch {
+			case code >= 0xD800 && code <= 0xDBFF:
+				low, ok := uint16(0), false
+				if at+7 < len(text) && text[at+6] == '\\' && text[at+7] == 'u' {
+					low, ok = hex4(text, at+8)
+				}
+				if !ok || low < 0xDC00 || low > 0xDFFF {
+					return errHalfOfACharacter
+				}
+				at += 11
+			case code >= 0xDC00 && code <= 0xDFFF:
+				return errHalfOfACharacter
+			default:
+				at += 5
+			}
+		case c == '\\':
+			at++
+		}
+	}
+	return nil
+}
+
+// hex4 is the number the four hex digits of text at at spell, and whether they
+// are four hex digits.
+func hex4(text string, at int) (uint16, bool) {
+	if at+4 > len(text) {
+		return 0, false
+	}
+	var code uint16
+	for _, c := range []byte(text[at : at+4]) {
+		var digit byte
+		switch {
+		case c >= '0' && c <= '9':
+			digit = c - '0'
+		case c >= 'a' && c <= 'f':
+			digit = c - 'a' + 10
+		case c >= 'A' && c <= 'F':
+			digit = c - 'A' + 10
+		default:
+			return 0, false
+		}
+		code = code<<4 | uint16(digit)
+	}
+	return code, true
+}
+
 // decodeJSON reads exactly one JSON value, a whole number kept in its written
 // spelling.
 //
@@ -219,6 +295,9 @@ var errMoreThanOneValue = errors.New("it carries more than one JSON value")
 // (docs/adr/0087, section 2.3). The text is read token by token for that, since
 // a map decoded whole no longer shows the name twice.
 func decodeJSON(text string) (any, error) {
+	if err := pairedEscapes(text); err != nil {
+		return nil, err
+	}
 	dec := json.NewDecoder(strings.NewReader(text))
 	// A whole number that does not fit a float64 must survive the decode, so
 	// numbers are kept in their written spelling and converted per field.
@@ -297,7 +376,7 @@ func decodeValue(dec *json.Decoder) (any, error) {
 // does carry is read as it came, and held to its type as any other value is.
 func LiftPayloadWithDefaults(data, defaults string) (PayloadFields, error) {
 	fields := PayloadFields{}
-	if strings.TrimSpace(data) != "" {
+	if strings.Trim(data, jsonWhitespace) != "" {
 		lifted, err := LiftPayload(data)
 		if err != nil {
 			return nil, err
@@ -314,6 +393,154 @@ func LiftPayloadWithDefaults(data, defaults string) (PayloadFields, error) {
 		}
 	}
 	return fields, nil
+}
+
+// LiftText reads the text a `<sce:lift>` reads as the fields of a record of a
+// schema (docs/adr/0087, section 2.1): depth is the deepest container a value
+// of the schema holds, declared the ids of its fields, and defaults, for a
+// schema a later revision of which added fields, the JSON object of their
+// defaults ("" for none), which a text that lacks one reads in its place.
+//
+// Three refusals come before the fields are read, in this order: a text that is
+// empty or only whitespace (notJson); a container opened deeper than depth,
+// decided over the text's brackets alone before it is read as JSON (LiftTooDeep,
+// tooDeep); and a text that is not one JSON object, as a delivery is refused
+// (LiftPayload).
+func LiftText(text string, depth uint32, declared []string, defaults string) (PayloadFields, error) {
+	if strings.Trim(text, jsonWhitespace) == "" {
+		return nil, refuseAt(RefusalNotJSON, "", "the text is empty")
+	}
+	if refusal := LiftTooDeep(text, depth, declared); refusal != nil {
+		return nil, refusal
+	}
+	fields, err := LiftPayload(text)
+	if err != nil {
+		return nil, err
+	}
+	if defaults != "" {
+		fallback, err := defaultsOf(defaults)
+		if err != nil {
+			return nil, err
+		}
+		for name, value := range fallback {
+			if _, ok := fields[name]; !ok {
+				fields[name] = value
+			}
+		}
+	}
+	return fields, nil
+}
+
+// LiftTooDeep is the refusal of a container text opens deeper than depth, the
+// deepest a value of a lift's schema holds (docs/adr/0087, section 2.1, item
+// 4), or nil when it opens none.
+//
+// Decided over the brackets alone, before the text is read as JSON, so that
+// every runtime decides it alike and no reader descends past the type: a text
+// is skipped from its opening quote to the next quote no backslash escapes,
+// each `{` and `[` outside one opens a level and each `}` and `]` closes one,
+// and the first opened past depth is refused, whatever the text holds after it.
+// A text that never closes ends the walk with nothing refused, and the reading
+// of the text as JSON refuses it.
+//
+// The pointer names the member of the outermost object the container stands
+// under, the name read from the last text closed in that object before a `:`,
+// when that name is one of declared; otherwise the whole text, "". A container
+// under a key no field declares is no place of the schema. The bound is depth.
+func LiftTooDeep(text string, depth uint32, declared []string) *PayloadRefusal {
+	var level uint32
+	lastText, member := "", ""
+	for at := 0; at < len(text); at++ {
+		switch text[at] {
+		case '"':
+			start := at
+			at++
+			for at < len(text) && text[at] != '"' {
+				if text[at] == '\\' {
+					at++
+				}
+				at++
+			}
+			if at >= len(text) {
+				return nil
+			}
+			if level == 1 {
+				lastText = text[start : at+1]
+			}
+		case ':':
+			if level == 1 {
+				member, lastText = lastText, ""
+			}
+		case ',':
+			if level == 1 {
+				member, lastText = "", ""
+			}
+		case '{', '[':
+			level++
+			if level > depth {
+				pointer := ""
+				if name, err := decodeJSON(member); err == nil {
+					if name, ok := name.(string); ok {
+						for _, field := range declared {
+							if field == name {
+								pointer = PointerBelow("", name)
+							}
+						}
+					}
+				}
+				return refuseAt(RefusalTooDeep, pointer, fmt.Sprintf(
+					"the text opens a container deeper than the %d levels a value of its schema holds",
+					depth)).withBound(int(depth))
+			}
+		case '}', ']':
+			if level > 0 {
+				level--
+			}
+		}
+	}
+	return nil
+}
+
+// LiftField is the value of the field name of the record r, read by read: what a
+// lift reads each field of its schema by.
+func LiftField[T any](r PayloadRecord, name string, read func(PayloadValue) (T, error)) (T, error) {
+	v, err := r.Field(name)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return read(v)
+}
+
+// LiftRecord is what a `<sce:lift>` reads (docs/adr/0087, section 2.1): text as a
+// record of the schema named schema, whose fields read reads out of the record
+// it is handed, as a delivery of the schema is read; or the refusal of the first
+// place that is not one, its code, pointer and bound the statechart keeps as a
+// record. LiftText says what is refused before the fields are read. Each outcome
+// is logged with the schema's name and, for a refusal, its code, pointer and
+// bound; the text itself is not, since nothing bounds what a sender writes in it.
+func LiftRecord[T any](text, schema string, depth uint32, declared []string, defaults string,
+	read func(PayloadRecord) (T, error)) (T, *PayloadRefusal) {
+	var zero T
+	fields, err := LiftText(text, depth, declared, defaults)
+	value := zero
+	if err == nil {
+		value, err = read(PayloadRecord{members: map[string]any(fields)})
+	}
+	if err == nil {
+		log.Printf("[sce] <sce:lift>: the text is a record of %s", schema)
+		return value, nil
+	}
+	var refusal *PayloadRefusal
+	if !errors.As(err, &refusal) {
+		// Every reader of this file refuses with a *PayloadRefusal; an error of
+		// another kind is the text not being JSON at all.
+		refusal = refuseAt(RefusalNotJSON, "", err.Error())
+	}
+	bound, hasBound := refusal.Bound()
+	log.Printf("[sce] <sce:lift>: the text is no record of %s: %s at '%s', bound %d (%t) (%s)",
+		schema, refusal.Code().Name(), refusal.Pointer(), bound, hasBound, refusal.Error())
+	return zero, refusal
 }
 
 // defaultsOf is a schema's defaults, which the generator spells as one JSON
@@ -498,6 +725,12 @@ func (v PayloadValue) wide(signed bool) (string, error) {
 		}
 		return x, nil
 	case json.Number:
+		// `-0` is no whole number, and a number below zero no spelling of an
+		// unsigned one, as for every narrower width.
+		if x.String() == "-0" || (!signed && strings.HasPrefix(x.String(), "-")) {
+			return "", v.refuse(RefusalBadNumber,
+				fmt.Sprintf("is not a whole number of its type (%s)", x.String()))
+		}
 		n, err := strconv.ParseInt(x.String(), 10, 64)
 		if err != nil {
 			return "", v.refuse(RefusalBadNumber, fmt.Sprintf("is not a whole number (%s)", x.String()))
@@ -553,6 +786,11 @@ func ValueSigned[T int8 | int16 | int32 | int64](v PayloadValue) (T, error) {
 	if err != nil {
 		return 0, err
 	}
+	// `-0` is a JSON number and no spelling of a whole number: every runtime
+	// refuses it, as it refuses `"-0"` for a 64-bit integer.
+	if n.String() == "-0" {
+		return 0, v.refuse(RefusalBadNumber, "is not a whole number (-0)")
+	}
 	whole, err := n.Int64()
 	if err != nil {
 		// A whole number no int64 holds is past every signed width; any other
@@ -577,7 +815,7 @@ func ValueUnsigned[T uint8 | uint16 | uint32 | uint64](v PayloadValue) (T, error
 		return 0, err
 	}
 	whole, err := n.Int64()
-	if err != nil || whole < 0 {
+	if err != nil || whole < 0 || n.String() == "-0" {
 		// Below zero is no spelling of an unsigned number; a whole number no
 		// int64 holds is past every width this reads.
 		code := RefusalBadNumber
