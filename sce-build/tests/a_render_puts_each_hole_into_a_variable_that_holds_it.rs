@@ -97,7 +97,9 @@ fn refused(text: &str) -> (DiagnosticCode, String) {
 
 /// A render that keeps every rule is generated on every backend that can name
 /// the template's unit, through its `render` and the line that brings it into
-/// scope, and Rust, C++ and C11 log it by the template and the variable.
+/// scope, and Rust, C++, C11 and Swift log it by the template and the variable
+/// (Go's line is held by the static lowering's
+/// `a_render_is_logged_through_the_machine_runtime_that_has_a_log`).
 #[test]
 fn a_render_is_lowered_through_the_templates_unit_on_every_backend() {
     let text = document(VARIABLES, &render("note", EVERY_HOLE));
@@ -130,6 +132,7 @@ fn a_render_is_lowered_through_the_templates_unit_on_every_backend() {
                 false,
             ),
             Language::Python => (".render(", Some("import text_notice as"), false),
+            // Swift logs through its machine runtime's public entry point.
             Language::Swift => ("TextNotice.render(", None, false),
             Language::Go => unreachable!("skipped above"),
         };
@@ -142,6 +145,14 @@ fn a_render_is_lowered_through_the_templates_unit_on_every_backend() {
             logs,
             "{lang:?} logs the render: {logs}"
         );
+        if lang == Language::Swift {
+            assert!(
+                code.contains(
+                    "sceLogRender(machine: \"probe\", template: \"Notice\", location: \"note\")"
+                ),
+                "Swift logs the render through SceRuntime:\n{code}"
+            );
+        }
     }
 }
 

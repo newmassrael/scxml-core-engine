@@ -8874,6 +8874,16 @@ impl StaticTarget for GoTarget<'_> {
     fn text_template(&self, document: &str) -> Option<Callee> {
         Some(generated_template(Language::Go, document, self.import_root))
     }
+    // The machine runtime's helper writes the line through its log, as the Rust,
+    // C++ and C11 machines write it through theirs.
+    fn render_log(&self, machine: &str, template: &str, location: &str) -> Option<String> {
+        Some(format!(
+            "sce.LogRender(\"{}\", \"{}\", \"{}\")",
+            filters::escape_go(machine.to_string()),
+            filters::escape_go(template.to_string()),
+            filters::escape_go(location.to_string())
+        ))
+    }
     fn lowers_state_calls(&self) -> bool {
         true
     }
@@ -13670,6 +13680,16 @@ impl StaticTarget for SwiftTarget {
     fn text_template(&self, document: &str) -> Option<Callee> {
         Some(generated_template(Language::Swift, document, None))
     }
+    // The machine runtime's public entry point forwards the line to `sceLog`, as
+    // the Rust, C++ and C11 machines write it through their logs.
+    fn render_log(&self, machine: &str, template: &str, location: &str) -> Option<String> {
+        Some(format!(
+            "sceLogRender(machine: \"{}\", template: \"{}\", location: \"{}\")",
+            filters::escape_swift(machine.to_string()),
+            filters::escape_swift(template.to_string()),
+            filters::escape_swift(location.to_string())
+        ))
+    }
     // A call that hands an algorithm a record, or takes one back, goes through an
     // adapter of the machine's file: the machine holds a record in a struct of its own
     // (`record_type`) and the algorithm in the one its schema's unit declares, and the
@@ -15561,8 +15581,12 @@ fn lower_action(
                 let written = target.assign_string(&name, v);
                 if logged.is_empty() {
                     written
-                } else {
+                } else if written.ends_with(';') || written.ends_with('}') {
                     format!("{written} {logged}")
+                } else {
+                    // A language whose statements end at the line (Go, Swift)
+                    // takes two on one line apart by `;`.
+                    format!("{written}; {logged}")
                 }
             };
             (action.native_code, action.native_fails) =
@@ -17077,6 +17101,34 @@ fn lower_nested(
 mod tests {
     use super::*;
     use crate::parser::SCXMLParser;
+
+    /// A `<sce:render>` is logged through each machine runtime that has a log
+    /// (docs/adr/0087, section 3.1): one line naming the machine, the template
+    /// and the variable, the Go and Swift machines through their runtime's
+    /// helper; Kotlin and Python have no log in their runtime and write none.
+    #[test]
+    fn a_render_is_logged_through_the_machine_runtime_that_has_a_log() {
+        let go = GoTarget { import_root: None };
+        assert_eq!(
+            go.render_log("m", "Notice", "note").as_deref(),
+            Some("sce.LogRender(\"m\", \"Notice\", \"note\")")
+        );
+        assert_eq!(
+            SwiftTarget.render_log("m", "Notice", "note").as_deref(),
+            Some("sceLogRender(machine: \"m\", template: \"Notice\", location: \"note\")")
+        );
+        assert!(RustTarget
+            .render_log("m", "Notice", "note")
+            .is_some_and(|l| l.contains("sce_log_info!")));
+        assert!(CppTarget
+            .render_log("m", "Notice", "note")
+            .is_some_and(|l| l.contains("SCE_LOG_INFO(")));
+        assert!(CTarget::arguments()
+            .render_log("m", "Notice", "note")
+            .is_some_and(|l| l.starts_with("fprintf(stderr, ")));
+        assert_eq!(KotlinTarget.render_log("m", "Notice", "note"), None);
+        assert_eq!(PythonTarget.render_log("m", "Notice", "note"), None);
+    }
 
     /// C11 holds an optional value in the struct `sce/forge/optional.h` declares
     /// over the type its present value is held in (docs/adr/0055, section 5): one

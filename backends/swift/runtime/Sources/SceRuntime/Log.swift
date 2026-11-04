@@ -12,6 +12,15 @@ func sceLog(_ message: @autoclosure () -> String) {
     FileHandle.standardError.write(Data("[sce] \(message())\n".utf8))
 }
 
+/// Writes, through `sceLog`, the line a generated machine's `<sce:render>` writes once it has
+/// replaced `location` with the rendering of `template` (docs/adr/0087, section 3.1, item 6):
+/// the machine, the template and the variable, never the text, which may hold what a person
+/// wrote. The same line the Rust, C++, C11 and Go machines write through their logs; a render
+/// whose hole failed raised `error.execution` instead and writes no line.
+public func sceLogRender(machine: String, template: String, location: String) {
+    sceLog("\(machine): <sce:render template=\"\(template)\"> wrote \(location)")
+}
+
 extension Duration {
     /// This duration in whole milliseconds, truncated toward zero.
     var wholeMilliseconds: Int64 {
