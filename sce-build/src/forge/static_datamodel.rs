@@ -2154,11 +2154,11 @@ impl<'a> Judge<'a> {
         match ty {
             InferredType::Str => {}
             InferredType::Optional(crate::forge::types::OptionalElem::Str) => {
-                return Err(lift_text(
-                    "names a text that may be absent and is not proven present here: test it \
-                     first (`x !== null`), or lift a text that is always present"
-                        .to_string(),
-                ));
+                return Err(lift_text(format!(
+                    "names a text that may be absent: test it first (`{text} !== null`) and \
+                     lift its present value (`{text}.value`), or lift a text that is always \
+                     present"
+                )));
             }
             other => {
                 return Err(lift_text(format!(
@@ -3240,6 +3240,11 @@ impl<'a> Judge<'a> {
             ExprKind::Member { object, property } => {
                 if let Some(path) = crate::forge::expr::dotted_path(node) {
                     if let Some(field) = path.strip_prefix("_event.data.") {
+                        // The present value of an optional text of the payload is
+                        // bounded as the field is (docs/adr/0055).
+                        let field = field
+                            .strip_suffix(&format!(".{}", crate::forge::expr::OPTIONAL_VALUE))
+                            .unwrap_or(field);
                         if field.contains('.') {
                             return None;
                         }
@@ -3253,6 +3258,15 @@ impl<'a> Judge<'a> {
                     }
                 }
                 match &object.kind {
+                    // The present value of an optional text variable, `note.value`,
+                    // is bounded as the variable is (docs/adr/0055).
+                    ExprKind::Ident(holder) if property == crate::forge::expr::OPTIONAL_VALUE => {
+                        let var = variable(holder)?;
+                        match var.value_type.as_ref()?.optional_elem()?.scalar()? {
+                            SceType::String | SceType::Bytes => var.capacity(),
+                            _ => None,
+                        }
+                    }
                     ExprKind::Ident(holder) => {
                         if let Some(alias) = variable(holder)
                             .and_then(|v| v.value_type.as_ref())

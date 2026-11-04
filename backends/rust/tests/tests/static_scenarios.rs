@@ -86,6 +86,9 @@ use sce_rust_tests::integration::static_datamodel::static_invoke_string_sm::{
 use sce_rust_tests::integration::static_datamodel::static_invoke_tree_sm::{
     StaticInvokeTreePersist, StaticInvokeTreePolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_lift_sm::{
+    StaticLiftPersist, StaticLiftPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_list_assign_sm::{
     StaticListAssignPersist, StaticListAssignPolicy,
 };
@@ -573,6 +576,20 @@ fn static_wire_wide_carries_a_64_bit_integer_as_its_digits() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json"
+        ),
+    );
+}
+
+// A text read into a record of a schema, or its refusal kept as a record of the
+// standard refusal document, the same code, pointer and bound on every lane
+// (docs/adr/0087, section 9.1).
+#[test]
+fn static_lift_reads_a_text_into_a_record_or_keeps_its_refusal() {
+    replay(
+        Engine::new(StaticLiftPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_lift.json"
         ),
     );
 }

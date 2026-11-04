@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  `text.given` (docs/adr/0087, section 9.1): a text a sender hands
+  `static_lift.scxml`, which lifts it from the payload in place.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="lift_given"
+       sce:event-name="text.given">
+  <datamodel>
+    <data id="text" sce:type="string[512]" sce:direction="in"/>
+  </datamodel>
+</scxml>

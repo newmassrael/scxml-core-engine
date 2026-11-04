@@ -883,6 +883,106 @@ fn enum_variant_pairs(
         .collect()
 }
 
+/// A `<sce:lift>` as the walk hands it to a target (docs/adr/0087, section 2.1):
+/// everything the statement reads and writes, decided once, so a target spells
+/// only its own language.
+///
+/// The statement reads the text as a record of `schema` through the runtime's
+/// reader of a lift, which refuses a container opened deeper than `depth`
+/// before it reads the text as JSON and then reads it as a delivery of the
+/// schema is read, a field a later revision added taking its default. A text
+/// that is a value of the schema replaces `location` whole (present, where it
+/// is optional) and makes `refusal` absent; any other makes `refusal` present,
+/// holding the code, the strict RFC 6901 pointer and the bound of the first
+/// place refused, and leaves `location` as it was. It raises nothing.
+pub struct LiftStatement<'a> {
+    /// The machine the statement is in.
+    pub machine: &'a str,
+    /// The text read, lent in place: an expression of the target's language
+    /// that is the text ([`crate::forge::expr::transpile_into_copied`]).
+    pub text: &'a str,
+    /// The schema the text is read as a record of, by the alias the document
+    /// imports it under, and its fields, each one entry.
+    pub alias: &'a str,
+    pub schema: &'a EntrySchema,
+    /// `depth(R)` ([`crate::forge::lift::depth`]).
+    pub depth: u32,
+    /// The JSON object of the defaults of the fields a later revision of the
+    /// schema added ([`crate::forge::schema_revision::defaults_wire`]).
+    pub defaults: Option<String>,
+    /// The variable the record replaces, as the target names it, and whether
+    /// it holds an optional record.
+    pub location: &'a str,
+    pub location_optional: bool,
+    /// The variable the refusal is kept in, as the target names it: an
+    /// optional record of the standard refusal document, imported as
+    /// `refusal_alias`.
+    pub refusal: &'a str,
+    pub refusal_alias: &'a str,
+    pub refusal_schema: &'a EntrySchema,
+    /// Every enum the machine holds, by the name it holds each by
+    /// ([`SCXMLModel::held_enums`]).
+    pub enums: &'a std::collections::BTreeMap<String, EnumModel>,
+}
+
+impl LiftStatement<'_> {
+    /// The ids of the schema's fields, in its order: the places a lift names in
+    /// a pointer, and the members a `tooDeep` refusal names a container under
+    /// where the schema declares them.
+    pub fn field_ids(&self) -> Vec<&str> {
+        self.schema.fields.iter().map(|f| f.id.as_str()).collect()
+    }
+
+    /// The enum the refusal record's `code` holds a value of: the alias the
+    /// machine holds it by, and the enum document.
+    pub fn refusal_code(&self) -> Option<(&str, &EnumModel)> {
+        let field = self.refusal_schema.fields.iter().find(|f| f.id == "code")?;
+        let SceType::Enum(reference) = field.sce_type.present_type() else {
+            return None;
+        };
+        self.enums
+            .get_key_value(reference.alias.as_str())
+            .map(|(alias, model)| (alias.as_str(), model))
+    }
+
+    /// The bound of the refusal record's `path`, the room the pointer is
+    /// written into, which the judge held to be at least the longest pointer of
+    /// the schema ([`crate::forge::lift::longest_pointer`]).
+    pub fn path_bound(&self) -> Option<u32> {
+        self.refusal_schema
+            .fields
+            .iter()
+            .find(|f| f.id == crate::forge::lift::REFUSAL_PATH_FIELD)
+            .and_then(|f| f.max_size)
+    }
+
+    /// The members of a refusal record, each field's identifier with its
+    /// value, in the schema's order: `code`, `path` and `bound` as given. `None`
+    /// for a field the standard refusal record does not declare, which the
+    /// judge refused.
+    pub fn refusal_members(
+        &self,
+        target: &dyn StaticTarget,
+        code: &str,
+        path: &str,
+        bound: &str,
+    ) -> Option<Vec<(String, String)>> {
+        self.refusal_schema
+            .fields
+            .iter()
+            .map(|field| {
+                let value = match field.id.as_str() {
+                    "code" => code,
+                    "path" => path,
+                    "bound" => bound,
+                    _ => return None,
+                };
+                Some((target.record_field(&field.id), value.to_string()))
+            })
+            .collect()
+    }
+}
+
 /// How one backend spells what a `sce-static` document says. The walk
 /// ([`lower`]) asks; the answer is the only thing that differs by backend.
 pub trait StaticTarget {
@@ -1803,6 +1903,14 @@ pub trait StaticTarget {
     /// (§scxml-4.7). A target that formats by the value's type — C has no
     /// overloading — reads `ty`; the others show the value as the language does.
     fn log(&self, label: &str, value: &str, ty: InferredType) -> String;
+    /// The whole statement a `<sce:lift>` lowers to (docs/adr/0087, section
+    /// 2.1), [`LiftStatement`] saying what it reads and writes. It raises
+    /// nothing and cannot fail, so it is a plain statement the dispatcher emits
+    /// as it stands. `None` for a target with no spelling of it yet, which
+    /// refuses the statement by name.
+    fn lift(&self, _lift: &LiftStatement<'_>) -> Option<String> {
+        None
+    }
     /// Append `value` to the list at `target` while it holds fewer than
     /// `capacity` elements, as an expression that is `true` when the append
     /// failed. It fails when the list is full — `overflow`, if any, runs, and
@@ -3737,6 +3845,114 @@ impl StaticTarget for RustTarget {
             )
         }
     }
+    // The runtime's `lift_record` reads the text and hands the record of its
+    // fields to the readers a composed record is read by (`RustComposed`), so a
+    // field is held to its type by the very call a delivery's is. A refusal is
+    // matched code by code onto the machine's enum of the standard refusal
+    // document, an exhaustive match the compiler holds to the runtime's codes.
+    // The pointer fits the record's path: the judge held its bound to the
+    // longest pointer of the schema.
+    fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
+        use crate::forge::composed_lowering::{ComposedSpelling, MachineEnum, RustComposed};
+        const PAYLOAD: &str = "::sce_rust_runtime::event_payload";
+        let spelling = RustComposed {
+            machine: lift.machine,
+        };
+        let machine_enum = |alias: &str| -> Option<MachineEnum> {
+            let model = lift.enums.get(alias)?;
+            let ty = self.enum_type(lift.machine, alias)?;
+            let variants = model
+                .variants
+                .iter()
+                .map(|v| (v.name.clone(), self.enum_variant(&ty, &model.name, &v.name)))
+                .collect();
+            Some(MachineEnum {
+                alias: alias.to_string(),
+                ty,
+                variants,
+            })
+        };
+        let read = |ty: &SceType, max: Option<u32>| -> Option<String> {
+            Some(match ty {
+                SceType::String => spelling.read_text(max?, "v"),
+                SceType::Bytes => spelling.read_bytes(max?, "v"),
+                SceType::Enum(reference) => {
+                    spelling.read_enum(&machine_enum(&reference.alias)?, "v")
+                }
+                scalar => spelling.read_scalar(scalar, "v"),
+            })
+        };
+        let mut members = Vec::with_capacity(lift.schema.fields.len());
+        for field in &lift.schema.fields {
+            let reader = match &field.sce_type {
+                EntryType::Scalar(ty) => read(ty, field.max_size)?,
+                EntryType::Optional { elem } => {
+                    spelling.read_optional("v", &read(elem, field.max_size)?)
+                }
+            };
+            members.push((
+                self.record_field(&field.id),
+                format!("r.field(\"{}\").and_then(|v| {reader})?", field.id),
+            ));
+        }
+        let record = self.record_value(&self.record_type(lift.machine, lift.alias), &members);
+        let declared: Vec<String> = lift
+            .field_ids()
+            .iter()
+            .map(|id| format!("\"{id}\""))
+            .collect();
+        let defaults = lift.defaults.as_ref().map_or_else(
+            || "None".to_string(),
+            |json| format!("Some(\"{}\")", filters::escape_rust(json.clone())),
+        );
+        // The refusal, as a record of the standard refusal document.
+        let (code_alias, code_model) = lift.refusal_code()?;
+        let code_ty = self.enum_type(lift.machine, code_alias)?;
+        let arms: String = code_model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "{PAYLOAD}::RefusalCode::{} => {code_ty}::{}, ",
+                    filters::to_pascal_case(v.name.clone()),
+                    self.enum_variant(&code_ty, &code_model.name, &v.name)
+                )
+            })
+            .collect();
+        let path = format!(
+            "{}::SceString::<{}>::from_text(sce_refusal.pointer()).unwrap_or_default()",
+            crate::forge::composed_lowering::RUST_PORTABLE,
+            lift.path_bound()?
+        );
+        let members = lift.refusal_members(
+            self,
+            &format!("match sce_refusal.code() {{ {arms}}}"),
+            &path,
+            "sce_refusal.bound()",
+        )?;
+        let refusal_record = self.record_value(
+            &self.record_type(lift.machine, lift.refusal_alias),
+            &members,
+        );
+        let refusal_present = self.optional_some("", &refusal_record)?;
+        let lifted = if lift.location_optional {
+            self.optional_some("", "sce_lifted")?
+        } else {
+            "sce_lifted".to_string()
+        };
+        Some(format!(
+            "match {PAYLOAD}::lift_record(&{text}, \"{schema}\", {depth}, &[{declared}], {defaults}, \
+             |r| Ok({record})) {{ Ok(sce_lifted) => {{ {write} {absent} }} Err(sce_refusal) => {{ \
+             {refused} }} }}",
+            text = lift.text,
+            schema = filters::escape_rust(lift.alias.to_string()),
+            depth = lift.depth,
+            declared = declared.join(", "),
+            write = self.assign(lift.location, &lifted),
+            absent = self.assign(lift.refusal, &self.optional_none("")?),
+            refused = self.assign(lift.refusal, &refusal_present),
+        ))
+    }
     // An expression that is `true` when the append failed: the list is full,
     // or the value could not be computed. The value is computed only where
     // there is room for it, and a checked helper answers through `?`, which
@@ -4717,6 +4933,8 @@ pub fn lower(
         next_if_ordinal: std::cell::Cell::new(max_if_ordinal(model) + 1),
         host_optional: std::cell::Cell::new(false),
         composed: ComposedNames::of(model, target, machine, &held_enums),
+        held_enums: held_enums.clone(),
+        type_scope: crate::forge::value_path::statechart_scope(model),
     };
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
@@ -6789,6 +7007,14 @@ struct Rewrites<'m> {
     /// the type a loop over a list the payload holds names its item and list
     /// by. `None` for a target that spells no composed value.
     composed: Option<ComposedNames>,
+    /// Every enum the document holds a value of, by the name it holds each by
+    /// ([`SCXMLModel::held_enums`]): what a `<sce:lift>` names the variants of
+    /// the enum fields of the record it reads by, and of the refusal's code.
+    held_enums: std::collections::BTreeMap<String, EnumModel>,
+    /// The scope the document names its types in, each record with the
+    /// document it is: what the depth of a record a `<sce:lift>` reads is
+    /// folded in ([`crate::forge::lift::depth`]).
+    type_scope: crate::forge::value_type::TypeScope,
 }
 
 impl Rewrites<'_> {
@@ -7110,8 +7336,9 @@ impl CppTarget {
                 // variables; one that reads an event payload is refused with
                 // the payload itself.
                 "assign" | "log" | "if" | "raise" | "cancel" | "native_action" => {}
-                // A list is filled, emptied and walked by native statements.
-                "sce_append" | "sce_clear" | "foreach" => {}
+                // A list is filled, emptied and walked by native statements, and
+                // a text is lifted into a record by one (docs/adr/0087).
+                "sce_append" | "sce_clear" | "foreach" | "sce_lift" => {}
                 // A param is the typed value of the data model crossed to the
                 // event's JSON and, as the text a form carries
                 // (`ScriptResultUtils::valueText`), to the request of a BasicHTTP
@@ -8211,8 +8438,9 @@ impl GoTarget<'_> {
                 // A param is the typed value of the data model crossed to the
                 // event's JSON, and a literal `<content>` is the text it spells.
                 "send" => {}
-                // A list is filled, emptied and walked by native statements.
-                "sce_append" | "sce_clear" | "foreach" => {}
+                // A list is filled, emptied and walked by native statements, and
+                // a text is lifted into a record by one (docs/adr/0087).
+                "sce_append" | "sce_clear" | "foreach" | "sce_lift" => {}
                 other => return Some(format!("<{other}>")),
             }
             for block in action.nested_blocks() {
@@ -9338,8 +9566,9 @@ impl PythonTarget {
         for action in actions {
             match action.action_type.as_str() {
                 "assign" | "log" | "if" | "raise" | "cancel" => {}
-                // A list is filled, emptied and walked by native statements.
-                "sce_append" | "sce_clear" | "foreach" => {}
+                // A list is filled, emptied and walked by native statements, and
+                // a text is lifted into a record by one (docs/adr/0087).
+                "sce_append" | "sce_clear" | "foreach" | "sce_lift" => {}
                 // A param is the typed value of the data model crossed to the
                 // event's data, and a literal `<content>` is the text it spells.
                 "send" => {}
@@ -10463,7 +10692,7 @@ impl CTarget {
                 // machine's variables, lowered where the call is rendered
                 // ([`crate::forge::native_action`]).
                 "assign" | "log" | "if" | "raise" | "native_action" | "sce_append"
-                | "sce_clear" | "foreach" | "cancel" => {}
+                | "sce_clear" | "foreach" | "cancel" | "sce_lift" => {}
                 // The pairs of a `<send>`'s `<param>`s are written as the JSON
                 // object of the event's data from the machine's own fields, as a
                 // `<donedata>`'s are, and for a processor the host serves also
@@ -12480,8 +12709,9 @@ impl SwiftTarget {
         for action in actions {
             match action.action_type.as_str() {
                 "assign" | "log" | "if" | "raise" | "cancel" => {}
-                // A list is filled, emptied and walked by native statements.
-                "sce_append" | "sce_clear" | "foreach" => {}
+                // A list is filled, emptied and walked by native statements, and
+                // a text is lifted into a record by one (docs/adr/0087).
+                "sce_append" | "sce_clear" | "foreach" | "sce_lift" => {}
                 // A call of the machine's host, lowered ahead of this walk by
                 // `native_action::render`; an argument that reads the event's data is
                 // refused before it (`first_swift_unlowered_host_argument`).
@@ -14302,6 +14532,58 @@ fn lower_action(
             let name = renames.get(list).copied().unwrap_or(list);
             action.native_code = target.clear(name);
             rewrites.note_element(action.spellings.get("target"), &action.native_code);
+        }
+        // docs/adr/0087, section 2.1: the text read as a record of the schema,
+        // or the refusal kept; the judge held every name to its type before this
+        // walk ([`crate::forge::static_datamodel`]), so what is missing here is a
+        // lowering this walk lacks.
+        "sce_lift" => {
+            reads_payload = reads(&action.lift_text);
+            let construct = format!("<sce:lift text=\"{}\">", action.lift_text.trim());
+            let unlowered = |why: &str| GenerateError::unsupported(format!("{construct}: {why}"));
+            let alias = action.lift_schema.trim();
+            let schema = rewrites
+                .schemas
+                .get(alias)
+                .ok_or_else(|| unlowered("its schema is no record of entries this build read"))?;
+            let location = action.location.trim();
+            let refusal = action.lift_refusal.trim();
+            let refusal_place = rewrites
+                .optional_records
+                .get(refusal)
+                .ok_or_else(|| unlowered("its refusal names no optional record variable"))?;
+            // Read in place, never copied (docs/adr/0087, section 2.1, item 2).
+            let text = rewrites
+                .lent(&action.lift_text, ctx, renames, InferredType::Str)
+                .map_err(|r| unlowered(&format!("the text has no {lang} lowering: {}", r.error)))?;
+            if text.can_fail {
+                return Err(unlowered(
+                    "reading the text can fail, and a lift is a statement that cannot",
+                ));
+            }
+            // The statement is the element that does the lift and holds the text,
+            // so the text is not noted beside it.
+            let depth = crate::forge::lift::depth(alias, &rewrites.type_scope)
+                .map_err(|e| unlowered(&format!("its schema has no depth: {e}")))?;
+            let statement = LiftStatement {
+                machine: rewrites.machine,
+                text: &text.text,
+                alias,
+                schema,
+                depth,
+                defaults: crate::forge::schema_revision::defaults_wire(schema),
+                location: renames.get(location).copied().unwrap_or(location),
+                location_optional: rewrites.optional_records.contains_key(location),
+                refusal: renames.get(refusal).copied().unwrap_or(refusal),
+                refusal_alias: &refusal_place.alias,
+                refusal_schema: &refusal_place.schema,
+                enums: &rewrites.held_enums,
+            };
+            action.native_code = target
+                .lift(&statement)
+                .ok_or_else(|| unlowered(&format!("{lang} has no lowering of it yet")))?;
+            action.native_fails = false;
+            rewrites.note_element(action.spellings.get("location"), &action.native_code);
         }
         // A `<foreach>` walks a list variable; its loop variables are the
         // body's own, so the body is lowered in a scope that has them and

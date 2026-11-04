@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The answer `static_lift.scxml` reads a text as (docs/adr/0087, section 9.1): a record
+  of a field of each kind a lift reads now, a number of each width class, a text, a
+  closed enum, an optional text and a byte string, and a field a later revision added,
+  which a text written against the first revision reads at its default. An event schema
+  used as a record type: no machine sends `lift.answer`.
+
+  Every field is one entry, so the deepest container a value of it holds is the record
+  itself (depth 1), and its longest pointer is `/priority`, nine bytes, within the 256
+  of the refusal record's path.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="lift_answer"
+       sce:event-name="lift.answer"
+       sce:revision="2">
+  <sce:import kind="enum" src="enum_lift_kind.scxml" as="LiftKind"/>
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="amount" sce:type="int64" sce:direction="in"/>
+    <data id="title" sce:type="string[16]" sce:direction="in"/>
+    <data id="kind" sce:type="enum:LiftKind" sce:direction="in"/>
+    <data id="note" sce:type="optional&lt;string[8]&gt;" sce:direction="in"/>
+    <data id="tag" sce:type="bytes[4]" sce:direction="in"/>
+    <data id="priority" sce:type="uint8" sce:direction="in" sce:since="2" sce:default="3"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,116 @@
+{
+  "machine": "static_lift",
+  "about": "A text read into a record of lift_answer.scxml, or its refusal kept as a record of sce:std/lift/refusal.scxml (docs/adr/0087, section 2). Each well-formed text replaces `answer` and leaves `why` absent; each ill-formed one, one per code of section 2.3 and the adversarial texts of section 9.1, leaves `answer` as it was and keeps the code, the strict RFC 6901 pointer and the bound of the first place refused, the same on every lane. The statement raises nothing, so `lifts` counts every lift and `errors` stays 0. Every schema a lift reads now is a record of entries, one level deep, so each refusal is at depth 1; a repeated name in a nested object is refused as a container past the depth before it is read. Expected values are derived from the document and the refusal table, not observed from a backend.",
+  "steps": [
+    { "note": "nothing is lifted yet: no answer and no refusal",
+      "expect": {"state": "lifting", "variables": {"answer": null, "why": null, "said": "", "lifts": 0, "errors": 0}} },
+
+    { "note": "the canonical text of a record: the record replaces the answer and no refusal remains",
+      "event": "text.given", "data": {"text": "{\"amount\":-42,\"id\":7,\"kind\":\"task\",\"note\":null,\"priority\":1,\"tag\":\"ab\",\"title\":\"Plan\"}"}, "expect": {"variables": {"answer": {"id": 7, "amount": -42, "title": "Plan", "kind": "task", "note": null, "tag": "ab", "priority": 1}, "why": null, "lifts": 1, "errors": 0}} },
+
+    { "note": "keys in another order, a key the schema does not declare, whitespace, a present note, a 64-bit number at 2^53 - 1",
+      "event": "text.given", "data": {"text": "{\n  \"title\" : \"Two\",\t\"extra\": \"x\",\r\n  \"id\": 8, \"kind\": \"meeting\", \"amount\": 9007199254740991,\n  \"note\": \"hi\", \"tag\": \"abcd\", \"priority\": 2 }"}, "expect": {"variables": {"answer": {"id": 8, "amount": 9007199254740991, "title": "Two", "kind": "meeting", "note": "hi", "tag": "abcd", "priority": 2}, "why": null, "lifts": 2}} },
+
+    { "note": "a 64-bit integer as the text of its digits, and an empty byte string",
+      "event": "text.given", "data": {"text": "{\"id\":9,\"amount\":\"-9007199254740991\",\"title\":\"Digits\",\"kind\":\"task\",\"note\":null,\"tag\":\"\",\"priority\":0}"}, "expect": {"variables": {"answer": {"id": 9, "amount": -9007199254740991, "title": "Digits", "kind": "task", "note": null, "tag": "", "priority": 0}, "why": null, "lifts": 3}} },
+
+    { "note": "a text of the first revision reads the later field at its default",
+      "event": "text.given", "data": {"text": "{\"id\":10,\"amount\":0,\"title\":\"First\",\"kind\":\"meeting\",\"note\":null,\"tag\":\"z\"}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": null, "lifts": 4}} },
+
+    { "note": "an empty text is no JSON",
+      "event": "text.given", "data": {"text": ""}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "notJson", "path": "", "bound": null}, "lifts": 5, "errors": 0}} },
+
+    { "note": "an object that never closes is no JSON",
+      "event": "text.given", "data": {"text": "{"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "notJson", "path": "", "bound": null}, "lifts": 6, "errors": 0}} },
+
+    { "note": "two JSON values are no JSON text",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1} {\"id\":7,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "notJson", "path": "", "bound": null}, "lifts": 7, "errors": 0}} },
+
+    { "note": "an array is no record",
+      "event": "text.given", "data": {"text": "[1]"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "notObject", "path": "", "bound": null}, "lifts": 8, "errors": 0}} },
+
+    { "note": "a field the text lacks, with no default",
+      "event": "text.given", "data": {"text": "{\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "missing", "path": "/id", "bound": null}, "lifts": 9, "errors": 0}} },
+
+    { "note": "null where the type is not optional",
+      "event": "text.given", "data": {"text": "{\"id\":null,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "nullNotOptional", "path": "/id", "bound": null}, "lifts": 10, "errors": 0}} },
+
+    { "note": "a text where a number is",
+      "event": "text.given", "data": {"text": "{\"id\":\"7\",\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "wrongKind", "path": "/id", "bound": null}, "lifts": 11, "errors": 0}} },
+
+    { "note": "a fraction for an unsigned field",
+      "event": "text.given", "data": {"text": "{\"id\":1.5,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "badNumber", "path": "/id", "bound": null}, "lifts": 12, "errors": 0}} },
+
+    { "note": "below zero for an unsigned field",
+      "event": "text.given", "data": {"text": "{\"id\":-1,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "badNumber", "path": "/id", "bound": null}, "lifts": 13, "errors": 0}} },
+
+    { "note": "a 64-bit number past 2^53 - 1",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":9007199254740992,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "badNumber", "path": "/amount", "bound": null}, "lifts": 14, "errors": 0}} },
+
+    { "note": "a whole number one past its width",
+      "event": "text.given", "data": {"text": "{\"id\":4294967296,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "outOfRange", "path": "/id", "bound": null}, "lifts": 15, "errors": 0}} },
+
+    { "note": "a title of 17 bytes: 15 ASCII bytes and one two-byte character",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"abcdefghijklmnoé\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "tooLong", "path": "/title", "bound": 16}, "lifts": 16, "errors": 0}} },
+
+    { "note": "a byte string of 5 bytes past its bound of 4",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"abcde\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "tooLong", "path": "/tag", "bound": 4}, "lifts": 17, "errors": 0}} },
+
+    { "note": "a note of 9 bytes past its bound of 8",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":\"123456789\",\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "tooLong", "path": "/note", "bound": 8}, "lifts": 18, "errors": 0}} },
+
+    { "note": "a name the enum does not declare",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"call\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "unknownVariant", "path": "/kind", "bound": null}, "lifts": 19, "errors": 0}} },
+
+    { "note": "a byte string holding U+0100",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"\\u0100\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "notByteText", "path": "/tag", "bound": null}, "lifts": 20, "errors": 0}} },
+
+    { "note": "a text holding U+0000",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"a\\u0000b\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "nulInText", "path": "/title", "bound": null}, "lifts": 21, "errors": 0}} },
+
+    { "note": "a container under a key the schema does not declare, past the depth of 1",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1,\"extra\":[1]}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "tooDeep", "path": "", "bound": 1}, "lifts": 22, "errors": 0}} },
+
+    { "note": "a container under a declared field, past the depth of 1",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":[\"Plan\"],\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "tooDeep", "path": "/title", "bound": 1}, "lifts": 23, "errors": 0}} },
+
+    { "note": "a repeated name at the top of the text",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1,\"id\":8}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "notJson", "path": "", "bound": null}, "lifts": 24, "errors": 0}} },
+
+    { "note": "brackets nested far past the depth under an unknown key, never closed",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"extra\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "tooDeep", "path": "", "bound": 1}, "lifts": 25, "errors": 0}} },
+
+    { "note": "a lone surrogate escape in a text",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"\\ud800\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "notJson", "path": "", "bound": null}, "lifts": 26, "errors": 0}} },
+
+    { "note": "a number past every double where a whole number is",
+      "event": "text.given", "data": {"text": "{\"id\":1e999,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "badNumber", "path": "/id", "bound": null}, "lifts": 27, "errors": 0}} },
+
+    { "note": "-0 for an unsigned field",
+      "event": "text.given", "data": {"text": "{\"id\":-0,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "badNumber", "path": "/id", "bound": null}, "lifts": 28, "errors": 0}} },
+
+    { "note": "leading zeros",
+      "event": "text.given", "data": {"text": "{\"id\":007,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "notJson", "path": "", "bound": null}, "lifts": 29, "errors": 0}} },
+
+    { "note": "a raw control character in a text",
+      "event": "text.given", "data": {"text": "{\"id\":7,\"amount\":-42,\"title\":\"a\u0001b\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "notJson", "path": "", "bound": null}, "lifts": 30, "errors": 0}} },
+
+    { "note": "a number with a plus sign",
+      "event": "text.given", "data": {"text": "{\"id\":+7,\"amount\":-42,\"title\":\"Plan\",\"kind\":\"task\",\"note\":null,\"tag\":\"ab\",\"priority\":1}"}, "expect": {"variables": {"answer": {"id": 10, "amount": 0, "title": "First", "kind": "meeting", "note": null, "tag": "z", "priority": 3}, "why": {"code": "notJson", "path": "", "bound": null}, "lifts": 31, "errors": 0}} },
+
+    { "note": "a title holding a quote, a brace and a fence marker is read as the text it is",
+      "event": "text.given", "data": {"text": "{\"id\":11,\"amount\":5,\"title\":\"x\\\"}<<<TEXT\",\"kind\":\"task\",\"note\":\"TEXT>>>\",\"tag\":\"a b\",\"priority\":4}"}, "expect": {"variables": {"answer": {"id": 11, "amount": 5, "title": "x\"}<<<TEXT", "kind": "task", "note": "TEXT>>>", "tag": "a b", "priority": 4}, "why": null, "lifts": 32, "errors": 0}} },
+
+    { "note": "a refusal after a value: the value stays, the refusal is kept",
+      "event": "text.given", "data": {"text": "{"}, "expect": {"variables": {"answer": {"id": 11, "amount": 5, "title": "x\"}<<<TEXT", "kind": "task", "note": "TEXT>>>", "tag": "a b", "priority": 4}, "why": {"code": "notJson", "path": "", "bound": null}, "lifts": 33}} },
+
+    { "note": "a text kept in a variable and lifted from it: the refusal before it is gone",
+      "event": "text.kept", "data": {"text": "{\"id\":12,\"amount\":6,\"title\":\"Kept\",\"kind\":\"meeting\",\"note\":null,\"tag\":\"k\",\"priority\":5}"}, "expect": {"variables": {"answer": {"id": 12, "amount": 6, "title": "Kept", "kind": "meeting", "note": null, "tag": "k", "priority": 5}, "why": null, "lifts": 34, "said": "{\"id\":12,\"amount\":6,\"title\":\"Kept\",\"kind\":\"meeting\",\"note\":null,\"tag\":\"k\",\"priority\":5}"}} },
+
+    { "note": "a kept text that is no record keeps its refusal and the answer before it",
+      "event": "text.kept", "data": {"text": "{\"id\":12,\"amount\":6,\"title\":\"Kept\",\"kind\":\"meeting\",\"note\":null,\"tag\":\"k\",\"priority\":256}"}, "expect": {"variables": {"answer": {"id": 12, "amount": 6, "title": "Kept", "kind": "meeting", "note": null, "tag": "k", "priority": 5}, "why": {"code": "outOfRange", "path": "/priority", "bound": null}, "lifts": 35}} },
+
+    { "note": "the widest values of each field are read",
+      "event": "text.given", "data": {"text": "{\"id\":4294967295,\"amount\":1,\"title\":\"Again\",\"kind\":\"task\",\"note\":\"ok\",\"tag\":\"\",\"priority\":255}"}, "expect": {"variables": {"answer": {"id": 4294967295, "amount": 1, "title": "Again", "kind": "task", "note": "ok", "tag": "", "priority": 255}, "why": null, "lifts": 36, "errors": 0}} }
+  ]
+}

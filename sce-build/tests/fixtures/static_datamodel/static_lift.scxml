@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A text read as a record";
+  docs/adr/0087, section 2): a text read into a record of a schema, or the refusal of
+  it kept as a record. `text.given` lifts the text its payload carries, in place;
+  `text.kept` first keeps the text in `said`, as a harness keeps an answer it may lift
+  again, and lifts the variable.
+
+  After a text that is a record of `lift_answer.scxml`, `answer` holds it and `why` is
+  absent; after any other, `why` holds the code, the strict RFC 6901 pointer and the
+  bound of the first place refused, and `answer` is what it was. The statement raises
+  nothing, so the assignment after it runs either way: `lifts` counts every lift, and
+  `errors` stays 0, since no error.execution is raised.
+
+  Expected values are derived from the document and the refusal table of docs/adr/0087,
+  section 2.3, not observed from a backend. scenarios/static_lift.json replays it on
+  every lane.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="lifting" datamodel="sce-static" name="static_lift">
+  <sce:import kind="event-schema" src="lift_given.scxml" as="Given"/>
+  <sce:import kind="event-schema" src="lift_kept.scxml" as="Kept"/>
+  <sce:import kind="event-schema" src="lift_answer.scxml" as="Answer"/>
+  <sce:import kind="event-schema" src="sce:std/lift/refusal.scxml" as="LiftRefusal"/>
+  <datamodel>
+    <data id="answer" sce:type="optional&lt;record:Answer&gt;" expr="null" sce:direction="out"/>
+    <data id="why" sce:type="optional&lt;record:LiftRefusal&gt;" expr="null" sce:direction="out"/>
+    <data id="said" sce:type="string[512]" expr="''" sce:direction="out"/>
+    <data id="lifts" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="lifting">
+    <transition event="text.given" type="internal">
+      <sce:lift text="_event.data.text" schema="Answer" location="answer" refusal="why"/>
+      <assign location="lifts" expr="lifts + 1"/>
+    </transition>
+    <transition event="text.kept" type="internal">
+      <assign location="said" expr="_event.data.text"/>
+      <sce:lift text="said" schema="Answer" location="answer" refusal="why"/>
+      <assign location="lifts" expr="lifts + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

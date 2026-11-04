@@ -5117,11 +5117,12 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
             "native_action",
         ];
         // SCE Accepted Subset §2.15: a list a `sce-static` document fills and
-        // empties is lowered to native statements by the static lowering
+        // empties, and a text it lifts into a record (docs/adr/0087), are
+        // lowered to native statements by the static lowering
         // (`static_lowering::PythonTarget`), which refuses by name what it
         // does not spell; under any other data model the element is not
         // lowered and stays refused here.
-        const STATIC_ACTIONS: &[&str] = &["sce_append", "sce_clear"];
+        const STATIC_ACTIONS: &[&str] = &["sce_append", "sce_clear", "sce_lift"];
         for action in actions {
             let static_lowered =
                 static_model && STATIC_ACTIONS.contains(&action.action_type.as_str());

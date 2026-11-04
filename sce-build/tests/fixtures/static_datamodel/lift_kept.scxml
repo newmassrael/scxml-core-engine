@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  `text.kept` (docs/adr/0087, section 9.1): a text `static_lift.scxml` keeps in a
+  variable before it lifts it, as a harness keeps an answer it may lift again.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="lift_kept"
+       sce:event-name="text.kept">
+  <datamodel>
+    <data id="text" sce:type="string[512]" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -225,6 +225,7 @@ scenarios! {
     "static_invoke_params" => static_invoke_params_sm::{StaticInvokeParamsPolicy, StaticInvokeParamsPersist};
     "static_invoke_string" => static_invoke_string_sm::{StaticInvokeStringPolicy, StaticInvokeStringPersist};
     "static_invoke_tree" => static_invoke_tree_sm::{StaticInvokeTreePolicy, StaticInvokeTreePersist} @ Manual;
+    "static_lift" => static_lift_sm::{StaticLiftPolicy, StaticLiftPersist};
     "static_list" => static_list_sm::{StaticListPolicy, StaticListPersist};
     "static_list_assign" => static_list_assign_sm::{StaticListAssignPolicy, StaticListAssignPersist};
     "static_list_call" => static_list_call_sm::{StaticListCallPolicy, StaticListCallPersist};

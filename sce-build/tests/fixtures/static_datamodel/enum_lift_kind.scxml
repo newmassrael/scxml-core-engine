@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The kind of an answer `lift_answer.scxml` holds (docs/adr/0087, section 9.1): a
+  closed enum, so a name it does not declare is a refusal of the text that carries it
+  (`unknownVariant`).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="lift_kind"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="meeting" value="0"/>
+      <sce:variant name="task" value="1"/>
+    </data>
+  </datamodel>
+</scxml>
