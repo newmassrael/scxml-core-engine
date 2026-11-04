@@ -64,6 +64,10 @@ final class ScriptedPolicy: InvocablePolicy {
     var active: [FlatState] = []
     var log: [String] = []
 
+    /// `_event.data` of the event being taken, empty between two events: what a
+    /// transition's content reads, as a document's `_event.data` is.
+    var eventData = ""
+
     /// What the parent-delivery hooks answer, set by a test that plays a child.
     var parentDeliveries: [(name: String, data: String)] = []
     var hasParent = false
@@ -120,6 +124,14 @@ final class ScriptedPolicy: InvocablePolicy {
     func nullEvent() -> FlatEvent { .null }
 
     func bindCurrentEvent(_ event: FlatEvent, engine: Engine<ScriptedPolicy>) {}
+
+    func populateEventMetadata(_ metadata: EventMetadata) {
+        eventData = metadata.data
+    }
+
+    func clearEventMetadata() {
+        eventData = ""
+    }
 
     func firstEnabledTransition(
         _ state: FlatState,

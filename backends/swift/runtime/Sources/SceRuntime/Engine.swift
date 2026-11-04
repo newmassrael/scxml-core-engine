@@ -135,10 +135,16 @@ private let maxMacrostepMicrosteps = 1000
 ///
 /// # Threading model
 ///
-/// An engine is not safe for concurrent use, and is not `Sendable`: the host runs it
-/// on one thread, as the C++ and Rust single-threaded microstep loop does. The two
-/// places state is shared with another thread are `ParentEventQueue` and the id
-/// counters, which synchronize themselves.
+/// The rule is ARCHITECTURE.md "Engine Threading" (docs/adr/0084). An engine is not
+/// `Sendable`, so the compiler confines it to the thread that drives it, its owner.
+/// Its owner-thread operations are every call on it, among them driving it
+/// (`initialize`, `enterAt`, `step`, `tick`, `processEvent`, `advanceTimeMs`, `stop`),
+/// raising an external event (`raiseExternal`, `raiseExternalByName` and their
+/// spellings), ending or cancelling a host-run invocation (`completeHostInvoke`,
+/// `failHostInvoke`, `cancelHostInvoke`) and applying a Mesh delivery
+/// (`applyMeshCall`, `applyMeshCalls`). Another thread uses `inbox` (`EngineInbox`),
+/// the one `Sendable` handle, offered when the event type is `Sendable`.
+/// `ParentEventQueue` and the id counters synchronize themselves.
 public final class Engine<Policy: StatePolicy> {
     public typealias State = Policy.State
     public typealias Event = Policy.Event
@@ -193,6 +199,17 @@ public final class Engine<Policy: StatePolicy> {
     /// `hostInvokes` is and operated on by `HostSend.swift`.
     var hostSends = HostSendBook()
     var meshRouting = MeshRouting()
+
+    /// The owner's half of the inbox (docs/adr/0084), operated on by `EngineInbox.swift`.
+    /// Made by the first `inbox` a host asks for, since the handle needs the event type
+    /// to be `Sendable` and this class cannot say so; nil until then, when nothing can
+    /// have been posted.
+    var ownedInbox: (any OwnedInbox<Event>)?
+
+    /// Whether the inbox refuses posts: from a stop or a run's top-level `<final>` to the
+    /// next run entered. Kept here as well as in the inbox, so an inbox made after the
+    /// run ended starts closed.
+    var inboxClosed = false
 
     /// `_event.invokeid` of the event being processed (§scxml-5.10.1), empty when none is: while
     /// the initial configuration is entered, or between two events. A `<send>` to a processor the
@@ -351,6 +368,9 @@ public final class Engine<Policy: StatePolicy> {
         clearTerminalState()
         configurationEmpty = false
         lateBoundStates = nil
+        // docs/adr/0084: a run that follows a stop, or one that ended, takes posts
+        // again; what was posted before it is applied at its first boundary.
+        openInbox()
 
         // §scxml-5.3: Initialize datamodel before any state entry
         if policy.needsDataModelInit {
@@ -460,6 +480,8 @@ public final class Engine<Policy: StatePolicy> {
         }
 
         isRunning = true
+        // docs/adr/0084: the entered run takes posts, as one `initialize` enters does.
+        openInbox()
         return .accepted
     }
 
@@ -596,11 +618,15 @@ public final class Engine<Policy: StatePolicy> {
     /// §scxml-D-exitInterpreter: a run the host stops is exited as one that ended:
     /// every active state's `<onexit>` runs, innermost first, and the configuration
     /// ends empty. A run that already ended has been exited.
+    ///
+    /// The inbox closes with the run, after what it holds is applied as a direct call
+    /// would be now (docs/adr/0084).
     public func stop() {
         if isRunning {
             exitInterpreter()
         }
         isRunning = false
+        closeInbox()
     }
 
     /// Appendix D's `exitInterpreter` (§scxml-D-exitInterpreter): exit every state
@@ -1745,7 +1771,13 @@ public final class Engine<Policy: StatePolicy> {
                 // host put on the external queue ends with it. That is the clause: a
                 // machine that reached a top-level final state has exited the
                 // interpreter. Saying nothing about it is not the clause; see
-                // `unseenExternalEvents`.
+                // `unseenExternalEvents`. The inbox closes with a run that ended, and
+                // what was posted before is applied first, so an event posted to it is
+                // counted with the rest (docs/adr/0084). A stopped run closed it in
+                // `stop`; one never started keeps what was posted for its first boundary.
+                if isInFinalState {
+                    closeInbox()
+                }
                 recordUnseenExternalEvents()
                 // §scxml-D-exitInterpreter: the loop is over because the run entered a
                 // top-level final, so every state still active is exited now, before
@@ -1774,6 +1806,14 @@ public final class Engine<Policy: StatePolicy> {
             if !macrostepTruncated && internalQueue.hasEvents {
                 continue
             }
+
+            // docs/adr/0084: the macrostep is complete, and this is the point before the
+            // external queue is consulted. What other threads posted since the last
+            // boundary is applied here, in the order the inbox took it, so an event it
+            // carries joins the external queue behind what this macrostep queued
+            // (§scxml-C-1). Each input is applied by an operation that raises onto the
+            // external queue only, so the internal queue is not asked again.
+            drainInbox()
 
             guard let head = externalQueue.front() else {
                 break
