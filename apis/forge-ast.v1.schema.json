@@ -191,6 +191,17 @@
           },
           "type": "array"
         },
+        "render_sets": {
+          "description": "The `<sce:set name expr>` children of a `<sce:render>`, in document order: the value each hole of its template is given. Empty on every other action.",
+          "items": {
+            "$ref": "#/definitions/RenderSet"
+          },
+          "type": "array"
+        },
+        "render_template": {
+          "description": "`<sce:render template>` (docs/adr/0087, section 3.1, item 6): the alias of the imported text template the statement renders. The string variable the rendering replaces whole is [`Self::location`]. Empty on every other action.",
+          "type": "string"
+        },
         "req": {
           "description": "`sce:req` requirement IDs attached to this executable-content element. See [`Transition::req`] for the wire-format contract.",
           "items": {
@@ -4156,6 +4167,72 @@
             "retention"
           ],
           "type": "object"
+        },
+        {
+          "description": "A text with typed holes. See [`TextTemplateModel`].",
+          "properties": {
+            "fence": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TemplateFence"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The two markers an untrusted hole's text is put between. Present exactly when a hole is untrusted."
+            },
+            "holes": {
+              "description": "The holes in declaration order, which is the order the generated `render` takes them in.",
+              "items": {
+                "$ref": "#/definitions/TemplateHole"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "text-template"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "parts": {
+              "description": "The text, in order: its literal parts and the holes put between them.",
+              "items": {
+                "$ref": "#/definitions/TemplatePart"
+              },
+              "type": "array"
+            },
+            "revision": {
+              "description": "`sce:revision` on the root: which revision of the template this document is. `None` when the document declares none, which makes it the first.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post-preprocessor source position of the `<scxml sce:kind=\"text-template\">` root element (RFC §synth-5-O)."
+            }
+          },
+          "required": [
+            "holes",
+            "kind",
+            "name",
+            "parts"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -4565,6 +4642,13 @@
             "broadcast_log"
           ],
           "type": "string"
+        },
+        {
+          "description": "A text with typed holes, rendered by one pure function on every backend — docs/adr/0087, section 3. A hole is a bounded text, a fixed-width integer or a value of a closed enum; a text hole says whether it is trusted, and an untrusted one is put between the document's two fence markers with every marker removed from its value. The build knows the longest text it renders (`MAX_LEN`), and a `sce-static` statechart renders it into a variable that holds it with `<sce:render>`.",
+          "enum": [
+            "text_template"
+          ],
+          "type": "string"
         }
       ]
     },
@@ -4630,6 +4714,72 @@
         "type"
       ],
       "type": "object"
+    },
+    "HoleKind": {
+      "description": "What a hole of a text template holds: the values whose text is the same on every backend (docs/adr/0087, section 3.1, item 1).",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "`string[B]`: a text of at most `max` UTF-8 bytes, put as it is when trusted and between the fence markers, every marker removed, when not.",
+          "properties": {
+            "text": {
+              "properties": {
+                "max": {
+                  "format": "uint32",
+                  "minimum": 0.0,
+                  "type": "integer"
+                },
+                "trust": {
+                  "$ref": "#/definitions/HoleTrust"
+                }
+              },
+              "required": [
+                "max",
+                "trust"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A fixed-width integer, put as its decimal digits, `-` before a negative one.",
+          "properties": {
+            "integer": {
+              "$ref": "#/definitions/SceType"
+            }
+          },
+          "required": [
+            "integer"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A value of the closed enum the template imports as `alias`, put as its variant's declared name.",
+          "properties": {
+            "enum": {
+              "$ref": "#/definitions/EnumRef"
+            }
+          },
+          "required": [
+            "enum"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "HoleTrust": {
+      "description": "Whether a text hole's value is the program's own (`trusted`) or came from outside it (`untrusted`), which the fence marks.",
+      "enum": [
+        "trusted",
+        "untrusted"
+      ],
+      "type": "string"
     },
     "InboxConfig": {
       "description": "`<sce:inbox>` configuration — RFC §synth-5-D + §synth-5-P *Migration*. The inbox is a queue the worker imports (`<sce:import kind=\"queue\">`), named by its alias: the queue document owns the element type, the capacity and the algorithm, so the worker states none of them. The imported queue must declare `consumers` `one` (`worker/inbox-queue-not-single-consumer`); a worker is the one context that pops its inbox.\n\nThe inline `depth` and `ordering` attributes this replaced are refused with `worker/inbox-inline-removed`, whose fix names the queue document that is exactly what the old ring held.",
@@ -6297,6 +6447,22 @@
       ],
       "type": "object"
     },
+    "RenderSet": {
+      "description": "One `<sce:set name expr>` of a `<sce:render>` (docs/adr/0087, section 3.1, item 6): the hole `name` of the template is given the value of `expr`.",
+      "properties": {
+        "expr": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "expr",
+        "name"
+      ],
+      "type": "object"
+    },
     "SceType": {
       "description": "Canonical SCE type — used in `sce:type` attributes. Language-specific mappings are in the generator module (SRP).",
       "oneOf": [
@@ -6639,6 +6805,74 @@
         "transitions"
       ],
       "type": "object"
+    },
+    "TemplateFence": {
+      "description": "The `<sce:fence open close>` of a text template: two texts of printable ASCII, each of 1 to 32 bytes, neither inside the other, neither in the template's own text.",
+      "properties": {
+        "close": {
+          "type": "string"
+        },
+        "open": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "close",
+        "open"
+      ],
+      "type": "object"
+    },
+    "TemplateHole": {
+      "description": "One hole of a [`TextTemplateModel`]: a `<data>` of its `<datamodel>`.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/HoleKind"
+            }
+          ],
+          "description": "What the hole holds, and so how its value is put into the text."
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "TemplatePart": {
+      "description": "One piece of a text template's text.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Character data, put as its UTF-8 bytes.",
+          "properties": {
+            "literal": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "literal"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A `<sce:put hole>`: the id of the hole whose text goes here.",
+          "properties": {
+            "put": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "put"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "TestVector": {
       "description": "Single `<sce:test-vector hex value/>` row (RFC §synth-5-B). Captures the declared input bytes and expected output literal; the emitter pairs these with the algorithm's signature to render an idiomatic per-backend test function.",
