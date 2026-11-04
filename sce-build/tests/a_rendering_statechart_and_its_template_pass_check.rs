@@ -34,7 +34,7 @@ fn check(lang: Language, document: &str) -> (Option<i32>, String) {
         .arg(repo_root())
         .arg("--error-format=json")
         .arg("check")
-        .args(["-l", lang.wire_name()]);
+        .args(["-l", lang.canonical_name()]);
     if lang == Language::Go {
         command.args(["--go-module-prefix", "example.com/generated"]);
     }

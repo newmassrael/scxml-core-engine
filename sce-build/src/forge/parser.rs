@@ -1275,10 +1275,6 @@ pub(crate) fn parse_variant_value(text: &str) -> Option<i128> {
 
 // ── Feature-model parsing ──────────────────────────────────────
 
-/// Read a `sce:kind="feature-model"` document (ADR 0057 §2): its
-/// `<sce:feature>` children, held to every rule of
-/// [`crate::feature_model::FeatureModel::new`]. A refusal is placed on the
-/// `<sce:feature>` that shows it.
 // ── Text-template kind parser ─────────────────────────────────
 
 /// Parse `<scxml sce:kind="text-template">…</scxml>` into a
@@ -1594,6 +1590,10 @@ fn parse_text_template(
     })
 }
 
+/// Read a `sce:kind="feature-model"` document (ADR 0057 §2): its
+/// `<sce:feature>` children, held to every rule of
+/// [`crate::feature_model::FeatureModel::new`]. A refusal is placed on the
+/// `<sce:feature>` that shows it.
 fn parse_feature_model(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,

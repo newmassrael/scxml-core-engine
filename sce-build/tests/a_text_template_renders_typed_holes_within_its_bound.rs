@@ -8,7 +8,7 @@
 
 use sce_build::compile_forge_from_string;
 use sce_build::forge::codegen_matrix::{self, EmitOutcome, KindClass};
-use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::forge::error::{ForgeError, ValidationError};
 use sce_build::forge::model::{
     ForgeDocument, ForgeKind, HoleKind, HoleTrust, SceType, TemplatePart, TextTemplateModel,
@@ -60,10 +60,10 @@ fn refusal(datamodel: &str, fence: &str, text: &str) -> ValidationError {
 }
 
 /// The wire code of a refusal, as a consumer routes it.
-fn code_of(datamodel: &str, fence: &str, text: &str) -> DiagnosticCode {
+fn code_of(datamodel: &str, fence: &str, text: &str) -> &'static str {
     let err = parse_forge_with_imports(&document(datamodel, fence, text), LABEL)
         .expect_err("the template is refused");
-    err.error.to_diagnostics()[0].code
+    err.error.to_diagnostics()[0].code.as_str()
 }
 
 const HOLES: &str = r#"    <data id="sender" sce:type="string[8]" sce:trust="trusted"/>
@@ -223,7 +223,7 @@ fn each_rule_of_holes_refuses_its_case() {
         }
         assert_eq!(
             code_of(datamodel, "", text),
-            DiagnosticCode::ValidationTextTemplateHole
+            "validation/text-template-hole"
         );
     }
 }
@@ -282,7 +282,7 @@ fn each_rule_of_fences_refuses_its_case() {
         }
         assert_eq!(
             code_of(datamodel, fence, text),
-            DiagnosticCode::ValidationTextTemplateFence
+            "validation/text-template-fence"
         );
     }
     // A marker of exactly 32 bytes is admitted.

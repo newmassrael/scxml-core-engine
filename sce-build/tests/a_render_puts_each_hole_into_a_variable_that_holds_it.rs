@@ -10,7 +10,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::forge::error::{ForgeError, Located};
 use sce_build::generator::Language;
 use sce_build::{compile_scxml_lang_typed, find_template_dir_for};
@@ -88,11 +88,11 @@ fn compile(text: &str, lang: Language) -> Result<String, Located<ForgeError>> {
     )
 }
 
-/// The code a refused document is refused with.
-fn refused(text: &str) -> (DiagnosticCode, String) {
+/// The wire code a refused document is refused with, and its message.
+fn refused(text: &str) -> (&'static str, String) {
     let err = compile(text, Language::Rust).expect_err("the render is refused");
     let message = err.error.to_string();
-    (err.error.to_diagnostics()[0].code, message)
+    (err.error.to_diagnostics()[0].code.as_str(), message)
 }
 
 /// A render that keeps every rule is generated on every backend that can name
@@ -186,8 +186,8 @@ fn go_asks_for_the_module_a_rendered_templates_package_lives_under() {
     )
     .expect_err("no module prefix");
     assert_eq!(
-        err.error.to_diagnostics()[0].code,
-        DiagnosticCode::GenerateInvalidConfig,
+        err.error.to_diagnostics()[0].code.as_str(),
+        "generate/invalid-config",
         "{err}"
     );
     assert!(err.error.to_string().contains("go_module_prefix"), "{err}");
@@ -229,23 +229,17 @@ fn each_rule_of_the_statement_refuses_its_case() {
         VARIABLES,
         &render("note", EVERY_HOLE).replace("template=\"Notice\"", "template=\"Other\""),
     );
-    assert_eq!(
-        refused(&unknown).0,
-        DiagnosticCode::ValidationInvalidAttribute
-    );
+    assert_eq!(refused(&unknown).0, "validation/invalid-attribute");
 
     let not_text = document(VARIABLES, &render("count", EVERY_HOLE));
-    assert_eq!(
-        refused(&not_text).0,
-        DiagnosticCode::ValidationInvalidAttribute
-    );
+    assert_eq!(refused(&not_text).0, "validation/invalid-attribute");
 
     let short = document(
         &VARIABLES.replace("string[95]", "string[94]"),
         &render("note", EVERY_HOLE),
     );
     let (code, message) = refused(&short);
-    assert_eq!(code, DiagnosticCode::ValidationRenderBound);
+    assert_eq!(code, "validation/render-bound");
     assert!(
         message.contains("94") && message.contains("95"),
         "{message}"
@@ -315,11 +309,7 @@ fn each_rule_of_the_statement_refuses_its_case() {
     ];
     for (sets, says) in &cases {
         let (code, message) = refused(&document(VARIABLES, &render("note", sets)));
-        assert_eq!(
-            code,
-            DiagnosticCode::ValidationRenderHoles,
-            "{says}: {message}"
-        );
+        assert_eq!(code, "validation/render-holes", "{says}: {message}");
         assert!(message.contains(says), "{says}: {message}");
     }
 }
@@ -337,5 +327,5 @@ fn a_render_is_refused_under_another_data_model() {
   </state>
 </scxml>
 "#;
-    assert_eq!(refused(text).0, DiagnosticCode::ScxmlStaticDatamodelRule);
+    assert_eq!(refused(text).0, "scxml/static-datamodel-rule");
 }
