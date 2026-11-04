@@ -471,7 +471,7 @@ set(BROADCAST_LOG_GENERATED_FIXTURES
     broadcast_log_conformance_deployed
 )
 set(BROADCAST_LOG_DEPLOY "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_deploy.yaml")
-file(WRITE "${BROADCAST_LOG_DEPLOY}"
+sce_codegen_write_input("${BROADCAST_LOG_DEPLOY}"
 "version: \"1.0\"
 topology:
   ecu1:
@@ -592,8 +592,8 @@ configure_file("${RESOURCE_DIR}/broadcast_log_conformance_record.scxml"
 string(REPLACE "name=\"broadcast_log_conformance_literal\"" "name=\"broadcast_log_cpp_narrow\"" _blogn_text "${_blogn_literal}")
 string(REPLACE "<sce:element-type>broadcast_log_conformance_event</sce:element-type>"
        "<sce:element-type>broadcast_log_conformance_record</sce:element-type>" _blogn_text "${_blogn_text}")
-file(WRITE "${BLOGN_CPP_NARROW_DOCS_DIR}/broadcast_log_cpp_narrow.scxml" "${_blogn_text}")
-file(WRITE "${BLOGN_CPP_NARROW_DOCS_DIR}/deploy.yaml" [=[
+sce_codegen_write_input("${BLOGN_CPP_NARROW_DOCS_DIR}/broadcast_log_cpp_narrow.scxml" "${_blogn_text}")
+sce_codegen_write_input("${BLOGN_CPP_NARROW_DOCS_DIR}/deploy.yaml" [=[
 version: "1.0"
 topology:
   ecu1:
@@ -607,7 +607,7 @@ topology:
 ]=])
 # The same deploy without the pause: the target says the stamp wraps, and the generator
 # refuses the log rather than guess a bound.
-file(WRITE "${BLOGN_CPP_NARROW_DOCS_DIR}/deploy_unstated.yaml" [=[
+sce_codegen_write_input("${BLOGN_CPP_NARROW_DOCS_DIR}/deploy_unstated.yaml" [=[
 version: "1.0"
 topology:
   ecu1:
@@ -622,8 +622,8 @@ file(MAKE_DIRECTORY "${BLOGN_CPP_OWNERSHIP_DOCS_DIR}")
 configure_file("${RESOURCE_DIR}/broadcast_log_conformance_event.scxml"
                "${BLOGN_CPP_OWNERSHIP_DOCS_DIR}/broadcast_log_conformance_event.scxml" COPYONLY)
 string(REPLACE "name=\"broadcast_log_conformance_literal\"" "name=\"broadcast_log_cpp_ownership\"" _blogn_text "${_blogn_literal}")
-file(WRITE "${BLOGN_CPP_OWNERSHIP_DOCS_DIR}/broadcast_log_cpp_ownership.scxml" "${_blogn_text}")
-file(WRITE "${BLOGN_CPP_OWNERSHIP_DOCS_DIR}/deploy.yaml" [=[
+sce_codegen_write_input("${BLOGN_CPP_OWNERSHIP_DOCS_DIR}/broadcast_log_cpp_ownership.scxml" "${_blogn_text}")
+sce_codegen_write_input("${BLOGN_CPP_OWNERSHIP_DOCS_DIR}/deploy.yaml" [=[
 version: "1.0"
 topology:
   ecu1:
@@ -690,7 +690,7 @@ set_tests_properties(broadcast_log_narrow_unstated_pause PROPERTIES
 # narrow logs' above, and the 64-bit set's of the same names.
 set(BLOGN_CONTEXT_CPP_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_narrow_context_headers")
 file(MAKE_DIRECTORY "${BLOGN_CONTEXT_CPP_GENERATED_DIR}")
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_narrow_context_deploy.yaml" [=[
+sce_codegen_write_input("${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_narrow_context_deploy.yaml" [=[
 version: "1.0"
 topology:
   ecu1:

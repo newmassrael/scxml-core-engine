@@ -2945,13 +2945,16 @@ endforeach()
 # Use space-separated format (compatible with CMake set() and Python regex parsing)
 string(REPLACE ";" " " _W3C_AOT_TESTS_SPACES "${W3C_AOT_TESTS}")
 set(_W3C_AOT_TESTS_LIST_FILE "${CMAKE_SOURCE_DIR}/build/W3CAotTestList.cmake")
-file(WRITE "${_W3C_AOT_TESTS_LIST_FILE}"
+# Written only when the list changed (`sce_codegen_write_input`), as every
+# file this tree composes when it is configured.
+string(CONCAT _W3C_AOT_TESTS_LIST
     "# Auto-generated from sce_generate_static_w3c_test() calls in tests/CMakeLists.txt\n"
     "# DO NOT EDIT - Run Native CMake configure to regenerate\n"
     "set(W3C_AOT_TESTS\n"
     "    ${_W3C_AOT_TESTS_SPACES}\n"
     ")\n"
 )
+sce_codegen_write_input("${_W3C_AOT_TESTS_LIST_FILE}" "${_W3C_AOT_TESTS_LIST}")
 message(STATUS "W3C AOT Tests auto-accumulated: ${W3C_AOT_TESTS}")
 message(STATUS "Saved W3C_AOT_TESTS list to ${_W3C_AOT_TESTS_LIST_FILE}")
 
@@ -3046,7 +3049,8 @@ configure_file(
 set(W3C_AOT_RUNNER_SOURCES "")
 foreach(TEST_NUM ${W3C_AOT_TESTS})
     set(RUNNER_FILE "${CMAKE_CURRENT_SOURCE_DIR}/w3c/runners/W3CTestRunner_Test${TEST_NUM}.cpp")
-    file(WRITE "${RUNNER_FILE}"
+    # Kept when unchanged, so a reconfigure recompiles no runner.
+    sce_codegen_write_input("${RUNNER_FILE}"
 "// Auto-generated runner file for W3C SCXML Test ${TEST_NUM}
 #include \"aot_tests/Test${TEST_NUM}.h\"
 ")

@@ -346,7 +346,11 @@ on their own (`backends/<c|cpp>/forge-runtime/tests/<round_trip|conformance>`) i
 module, which resolves the generator through `cmake/SCEFindCodegen.cmake` when no includer did,
 and the public functions of `cmake/SCECodegen.cmake` declare through it too (see the system
 install above). The module gives every run of the generator, a plan and a generation, the
-templates the build names (`SCE_TEMPLATE_DIR`), and keys a kept answer on them. The module asks every
+templates the build names (`SCE_TEMPLATE_DIR`), and keys a kept answer on them. A file the
+build composes when it is configured (a queue document, a deploy, a runner source) is written
+through `sce_codegen_write_input`, which leaves unchanged content as it is, date included: a
+`file(WRITE)` on every configure made every plan that read the file stale, so a reconfigure that
+changed nothing asked those plans again. The module asks every
 plan with `--plan-requires` too, so the same answer states what the machines of each
 generation need linked (`<PREFIX>_REQUIRES`; see "What a machine links" under C11 Backend
 Layering). A plan is the whole

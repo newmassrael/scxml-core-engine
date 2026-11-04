@@ -1811,6 +1811,142 @@ set(_CMD ${CMAKE_COMMAND} -E echo generate)
     assert_eq!(found, vec!["_ENV", "_RUN", "_SET"]);
 }
 
+/// The commands that declare a generation, a file calling any of which
+/// composes the inputs of its plans when it is configured: the module's, and
+/// the public functions that declare through it.
+const DECLARING_COMMANDS: &[&str] = &[
+    "sce_codegen_generation",
+    "sce_codegen_plan",
+    "sce_codegen_plan_request",
+    "sce_add_state_machine",
+    "sce_add_state_machines_from_dir",
+    "sce_add_algorithm",
+    "sce_create_state_machine_library",
+];
+
+/// The `file(WRITE)`s a file that declares a generation may make, each with
+/// why: the file, the start of the path written, and the reason. Every other
+/// file such a file composes when it is configured is written through
+/// `sce_codegen_write_input`.
+const WRITES_NO_GENERATION_READS: &[(&str, &str, &str)] = &[
+    (
+        PLAN_MODULE_PATH,
+        "\"${_CACHE}/",
+        "the module's cache of answers, which it reads itself and no generation does",
+    ),
+    (
+        PLAN_MODULE_PATH,
+        "\"${PATH}\"",
+        "the one write `sce_codegen_write_input` makes, once it found the content changed",
+    ),
+];
+
+/// Every `file(WRITE)` and `file(APPEND)` of the CMake files given (each a
+/// path and its text) that declare a generation ([`DECLARING_COMMANDS`]),
+/// but the ones [`WRITES_NO_GENERATION_READS`] names. Such a write runs on
+/// every configure and dates its file anew whatever it holds, and a document,
+/// deploy or catalog a plan read is then newer than the kept answer: the plan
+/// is sent to the generator again on every configure, and its generation runs
+/// again on every build after. The conformance projects wrote their queue
+/// documents and deploys so until 2026-11-04, and a reconfigure that changed
+/// nothing asked those plans again.
+fn configure_time_rewrites(files: &[(String, String)]) -> Vec<String> {
+    let mut found = Vec::new();
+    for (path, text) in files {
+        let code = cmake_code(text);
+        let declares = DECLARING_COMMANDS
+            .iter()
+            .any(|name| !invocations(&code, name).is_empty());
+        if !declares {
+            continue;
+        }
+        for write in invocations(&code, "file") {
+            let Some(mode) = write.args.first() else {
+                continue;
+            };
+            if mode != "WRITE" && mode != "APPEND" {
+                continue;
+            }
+            let target = write.args.get(1).map(String::as_str).unwrap_or_default();
+            if WRITES_NO_GENERATION_READS
+                .iter()
+                .any(|(at, start, _)| *at == path.as_str() && target.starts_with(*start))
+            {
+                continue;
+            }
+            found.push(format!(
+                "{path}: line {}: `file({mode} {target} ...)` dates the file anew on every \
+                 configure, so a plan that read it is asked again and its generation runs \
+                 again; write it with `sce_codegen_write_input` (cmake/SCECodegenPlan.cmake), \
+                 which keeps unchanged content as it is",
+                write.line
+            ));
+        }
+    }
+    found
+}
+
+/// No file of the tree that declares a generation rewrites a file on every
+/// configure: a reconfigure that changed nothing asks no plan of the
+/// generator.
+#[test]
+fn no_file_that_declares_a_generation_rewrites_an_input_on_every_configure() {
+    let files = tracked_cmake_files();
+    let found = configure_time_rewrites(&files);
+    assert!(
+        found.is_empty(),
+        "a CMake file of the tree rewrites a file on every configure:\n  {}",
+        found.join("\n  ")
+    );
+}
+
+/// The conformance projects' former shape, a queue document and its deploy
+/// written with `file(WRITE)` beside the generation that reads them, is
+/// refused; written through `sce_codegen_write_input` it passes, as does a
+/// file that declares no generation, and the module's own writes. A write of
+/// the module outside its cache and the helper is refused.
+#[test]
+fn a_document_rewritten_on_every_configure_is_refused() {
+    let file = |path: &str, text: &str| vec![(path.to_string(), text.to_string())];
+    let rewritten = r#"
+file(WRITE "${QUEUE_C_DEPLOY}" [=[
+version: "1.0"
+]=])
+file(WRITE "${QUEUE_C_DOCS_DIR}/${name}.scxml" "${_text}")
+sce_codegen_generation(_QUEUE DOCUMENT "${QUEUE_C_DOCS_DIR}/q.scxml" OUTPUT_DIR "${O}"
+    LANGUAGE c11 DEPLOY "${QUEUE_C_DEPLOY}")
+"#;
+    let found = configure_time_rewrites(&file("backends/probe/CMakeLists.txt", rewritten));
+    assert_eq!(
+        found.len(),
+        2,
+        "the deploy and the document rewritten on every configure: {found:?}"
+    );
+    let kept = rewritten.replace("file(WRITE ", "sce_codegen_write_input(");
+    assert_eq!(
+        configure_time_rewrites(&file("backends/probe/CMakeLists.txt", &kept)),
+        Vec::<String>::new(),
+        "inputs written through sce_codegen_write_input were refused"
+    );
+    let no_generation = "file(WRITE \"${D}/notes.txt\" \"x\")\n";
+    assert_eq!(
+        configure_time_rewrites(&file("tests/probe/CMakeLists.txt", no_generation)),
+        Vec::<String>::new(),
+        "a file that declares no generation was held to its writes"
+    );
+    assert_eq!(
+        configure_time_rewrites(&file(PLAN_MODULE_PATH, PLAN_MODULE)),
+        Vec::<String>::new(),
+        "the module's own writes were refused"
+    );
+    let stray = format!("{PLAN_MODULE}\nfile(WRITE \"${{OUTPUT_DIR}}/stray.scxml\" \"x\")\n");
+    assert_eq!(
+        configure_time_rewrites(&file(PLAN_MODULE_PATH, &stray)).len(),
+        1,
+        "a write of the module outside its cache and the helper was accepted"
+    );
+}
+
 /// A plan no request asks ahead is refused in whichever file of the tree it
 /// is written, and a plan a request of the same file asks word for word
 /// passes; so is a generation declared outside the module's deferred

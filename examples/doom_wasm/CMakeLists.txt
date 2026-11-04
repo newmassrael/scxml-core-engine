@@ -130,7 +130,7 @@ if(NOT EXISTS ${FREEPATS_CFG})
         file(REMOVE_RECURSE "${FREEPATS_DIR}/freepats-20060219")
         file(REMOVE_RECURSE "${FREEPATS_DIR}/freepats")
         # Create timidity.cfg
-        file(WRITE "${FREEPATS_DIR}/timidity.cfg" "source freepats.cfg\n")
+        sce_codegen_write_input("${FREEPATS_DIR}/timidity.cfg" "source freepats.cfg\n")
         message(STATUS "FreePats installed successfully")
     endif()
 endif()

@@ -203,6 +203,35 @@ function(_sce_codegen_launcher VAR)
     endif()
 endfunction()
 
+# sce_codegen_write_input(<path> <content>)
+#
+#   Write an input of the build that is composed when the tree is configured
+#   (a document, a deploy or a catalog a plan reads; a source a target
+#   compiles), and leave the file as it is, date included, when it already
+#   holds <content>.
+#
+#   A kept plan is reused only while no file it read is newer than it
+#   (`_sce_codegen_plan_fresh`), and a depfile re-runs its generation when one
+#   is. A `file(WRITE)` of the same bytes on every configure dates the file
+#   anew each time, so every configure sent its plan to the generator again
+#   and every build after it generated again: a reconfigure that changed
+#   nothing was not a no-op. Compared here, in the configure: a
+#   `configure_file` from a staging copy reads a file written on every
+#   configure as its input, and `file(CONFIGURE)` and `file(GENERATE)` write
+#   after the plans were asked. A file of the build composed at configure time
+#   is written through this in every CMake file that declares a generation,
+#   and `the_conformance_cmake_route_declares_what_the_generator_plans` refuses
+#   a `file(WRITE)` there.
+function(sce_codegen_write_input PATH CONTENT)
+    if(EXISTS "${PATH}")
+        file(READ "${PATH}" _KEPT)
+        if("${_KEPT}" STREQUAL "${CONTENT}")
+            return()
+        endif()
+    endif()
+    file(WRITE "${PATH}" "${CONTENT}")
+endfunction()
+
 # What a generation's command is given to format what it writes
 # (`sce_codegen_format_args`), which `sce_codegen_generation` gives every one.
 include(${CMAKE_CURRENT_LIST_DIR}/SCEClangFormat.cmake)

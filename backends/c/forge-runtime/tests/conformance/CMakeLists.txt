@@ -388,7 +388,7 @@ string(APPEND _queue_scenarios_c
     "static const size_t g_scenario_count = ${_queue_scenarios_run};\n")
 set(QUEUE_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/queue_generated")
 file(MAKE_DIRECTORY "${QUEUE_GENERATED_DIR}")
-file(WRITE "${QUEUE_GENERATED_DIR}/queue_contract_scenarios.inc" "${_queue_scenarios_c}")
+sce_codegen_write_input("${QUEUE_GENERATED_DIR}/queue_contract_scenarios.inc" "${_queue_scenarios_c}")
 
 add_executable(queue_runtime_test_c "${CMAKE_CURRENT_SOURCE_DIR}/queue_runtime_test.c")
 target_include_directories(queue_runtime_test_c PRIVATE "${QUEUE_GENERATED_DIR}")
@@ -498,7 +498,7 @@ set(QUEUE_C_DOCS_DIR "${CMAKE_CURRENT_BINARY_DIR}/queue_documents")
 set(QUEUE_C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/queue_headers")
 file(MAKE_DIRECTORY "${QUEUE_C_DOCS_DIR}" "${QUEUE_C_GENERATED_DIR}")
 set(QUEUE_C_DEPLOY "${QUEUE_C_DOCS_DIR}/deploy.yaml")
-file(WRITE "${QUEUE_C_DEPLOY}" [=[
+sce_codegen_write_input("${QUEUE_C_DEPLOY}" [=[
 version: "1.0"
 topology:
   ecu1:
@@ -553,7 +553,7 @@ function(sce_queue_variant fixture name progress)
         string(REGEX REPLACE "<sce:progress>[a-z-]+</sce:progress>"
                "<sce:progress>${progress}</sce:progress>" _text "${_text}")
     endif()
-    file(WRITE "${QUEUE_C_DOCS_DIR}/${name}.scxml" "${_text}")
+    sce_codegen_write_input("${QUEUE_C_DOCS_DIR}/${name}.scxml" "${_text}")
 endfunction()
 
 sce_queue_variant(queue_conformance_spsc queue_c_spsc "")
@@ -661,7 +661,7 @@ sce_queue_refusal(queue_generate_c_wait_free_without_atomics "cannot be met on t
     "${RESOURCE_DIR}/queue_conformance_spsc.scxml"
     --deploy "${QUEUE_C_DEPLOY}" --target-machine mcu0)
 # A machine with a heap and no read-modify-write atomic.
-file(WRITE "${QUEUE_C_DOCS_DIR}/deploy_no_atomics_heap.yaml" [=[
+sce_codegen_write_input("${QUEUE_C_DOCS_DIR}/deploy_no_atomics_heap.yaml" [=[
 version: "1.0"
 topology:
   ecu1:
@@ -675,7 +675,7 @@ topology:
           atomic_rmw_width: 0
 ]=])
 # Interrupt masking excludes nothing on another core.
-file(WRITE "${QUEUE_C_DOCS_DIR}/deploy_two_cores.yaml" [=[
+sce_codegen_write_input("${QUEUE_C_DOCS_DIR}/deploy_two_cores.yaml" [=[
 version: "1.0"
 topology:
   ecu1:
@@ -731,7 +731,7 @@ set(BLOG_C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_headers")
 file(MAKE_DIRECTORY "${BLOG_C_DOCS_DIR}" "${BLOG_C_GENERATED_DIR}")
 
 set(BLOG_C_DEPLOY "${BLOG_C_DOCS_DIR}/deploy.yaml")
-file(WRITE "${BLOG_C_DEPLOY}" [=[
+sce_codegen_write_input("${BLOG_C_DEPLOY}" [=[
 version: "1.0"
 topology:
   ecu1:
@@ -767,7 +767,7 @@ file(READ "${RESOURCE_DIR}/broadcast_log_conformance_literal.scxml" _blog_text)
 string(REPLACE "name=\"broadcast_log_conformance_literal\"" "name=\"broadcast_log_c_cbor\"" _blog_text "${_blog_text}")
 string(REPLACE "<sce:element-type>broadcast_log_conformance_event</sce:element-type>"
        "<sce:element-type>codec_cbor_map</sce:element-type>" _blog_text "${_blog_text}")
-file(WRITE "${BLOG_C_DOCS_DIR}/broadcast_log_c_cbor.scxml" "${_blog_text}")
+sce_codegen_write_input("${BLOG_C_DOCS_DIR}/broadcast_log_c_cbor.scxml" "${_blog_text}")
 sce_codegen_generation(_BLOG_C_CBOR
     DOCUMENTS "${BLOG_C_DOCS_DIR}/codec_cbor_map.scxml"
               "${BLOG_C_DOCS_DIR}/broadcast_log_c_cbor.scxml"
@@ -806,8 +806,8 @@ configure_file("${RESOURCE_DIR}/broadcast_log_conformance_record.scxml"
 string(REPLACE "name=\"broadcast_log_conformance_literal\"" "name=\"broadcast_log_c_narrow\"" _blogn_text "${_blogn_literal}")
 string(REPLACE "<sce:element-type>broadcast_log_conformance_event</sce:element-type>"
        "<sce:element-type>broadcast_log_conformance_record</sce:element-type>" _blogn_text "${_blogn_text}")
-file(WRITE "${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_c_narrow.scxml" "${_blogn_text}")
-file(WRITE "${BLOGN_C_NARROW_DOCS_DIR}/deploy.yaml" [=[
+sce_codegen_write_input("${BLOGN_C_NARROW_DOCS_DIR}/broadcast_log_c_narrow.scxml" "${_blogn_text}")
+sce_codegen_write_input("${BLOGN_C_NARROW_DOCS_DIR}/deploy.yaml" [=[
 version: "1.0"
 topology:
   ecu1:
@@ -821,7 +821,7 @@ topology:
 ]=])
 # The same deploy without the pause: the target says the stamp wraps, and the generator
 # refuses the log rather than guess a bound.
-file(WRITE "${BLOGN_C_NARROW_DOCS_DIR}/deploy_unstated.yaml" [=[
+sce_codegen_write_input("${BLOGN_C_NARROW_DOCS_DIR}/deploy_unstated.yaml" [=[
 version: "1.0"
 topology:
   ecu1:
@@ -836,8 +836,8 @@ file(MAKE_DIRECTORY "${BLOGN_C_OWNERSHIP_DOCS_DIR}")
 configure_file("${RESOURCE_DIR}/broadcast_log_conformance_event.scxml"
                "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_conformance_event.scxml" COPYONLY)
 string(REPLACE "name=\"broadcast_log_conformance_literal\"" "name=\"broadcast_log_c_ownership\"" _blogn_text "${_blogn_literal}")
-file(WRITE "${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_c_ownership.scxml" "${_blogn_text}")
-file(WRITE "${BLOGN_C_OWNERSHIP_DOCS_DIR}/deploy.yaml" [=[
+sce_codegen_write_input("${BLOGN_C_OWNERSHIP_DOCS_DIR}/broadcast_log_c_ownership.scxml" "${_blogn_text}")
+sce_codegen_write_input("${BLOGN_C_OWNERSHIP_DOCS_DIR}/deploy.yaml" [=[
 version: "1.0"
 topology:
   ecu1:

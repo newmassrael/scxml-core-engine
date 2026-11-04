@@ -462,6 +462,14 @@ def main() -> int:
         )
 
     doc = build(cases, cases_rel=args.cases.name)
+    # Run on every configure, and the document is an input of the build's
+    # plan of its generation and of that generation's depfile: rewriting the
+    # same text would date it anew each time, so every configure asked the
+    # plan again and every build generated again. Unchanged text keeps its
+    # file, date and all.
+    if args.output.is_file() and args.output.read_text(encoding="utf-8") == doc:
+        print(f"kept {args.output} — {len(cases)} case(s), unchanged")
+        return 0
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(doc, encoding="utf-8")
     print(f"wrote {args.output} — {len(cases)} case(s)")
