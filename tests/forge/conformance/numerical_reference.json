@@ -41549,6 +41549,47 @@
         {"source": {"header": 63, "keyexpr": {"id": 3, "suffix": "k/*"}}, "encoded": [63, 3, 3, 107, 47, 42], "note": "restricted, the key expression says N: bit 5 is what it says"},
         {"source": {"header": 18, "keyexpr": {"id": 8, "suffix": null}}, "encoded": [18, 8], "note": "restricted, the key expression says N clear: bit 5 stays clear"}
       ]
+    },
+    "codec_zenoh_declaration": {
+      "fixture": "CodecZenohDeclaration",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. each arm's codec is handed the header's N or Z as its import binds it, and the header's flag is what the arm says: derived where the arm binds and says it, the value's own where it does not.",
+      "sources": [
+        {"source": {"header": 32, "body": {"arm": "codec_zenoh_decl_kexpr", "body": {"id": 3, "wireexpr": {"id": 7, "suffix": "a"}}}}, "encoded": [32, 3, 7, 1, 97], "note": "a key-expression declaration whose suffix says N: mid 0 and N set"},
+        {"source": {"header": 132, "body": {"arm": "codec_zenoh_decl_queryable", "body": {"id": 1, "wireexpr": {"id": 5, "suffix": null}, "Z": {"arm": 0, "ext_type": 33, "ext_value": 1}}}}, "encoded": [132, 1, 5, 33, 1], "note": "a queryable that says Z by its extension and N clear by its key expression"},
+        {"source": {"header": 3, "body": {"arm": "codec_zenoh_undecl_subscriber", "body": {"id": 2, "ext_keyexpr": null}}}, "encoded": [3, 2], "note": "a subscriber undeclared with no extension: Z clear"},
+        {"source": {"header": 97, "body": {"arm": "codec_zenoh_undecl_kexpr", "body": {"id": 0}}}, "encoded": [97, 0], "note": "an arm that binds nothing: N and M are the value's own"},
+        {"source": {"header": 26, "body": {"arm": "codec_zenoh_decl_final", "body": {}}}, "encoded": [26], "note": "the final declaration's own tag"},
+        {"source": {"header": 27, "body": {"tag": 27, "body": {}}}, "encoded": [27], "note": "a tag no arm names: the default arm keeps it"}
+      ]
+    },
+    "codec_zenoh_declare": {
+      "fixture": "CodecZenohDeclare",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a declaration embedded whole: its header and the arm it holds.",
+      "sources": [
+        {"source": {"header": 30, "interest_id": null, "extensions": null, "declaration": {"header": 32, "body": {"arm": "codec_zenoh_decl_kexpr", "body": {"id": 3, "wireexpr": {"id": 7, "suffix": "a"}}}}}, "encoded": [30, 32, 3, 7, 1, 97], "note": "no interest id, no extension: the declaration alone"},
+        {"source": {"header": 62, "interest_id": 5, "extensions": null, "declaration": {"header": 6, "body": {"arm": "codec_zenoh_decl_token", "body": {"id": 9, "wireexpr": {"id": 4, "suffix": null}}}}}, "encoded": [62, 5, 6, 9, 4], "note": "I set: the interest id, then a token declared with no suffix"}
+      ]
+    },
+    "codec_transport_envelope": {
+      "fixture": "CodecTransportEnvelope",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. each arm's codec is handed the header's A or S as its import binds it, and the header's flag is what the arm says.",
+      "sources": [
+        {"source": {"header": 97, "body": {"arm": "codec_zenoh_init_body", "body": {"version": 1, "cbyte": 49, "zid": [1, 2, 3, 4], "S": {"arm": 0, "sn_res": 10, "batch_size": 258}, "cookie": [9, 9]}}}, "encoded": [97, 1, 49, 1, 2, 3, 4, 10, 2, 1, 2, 9, 9], "note": "an init that says S by its group and A by its cookie: both set"},
+        {"source": {"header": 34, "body": {"arm": "codec_zenoh_open_body", "body": {"lease": 10, "initial_sn": 128, "cookie": null}}}, "encoded": [34, 10, 128, 1], "note": "an open with no cookie says A set"},
+        {"source": {"header": 2, "body": {"arm": "codec_zenoh_open_body", "body": {"lease": 10, "initial_sn": 0, "cookie": [1, 2]}}}, "encoded": [2, 10, 0, 2, 1, 2], "note": "an open with a cookie says A clear"},
+        {"source": {"header": 132, "body": {"arm": "codec_zenoh_keep_alive", "body": {}}}, "encoded": [132], "note": "an arm that binds nothing: Z is the value's own"},
+        {"source": {"header": 7, "body": {"arm": "codec_zenoh_join", "body": {"version": 1, "cbyte": 2, "zid": [5], "S": null, "lease": 1, "next_sn_reliable": 2, "next_sn_best_effort": 3}}}, "encoded": [7, 1, 2, 5, 1, 2, 3], "note": "a join that says S clear"},
+        {"source": {"header": 16, "body": {"tag": 16, "body": {"reason": 1}}}, "encoded": [16, 1], "note": "a tag no arm names: the default close keeps it"}
+      ]
+    },
+    "codec_init_syn_envelope": {
+      "fixture": "CodecInitSynEnvelope",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. one arm, also the default, handed the header's S: the flag is what the arm says.",
+      "sources": [
+        {"source": {"header": 65, "body": {"arm": "codec_init_syn_body", "body": {"version": 1, "S": {"arm": 0, "sn_res": 2, "batch_size": 4096}}}}, "encoded": [65, 1, 2, 16, 0], "note": "the arm says S set by its group"},
+        {"source": {"header": 1, "body": {"arm": "codec_init_syn_body", "body": {"version": 1, "S": null}}}, "encoded": [1, 1], "note": "the arm says S clear"},
+        {"source": {"header": 66, "body": {"tag": 2, "body": {"version": 1, "S": {"arm": 0, "sn_res": 0, "batch_size": 0}}}}, "encoded": [66, 1, 0, 0, 0], "note": "the default arm binds S too, and keeps its tag"}
+      ]
     }
   },
   "string_lookups": {

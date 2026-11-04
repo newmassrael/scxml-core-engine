@@ -248,6 +248,14 @@ the case and its decode agree. Five codecs gain 12 cases: the Zenoh key-expressi
 declarations, each handing its `N` to the key expression it embeds, and the interest body, whose flags byte's `N` the
 embedded key expression says. A held codec whose inputs a list's entries or an arm's codec take stays refused by name.
 
+*Landed (step 3, ninth part, 2026-11-04): arms that take flag inputs.* An arm of a variant, the default arm among them,
+is handed each input its import binds, as an embedded body is; a body and an arm share one reading of the binds and
+one handing on. A flag of a carrier bound to an input of the arm the value holds is what that arm says, and the
+value's own where the arm binds it not or does not say it (docs/adr/0065 §6 R4a, the plan's `ArmSays`). Four codecs
+gain 17 cases: the Zenoh declaration, whose arms are handed the header's N and Z, the declare message that embeds
+it, the transport envelope, whose arms are handed A and S, and the init-syn envelope, whose default arm takes S too.
+A header that contradicts the arm it holds does not read back as written, so the model refuses it as a case.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.

@@ -63,7 +63,11 @@ What the model reads so far, and refuses by name past it:
 * the flag inputs a codec declares (`<sce:flag-inputs>`, one bit each): a gate
   on one is decided by the value the parent hands, which a case states in its
   `inputs`, and two elements one input decides are a group keyed by its name.
-  A held codec whose inputs its parent binds is not read yet.
+  An embedded body or an arm of a variant whose codec takes inputs is handed
+  each as its import binds it (`<sce:flag-bind>`): the parent's own input, or
+  a flag of a carrier, which is then derived from what the held codec says
+  (docs/adr/0065 §6 R4a) and is the value's own where nothing held says it.
+  The entries of a list that take inputs are not read yet.
 
 Each fixture this module writes is listed in FIXTURES with its hand-chosen
 sources; `regenerate` writes them into `numerical_reference.json` under the
@@ -216,6 +220,18 @@ class Group:
 
 
 @dataclass
+class Arm:
+    """An arm of a variant: the codec it holds, imported as `alias`, the tag
+    that names it (`None` for the default arm, which keeps a tag no arm names),
+    and what the parent hands each flag input of the codec."""
+
+    tag: int | None
+    alias: str
+    codec: Codec
+    binds: dict[str, str]
+
+
+@dataclass
 class Field:
     id: str
     #: The `sce:type` of a field, or the kind of element: `embed`, `repeat`,
@@ -244,11 +260,10 @@ class Field:
     #: The codec of a body or of each entry of a list.
     child: Codec | None = None
     #: Of a variant (`<sce:variant>`): the field or `carrier.flag` its tag is
-    #: in, each known arm as `(tag, alias, codec)`, and the default arm as
-    #: `(alias, codec)`, which keeps a tag no arm names.
+    #: in, each known arm, and the default arm.
     tag_ref: str | None = None
-    arms: list[tuple[int, str, Codec]] = field(default_factory=list)
-    default_arm: tuple[str, Codec] | None = None
+    arms: list[Arm] = field(default_factory=list)
+    default_arm: Arm | None = None
     #: Of a chain that ends on a flag of its entries (`terminate-on=
     #: "entry-flag"`): the entry's carrier and the flag, set on every entry
     #: but the last, which the chain derives (docs/adr/0058 §1).
@@ -452,6 +467,27 @@ def read_gate(stem: str, node, inputs: list[str]) -> Gate | None:
     return Gate(clauses, " || ".join(c.label() for c in clauses))
 
 
+def bound_inputs(
+    stem: str,
+    what: str,
+    alias: str,
+    child: Codec,
+    binds: dict[str, dict[str, str]],
+    inputs: list[str],
+) -> dict[str, str]:
+    """What the parent hands each flag input of the codec imported as `alias`,
+    which `what` holds: every input bound, each to an input of the parent or a
+    flag of one of its carriers (`carrier.flag`)."""
+    bound = binds.get(alias, {})
+    if sorted(bound) != sorted(child.inputs):
+        raise Unread(f"{stem}: {what} binds {sorted(bound)}, not every input of `{alias}`")
+    for source in bound.values():
+        _, _, flag = source.partition(".")
+        if not flag and source not in inputs:
+            raise Unread(f"{stem}: {what} binds `{source}`, no flag input of the codec")
+    return dict(bound)
+
+
 def read_held(
     stem: str,
     node,
@@ -470,15 +506,9 @@ def read_held(
     child = imports.get(alias)
     if child is None:
         raise Unread(f"{stem}: `{id}` holds `{alias}`, which is not imported")
-    bound = binds.get(alias, {})
     if child.inputs and kind != "embed":
         raise Unread(f"{stem}: the entries of `{id}` take flag inputs, a law not read yet")
-    if sorted(bound) != sorted(child.inputs):
-        raise Unread(f"{stem}: `{id}` binds {sorted(bound)}, not every input of `{alias}`")
-    for source in bound.values():
-        carrier, _, flag = source.partition(".")
-        if not flag and source not in inputs:
-            raise Unread(f"{stem}: `{id}` binds `{source}`, no flag input of the codec")
+    bound = bound_inputs(stem, f"`{id}`", alias, child, binds, inputs)
     if kind == "embed":
         size, measured_by, most = "body", node.get(f"{SCE}length-from"), None
     elif kind == "repeat":
@@ -513,32 +543,38 @@ def read_held(
         most=most,
         child=child,
         end_flag=end_flag,
-        binds=dict(bound),
+        binds=bound,
     )
 
 
-def read_variant(stem: str, node, imports: dict[str, Codec]) -> Field:
+def read_variant(
+    stem: str,
+    node,
+    imports: dict[str, Codec],
+    inputs: list[str],
+    binds: dict[str, dict[str, str]],
+) -> Field:
     """A `<sce:variant>` whose tag is a field or a flag before it: the value
-    holds one arm, `body`, and the tag is the arm's."""
+    holds one arm, `body`, and the tag is the arm's; the parent hands the arm's
+    codec each flag input as its import binds it."""
     tag_ref = node.get("tag")
     if tag_ref is None:
         raise Unread(f"{stem}: a variant whose caller supplies its tag is not read yet")
-    arms: list[tuple[int, str, Codec]] = []
+    arms: list[Arm] = []
     default_arm = None
 
-    def imported(alias: str) -> Codec:
+    def arm(tag: int | None, alias: str) -> Arm:
         codec = imports.get(alias)
         if codec is None:
             raise Unread(f"{stem}: an arm holds `{alias}`, which is not imported")
-        if codec.inputs:
-            raise Unread(f"{stem}: an arm holds `{alias}`, which takes flag inputs")
-        return codec
+        bound = bound_inputs(stem, f"the arm of `{alias}`", alias, codec, binds, inputs)
+        return Arm(tag, alias, codec, bound)
 
     for child in node:
         if child.tag == f"{SCE}arm" and not set(child.attrib) - {"value", "type", "default"}:
-            arms.append((int(child.get("value"), 0), child.get("type"), imported(child.get("type"))))
+            arms.append(arm(int(child.get("value"), 0), child.get("type")))
         elif child.tag == f"{SCE}default" and set(child.attrib) == {"type"}:
-            default_arm = (child.get("type"), imported(child.get("type")))
+            default_arm = arm(None, child.get("type"))
         else:
             raise Unread(f"{stem}: a variant's <{child.tag}> is not read yet")
     return Field(
@@ -605,7 +641,7 @@ def read_document(path: Path) -> Codec:
         if extra := sorted(set(node.attrib) - READ_ATTRIBUTES[kind]):
             raise Unread(f"{stem}: `{id}` declares {', '.join(extra)}, which is not read yet")
         if kind == "variant":
-            fields.append(read_variant(stem, node, imports))
+            fields.append(read_variant(stem, node, imports, inputs, binds))
             continue
         if kind != "field":
             fields.append(read_held(stem, node, kind, imports, inputs, binds))
@@ -737,35 +773,68 @@ def said_input(codec: Codec, source: dict, name: str) -> int | None:
 
 
 def handed_to(
-    codec: Codec, f: Field, value: dict, source: dict, inputs: dict[str, int]
+    codec: Codec,
+    child: Codec,
+    binds: dict[str, str],
+    value: dict,
+    source: dict,
+    inputs: dict[str, int],
 ) -> dict[str, int]:
-    """What the parent `codec` hands each flag input of the body `f` holding
-    `value`: the parent's own input, or the flag of its carrier, which the body
-    says where it says the input and the value presents where it does not."""
+    """What the parent `codec` hands each flag input of the held `child`
+    holding `value`, as `binds` binds it: the parent's own input, or the flag
+    of its carrier, which the held codec says where it says the input and the
+    value presents where it does not."""
     out = {}
-    for child_input, bound in f.binds.items():
+    for child_input, bound in binds.items():
         carrier, _, flag = bound.partition(".")
         if not flag:
             out[child_input] = inputs[bound]
             continue
-        said = said_input(f.child, value, child_input)
+        said = said_input(child, value, child_input)
         if said is None:
             said = (source[carrier] >> codec.flag(carrier, flag).bit) & 1
         out[child_input] = said
     return out
 
 
-def bound_flags(codec: Codec, source: dict) -> dict[tuple[str, str], int]:
-    """Each flag of a carrier bound to an input of a body the value holds and
-    says: the encoder derives it from what the body says (R4a)."""
+def handed_on(
+    codec: Codec, binds: dict[str, str], carriers: dict[str, int], inputs: dict[str, int]
+) -> dict[str, int]:
+    """What the decode of `codec` hands a held codec for each input `binds`
+    binds: its own input, or the flag of a carrier read before it."""
     out = {}
+    for child_input, bound in binds.items():
+        carrier, _, flag = bound.partition(".")
+        out[child_input] = (
+            inputs[bound] if not flag else (carriers[carrier] >> codec.flag(carrier, flag).bit) & 1
+        )
+    return out
+
+
+def held_codecs(codec: Codec, source: dict) -> list[tuple[Codec, dict[str, str], dict]]:
+    """Each codec the value of `codec` holds that its parent binds inputs of:
+    a present embedded body and the arm of the variant, with its binds and the
+    value it holds."""
+    out = []
     for f in codec.fields:
-        if f.size != "body" or source.get(f.id) is None:
-            continue
-        for child_input, bound in f.binds.items():
+        if f.size == "body" and f.binds and source.get(f.id) is not None:
+            out.append((f.child, f.binds, source[f.id]))
+        elif f.size == "variant":
+            arm = arm_held(codec, f, source[f.id])
+            if arm.binds:
+                out.append((arm.codec, arm.binds, source[f.id]["body"]))
+    return out
+
+
+def bound_flags(codec: Codec, source: dict) -> dict[tuple[str, str], int]:
+    """Each flag of a carrier bound to an input of a codec the value holds and
+    says: the encoder derives it from what the held codec says (R4a)."""
+    out = {}
+    for child, binds, value in held_codecs(codec, source):
+        for child_input, bound in binds.items():
             carrier, _, flag = bound.partition(".")
             if flag:
-                said = said_input(f.child, source[f.id], child_input)
+                said = said_input(child, value, child_input)
                 if said is not None:
                     out[(carrier, flag)] = said
     return out
@@ -793,6 +862,7 @@ def held(f: Field, value, handed: dict[str, int] | None = None) -> bytes | list[
         if f.end_flag is not None:
             # The chain ends on its entries' flag: it is set on every entry
             # but the last, so the chain holds one entry or more.
+            # (Entries that take inputs are refused when the codec is read.)
             if not value:
                 raise ValueError(f"`{f.id}` ends on an entry's flag, so it holds one or more")
             carrier, name = f.end_flag
@@ -819,25 +889,37 @@ def tag_width(codec: Codec, variant: Field) -> int:
     return tag.bits
 
 
-def chosen_arm(codec: Codec, variant: Field, value) -> tuple[int, bytes]:
-    """The tag and the frame of the arm `value` holds: `{"arm": alias, "body":
-    ..}` for a known arm, whose tag is the document's, or `{"tag": n, "body":
-    ..}` for the default arm, which holds a tag no arm names."""
+def arm_held(codec: Codec, variant: Field, value) -> Arm:
+    """The arm `value` holds: `{"arm": alias, "body": ..}` for a known arm, or
+    `{"tag": n, "body": ..}` for the default arm, which holds a tag no arm
+    names and fits the tag's bits."""
     if not isinstance(value, dict) or "body" not in value:
         raise ValueError(f"{codec.name}: a variant is an object with `body`")
     if sorted(value) == ["arm", "body"]:
-        arm = next((a for a in variant.arms if a[1] == value["arm"]), None)
+        arm = next((a for a in variant.arms if a.alias == value["arm"]), None)
         if arm is None:
             raise ValueError(f"{codec.name}: no arm holds `{value['arm']}`")
-        return arm[0], encode(arm[2], value["body"])
+        return arm
     if sorted(value) == ["body", "tag"]:
         tag = value["tag"]
         if variant.default_arm is None:
             raise ValueError(f"{codec.name}: the variant has no default arm")
-        if tag in (a[0] for a in variant.arms) or not 0 <= tag < 1 << tag_width(codec, variant):
+        if tag in (a.tag for a in variant.arms) or not 0 <= tag < 1 << tag_width(codec, variant):
             raise ValueError(f"{codec.name}: {tag} is an arm's tag or past the tag's bits")
-        return tag, encode(variant.default_arm[1], value["body"])
+        return variant.default_arm
     raise ValueError(f"{codec.name}: a variant states `arm` or `tag`, and `body`")
+
+
+def chosen_arm(
+    codec: Codec, variant: Field, value, source: dict, inputs: dict[str, int]
+) -> tuple[int, bytes]:
+    """The tag and the frame of the arm `value` holds, a known arm's tag the
+    document's and the default arm's the one it keeps, the arm's codec handed
+    each input as its import binds it."""
+    arm = arm_held(codec, variant, value)
+    tag = value["tag"] if arm.tag is None else arm.tag
+    handed = handed_to(codec, arm.codec, arm.binds, value["body"], source, inputs)
+    return tag, encode(arm.codec, value["body"], handed)
 
 
 def said_length(codec: Codec, name: str, contents: dict[str, bytes | list[bytes]]) -> int | None:
@@ -907,7 +989,7 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
         f.id: held(
             f,
             source[f.id],
-            handed_to(codec, f, source[f.id], source, inputs) if f.binds else None,
+            handed_to(codec, f.child, f.binds, source[f.id], source, inputs) if f.binds else None,
         )
         for f in codec.fields
         if holds_bytes(f) and source[f.id] is not None
@@ -918,7 +1000,7 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
     # A tag in a flag of a carrier is that flag, derived from the arm.
     forced_tag = None
     if variant is not None:
-        tag, contents[variant.id] = chosen_arm(codec, variant, source[variant.id])
+        tag, contents[variant.id] = chosen_arm(codec, variant, source[variant.id], source, inputs)
         carrier, _, flag_name = variant.tag_ref.partition(".")
         if flag_name:
             forced_tag = (carrier, flag_name)
@@ -1049,15 +1131,7 @@ def decode_at(
             raw[f.id] = data.decode("utf-8") if f.sce_type == "string" else list(data)
             continue
         if f.size == "body":
-            # Each input of the body as the parent binds it: its own input, or
-            # a flag of a carrier read before the body.
-            handed = {}
-            for child_input, bound_to in f.binds.items():
-                carrier, _, flag = bound_to.partition(".")
-                handed[child_input] = (
-                    inputs[bound_to] if not flag
-                    else (carriers[carrier] >> codec.flag(carrier, flag).bit) & 1
-                )
+            handed = handed_on(codec, f.binds, carriers, inputs)
             if f.measured_by is None:
                 raw[f.id], at = decode_at(f.child, frame, at, end, handed)
             else:
@@ -1070,15 +1144,14 @@ def decode_at(
             continue
         if f.size == "variant":
             tag = measure_on_wire(codec, f.tag_ref, raw, carriers)
-            arm = next((a for a in f.arms if a[0] == tag), None)
-            if arm is not None:
-                body, at = decode_at(arm[2], frame, at, end, {})
-                raw[f.id] = {"arm": arm[1], "body": body}
-            elif f.default_arm is not None:
-                body, at = decode_at(f.default_arm[1], frame, at, end, {})
-                raw[f.id] = {"tag": tag, "body": body}
-            else:
+            arm = next((a for a in f.arms if a.tag == tag), f.default_arm)
+            if arm is None:
                 raise ValueError(f"{codec.name}: no arm has the tag {tag}")
+            handed = handed_on(codec, arm.binds, carriers, inputs)
+            body, at = decode_at(arm.codec, frame, at, end, handed)
+            raw[f.id] = {"body": body} | (
+                {"tag": tag} if arm.tag is None else {"arm": arm.alias}
+            )
             continue
         if f.size == "list":
             entries = []
@@ -1493,6 +1566,83 @@ FIXTURES = {
         ],
         "the flags byte's N is the key expression's input: derived from the key expression "
         "where the body holds one, the value's own where it does not.",
+    ),
+    "codec_zenoh_declaration": Fixture(
+        [
+            ({"header": 0x20, "body": {"arm": "codec_zenoh_decl_kexpr",
+                                       "body": {"id": 3, "wireexpr": {"id": 7, "suffix": "a"}}}},
+             "a key-expression declaration whose suffix says N: mid 0 and N set"),
+            ({"header": 0x84, "body": {"arm": "codec_zenoh_decl_queryable",
+                                       "body": {"id": 1, "wireexpr": {"id": 5, "suffix": None},
+                                                "Z": {"arm": 0, "ext_type": 0x21,
+                                                      "ext_value": 1}}}},
+             "a queryable that says Z by its extension and N clear by its key expression"),
+            ({"header": 0x03, "body": {"arm": "codec_zenoh_undecl_subscriber",
+                                       "body": {"id": 2, "ext_keyexpr": None}}},
+             "a subscriber undeclared with no extension: Z clear"),
+            ({"header": 0x61, "body": {"arm": "codec_zenoh_undecl_kexpr", "body": {"id": 0}}},
+             "an arm that binds nothing: N and M are the value's own"),
+            ({"header": 0x1A, "body": {"arm": "codec_zenoh_decl_final", "body": {}}},
+             "the final declaration's own tag"),
+            ({"header": 0x1B, "body": {"tag": 0x1B, "body": {}}},
+             "a tag no arm names: the default arm keeps it"),
+        ],
+        "each arm's codec is handed the header's N or Z as its import binds it, and the "
+        "header's flag is what the arm says: derived where the arm binds and says it, the "
+        "value's own where it does not.",
+    ),
+    "codec_zenoh_declare": Fixture(
+        [
+            ({"header": 0x1E, "interest_id": None, "extensions": None,
+              "declaration": {"header": 0x20, "body": {
+                  "arm": "codec_zenoh_decl_kexpr",
+                  "body": {"id": 3, "wireexpr": {"id": 7, "suffix": "a"}}}}},
+             "no interest id, no extension: the declaration alone"),
+            ({"header": 0x3E, "interest_id": 5, "extensions": None,
+              "declaration": {"header": 0x06, "body": {
+                  "arm": "codec_zenoh_decl_token",
+                  "body": {"id": 9, "wireexpr": {"id": 4, "suffix": None}}}}},
+             "I set: the interest id, then a token declared with no suffix"),
+        ],
+        "a declaration embedded whole: its header and the arm it holds.",
+    ),
+    "codec_transport_envelope": Fixture(
+        [
+            ({"header": 0x61, "body": {"arm": "codec_zenoh_init_body", "body": {
+                "version": 1, "cbyte": 0x31, "zid": [1, 2, 3, 4],
+                "S": {"arm": 0, "sn_res": 0x0A, "batch_size": 0x0102}, "cookie": [9, 9]}}},
+             "an init that says S by its group and A by its cookie: both set"),
+            ({"header": 0x22, "body": {"arm": "codec_zenoh_open_body", "body": {
+                "lease": 10, "initial_sn": 0x80, "cookie": None}}},
+             "an open with no cookie says A set"),
+            ({"header": 0x02, "body": {"arm": "codec_zenoh_open_body", "body": {
+                "lease": 10, "initial_sn": 0, "cookie": [1, 2]}}},
+             "an open with a cookie says A clear"),
+            ({"header": 0x84, "body": {"arm": "codec_zenoh_keep_alive", "body": {}}},
+             "an arm that binds nothing: Z is the value's own"),
+            ({"header": 0x07, "body": {"arm": "codec_zenoh_join", "body": {
+                "version": 1, "cbyte": 0x02, "zid": [5], "S": None, "lease": 1,
+                "next_sn_reliable": 2, "next_sn_best_effort": 3}}},
+             "a join that says S clear"),
+            ({"header": 0x10, "body": {"tag": 0x10, "body": {"reason": 1}}},
+             "a tag no arm names: the default close keeps it"),
+        ],
+        "each arm's codec is handed the header's A or S as its import binds it, and the "
+        "header's flag is what the arm says.",
+    ),
+    "codec_init_syn_envelope": Fixture(
+        [
+            ({"header": 0x41, "body": {"arm": "codec_init_syn_body", "body": {
+                "version": 1, "S": {"arm": 0, "sn_res": 2, "batch_size": 0x1000}}}},
+             "the arm says S set by its group"),
+            ({"header": 0x01, "body": {"arm": "codec_init_syn_body", "body": {
+                "version": 1, "S": None}}},
+             "the arm says S clear"),
+            ({"header": 0x42, "body": {"tag": 2, "body": {
+                "version": 1, "S": {"arm": 0, "sn_res": 0, "batch_size": 0}}}},
+             "the default arm binds S too, and keeps its tag"),
+        ],
+        "one arm, also the default, handed the header's S: the flag is what the arm says.",
     ),
     "codec_init_cookie_body": Fixture(
         [
