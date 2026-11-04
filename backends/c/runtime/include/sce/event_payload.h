@@ -35,7 +35,18 @@
    ⚠ Every refusal is a STATIC sentence about the field, with no name in it:
    the caller composes "`<event>` payload: '<field>' <reason>" from its own
    generation-time literals, because this backend has no allocator to build a
-   message with.
+   message with. Beside the sentence a refusal carries what a statechart reads as
+   data (docs/adr/0087, section 2.4): its code, which
+   `sce_payload_refusal_code` answers for the sentence's own storage, so one text
+   can stand for two codes; the place as a strict RFC 6901 pointer, which the
+   caller composes as it composes the path (`sce_payload_pointer_join`); and the
+   bound the value broke, which is the bound the caller handed the reader.
+
+   Before any field is read, the whole text is held to the JSON grammar, and an
+   object that repeats a name at any depth is refused, as every runtime's reader
+   refuses it (tests/json_text/payload_refusal.json). The check keeps no stack:
+   each container is walked once for its own members, and a container inside it
+   is stepped over by counting brackets, so the memory is the same for any depth.
 
    Cross-language siblings: `sce_runtime.event_payload` (Python),
    `sce.LiftPayload` (Go), `SCE::Common::EventPayloadFields` (C++). */
@@ -61,30 +72,144 @@ extern "C" {
 
 /* ── The refusals, spelled once ─────────────────────────────────────────── */
 
-#define SCE_PAYLOAD_REFUSE_NO_DATA "the event carries no data"
-#define SCE_PAYLOAD_REFUSE_NOT_OBJECT "the event's data is not an object of named fields"
-#define SCE_PAYLOAD_REFUSE_MISSING "is missing from the event's data"
-#define SCE_PAYLOAD_REFUSE_NOT_NUMBER "is not a number"
-#define SCE_PAYLOAD_REFUSE_NOT_WHOLE "is not a whole number"
-#define SCE_PAYLOAD_REFUSE_NOT_DIGITS "is not a whole number written as digits"
-#define SCE_PAYLOAD_REFUSE_PAST_2_53                                                                                   \
-    "is a number past 2^53 - 1, which is not exact everywhere; a 64-bit integer that large is written as a text of "   \
-    "its "                                                                                                             \
-    "digits"
-#define SCE_PAYLOAD_REFUSE_NOT_IN_WIDTH "does not fit the width its schema declares"
-#define SCE_PAYLOAD_REFUSE_NOT_TRUTH "is not a truth value"
-#define SCE_PAYLOAD_REFUSE_NOT_TEXT "is not a text"
-#define SCE_PAYLOAD_REFUSE_TOO_LONG "is longer than this build reserved room for"
-#define SCE_PAYLOAD_REFUSE_NOT_ONE_BYTE "carries a character above U+00FF, which no single byte spells"
+/* The class of a refusal: the enum `sce:std/lift/refusal_code.scxml` declares, each
+   code at the number that document gives it (docs/adr/0087, section 2.3). */
+typedef enum {
+    SCE_PAYLOAD_CODE_NOT_JSON = 1,
+    SCE_PAYLOAD_CODE_NOT_OBJECT = 2,
+    SCE_PAYLOAD_CODE_TOO_DEEP = 3,
+    SCE_PAYLOAD_CODE_MISSING = 4,
+    SCE_PAYLOAD_CODE_NULL_NOT_OPTIONAL = 5,
+    SCE_PAYLOAD_CODE_WRONG_KIND = 6,
+    SCE_PAYLOAD_CODE_BAD_NUMBER = 7,
+    SCE_PAYLOAD_CODE_OUT_OF_RANGE = 8,
+    SCE_PAYLOAD_CODE_TOO_LONG = 9,
+    SCE_PAYLOAD_CODE_TOO_MANY = 10,
+    SCE_PAYLOAD_CODE_UNKNOWN_VARIANT = 11,
+    SCE_PAYLOAD_CODE_NOT_BYTE_TEXT = 12,
+    SCE_PAYLOAD_CODE_NUL_IN_TEXT = 13
+} sce_payload_code_t;
+
+/* Each sentence is one array, so a refusal is told by the storage it points at and
+   not by its text: where one sentence stands for two classes (a number that is no
+   width's, or below zero for an unsigned one), it is two arrays of one text. */
+SCE_C_UNUSED static const char sce_payload_refuse_no_data[] = "the event carries no data";
+SCE_C_UNUSED static const char sce_payload_refuse_not_object[] = "the event's data is not an object of named fields";
+SCE_C_UNUSED static const char sce_payload_refuse_not_object_nor_json[] =
+    "the event's data is not an object of named fields";
+SCE_C_UNUSED static const char sce_payload_refuse_not_json[] = "the event's data is not JSON";
+SCE_C_UNUSED static const char sce_payload_refuse_trailing[] = "the event's data carries more than one JSON value";
+SCE_C_UNUSED static const char sce_payload_refuse_missing[] = "is missing from the event's data";
+SCE_C_UNUSED static const char sce_payload_refuse_not_number[] = "is not a number";
+SCE_C_UNUSED static const char sce_payload_refuse_not_whole[] = "is not a whole number";
+SCE_C_UNUSED static const char sce_payload_refuse_not_digits[] = "is not a whole number written as digits";
+SCE_C_UNUSED static const char sce_payload_refuse_past_2_53[] =
+    "is a number past 2^53 - 1, which is not exact everywhere; a 64-bit integer that large is written as a text of "
+    "its digits";
+SCE_C_UNUSED static const char sce_payload_refuse_not_in_width[] = "does not fit the width its schema declares";
+/* Below zero, for an unsigned type: no spelling of its numbers at all. */
+SCE_C_UNUSED static const char sce_payload_refuse_below_zero[] = "does not fit the width its schema declares";
+/* A 64-bit integer as a number past every width: past 2^53 - 1 as well. */
+SCE_C_UNUSED static const char sce_payload_refuse_wide_past_width[] = "does not fit the width its schema declares";
+SCE_C_UNUSED static const char sce_payload_refuse_not_truth[] = "is not a truth value";
+SCE_C_UNUSED static const char sce_payload_refuse_not_text[] = "is not a text";
+/* A text whose escapes name no character, or a byte string's text that is no UTF-8. */
+SCE_C_UNUSED static const char sce_payload_refuse_text_malformed[] = "is not a text";
+SCE_C_UNUSED static const char sce_payload_refuse_too_long[] = "is longer than this build reserved room for";
+SCE_C_UNUSED static const char sce_payload_refuse_not_one_byte[] =
+    "carries a character above U+00FF, which no single byte spells";
+SCE_C_UNUSED static const char sce_payload_refuse_nul_in_text[] = "carries U+0000, which no text holds";
+SCE_C_UNUSED static const char sce_payload_refuse_unknown_variant[] = "is not a variant of its enum";
+SCE_C_UNUSED static const char sce_payload_refuse_null[] = "is null, and its type is not optional";
+SCE_C_UNUSED static const char sce_payload_refuse_not_list[] = "is not a list";
+SCE_C_UNUSED static const char sce_payload_refuse_not_record[] = "is not a record";
+SCE_C_UNUSED static const char sce_payload_refuse_past_count[] = "holds more elements than its type declares";
+SCE_C_UNUSED static const char sce_payload_refuse_past_bound[] = "is more bytes than its type declares";
+SCE_C_UNUSED static const char sce_payload_refuse_bad_defaults[] =
+    "the schema's defaults are not a JSON object, which the generator never writes";
+
+#define SCE_PAYLOAD_REFUSE_NO_DATA sce_payload_refuse_no_data
+#define SCE_PAYLOAD_REFUSE_NOT_OBJECT sce_payload_refuse_not_object
+#define SCE_PAYLOAD_REFUSE_NOT_JSON sce_payload_refuse_not_json
+#define SCE_PAYLOAD_REFUSE_TRAILING sce_payload_refuse_trailing
+#define SCE_PAYLOAD_REFUSE_MISSING sce_payload_refuse_missing
+#define SCE_PAYLOAD_REFUSE_NOT_NUMBER sce_payload_refuse_not_number
+#define SCE_PAYLOAD_REFUSE_NOT_WHOLE sce_payload_refuse_not_whole
+#define SCE_PAYLOAD_REFUSE_NOT_DIGITS sce_payload_refuse_not_digits
+#define SCE_PAYLOAD_REFUSE_PAST_2_53 sce_payload_refuse_past_2_53
+#define SCE_PAYLOAD_REFUSE_NOT_IN_WIDTH sce_payload_refuse_not_in_width
+#define SCE_PAYLOAD_REFUSE_NOT_TRUTH sce_payload_refuse_not_truth
+#define SCE_PAYLOAD_REFUSE_NOT_TEXT sce_payload_refuse_not_text
+#define SCE_PAYLOAD_REFUSE_TOO_LONG sce_payload_refuse_too_long
+#define SCE_PAYLOAD_REFUSE_NOT_ONE_BYTE sce_payload_refuse_not_one_byte
+#define SCE_PAYLOAD_REFUSE_NUL_IN_TEXT sce_payload_refuse_nul_in_text
+#define SCE_PAYLOAD_REFUSE_UNKNOWN_VARIANT sce_payload_refuse_unknown_variant
 /* The refusals of a value of a composed type (docs/adr/0086, section 4): each is said
    of the value at its path, which the caller composes from its generation-time
    literals and the indices (`sce_payload_path_index`). */
-#define SCE_PAYLOAD_REFUSE_NULL "is null, and its type is not optional"
-#define SCE_PAYLOAD_REFUSE_NOT_LIST "is not a list"
-#define SCE_PAYLOAD_REFUSE_NOT_RECORD "is not a record"
-#define SCE_PAYLOAD_REFUSE_PAST_COUNT "holds more elements than its type declares"
-#define SCE_PAYLOAD_REFUSE_PAST_BOUND "is more bytes than its type declares"
-#define SCE_PAYLOAD_REFUSE_BAD_DEFAULTS "the schema's defaults are not a JSON object, which the generator never writes"
+#define SCE_PAYLOAD_REFUSE_NULL sce_payload_refuse_null
+#define SCE_PAYLOAD_REFUSE_NOT_LIST sce_payload_refuse_not_list
+#define SCE_PAYLOAD_REFUSE_NOT_RECORD sce_payload_refuse_not_record
+#define SCE_PAYLOAD_REFUSE_PAST_COUNT sce_payload_refuse_past_count
+#define SCE_PAYLOAD_REFUSE_PAST_BOUND sce_payload_refuse_past_bound
+#define SCE_PAYLOAD_REFUSE_BAD_DEFAULTS sce_payload_refuse_bad_defaults
+
+/* The class of `refusal`, a sentence a reader of this header answered, told by its
+   storage; 0 for NULL, which is no refusal, and for any other text. */
+SCE_C_UNUSED static inline uint8_t sce_payload_refusal_code(const char *refusal) {
+    static const struct {
+        const char *sentence;
+        uint8_t code;
+    } classes[] = {
+        {sce_payload_refuse_no_data, SCE_PAYLOAD_CODE_NOT_JSON},
+        {sce_payload_refuse_not_object, SCE_PAYLOAD_CODE_NOT_OBJECT},
+        {sce_payload_refuse_not_object_nor_json, SCE_PAYLOAD_CODE_NOT_JSON},
+        {sce_payload_refuse_not_json, SCE_PAYLOAD_CODE_NOT_JSON},
+        {sce_payload_refuse_trailing, SCE_PAYLOAD_CODE_NOT_JSON},
+        {sce_payload_refuse_missing, SCE_PAYLOAD_CODE_MISSING},
+        {sce_payload_refuse_not_number, SCE_PAYLOAD_CODE_WRONG_KIND},
+        {sce_payload_refuse_not_whole, SCE_PAYLOAD_CODE_BAD_NUMBER},
+        {sce_payload_refuse_not_digits, SCE_PAYLOAD_CODE_BAD_NUMBER},
+        {sce_payload_refuse_past_2_53, SCE_PAYLOAD_CODE_BAD_NUMBER},
+        {sce_payload_refuse_not_in_width, SCE_PAYLOAD_CODE_OUT_OF_RANGE},
+        {sce_payload_refuse_below_zero, SCE_PAYLOAD_CODE_BAD_NUMBER},
+        {sce_payload_refuse_wide_past_width, SCE_PAYLOAD_CODE_BAD_NUMBER},
+        {sce_payload_refuse_not_truth, SCE_PAYLOAD_CODE_WRONG_KIND},
+        {sce_payload_refuse_not_text, SCE_PAYLOAD_CODE_WRONG_KIND},
+        {sce_payload_refuse_text_malformed, SCE_PAYLOAD_CODE_NOT_JSON},
+        {sce_payload_refuse_too_long, SCE_PAYLOAD_CODE_TOO_LONG},
+        {sce_payload_refuse_not_one_byte, SCE_PAYLOAD_CODE_NOT_BYTE_TEXT},
+        {sce_payload_refuse_nul_in_text, SCE_PAYLOAD_CODE_NUL_IN_TEXT},
+        {sce_payload_refuse_unknown_variant, SCE_PAYLOAD_CODE_UNKNOWN_VARIANT},
+        {sce_payload_refuse_null, SCE_PAYLOAD_CODE_NULL_NOT_OPTIONAL},
+        {sce_payload_refuse_not_list, SCE_PAYLOAD_CODE_WRONG_KIND},
+        {sce_payload_refuse_not_record, SCE_PAYLOAD_CODE_WRONG_KIND},
+        {sce_payload_refuse_past_count, SCE_PAYLOAD_CODE_TOO_MANY},
+        {sce_payload_refuse_past_bound, SCE_PAYLOAD_CODE_TOO_LONG},
+        {sce_payload_refuse_bad_defaults, SCE_PAYLOAD_CODE_NOT_JSON},
+    };
+
+    for (size_t i = 0u; i < sizeof(classes) / sizeof(classes[0]); ++i) {
+        if (classes[i].sentence == refusal) {
+            return classes[i].code;
+        }
+    }
+    return 0u;
+}
+
+/* The name the enum declares `code` by (`notJson`); "" for a number it does not declare. */
+SCE_C_UNUSED static inline const char *sce_payload_code_name(uint8_t code) {
+    static const char *const names[] = {
+        "",          "notJson",    "notObject", "tooDeep", "missing",        "nullNotOptional", "wrongKind",
+        "badNumber", "outOfRange", "tooLong",   "tooMany", "unknownVariant", "notByteText",     "nulInText"};
+    return code < sizeof(names) / sizeof(names[0]) ? names[code] : "";
+}
+
+/* Whether a refusal of class `code` names the bound the value broke: the bound the
+   caller handed the reader, for a text or byte string (bytes) or a list (elements). */
+SCE_C_UNUSED static inline bool sce_payload_code_has_bound(uint8_t code) {
+    return code == SCE_PAYLOAD_CODE_TOO_LONG || code == SCE_PAYLOAD_CODE_TOO_MANY || code == SCE_PAYLOAD_CODE_TOO_DEEP;
+}
 
 /* The fields an event's data names — a borrowed view, valid only while the
    event record it came from is. */
@@ -227,6 +352,284 @@ SCE_C_UNUSED static inline const char *sce_payload_find_in(const char *object, c
     return NULL;
 }
 
+/* ── Holding a text to the JSON grammar (RFC 8259) ──────────────────────── */
+
+/* Four hex digits at `p`, or -1 when they are not; defined with the readers below. */
+SCE_C_UNUSED static inline long sce_payload_hex4(const char *p);
+
+/* Past one JSON string at `p` in RFC 8259's grammar (section 7): closed, and every
+   escape one of the eight short ones or `\u` and four hex digits. NULL when `p`
+   spells none. Which character a `\u` escape names is the reader's question, not
+   the grammar's: half of a character is refused where a text is read. */
+SCE_C_UNUSED static inline const char *sce_payload_past_string(const char *p) {
+    if (*p != '"') {
+        return NULL;
+    }
+    p++;
+    while (*p != '"') {
+        if (*p == '\0') {
+            return NULL;
+        }
+        if (*p == '\\') {
+            p++;
+            if (*p == 'u') {
+                if (sce_payload_hex4(p + 1) < 0) {
+                    return NULL;
+                }
+                p += 4;
+            } else if (*p == '\0' || strchr("\"\\/bfnrt", *p) == NULL) {
+                return NULL;
+            }
+        }
+        p++;
+    }
+    return p + 1;
+}
+
+/* Past one JSON number at `p` in RFC 8259's grammar (section 6): `-`, then `0` or a
+   digit that is not `0` and more digits, then a fraction and an exponent, each with at
+   least one digit. NULL when `p` spells none. */
+SCE_C_UNUSED static inline const char *sce_payload_past_number(const char *p) {
+    if (*p == '-') {
+        p++;
+    }
+    if (*p == '0') {
+        p++;
+    } else if (*p >= '1' && *p <= '9') {
+        while (*p >= '0' && *p <= '9') {
+            p++;
+        }
+    } else {
+        return NULL;
+    }
+    if (*p == '.') {
+        p++;
+        if (*p < '0' || *p > '9') {
+            return NULL;
+        }
+        while (*p >= '0' && *p <= '9') {
+            p++;
+        }
+    }
+    if (*p == 'e' || *p == 'E') {
+        p++;
+        if (*p == '+' || *p == '-') {
+            p++;
+        }
+        if (*p < '0' || *p > '9') {
+            return NULL;
+        }
+        while (*p >= '0' && *p <= '9') {
+            p++;
+        }
+    }
+    return p;
+}
+
+/* Past one JSON value at `p`: a string, a number or a keyword by its grammar, and a
+   container to the bracket that closes it, counting both kinds of bracket, its strings
+   held to their grammar. What a container holds is held to the grammar by its own walk
+   (`sce_payload_container_is_well_formed`). NULL when `p` spells no value. */
+SCE_C_UNUSED static inline const char *sce_payload_past_value(const char *p) {
+    if (*p == '"') {
+        return sce_payload_past_string(p);
+    }
+    if (*p == '{' || *p == '[') {
+        unsigned long depth = 0u;
+        while (*p != '\0') {
+            if (*p == '"') {
+                p = sce_payload_past_string(p);
+                if (p == NULL) {
+                    return NULL;
+                }
+                continue;
+            }
+            if (*p == '{' || *p == '[') {
+                depth++;
+            } else if (*p == '}' || *p == ']') {
+                depth--;
+                if (depth == 0u) {
+                    return p + 1;
+                }
+            }
+            p++;
+        }
+        return NULL;
+    }
+    if (strncmp(p, "true", 4) == 0 || strncmp(p, "null", 4) == 0) {
+        return p + 4;
+    }
+    if (strncmp(p, "false", 5) == 0) {
+        return p + 5;
+    }
+    return sce_payload_past_number(p);
+}
+
+/* The next member's name of an object after the member whose name is at `name`, or
+   NULL after the last; the object has been held to the grammar. */
+SCE_C_UNUSED static inline const char *sce_payload_next_member(const char *name) {
+    const char *p = sce_payload_past_string(name);
+    if (p == NULL) {
+        return NULL;
+    }
+    p = sce_payload_skip_space(p);
+    if (*p != ':') {
+        return NULL;
+    }
+    p = sce_payload_past_value(sce_payload_skip_space(p + 1));
+    if (p == NULL) {
+        return NULL;
+    }
+    p = sce_payload_skip_space(p);
+    return (*p == ',') ? sce_payload_skip_space(p + 1) : NULL;
+}
+
+/* The next character of the JSON string whose body `*p` is in, as a code point,
+   `*p` moved past it: an escape is the character it names, a pair of halves the one
+   character they name together, and UTF-8 the character it spells. A byte that begins
+   no character is itself, so two names compare as their bytes where they are no text. */
+SCE_C_UNUSED static inline unsigned long sce_payload_next_character(const char **p) {
+    const unsigned char c = (unsigned char)**p;
+    if (c == '\\') {
+        const char e = (*p)[1];
+        *p += 2;
+        switch (e) {
+        case 'b':
+            return '\b';
+        case 'f':
+            return '\f';
+        case 'n':
+            return '\n';
+        case 'r':
+            return '\r';
+        case 't':
+            return '\t';
+        case 'u': {
+            unsigned long code = (unsigned long)sce_payload_hex4(*p);
+            *p += 4;
+            if (code >= 0xD800u && code <= 0xDBFFu && (*p)[0] == '\\' && (*p)[1] == 'u') {
+                const long low = sce_payload_hex4(*p + 2);
+                if (low >= 0xDC00 && low <= 0xDFFF) {
+                    code = 0x10000u + ((code - 0xD800u) << 10) + ((unsigned long)low - 0xDC00u);
+                    *p += 6;
+                }
+            }
+            return code;
+        }
+        default:
+            return (unsigned char)e;
+        }
+    }
+    size_t n = 0u;
+    unsigned long code = c;
+    if (c >= 0xF0u && c <= 0xF4u) {
+        n = 3u;
+        code = c & 0x07u;
+    } else if (c >= 0xE0u) {
+        n = 2u;
+        code = c & 0x0Fu;
+    } else if (c >= 0xC2u) {
+        n = 1u;
+        code = c & 0x1Fu;
+    }
+    for (size_t i = 1u; i <= n; ++i) {
+        const unsigned char more = (unsigned char)(*p)[i];
+        if ((more & 0xC0u) != 0x80u) {
+            *p += 1;
+            return c;
+        }
+        code = (code << 6) | (more & 0x3Fu);
+    }
+    *p += 1u + n;
+    return code;
+}
+
+/* Whether the JSON strings at `a` and `b` spell the same name. */
+SCE_C_UNUSED static inline bool sce_payload_same_name(const char *a, const char *b) {
+    a++;
+    b++;
+    while (*a != '"' && *b != '"') {
+        if (sce_payload_next_character(&a) != sce_payload_next_character(&b)) {
+            return false;
+        }
+    }
+    return *a == '"' && *b == '"';
+}
+
+/* Whether the container at `p` is well formed in what it holds itself: its members
+   or elements separated by commas, each name a string followed by a colon, each value
+   one JSON value, the bracket of its own kind at its end, and in an object no name
+   twice. A container inside it is stepped over, and held to the grammar by its own
+   walk. */
+SCE_C_UNUSED static inline bool sce_payload_container_is_well_formed(const char *p) {
+    const bool object = (*p == '{');
+    const char close = object ? '}' : ']';
+    const char *q = sce_payload_skip_space(p + 1);
+    if (*q == close) {
+        return true;
+    }
+    for (;;) {
+        if (object) {
+            q = sce_payload_past_string(q);
+            if (q == NULL) {
+                return false;
+            }
+            q = sce_payload_skip_space(q);
+            if (*q != ':') {
+                return false;
+            }
+            q = sce_payload_skip_space(q + 1);
+        }
+        q = sce_payload_past_value(q);
+        if (q == NULL) {
+            return false;
+        }
+        q = sce_payload_skip_space(q);
+        if (*q == ',') {
+            q = sce_payload_skip_space(q + 1);
+            continue;
+        }
+        if (*q == close) {
+            break;
+        }
+        return false;
+    }
+    if (object) {
+        /* An object whose names repeat has no single meaning: a reader that takes the
+           first and one that takes the last would read two values from one text. */
+        for (const char *a = sce_payload_skip_space(p + 1); a != NULL; a = sce_payload_next_member(a)) {
+            for (const char *b = sce_payload_next_member(a); b != NULL; b = sce_payload_next_member(b)) {
+                if (sce_payload_same_name(a, b)) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+/* Why the text at `text` is not exactly one JSON value, or NULL when it is: every
+   container in it walked once for what it holds itself, in the order its bracket
+   opens, so no call is made per level and nothing is kept per level. */
+SCE_C_UNUSED static inline const char *sce_payload_check_text(const char *text) {
+    const char *p = sce_payload_skip_space(text);
+    const char *end = sce_payload_past_value(p);
+    if (end == NULL) {
+        return SCE_PAYLOAD_REFUSE_NOT_JSON;
+    }
+    for (const char *q = p; q < end;) {
+        if (*q == '"') {
+            q = sce_payload_past_string(q);
+            continue;
+        }
+        if ((*q == '{' || *q == '[') && !sce_payload_container_is_well_formed(q)) {
+            return SCE_PAYLOAD_REFUSE_NOT_JSON;
+        }
+        q++;
+    }
+    return (*sce_payload_skip_space(end) == '\0') ? NULL : SCE_PAYLOAD_REFUSE_TRAILING;
+}
+
 /* The value `name` carries: in the delivery, else in the schema's defaults when
    the decode was given them, else NULL. */
 SCE_C_UNUSED static inline const char *sce_payload_find(const sce_payload_fields_t *fields, const char *name) {
@@ -255,10 +658,15 @@ SCE_C_UNUSED static inline const char *sce_payload_decode(const char *data, sce_
     if (*p == '\0') {
         return SCE_PAYLOAD_REFUSE_NO_DATA;
     }
+    const char *not_json = sce_payload_check_text(p);
     if (*p != '{') {
         /* §scxml-B-2-8-1's other rungs: a bare value or a space-normalized
-           string names no fields. */
-        return SCE_PAYLOAD_REFUSE_NOT_OBJECT;
+           string names no fields. One sentence, and two classes: one JSON value
+           that is not an object, and a text that is not JSON at all. */
+        return (not_json == NULL) ? SCE_PAYLOAD_REFUSE_NOT_OBJECT : sce_payload_refuse_not_object_nor_json;
+    }
+    if (not_json != NULL) {
+        return not_json;
     }
     out->object = p;
     return NULL;
@@ -371,7 +779,9 @@ SCE_C_UNUSED static inline const char *sce_payload_value_wide(const char *p, boo
         if (refusal == NULL && *magnitude > (((uint64_t)1 << 53) - 1u)) {
             return SCE_PAYLOAD_REFUSE_PAST_2_53;
         }
-        return refusal;
+        /* A 64-bit integer as a number is held to 2^53 - 1 however large the number
+           is: one past every width is no spelling of it either. */
+        return (refusal == SCE_PAYLOAD_REFUSE_NOT_IN_WIDTH) ? sce_payload_refuse_wide_past_width : refusal;
     }
     p++;
     *negative = (*p == '-');
@@ -444,7 +854,11 @@ SCE_C_UNUSED static inline const char *sce_payload_value_unsigned(const char *p,
     if (refusal != NULL) {
         return refusal;
     }
-    if (negative || magnitude > max) {
+    if (negative) {
+        /* Below zero is no spelling of an unsigned number at any width. */
+        return sce_payload_refuse_below_zero;
+    }
+    if (magnitude > max) {
         return SCE_PAYLOAD_REFUSE_NOT_IN_WIDTH;
     }
     *out = magnitude;
@@ -525,7 +939,7 @@ SCE_C_UNUSED static inline const char *sce_payload_value_u64(const char *p, uint
         return refusal;
     }
     if (negative) {
-        return SCE_PAYLOAD_REFUSE_NOT_IN_WIDTH;
+        return sce_payload_refuse_below_zero;
     }
     *out = magnitude;
     return NULL;
@@ -754,7 +1168,7 @@ SCE_C_UNUSED static inline const char *sce_payload_walk_text(const char *p, sce_
             case 'u': {
                 const long unit = sce_payload_hex4(p + 1);
                 if (unit < 0) {
-                    return SCE_PAYLOAD_REFUSE_NOT_TEXT;
+                    return sce_payload_refuse_text_malformed;
                 }
                 p += 4;
                 code = (unsigned long)unit;
@@ -765,18 +1179,18 @@ SCE_C_UNUSED static inline const char *sce_payload_walk_text(const char *p, sce_
                 if (code >= 0xD800u && code <= 0xDBFFu) {
                     const long low = (p[1] == '\\' && p[2] == 'u') ? sce_payload_hex4(p + 3) : -1;
                     if (low < 0xDC00 || low > 0xDFFF) {
-                        return SCE_PAYLOAD_REFUSE_NOT_TEXT;
+                        return sce_payload_refuse_text_malformed;
                     }
                     code = 0x10000u + ((code - 0xD800u) << 10) + ((unsigned long)low - 0xDC00u);
                     p += 6;
                 } else if (code >= 0xDC00u && code <= 0xDFFFu) {
-                    return SCE_PAYLOAD_REFUSE_NOT_TEXT;
+                    return sce_payload_refuse_text_malformed;
                 }
                 named = true;
                 break;
             }
             default:
-                return SCE_PAYLOAD_REFUSE_NOT_TEXT;
+                return sce_payload_refuse_text_malformed;
             }
             p++;
         } else {
@@ -794,7 +1208,7 @@ SCE_C_UNUSED static inline const char *sce_payload_walk_text(const char *p, sce_
                     sink->above_one_byte = true;
                     return SCE_PAYLOAD_REFUSE_NOT_ONE_BYTE;
                 } else {
-                    return SCE_PAYLOAD_REFUSE_NOT_TEXT;
+                    return sce_payload_refuse_text_malformed;
                 }
             }
         }
@@ -806,7 +1220,7 @@ SCE_C_UNUSED static inline const char *sce_payload_walk_text(const char *p, sce_
         }
     }
     if (*p != '"') {
-        return SCE_PAYLOAD_REFUSE_NOT_TEXT;
+        return sce_payload_refuse_text_malformed;
     }
     return NULL;
 }
@@ -829,6 +1243,12 @@ SCE_C_UNUSED static inline const char *sce_payload_text_into(const char *p, char
     const char *refusal = sce_payload_walk_text(p, &sink);
     if (refusal != NULL) {
         return refusal;
+    }
+    /* A text holding U+0000 would end at it here, where a text is held
+       NUL-terminated, so no runtime holds one and every reader refuses it
+       (docs/adr/0087, section 2.3). A byte string may hold the byte zero. */
+    if (memchr(out, '\0', sink.len) != NULL) {
+        return SCE_PAYLOAD_REFUSE_NUL_IN_TEXT;
     }
     out[sink.len] = '\0';
     return NULL;
@@ -1017,19 +1437,71 @@ SCE_C_UNUSED static inline bool sce_payload_path_join(char *out, size_t cap, con
     return true;
 }
 
-SCE_C_UNUSED static inline bool sce_payload_path_index(char *out, size_t cap, const char *prefix, uint32_t position) {
+/* The decimal digits of `position`, terminated, into `segment` of 11 bytes. */
+SCE_C_UNUSED static inline void sce_payload_index_digits(char segment[11], uint32_t position) {
     char digits[11];
     size_t n = 0u;
     do {
         digits[n++] = (char)('0' + (position % 10u));
         position /= 10u;
     } while (position != 0u);
-    char segment[11];
     for (size_t i = 0u; i < n; ++i) {
         segment[i] = digits[n - 1u - i];
     }
     segment[n] = '\0';
+}
+
+SCE_C_UNUSED static inline bool sce_payload_path_index(char *out, size_t cap, const char *prefix, uint32_t position) {
+    char segment[11];
+    sce_payload_index_digits(segment, position);
     return sce_payload_path_join(out, cap, prefix, segment);
+}
+
+/* The strict RFC 6901 pointer to the field `name` below the pointer `prefix` (empty or
+   NULL for the whole text), written into `out` of `cap` bytes: `/` and the name with
+   `~` written `~0` and `/` written `~1` (RFC 6901, section 3), what a refusal names a
+   value by beside its sentence (`/items/2/tags/0`). False when it does not fit, and
+   `out` then holds the prefix alone, never a pointer cut in the middle of a token. */
+SCE_C_UNUSED static inline bool sce_payload_pointer_join(char *out, size_t cap, const char *prefix, const char *name) {
+    if (cap == 0u) {
+        return false;
+    }
+    const size_t head = (prefix != NULL) ? strlen(prefix) : 0u;
+    size_t tail = 0u;
+    for (const char *c = name; *c != '\0'; ++c) {
+        tail += (*c == '~' || *c == '/') ? 2u : 1u;
+    }
+    if (head < cap && prefix != NULL && prefix != out) {
+        memmove(out, prefix, head);
+    }
+    if (head + 1u + tail + 1u > cap) {
+        if (head < cap) {
+            out[head] = '\0';
+        } else if (prefix != out) {
+            out[0] = '\0';
+        }
+        return false;
+    }
+    size_t at = head;
+    out[at++] = '/';
+    for (const char *c = name; *c != '\0'; ++c) {
+        if (*c == '~' || *c == '/') {
+            out[at++] = '~';
+            out[at++] = (*c == '~') ? '0' : '1';
+        } else {
+            out[at++] = *c;
+        }
+    }
+    out[at] = '\0';
+    return true;
+}
+
+/* The strict RFC 6901 pointer to the element at `position` below `prefix`. */
+SCE_C_UNUSED static inline bool sce_payload_pointer_index(char *out, size_t cap, const char *prefix,
+                                                          uint32_t position) {
+    char segment[11];
+    sce_payload_index_digits(segment, position);
+    return sce_payload_pointer_join(out, cap, prefix, segment);
 }
 
 /* The short form JSON gives a control character, or 0 when it has none. */

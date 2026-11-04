@@ -4477,6 +4477,29 @@ set_tests_properties(c11_unit_payload_bytes PROPERTIES
     LABELS "unit;c11"
 )
 
+# ─── Payload refusal unit test ──────────────────────────────────────
+#
+# What the payload reader refuses and how it names the refusal (docs/adr/0087,
+# sections 2.3 and 2.4): the code, the RFC 6901 pointer and the bound of every case
+# of tests/json_text/payload_refusal.json, the table every runtime's reader reads,
+# and the codes held to the enum stdlib/lift/refusal_code.scxml declares.
+# Header-only code, so the test needs nothing a configuration can leave out.
+add_executable(sce_c_payload_refusal_unit_test unit/payload_refusal_test.c)
+target_link_libraries(sce_c_payload_refusal_unit_test PRIVATE sce_c_runtime)
+target_compile_definitions(sce_c_payload_refusal_unit_test PRIVATE
+    SCE_JSON_PAYLOAD_REFUSAL_TABLE="${CMAKE_SOURCE_DIR}/tests/json_text/payload_refusal.json"
+    SCE_STDLIB_REFUSAL_CODE="${CMAKE_SOURCE_DIR}/stdlib/lift/refusal_code.scxml")
+set_target_properties(sce_c_payload_refusal_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_payload_refusal COMMAND sce_c_payload_refusal_unit_test)
+set_tests_properties(c11_unit_payload_refusal PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
 # ─── Payload composed unit test ─────────────────────────────────────
 #
 # A value of any bounded type at its path (docs/adr/0086): the list cursor and the
