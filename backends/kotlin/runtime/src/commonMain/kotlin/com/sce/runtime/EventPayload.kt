@@ -202,6 +202,9 @@ object EventPayload {
 
         private fun whole(): Long {
             val text = number()
+            // `-0` is a JSON number and no spelling of a whole number: every
+            // runtime refuses it, as it refuses `"-0"` for a 64-bit integer.
+            if (text == "-0") throw refuse(RefusalCode.BAD_NUMBER, "is not a whole number ($text)")
             // A whole number no Long holds is past every width this reads; any
             // other spelling is no whole number at all.
             return text.toLongOrNull() ?: throw refuse(
@@ -238,7 +241,12 @@ object EventPayload {
                 is String ->
                     if (isDecimal(raw, signed)) raw
                     else throw refuse(RefusalCode.BAD_NUMBER, "is not a whole number written as digits ($raw)")
+                // `-0` is no whole number, and a number below zero no spelling of
+                // an unsigned one, as for every narrower width.
                 is Json.Number -> {
+                    if (raw.text == "-0" || (!signed && raw.text.startsWith("-"))) {
+                        throw refuse(RefusalCode.BAD_NUMBER, "is not a whole number of its type (${raw.text})")
+                    }
                     val n = raw.text.toLongOrNull()
                         ?: throw refuse(RefusalCode.BAD_NUMBER, "is not a whole number (${raw.text})")
                     if (n > EXACT_IN_A_DOUBLE || n < -EXACT_IN_A_DOUBLE) {
@@ -291,9 +299,16 @@ object EventPayload {
             return wide.toFloat()
         }
 
+        /**
+         * A 64-bit fractional value. A number past the largest double (`1e999`)
+         * does not fit it, as one past the largest single does not fit a
+         * `float32`: no runtime holds the infinity a reader would round it to.
+         */
         fun float64(): Double {
             val text = number()
-            return text.toDoubleOrNull() ?: throw refuse(RefusalCode.BAD_NUMBER, "is not a number ($text)")
+            val real = text.toDoubleOrNull() ?: throw refuse(RefusalCode.BAD_NUMBER, "is not a number ($text)")
+            if (!real.isFinite()) throw pastWidth(text)
+            return real
         }
 
         fun boolean(): Boolean {
@@ -491,7 +506,8 @@ object EventPayload {
      * engine takes for the same string — through the runtime's one reader.
      */
     fun decode(data: String): Fields {
-        val trimmed = data.trim()
+        // Only the whitespace RFC 8259 has: any other is a text that is not JSON.
+        val trimmed = Json.trimWhitespace(data)
         if (trimmed.isEmpty()) {
             throw Refusal("the event carries no data", RefusalCode.NOT_JSON, "")
         }
@@ -535,9 +551,129 @@ object EventPayload {
      * other value is.
      */
     fun decode(data: String, defaults: String): Fields {
-        val delivered = if (data.isBlank()) emptyMap() else decode(data).values
+        val delivered = if (Json.trimWhitespace(data).isEmpty()) emptyMap() else decode(data).values
         return Fields(defaultsOf(defaults) + delivered)
     }
+
+    /**
+     * Read the text a `<sce:lift>` reads as the fields of a record of a schema
+     * (docs/adr/0087, section 2.1): [depth] is the deepest container a value of
+     * the schema holds, [declared] the ids of its fields, and [defaults], for a
+     * schema a later revision of which added fields, the JSON object of their
+     * defaults, which a text that lacks one reads in its place.
+     *
+     * Three refusals come before the fields are read, in this order: a text
+     * that is empty or only whitespace (`notJson`); a container opened deeper
+     * than [depth], decided over the text's brackets alone before it is read as
+     * JSON ([liftTooDeep], `tooDeep`); and a text that is not one JSON object,
+     * as a delivery is refused ([decode]).
+     */
+    fun lift(text: String, depth: Int, declared: List<String>, defaults: String?): Fields {
+        if (Json.trimWhitespace(text).isEmpty()) {
+            throw Refusal("the text is empty", RefusalCode.NOT_JSON, "")
+        }
+        liftTooDeep(text, depth, declared)?.let { throw it }
+        val delivered = decode(text).values
+        return Fields(if (defaults == null) delivered else defaultsOf(defaults) + delivered)
+    }
+
+    /**
+     * The refusal of a container [text] opens deeper than [depth], the deepest a
+     * value of a lift's schema holds (docs/adr/0087, section 2.1, item 4), or
+     * null when it opens none.
+     *
+     * Decided over the brackets alone, before the text is read as JSON, so that
+     * every runtime decides it alike and no reader descends past the type: a
+     * text is skipped from its opening quote to the next quote no backslash
+     * escapes, each `{` and `[` outside one opens a level and each `}` and `]`
+     * closes one, and the first opened past [depth] is refused, whatever the
+     * text holds after it. A text that never closes ends the walk with nothing
+     * refused, and the reading of the text as JSON refuses it.
+     *
+     * The pointer names the member of the outermost object the container
+     * stands under, the name read from the last text closed in that object
+     * before a `:`, when that name is one of [declared]; otherwise the whole
+     * text, `""`. The bound is [depth].
+     */
+    fun liftTooDeep(text: String, depth: Int, declared: List<String>): Refusal? {
+        var level = 0
+        var lastText: String? = null
+        var member: String? = null
+        var at = 0
+        while (at < text.length) {
+            when (text[at]) {
+                '"' -> {
+                    val start = at
+                    at++
+                    while (at < text.length && text[at] != '"') {
+                        at += if (text[at] == '\\') 2 else 1
+                    }
+                    if (at >= text.length) return null
+                    if (level == 1) lastText = text.substring(start, at + 1)
+                }
+                ':' -> if (level == 1) {
+                    member = lastText
+                    lastText = null
+                }
+                ',' -> if (level == 1) {
+                    member = null
+                    lastText = null
+                }
+                '{', '[' -> {
+                    level++
+                    if (level > depth) {
+                        val name = member?.let {
+                            try {
+                                Json.parse(it) as? String
+                            } catch (e: Json.Error) {
+                                null
+                            }
+                        }
+                        val pointer = if (name != null && name in declared) pointerBelow("", name) else ""
+                        return Refusal(
+                            "the text opens a container deeper than the $depth levels a value of its schema holds",
+                            RefusalCode.TOO_DEEP,
+                            pointer,
+                            depth.toLong(),
+                        )
+                    }
+                }
+                '}', ']' -> if (level > 0) level--
+            }
+            at++
+        }
+        return null
+    }
+
+    /** What a `<sce:lift>` answers: a record of its schema, or the refusal of the text. */
+    sealed class LiftOutcome<out T> {
+        /** The text is a record of the schema. */
+        class Lifted<out T>(val value: T) : LiftOutcome<T>()
+
+        /** The text is not: the first place refused, its code, pointer and bound. */
+        class Refused(val refusal: Refusal) : LiftOutcome<Nothing>()
+    }
+
+    /**
+     * What a `<sce:lift>` reads (docs/adr/0087, section 2.1): [text] as a record
+     * of a schema, whose fields [read] reads out of the [Fields] it is handed, as
+     * a delivery of the schema is read; or the refusal of the first place that
+     * is not one, its code, pointer and bound the statechart keeps as a record.
+     * [lift] says what is refused before the fields are read. This runtime keeps
+     * no log, so neither outcome is written to one.
+     */
+    fun <T> liftRecord(
+        text: String,
+        depth: Int,
+        declared: List<String>,
+        defaults: String?,
+        read: (Fields) -> T,
+    ): LiftOutcome<T> =
+        try {
+            LiftOutcome.Lifted(read(lift(text, depth, declared, defaults)))
+        } catch (refusal: Refusal) {
+            LiftOutcome.Refused(refusal)
+        }
 
     /** The members of a schema's defaults, which the generator spells as one JSON object. */
     private fun defaultsOf(defaults: String): Map<String, Any?> {

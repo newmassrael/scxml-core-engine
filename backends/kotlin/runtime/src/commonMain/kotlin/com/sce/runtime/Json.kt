@@ -41,6 +41,15 @@ object Json {
         override fun hashCode(): Int = text.hashCode()
     }
 
+    /**
+     * Whether [c] is whitespace RFC 8259 has between tokens (section 2): space,
+     * tab, line feed or carriage return.
+     */
+    fun isWhitespace(c: Char): Boolean = c == ' ' || c == '\t' || c == '\n' || c == '\r'
+
+    /** [text] with the whitespace RFC 8259 has trimmed from both ends, and no other. */
+    fun trimWhitespace(text: String): String = text.trim { isWhitespace(it) }
+
     /** Read [text] as exactly one JSON value, surrounding whitespace aside. */
     fun parse(text: String): Any? {
         val reader = Reader(text)
@@ -206,8 +215,14 @@ object Json {
 
         fun atEnd(): Boolean = at >= text.length
 
+        /**
+         * Past the whitespace RFC 8259 has between tokens (section 2): space,
+         * tab, line feed and carriage return, and no other, so a no-break space
+         * or a vertical tab is a text that is not JSON on every runtime
+         * (tests/json_text/payload_refusal.json).
+         */
         fun skipWhitespace() {
-            while (at < text.length && text[at].isWhitespace()) at++
+            while (at < text.length && Json.isWhitespace(text[at])) at++
         }
 
         private fun malformed(what: String): Nothing = throw Error.Malformed(what)
@@ -297,36 +312,86 @@ object Json {
                             'r' -> sb.append('\r')
                             't' -> sb.append('\t')
                             'u' -> {
-                                if (at + 4 > text.length) malformed("a \\u escape is short")
-                                val code = text.substring(at, at + 4).toIntOrNull(16)
-                                    ?: malformed("a \\u escape is not hex")
-                                sb.append(code.toChar())
-                                at += 4
+                                // A character past U+FFFF is written as the two
+                                // halves of its UTF-16 pair, each its own escape;
+                                // a half alone names no character, so the text is
+                                // no JSON text any runtime reads alike (RFC 8259,
+                                // sections 7 and 8.2).
+                                val code = readHex4()
+                                when (code) {
+                                    in 0xD800..0xDBFF -> {
+                                        if (!text.startsWith("\\u", at)) {
+                                            malformed("a \\u escape is half of a character")
+                                        }
+                                        at += 2
+                                        val low = readHex4()
+                                        if (low !in 0xDC00..0xDFFF) {
+                                            malformed("a \\u escape is half of a character")
+                                        }
+                                        sb.append(code.toChar()).append(low.toChar())
+                                    }
+                                    in 0xDC00..0xDFFF -> malformed("a \\u escape is half of a character")
+                                    else -> sb.append(code.toChar())
+                                }
                             }
                             else -> malformed("unknown escape '\\$e'")
                         }
                     }
-                    else -> sb.append(c)
+                    // RFC 8259, section 7: a character below U+0020 stands in a
+                    // text only as an escape.
+                    else -> {
+                        if (c < ' ') malformed("a control character stands in a text unescaped")
+                        sb.append(c)
+                    }
                 }
             }
         }
 
+        /** The four hex digits after a `\u`, as the number they spell: exactly four, no sign. */
+        private fun readHex4(): Int {
+            if (at + 4 > text.length) malformed("a \\u escape is short")
+            var code = 0
+            for (i in at until at + 4) {
+                val digit = text[i].digitToIntOrNull(16) ?: malformed("a \\u escape is not hex")
+                code = code * 16 + digit
+            }
+            at += 4
+            return code
+        }
+
+        /**
+         * One number in RFC 8259's grammar (section 6): `-`, then `0` or a digit
+         * that is not `0` and more digits, then a fraction and an exponent, each
+         * with at least one digit. A leading zero, a fraction or an exponent with
+         * no digit, and a sign but `-` are no JSON number.
+         */
         private fun readNumber(): Number {
             val start = at
             if (!atEnd() && text[at] == '-') at++
-            while (!atEnd() && text[at] in '0'..'9') at++
+            when {
+                !atEnd() && text[at] == '0' -> at++
+                !atEnd() && text[at] in '1'..'9' -> skipDigits()
+                else -> malformed("a number has no digits")
+            }
             if (!atEnd() && text[at] == '.') {
                 at++
-                while (!atEnd() && text[at] in '0'..'9') at++
+                if (atEnd() || text[at] !in '0'..'9') malformed("a fraction has no digits")
+                skipDigits()
             }
             if (!atEnd() && (text[at] == 'e' || text[at] == 'E')) {
                 at++
                 if (!atEnd() && (text[at] == '+' || text[at] == '-')) at++
-                while (!atEnd() && text[at] in '0'..'9') at++
+                if (atEnd() || text[at] !in '0'..'9') malformed("an exponent has no digits")
+                skipDigits()
             }
-            val slice = text.substring(start, at)
-            if (slice.isEmpty() || slice == "-") malformed("a number has no digits")
-            return Number(slice)
+            // A digit right after the number is a number with a leading zero
+            // (`01`), which no runtime reads alike.
+            if (!atEnd() && text[at] in '0'..'9') malformed("a number has a leading zero")
+            return Number(text.substring(start, at))
+        }
+
+        private fun skipDigits() {
+            while (!atEnd() && text[at] in '0'..'9') at++
         }
 
         private fun readKeyword(word: String, value: Any?): Any? {

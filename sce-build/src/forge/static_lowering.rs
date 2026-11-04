@@ -2805,6 +2805,103 @@ impl StaticTarget for KotlinTarget {
         };
         format!("println({label}{value})")
     }
+    // The runtime's `EventPayload.liftRecord` reads the text and hands the fields
+    // to a lambda that reads each through the reader a delivery's value of its
+    // type is read by (`Value.uint32`, `Value.string(bound)`, ...). A refusal is
+    // the record of the standard refusal document, its code matched constant by
+    // constant onto the machine's enum of it: an exhaustive `when` the compiler
+    // holds to the runtime's codes, both spelled as the enum document names them.
+    fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
+        const PAYLOAD: &str = "com.sce.runtime.EventPayload";
+        let enum_reader = |alias: &str, v: &str| -> Option<String> {
+            let model = lift.enums.get(alias)?;
+            let ty = self.enum_type(lift.machine, alias)?;
+            let arms: String = model
+                .variants
+                .iter()
+                .map(|variant| {
+                    format!(
+                        "\"{}\" -> {ty}.{}; ",
+                        filters::escape_kotlin(variant.name.clone()),
+                        self.enum_variant(&ty, &model.name, &variant.name)
+                    )
+                })
+                .collect();
+            Some(format!(
+                "{v}.name().let {{ name -> when (name) {{ {arms}else -> throw \
+                 {v}.unknownVariant(name, \"{}\") }} }}",
+                filters::escape_kotlin(alias.to_string())
+            ))
+        };
+        // The reader of a present value of `ty` at the value `v` names.
+        let read = |ty: &SceType, max: Option<u32>, v: &str| -> Option<String> {
+            Some(match ty {
+                SceType::String => format!("{v}.string({})", max?),
+                SceType::Bytes => format!("{v}.bytes({})", max?),
+                SceType::Bool => format!("{v}.boolean()"),
+                SceType::Enum(reference) => enum_reader(&reference.alias, v)?,
+                scalar => format!("{v}.{}()", scalar.as_attr()),
+            })
+        };
+        let mut members = Vec::with_capacity(lift.schema.fields.len());
+        for field in &lift.schema.fields {
+            let reader = match &field.sce_type {
+                EntryType::Scalar(ty) => read(ty, field.max_size, "v")?,
+                // The present value is bound to a name of its own, so the lambda
+                // shadows nothing.
+                EntryType::Optional { elem } => format!(
+                    "v.optional {{ present -> {} }}",
+                    read(elem, field.max_size, "present")?
+                ),
+            };
+            members.push((
+                self.record_field(&field.id),
+                format!("r.field(\"{}\").let {{ v -> {reader} }}", field.id),
+            ));
+        }
+        let record = self.record_value(&self.record_type(lift.machine, lift.alias), &members);
+        let declared: Vec<String> = lift
+            .field_ids()
+            .iter()
+            .map(|id| format!("\"{id}\""))
+            .collect();
+        let defaults = lift.defaults.as_ref().map_or_else(
+            || "null".to_string(),
+            |json| format!("\"{}\"", filters::escape_kotlin(json.clone())),
+        );
+        // The refusal, as a record of the standard refusal document.
+        let (code_alias, code_model) = lift.refusal_code()?;
+        let code_ty = self.enum_type(lift.machine, code_alias)?;
+        let arms: String = code_model
+            .variants
+            .iter()
+            .map(|v| {
+                let ident = self.enum_variant(&code_ty, &code_model.name, &v.name);
+                format!("{PAYLOAD}.RefusalCode.{ident} -> {code_ty}.{ident}; ")
+            })
+            .collect();
+        let members_of_refusal = lift.refusal_members(
+            self,
+            &format!("when (sceLift.refusal.code) {{ {arms}}}"),
+            "sceLift.refusal.pointer",
+            "sceLift.refusal.bound?.toUInt()",
+        )?;
+        let refusal_record = self.record_value(
+            &self.record_type(lift.machine, lift.refusal_alias),
+            &members_of_refusal,
+        );
+        Some(format!(
+            "when (val sceLift = {PAYLOAD}.liftRecord({text}, {depth}, listOf({declared}), \
+             {defaults}) {{ r -> {record} }}) {{ is {PAYLOAD}.LiftOutcome.Lifted -> {{ {write}; \
+             {absent} }}; is {PAYLOAD}.LiftOutcome.Refused -> {{ {refused} }} }}",
+            text = lift.text,
+            depth = lift.depth,
+            declared = declared.join(", "),
+            write = self.assign(lift.location, "sceLift.value"),
+            absent = self.assign(lift.refusal, &self.optional_none("")?),
+            refused = self.assign(lift.refusal, &refusal_record),
+        ))
+    }
     // The list is immutable, so an append builds the next list — a snapshot
     // holding the old one keeps what it saw. The expression is `true` when it
     // failed: the list is full, or the value could not be computed.

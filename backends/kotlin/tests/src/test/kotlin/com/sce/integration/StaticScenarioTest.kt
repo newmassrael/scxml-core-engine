@@ -56,6 +56,7 @@ import com.sce.integration.static_invoke_optional.StaticInvokeOptionalStateMachi
 import com.sce.integration.static_invoke_params.StaticInvokeParamsStateMachine
 import com.sce.integration.static_invoke_tree.StaticInvokeTreeStateMachine
 import com.sce.integration.static_invoke_string.StaticInvokeStringStateMachine
+import com.sce.integration.static_lift.StaticLiftStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_list_assign.StaticListAssignStateMachine
 import com.sce.integration.static_list_index.StaticListIndexStateMachine
@@ -768,6 +769,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_wire_wide"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // docs/adr/0087, section 9.1: a text read into a record of a schema, or its
+    // refusal kept as a record of the standard refusal document, the same code,
+    // pointer and bound on every lane.
+    @Test
+    fun staticLiftReadsATextIntoARecordOrKeepsItsRefusal() {
+        val sm = StaticLiftStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_lift"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

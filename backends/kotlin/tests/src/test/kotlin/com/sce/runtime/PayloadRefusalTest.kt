@@ -71,8 +71,16 @@ class PayloadRefusalTest {
             val name = fields["name"] as String
             val data = fields["data"] as String
             val want = fields["refusal"] as Map<*, *>?
+            // A case that gives a depth is read as a `<sce:lift>` of the record of
+            // the one field `v` reads it (docs/adr/0087, section 2.1).
+            val depth = (fields["depth"] as Json.Number?)?.text?.toInt()
             val got = try {
-                read(fields["type"], EventPayload.decode(data).field("v"))
+                val decoded = if (depth == null) {
+                    EventPayload.decode(data)
+                } else {
+                    EventPayload.lift(data, depth, listOf("v"), null)
+                }
+                read(fields["type"], decoded.field("v"))
                 null
             } catch (refusal: EventPayload.Refusal) {
                 refusal
@@ -117,6 +125,48 @@ class PayloadRefusalTest {
         assertEquals("/a~0b~1c", EventPayload.pointerBelow("", "a~b/c"))
         assertEquals("/~01", EventPayload.pointerBelow("", "~1"))
         assertEquals("/", EventPayload.pointerBelow("", ""))
+    }
+
+    /**
+     * A lift refuses a container past its depth over the brackets alone, before
+     * the text is read as JSON, and names the declared member it stands under or
+     * the whole text (docs/adr/0087, section 2.1, item 4).
+     */
+    @Test
+    fun `a lift refuses a container past its depth before it reads the text`() {
+        val declared = listOf("title", "count")
+        fun refused(text: String, depth: Int = 1) =
+            EventPayload.liftTooDeep(text, depth, declared)?.let { Triple(it.code, it.pointer, it.bound) }
+        val tooDeep = { pointer: String -> Triple(EventPayload.RefusalCode.TOO_DEEP, pointer, 1L) }
+        assertNull(refused("{\"title\":\"a\",\"count\":1}"))
+        assertEquals(tooDeep("/title"), refused("{\"title\":[\"a\"]}"))
+        assertEquals(tooDeep(""), refused("{\"extra\":{\"a\":1}}"))
+        assertEquals(tooDeep("/title"), refused("{\"\\u0074itle\":[1]}"))
+        assertEquals(tooDeep(""), refused("[[1]]"))
+        assertEquals(tooDeep(""), refused("{\"extra\":[[[[[[["))
+        assertNull(refused("{\"title\":\"[[{\\\"[\",\"count\":1}"))
+        assertNull(refused("{\"title\":{\"a\":1}}", 2))
+        assertNull(refused("{\"title\":\"[["))
+        assertEquals(tooDeep(""), refused("{\"title\":\"x\",\"extra\":[1]}"))
+    }
+
+    /** A lift reads its record as a delivery's is read, or answers its refusal as data. */
+    @Test
+    fun `a lift reads a record or answers its refusal`() {
+        val read = { fields: EventPayload.Fields -> Pair(fields.uint8("v"), fields.uint8("w")) }
+        val lifted = EventPayload.liftRecord("{\"v\":1}", 1, listOf("v", "w"), "{\"w\":7}", read)
+        assertTrue(lifted is EventPayload.LiftOutcome.Lifted && lifted.value == Pair(1.toUByte(), 7.toUByte()))
+        for ((text, code) in listOf(
+            " \t" to EventPayload.RefusalCode.NOT_JSON,
+            "[[" to EventPayload.RefusalCode.TOO_DEEP,
+            "[1]" to EventPayload.RefusalCode.NOT_OBJECT,
+            "{\"v\":1,\"v\":2}" to EventPayload.RefusalCode.NOT_JSON,
+            "{\"v\":256,\"w\":1}" to EventPayload.RefusalCode.OUT_OF_RANGE,
+            "{\"w\":1}" to EventPayload.RefusalCode.MISSING,
+        )) {
+            val outcome = EventPayload.liftRecord(text, 1, listOf("v", "w"), null, read)
+            assertTrue(outcome is EventPayload.LiftOutcome.Refused && outcome.refusal.code == code, text)
+        }
     }
 
     /** What a generated reader of an enum field answers for a name its enum does not declare. */
