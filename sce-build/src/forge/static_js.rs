@@ -1822,7 +1822,9 @@ mod tests {
             "`field` knows no constructor of a type descriptor"
         );
         assert!(
-            text.contains("return value === null ? null : readValue(value, type.optional, path);"),
+            text.contains(
+                "return value === null ? null : readValue(value, type.optional, path, pointer);"
+            ),
             "`field` reads no type written {{optional: T}}"
         );
         for part in [
