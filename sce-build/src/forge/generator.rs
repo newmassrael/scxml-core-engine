@@ -3668,6 +3668,28 @@ pub(crate) fn template_hole_param(id: &str, lang: crate::generator::Language) ->
     }
 }
 
+/// The call of the `render` of the text template `document`'s unit, against the
+/// import's `namespace` ([`forge_import_identity`]), as a statechart that renders
+/// it writes it: qualified by the module (Rust, Go, Python), the namespace
+/// (C++), the object or caseless enum the unit declares (Kotlin, Swift), or
+/// prefixed by the module (C11, `<snake>_render`). Kotlin's unit is an object
+/// because its import line brings a package's names into scope whole, where two
+/// templates' free functions would be one name.
+pub(crate) fn template_render_call(
+    namespace: &str,
+    document: &str,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    match lang {
+        Language::Kotlin => format!("{}.render", filters::to_pascal_case(document.to_string())),
+        Language::Go => crate::build_qualified_call("Render", namespace, &lang),
+        Language::Rust | Language::Cpp | Language::Python | Language::C11 | Language::Swift => {
+            crate::build_qualified_call("render", namespace, &lang)
+        }
+    }
+}
+
 /// A text-template unit (docs/adr/0087, section 3.1, item 7): `REVISION`,
 /// `MAX_LEN`, the fence's markers where a hole is untrusted, and a `render` that
 /// takes each hole in declaration order — a text and an enum's declared name as

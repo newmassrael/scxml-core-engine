@@ -716,6 +716,17 @@ pub struct Action {
     /// action.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub lift_refusal: String,
+    /// `<sce:render template>` (docs/adr/0087, section 3.1, item 6): the alias
+    /// of the imported text template the statement renders. The string
+    /// variable the rendering replaces whole is [`Self::location`]. Empty on
+    /// every other action.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub render_template: String,
+    /// The `<sce:set name expr>` children of a `<sce:render>`, in document
+    /// order: the value each hole of its template is given. Empty on every
+    /// other action.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub render_sets: Vec<RenderSet>,
 
     // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name
@@ -772,6 +783,19 @@ pub struct Action {
     /// executable-content element.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unresolved: Vec<UnresolvedMarker>,
+}
+
+/// One `<sce:set name expr>` of a `<sce:render>` (docs/adr/0087, section 3.1,
+/// item 6): the hole `name` of the template is given the value of `expr`.
+#[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct RenderSet {
+    pub name: String,
+    pub expr: String,
+    /// Where `expr` is written, for a refusal placed on it. Not part of the
+    /// IR, as [`ElseIfBranch::cond_spelling`] is not.
+    #[serde(skip)]
+    pub expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 /// W3C SCXML if/elseif branch
@@ -997,6 +1021,7 @@ impl Action {
             "sce_append" => &["location", "expr"],
             "sce_clear" => &["location"],
             "sce_lift" => &["lift_text", "lift_schema", "location", "lift_refusal"],
+            "sce_render" => &["render_template", "location", "render_sets"],
             "script" => &["content"],
             "send" => &[
                 "event",
@@ -1056,11 +1081,13 @@ impl Action {
         }
     }
 
-    /// The twelve tags an `action_type` can hold, in the order the parser
+    /// The thirteen tags an `action_type` can hold, in the order the parser
     /// and the template branches list them. `sce_append` / `sce_clear` are a
-    /// `sce-static` list's statements (`<sce:append>` / `<sce:clear>`), and
+    /// `sce-static` list's statements (`<sce:append>` / `<sce:clear>`),
     /// `sce_lift` the statement that reads a text into a record or keeps why
-    /// it could not (`<sce:lift>`, docs/adr/0087), each prefixed so no reader
+    /// it could not (`<sce:lift>`, docs/adr/0087), and `sce_render` the
+    /// statement that renders a text template into a string variable
+    /// (`<sce:render>`, docs/adr/0087), each prefixed so no reader
     /// mistakes it for an SCXML element's name.
     pub const TAGS: &'static [&'static str] = &[
         "assign",
@@ -1073,6 +1100,7 @@ impl Action {
         "sce_append",
         "sce_clear",
         "sce_lift",
+        "sce_render",
         "script",
         "send",
     ];
@@ -4144,6 +4172,15 @@ pub struct SCXMLModel {
     /// parsed; empty without sibling files and not serialized.
     #[serde(skip)]
     pub imported_enums: std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
+    /// The text templates a `sce-static` document imports, keyed by import
+    /// alias — what a `<sce:render template>` names (docs/adr/0087, section
+    /// 3.1, item 6), each with the enums its holes hold and its `MAX_LEN`.
+    /// Resolved where the document is parsed
+    /// ([`crate::forge::text_template::resolve`]); empty without sibling files
+    /// and not serialized.
+    #[serde(skip)]
+    pub imported_text_templates:
+        std::collections::BTreeMap<String, crate::forge::text_template::ImportedTextTemplate>,
     /// The enums a field of an imported schema holds that the document does not
     /// import itself, each under the name the document holds it by, which its
     /// text cannot write (docs/adr/0054). A schema's enum field names the enum

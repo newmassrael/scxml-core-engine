@@ -3468,6 +3468,11 @@ impl SCXMLParser {
             // (docs/adr/0044), and what a schema's enum field is named by in this
             // document (docs/adr/0054).
             model.enum_documents = crate::forge::schema_revision::enum_documents(&model, dir);
+            // The text templates the document renders, each with the enum its every
+            // enum hole holds and the longest text it renders, keyed as the enum
+            // documents above are (docs/adr/0087, section 3.1, item 6).
+            model.imported_text_templates =
+                crate::forge::text_template::resolve(&model, dir, diag_label)?;
             // A schema's enum field holds the enum document the schema imports,
             // whatever this document imports under the alias the schema writes:
             // renamed here to this document's name for that enum, once, before
@@ -5157,6 +5162,59 @@ impl SCXMLParser {
                 action.lift_schema = child.attribute("schema").unwrap_or("").to_string();
                 action.location = child.attribute("location").unwrap_or("").to_string();
                 action.lift_refusal = child.attribute("refusal").unwrap_or("").to_string();
+            }
+            // docs/adr/0087, section 3.1, item 6: render an imported text template
+            // into a string variable, one `<sce:set name expr>` per hole. Which
+            // template and variable it names, and whether each value fits its
+            // hole, is judged with the rest of the typed scope
+            // ([`crate::forge::static_datamodel`]).
+            (false, "render") => {
+                let refused = |node: &roxmltree::Node, rule: &str, observed: &str| {
+                    let pos = node.document().text_pos_at(node.range().start);
+                    crate::forge::error::Located::new(
+                        ScxmlSemanticError::StaticDatamodelRule {
+                            construct: "<sce:render>".to_string(),
+                            datamodel: model.datamodel.as_str().to_string(),
+                            rule: rule.to_string(),
+                            state: owning_state(child),
+                            observed: Some(observed.to_string()),
+                        }
+                        .into(),
+                        source_name,
+                        Some(pos.row),
+                        Some(pos.col),
+                    )
+                };
+                if model.datamodel != Datamodel::SceStatic {
+                    return Err(refused(
+                        child,
+                        "a text template is rendered into a variable whose bound the build \
+                         proves, which exists only where every variable has a type: under \
+                         datamodel=\"sce-static\"",
+                        "render",
+                    ));
+                }
+                action.action_type = "sce_render".to_string();
+                action.render_template = child.attribute("template").unwrap_or("").to_string();
+                action.location = child.attribute("location").unwrap_or("").to_string();
+                for set in child.children().filter(|n| n.is_element()) {
+                    let is_set = set.tag_name().namespace()
+                        == Some(crate::forge::model::SCE_NAMESPACE)
+                        && set.tag_name().name() == "set";
+                    if !is_set {
+                        return Err(refused(
+                            &set,
+                            "a <sce:render> holds one <sce:set name expr> per hole of its \
+                             template, and nothing else",
+                            set.tag_name().name(),
+                        ));
+                    }
+                    action.render_sets.push(RenderSet {
+                        name: set.attribute("name").unwrap_or("").to_string(),
+                        expr: set.attribute("expr").unwrap_or("").to_string(),
+                        expr_spelling: AttributeSpelling::of(&set, None, "expr"),
+                    });
+                }
             }
             // §scxml-4.10: an element of the SCXML namespace here is executable content, and the
             // ones that are not (`<onentry>` inside a `<transition>`, a `<state>` inside an
@@ -7257,7 +7315,7 @@ fn document_positions(
 
 /// The SCE elements the reader of executable content takes as actions, beside
 /// every element of the SCXML namespace.
-const SCE_EXECUTABLE_CONTENT: [&str; 3] = ["action", "append", "clear"];
+const SCE_EXECUTABLE_CONTENT: [&str; 5] = ["action", "append", "clear", "lift", "render"];
 
 /// Whether `node` is one of the actions of the executable content it sits in:
 /// an element `parse_executable_content_single` reads into an action (or

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a text template
+  rendered into a string variable with `<sce:render>` (docs/adr/0087, section
+  3.1, item 6). `note` is declared at the template's MAX_LEN (95), so the
+  longest rendering fills it exactly. Each event sets the holes' values, and
+  `render` renders them; `overflow` renders with a hole whose value overflows,
+  which writes nothing and ends its block, so `refusals` counts the
+  error.execution once and never the 100 the block would have added.
+
+  Replayed by scenarios/static_render.json on every lane, whose `note` values
+  are derived from the template, not observed from a backend.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_render">
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+  <sce:import kind="text-template" src="text_notice.scxml" as="Notice"/>
+  <datamodel>
+    <data id="note" sce:type="string[95]" expr="''" sce:direction="out"/>
+    <data id="who" sce:type="string[8]" expr="'ann'" sce:direction="out"/>
+    <data id="count" sce:type="int16" expr="0" sce:direction="out"/>
+    <data id="view" sce:type="enum:ViewMode" expr="ViewMode.month" sce:direction="out"/>
+    <data id="said" sce:type="string[16]" expr="'hi'" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="render" type="internal">
+      <sce:render template="Notice" location="note">
+        <sce:set name="who" expr="who"/>
+        <sce:set name="count" expr="count"/>
+        <sce:set name="view" expr="view"/>
+        <sce:set name="said" expr="said"/>
+      </sce:render>
+    </transition>
+    <!-- Every hole at its longest: the rendering is MAX_LEN bytes. -->
+    <transition event="longest" type="internal">
+      <assign location="who" expr="'abcdefgh'"/>
+      <assign location="count" expr="-32768"/>
+      <assign location="view" expr="ViewMode.agenda_list"/>
+      <assign location="said" expr="'0123456789abcdef'"/>
+    </transition>
+    <!-- Each marker, wherever it stands, is removed. -->
+    <transition event="markers" type="internal">
+      <assign location="said" expr="'a[[TEXTbTEXT]]c'"/>
+    </transition>
+    <!-- A marker rebuilt from two halves is removed too, leaving nothing. -->
+    <transition event="rebuilt" type="internal">
+      <assign location="said" expr="'[[TE[[TEXTXT'"/>
+    </transition>
+    <!-- Multi-byte text beside a marker is kept as it is. -->
+    <transition event="wide" type="internal">
+      <assign location="said" expr="'é[[TEXTü'"/>
+    </transition>
+    <!-- A hole whose value overflows: nothing is written, and the block ends. -->
+    <transition event="overflow" type="internal">
+      <sce:render template="Notice" location="note">
+        <sce:set name="who" expr="who"/>
+        <sce:set name="count" expr="count - 1"/>
+        <sce:set name="view" expr="view"/>
+        <sce:set name="said" expr="said"/>
+      </sce:render>
+      <assign location="refusals" expr="refusals + 100"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

@@ -250,6 +250,7 @@ scenarios! {
     "static_record_real" => static_record_real_sm::{StaticRecordRealPolicy, StaticRecordRealPersist};
     "static_record_real32" => static_record_real32_sm::{StaticRecordReal32Policy, StaticRecordReal32Persist};
     "static_record_string" => static_record_string_sm::{StaticRecordStringPolicy, StaticRecordStringPersist};
+    "static_render" => static_render_sm::{StaticRenderPolicy, StaticRenderPersist};
     "static_schema_revision" => static_schema_revision_sm::{StaticSchemaRevisionPolicy, StaticSchemaRevisionPersist};
     "static_send_content" => static_send_content_sm::{StaticSendContentPolicy, StaticSendContentPersist};
     "static_send_delay" => static_send_delay_sm::{StaticSendDelayPolicy, StaticSendDelayPersist} @ Manual;

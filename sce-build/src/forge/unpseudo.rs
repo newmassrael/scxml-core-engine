@@ -3938,6 +3938,37 @@ fn parse_scxml_action_body(
     {
         a.action_type = "sce_clear".to_string();
         a.location = undo(target, line.number)?;
+    } else if let Some((template, location)) = t.strip_prefix("render ").and_then(|rest| {
+        // `render <template> into <location>`: each is one name with no space
+        // in it (docs/adr/0087, section 3.1, item 6), so the keyword between
+        // them is where they split.
+        let (template, location) = rest.split_once(" into ")?;
+        [template, location]
+            .iter()
+            .all(|part| !part.is_empty() && !part.contains(' '))
+            .then_some((template, location))
+    }) {
+        a.action_type = "sce_render".to_string();
+        a.render_template = undo(template, line.number)?;
+        a.location = undo(location, line.number)?;
+        for k in kids {
+            // `set <name> = <value>`: the name has no space in it, and the value
+            // runs to the end of the line.
+            let (name, expr) = k
+                .text
+                .strip_prefix("set ")
+                .and_then(|rest| rest.split_once(" = "))
+                .filter(|(name, _)| !name.is_empty() && !name.contains(' '))
+                .ok_or_else(|| ParseError {
+                    line: k.number,
+                    why: format!("`{}` is no `set <name> = <value>` of a render", k.text),
+                })?;
+            a.render_sets.push(crate::model::RenderSet {
+                name: undo(name, k.number)?,
+                expr: undo(expr, k.number)?,
+                expr_spelling: None,
+            });
+        }
     } else if let Some(rest) = t.strip_prefix("call ") {
         a.action_type = "native_action".to_string();
         a.native_action_name = undo(rest.trim_end_matches(':'), line.number)?;

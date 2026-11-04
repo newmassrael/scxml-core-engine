@@ -147,7 +147,7 @@ done
 # it, so a construct Swift gains the lowering of is held to the compiler before a machine
 # reaches it. A kind Swift gains is added here, to the one list. Derived, and a refusal by
 # name (status 7) is listed, as the machines' are.
-UNIT_KINDS='(algorithm|condition|lookup|interpolation|filter|transform|validator|timer|observer|procedure|codec)'
+UNIT_KINDS='(algorithm|condition|lookup|interpolation|filter|transform|validator|timer|observer|procedure|codec|text-template)'
 # The conformance documents of the other backends' oracle that the catalog does not list, whose
 # units a test of the Swift backend reads: a codec that embeds a variant and says which of its own
 # flags selects the arm (ADR 0058), with the variant it embeds, and a CBOR map with an entry of an

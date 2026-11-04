@@ -19,7 +19,7 @@
 // method of [`StaticTarget`]. What a document means, and what it is refused
 // for, is decided once, here and in the judge, whatever the backend.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::filters;
 use crate::forge::error::GenerateError;
@@ -551,6 +551,74 @@ fn generated_callee(
             | Language::C11 => CalleeImport::Line(identity.include_stmt),
         },
     }
+}
+
+/// [`Callee`] for the unit of the text template `document` on a generated-code
+/// backend (docs/adr/0087, section 3.1, item 7): its `render`, qualified as an
+/// importer of the document reaches it ([`crate::forge::generator::template_render_call`]),
+/// and the import line a stateless kind's import writes. `go_module_prefix` is
+/// what a Go import path is rooted at, as for [`generated_callee`].
+fn generated_template(lang: Language, document: &str, go_module_prefix: Option<&str>) -> Callee {
+    if matches!(lang, Language::Go) && go_module_prefix.is_none() {
+        let package = filters::to_snake_case(document.to_string());
+        return Callee {
+            call: crate::forge::generator::template_render_call(&package, document, lang),
+            import: CalleeImport::Unwritable,
+        };
+    }
+    let options = crate::ForgeCompileOptions {
+        go_module_prefix: go_module_prefix.map(str::to_owned),
+        ..Default::default()
+    };
+    let identity = crate::forge::generator::forge_import_identity(document, &lang, false, &options);
+    Callee {
+        call: crate::forge::generator::template_render_call(&identity.namespace, document, lang),
+        import: match lang {
+            Language::Swift => CalleeImport::InScope,
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11 => CalleeImport::Line(identity.include_stmt),
+        },
+    }
+}
+
+/// The value one hole of a `<sce:render>` is given, lowered for the target
+/// (docs/adr/0087, section 3.1, item 6).
+pub struct RenderArg {
+    /// The value, read where the statement runs: a text as an operand reads
+    /// it, an integer at the hole's own type, a value of an enum as the
+    /// machine holds it.
+    pub value: String,
+    /// The alias the machine holds the value's enum by, for an enum hole: what
+    /// its declared name is read through ([`StaticTarget::enum_wire_name`]).
+    pub enum_alias: Option<String>,
+}
+
+/// A `<sce:render>` as the walk hands it to a target: the template's unit and
+/// the value of each of its holes, in the template's declaration order, which
+/// is the order its `render` takes them in.
+pub struct RenderCall<'a> {
+    /// The unit's render as the machine reaches it ([`Callee::call`]); empty
+    /// for a target with no unit, which renders from the template's parts.
+    pub call: &'a str,
+    /// The template.
+    pub template: &'a crate::forge::model::TextTemplateModel,
+    /// Each hole's value, in declaration order.
+    pub args: &'a [RenderArg],
+    /// The longest text the template renders (`MAX_LEN`), which a target that
+    /// renders into a buffer of its own sizes it by.
+    pub max_len: u64,
+}
+
+/// A text template a machine renders, as the walk reaches it: the template
+/// and its unit's `render`.
+#[derive(Clone)]
+struct RenderUnit {
+    template: crate::forge::text_template::ImportedTextTemplate,
+    call: String,
 }
 
 /// The schema the record `alias` of `spec` is of, when every field of it is a number, a
@@ -1912,6 +1980,50 @@ pub trait StaticTarget {
     fn lift_import(&self) -> Option<String> {
         None
     }
+    /// How the machine reaches the unit of the text template `document` it
+    /// renders (docs/adr/0087, section 3.1, item 7): its `render` and the line
+    /// that brings it into scope. `None` for a target with no spelling of a
+    /// `<sce:render>`, which refuses the statement by name.
+    fn text_template(&self, _document: &str) -> Option<Callee> {
+        None
+    }
+    /// The value of the text `render` answers, as an operand of this target's
+    /// strings, which the walk then holds to the location's bound and writes
+    /// as a string is written. The default calls the unit with the holes in
+    /// order, an enum value as its declared name ([`Self::enum_wire_name`]);
+    /// `None` where a value cannot be spelled.
+    fn render_call(&self, render: &RenderCall<'_>) -> Option<String> {
+        let args = render
+            .template
+            .holes
+            .iter()
+            .zip(render.args)
+            .map(|(hole, arg)| match hole.kind {
+                crate::forge::model::HoleKind::Enum(_) => {
+                    self.enum_wire_name(arg.enum_alias.as_deref()?, &arg.value)
+                }
+                crate::forge::model::HoleKind::Text { .. }
+                | crate::forge::model::HoleKind::Integer(_) => Some(arg.value.clone()),
+            })
+            .collect::<Option<Vec<String>>>()?;
+        Some(format!("{}({})", render.call, args.join(", ")))
+    }
+    /// The whole element a `<sce:render>` is replaced by, `value` the bounded
+    /// rendering, for a target that rewrites the document itself (the
+    /// Interpreter's ecmascript). `None` for every other, which writes the
+    /// rendering with the assignment of a string.
+    fn render_element(&self, _location: &str, _value: &str) -> Option<String> {
+        None
+    }
+    /// The statement that tells the runtime's log a `<sce:render>` wrote
+    /// `location`, for a target whose machine reaches a log (Rust's
+    /// `sce_log_*`, C++'s `SCE_LOG_*`, C11's standard error as `<log>` writes
+    /// it). It names the template and the variable and not the text, which
+    /// may hold what a person wrote. `None` for a target whose machine has no
+    /// log it reaches.
+    fn render_log(&self, _machine: &str, _template: &str, _location: &str) -> Option<String> {
+        None
+    }
     /// Append `value` to the list at `target` while it holds fewer than
     /// `capacity` elements, as an expression that is `true` when the append
     /// failed. It fails when the list is full — `overflow`, if any, runs, and
@@ -2197,6 +2309,9 @@ impl StaticTarget for KotlinTarget {
     }
     fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
         Some(generated_callee(Language::Kotlin, callee, None))
+    }
+    fn text_template(&self, document: &str) -> Option<Callee> {
+        Some(generated_template(Language::Kotlin, document, None))
     }
     fn lowers_state_calls(&self) -> bool {
         true
@@ -3107,6 +3222,34 @@ impl StaticTarget for RustTarget {
     }
     fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
         Some(generated_callee(Language::Rust, callee, None))
+    }
+    fn text_template(&self, document: &str) -> Option<Callee> {
+        Some(generated_template(Language::Rust, document, None))
+    }
+    // The unit takes each text as `&str`, which a borrow of any of the machine's
+    // texts (a `SceString`, a `String`, a `&str`) gives, and an enum value as the
+    // `&'static str` its declared name is.
+    fn render_call(&self, render: &RenderCall<'_>) -> Option<String> {
+        let args: Vec<String> = render
+            .template
+            .holes
+            .iter()
+            .zip(render.args)
+            .map(|(hole, arg)| match hole.kind {
+                crate::forge::model::HoleKind::Text { .. } => format!("&({})", arg.value),
+                crate::forge::model::HoleKind::Integer(_) => arg.value.clone(),
+                crate::forge::model::HoleKind::Enum(_) => format!("({}).sce_name()", arg.value),
+            })
+            .collect();
+        Some(format!("{}({})", render.call, args.join(", ")))
+    }
+    fn render_log(&self, machine: &str, template: &str, location: &str) -> Option<String> {
+        Some(format!(
+            "::sce_rust_runtime::sce_log_info!(\"[sce] {}: <sce:render template=\\\"{}\\\"> wrote {}\");",
+            filters::escape_rust(machine.to_string()),
+            filters::escape_rust(template.to_string()),
+            filters::escape_rust(location.to_string())
+        ))
     }
     fn lowers_state_calls(&self) -> bool {
         true
@@ -4947,6 +5090,47 @@ pub fn lower(
         || starts_a_child_with_an_optional_value(model))
     .then(|| target.optional_import())
     .flatten();
+    // The text templates the machine renders (docs/adr/0087, section 3.1, item
+    // 6), each reached through its unit's `render`; a target that cannot reach
+    // one refuses the document by name, as it refuses a callee it cannot call.
+    let mut text_templates: BTreeMap<String, RenderUnit> = BTreeMap::new();
+    let mut template_imports: Vec<String> = Vec::new();
+    for alias in rendered_templates(model) {
+        // A render the judge refused never reaches here; one whose template no
+        // sibling file declared names no template to reach.
+        let Some(template) = model.imported_text_templates.get(&alias) else {
+            continue;
+        };
+        match target.text_template(&template.model.name) {
+            None => {
+                return Err(GenerateError::unsupported(format!(
+                    "<sce:render template=\"{alias}\">: a text template has no {lang} lowering \
+                     yet"
+                )))
+            }
+            Some(Callee {
+                import: CalleeImport::Unwritable,
+                ..
+            }) => {
+                return Err(GenerateError::unsupported(format!(
+                    "<sce:render template=\"{alias}\">: the import of the template's unit \
+                     cannot be written for {lang} without the module its packages live under"
+                )))
+            }
+            Some(Callee { call, import }) => {
+                if let CalleeImport::Line(line) = import {
+                    template_imports.push(line);
+                }
+                text_templates.insert(
+                    alias,
+                    RenderUnit {
+                        template: template.clone(),
+                        call,
+                    },
+                );
+            }
+        }
+    }
     let imports: Vec<String> = scope
         .callees
         .iter()
@@ -4955,6 +5139,7 @@ pub fn lower(
             CalleeImport::InScope | CalleeImport::Unwritable => None,
         })
         .chain(optional_import)
+        .chain(template_imports)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -5024,6 +5209,7 @@ pub fn lower(
         held_enums: held_enums.clone(),
         type_scope: crate::forge::value_path::statechart_scope(model),
         lifts: std::cell::Cell::new(false),
+        text_templates,
     };
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
@@ -7113,6 +7299,9 @@ struct Rewrites<'m> {
     /// runtime's reader of a text ([`StaticTarget::lift_import`]). Set by the
     /// walk where it meets one, read once it is done.
     lifts: std::cell::Cell<bool>,
+    /// The text templates the machine renders, by the alias it imports each
+    /// under, each with its unit's `render` (docs/adr/0087, section 3.1).
+    text_templates: BTreeMap<String, RenderUnit>,
 }
 
 impl Rewrites<'_> {
@@ -7434,9 +7623,10 @@ impl CppTarget {
                 // variables; one that reads an event payload is refused with
                 // the payload itself.
                 "assign" | "log" | "if" | "raise" | "cancel" | "native_action" => {}
-                // A list is filled, emptied and walked by native statements, and
-                // a text is lifted into a record by one (docs/adr/0087).
-                "sce_append" | "sce_clear" | "foreach" | "sce_lift" => {}
+                // A list is filled, emptied and walked by native statements, a
+                // text is lifted into a record by one, and a text template is
+                // rendered by one (docs/adr/0087).
+                "sce_append" | "sce_clear" | "foreach" | "sce_lift" | "sce_render" => {}
                 // A param is the typed value of the data model crossed to the
                 // event's JSON and, as the text a form carries
                 // (`ScriptResultUtils::valueText`), to the request of a BasicHTTP
@@ -7479,6 +7669,19 @@ impl StaticTarget for CppTarget {
     }
     fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
         Some(generated_callee(Language::Cpp, callee, None))
+    }
+    fn text_template(&self, document: &str) -> Option<Callee> {
+        Some(generated_template(Language::Cpp, document, None))
+    }
+    // The names are identifiers of the document, which hold no brace the log's
+    // format string would read.
+    fn render_log(&self, machine: &str, template: &str, location: &str) -> Option<String> {
+        Some(format!(
+            "SCE_LOG_INFO(\"[sce] {}: <sce:render template=\\\"{}\\\"> wrote {}\");",
+            filters::escape_cpp(machine.to_string()),
+            filters::escape_cpp(template.to_string()),
+            filters::escape_cpp(location.to_string())
+        ))
     }
     fn lowers_state_calls(&self) -> bool {
         true
@@ -8639,9 +8842,10 @@ impl GoTarget<'_> {
                 // A param is the typed value of the data model crossed to the
                 // event's JSON, and a literal `<content>` is the text it spells.
                 "send" => {}
-                // A list is filled, emptied and walked by native statements, and
-                // a text is lifted into a record by one (docs/adr/0087).
-                "sce_append" | "sce_clear" | "foreach" | "sce_lift" => {}
+                // A list is filled, emptied and walked by native statements, a
+                // text is lifted into a record by one, and a text template is
+                // rendered by one (docs/adr/0087).
+                "sce_append" | "sce_clear" | "foreach" | "sce_lift" | "sce_render" => {}
                 other => return Some(format!("<{other}>")),
             }
             for block in action.nested_blocks() {
@@ -8666,6 +8870,9 @@ impl StaticTarget for GoTarget<'_> {
     }
     fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
         Some(generated_callee(Language::Go, callee, self.import_root))
+    }
+    fn text_template(&self, document: &str) -> Option<Callee> {
+        Some(generated_template(Language::Go, document, self.import_root))
     }
     fn lowers_state_calls(&self) -> bool {
         true
@@ -9899,9 +10106,10 @@ impl PythonTarget {
         for action in actions {
             match action.action_type.as_str() {
                 "assign" | "log" | "if" | "raise" | "cancel" => {}
-                // A list is filled, emptied and walked by native statements, and
-                // a text is lifted into a record by one (docs/adr/0087).
-                "sce_append" | "sce_clear" | "foreach" | "sce_lift" => {}
+                // A list is filled, emptied and walked by native statements, a
+                // text is lifted into a record by one, and a text template is
+                // rendered by one (docs/adr/0087).
+                "sce_append" | "sce_clear" | "foreach" | "sce_lift" | "sce_render" => {}
                 // A param is the typed value of the data model crossed to the
                 // event's data, and a literal `<content>` is the text it spells.
                 "send" => {}
@@ -9954,6 +10162,9 @@ impl StaticTarget for PythonTarget {
     }
     fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
         Some(generated_callee(Language::Python, callee, None))
+    }
+    fn text_template(&self, document: &str) -> Option<Callee> {
+        Some(generated_template(Language::Python, document, None))
     }
     fn lowers_state_calls(&self) -> bool {
         true
@@ -11119,7 +11330,7 @@ impl CTarget {
                 // machine's variables, lowered where the call is rendered
                 // ([`crate::forge::native_action`]).
                 "assign" | "log" | "if" | "raise" | "native_action" | "sce_append"
-                | "sce_clear" | "foreach" | "cancel" | "sce_lift" => {}
+                | "sce_clear" | "foreach" | "cancel" | "sce_lift" | "sce_render" => {}
                 // The pairs of a `<send>`'s `<param>`s are written as the JSON
                 // object of the event's data from the machine's own fields, as a
                 // `<donedata>`'s are, and for a processor the host serves also
@@ -11235,6 +11446,41 @@ impl StaticTarget for CTarget {
             reached.call = crate::forge::generator::c11_lookup_found_name(&reached.call);
         }
         Some(reached)
+    }
+    fn text_template(&self, document: &str) -> Option<Callee> {
+        Some(generated_template(Language::C11, document, None))
+    }
+    // The unit writes into a buffer the caller holds, here a compound literal of
+    // `MAX_LEN + 1` bytes that lives as long as the block the statement is,
+    // which a `SCE_FORGE_CONCAT` join is held in too; the write into the
+    // variable copies from it, so a hole that reads the variable reads it whole.
+    // A rendering that did not fit (none does, the buffer being sized for the
+    // longest) is a failure the statement receives as a checked operation's.
+    fn render_call(&self, render: &RenderCall<'_>) -> Option<String> {
+        let mut args = Vec::with_capacity(render.args.len());
+        for (hole, arg) in render.template.holes.iter().zip(render.args) {
+            args.push(match hole.kind {
+                crate::forge::model::HoleKind::Enum(_) => {
+                    self.enum_wire_name(arg.enum_alias.as_deref()?, &arg.value)?
+                }
+                crate::forge::model::HoleKind::Text { .. }
+                | crate::forge::model::HoleKind::Integer(_) => arg.value.clone(),
+            });
+        }
+        let cap = render.max_len.checked_add(1)?;
+        let held = args.iter().map(|a| format!(", {a}")).collect::<String>();
+        Some(format!(
+            "sce_forge_text_rendered(&sce_failure_, {}((char[{cap}]){{0}}, {cap}u{held}))",
+            render.call
+        ))
+    }
+    fn render_log(&self, machine: &str, template: &str, location: &str) -> Option<String> {
+        Some(format!(
+            "fprintf(stderr, \"[sce] {}: <sce:render template=\\\"{}\\\"> wrote {}\\n\");",
+            filters::escape_c(machine.to_string()),
+            filters::escape_c(template.to_string()),
+            filters::escape_c(location.to_string())
+        ))
     }
     fn callee_def(&self, callee: &StaticCallee) -> Option<String> {
         if callee.reading != CallReading::Found {
@@ -13274,9 +13520,10 @@ impl SwiftTarget {
         for action in actions {
             match action.action_type.as_str() {
                 "assign" | "log" | "if" | "raise" | "cancel" => {}
-                // A list is filled, emptied and walked by native statements, and
-                // a text is lifted into a record by one (docs/adr/0087).
-                "sce_append" | "sce_clear" | "foreach" | "sce_lift" => {}
+                // A list is filled, emptied and walked by native statements, a
+                // text is lifted into a record by one, and a text template is
+                // rendered by one (docs/adr/0087).
+                "sce_append" | "sce_clear" | "foreach" | "sce_lift" | "sce_render" => {}
                 // A call of the machine's host, lowered ahead of this walk by
                 // `native_action::render`; an argument that reads the event's data is
                 // refused before it (`first_swift_unlowered_host_argument`).
@@ -13419,6 +13666,9 @@ impl StaticTarget for SwiftTarget {
     // refused where it is imported, `StaticCallee::unlowered_by`.
     fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
         Some(generated_callee(Language::Swift, callee, None))
+    }
+    fn text_template(&self, document: &str) -> Option<Callee> {
+        Some(generated_template(Language::Swift, document, None))
     }
     // A call that hands an algorithm a record, or takes one back, goes through an
     // adapter of the machine's file: the machine holds a record in a struct of its own
@@ -14654,6 +14904,29 @@ fn max_if_ordinal(model: &SCXMLModel) -> u32 {
     largest
 }
 
+/// The alias of every text template a `<sce:render>` of `model` renders, over
+/// every block of executable content and the default transition of every
+/// history (docs/adr/0087, section 3.1, item 6).
+fn rendered_templates(model: &SCXMLModel) -> BTreeSet<String> {
+    let mut aliases = BTreeSet::new();
+    let mut note = |action: &Action| {
+        action.walk(&mut |a| {
+            if a.action_type == "sce_render" {
+                aliases.insert(a.render_template.trim().to_string());
+            }
+        });
+    };
+    for state in model.states.values() {
+        for block in state.executable_blocks() {
+            block.iter().for_each(&mut note);
+        }
+    }
+    for history in model.history_states.values() {
+        history.default_actions.iter().for_each(&mut note);
+    }
+    aliases
+}
+
 /// The type a `<send>` is given where the value its `typeexpr` computes is none
 /// the document declares: no processor this build delivers through, so the send
 /// raises `error.execution` as it does for a written `type` that names one
@@ -15189,6 +15462,111 @@ fn lower_action(
             // itself: its statement is the element that does the append, and
             // holds the value, so the value is not noted beside it.
             rewrites.note_element(action.spellings.get("target"), &action.native_code);
+        }
+        // docs/adr/0087, section 3.1, item 6: the template's unit renders the
+        // holes' values, and the text replaces the string variable whole, as an
+        // `<assign>` of a string does: a value that fails writes nothing and
+        // ends the block (§scxml-4.9). The judge held the variable's bound to
+        // the template's `MAX_LEN`, so the bound the write holds the text to is
+        // never passed.
+        "sce_render" => {
+            let alias = action.render_template.trim().to_string();
+            let location = action.location.trim().to_string();
+            let construct = format!("<sce:render template='{alias}'>");
+            let unit = rewrites.text_templates.get(&alias).ok_or_else(|| {
+                GenerateError::unsupported(format!(
+                    "{construct} names no text template this build read"
+                ))
+            })?;
+            let capacity = *rewrites.strings.get(location.as_str()).ok_or_else(|| {
+                GenerateError::unsupported(format!(
+                    "{construct}: location '{location}' names no string variable"
+                ))
+            })?;
+            let mut args = Vec::with_capacity(unit.template.model.holes.len());
+            for hole in &unit.template.model.holes {
+                let set = action
+                    .render_sets
+                    .iter()
+                    .find(|s| s.name.trim() == hole.id)
+                    .ok_or_else(|| {
+                        GenerateError::unsupported(format!(
+                            "{construct}: the hole '{}' is given no value",
+                            hole.id
+                        ))
+                    })?;
+                reads_payload |= reads(&set.expr);
+                let (slot, enum_alias) = match &hole.kind {
+                    crate::forge::model::HoleKind::Text { .. } => (InferredType::Str, None),
+                    crate::forge::model::HoleKind::Integer(ty) => {
+                        (InferredType::from_sce_type(ty), None)
+                    }
+                    crate::forge::model::HoleKind::Enum(_) => {
+                        let held = crate::forge::static_enum::value_held(
+                            &set.expr,
+                            ctx,
+                            &crate::forge::static_enum::EnumReading {
+                                var_alias: &|name| rewrites.enum_of_wire_value(name),
+                                calls: &|_| None,
+                            },
+                        )
+                        .ok()
+                        .and_then(crate::forge::static_enum::Held::present_enum);
+                        (InferredType::Unknown, held)
+                    }
+                };
+                let value = rewrites
+                    .receiving(&set.expr, ctx, renames, slot)
+                    .map_err(|r| {
+                        GenerateError::unsupported(format!(
+                            "`{}` has no {lang} lowering: {}",
+                            set.expr, r.error
+                        ))
+                    })?;
+                args.push(RenderArg {
+                    value: value.text,
+                    enum_alias,
+                });
+            }
+            let call = RenderCall {
+                call: &unit.call,
+                template: &unit.template.model,
+                args: &args,
+                max_len: unit.template.max_len,
+            };
+            let rendered = target.render_call(&call).ok_or_else(|| {
+                GenerateError::unsupported(format!("{construct} has no {lang} lowering yet"))
+            })?;
+            let name = renames
+                .get(location.as_str())
+                .copied()
+                .unwrap_or(location.as_str())
+                .to_string();
+            let bounded = target.bounded_string(&rendered, capacity);
+            // A target that rewrites the document itself replaces the element.
+            if let Some(element) = target.render_element(&name, &bounded) {
+                action.native_code = element;
+                action.native_fails = false;
+                rewrites.note_element(action.spellings.get("template"), &action.native_code);
+                return Ok(reads_payload);
+            }
+            let value = Receiving {
+                text: bounded,
+                can_fail: true,
+            };
+            let logged = target
+                .render_log(rewrites.machine, &alias, &location)
+                .unwrap_or_default();
+            let write = |v: &str| {
+                let written = target.assign_string(&name, v);
+                if logged.is_empty() {
+                    written
+                } else {
+                    format!("{written} {logged}")
+                }
+            };
+            (action.native_code, action.native_fails) =
+                statement(&value, InferredType::Str, &write, construct);
         }
         "sce_clear" => {
             let list = action.location.trim();

@@ -1,0 +1,11 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# docs/adr/0087, section 3.1, item 6: render a text template into a string
+   variable. The statement — each hole's value, the unit's `Render` and the
+   write of the whole variable — is lowered ahead of the template by
+   `forge::static_lowering` and stored on `action.native_code`. A hole whose
+   value fails writes nothing and ends its block as any element that raised
+   does (W3C SCXML 4.9). #}
+	// docs/adr/0087: <sce:render template="{{ action.render_template }}" location="{{ action.location }}">
+{% include 'actions/_native_statement.go.jinja2' %}

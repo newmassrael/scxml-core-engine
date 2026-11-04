@@ -89,6 +89,7 @@ import com.sce.integration.static_send_target.StaticSendTargetStateMachine
 import com.sce.integration.static_send_type.StaticSendTypeStateMachine
 import com.sce.integration.static_record_bytes.StaticRecordBytesStateMachine
 import com.sce.integration.static_record_string.StaticRecordStringStateMachine
+import com.sce.integration.static_render.StaticRenderStateMachine
 import com.sce.integration.static_schema_revision.StaticSchemaRevisionStateMachine
 import com.sce.integration.static_state_algorithm.StaticStateAlgorithmStateMachine
 import com.sce.integration.static_state_algorithm_enum.StaticStateAlgorithmEnumStateMachine
@@ -790,6 +791,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_lift"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // docs/adr/0087, section 3.1: a text template rendered into a string variable,
+    // the same text on every lane, an untrusted text fenced with every marker
+    // removed, and a hole that fails writing nothing.
+    @Test
+    fun staticRenderPutsEachHoleIntoTheVariableThatHoldsTheText() {
+        val sm = StaticRenderStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_render"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

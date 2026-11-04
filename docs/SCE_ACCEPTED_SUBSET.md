@@ -4569,6 +4569,39 @@ in a `\u` escape, no repeated name, and `-0` no whole number. Rust, Go, Kotlin, 
 C++, Swift, C11 and the Interpreter lower it, and each replays
 `scenarios/static_lift.json`.
 
+**A text rendered from a template: `<sce:render>`** (docs/adr/0087, section 3.1,
+item 6). `<sce:render template="AskDate" location="prompt">` with one `<sce:set
+name="today" expr="todayText"/>` per hole renders the text template the document
+imports as `AskDate` (`<sce:import kind="text-template">`, §2.1) and replaces the
+string variable `prompt` whole with the text. Each value is read where the statement
+stands; one that fails (a checked operation that overflows) writes nothing, raises
+`error.execution` and ends the block, as an `<assign>` does. What each name must be is
+judged where the document is read:
+
+- `template` names a text template the document imports (`validation/invalid-attribute`,
+  with the aliases it imports);
+- `location` names a `string[N]` variable (`validation/invalid-attribute`, with the string
+  variables), and `N` is at least the template's `MAX_LEN`, so a rendering is never cut
+  (`validation/render-bound` names both numbers);
+- each hole is given by one `<sce:set>` and no `<sce:set>` names anything else, and each
+  value fits its hole (docs/adr/0086, section 5.1): a text of a bound at most the hole's
+  (a variable, a field or a literal, whose bound is declared), an integer of the hole's
+  own type or a literal it holds, a value of an enum the document imports from the
+  document the hole's enum is (`validation/render-holes`).
+
+Under any other data model the element is `scxml/static-datamodel-rule`. Rust, Go,
+Kotlin, Python, C++, Swift and C11 call the template's unit (`render`, generated from
+the template document beside the machine) with the values in the template's order, an
+enum value as its declared name, and hold the text to the variable's bound as a string
+assignment does; C11 renders into a buffer of `MAX_LEN + 1` bytes that lives as long as
+the statement's block and copies it into the variable, so a hole may read the variable it
+replaces. The Interpreter's lowering replaces the element with an `<assign>` of
+`SceStatic.render`, handed the template's parts. Rust (`sce_log_info`), C++
+(`SCE_LOG_INFO`) and C11 (standard error, as `<log>` writes) log each rendering by the
+template and the variable it wrote, never the text, and so do Go and Swift, through
+their machine runtime's helper (`sce.LogRender`, `SceRuntime.logRender`); Kotlin and
+Python have no log facility in their runtime, so they log nothing.
+
 **Enum variables.** `sce:type="enum:<alias>"` holds a variable in a variant of
 the enum the document imports as `<alias>` (`<sce:import kind="enum">`). It
 starts at one of the variants, written as the expression `<alias>.<variant>`

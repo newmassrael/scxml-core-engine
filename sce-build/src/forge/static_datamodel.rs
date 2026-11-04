@@ -208,6 +208,8 @@ pub fn check(
         receivers: Receivers::of(model, &held_enums, &event_schemas),
         lift_schemas: &model.imported_records,
         type_scope: crate::forge::value_path::statechart_scope(model),
+        text_templates: &model.imported_text_templates,
+        enum_documents: &model.enum_documents.by_alias,
     };
     // Every record variable's fields, readable everywhere; a transition adds
     // its payload to these.
@@ -960,6 +962,14 @@ struct Judge<'a> {
     /// document it is: what tells a lift's refusal record from another, and
     /// what the depth and the longest pointer of a record are folded in.
     type_scope: crate::forge::value_type::TypeScope,
+    /// The text templates the document imports, by alias: what a
+    /// `<sce:render>` renders (docs/adr/0087, section 3.1, item 6).
+    text_templates:
+        &'a std::collections::BTreeMap<String, crate::forge::text_template::ImportedTextTemplate>,
+    /// The enum documents the document imports, by alias: what tells a value of
+    /// an enum hole's enum from a value of another document's.
+    enum_documents:
+        &'a std::collections::BTreeMap<String, crate::forge::schema_revision::EnumDocument>,
 }
 
 /// The documents that read the payload of a `<send>` of this document, where the
@@ -3197,6 +3207,237 @@ impl<'a> Judge<'a> {
         crate::forge::static_enum::value_held(written, ctx, &reading)
     }
 
+    /// A `<sce:render>` (docs/adr/0087, section 3.1, item 6): `template` a text
+    /// template the document imports; `location` a `string[N]` variable whose
+    /// bound is at least the template's `MAX_LEN`; and one `<sce:set>` for each
+    /// hole and no other, each value fitting its hole (docs/adr/0086, section
+    /// 5.1): a text of a bound at most the hole's, an integer of the hole's own
+    /// type, a value of the enum document the hole's enum is. Each refusal is
+    /// placed on the attribute that breaks it.
+    fn render(&self, ctx: &TypeCtx<'_>, action: &Action) -> Result<(), Located<ForgeError>> {
+        use crate::forge::error::ValidationError;
+        use crate::forge::model::{HoleKind, SceType};
+        let at =
+            |error: ForgeError, spelling: Option<&crate::attribute_spelling::AttributeSpelling>| {
+                Located::new(
+                    error,
+                    self.diag_label,
+                    spelling.map(|s| s.row()),
+                    spelling.map(|s| s.col()),
+                )
+            };
+        let alias = action.render_template.trim();
+        let Some(template) = self.text_templates.get(alias) else {
+            return Err(at(
+                ValidationError::InvalidAttribute {
+                    element: "<sce:render>".to_string(),
+                    attr: "template".to_string(),
+                    value: alias.to_string(),
+                    allowed: self.text_templates.keys().cloned().collect(),
+                }
+                .into(),
+                action.spellings.get("template"),
+            ));
+        };
+
+        // The location: a string variable, whose bound holds every rendering.
+        let location = action.location.trim();
+        let is_text = |var: &&Variable| {
+            var.value_type
+                .as_ref()
+                .and_then(|t| t.scalar())
+                .is_some_and(|s| matches!(s, SceType::String))
+        };
+        let bound = self
+            .scope
+            .variables
+            .iter()
+            .filter(is_text)
+            .find(|v| v.id == location)
+            .and_then(Variable::capacity);
+        let Some(bound) = bound else {
+            return Err(at(
+                ValidationError::InvalidAttribute {
+                    element: "<sce:render>".to_string(),
+                    attr: "location".to_string(),
+                    value: location.to_string(),
+                    allowed: self
+                        .scope
+                        .variables
+                        .iter()
+                        .filter(is_text)
+                        .map(|v| v.id.clone())
+                        .collect(),
+                }
+                .into(),
+                action.spellings.get("location"),
+            ));
+        };
+        if u64::from(bound) < template.max_len {
+            return Err(at(
+                ValidationError::RenderBound {
+                    template: alias.to_string(),
+                    location: location.to_string(),
+                    bound,
+                    max_len: template.max_len,
+                }
+                .into(),
+                action.spellings.get("location"),
+            ));
+        }
+
+        // The holes: each given once, each value fitting its hole.
+        let holes =
+            |hole: &str,
+             detail: String,
+             spelling: Option<&crate::attribute_spelling::AttributeSpelling>| {
+                at(
+                    ValidationError::RenderHoles {
+                        template: alias.to_string(),
+                        hole: hole.to_string(),
+                        detail,
+                    }
+                    .into(),
+                    spelling,
+                )
+            };
+        let mut given: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        for set in &action.render_sets {
+            let name = set.name.trim();
+            let spelling = set.expr_spelling.as_ref();
+            let Some(hole) = template.model.hole(name) else {
+                let declared: Vec<&str> =
+                    template.model.holes.iter().map(|h| h.id.as_str()).collect();
+                return Err(holes(
+                    name,
+                    format!(
+                        "is given by a <sce:set> and is no hole of the template: its holes are {}",
+                        declared.join(", ")
+                    ),
+                    spelling,
+                ));
+            };
+            if !given.insert(name) {
+                return Err(holes(
+                    name,
+                    "is given twice: a <sce:render> gives each hole of its template once"
+                        .to_string(),
+                    spelling,
+                ));
+            }
+            match &hole.kind {
+                HoleKind::Text { max, .. } => {
+                    let ty =
+                        self.expr(ctx, &set.expr, spelling, Expected::Hint(InferredType::Str))?;
+                    if ty != InferredType::Str {
+                        return Err(holes(
+                            name,
+                            format!(
+                                "is a text of string[{}], and is given a value of {}",
+                                max.max,
+                                self.spelled_type(ctx, &set.expr, ty)
+                            ),
+                            spelling,
+                        ));
+                    }
+                    match self.text_bound(&set.expr) {
+                        Some(given_bound) if given_bound <= max.max => {}
+                        Some(given_bound) => {
+                            return Err(holes(
+                                name,
+                                format!(
+                                    "is a text of string[{}], and is given a text of up to \
+                                     {given_bound} bytes: a value fits a hole whose bound is at \
+                                     least its own (docs/adr/0086, section 5.1)",
+                                    max.max
+                                ),
+                                spelling,
+                            ));
+                        }
+                        None => {
+                            return Err(holes(
+                                name,
+                                format!(
+                                    "is a text of string[{}], and is given a text whose bound \
+                                     nothing declares: give a variable, a field or a literal of \
+                                     at most {} bytes",
+                                    max.max, max.max
+                                ),
+                                spelling,
+                            ));
+                        }
+                    }
+                }
+                HoleKind::Integer(integer) => {
+                    let slot = InferredType::from_sce_type(integer);
+                    let ty = self.expr(ctx, &set.expr, spelling, Expected::Hint(slot))?;
+                    // A literal takes the hole's type where it holds the value,
+                    // which the expression's own judge says of it in that slot.
+                    if ty == InferredType::UntypedInt {
+                        self.expr(ctx, &set.expr, spelling, Expected::Slot(slot))?;
+                    } else if ty != slot {
+                        return Err(holes(
+                            name,
+                            format!(
+                                "is a {}, and is given a value of {}: a number fits only its own \
+                                 type (docs/adr/0086, section 5.1)",
+                                integer.as_attr(),
+                                self.spelled_type(ctx, &set.expr, ty)
+                            ),
+                            spelling,
+                        ));
+                    }
+                }
+                HoleKind::Enum(reference) => {
+                    let (_, held) = self.expr_held(
+                        ctx,
+                        &set.expr,
+                        spelling,
+                        Expected::Hint(InferredType::Unknown),
+                    )?;
+                    let same_document = held
+                        .as_deref()
+                        .and_then(|a| self.enum_documents.get(a))
+                        .zip(template.enums.get(&hole.id))
+                        .is_some_and(|(value, hole)| value.key == hole.key);
+                    if !same_document {
+                        let got = match &held {
+                            Some(alias) => format!(
+                                "a value of enum:{alias}, which is not the enum document the \
+                                 template's is"
+                            ),
+                            None => "a value of no enum this document imports".to_string(),
+                        };
+                        return Err(holes(
+                            name,
+                            format!(
+                                "is a value of enum:{} (as the template imports it), and is \
+                                 given {got}",
+                                reference.alias
+                            ),
+                            spelling,
+                        ));
+                    }
+                }
+            }
+        }
+        if let Some(missing) = template
+            .model
+            .holes
+            .iter()
+            .find(|h| !given.contains(h.id.as_str()))
+        {
+            return Err(holes(
+                &missing.id,
+                "is not given: a <sce:render> gives each hole of its template once, with one \
+                 <sce:set>"
+                    .to_string(),
+                action.spellings.get("template"),
+            ));
+        }
+        Ok(())
+    }
+
     /// The most bytes the text or byte string `written` can hold, where a declaration
     /// states it: a literal's own length; a string or byte-string variable's
     /// `sce:capacity`; a field of a record variable, of the element a list of records
@@ -3929,6 +4170,7 @@ impl<'a> Judge<'a> {
                     }
                 }
             }
+            "sce_render" => self.render(ctx, action)?,
             "sce_clear" => {
                 if self.list_var(&action.location).is_none() {
                     return Err(self.not_a_list(action, state));

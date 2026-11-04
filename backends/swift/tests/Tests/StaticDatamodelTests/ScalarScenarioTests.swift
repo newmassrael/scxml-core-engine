@@ -96,6 +96,19 @@ private func stringLiteral() -> Machine {
     )
 }
 
+private func render() -> Machine {
+    let policy = StaticRenderPolicy()
+    return drive(
+        policy,
+        variables: [
+            "note": { .text(policy.note) },
+            "count": { integer(policy.count) },
+            "said": { .text(policy.said) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
 private func blockEnds() -> Machine {
     let policy = StaticBlockEndsPolicy()
     return drive(
@@ -1158,6 +1171,13 @@ private func recordBytes() -> Machine {
 // Plane each arrive as themselves.
 @Test func aStringLiteralHoldsTheTextItsEscapesDenote() {
     replay("static_string_literal", stringLiteral())
+}
+
+// docs/adr/0087, section 3.1: a text template rendered into a string variable, the same
+// text on every lane, an untrusted text fenced with every marker removed, and a hole that
+// fails writing nothing.
+@Test func aRenderPutsEachHoleIntoTheVariableThatHoldsTheText() {
+    replay("static_render", render())
 }
 
 // A failing statement ends its block, and only its block: what stands after it in the

@@ -107,8 +107,9 @@ imports_of() {
 }
 
 # The kinds a machine calls as functions: an algorithm, and a transform, a condition,
-# a lookup, an interpolation or a validator (docs/adr/0048).
-CALLED_KINDS=(algorithm transform condition lookup interpolation validator)
+# a lookup, an interpolation or a validator (docs/adr/0048), and the text template a
+# `<sce:render>` renders through its unit (docs/adr/0087, section 3).
+CALLED_KINDS=(algorithm transform condition lookup interpolation validator text-template)
 
 # The documents document $1 calls, of every kind it calls.
 callees_of() {

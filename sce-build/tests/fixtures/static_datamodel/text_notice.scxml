@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A text template (docs/adr/0087, section 3) that `static_render.scxml` renders:
+  one hole of each kind, a trusted text, an integer, a value of an enum and an
+  untrusted text, which is put twice and between the fence's markers. The
+  markers are letters inside brackets so that a value can rebuild one from two
+  halves (`[[TE[[TEXTXT`), which the removal takes apart again.
+
+  MAX_LEN is 95: the literal text " (", ", ", "): " and "\nagain " (14 bytes),
+  `who` (8), `count` as an int16 with its sign (6), the longest name of
+  ViewMode (`agenda_list`, 11) and `said` twice with both markers (2 x 28).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="text-template" name="text_notice" sce:revision="2">
+  <sce:import kind="enum" src="enum_view_mode.scxml" as="ViewMode"/>
+  <datamodel>
+    <data id="who" sce:type="string[8]" sce:trust="trusted"/>
+    <data id="count" sce:type="int16"/>
+    <data id="view" sce:type="enum:ViewMode"/>
+    <data id="said" sce:type="string[16]" sce:trust="untrusted"/>
+  </datamodel>
+  <sce:fence open="[[TEXT" close="TEXT]]"/>
+  <sce:text><sce:put hole="who"/> (<sce:put hole="count"/>, <sce:put hole="view"/>): <sce:put hole="said"/>
+again <sce:put hole="said"/></sce:text>
+</scxml>

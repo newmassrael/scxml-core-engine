@@ -161,6 +161,9 @@ use sce_rust_tests::integration::static_datamodel::static_record_sm::{
 use sce_rust_tests::integration::static_datamodel::static_record_string_sm::{
     StaticRecordStringPersist, StaticRecordStringPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_render_sm::{
+    StaticRenderPersist, StaticRenderPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_schema_revision_sm::{
     StaticSchemaRevisionPersist, StaticSchemaRevisionPolicy,
 };
@@ -554,6 +557,20 @@ fn static_record_string_holds_a_string_field_within_the_bound_its_schema_declare
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_record_string.json"
+        ),
+    );
+}
+
+// A text template rendered into a string variable (docs/adr/0087, section 3.1):
+// the same bytes on every lane, an untrusted text fenced with every marker
+// removed, and a hole that fails writing nothing.
+#[test]
+fn static_render_puts_each_hole_into_the_variable_that_holds_the_text() {
+    replay(
+        Engine::new(StaticRenderPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_render.json"
         ),
     );
 }

@@ -869,7 +869,52 @@
     return bytes;
   }
 
+  /* The fence of a text template's untrusted hole (docs/adr/0087, section 3.1,
+     item 4): every occurrence of either marker removed from the value, the
+     leftmost first (the longer where both start at one place), until neither
+     occurs, so a value cannot rebuild a marker from two halves. The markers are
+     printable ASCII, each one UTF-16 unit as it is one UTF-8 byte, so removing
+     them from a string's units removes what the generated backends remove from
+     its bytes. An empty marker is no marker. */
+  function removeMarkers(value, open, close) {
+    var text = value;
+    var longest = Math.max(open.length, close.length);
+    var from = 0;
+    for (;;) {
+      var at = -1;
+      var marker = 0;
+      for (var i = from; i < text.length && at < 0; i++) {
+        var opens = open.length > 0 && text.startsWith(open, i);
+        var closes = close.length > 0 && text.startsWith(close, i);
+        if (opens || closes) {
+          at = i;
+          marker = opens && closes ? longest : (opens ? open.length : close.length);
+        }
+      }
+      if (at < 0) {
+        return text;
+      }
+      text = text.slice(0, at) + text.slice(at + marker);
+      from = Math.max(0, at - (longest - 1));
+    }
+  }
+
   return {
+    /* A text template rendered from its parts, in order (docs/adr/0087,
+       section 3.1, item 7): a string as it is, and an untrusted value,
+       `{fenced: value}`, between the markers with every marker removed. */
+    render: function (parts, open, close) {
+      var text = '';
+      for (var i = 0; i < parts.length; i++) {
+        var part = parts[i];
+        if (typeof part === 'string') {
+          text += part;
+        } else {
+          text += open + removeMarkers(String(part.fenced), open, close) + close;
+        }
+      }
+      return text;
+    },
     I8: integer(true, 8),
     I16: integer(true, 16),
     I32: integer(true, 32),

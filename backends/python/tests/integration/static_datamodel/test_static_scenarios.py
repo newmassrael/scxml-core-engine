@@ -602,6 +602,13 @@ def test_an_enum_variable_holds_a_variant_of_its_enum() -> None:
     replay("static_enum")
 
 
+# docs/adr/0087, section 3.1: a text template rendered into a string variable, the
+# same text on every lane, an untrusted text fenced with every marker removed, and a
+# hole that fails writing nothing.
+def test_a_render_puts_each_hole_into_the_variable_that_holds_the_text() -> None:
+    replay("static_render")
+
+
 # docs/adr/0047: a value of an enum read as the number its variant declares and a
 # number read back as the variant that declares it; a number no variant declares
 # is error.execution.

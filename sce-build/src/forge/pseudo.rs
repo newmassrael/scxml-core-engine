@@ -3088,6 +3088,21 @@ fn render_scxml_action_body(a: &crate::model::Action, out: &mut Out<'_>) {
             text(&a.location),
             text(&a.lift_refusal)
         )),
+        // docs/adr/0087, section 3.1, item 6: the template's alias and the
+        // variable are each one name, and each hole's value is the last thing
+        // on its own line, so a value holding ` = ` keeps it.
+        "sce_render" => {
+            out.line(&format!(
+                "render {} into {}",
+                text(&a.render_template),
+                text(&a.location)
+            ));
+            out.nested(|out| {
+                for set in &a.render_sets {
+                    out.line(&format!("set {} = {}", text(&set.name), text(&set.expr)));
+                }
+            });
+        }
         other => out.line(&format!("<unrendered action {}>", text(other))),
     }
 }

@@ -90,6 +90,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_real32"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record_string"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_render"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_schema_revision"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_content"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_send_delay"
@@ -1471,6 +1472,20 @@ func TestARecordHoldsAStringFieldWithinTheBoundItsSchemaDeclares(t *testing.T) {
 		"note":   func() any { return policy.Note() },
 		"labels": func() any { return labelledsJSON(policy.Labels()) },
 		"errors": func() any { return policy.Errors() },
+	}))
+}
+
+// A text template rendered into a string variable (docs/adr/0087, section 3.1):
+// the same text on every lane, an untrusted text fenced with every marker
+// removed, and a hole that fails writing nothing.
+func TestARenderPutsEachHoleIntoTheVariableThatHoldsTheText(t *testing.T) {
+	policy := static_render.NewStaticRenderPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_render", drive[static_render.StaticRenderState, static_render.StaticRenderEvent](&policy, map[string]func() any{
+		"note":     func() any { return policy.Note() },
+		"count":    func() any { return policy.Count() },
+		"said":     func() any { return policy.Said() },
+		"refusals": func() any { return policy.Refusals() },
 	}))
 }
 

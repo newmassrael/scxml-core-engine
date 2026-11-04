@@ -279,6 +279,11 @@ pub const SCE_IDENTIFIER_ATTRIBUTES: &[(&str, &str, Grammar)] = &[
     ("lift", "schema", Grammar::CodePath),
     ("lift", "location", Grammar::CodePath),
     ("lift", "refusal", Grammar::CodePath),
+    // `<sce:render>` (docs/adr/0087, section 3.1, item 6) names the alias of
+    // the template it renders and the variable it writes, each declared
+    // elsewhere, so a path's rule holds each, with no keyword refused here.
+    ("render", "template", Grammar::CodePath),
+    ("render", "location", Grammar::CodePath),
 ];
 
 /// Whether `name` is an XML Name in the ASCII form SCE accepts — the

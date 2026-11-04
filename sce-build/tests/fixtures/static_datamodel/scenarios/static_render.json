@@ -1,0 +1,39 @@
+{
+  "machine": "static_render",
+  "about": "A text template rendered into a string variable with <sce:render> (docs/adr/0087, section 3.1): a trusted text as it is, an int16 as its digits and sign, an enum value as its declared name, and an untrusted text between the fence's markers with every marker removed from it, a marker rebuilt from two halves included. The longest rendering is the template's MAX_LEN (95), which `note` holds exactly. A hole whose value overflows writes nothing and ends its block. Expected values are derived from the template, not observed from a backend.",
+  "steps": [
+    { "note": "nothing is rendered before `render`",
+      "expect": { "state": "idle", "variables": { "note": "", "refusals": 0 } } },
+    { "note": "each hole put where the template puts it; the untrusted text twice, between the markers",
+      "event": "render",
+      "expect": { "variables": { "note": "ann (0, month): [[TEXThiTEXT]]\nagain [[TEXThiTEXT]]", "refusals": 0 } } },
+
+    { "note": "every hole at its longest: the rendering is 95 bytes, the bound of `note`",
+      "event": "longest",
+      "expect": { "variables": { "count": -32768, "said": "0123456789abcdef" } } },
+    { "event": "render",
+      "expect": { "variables": { "note": "abcdefgh (-32768, agenda_list): [[TEXT0123456789abcdefTEXT]]\nagain [[TEXT0123456789abcdefTEXT]]", "refusals": 0 } } },
+
+    { "note": "each marker in the value is removed",
+      "event": "markers",
+      "expect": { "variables": { "said": "a[[TEXTbTEXT]]c" } } },
+    { "event": "render",
+      "expect": { "variables": { "note": "abcdefgh (-32768, agenda_list): [[TEXTabcTEXT]]\nagain [[TEXTabcTEXT]]" } } },
+
+    { "note": "a marker the removal rebuilds from two halves is removed too, and nothing is left",
+      "event": "rebuilt",
+      "expect": { "variables": { "said": "[[TE[[TEXTXT" } } },
+    { "event": "render",
+      "expect": { "variables": { "note": "abcdefgh (-32768, agenda_list): [[TEXTTEXT]]\nagain [[TEXTTEXT]]" } } },
+
+    { "note": "multi-byte text beside a marker is kept as it is",
+      "event": "wide",
+      "expect": { "variables": { "said": "é[[TEXTü" } } },
+    { "event": "render",
+      "expect": { "variables": { "note": "abcdefgh (-32768, agenda_list): [[TEXTéüTEXT]]\nagain [[TEXTéüTEXT]]" } } },
+
+    { "note": "`count - 1` overflows an int16: the render writes nothing and ends its block, so `refusals` counts the error.execution and not the 100 after the render",
+      "event": "overflow",
+      "expect": { "variables": { "note": "abcdefgh (-32768, agenda_list): [[TEXTéüTEXT]]\nagain [[TEXTéüTEXT]]", "refusals": 1 } } }
+  ]
+}

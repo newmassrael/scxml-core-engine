@@ -476,7 +476,9 @@ impl<'m> Analysis<'m> {
                 Ok(Cost::completing(1))
             }
             "send" => self.send(action),
-            "assign" | "log" | "sce_append" => {
+            // A `<sce:render>` fails as an `<assign>` does, where a hole's value
+            // fails (docs/adr/0087, section 3.1, item 6).
+            "assign" | "log" | "sce_append" | "sce_render" => {
                 if !action.native_code.is_empty() && action.native_fails {
                     Ok(Cost::ending(self.execution_error()))
                 } else {

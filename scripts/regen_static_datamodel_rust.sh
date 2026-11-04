@@ -97,6 +97,9 @@ SCHEMAS+=(schema_item enum_item_status)
 SCHEMAS+=(schema_goal)
 # ... and static_optional_record's, the record it may hold none of.
 SCHEMAS+=(schema_item_pick)
+# The text template static_render renders (docs/adr/0087, section 3), whose unit
+# the machine calls as `super::text_notice::render`.
+SCHEMAS+=(text_notice)
 # The schedule todo_peer reads from the fields a to-do holds: the occurrence and schedule
 # records, the rules that order two writes, read a field, tell a conflict, select a day
 # and expand a repetition. Each is named by its file, which a machine's import names as

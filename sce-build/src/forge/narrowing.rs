@@ -227,7 +227,8 @@ pub trait Statement: Sized {
 impl Statement for Action {
     fn writes(&self, into: &mut Writes) {
         match self.action_type.as_str() {
-            "assign" | "sce_append" | "sce_clear" => into.write(&self.location),
+            // A `<sce:render>` replaces its location whole (docs/adr/0087).
+            "assign" | "sce_append" | "sce_clear" | "sce_render" => into.write(&self.location),
             // A lift writes its refusal on every run, and its location on a
             // text that is read (docs/adr/0087, section 2.1): both may change.
             "sce_lift" => {

@@ -135,7 +135,8 @@ use crate::forge::model::{
 };
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{
-    lower, Callee, CalleeImport, LiftStatement, LoweredElement, LoweredSite, StaticTarget,
+    lower, Callee, CalleeImport, LiftStatement, LoweredElement, LoweredSite, RenderCall,
+    StaticTarget,
 };
 use crate::forge::type_ctx::{StateArg, StaticCallee, StaticScope};
 use crate::forge::types::InferredType;
@@ -449,6 +450,61 @@ impl StaticTarget for JsTarget {
         wire: &dyn Fn(&str) -> String,
     ) -> Option<String> {
         Some(map_present(without_out(value), wire))
+    }
+    // A template has no unit here: the library's one `render` is handed the
+    // template's parts where the statement stands (docs/adr/0087, section 3.1,
+    // item 7), so there is nothing to bring into scope.
+    fn text_template(&self, _document: &str) -> Option<Callee> {
+        Some(Callee {
+            call: String::new(),
+            import: CalleeImport::InScope,
+        })
+    }
+    // The template's text as the library's parts, in order: a literal part as
+    // the string it is, a trusted text and an enum's name (which a variant
+    // lowers to here) as the value, an integer as its decimal digits, and an
+    // untrusted text as `{fenced: value}`, which the library puts between the
+    // markers with every marker removed.
+    fn render_call(&self, render: &RenderCall<'_>) -> Option<String> {
+        use crate::forge::model::{HoleKind, HoleTrust, TemplatePart};
+        let mut parts = Vec::with_capacity(render.template.parts.len());
+        for part in &render.template.parts {
+            parts.push(match part {
+                TemplatePart::Literal(text) => crate::filters::ecmascript_string_literal(text),
+                TemplatePart::Put(id) => {
+                    let at = render.template.holes.iter().position(|h| h.id == *id)?;
+                    let value = &render.args.get(at)?.value;
+                    match render.template.holes[at].kind {
+                        HoleKind::Text {
+                            trust: HoleTrust::Untrusted,
+                            ..
+                        } => format!("{{fenced: {value}}}"),
+                        HoleKind::Integer(_) => format!("String({value})"),
+                        HoleKind::Text { .. } | HoleKind::Enum(_) => value.clone(),
+                    }
+                }
+            });
+        }
+        let (open, close) = render.template.fence.as_ref().map_or_else(
+            || ("''".to_string(), "''".to_string()),
+            |f| {
+                (
+                    crate::filters::ecmascript_string_literal(&f.open),
+                    crate::filters::ecmascript_string_literal(&f.close),
+                )
+            },
+        );
+        Some(format!(
+            "{RUNTIME_GLOBAL}.render([{}], {open}, {close})",
+            parts.join(", ")
+        ))
+    }
+    // The element that replaces the `<sce:render>`: an `<assign>` of the
+    // variable to the rendering, held to its bound as any string is. A hole that
+    // throws is answered as any assignment that fails is: nothing is written,
+    // `error.execution` is raised, and the block ends (§scxml-4.9).
+    fn render_element(&self, location: &str, value: &str) -> Option<String> {
+        Some(self.assign_element(location, value))
     }
     // Only an algorithm is lowered to a function the document carries; a call of
     // another kind is refused by name before the walk ([`lowered_algorithms`]).
