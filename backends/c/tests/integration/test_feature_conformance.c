@@ -12,6 +12,8 @@
 // to four of the events either one names: they must agree on every observation
 // a host has of a machine — where it is, what it asked its host to do, which
 // events it discarded, which names it had no event for, and where it ended.
+// Each saves the same text, which records this build's configuration, and
+// refuses a state taken in another (docs/adr/0057, section 7).
 //
 // Fixture: tests/product_line/session.scxml, generated with the symbol prefix
 // `lifted` once for every build and with `alone` for this feature set; see
@@ -125,6 +127,125 @@ static void end_accept(void *user_data) {
 OBSERVER(lifted_)
 OBSERVER(alone_)
 
+/* The wall-clock moment the states below are saved at, and the room a saved state has. */
+#define SAVED_AT_MS INT64_C(1700000000000)
+#define SAVED_CAP 4096u
+
+/* The features this build turns on, sorted, as a saved state writes them and as a refusal names
+   them (docs/adr/0057, section 7), and a configuration that is not this build's. */
+#if defined(SCE_FEATURE_SESSION_UNICAST) && defined(SCE_FEATURE_SESSION_UNICAST_ACCEPT)
+#define THIS_BUILD "[\"session-unicast\",\"session-unicast-accept\"]"
+#define THIS_BUILD_NAMED "[session-unicast, session-unicast-accept]"
+#elif defined(SCE_FEATURE_SESSION_UNICAST)
+#define THIS_BUILD "[\"session-unicast\"]"
+#define THIS_BUILD_NAMED "[session-unicast]"
+#else
+#define THIS_BUILD "[]"
+#define THIS_BUILD_NAMED "[]"
+#endif
+#if defined(SCE_FEATURE_SESSION_UNICAST)
+#define OTHER_BUILD "[]"
+#define OTHER_BUILD_NAMED "[]"
+#else
+#define OTHER_BUILD "[\"session-unicast\"]"
+#define OTHER_BUILD_NAMED "[session-unicast]"
+#endif
+
+/* `text` with every `from` in it read as `to`, into `out` of `cap` bytes. */
+static void replace_all(const char *text, const char *from, const char *to, char *out, size_t cap) {
+    const size_t n = strlen(from);
+    size_t used = 0;
+    out[0] = '\0';
+    while (*text != '\0' && used + 1 < cap) {
+        if (n > 0 && strncmp(text, from, n) == 0) {
+            snprintf(out + used, cap - used, "%s", to);
+            used += strlen(out + used);
+            text += n;
+        } else {
+            out[used++] = *text++;
+            out[used] = '\0';
+        }
+    }
+}
+
+/* The state of the machine of prefix P as `_init` leaves it, saved into `out`, its session id
+   read as `fixture-root`, since each machine draws an id of its own. */
+#define SAVER(P)                                                                                                       \
+    static void P##saved(char *out, size_t cap) {                                                                      \
+        struct observation seen;                                                                                       \
+        memset(&seen, 0, sizeof seen);                                                                                 \
+        P##session_actions_t host;                                                                                     \
+        memset(&host, 0, sizeof host);                                                                                 \
+        host.on_idle = on_idle;                                                                                        \
+        SERVE_UNICAST(host)                                                                                            \
+        SERVE_ACCEPT(host)                                                                                             \
+        host.user_data = &seen;                                                                                        \
+        P##session_t sm;                                                                                               \
+        if (!P##session_init_with_actions(&sm, &host)) {                                                               \
+            fprintf(stderr, "feature_conformance: FAIL - `" #P "session` refused a host "                              \
+                            "that serves every action of this build\n");                                               \
+            exit(1);                                                                                                   \
+        }                                                                                                              \
+        char text[SAVED_CAP];                                                                                          \
+        size_t len = 0;                                                                                                \
+        sce_saved_error_t err;                                                                                         \
+        if (!P##session_save(&sm, SAVED_AT_MS, text, sizeof text, &len, &err)) {                                       \
+            fprintf(stderr, "feature_conformance: FAIL - `" #P "session` does not save: %s\n", err.message);           \
+            exit(1);                                                                                                   \
+        }                                                                                                              \
+        replace_all(text, P##session_session_id(&sm), "fixture-root", out, cap);                                       \
+        P##session_destroy(&sm);                                                                                       \
+    }
+
+SAVER(lifted_)
+SAVER(alone_)
+
+/* A saved state records the configuration it was taken in, and the machine for every build saves
+   exactly what this build's own machine saves: the same text, its features this build's, last. A
+   state of another configuration is refused by the features that differ, before the shape is
+   judged (docs/adr/0057, section 7). */
+static int a_saved_state_records_this_builds_configuration(void) {
+    static const char last[] = ",\"features\":" THIS_BUILD "}";
+    static const char refusal[] = "the saved state was taken with the features " OTHER_BUILD_NAMED
+                                  " on, and this machine is built with " THIS_BUILD_NAMED;
+    char lifted_state[SAVED_CAP];
+    char alone_state[SAVED_CAP];
+    char elsewhere[SAVED_CAP];
+    sce_saved_error_t err;
+    lifted_saved(lifted_state, sizeof lifted_state);
+    alone_saved(alone_state, sizeof alone_state);
+    if (strcmp(lifted_state, alone_state) != 0) {
+        fprintf(stderr,
+                "feature_conformance: FAIL - the machine for every build saves\n  %s\nwhere this build's own "
+                "saves\n  %s\n",
+                lifted_state, alone_state);
+        return 1;
+    }
+    const size_t len = strlen(lifted_state);
+    const size_t tail = strlen(last);
+    if (len < tail || strcmp(lifted_state + len - tail, last) != 0) {
+        fprintf(stderr, "feature_conformance: FAIL - the saved state does not end with `%s`: %s\n", last, lifted_state);
+        return 1;
+    }
+    if (!lifted_session_judge(alone_state, strlen(alone_state), &err) ||
+        !alone_session_judge(lifted_state, len, &err)) {
+        fprintf(stderr, "feature_conformance: FAIL - a state of this build is refused: %s\n", err.message);
+        return 1;
+    }
+    snprintf(elsewhere, sizeof elsewhere, "%.*s,\"features\":" OTHER_BUILD "}", (int)(len - tail), lifted_state);
+    if (lifted_session_judge(elsewhere, strlen(elsewhere), &err)) {
+        fprintf(stderr, "feature_conformance: FAIL - a state taken with the features " OTHER_BUILD_NAMED
+                        " is restored by the build of " THIS_BUILD_NAMED "\n");
+        return 1;
+    }
+    if (strncmp(err.message, refusal, strlen(refusal)) != 0) {
+        fprintf(stderr, "feature_conformance: FAIL - a state of another configuration is refused with \"%s\"\n",
+                err.message);
+        return 1;
+    }
+    return 0;
+}
+
 static void print(const char *who, const struct observation *seen) {
     fprintf(stderr, "  %s: active=%s calls=%s discarded=%u unnamed=%u terminal=%s\n", who, seen->active, seen->calls,
             (unsigned)seen->discarded, (unsigned)seen->unnamed, seen->terminal);
@@ -200,6 +321,10 @@ int main(void) {
                 "feature_conformance: FAIL - the machine for every build starts in %s "
                 "where this build's default state is %s\n",
                 start.active, expected);
+        return 1;
+    }
+
+    if (a_saved_state_records_this_builds_configuration() != 0) {
         return 1;
     }
 

@@ -173,6 +173,19 @@ static const sce_saved_lineage_t {{ _t }}_saved_enums[] = {
 {% endfor %}
 };
 {% endif %}
+{% if static_saved_shape.features is not none %}
+{# docs/adr/0057, section 7: one feature to a line, so the machine generated for
+   every build of the product line holds each under its own condition. #}
+/* The configuration of the product line this machine was built for: the features
+   it turns on, sorted, ended by NULL. A saved state records it, and a restore
+   refuses a state taken in another before it judges the shape. */
+static const char *const {{ _t }}_saved_features[] = {
+{% for feature in static_saved_shape.features %}
+    "{{ feature | escape_c }}",
+{% endfor %}
+    NULL
+};
+{% endif %}
 
 /* What a saved state of this document is bound to: a state saved from a document
    that renamed, re-typed or moved a state or a variable is refused, one saved
@@ -185,7 +198,8 @@ static const sce_saved_shape_t {{ _t }}_saved_shape = {
     "{{ static_saved_shape.format2_first }}",
     "{{ static_saved_shape.format2_revised }}",
     {% if n_records %}{{ _t }}_saved_records{% else %}NULL{% endif %}, {{ n_records }}u,
-    {% if n_enums %}{{ _t }}_saved_enums{% else %}NULL{% endif %}, {{ n_enums }}u
+    {% if n_enums %}{{ _t }}_saved_enums{% else %}NULL{% endif %}, {{ n_enums }}u,
+    {% if static_saved_shape.features is not none %}{{ _t }}_saved_features{% else %}NULL{% endif %}
 };
 
 /* The name the document writes for an event, which a saved state holds it by. */
@@ -1200,8 +1214,8 @@ typedef struct {
 } {{ _t }}_saved_judged_t;
 
 /* Refuse `s` unless it can be a state of this document, building nothing (docs/adr/0045,
-   section 3, step 1): its shape and the revision of each schema, its histories and variables, its
-   configuration, its queue and its waiting sends. */
+   section 3, step 1): the features it was taken with, its shape and the revision of each schema,
+   its histories and variables, its configuration, its queue and its waiting sends. */
 SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s, {{ _t }}_saved_judged_t *judged,
                                                  sce_saved_error_t *err) {
     sce_jiter_t it;
@@ -1323,7 +1337,8 @@ SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s,
 /* The members of this session, in the order every backend writes them: the shape and the id, the
    configuration and where the machine stands, every variable, what each history recorded, the
    delayed sends still waiting as the wall-clock moment each comes due, the children, the host-run
-   invocations, the counters, the queue and the revision each schema is past its first at. */
+   invocations, the counters, the queue, the revision each schema is past its first at, and the
+   configuration of the product line a machine of one was built for. */
 bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *w, sce_saved_error_t *err) {
     (void)wall_now_ms;
     if (sm == NULL || !sm->is_running) {
@@ -1654,6 +1669,10 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
 {% endif %}
 {% endfor %}
     sce_jw_end_object(w);
+{% endif %}
+{% if static_saved_shape.features is not none %}
+    /* The configuration this machine was built for, last (docs/adr/0057, section 7). */
+    sce_saved_write_features(w, {{ _t }}_saved_shape.features);
 {% endif %}
     return true;
 }
