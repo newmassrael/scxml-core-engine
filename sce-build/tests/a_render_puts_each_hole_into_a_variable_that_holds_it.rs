@@ -110,48 +110,48 @@ fn a_render_is_lowered_through_the_templates_unit_on_every_backend() {
             continue;
         }
         let code = compile(&text, lang).unwrap_or_else(|e| panic!("{lang:?}: {e}"));
-        let (call, import, logs) = match lang {
+        // Every lane's log line names the machine by the document's own name
+        // (`probe`), whatever its types are named by; Swift hands the three names
+        // to its machine runtime, which writes the same line.
+        const LINE: &str = "[sce] probe: <sce:render template=\\\"Notice\\\"> wrote note";
+        const SWIFT: &str =
+            "sceLogRender(machine: \"probe\", template: \"Notice\", location: \"note\")";
+        let (call, import, log) = match lang {
             Language::Rust => (
                 "text_notice::render(",
                 Some("use super::text_notice;"),
-                true,
+                Some(LINE),
             ),
             Language::Cpp => (
                 "SCE::Generated::TextNotice::render(",
                 Some("#include \"text_notice.h\""),
-                true,
+                Some(LINE),
             ),
             Language::C11 => (
                 "text_notice_render(",
                 Some("#include \"text_notice.h\""),
-                true,
+                Some(LINE),
             ),
             Language::Kotlin => (
                 "TextNotice.render(",
                 Some("import com.sce.generated.text_notice.*"),
-                false,
+                None,
             ),
-            Language::Python => (".render(", Some("import text_notice as"), false),
-            // Swift logs through its machine runtime's public entry point.
-            Language::Swift => ("TextNotice.render(", None, false),
+            Language::Python => (".render(", Some("import text_notice as"), None),
+            Language::Swift => ("TextNotice.render(", None, Some(SWIFT)),
             Language::Go => unreachable!("skipped above"),
         };
         assert!(code.contains(call), "{lang:?} calls {call}:\n{code}");
         if let Some(import) = import {
             assert!(code.contains(import), "{lang:?} imports {import}:\n{code}");
         }
-        assert_eq!(
-            code.contains("<sce:render template=\\\"Notice\\\"> wrote note"),
-            logs,
-            "{lang:?} logs the render: {logs}"
-        );
-        if lang == Language::Swift {
-            assert!(
-                code.contains(
-                    "sceLogRender(machine: \"probe\", template: \"Notice\", location: \"note\")"
-                ),
-                "Swift logs the render through SceRuntime:\n{code}"
-            );
+        match log {
+            Some(line) => assert!(code.contains(line), "{lang:?} logs {line}:\n{code}"),
+            None => assert!(
+                !code.contains("<sce:render template=\\\"Notice\\\"> wrote")
+                    && !code.contains("sceLogRender("),
+                "{lang:?} has no log and writes none:\n{code}"
+            ),
         }
     }
 }

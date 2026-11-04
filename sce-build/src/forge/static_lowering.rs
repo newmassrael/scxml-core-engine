@@ -5210,6 +5210,7 @@ pub fn lower(
         type_scope: crate::forge::value_path::statechart_scope(model),
         lifts: std::cell::Cell::new(false),
         text_templates,
+        document: model.name.clone(),
     };
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
@@ -7302,6 +7303,10 @@ struct Rewrites<'m> {
     /// The text templates the machine renders, by the alias it imports each
     /// under, each with its unit's `render` (docs/adr/0087, section 3.1).
     text_templates: BTreeMap<String, RenderUnit>,
+    /// The document's own name (`<scxml name>`), the one spelling of the
+    /// machine every lane's render log line carries, whatever a backend names
+    /// the machine's types by.
+    document: String,
 }
 
 impl Rewrites<'_> {
@@ -15578,7 +15583,7 @@ fn lower_action(
                 can_fail: true,
             };
             let logged = target
-                .render_log(rewrites.machine, &alias, &location)
+                .render_log(&rewrites.document, &alias, &location)
                 .unwrap_or_default();
             let write = |v: &str| {
                 let written = target.assign_string(&name, v);

@@ -1070,6 +1070,10 @@ fn unsupported_action(action: &Action) -> Option<String> {
         // A lift is lowered to a `<script>` that calls the library's reader of a
         // text (docs/adr/0087, section 2.1).
         "sce_lift" => None,
+        // A render is replaced by an `<assign>` of the library's `render`, handed
+        // the template's parts (docs/adr/0087, section 3.1, item 7):
+        // `JsTarget::render_call` and `JsTarget::render_element`.
+        "sce_render" => None,
         // A host operation: the Interpreter performs it through its host, and
         // the arguments are expressions the walk lowers.
         "native_action" => None,
