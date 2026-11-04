@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "aad9ea7",
+  "embed_version": "102dafe",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 496,
+  "symbol_count": 497,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1821,6 +1821,12 @@
       "kind": "function",
       "name": "SCE::requestFieldWire",
       "signature": "std::optional<std::string> SCE::requestFieldWire(const ::ScriptValue &, const std::string &, RequestFieldType, const std::function<std::string (double)> &, std::string &)"
+    },
+    {
+      "header": "core/TypedHostInvokeRequest.h",
+      "kind": "function",
+      "name": "SCE::typedRequestRequiresParam",
+      "signature": "bool SCE::typedRequestRequiresParam(std::string_view)"
     },
     {
       "header": "core/TypedHostInvokeRequest.h",
