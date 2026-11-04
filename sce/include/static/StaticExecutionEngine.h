@@ -874,9 +874,13 @@ private:
         internalQueue_;  // §scxml-3.13: Internal event queue (high priority)
     SCE::Core::EventQueueManager<EventWithMetadata> externalQueue_;  // §scxml-3.13: External event queue (low priority)
     // docs/adr/0084: what other threads posted, which the owner applies at each
-    // macrostep boundary (`drainInbox`), and the record of who the owner is. Open
-    // from construction, so what is posted before the first run is kept for it.
+    // macrostep boundary (`drainInbox`) and before it puts an event of its own on
+    // the external queue (`applyHeldBeforeExternalEnqueue`), and the record of who
+    // the owner is. Open from construction, so what is posted before the first run
+    // is kept for it.
     ::SCE::Core::EngineInboxOwner<InboxInput> inbox_;
+    // A drain of the inbox is applying what it held; the owner's only.
+    bool drainingInbox_ = false;
     bool isRunning_ = false;
     // Whether `tick()` has ever run. A machine whose policy declares
     // NEEDS_EVENT_SCHEDULER has delayed events only `tick()` can deliver, so a
@@ -1163,16 +1167,61 @@ private:
     }
 
     /**
-     * @brief The macrostep boundary's half of the inbox (docs/adr/0084)
+     * @brief The owner's half of the inbox (docs/adr/0084)
      *
      * Applies, on the owner, what other threads posted, in the order the inbox
      * took it, each by the owner-thread operation of the same name
-     * (`applyInboxInput`). What the inbox held when the boundary was reached, so
-     * posters that never stop cannot hold the owner here; what they post
-     * meanwhile is applied at the next one.
+     * (`applyInboxInput`). Called at each macrostep boundary, and before the
+     * owner puts an event of its own on the external queue
+     * (`applyHeldBeforeExternalEnqueue`). What the inbox held when this was
+     * called, so posters that never stop cannot hold the owner here; what they
+     * post meanwhile is applied at the next drain.
+     *
+     * One drain at a time. Applying a held input reaches the external queue
+     * through `raiseExternal`, which asks for the held inputs first, and so can
+     * a handler the input runs (a host-run invocation's ending raising
+     * `done.invoke`, a cancel handler raising an event of its own). A drain
+     * started there would put the inputs posted after the one being applied on
+     * the queue ahead of it. The drain already applying them takes them in
+     * order, so a drain inside a drain applies nothing, and an applied event is
+     * pushed as it is.
      */
     void drainInbox() {
+        if (drainingInbox_) {
+            return;
+        }
+        drainingInbox_ = true;
+
+        struct Draining {
+            bool &flag;
+
+            ~Draining() {
+                flag = false;
+            }
+        } draining{drainingInbox_};
+
         inbox_.state().drain([this](InboxInput &&input) { applyInboxInput(std::move(input)); });
+    }
+
+    /**
+     * @brief Before the owner puts an event of its own on the external queue,
+     *        apply what the inbox holds (docs/adr/0084, D2)
+     *
+     * The external queue takes events in the order they arrived. What another
+     * thread posted before this event has arrived first, so it joins the queue
+     * first, and not only at the macrostep's boundary: W3C test 201's BasicHTTP
+     * send waits for the listener, whose thread posts `event1`, and the
+     * `timeout` the document sends itself next must come second. Only while a
+     * run is going, as the boundary drains only then: before a run is entered,
+     * what was posted is kept for that run, as `inbox()` says.
+     *
+     * Not asked for an internal raise (`raise`): the internal queue is the
+     * running macrostep's own, and arrival order is the external queue's.
+     */
+    void applyHeldBeforeExternalEnqueue() {
+        if (isRunning_) {
+            drainInbox();
+        }
     }
 
     /**
@@ -1246,15 +1295,16 @@ public:
      *
      * Thread-safe, as is every copy of it; everything else of the engine that
      * changes its state is an owner-thread operation (ARCHITECTURE.md "Engine
-     * Threading"). What is posted is applied by the owner at its next macrostep
-     * boundary, before the external queue is consulted, in the order the inbox
-     * took it. `post` answers whether the inbox took the input: it refuses one
-     * once the run has ended or been stopped (until the next `initialize` or
-     * `enterAt`), and when the heap refuses the memory for it. It is unbounded
-     * otherwise (docs/adr/0084, D2), and never refuses a post for contention. A
-     * post taken before the first run is applied at that run's first boundary.
-     * `wakeWith` installs what each post calls, so a host that drives the
-     * engine itself knows when to drive it.
+     * Threading"). What is posted is applied by the owner, in the order the inbox
+     * took it, at its next macrostep boundary, before the external queue is
+     * consulted, or sooner, before it puts an event of its own on the external
+     * queue, which takes events in the order they arrived. `post` answers
+     * whether the inbox took the input: it refuses one once the run has ended
+     * or been stopped (until the next `initialize` or `enterAt`), and when the
+     * heap refuses the memory for it. It is unbounded otherwise (docs/adr/0084,
+     * D2), and never refuses a post for contention. A post taken before the
+     * first run is applied by that run. `wakeWith` installs what each post
+     * calls, so a host that drives the engine itself knows when to drive it.
      */
     Inbox inbox() const {
         return inbox_.handle();
@@ -1300,7 +1350,10 @@ public:
                 return;
             }
         }
-        // §scxml-3.13: Enqueue event with metadata
+        // §scxml-3.13: Enqueue event with metadata. The inbox is not applied
+        // first, as it is before an external enqueue (docs/adr/0084, D2): the
+        // internal queue is the running macrostep's own, and arrival order is
+        // the external queue's.
         internalQueue_.raise(std::move(metadata));
     }
 
@@ -1476,7 +1529,15 @@ public:
             }
         }
 
-        // Normal internal/external queue processing
+        // docs/adr/0084, D2: every event this machine puts on its own external
+        // queue comes through here (a `<send>` to itself, a host-run
+        // invocation's `done.invoke`, a delayed send released by `tick`, a
+        // child's report, the host's own call), so this is where the external
+        // queue keeps arrival order: what other threads posted before this event
+        // is applied first, and this event joins the queue behind it. Applying a
+        // posted event comes back here inside the drain, and is pushed as it is.
+        applyHeldBeforeExternalEnqueue();
+
         SCE_LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",
                       static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
 
@@ -2490,9 +2551,10 @@ protected:
 
             // docs/adr/0084: the macrostep is complete, and this is the point
             // before the external queue is consulted. What other threads posted
-            // since the last boundary is applied here, in the order the inbox
-            // took it, so an event it carries joins the external queue behind
-            // what this macrostep queued.
+            // since the last drain is applied here, in the order the inbox took
+            // it. What was posted before an event this macrostep put on the
+            // external queue was applied then (`applyHeldBeforeExternalEnqueue`);
+            // what is left came after, and joins the queue behind it.
             drainInbox();
             // Applying an input can raise an internal event (an event whose
             // target is refused raises error.execution), which comes before
@@ -2914,7 +2976,8 @@ public:
         // and its owner is the thread that drives it from here (the first
         // `step`, `tick` or `processEvent`). A run that ended or was stopped
         // closed the inbox; this one takes posts again, and what was posted
-        // before the first run is applied at its first boundary.
+        // before the first run is applied by it, at its first boundary or
+        // before the first event it puts on the external queue.
         requireOwner("initialize");
         inbox_.state().releaseOwner();
         inbox_.state().open();
@@ -3790,7 +3853,7 @@ public:
      *
      * An owner-thread operation: a host whose invocation ends on a thread of its own
      * posts an `InboxHostInvokeEnding` naming the session to `inbox()` instead, and
-     * the owner applies it with this call at its next macrostep boundary.
+     * the owner applies it with this call when it next drains the inbox (`drainInbox`).
      */
     ::SCE::HostInvokeEndOutcome endHostInvokeIn(const std::string &sessionId, const ::SCE::HostInvokeEnding &ending) {
         requireOwner("endHostInvokeIn");
@@ -3899,7 +3962,8 @@ public:
      * An owner-thread operation (ARCHITECTURE.md "Engine Threading"): a host
      * whose invocation finishes on a thread of its own posts an
      * `InboxHostInvokeEnding` to `inbox()` instead, and the owner applies it
-     * with this call at its next macrostep boundary, where the token is checked.
+     * with this call when it next drains the inbox (`drainInbox`), where the
+     * token is checked.
      */
     bool completeHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
                             const std::string &doneData, const std::string &origin = "",

@@ -17,6 +17,10 @@
 //     those of a single-threaded replay of the same posts;
 //   * an ending posted for a start that was cancelled or started again is
 //     refused by the token check, as a direct one is;
+//   * the external queue takes events in the order they arrived: a post made
+//     while a macrostep runs is applied before an event the owner puts on that
+//     queue after it, whether a host-run invocation's `done.invoke` or the
+//     host's own `raiseExternal` (W3C test 201's shape);
 //   * a post is taken before the run starts and refused once it is stopped;
 //   * an owner-thread operation called from another thread is refused with an
 //     error that names the inbox, and changes nothing (debug builds).
@@ -328,6 +332,57 @@ TEST_F(WhatAnotherThreadPostsEntersThroughTheInbox, APostedEndingOfACancelledOrR
     EXPECT_EQ(sm.getPolicy().taken(), std::optional<std::string>("done:fresh;")) << "the same start ended twice";
     EXPECT_EQ(host.log, (std::vector<std::string>{"start:" + std::to_string(first), "cancel:" + std::to_string(first),
                                                   "start:" + std::to_string(second)}));
+}
+
+// W3C test 201's shape, without the HTTP listener: inside the macrostep that
+// enters `working`, `job`'s start reaches the host on the owner, and the host
+// posts `ping` from a thread it joins before it answers, as a BasicHTTP send
+// waits for the listener whose thread raises the event. The host then answers
+// the start with a completion, whose `done.invoke.job` the engine puts on the
+// external queue itself. `ping` arrived first, so it is taken first: the engine
+// applies what its inbox holds before it puts its own event on the external
+// queue, and not only at the macrostep's boundary. The join is the only
+// ordering; nothing sleeps.
+TEST_F(WhatAnotherThreadPostsEntersThroughTheInbox, APostMadeBeforeTheEnginesOwnDoneInvokeIsTakenFirst) {
+    Machine sm;
+    std::optional<bool> postTaken;
+    sm.registerInvoker(TYPE, [&sm, &postTaken](const SCE::HostInvokeEvent &event) {
+        if (!event.start.has_value()) {
+            return std::optional<SCE::HostInvokeResponse>();
+        }
+        postTaken = postFromAnotherThread(sm, ping(quoted("posted")));
+        SCE::HostInvokeResponse completed;
+        completed.doneData = quoted("job");
+        return std::optional<SCE::HostInvokeResponse>(completed);
+    });
+    boot(sm);
+
+    ASSERT_EQ(postTaken, std::optional<bool>(true)) << "`job` never started, or the inbox refused the post";
+    EXPECT_EQ(sm.getPolicy().taken(), std::optional<std::string>("ping:posted;done:job;"))
+        << "the engine's own done.invoke overtook an event posted before it";
+    EXPECT_EQ(sm.refusedInboxPosts(), 0u);
+}
+
+// The same order for an event the host raises itself on the owner, as the W3C
+// HTTP harness does with what its listener did not post: posted during the same
+// call before the host's own `raiseExternal`, `ping:posted` is taken before
+// `ping:own`.
+TEST_F(WhatAnotherThreadPostsEntersThroughTheInbox, APostMadeBeforeTheHostsOwnRaiseOnTheOwnerIsTakenFirst) {
+    Machine sm;
+    std::optional<bool> postTaken;
+    sm.registerInvoker(TYPE, [&sm, &postTaken](const SCE::HostInvokeEvent &event) {
+        if (event.start.has_value()) {
+            postTaken = postFromAnotherThread(sm, ping(quoted("posted")));
+            sm.raiseExternal(Event::Ping, quoted("own"));
+        }
+        return std::optional<SCE::HostInvokeResponse>();
+    });
+    boot(sm);
+
+    ASSERT_EQ(postTaken, std::optional<bool>(true)) << "`job` never started, or the inbox refused the post";
+    EXPECT_EQ(sm.getPolicy().taken(), std::optional<std::string>("ping:posted;ping:own;"))
+        << "the host's own raise overtook an event posted before it";
+    EXPECT_EQ(sm.refusedInboxPosts(), 0u);
 }
 
 // The inbox is open from the moment the engine is built, so what is posted
