@@ -20,43 +20,23 @@ mutation_oracles backends/rust/forge-conformance/tests/forge_view_round_trip.rs
 mutation_case "a frame past a capacity in a list is not judged" <<'PY'
 edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
      r'''        match Self::store_into(cursor, _out{{ decode_forward_args_with_comma }}) {
-            Err(CodecError::CapacityExceeded) => {
-{% if emit_views and not view_is_alias %}
-                {{ struct_name }}View::decode(&mut _frame{{ decode_forward_args_with_comma }})?;
-{% else %}
-                {{ struct_name }}::store_into(&mut _frame, &mut {{ struct_name }}::default(){{ decode_forward_args_with_comma }})?;
-{% endif %}
-                Err(CodecError::CapacityExceeded)
-            }''',
+            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame{{ decode_forward_args_with_comma }})),''',
      r'''        match Self::store_into(cursor, _out{{ decode_forward_args_with_comma }}) {
-            Err(CodecError::CapacityExceeded) => {
-                let _ = &mut _frame;
-                Err(CodecError::CapacityExceeded)
-            }''')
+            Err(CodecError::CapacityExceeded) => Err(CodecError::CapacityExceeded),''')
 PY
 
 mutation_case "a frame past a capacity in a body with no list is not judged" <<'PY'
 edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
      r'''        match Self::stored(cursor{{ decode_forward_args_with_comma }}) {
-            Err(CodecError::CapacityExceeded) => {
-{% if emit_views and not view_is_alias %}
-                {{ struct_name }}View::decode(&mut _frame{{ decode_forward_args_with_comma }})?;
-{% else %}
-                {{ struct_name }}::stored(&mut _frame{{ decode_forward_args_with_comma }})?;
-{% endif %}
-                Err(CodecError::CapacityExceeded)
-            }''',
+            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame{{ decode_forward_args_with_comma }})),''',
      r'''        match Self::stored(cursor{{ decode_forward_args_with_comma }}) {
-            Err(CodecError::CapacityExceeded) => {
-                let _ = &mut _frame;
-                Err(CodecError::CapacityExceeded)
-            }''')
+            Err(CodecError::CapacityExceeded) => Err(CodecError::CapacityExceeded),''')
 PY
 
 mutation_case "a frame is judged by the form that stopped" <<'PY'
 edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
-     r'''{{ struct_name }}::stored(&mut _frame{{ decode_forward_args_with_comma }})?;''',
-     r'''Self::stored(&mut _frame{{ decode_forward_args_with_comma }})?;''')
+     r'''        match {{ struct_name }}::stored(&mut _frame{{ decode_forward_args_with_comma }}) {''',
+     r'''        match Self::stored(&mut _frame{{ decode_forward_args_with_comma }}) {''')
 PY
 
 mutation_case "a failed fill keeps what it pushed" <<'PY'

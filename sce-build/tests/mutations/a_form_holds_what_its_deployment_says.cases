@@ -36,16 +36,14 @@ PY
 
 mutation_case "a frame is called too big to hold before it is judged whole" <<'PY'
 edit("tools/codegen/templates/forge/rust/codec.rs.jinja2",
-     r'''                {{ struct_name }}View::decode(&mut _frame{{ decode_forward_args_with_comma }})?;
-{% else %}
-                {{ struct_name }}::store_into(&mut _frame, &mut {{ struct_name }}::default(){{ decode_forward_args_with_comma }})?;
+     r'''        match {{ struct_name }}::store_into(&mut _frame, &mut {{ struct_name }}::default(){{ decode_forward_args_with_comma }}) {
 {% endif %}
-                Err(CodecError::CapacityExceeded)''',
-     r'''                let _ = &mut _frame;
-{% else %}
-                {{ struct_name }}::store_into(&mut _frame, &mut {{ struct_name }}::default(){{ decode_forward_args_with_comma }})?;
+            Ok(_) => CodecError::CapacityExceeded,
+            Err(refused) => refused,''',
+     r'''        match {{ struct_name }}::store_into(&mut _frame, &mut {{ struct_name }}::default(){{ decode_forward_args_with_comma }}) {
 {% endif %}
-                Err(CodecError::CapacityExceeded)''')
+            Ok(_) => CodecError::CapacityExceeded,
+            Err(_) => CodecError::CapacityExceeded,''')
 PY
 
 mutation_case "a capacity past the bound is taken" <<'PY'
