@@ -64,13 +64,9 @@ const std::set<int> EXCLUDED_TESTS = {
 std::vector<int> discoverW3CTests() {
     std::vector<int> testIds;
 
-#ifdef __EMSCRIPTEN__
-    // WASM: Use NODEFS mounted path
-    std::string resourcesPath = "/project/resources";
-#else
-    // Native: Use SCE_PROJECT_ROOT macro
+    // The checkout CMake names; under WASM the host (w3c/wasm_polyfill.js)
+    // mounts it at the same path.
     std::string resourcesPath = std::string(SCE_PROJECT_ROOT) + "/resources";
-#endif
 
     if (!fs::exists(resourcesPath)) {
         return testIds;
@@ -148,13 +144,7 @@ std::vector<int> getTestsToRun() {
  * @brief Helper to get SCXML file path for a test
  */
 std::string getTestSCXMLPath(int testId) {
-#ifdef __EMSCRIPTEN__
-    // WASM: Use NODEFS mounted path (project root mounted at /project in wasm_polyfill.js)
-    std::string resourcesBase = "/project/resources/";
-#else
-    // Native: Use SCE_PROJECT_ROOT macro
     std::string resourcesBase = std::string(SCE_PROJECT_ROOT) + "/resources/";
-#endif
 
     // Try .scxml first, then .txml
     std::string scxmlPath = resourcesBase + std::to_string(testId) + "/test" + std::to_string(testId) + ".scxml";

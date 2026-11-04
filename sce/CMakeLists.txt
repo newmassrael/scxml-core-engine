@@ -697,7 +697,6 @@ if(EMSCRIPTEN)
         -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}  # Centrally managed in root CMakeLists.txt
         -sALLOW_MEMORY_GROWTH=0          # Disable runtime heap expansion (use fixed INITIAL_MEMORY)
         -sSTACK_SIZE=2097152             # 2MB stack (reduced to fit within 384MB heap)
-        -sDISABLE_EXCEPTION_CATCHING=0   # Enable C++ exception catching (required for tests)
     )
     message(STATUS "WASM build: pthread enabled for EventDispatcherImpl (no PROXY_TO_PTHREAD)")
 endif()

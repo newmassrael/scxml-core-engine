@@ -165,20 +165,14 @@ int main(int argc, char *argv[]) {
             executablePath = argv[0];
         }
 #else
-        // WASM: Use argv[0]
+        // WASM: no /proc/self/exe. The program's path is `argv[0]`: under Node,
+        // Emscripten passes the script Node runs, and the host
+        // (w3c/wasm_polyfill.js) mounts the host's directories at the paths
+        // they have there, so the search below reads the same tree.
         executablePath = argv[0];
 #endif
 
-        std::string resourcePath;
-#ifdef __EMSCRIPTEN__
-        // WASM: Use NODEFS mounted path
-        // Project root is mounted at /project in pre-js
-        resourcePath = "/project/resources";
-        SCE_LOG_INFO("WASM: Using resources path with NODEFS: {}", resourcePath);
-#else
-        resourcePath = findResourcesPath(executablePath);
-
-        // Validate resources path was found (Native only - WASM allows --resources override)
+        std::string resourcePath = findResourcesPath(executablePath);
         if (resourcePath.empty()) {
             SCE_LOG_ERROR("W3C CLI: Failed to locate resources directory");
             fprintf(stderr, "ERROR: Could not find W3C test resources directory.\n");
@@ -187,22 +181,15 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "       Or use --resources PATH to specify location manually.\n");
             return 1;
         }
-#endif
 
         std::filesystem::path projectRoot = std::filesystem::path(resourcePath).parent_path();
 
         // Artifacts (XML/HTML reports, failed-test logs) land in the directory
-        // the CLI was invoked from — standard CLI semantics. Captured before the
-        // later chdir to projectRoot (resource-relative machinery) so that chdir
-        // cannot relocate them into the source tree.
-#ifdef __EMSCRIPTEN__
-        // WASM: NODEFS mounts the host project at /project (pre-js), and there
-        // is no meaningful invocation directory — reports go to the mount so
-        // the host filesystem sees them.
-        std::filesystem::path artifactDir = "/project";
-#else
+        // the CLI was invoked from — standard CLI semantics, under WASM too,
+        // where the host puts the program in the directory it was started from.
+        // Captured before the later chdir to projectRoot (resource-relative
+        // machinery) so that chdir cannot relocate them into the source tree.
         std::filesystem::path artifactDir = std::filesystem::current_path();
-#endif
         std::string outputPath = (artifactDir / "w3c_test_results.xml").string();
 
         // Parse command line arguments

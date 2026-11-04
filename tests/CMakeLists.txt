@@ -143,7 +143,6 @@ function(apply_sce_test_policies target_name)
             -sASSERTIONS=2
             -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}  # Centrally managed in root CMakeLists.txt
             -sSTACK_SIZE=33554432
-            -sDISABLE_EXCEPTION_CATCHING=0  # Enable C++ exception catching for tests
             -g1                             # Line number info only (allows full optimization)
             --profiling-funcs
         )
@@ -249,7 +248,6 @@ if(EMSCRIPTEN)
         -sASSERTIONS=2
         -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}
         -sSTACK_SIZE=33554432
-        -sDISABLE_EXCEPTION_CATCHING=0
         -g1
         --profiling-funcs
     )
@@ -1964,7 +1962,6 @@ if(EMSCRIPTEN)
         -sASSERTIONS=2
         -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}
         -sSTACK_SIZE=33554432
-        -sDISABLE_EXCEPTION_CATCHING=0
         -g1
         --profiling-funcs
     )
@@ -2036,7 +2033,6 @@ if(EMSCRIPTEN)
         -sASSERTIONS=2
         -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}
         -sSTACK_SIZE=33554432
-        -sDISABLE_EXCEPTION_CATCHING=0
         -g1
         --profiling-funcs
     )
@@ -3078,9 +3074,17 @@ configure_file(
 
 # WASM: the same two facts for w3c/wasm_polyfill.js, which decides before
 # main() runs whether to start the BasicHTTP endpoint and so cannot ask the
-# compiled registry. Generated into this build tree from the registration
-# above and handed to every target that runs the polyfill as the `--pre-js`
-# before it; written only when it changed, so a reconfigure relinks nothing.
+# compiled registry, and where the checkout is. Generated into this build tree
+# from the registration above and handed to every target that runs the
+# polyfill as the `--pre-js` before it; written only when it changed, so a
+# reconfigure relinks nothing.
+#
+# The checkout is stated rather than guessed. The polyfill read it as the
+# working directory's grandparent, which held for one build directory name at
+# one depth, and it required its Node modules (the endpoint reader, the fixture
+# server) beside the linked program, where only the server was copied: the
+# endpoint reader was missing and the server never started. They are read
+# where they are kept, in w3c/.
 if(EMSCRIPTEN)
     set(W3C_REGISTRY_PRE_JS "${CMAKE_CURRENT_BINARY_DIR}/w3c/w3c_registry_pre.js")
     list(JOIN W3C_HTTP_TEST_IDS "', '" _W3C_HTTP_TEST_IDS_JS)
@@ -3089,6 +3093,9 @@ if(EMSCRIPTEN)
 // The fixtures the registry runs under its `http` harness, and the largest test number.
 var SCE_W3C_HTTP_TEST_IDS = ['${_W3C_HTTP_TEST_IDS_JS}'];
 var SCE_W3C_LARGEST_TEST_NUMBER = ${W3C_LARGEST_TEST_NUMBER};
+// The checkout, mounted for the fixtures, and the Node package of the harness.
+var SCE_W3C_SOURCE_ROOT = '${CMAKE_SOURCE_DIR}';
+var SCE_W3C_HARNESS_DIR = '${CMAKE_CURRENT_SOURCE_DIR}/w3c';
 ")
 endif()
 
@@ -3157,7 +3164,6 @@ if(EMSCRIPTEN)
         -sASSERTIONS=2
         -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}      # Centrally managed in root CMakeLists.txt
         -sSTACK_SIZE=33554432
-        -sDISABLE_EXCEPTION_CATCHING=0
         -g1                             # Line number info only
         --profiling-funcs
         # Each `--pre-js` is one `SHELL:` option with its file: CMake
@@ -3167,19 +3173,14 @@ if(EMSCRIPTEN)
         "SHELL:--pre-js ${W3C_REGISTRY_PRE_JS}"  # The registry's BasicHTTP fixtures, read by the polyfill
         "SHELL:--pre-js ${POLYFILL_PRE_JS}"      # Inject XMLHttpRequest polyfill and NODEFS for Node.js
         -lnodefs.js                     # Enable NODEFS for Node.js filesystem access
+        # The polyfill holds main() until the fixture server is ready, through
+        # library functions a pre-js has to name to the link.
+        "-sEXPORTED_RUNTIME_METHODS=[addRunDependency,removeRunDependency]"
         "-sEXPORTED_FUNCTIONS=['_main','_dom_getElementsByTagName_wrapper','_dom_getAttribute_wrapper']"  # Export main + DOM wrapper functions
     )
     # A pre-js is read at link time, which does not otherwise depend on it.
     set_property(TARGET w3c_test_cli APPEND PROPERTY
         LINK_DEPENDS "${W3C_REGISTRY_PRE_JS}" "${POLYFILL_PRE_JS}")
-
-    # W3C SCXML C.2: Copy standalone HTTP server to build directory (spawned by polyfill_pre.js)
-    add_custom_command(TARGET w3c_test_cli POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-            ${CMAKE_CURRENT_SOURCE_DIR}/w3c/standalone_http_server.js
-            ${CMAKE_CURRENT_BINARY_DIR}/standalone_http_server.js
-        COMMENT "Copying standalone HTTP server to build directory"
-    )
 endif()
 
 # Native: Explicitly link pthread
@@ -3292,13 +3293,13 @@ if(EMSCRIPTEN)
         -sASSERTIONS=2
         -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}
         -sSTACK_SIZE=33554432
-        -sDISABLE_EXCEPTION_CATCHING=0
         -g1
         --profiling-funcs
         # One `SHELL:` option per pre-js, as w3c_test_cli's above says why.
         "SHELL:--pre-js ${W3C_REGISTRY_PRE_JS}"  # The registry's BasicHTTP fixtures, read by the polyfill
         "SHELL:--pre-js ${POLYFILL_PRE_JS}"      # Inject XMLHttpRequest polyfill and NODEFS for Node.js
         -lnodefs.js                     # Enable NODEFS for Node.js filesystem access
+        "-sEXPORTED_RUNTIME_METHODS=[addRunDependency,removeRunDependency]"
     )
     set_property(TARGET comprehensive_interactive_test APPEND PROPERTY
         LINK_DEPENDS "${W3C_REGISTRY_PRE_JS}" "${POLYFILL_PRE_JS}")
@@ -8540,9 +8541,6 @@ if(EMSCRIPTEN)
 
         # Environment (browser and Node.js)
         -sENVIRONMENT=web,node
-
-        # Exception handling
-        -sDISABLE_EXCEPTION_CATCHING=0
 
         # Assertions for debugging
         -sASSERTIONS=1

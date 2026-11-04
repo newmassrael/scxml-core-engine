@@ -49,6 +49,9 @@ public:
      * - relativePath: "w3c_static_generated"
      * - Returns: "/home/user/project/build/tests/w3c_static_generated"
      *
+     * Under WASM the executable is the program's path as its host declared it
+     * (Emscripten's `thisProgram`, argv[0]): under Node, the script Node runs.
+     *
      * ARCHITECTURE.md: Execution location independence for AOT tests
      */
     static std::string resolveExecutableBasePath(const std::string &relativePath);

@@ -9,6 +9,21 @@
 #include <algorithm>
 #include <filesystem>
 
+#ifdef __EMSCRIPTEN__
+#include <cstdlib>
+#include <emscripten.h>
+
+// WASM: the program's path as its host declared it, which Emscripten keeps as
+// `thisProgram` and hands to main() as argv[0]. Under Node it is the script
+// Node runs; in a browser, where no file is the program, `./this.program`.
+EM_JS_DEPS(sce_this_program_deps, "$stringToNewUTF8");
+// clang-format off
+EM_JS(char *, sce_this_program, (), {
+    return stringToNewUTF8(thisProgram);
+});
+// clang-format on
+#endif
+
 std::string SCE::DataModelInitHelper::resolveExecutableBasePath(const std::string &relativePath) {
     // ARCHITECTURE.md: Execution location independence for AOT tests
     // Convert relative basePath to absolute based on executable location
@@ -17,10 +32,14 @@ std::string SCE::DataModelInitHelper::resolveExecutableBasePath(const std::strin
 
     try {
 #ifdef __EMSCRIPTEN__
-        // WASM: /proc/self/exe points to Node.js binary, not WASM executable
-        // W3CTestCLI sets working directory to project root, so resolve from cwd
-        fs::path cwd = fs::current_path();
-        fs::path absolutePath = (cwd / "build/tests" / relativePath).lexically_normal();
+        // WASM: /proc/self/exe names the Node binary, not this program. The
+        // program's own path is the one its host declared; resolved against
+        // its directory, as natively, a host that mounts its directories at
+        // their own paths (tests/w3c/wasm_polyfill.js) reads the same file.
+        char *program = sce_this_program();
+        const fs::path programPath(program);
+        std::free(program);
+        fs::path absolutePath = (programPath.parent_path() / relativePath).lexically_normal();
 
         std::string result = absolutePath.string();
         SCE_LOG_DEBUG("DataModelInitHelper::resolveExecutableBasePath (WASM): '{}' -> '{}'", relativePath, result);

@@ -250,6 +250,17 @@ if(EMSCRIPTEN)
     # Central WASM memory configuration shared by sce/ and tests/
     set(WASM_INITIAL_MEMORY 4160749568 CACHE STRING "WASM initial heap size in bytes (4GB - 128MB)")
     message(STATUS "WASM: INITIAL_MEMORY=${WASM_INITIAL_MEMORY} (${WASM_INITIAL_MEMORY} bytes = 3.875 GB)")
+
+    # C++ exceptions are caught under Emscripten only where the code that
+    # catches was COMPILED with catching on: the default compiles every `catch`
+    # away and a throw aborts the program. The engine reports a failed
+    # expression by throwing and catches it where the specification raises
+    # error.execution, so catching is one setting of the whole build, for
+    # every C++ object and every link. It was a link option of each test
+    # program before, which left the engine's own catches compiled away and
+    # turned the first such error into an abort of the W3C run.
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-sDISABLE_EXCEPTION_CATCHING=0>)
+    add_link_options(-sDISABLE_EXCEPTION_CATCHING=0)
 endif()
 
 # Include GNUInstallDirs for installation paths

@@ -1,162 +1,159 @@
-// XMLHttpRequest polyfill for Node.js environment
-if (typeof module !== 'undefined' && typeof require !== 'undefined') {
-    try {
-        global.XMLHttpRequest = require('xmlhttprequest').XMLHttpRequest;
-        console.log('[INFO] XMLHttpRequest polyfill loaded for Node.js');
-    } catch (e) {
-        console.warn('[WARN] xmlhttprequest polyfill not found. Install: npm install xmlhttprequest');
-    }
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
+/**
+ * @file wasm_polyfill.js
+ * @brief The Node host of the WASM W3C runner, linked as a `--pre-js`.
+ *
+ * It gives the program what a Node host has to: the checkout mounted for the
+ * fixtures, and the BasicHTTP fixture server a run of `http` fixtures posts to
+ * (§scxml-C-2). The engine's own HTTP client needs nothing from here: under
+ * Node it posts through Node's `http` module (EmscriptenFetchClient), and only
+ * the browser's path goes through Emscripten's fetch and its XMLHttpRequest.
+ *
+ * It reads from w3c_registry_pre.js, the `--pre-js` linked before it, which
+ * tests/CMakeLists.txt generates: the fixtures the registry runs under its
+ * `http` harness, the largest test number, the checkout, and the directory of
+ * the harness's Node modules (this one).
+ *
+ * It runs on the main thread only. A pthread's worker loads this same program
+ * and runs every `--pre-js` again; a host set up there would mount the
+ * checkout and start a server once per worker.
+ *
+ * `main()` does not start before the fixture server is ready: the server is a
+ * run dependency of the program, so the runner never races its listener.
+ */
+
+// `ENVIRONMENT_IS_PTHREAD` is declared only in a program linked with pthreads.
+const SCE_W3C_ON_A_PTHREAD = typeof ENVIRONMENT_IS_PTHREAD !== 'undefined' && ENVIRONMENT_IS_PTHREAD;
+
+if (ENVIRONMENT_IS_NODE && !SCE_W3C_ON_A_PTHREAD) {
     const { spawn } = require('child_process');
     const path = require('path');
+    // The harness's own modules are resolved from where they are kept, not
+    // from beside the linked program.
+    const harnessRequire = require('module').createRequire(path.join(SCE_W3C_HARNESS_DIR, 'wasm_polyfill.js'));
 
-    // W3C SCXML C.2: the fixtures that need the external HTTP server are the
-    // ones the conformance registry runs under its `http` harness, and an open
-    // range ends at the registry's largest test number. Both are generated from
-    // the registry by tests/CMakeLists.txt into w3c_registry_pre.js, the
-    // --pre-js linked before this one, and are not kept here.
+    // §scxml-C-2: the fixtures that need the server are the ones the registry
+    // runs under its `http` harness; an open range ends at its largest number.
     const HTTP_TEST_IDS = new Set(SCE_W3C_HTTP_TEST_IDS);
-
-    // Detect if HTTP tests will be executed
-    const args = process.argv.slice(2);
-    const testArgs = args.filter(arg => !arg.startsWith('--'));  // Filter out flags (--interpreter-only, etc.)
-    const needsHttpServer = testArgs.length === 0 || // Run all tests (no test numbers specified)
+    const testArgs = process.argv.slice(2).filter(arg => !arg.startsWith('--'));
+    const needsHttpServer = testArgs.length === 0 ||
         testArgs.some(arg => {
-            // Exact match
             if (HTTP_TEST_IDS.has(arg)) return true;
-
             // Range format: "500~600", "~600", or "500~"
             if (arg.includes('~')) {
                 const parts = arg.split('~');
-                const start = parseInt(parts[0]) || 1;    // Empty string → 1 (start from test 1)
-                const end = parseInt(parts[1]) || SCE_W3C_LARGEST_TEST_NUMBER;  // Empty string → the last test
+                const start = parseInt(parts[0]) || 1;
+                const end = parseInt(parts[1]) || SCE_W3C_LARGEST_TEST_NUMBER;
                 return Array.from(HTTP_TEST_IDS).some(id => {
                     const num = parseInt(id);
                     return num >= start && num <= end;
                 });
             }
-
             return false;
         });
 
     let httpServerProcess = null;
-    let httpServerReady = false;
 
-    // Module initialization: Ensure Module and preRun are defined
-    if (!Module) var Module = {};
-    if (!Module.preRun) Module.preRun = [];
-
-    // NODEFS mounting: Execute in preRun (after FS initialization, before main())
-    Module.preRun.push(function() {
-        try {
-            // Mount project root to WASM /project
-            // process.cwd() is build_wasm/tests, so ../.. is project root
-            const projectRoot = path.resolve(process.cwd(), "../..");
-            FS.mkdir("/project");
-            FS.mount(NODEFS, { root: projectRoot }, "/project");
-            console.log("[INFO] NODEFS mounted project root at /project:", projectRoot);
-        } catch (e) {
-            console.error("[ERROR] Failed to mount NODEFS:", e.message);
-        }
-    });
-
-    // HTTP server management: Start asynchronously (independent of FS)
-    (async function() {
-        // Start external HTTP server if needed
-        if (needsHttpServer) {
-            console.log("[INFO] HTTP tests detected - starting external HTTP server...");
-
-            try {
-                await startHttpServer();
-                process.env.USE_EXTERNAL_HTTP_SERVER = '1';
-                console.log("[INFO] External HTTP server ready - w3c_test_cli will use it");
-            } catch (err) {
-                console.error("[ERROR] Failed to start HTTP server:", err.message);
-                console.error("[ERROR] HTTP tests will fail without server");
-                // Continue anyway - tests will fail gracefully
-            }
-        }
-    })();  // Immediately invoke async function
-
-    // Force clean exit after main() completes (EXIT_RUNTIME=0 keeps event loop alive)
-    Module['onExit'] = function(status) {
-        // Kill HTTP server when runtime exits
-        if (httpServerProcess && !httpServerProcess.killed) {
-            httpServerProcess.kill('SIGKILL');
-        }
-        // Force process exit
-        process.exit(status || 0);
-    };
-
-    // Start HTTP server and wait for ready signal
-    async function startHttpServer() {
-        const serverScript = path.resolve(__dirname, 'standalone_http_server.js');
-        // W3C SCXML C.2.3: the endpoint the harness owns, not a number spelled
-        // here. The WASM run's listener has to answer where the generated
-        // machines publish, and `http_endpoint.js` reads that from the same
-        // header the native runners include.
-        const endpoint = require('./http_endpoint');
+    // Start the fixture server and resolve when it reports `[READY]`.
+    function startHttpServer() {
+        const serverScript = path.join(SCE_W3C_HARNESS_DIR, 'standalone_http_server.js');
+        // §scxml-C-2-3: the endpoint the harness owns, read from the header
+        // the native runners include, not a number spelled here.
+        const endpoint = harnessRequire('./http_endpoint');
         const serverPort = endpoint.endpointPort();
         const serverPath = endpoint.endpointPath();
 
-        httpServerProcess = spawn('node', [serverScript, serverPort.toString(), serverPath], {
+        httpServerProcess = spawn(process.execPath, [serverScript, serverPort.toString(), serverPath], {
             stdio: ['ignore', 'pipe', 'pipe'],
-            detached: false  // Keep attached for proper cleanup
+            detached: false
         });
-
-        // Do NOT unref() - we need to wait for server to be ready
-        // httpServerProcess.unref();  // Removed: causes race condition with server startup
 
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
-                if (httpServerProcess) {
-                    httpServerProcess.kill();
-                }
-                reject(new Error(`HTTP server startup timeout (10000ms)`));
-            }, 10000);  // Increase timeout to 10 seconds for WASM environment
+                httpServerProcess.kill();
+                reject(new Error('the fixture server did not report ready within 10000ms'));
+            }, 10000);
 
             httpServerProcess.stdout.on('data', (data) => {
                 const output = data.toString();
                 process.stdout.write(output);
-
                 if (output.includes('[READY]')) {
                     clearTimeout(timeout);
                     resolve();
                 }
             });
-
             httpServerProcess.stderr.on('data', (data) => {
                 process.stderr.write(`[Server Error] ${data.toString()}`);
             });
-
             httpServerProcess.on('error', (err) => {
                 clearTimeout(timeout);
-                reject(new Error(`Failed to spawn HTTP server: ${err.message}`));
+                reject(new Error(`could not spawn the fixture server: ${err.message}`));
             });
-
             httpServerProcess.on('exit', (code, signal) => {
                 clearTimeout(timeout);
                 if (code !== null && code !== 0) {
-                    reject(new Error(`HTTP server exited prematurely (code: ${code}, signal: ${signal})`));
+                    reject(new Error(`the fixture server exited (code: ${code}, signal: ${signal})`));
                 }
             });
         });
     }
 
-    // Cleanup handler - stop HTTP server on process exit
-    function stopHttpServer() {
-        if (httpServerProcess && !httpServerProcess.killed) {
-            console.log('[INFO] Stopping HTTP server...');
-            httpServerProcess.kill('SIGTERM');
-            // Immediate force kill as fallback (no setTimeout to avoid event loop hang)
-            httpServerProcess.kill('SIGKILL');
+    // The host's directories the program reads and writes, mounted at the
+    // paths they have on the host, so a path means the same file to the
+    // program as to everything around it: the checkout (the fixtures, and the
+    // program's own `SCE_PROJECT_ROOT`), the directory of the program, which
+    // Node names as its first argument and Emscripten hands to `main()` as
+    // `argv[0]` (the generated machines' `src` documents sit beside it, as
+    // they sit beside a native executable), and the directory it was started
+    // from, which it is put in, as a native program is. A directory under one
+    // already mounted is visible through that mount.
+    function mountHostDirectories() {
+        const wanted = [SCE_W3C_SOURCE_ROOT, path.dirname(process.argv[1]), process.cwd()]
+            .map(dir => path.resolve(dir))
+            .sort((a, b) => a.length - b.length);
+        const mounted = [];
+        for (const dir of wanted) {
+            if (mounted.some(root => dir === root || dir.startsWith(root + path.sep))) {
+                continue;
+            }
+            FS.mkdirTree(dir);
+            FS.mount(NODEFS, { root: dir }, dir);
+            mounted.push(dir);
         }
+        FS.chdir(process.cwd());
     }
 
-    // Register cleanup handlers
+    Module.preRun = Module.preRun || [];
+    Module.preRun.push(function() {
+        mountHostDirectories();
+
+        if (needsHttpServer) {
+            addRunDependency('w3c-fixture-server');
+            startHttpServer().then(() => {
+                process.env.USE_EXTERNAL_HTTP_SERVER = '1';
+                removeRunDependency('w3c-fixture-server');
+            }, (err) => {
+                // A run of `http` fixtures without their server is not a
+                // conformance run: stop before main() rather than report each
+                // fixture as failed.
+                console.error(`[ERROR] ${err.message}`);
+                process.exit(1);
+            });
+        }
+    });
+
+    // The runtime stays alive after main() returns (EXIT_RUNTIME=0, for
+    // asynchronous HTTP callbacks), so the exit is taken here, with the server.
+    Module['onExit'] = function(status) {
+        if (httpServerProcess && !httpServerProcess.killed) {
+            httpServerProcess.kill('SIGKILL');
+        }
+        process.exit(status || 0);
+    };
     process.on('exit', () => {
         if (httpServerProcess && !httpServerProcess.killed) {
-            // Synchronous cleanup only (no async operations in exit handler)
             httpServerProcess.kill('SIGKILL');
         }
     });
