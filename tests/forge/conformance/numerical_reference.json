@@ -41507,6 +41507,48 @@
         {"source": {"header": 29, "body": {"arm": "codec_zenoh_push_body", "body": {"header": 1, "body": {"arm": "codec_zenoh_put", "body": {"payload": 7}}}}}, "encoded": [29, 1, 7], "note": "mid 0x1d, derived from the arm; a put"},
         {"source": {"header": 62, "body": {"tag": 30, "body": {"header": 2, "body": {"arm": "codec_zenoh_del", "body": {}}}}}, "encoded": [62, 2], "note": "a mid no arm names: the default arm keeps it"}
       ]
+    },
+    "codec_zenoh_decl_kexpr": {
+      "fixture": "CodecZenohDeclKexpr",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. the body hands its own input N to the key expression it embeds, which says it.",
+      "sources": [
+        {"source": {"id": 3, "wireexpr": {"id": 7, "suffix": null}}, "inputs": {"N": 0}, "encoded": [3, 7], "note": "N clear, handed on: the key expression is its id alone"},
+        {"source": {"id": 128, "wireexpr": {"id": 1, "suffix": "a/b"}}, "inputs": {"N": 1}, "encoded": [128, 1, 1, 3, 97, 47, 98], "note": "N set, handed on: the suffix follows the id"}
+      ]
+    },
+    "codec_zenoh_decl_subscriber": {
+      "fixture": "CodecZenohDeclSubscriber",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. the body hands its own input N to the key expression it embeds.",
+      "sources": [
+        {"source": {"id": 0, "wireexpr": {"id": 0, "suffix": null}}, "inputs": {"N": 0}, "encoded": [0, 0], "note": "N clear: an id and a bare key expression"},
+        {"source": {"id": 16384, "wireexpr": {"id": 2, "suffix": "x"}}, "inputs": {"N": 1}, "encoded": [128, 128, 1, 2, 1, 120], "note": "N set: a three-byte id, the key expression with its suffix"}
+      ]
+    },
+    "codec_zenoh_decl_token": {
+      "fixture": "CodecZenohDeclToken",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. the body hands its own input N to the key expression it embeds.",
+      "sources": [
+        {"source": {"id": 9, "wireexpr": {"id": 4, "suffix": null}}, "inputs": {"N": 0}, "encoded": [9, 4], "note": "N clear"},
+        {"source": {"id": 9, "wireexpr": {"id": 4, "suffix": ""}}, "inputs": {"N": 1}, "encoded": [9, 4, 0], "note": "N set: an empty suffix is still present"}
+      ]
+    },
+    "codec_zenoh_decl_queryable": {
+      "fixture": "CodecZenohDeclQueryable",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. N is handed on to the key expression; Z, the body's own input, gates the extension.",
+      "sources": [
+        {"source": {"id": 1, "wireexpr": {"id": 5, "suffix": null}, "Z": null}, "inputs": {"N": 0, "Z": 0}, "encoded": [1, 5], "note": "N and Z clear: no suffix, no extension"},
+        {"source": {"id": 1, "wireexpr": {"id": 5, "suffix": "q"}, "Z": {"arm": 0, "ext_type": 33, "ext_value": 769}}, "inputs": {"N": 1, "Z": 1}, "encoded": [1, 5, 1, 113, 33, 129, 6], "note": "N and Z set: the suffix, then the extension"},
+        {"source": {"id": 2, "wireexpr": {"id": 6, "suffix": null}, "Z": {"arm": 0, "ext_type": 33, "ext_value": 1}}, "inputs": {"N": 0, "Z": 1}, "encoded": [2, 6, 33, 1], "note": "Z set alone: the extension without a suffix"}
+      ]
+    },
+    "codec_zenoh_interest_body": {
+      "fixture": "CodecZenohInterestBody",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. the flags byte's N is the key expression's input: derived from the key expression where the body holds one, the value's own where it does not.",
+      "sources": [
+        {"source": {"header": 1, "keyexpr": null}, "encoded": [1], "note": "not restricted: the flags byte alone, N its own"},
+        {"source": {"header": 63, "keyexpr": {"id": 3, "suffix": "k/*"}}, "encoded": [63, 3, 3, 107, 47, 42], "note": "restricted, the key expression says N: bit 5 is what it says"},
+        {"source": {"header": 18, "keyexpr": {"id": 8, "suffix": null}}, "encoded": [18, 8], "note": "restricted, the key expression says N clear: bit 5 stays clear"}
+      ]
     }
   },
   "string_lookups": {

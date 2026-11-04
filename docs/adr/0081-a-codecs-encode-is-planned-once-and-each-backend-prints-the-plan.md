@@ -240,6 +240,14 @@ as nothing of the wire. Sixteen codecs gain 32 cases, the Zenoh put, del, err, r
 hello and push among them, each frame with every element it derives written by the model. Two lists of one count (R5)
 are refused by name.
 
+*Landed (step 3, eighth part, 2026-11-04): flag binds.* The model reads an import's `<sce:flag-bind>`: the parent hands
+the held codec each input it binds, its own input passed on or a flag of a carrier before the body. A flag of a carrier
+so bound is derived (docs/adr/0065 §6 R4a): where the body is held and says the input, the flag is what it says; where
+the body is absent or says nothing, the flag is the value's own. A case states the carrier as the frame writes it, so
+the case and its decode agree. Five codecs gain 12 cases: the Zenoh key-expression, subscriber, token and queryable
+declarations, each handing its `N` to the key expression it embeds, and the interest body, whose flags byte's `N` the
+embedded key expression says. A held codec whose inputs a list's entries or an arm's codec take stays refused by name.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.

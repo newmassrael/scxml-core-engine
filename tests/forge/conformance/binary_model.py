@@ -253,6 +253,10 @@ class Field:
     #: "entry-flag"`): the entry's carrier and the flag, set on every entry
     #: but the last, which the chain derives (docs/adr/0058 §1).
     end_flag: tuple[str, str] | None = None
+    #: Of an embedded body: what the parent hands each flag input of the body's
+    #: codec (`<sce:flag-bind input source>` on its import), a flag input of
+    #: the parent or a flag of its carrier (`carrier.flag`).
+    binds: dict[str, str] = field(default_factory=dict)
 
     def shares_a_byte(self) -> bool:
         return self.size == "fixed" and (self.bit_offset is not None or self.bits < 8)
@@ -449,18 +453,32 @@ def read_gate(stem: str, node, inputs: list[str]) -> Gate | None:
 
 
 def read_held(
-    stem: str, node, kind: str, imports: dict[str, Codec], inputs: list[str]
+    stem: str,
+    node,
+    kind: str,
+    imports: dict[str, Codec],
+    inputs: list[str],
+    binds: dict[str, dict[str, str]],
 ) -> Field:
     """An embedded body, a `<sce:repeat>` or a `<sce:tlv-chain>`: a field
-    holding the codec imported as its `type`."""
+    holding the codec imported as its `type`, and for a body, what the parent
+    hands each flag input of it."""
     id = node.get("id")
     if len(node):
         raise Unread(f"{stem}: `{id}` has children, which are not read yet")
-    child = imports.get(node.get("type"))
+    alias = node.get("type")
+    child = imports.get(alias)
     if child is None:
-        raise Unread(f"{stem}: `{id}` holds `{node.get('type')}`, which is not imported")
-    if child.inputs:
-        raise Unread(f"{stem}: `{id}` holds a codec that takes flag inputs, a binding not read yet")
+        raise Unread(f"{stem}: `{id}` holds `{alias}`, which is not imported")
+    bound = binds.get(alias, {})
+    if child.inputs and kind != "embed":
+        raise Unread(f"{stem}: the entries of `{id}` take flag inputs, a law not read yet")
+    if sorted(bound) != sorted(child.inputs):
+        raise Unread(f"{stem}: `{id}` binds {sorted(bound)}, not every input of `{alias}`")
+    for source in bound.values():
+        carrier, _, flag = source.partition(".")
+        if not flag and source not in inputs:
+            raise Unread(f"{stem}: `{id}` binds `{source}`, no flag input of the codec")
     if kind == "embed":
         size, measured_by, most = "body", node.get(f"{SCE}length-from"), None
     elif kind == "repeat":
@@ -495,6 +513,7 @@ def read_held(
         most=most,
         child=child,
         end_flag=end_flag,
+        binds=dict(bound),
     )
 
 
@@ -547,6 +566,8 @@ def read_document(path: Path) -> Codec:
     if root.get(f"{SCE}kind") != "codec":
         raise Unread(f"{stem}: not a codec")
     imports: dict[str, Codec] = {}
+    #: For each import, what the parent hands each flag input of it.
+    binds: dict[str, dict[str, str]] = {}
     inputs: list[str] = []
     for child in root:
         if child.tag == f"{SCE}flag-inputs":
@@ -557,16 +578,17 @@ def read_document(path: Path) -> Codec:
                     raise Unread(f"{stem}: the flag input `{item.get('name')}` is wider than a bit")
                 inputs.append(item.get("name"))
         elif child.tag == f"{SCE}import":
-            if (
-                child.get("kind") != "codec"
-                or set(child.attrib) - {"src", "kind", "as"}
-                or len(child)
-            ):
+            if child.get("kind") != "codec" or set(child.attrib) - {"src", "kind", "as"}:
                 raise Unread(f"{stem}: an import other than of a codec by its file")
             src = child.get("src")
             if src.startswith("sce:"):
                 raise Unread(f"{stem}: the standard document {src} is not read yet")
-            imports[child.get("as")] = read_document(path.parent / src)
+            alias = child.get("as")
+            imports[alias] = read_document(path.parent / src)
+            for bind in child:
+                if bind.tag != f"{SCE}flag-bind" or set(bind.attrib) != {"input", "source"}:
+                    raise Unread(f"{stem}: the import of `{alias}` holds <{bind.tag}>")
+                binds.setdefault(alias, {})[bind.get("input")] = bind.get("source")
         elif child.tag != f"{SCXML}datamodel" and child.tag not in SILENT_CHILDREN:
             raise Unread(f"{stem}: <{child.tag}> is not read yet")
     datamodel = root.find(f"{SCXML}datamodel")
@@ -586,7 +608,7 @@ def read_document(path: Path) -> Codec:
             fields.append(read_variant(stem, node, imports))
             continue
         if kind != "field":
-            fields.append(read_held(stem, node, kind, imports, inputs))
+            fields.append(read_held(stem, node, kind, imports, inputs, binds))
             continue
         sce_type = node.get(f"{SCE}type")
         size_text = node.get(f"{SCE}bit-size")
@@ -685,22 +707,86 @@ def content(f: Field, value) -> bytes:
     return bytes(value)
 
 
+def said_input(codec: Codec, source: dict, name: str) -> int | None:
+    """The value `source` says of the flag input `name` of `codec`, or `None`
+    where it says none (`SCE_FORGE.md` §4.6, docs/adr/0065 §6 R4a): a field it
+    presents gated on the input alone, present exactly where the gate holds;
+    the arm of a group the input decides; or a body, always there, the input is
+    handed on to and whose codec says it."""
+    grouped = {m.id for g in codec.groups() for m in g.members()}
+    for group in codec.groups():
+        if [c.label() for c in group.clauses] == [name] and group.clauses[0].is_input():
+            held_arm = source[group.label]
+            if held_arm is None:
+                (side,), _ = group.arms[0]
+                return int(not side)
+            return int(group.arms[held_arm["arm"]][0][0])
+    for f in codec.fields:
+        clause = f.gate.one() if f.gate is not None else None
+        if (clause is not None and clause.is_input() and clause.flag == name
+                and codec.presented(f) and f.id not in grouped):
+            return int((source[f.id] is not None) != clause.when_clear)
+    for f in codec.fields:
+        if f.size == "body" and f.gate is None:
+            for child_input, bound in f.binds.items():
+                if bound == name:
+                    said = said_input(f.child, source[f.id], child_input)
+                    if said is not None:
+                        return said
+    return None
+
+
+def handed_to(
+    codec: Codec, f: Field, value: dict, source: dict, inputs: dict[str, int]
+) -> dict[str, int]:
+    """What the parent `codec` hands each flag input of the body `f` holding
+    `value`: the parent's own input, or the flag of its carrier, which the body
+    says where it says the input and the value presents where it does not."""
+    out = {}
+    for child_input, bound in f.binds.items():
+        carrier, _, flag = bound.partition(".")
+        if not flag:
+            out[child_input] = inputs[bound]
+            continue
+        said = said_input(f.child, value, child_input)
+        if said is None:
+            said = (source[carrier] >> codec.flag(carrier, flag).bit) & 1
+        out[child_input] = said
+    return out
+
+
+def bound_flags(codec: Codec, source: dict) -> dict[tuple[str, str], int]:
+    """Each flag of a carrier bound to an input of a body the value holds and
+    says: the encoder derives it from what the body says (R4a)."""
+    out = {}
+    for f in codec.fields:
+        if f.size != "body" or source.get(f.id) is None:
+            continue
+        for child_input, bound in f.binds.items():
+            carrier, _, flag = bound.partition(".")
+            if flag:
+                said = said_input(f.child, source[f.id], child_input)
+                if said is not None:
+                    out[(carrier, flag)] = said
+    return out
+
+
 def holds_bytes(f: Field) -> bool:
     """Whether `f` writes what it holds rather than a number: bytes, text, a
     body or a list."""
     return f.sce_type in SEQUENCE or f.child is not None
 
 
-def held(f: Field, value) -> bytes | list[bytes]:
+def held(f: Field, value, handed: dict[str, int] | None = None) -> bytes | list[bytes]:
     """What a present element that holds bytes writes: the bytes of a sequence,
-    the frame of a body, the frame of each entry of a list, each within its
-    bound."""
+    the frame of a body, handed the flag inputs `handed`, the frame of each
+    entry of a list, each within its bound."""
     if f.sce_type in SEQUENCE:
         data = content(f, value)
     elif f.size == "body":
         if not isinstance(value, dict):
             raise ValueError(f"`{f.id}` is a body, a JSON object")
-        return encode(f.child, value)
+        return encode(f.child, value, handed)
     else:
         if not isinstance(value, list):
             raise ValueError(f"`{f.id}` is a list, a JSON array")
@@ -818,10 +904,15 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
             for clause, value in zip(group.clauses, values):
                 forced[(clause.carrier, clause.flag)] = value
     contents = {
-        f.id: held(f, source[f.id])
+        f.id: held(
+            f,
+            source[f.id],
+            handed_to(codec, f, source[f.id], source, inputs) if f.binds else None,
+        )
         for f in codec.fields
         if holds_bytes(f) and source[f.id] is not None
     }
+    bound = bound_flags(codec, source)
     variant = codec.variant()
     tag = None
     # A tag in a flag of a carrier is that flag, derived from the arm.
@@ -843,6 +934,8 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
                 value = (value & ~mask) | (tag << flag.bit)
             elif (f.id, flag.name) in forced:
                 value = (value & ~mask) | (mask if forced[(f.id, flag.name)] else 0)
+            elif (f.id, flag.name) in bound:
+                value = (value & ~mask) | (mask if bound[(f.id, flag.name)] else 0)
             elif gated is not None:
                 sets = {(source[g.id] is not None) != g.gate.when_clear for g in gated}
                 if len(sets) > 1:
@@ -956,12 +1049,21 @@ def decode_at(
             raw[f.id] = data.decode("utf-8") if f.sce_type == "string" else list(data)
             continue
         if f.size == "body":
+            # Each input of the body as the parent binds it: its own input, or
+            # a flag of a carrier read before the body.
+            handed = {}
+            for child_input, bound_to in f.binds.items():
+                carrier, _, flag = bound_to.partition(".")
+                handed[child_input] = (
+                    inputs[bound_to] if not flag
+                    else (carriers[carrier] >> codec.flag(carrier, flag).bit) & 1
+                )
             if f.measured_by is None:
-                raw[f.id], at = decode_at(f.child, frame, at, end, {})
+                raw[f.id], at = decode_at(f.child, frame, at, end, handed)
             else:
                 n = measure_on_wire(codec, f.measured_by, raw, carriers)
                 within(n, f.id)
-                raw[f.id], stop = decode_at(f.child, frame, at, at + n, {})
+                raw[f.id], stop = decode_at(f.child, frame, at, at + n, handed)
                 if stop != at + n:
                     raise ValueError(f"{codec.name}: `{f.id}` ends before the bytes it is given")
                 at += n
@@ -1340,6 +1442,57 @@ FIXTURES = {
             ({"id": 1, "suffix": ""}, "an empty suffix is present", {"N": 1}),
         ],
         "the parent hands N, which the value says: a suffix is there exactly where N is set.",
+    ),
+    "codec_zenoh_decl_kexpr": Fixture(
+        [
+            ({"id": 3, "wireexpr": {"id": 7, "suffix": None}},
+             "N clear, handed on: the key expression is its id alone", {"N": 0}),
+            ({"id": 0x80, "wireexpr": {"id": 1, "suffix": "a/b"}},
+             "N set, handed on: the suffix follows the id", {"N": 1}),
+        ],
+        "the body hands its own input N to the key expression it embeds, which says it.",
+    ),
+    "codec_zenoh_decl_subscriber": Fixture(
+        [
+            ({"id": 0, "wireexpr": {"id": 0, "suffix": None}},
+             "N clear: an id and a bare key expression", {"N": 0}),
+            ({"id": 0x4000, "wireexpr": {"id": 2, "suffix": "x"}},
+             "N set: a three-byte id, the key expression with its suffix", {"N": 1}),
+        ],
+        "the body hands its own input N to the key expression it embeds.",
+    ),
+    "codec_zenoh_decl_token": Fixture(
+        [
+            ({"id": 9, "wireexpr": {"id": 4, "suffix": None}}, "N clear", {"N": 0}),
+            ({"id": 9, "wireexpr": {"id": 4, "suffix": ""}},
+             "N set: an empty suffix is still present", {"N": 1}),
+        ],
+        "the body hands its own input N to the key expression it embeds.",
+    ),
+    "codec_zenoh_decl_queryable": Fixture(
+        [
+            ({"id": 1, "wireexpr": {"id": 5, "suffix": None}, "Z": None},
+             "N and Z clear: no suffix, no extension", {"N": 0, "Z": 0}),
+            ({"id": 1, "wireexpr": {"id": 5, "suffix": "q"},
+              "Z": {"arm": 0, "ext_type": 0x21, "ext_value": 0x0301}},
+             "N and Z set: the suffix, then the extension", {"N": 1, "Z": 1}),
+            ({"id": 2, "wireexpr": {"id": 6, "suffix": None},
+              "Z": {"arm": 0, "ext_type": 0x21, "ext_value": 1}},
+             "Z set alone: the extension without a suffix", {"N": 0, "Z": 1}),
+        ],
+        "N is handed on to the key expression; Z, the body's own input, gates the extension.",
+    ),
+    "codec_zenoh_interest_body": Fixture(
+        [
+            ({"header": 0x01, "keyexpr": None},
+             "not restricted: the flags byte alone, N its own"),
+            ({"header": 0x3F, "keyexpr": {"id": 3, "suffix": "k/*"}},
+             "restricted, the key expression says N: bit 5 is what it says"),
+            ({"header": 0x12, "keyexpr": {"id": 8, "suffix": None}},
+             "restricted, the key expression says N clear: bit 5 stays clear"),
+        ],
+        "the flags byte's N is the key expression's input: derived from the key expression "
+        "where the body holds one, the value's own where it does not.",
     ),
     "codec_init_cookie_body": Fixture(
         [
