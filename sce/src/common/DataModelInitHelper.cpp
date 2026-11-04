@@ -137,8 +137,8 @@ bool SCE::DataModelInitHelper::initializeVariable(IScriptEngine &jsEngine, const
     return true;
 }
 
-SCE::ScriptValue SCE::DataModelInitHelper::inlineContentValue(IScriptEngine &jsEngine, const std::string &sessionId,
-                                                              const ScriptSource &content) {
+ScriptValue SCE::DataModelInitHelper::inlineContentValue(IScriptEngine &jsEngine, const std::string &sessionId,
+                                                         const ScriptSource &content) {
     // Try evaluating the children as an expression first. The LOWERED half
     // goes to the engine; under the ECMAScript target the two halves are the
     // same string, so this is the author's text.
