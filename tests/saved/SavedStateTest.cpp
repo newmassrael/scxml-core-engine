@@ -17,9 +17,12 @@
 #include <fstream>
 #include <gtest/gtest.h>
 #include <map>
+#include <optional>
 #include <regex>
 #include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -443,4 +446,132 @@ TEST(SavedState, ARefusalInsideAChildNamesTheSessionItIsAbout) {
     EXPECT_EQ(std::string(inner.what()), "the session at invokes[1].session: 'x' is not a text");
     const StateRefusal outer = refusalWithin(inner, "invokes[0].session");
     EXPECT_EQ(std::string(outer.what()), "the session at invokes[0].session.invokes[1].session: 'x' is not a text");
+}
+
+namespace {
+
+/// A configuration of a product line, or none: nullopt is a machine of no product line, and an
+/// empty list the configuration that turns no feature on.
+using Features = std::optional<std::vector<std::string>>;
+
+/// The configuration that turns on `names`, which may be none.
+Features on(std::vector<std::string> names) {
+    return names;
+}
+
+/// A format-2 session of shape `a` taken in the configuration `features`.
+SavedState takenWith(Features features) {
+    SavedState saved;
+    saved.shape = "a";
+    saved.configuration = {"a"};
+    saved.current = "a";
+    saved.sessionId = "root";
+    saved.invokes.resumed = true;
+    saved.features = std::move(features);
+    return saved;
+}
+
+/// The refusal `judge` throws, or empty when it throws none.
+template <typename Judge> std::string refusalBy(const Judge &judge) {
+    try {
+        judge();
+    } catch (const StateRefusal &refused) {
+        return refused.what();
+    }
+    return "";
+}
+
+}  // namespace
+
+// docs/adr/0057, section 7: a saved state records the configuration it was taken in, as the last
+// member of the session, after `revisions`; a machine of no product line records none, and its
+// text is the one it was before configurations were recorded.
+TEST(SavedState, AConfigurationIsReadBackAsItWasWritten) {
+    SavedState state = takenWith(on({"session-unicast", "tls"}));
+    state.revisions = {SavedRevision{"reading.taken", 3, std::string(64, '0')}};
+    const std::string text = state.toJson();
+    EXPECT_NE(text.find(R"("revisions":{"reading.taken":{"revision":3,"fields":")" + std::string(64, '0') +
+                        R"("}},"features":["session-unicast","tls"]})"),
+              std::string::npos)
+        << text;
+    const SavedState back = SavedState::fromJson(text);
+    EXPECT_EQ(back.features, on({"session-unicast", "tls"}));
+    EXPECT_EQ(back.toJson(), text);
+
+    // The configuration that turns none on is written, and read back, as an empty list.
+    const SavedState none = takenWith(on({}));
+    EXPECT_NE(none.toJson().find(R"("external":[],"features":[]})"), std::string::npos) << none.toJson();
+    EXPECT_EQ(SavedState::fromJson(none.toJson()).features, on({}));
+
+    // A machine of no product line records no configuration.
+    const SavedState plain = takenWith(std::nullopt);
+    EXPECT_EQ(plain.toJson().find("features"), std::string::npos) << plain.toJson();
+    EXPECT_FALSE(SavedState::fromJson(plain.toJson()).features.has_value());
+
+    // Format 1 writes it last as well.
+    SavedState format1 = takenWith(on({"tls"}));
+    format1.invokes.resumed = false;
+    format1.sessionId.clear();
+    ASSERT_EQ(format1.format(), kSavedFormat1);
+    EXPECT_NE(format1.toJson().find(R"("external":[],"features":["tls"]})"), std::string::npos) << format1.toJson();
+    EXPECT_EQ(SavedState::fromJson(format1.toJson()).toJson(), format1.toJson());
+}
+
+// docs/adr/0057, section 7: a restore judges the configuration a state was taken in before its
+// shape, and names the features that differ.
+TEST(SavedState, AStateOfAnotherConfigurationIsRefusedByTheFeaturesThatDiffer) {
+    const auto refused = [](const SavedState &saved, const Features &built) {
+        return refusalBy([&] { checkSavedFeatures(saved, built); });
+    };
+    EXPECT_EQ(refused(takenWith(std::nullopt), std::nullopt), "");
+    EXPECT_EQ(refused(takenWith(on({})), on({})), "");
+    EXPECT_EQ(refused(takenWith(on({"a", "b"})), on({"a", "b"})), "");
+    EXPECT_EQ(refused(takenWith(on({"a", "b"})), on({"a", "c"})),
+              "the saved state was taken with the features [a, b] on, and this machine is built with [a, c]: [b] on "
+              "only where it was saved, [c] on only in this build");
+    EXPECT_EQ(refused(takenWith(on({"a"})), on({})),
+              "the saved state was taken with the features [a] on, and this machine is built with []: [a] on only "
+              "where it was saved");
+    EXPECT_EQ(refused(takenWith(on({})), on({"a"})),
+              "the saved state was taken with the features [] on, and this machine is built with [a]: [a] on only "
+              "in this build");
+    EXPECT_EQ(refused(takenWith(std::nullopt), on({"a"})),
+              "the saved state records no features, and this machine is built with the features [a] on");
+    EXPECT_EQ(refused(takenWith(on({})), std::nullopt),
+              "the saved state was taken with the features [] on, and this machine is built from a document of no "
+              "feature model");
+
+    // Judged before the shape: a state of another build is refused for its features even where
+    // its shape differs too.
+    SavedShape shape;
+    shape.first = "first";
+    shape.revised = "revised";
+    shape.format2First = "first2";
+    shape.format2Revised = "revised2";
+    shape.features = on({"a"});
+    const std::string reason = refusalBy([&] { static_cast<void>(upgradeSavedState(takenWith(on({"b"})), shape)); });
+    EXPECT_EQ(reason.rfind("the saved state was taken with the features [b] on", 0), 0U) << reason;
+    // A state of this build's configuration is then judged by its shape.
+    EXPECT_EQ(refusalBy([&] { static_cast<void>(upgradeSavedState(takenWith(on({"a"})), shape)); }),
+              "the saved state is of a document of shape a, and this machine's is first2");
+}
+
+// docs/adr/0057, section 7: `features` is a set, written sorted, so a text that repeats a feature
+// or names them out of order is refused as it is read.
+TEST(SavedState, TheFeaturesOfASavedStateAreASortedSet) {
+    const auto text = [](const std::string &features) {
+        return R"({"format":1,"shape":"s","configuration":["s"],"current":"s","variables":{},"history":{},)"
+               R"("pending":[],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[],)"
+               R"("features":)" +
+               features + "}";
+    };
+    EXPECT_EQ(SavedState::fromJson(text(R"(["a","b"])")).features, on({"a", "b"}));
+    EXPECT_EQ(SavedState::fromJson(text("[]")).features, on({}));
+    for (const std::string unordered : {R"(["b","a"])", R"(["a","a"])"}) {
+        EXPECT_EQ(refusalOf(text(unordered)),
+                  "'features' is not in order or names a feature twice; it is a set, sorted")
+            << unordered;
+    }
+    EXPECT_EQ(refusalOf(text(R"("a")")), "'features' is not an array");
+    EXPECT_EQ(refusalOf(text("[1]")), "'features' is not a text");
 }

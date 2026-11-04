@@ -425,6 +425,15 @@ inline const ::SCE::Saved::SavedShape &savedShape() {
         built.revised = "{{ static_saved_shape.revised | escape_cpp }}";
         built.format2First = "{{ static_saved_shape.format2_first | escape_cpp }}";
         built.format2Revised = "{{ static_saved_shape.format2_revised | escape_cpp }}";
+{# The configuration of a product line this machine was built for (docs/adr/0057, section 7),
+    one feature to a statement, so the machine generated for every build of the line holds each
+    feature under its own condition (section 10). Absent for a machine of no product line. #}
+{% if static_saved_shape.features is not none %}
+        built.features.emplace();
+{% for feature in static_saved_shape.features %}
+        built.features->push_back("{{ feature | escape_cpp }}");
+{% endfor %}
+{% endif %}
 {% for record in static_saved_shape.records %}
         {
             ::SCE::Saved::RecordLineage record;

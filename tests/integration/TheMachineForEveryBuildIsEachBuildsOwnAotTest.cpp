@@ -20,9 +20,13 @@
 #include "alone/session_sm.h"
 #include "lifted/session_sm.h"
 
+#include "common/SceClock.h"
+#include "saved/SavedState.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <memory>
 #include <optional>
 #include <ostream>
 #include <string>
@@ -172,6 +176,72 @@ TEST(TheMachineForEveryBuildIsEachBuildsOwnAotTest, TheDefaultStateIsThisBuilds)
 #else
     EXPECT_EQ(start.active, "idle;");
 #endif
+}
+
+/// The features this build turns on, sorted: the configuration a saved state of either machine
+/// records (docs/adr/0057, section 7).
+std::vector<std::string> thisBuild() {
+    std::vector<std::string> on;
+#if defined(SCE_FEATURE_SESSION_UNICAST)
+    on.emplace_back("session-unicast");
+#endif
+#if defined(SCE_FEATURE_SESSION_UNICAST_ACCEPT)
+    on.emplace_back("session-unicast-accept");
+#endif
+    return on;
+}
+
+/// The wall-clock moment the states below are saved and restored at.
+constexpr std::int64_t kSavedAtMs = 1'700'000'000'000;
+
+/// The state of `Machine` just started, its session given the id `fixture-root`.
+template <typename Machine, typename Actions> SCE::Saved::SavedState savedAtStart() {
+    std::string calls;
+    Host<Actions> host(calls);
+    Machine sm(host);
+    sm.setClock(std::make_shared<::SCE::ManualClock>(0));
+    sm.bindSessionId("fixture-root");
+    sm.initialize();
+    return sm.saveAt(kSavedAtMs);
+}
+
+/// The refusal a fresh `Machine` gives a restore of `saved`, or empty when it restores it.
+template <typename Machine, typename Actions> std::string restoreRefusal(const ::SCE::Saved::SavedState &saved) {
+    std::string calls;
+    Host<Actions> host(calls);
+    Machine sm(host);
+    sm.setClock(std::make_shared<::SCE::ManualClock>(0));
+    try {
+        sm.restoreAt(saved, kSavedAtMs);
+    } catch (const ::SCE::Saved::StateRefusal &refused) {
+        return refused.what();
+    }
+    return "";
+}
+
+/// A saved state records the configuration it was taken in, and the machine for every build
+/// saves exactly what this build's own machine saves: the same text, its features this build's.
+/// A state of another configuration is refused by the features that differ, before the shape is
+/// judged.
+TEST(TheMachineForEveryBuildIsEachBuildsOwnAotTest, ASavedStateRecordsThisBuildsConfiguration) {
+    const ::SCE::Saved::SavedState lifted = savedAtStart<Lifted::session, Lifted::SessionActions>();
+    const ::SCE::Saved::SavedState alone = savedAtStart<Alone::session, Alone::SessionActions>();
+    EXPECT_EQ(lifted.toJson(), alone.toJson());
+    ASSERT_TRUE(lifted.features.has_value()) << lifted.toJson();
+    EXPECT_EQ(*lifted.features, thisBuild());
+    EXPECT_EQ((restoreRefusal<Lifted::session, Lifted::SessionActions>(alone)), "");
+    EXPECT_EQ((restoreRefusal<Alone::session, Alone::SessionActions>(lifted)), "");
+
+    std::vector<std::string> other;
+    if (thisBuild().empty()) {
+        other.emplace_back("session-unicast");
+    }
+    ::SCE::Saved::SavedState elsewhere = lifted;
+    elsewhere.features = other;
+    const std::string refused = restoreRefusal<Lifted::session, Lifted::SessionActions>(elsewhere);
+    const std::string expected = "the saved state was taken with the features " + spelled(other) +
+                                 " on, and this machine is built with " + spelled(thisBuild());
+    EXPECT_EQ(refused.rfind(expected, 0), 0U) << refused;
 }
 
 }  // namespace

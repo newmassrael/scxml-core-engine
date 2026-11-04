@@ -295,6 +295,9 @@ struct EngineAccess {
             }
         }
         state.shape = state.revisions.empty() ? shape.format2First : shape.format2Revised;
+        // The configuration the machine was built for, which a restore judges before the shape
+        // (docs/adr/0057, section 7); none for a machine of no product line.
+        state.features = shape.features;
         state.variables = std::move(variables);
         state.history = std::move(history);
         state.invokes.resumed = true;

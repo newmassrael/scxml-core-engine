@@ -34,6 +34,7 @@
 #include "saved/SavedJson.h"
 #include "saved/SessionId.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <map>
@@ -347,6 +348,10 @@ struct SavedShape {
     std::vector<RecordLineage> records;
     /// Each enum a value of the state is of, by its key, ordered by it.
     std::vector<EnumLineage> enums;
+    /// The configuration of a product line the machine was built for, sorted
+    /// (SavedState::features); nullopt for a machine of no product line. A machine generated
+    /// for every build of one states it per build, under the build's own condition.
+    std::optional<std::vector<std::string>> features;
 };
 
 /// A machine's whole state at a macrostep boundary.
@@ -379,6 +384,12 @@ struct SavedState {
     /// The revision each record schema and enum past its first was saved at, ordered by key.
     /// Empty when every one is in its first revision.
     std::vector<SavedRevision> revisions;
+    /// The configuration of a product line the machine was built for (docs/adr/0057, section
+    /// 7): the features it turns on, sorted, each once. nullopt for a machine of no product
+    /// line, which is every machine of a document that imports no feature model; an empty list
+    /// is the configuration that turns none on. A restore judges it before the shape
+    /// (checkSavedFeatures).
+    std::optional<std::vector<std::string>> features;
     /// The session's own id (`_sessionid`). An XML Nmtoken in format 2; empty in a format-1
     /// state, which holds none.
     std::string sessionId;
@@ -591,6 +602,11 @@ inline JsonObject SavedState::sessionMembers() const {
             named.set(saved.key, std::move(entry));
         }
         members.set("revisions", std::move(named));
+    }
+    // Absent for a machine of no product line, so the text of every other machine is the text
+    // it was before configurations were recorded.
+    if (features.has_value()) {
+        members.set("features", detail::stringsToJson(*features));
     }
     return members;
 }
@@ -1023,6 +1039,24 @@ inline SavedState savedSessionFromJson(const JsonObject &members, int format) {
         }
     }
 
+    // Optional too: only a machine of a product line records the features it was built with,
+    // as a set, so each is named once and in order (byte order, which std::string compares in).
+    if (const JsonValue *configured = members.get("features")) {
+        if (!configured->isArray()) {
+            refuse("'features' is not an array");
+        }
+        std::vector<std::string> features;
+        for (const JsonValue &item : configured->asArray()) {
+            features.push_back(textOf(item, "features"));
+        }
+        for (std::size_t at = 1; at < features.size(); ++at) {
+            if (features[at - 1] >= features[at]) {
+                refuse("'features' is not in order or names a feature twice; it is a set, sorted");
+            }
+        }
+        state.features = std::move(features);
+    }
+
     state.shape = fieldText("shape");
     state.current = fieldText("current");
     return state;
@@ -1072,6 +1106,71 @@ inline void checkSavedShape(const SavedState &saved, const std::string &shape) {
         throw StateRefusal("the saved state is of a document of shape " + saved.shape + ", and this machine's is " +
                            shape);
     }
+}
+
+namespace detail {
+
+/// `features` as a saved-state refusal lists them: `[a, b]`, and `[]` for none.
+inline std::string featureList(const std::vector<std::string> &features) {
+    std::string out = "[";
+    for (std::size_t at = 0; at < features.size(); ++at) {
+        if (at > 0) {
+            out += ", ";
+        }
+        out += features[at];
+    }
+    return out + "]";
+}
+
+/// Each of `features` that `others` does not name, in the order `features` names them.
+inline std::vector<std::string> featuresNotIn(const std::vector<std::string> &features,
+                                              const std::vector<std::string> &others) {
+    std::vector<std::string> out;
+    for (const std::string &feature : features) {
+        if (std::find(others.begin(), others.end(), feature) == others.end()) {
+            out.push_back(feature);
+        }
+    }
+    return out;
+}
+
+}  // namespace detail
+
+/// Refuses `saved` unless it was taken in the configuration `features` of a product line, or
+/// both are of none (docs/adr/0057, section 7), judged before the shape, which differs too
+/// between builds that differ in states or variables, so a state of another build is refused
+/// by the features that differ and not by a digest. A build with fewer features lacks states
+/// or data the state may hold, and one with more has data and invocations the saved run never
+/// initialised or started: either is refused. Carrying a state across configurations is a
+/// migration, which a restore does not do.
+inline void checkSavedFeatures(const SavedState &saved, const std::optional<std::vector<std::string>> &features) {
+    if (!saved.features.has_value() && !features.has_value()) {
+        return;
+    }
+    if (saved.features.has_value() && features.has_value()) {
+        const std::vector<std::string> &taken = *saved.features;
+        const std::vector<std::string> &built = *features;
+        if (taken == built) {
+            return;
+        }
+        const std::vector<std::string> onlySaved = detail::featuresNotIn(taken, built);
+        const std::vector<std::string> onlyBuilt = detail::featuresNotIn(built, taken);
+        std::string differ;
+        if (!onlySaved.empty()) {
+            differ += detail::featureList(onlySaved) + " on only where it was saved";
+        }
+        if (!onlyBuilt.empty()) {
+            differ += (differ.empty() ? "" : ", ") + detail::featureList(onlyBuilt) + " on only in this build";
+        }
+        throw StateRefusal("the saved state was taken with the features " + detail::featureList(taken) +
+                           " on, and this machine is built with " + detail::featureList(built) + ": " + differ);
+    }
+    if (features.has_value()) {
+        throw StateRefusal("the saved state records no features, and this machine is built with the features " +
+                           detail::featureList(*features) + " on");
+    }
+    throw StateRefusal("the saved state was taken with the features " + detail::featureList(*saved.features) +
+                       " on, and this machine is built from a document of no feature model");
 }
 
 namespace detail {
@@ -1185,7 +1284,8 @@ inline void checkWidenedHolder(const SavedState &saved, const RecordLineage &rec
 
 /// `saved` as a state of the machine whose saved state is bound to `shape`, or the refusal
 /// that says why it is not one (docs/adr/0044), judged before any variable is read, as
-/// checkSavedShape is.
+/// checkSavedShape is. The configuration the state was taken in is judged first
+/// (checkSavedFeatures).
 ///
 /// A state that names no revision is of the first shape; one that does is of the revised
 /// shape, and each revision it names is of a schema a record variable of this machine is of,
@@ -1197,6 +1297,7 @@ inline void checkWidenedHolder(const SavedState &saved, const RecordLineage &rec
 /// widened to optional, since at the revision it was saved at the field was a value of its
 /// present type and no build wrote it absent (docs/adr/0055, section 6).
 inline SavedState upgradeSavedState(const SavedState &saved, const SavedShape &shape) {
+    checkSavedFeatures(saved, shape.features);
     // A format-2 state names an enum by its document and a format-1 state by the alias it is
     // imported under, so each is judged against its own shape (docs/adr/0045, section 2).
     const std::string &first = saved.format() == kSavedFormat2 ? shape.format2First : shape.first;
