@@ -746,6 +746,40 @@ static inline const sce_host_invoker_entry_t *sce_host_invoker_find(const sce_ho
 }
 
 /**
+ * How a host ends a host-run invocation of some session of a tree, as one
+ * value: the start it ends, and whether it completed (`done.invoke`) or failed
+ * (`error.invoke`), with `data` as the event's `_event.data`.
+ *
+ * Everything the machine's completion and failure take, so an ending posted to
+ * a machine's inbox from another context carries what a direct call on its
+ * owner would have passed (docs/adr/0084). The C11 port of
+ * `SCE::HostInvokeEnding` (`sce/include/core/HostProcessor.h`), with the
+ * session it names beside it, and every string held rather than pointed at,
+ * because a post copies the value into the inbox.
+ */
+typedef struct sce_host_invoke_ending_s {
+    /** The session that started the invocation, as its request named it
+        (`sce_host_invoke_event_t::session_id`); empty for the machine the
+        ending is posted to. */
+    char session_id[SCE_MAX_SESSION_ID_LEN];
+    /** The `type` the request named. */
+    char processor_type[SCE_MAX_ID_LEN];
+    /** The invocation's id, as the request named it. */
+    char invoke_id[SCE_MAX_ID_LEN];
+    /** The token the request carried. */
+    uint64_t token;
+    /** True for a completion and false for a failure. */
+    bool done;
+    /** `_event.data` of the event the ending raises. */
+    char data[SCE_MAX_DATA_LEN];
+    /** `_event.origin` of that event, for a host whose invocation stands for a
+        party it can name; empty for none. */
+    char origin[SCE_MAX_URI_LEN];
+    /** `_event.origintype` of that event; empty keeps the SCXML processor's. */
+    char origin_type[SCE_MAX_ID_LEN];
+} sce_host_invoke_ending_t;
+
+/**
  * Every host-run invocation started and neither completed nor cancelled,
  * with its start's token.
  *

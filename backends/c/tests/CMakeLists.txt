@@ -3768,6 +3768,61 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # docs/adr/0084, ARCHITECTURE.md "Engine Threading": what another thread posts
+    # to a generated machine enters through its inbox, bounded at the capacity the
+    # deployment declares (`SCE_MAX_INBOX`), and is taken as a single-threaded
+    # replay of the same posts takes it. The document the C++ engine's inbox test
+    # drives, generated with the host-invoker declaration it is compiled with
+    # there. Built once per row of the queue, as a deployment states its atomics
+    # (`SCE_INBOX_ATOMIC_RMW_WIDTH`): the SCQ over 64- and over 32-bit entries
+    # against the hosted reference atomics, and the interrupt-masked ring against
+    # the hosted stand-in for masking interrupts, the two the forge runtime's own
+    # queue tests run against.
+    find_package(Threads REQUIRED)
+    sce_generate_static_integration_c_test(inbox_probe
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/tests/integration/inbox_probe.scxml"
+        HOST_INVOKER x-sce-host
+    )
+    foreach(_sce_inbox_width 64 32 0)
+        set(_sce_inbox_target sce_c_integration_what_another_thread_posts_enters_through_the_inbox_${_sce_inbox_width})
+        if(_sce_inbox_width EQUAL 0)
+            set(_sce_inbox_platform "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/tests/conformance/sce_irq_host.c")
+        else()
+            set(_sce_inbox_platform "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/tests/conformance/sce_atomic_host.c")
+        endif()
+        add_executable(${_sce_inbox_target}
+            integration/test_what_another_thread_posts_enters_through_the_inbox.c
+            ${INTEGRATION_C_TEST_inbox_probe_SOURCES}
+            ${_sce_inbox_platform}
+        )
+        target_link_libraries(${_sce_inbox_target} PRIVATE
+            sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54 Threads::Threads
+        )
+        target_include_directories(${_sce_inbox_target} PRIVATE
+            "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+        )
+        # The deployment's declaration: sixteen inputs, on this row.
+        target_compile_definitions(${_sce_inbox_target} PRIVATE
+            SCE_MAX_INBOX=16
+            SCE_INBOX_ATOMIC_RMW_WIDTH=${_sce_inbox_width}
+        )
+        set_target_properties(${_sce_inbox_target} PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        add_test(NAME c11_integration_what_another_thread_posts_enters_through_the_inbox_${_sce_inbox_width}
+            COMMAND ${_sce_inbox_target}
+        )
+        set_tests_properties(c11_integration_what_another_thread_posts_enters_through_the_inbox_${_sce_inbox_width}
+            PROPERTIES
+            TIMEOUT 60
+            LABELS "integration;c11;aot"
+        )
+    endforeach()
+
     # SCE Accepted Subset §2.15: a delayed `<send>` the host serves, in a
     # `datamodel="sce-static"` machine — typed `<param>`s read from the machine's
     # own fields when the send is made, and carried by the wait. The document the

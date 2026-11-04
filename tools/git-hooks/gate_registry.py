@@ -1701,10 +1701,11 @@ GATES: dict[str, dict] = {
         "workflows": ["w3c-tests.yml"],
         "runner_workflow": True,
         "narrows": "same catch-all as `w3c-cpp`, same reason. This arm's real "
-                   "inputs are the C backend, the C templates and the "
-                   "generator.",
+                   "inputs are the C backend, the C templates, the "
+                   "generator, and the inbox probe it shares with the C++ "
+                   "engine's inbox test (docs/adr/0084).",
         "extra": ["backends/c/**", "tools/codegen/templates/**",
-                  "sce-build/src/**"],
+                  "sce-build/src/**", "tests/integration/inbox_probe.scxml"],
         "deps": ["codegen-build"],
         "ci_only": "391s inside a push, measured 2026-08-23 — and that number "
                    "is the point. The same 245 tests read 85s and 95s run on "

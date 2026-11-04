@@ -1186,7 +1186,11 @@ it, which its documentation names and nothing checks
 `Engine.inbox`, unbounded (`sce_runtime/inbox.py`), and its engine documents
 the owner, the thread that drives it, without checking it. So does Swift: the
 compiler confines the engine, and its inbox is `inbox` (`EngineInbox.swift`), a
-`Sendable` handle offered when the machine's event type is `Sendable`.
+`Sendable` handle offered when the machine's event type is `Sendable`. So does
+the generated C11 machine: its inbox is `_inbox_post`, bounded on the forge SCQ
+(`sce/inbox.h`), with the capacity its deployment declares (`SCE_MAX_INBOX`); a
+machine driven from a superloop is owned by the superloop, and an interrupt
+handler posts.
 
 **The invariant.** A macrostep runs to completion: no input is observed in the
 middle of one (§scxml-C-1). Every engine holds it by the same mechanism.

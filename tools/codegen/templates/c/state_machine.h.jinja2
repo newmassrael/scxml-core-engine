@@ -106,6 +106,12 @@
    or not it has delays of its own. */
 #include "sce/clock.h"
 
+/* docs/adr/0084: the queue another context posts to this machine through, which
+   exists when the deployment declares its capacity (`SCE_MAX_INBOX`) and is
+   nothing otherwise. Included on every machine for that reason: the declaration
+   is the deployment's, made at build time, and not the document's. */
+#include "sce/inbox.h"
+
 {% if has_native_duties %}
 /* docs/adr/0038: `sce_action_realization_t`, the first member of the host table
    of a machine that states a duty
@@ -598,6 +604,47 @@ typedef struct {{ csym_prefix }}{{ model.name }}_restored_host {
 } {{ csym_prefix }}{{ model.name }}_restored_host_t;
 
 {% endif %}
+{# docs/adr/0084: a machine whose tree can run a host-run invocation takes its
+   ending through the inbox — one that runs one itself, and a `sce-static` one,
+   whose `_complete_host_invoke_in` reaches the sessions below it. Kept in step
+   with the same `set` in `state_machine.c.jinja2`. #}
+{% set inbox_endings = model.host_invoker_types or static_datamodel %}
+#if SCE_MAX_INBOX > 0
+/* ── docs/adr/0084: what another context may post ─────────────────── */
+/* The set is closed: it is the inputs that have a caller on another thread,
+   core or interrupt handler, each carrying exactly what the owner-thread
+   operation that applies it takes, because the owner applies a posted input by
+   calling that operation. A posted input and a direct call cannot differ. */
+typedef enum {{ csym_prefix }}{{ model.name }}_inbox_kind_e {
+    /* `as.event`, applied with `_raise_external`. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT = 0,
+    /* `as.by_name`, an event named by text, applied with
+       `_raise_external_forwarded`: resolved against this machine's names when
+       it is applied, and dropped then if none of them could take it. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT_BY_NAME{% if inbox_endings %},
+    /* `as.ending`, the end of a host-run invocation's start, applied with
+       `_complete_host_invoke_from` or `_fail_host_invoke` when it names no
+       session, and with their `_in` spellings when it names one. The token
+       check those make is made when the input is applied, so an ending posted
+       for a start that was cancelled or started again by then raises nothing,
+       as a direct one would. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING{% endif %}
+
+} {{ csym_prefix }}{{ model.name }}_inbox_kind_t;
+
+/* One input of this machine's inbox: `kind` says which member of `as` it is. */
+typedef struct {{ csym_prefix }}{{ model.name }}_inbox_input {
+    {{ csym_prefix }}{{ model.name }}_inbox_kind_t kind;
+    union {
+        {{ csym_prefix }}{{ model.name }}_event_with_meta_t event;
+        sce_forwarded_event_t by_name;
+{% if inbox_endings %}
+        sce_host_invoke_ending_t ending;
+{% endif %}
+    } as;
+} {{ csym_prefix }}{{ model.name }}_inbox_input_t;
+#endif
+
 /* ── Policy state (datamodel + transition tracking) ───────────────── */
 {# C++ `{name}Policy` mutable members: the last microstep's source and
    every <history>'s recorded configuration. #}
@@ -950,6 +997,13 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     uint8_t restored_host_invoke_count;
 {% endif %}
     {% endif %}
+#if SCE_MAX_INBOX > 0
+    /* docs/adr/0084: the inbox, built empty by every initialiser, and the slots
+       its inputs are copied into. The queue keeps the address of its own rings,
+       so a machine is not moved once it is initialised. */
+    sce_inbox_t inbox;
+    {{ csym_prefix }}{{ model.name }}_inbox_input_t inbox_slots[SCE_MAX_INBOX];
+#endif
 } {{ csym_prefix }}{{ model.name }}_t;
 
 /* ── Public API ───────────────────────────────────────────────────── */
@@ -1751,6 +1805,49 @@ void {{ csym_prefix }}{{ model.name }}_raise_external_by_name({{ csym_prefix }}{
    them can be invoked, and whether it SENDS to a parent says nothing about
    whether a parent sends to it. */
 void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csym_prefix }}{{ model.name }}_t *sm, const sce_forwarded_event_t *fwd);
+
+/* ── docs/adr/0084: the owner and the inbox ──────────────────────── */
+/* ARCHITECTURE.md "Engine Threading" states the rule. On this machine the
+   owner-thread operations are every function of this header that changes it:
+   the initialisers, `_step`, `_run`, `_tick` and `_advance_time_ms`,
+   `_raise_external` and its by-name and forwarded spellings, the endings of a
+   host-run invocation (`_complete_host_invoke`, `_fail_host_invoke` and their
+   `_from` and `_in` spellings), `_cancel_host_invoke`, `_apply_mesh_calls`,
+   `_stop` and `_destroy`. The owner of a machine driven from a superloop is the
+   superloop.
+
+   Its inbox handle is `_inbox_post` on the machine's address, the one call
+   another thread, core or interrupt handler may make, which exists when the
+   deployment declares the inbox's capacity (`SCE_MAX_INBOX`, sce/inbox.h). What
+   it takes is applied by the owner at its next macrostep boundary, before the
+   external queue is consulted, in the order the inbox took it, by the operation
+   `kind` names. The inbox is built by the initialiser and is handed to other
+   contexts after it returns.
+
+   A posted input waits in the inbox while the external queue has no room for
+   the one event it raises, so the bound a poster meets is the inbox's, which
+   refuses and reports, and never the queue's. The inbox does not close when the
+   run ends: what is posted after is applied by the next `_step`, as the same
+   direct call would be then, so an event is counted by
+   `_unseen_external_events` and an ending finds its invocation over. */
+#if SCE_MAX_INBOX > 0
+/* Post `input`; whether the inbox took it. Safe from any context. A full inbox
+   refuses it, counted by `_refused_inbox_posts`; after a post the inbox took,
+   the waker `_inbox_wake_with` installed is called on this context. */
+bool {{ csym_prefix }}{{ model.name }}_inbox_post({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                  const {{ csym_prefix }}{{ model.name }}_inbox_input_t *input);
+
+/* Install `waker`, called with `context` after each post the inbox takes, so a
+   host that drives the machine itself knows when to drive it; NULL removes it.
+   An owner-thread operation, made before the machine is handed to another
+   context. */
+void {{ csym_prefix }}{{ model.name }}_inbox_wake_with({{ csym_prefix }}{{ model.name }}_t *sm, sce_inbox_waker_fn waker,
+                                                       void *context);
+
+/* How many posts this machine's inbox refused since it was initialised. Safe
+   from any context. */
+uint32_t {{ csym_prefix }}{{ model.name }}_refused_inbox_posts(const {{ csym_prefix }}{{ model.name }}_t *sm);
+#endif
 
 /* W3C SCXML 3.2: configuration query helpers. `_active_states` exposes
    the full bitmap; `_in_state(s)` mirrors the SCXML In() predicate (true

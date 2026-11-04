@@ -243,9 +243,11 @@ runtime stops and amends this ADR rather than working around it.
 
 ## Open questions
 
-- The owner of a tree whose host never runs a loop of its own (a C11 machine driven from a superloop and an interrupt)
-  is the superloop. The interrupt posts. Whether `queue_irq.h`'s capacity is declared per machine or per deployment is
-  decided in step 4.
+- Decided in step 4 (the owner, 2026-11-04): the owner of a tree whose host never runs a loop of its own (a C11
+  machine driven from a superloop and an interrupt) is the superloop, and the interrupt posts. C11's inbox is bounded
+  and its capacity is declared per deployment (`-DSCE_MAX_INBOX=N`, the override every C11 bound takes), with the
+  queue's row (`queue.h`'s SCQ, or `queue_irq.h` on a target with no read-modify-write atomic) chosen by the atomics
+  the deployment states. A deployment that declares no capacity has no inbox and declares no post.
 - Whether a Mesh router's held calls become inbox posts in step 3 and 4, retiring `takeCalls`, or keep the pull they
   have and only gain the thread-safety requirement in writing. The first is the rule applied fully. It is decided when
   step 3 measures the C++ router.

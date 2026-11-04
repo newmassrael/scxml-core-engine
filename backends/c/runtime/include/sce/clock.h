@@ -19,7 +19,9 @@
 //   * Returns a monotonically non-decreasing millisecond counter.
 //   * Origin is implementation-defined (epoch-since-boot, since-startup,
 //     etc.); the generated code only ever takes deltas.
-//   * Thread-safe: callable from any context that drives `_tick`.
+//   * Callable from several threads at once: a machine reads it on its
+//     owner (ARCHITECTURE.md "Engine Threading"), and the machines of one
+//     image may have different owners.
 //
 // Pre-1.0: this contract may evolve before SCE 1.0 (per
 // `feedback_pre_release_no_compat.md`); downstream impls re-link

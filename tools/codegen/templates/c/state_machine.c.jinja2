@@ -2767,6 +2767,24 @@ SCE_SM_FN static bool is_in_final_state_of(const {{ csym_prefix }}{{ model.name 
 SCE_SM_FN static void note_unseen_event({{ csym_prefix }}{{ model.name }}_t *sm,
                             {{ csym_prefix }}{{ model.name }}_event_t event);
 SCE_SM_FN static void record_unseen_external_events({{ csym_prefix }}{{ model.name }}_t *sm);
+/* docs/adr/0084: the macrostep boundary's half of the inbox, defined with the
+   rest of it at the bottom of this file; declared here because its caller,
+   `run_main_event_loop`, comes long before that. Nothing for a deployment that
+   declared no inbox. */
+SCE_SM_FN static void drain_inbox({{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* docs/adr/0084: build the inbox empty, with no waker. Called by every
+   initialiser right after it zeroes the machine, since the queue keeps the
+   address of its own rings and a zeroed queue is not an empty one. */
+SCE_SM_FN static void build_inbox({{ csym_prefix }}{{ model.name }}_t *sm) {
+#if SCE_MAX_INBOX > 0
+    /* False only for a shape the queue refuses, which sce/inbox.h rules out at
+       compile time. */
+    (void)sce_inbox_init(&sm->inbox);
+#else
+    (void)sm;
+#endif
+}
 
 /* ── W3C SCXML 5.9: Action execution (per-state, document-order) ──── */
 {# Mirrors the C++ entry_exit_actions.jinja2 dispatch: each `<onentry>` /
@@ -4835,7 +4853,12 @@ SCE_SM_FN static void run_main_event_loop({{ csym_prefix }}{{ model.name }}_t *s
                the external queue ends with it. That is the clause: a machine
                that reached a top-level final state has exited the interpreter.
                Saying nothing about it is not the clause — see
-               `_unseen_external_events`. */
+               `_unseen_external_events`. What other contexts posted before
+               this boundary is applied first, as a direct call would be now, so
+               an event posted to the inbox is counted with the rest, and an
+               ending is judged before the exit below cancels what still runs
+               (docs/adr/0084). */
+            drain_inbox(sm);
             record_unseen_external_events(sm);
             /* §scxml-D-exitInterpreter: the loop is over because the run
                entered a top-level final, so every state still active is
@@ -4845,6 +4868,16 @@ SCE_SM_FN static void run_main_event_loop({{ csym_prefix }}{{ model.name }}_t *s
             exit_interpreter(sm);
             break;
         }
+
+        /* docs/adr/0084: the macrostep is complete, and the external queue has
+           not been consulted. What other contexts posted since the last
+           boundary is applied here, in the order the inbox took it, as the same
+           direct calls made between two drives would be: an event joins the
+           external queue behind what the macrostep queued, and an ending for a
+           session below this one reaches that session before the children are
+           driven below. Each input raises at most one external event and none
+           raises an internal one, so the macrostep stays complete. */
+        drain_inbox(sm);
 
         {% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
         /* W3C SCXML 6.4: execute the deferred `<invoke>` elements for states
@@ -5348,6 +5381,7 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_p
     }
 {% endif %}
     memset(sm, 0, sizeof(*sm));
+    build_inbox(sm);
 {% if has_native_actions %}
     /* Copied in before the entry walk, for the reason the host-processor
        registry below is: the first `<onentry>` body may already perform an
@@ -6491,6 +6525,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix
                                        const char *invoke_id,
                                        sce_clock_t clock) {
     memset(sm, 0, sizeof(*sm));
+    build_inbox(sm);
 {% if model.needs_event_scheduler %}
     sm->clock = clock;
 {% else %}
@@ -6777,6 +6812,108 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_detach_mesh({{ csym_prefix }}{{
     }
 }
 {% endif %}
+
+/* ── docs/adr/0084: the inbox (ARCHITECTURE.md "Engine Threading") ── */
+{# Kept in step with the same `set` in `state_machine.h.jinja2`. #}
+{% set inbox_endings = model.host_invoker_types or static_datamodel %}
+#if SCE_MAX_INBOX > 0
+{% if inbox_endings %}
+/* Apply a posted ending by the operation a direct call on the owner makes: the
+   body behind `_complete_host_invoke_from` and `_fail_host_invoke` for an
+   ending that names no session, and the walk behind their `_in` spellings for
+   one that names a session. */
+SCE_SM_FN static void apply_host_invoke_ending({{ csym_prefix }}{{ model.name }}_t *sm,
+                                               const sce_host_invoke_ending_t *ending) {
+{% if static_datamodel %}
+    if (ending->session_id[0] != '\0') {
+        (void){{ csym_prefix }}{{ model.name }}_end_host_invoke_in(sm, ending->session_id, ending->processor_type,
+                                                                 ending->invoke_id, ending->token, !ending->done,
+                                                                 ending->data, ending->origin, ending->origin_type);
+        return;
+    }
+{% else %}
+    /* Only a `sce-static` machine has the `_in` doors that walk its children
+       for an ending, and this one is not, so the one session an ending reaches
+       through it is its own: one that names another reaches no session, as a
+       session `_complete_host_invoke_in` cannot find. */
+    if (ending->session_id[0] != '\0' && strcmp(ending->session_id, sm->session_id) != 0) {
+        return;
+    }
+{% endif %}
+{% if model.host_invoker_types %}
+    (void)end_host_invoke(sm, ending->processor_type, ending->invoke_id, ending->token, !ending->done, ending->data,
+                          ending->origin, ending->origin_type);
+{% endif %}
+}
+
+{% endif %}
+/* Apply one posted `input` by the owner-thread operation its kind names. */
+SCE_SM_FN static void apply_inbox_input({{ csym_prefix }}{{ model.name }}_t *sm,
+                                        const {{ csym_prefix }}{{ model.name }}_inbox_input_t *input) {
+    switch (input->kind) {
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT:
+        {{ csym_prefix }}{{ model.name }}_raise_external(sm, &input->as.event);
+        break;
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT_BY_NAME:
+        {{ csym_prefix }}{{ model.name }}_raise_external_forwarded(sm, &input->as.by_name);
+        break;
+{% if inbox_endings %}
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING:
+        apply_host_invoke_ending(sm, &input->as.ending);
+        break;
+{% endif %}
+    default:
+        /* Not a kind this machine declares: a host wrote a value outside the
+           enumeration, and nothing it could mean is applied. */
+        break;
+    }
+}
+#endif
+
+/* The macrostep boundary's half of the inbox: apply, on the owner, what other
+   contexts posted, oldest first, while the external queue has room for the one
+   event an input raises. At most as many as the inbox holds, so posters that
+   never stop cannot hold the owner at this boundary; what they post meanwhile is
+   applied at the next one, and what waits for room waits in the inbox. */
+SCE_SM_FN static void drain_inbox({{ csym_prefix }}{{ model.name }}_t *sm) {
+#if SCE_MAX_INBOX > 0
+    {{ csym_prefix }}{{ model.name }}_inbox_input_t input;
+    uint32_t applied = 0u;
+    /* Zeroed once, because GCC cannot follow a copy made inside the queue's
+       take into the reads that follow it, and `-Werror=maybe-uninitialized`
+       would stop an optimising build. */
+    memset(&input, 0, sizeof(input));
+    while (applied < (uint32_t)SCE_MAX_INBOX && sm->external_queue.count < (uint16_t)SCE_MAX_EVENTS &&
+           sce_inbox_take(&sm->inbox, (unsigned char *)sm->inbox_slots, sizeof(sm->inbox_slots[0]), &input)) {
+        apply_inbox_input(sm, &input);
+        applied++;
+    }
+#else
+    (void)sm;
+#endif
+}
+#if SCE_MAX_INBOX > 0
+
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_inbox_post({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                            const {{ csym_prefix }}{{ model.name }}_inbox_input_t *input) {
+    if (sm == NULL || input == NULL) {
+        return false;
+    }
+    return sce_inbox_post(&sm->inbox, (unsigned char *)sm->inbox_slots, sizeof(sm->inbox_slots[0]), input);
+}
+
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_inbox_wake_with({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                 sce_inbox_waker_fn waker, void *context) {
+    if (sm == NULL) {
+        return;
+    }
+    sce_inbox_wake_with(&sm->inbox, waker, context);
+}
+
+SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_refused_inbox_posts(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return (sm == NULL) ? 0u : sce_inbox_refused(&sm->inbox);
+}
+#endif
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_destroy({{ csym_prefix }}{{ model.name }}_t *sm) {
     {% if model.invokes | scxml_family %}
