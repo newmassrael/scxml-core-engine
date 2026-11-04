@@ -37,9 +37,9 @@ use sce_rust_tests::integration::host_processor::{
 
 const DECLARED_TYPE: &str = "x-sce-host";
 
-/// Any text, and no record or enum lineage: the engine-level `save` records the
-/// shape it is told, and `check_shape` (which a generated `restore` calls) is not
-/// under test here.
+/// Any text, no record or enum lineage, and no product line: the engine-level
+/// `save` records the shape it is told, and `check_shape` (which a generated
+/// `restore` calls) is not under test here.
 const SHAPE: SavedShape = SavedShape {
     first: "shape",
     revised: "shape",
@@ -47,6 +47,7 @@ const SHAPE: SavedShape = SavedShape {
     format2_revised: "shape",
     records: &[],
     enums: &[],
+    features: None,
 };
 
 /// The wall-clock moment the machine is saved at.
