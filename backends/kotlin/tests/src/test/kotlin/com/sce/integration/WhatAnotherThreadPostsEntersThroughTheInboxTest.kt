@@ -19,11 +19,15 @@
 //   * a post is taken before the run starts and refused once the engine stops;
 //   * what the inbox holds when the engine stops is applied as a direct call
 //     then is: an event joins the queue nothing dequeues and is counted as
-//     unseen, and an ending finds its invocation cancelled by the exit.
+//     unseen, and an ending finds its invocation cancelled by the exit;
+//   * the external queue takes events in the order they arrived: a post made
+//     during a macrostep is applied before an event that macrostep sends to its
+//     own session after it (W3C test 201's shape), in both driving modes.
 //
 // The machine is written by hand, as the smallest one with a host-run
 // invocation: `working` starts `job` on entry and cancels it on exit, and every
-// event it takes is recorded with its `_event.data`.
+// event it takes is recorded with its `_event.data`. The arrival-order cases use
+// a second one, smaller still, that sends itself an event after a callback.
 
 package com.sce.integration
 
@@ -174,6 +178,95 @@ private class InboxProbeMachine(
         const val PING = 2
         const val DONE = 3
         const val FAILED = 4
+    }
+}
+
+private sealed interface ArrivalProbeState : State {
+    data object Waiting : ArrivalProbeState
+}
+
+private sealed interface ArrivalProbeEvent : Event {
+    data object Go : ArrivalProbeEvent
+    data object Posted : ArrivalProbeEvent
+    data object Own : ArrivalProbeEvent
+}
+
+/**
+ * W3C test 201's shape without the HTTP listener. `waiting` takes `go` by
+ * calling [whileGoIsTaken], the host's callback inside the macrostep (where a
+ * BasicHTTP send waits for its listener), and then sends `own` to its own
+ * session, as the document's `<send event="timeout"/>` does. `posted` and `own`
+ * are recorded in the order they are taken.
+ */
+private class ArrivalProbeMachine(
+    private val whileGoIsTaken: (ArrivalProbeMachine) -> Unit,
+    private val takenLatch: CountDownLatch? = null,
+) : StateMachineEngine<ArrivalProbeState, ArrivalProbeEvent>() {
+    override val initialState: ArrivalProbeState = ArrivalProbeState.Waiting
+
+    /** What the machine took, in order. Written by the owner, read by the test's thread. */
+    val taken = CopyOnWriteArrayList<String>()
+
+    override fun firstEnabledTransition(
+        state: ArrivalProbeState,
+        event: ArrivalProbeEvent?,
+    ): EnabledTransition<ArrivalProbeState, HistoryId>? {
+        val index = when (event) {
+            null -> return null
+            ArrivalProbeEvent.Go -> GO
+            ArrivalProbeEvent.Posted -> POSTED
+            ArrivalProbeEvent.Own -> OWN
+        }
+        return EnabledTransition<ArrivalProbeState, HistoryId>(
+            state,
+            emptyList(),
+            index,
+            hasActions = true,
+            isInternal = false,
+        )
+    }
+
+    override fun onEntry(state: ArrivalProbeState, isDefaultEntry: Boolean) {}
+
+    override fun onExit(state: ArrivalProbeState) {}
+
+    override fun executeTransitionContent(source: ArrivalProbeState, transitionIndex: Int) {
+        val record = when (transitionIndex) {
+            GO -> {
+                whileGoIsTaken(this)
+                send(ArrivalProbeEvent.Own, EventMetadata.external(data = "own"))
+                return
+            }
+            POSTED -> "posted"
+            OWN -> "own"
+            else -> return
+        }
+        taken.add(record)
+        takenLatch?.countDown()
+    }
+
+    override fun resolveState(stateId: String): ArrivalProbeState? =
+        if (stateId == "waiting") ArrivalProbeState.Waiting else null
+
+    override fun stateIdOf(state: ArrivalProbeState): String = "waiting"
+
+    override fun resolveEventByName(name: String): ArrivalProbeEvent? = when (name) {
+        "go" -> ArrivalProbeEvent.Go
+        "posted" -> ArrivalProbeEvent.Posted
+        "own" -> ArrivalProbeEvent.Own
+        else -> null
+    }
+
+    override fun eventNameOf(event: ArrivalProbeEvent): String = when (event) {
+        ArrivalProbeEvent.Go -> "go"
+        ArrivalProbeEvent.Posted -> "posted"
+        ArrivalProbeEvent.Own -> "own"
+    }
+
+    companion object {
+        const val GO = 0
+        const val POSTED = 1
+        const val OWN = 2
     }
 }
 
@@ -644,6 +737,62 @@ class WhatAnotherThreadPostsEntersThroughTheInboxTest {
             assertEquals(emptyList<String>(), sm.taken.toList(), "the first run took what was held at an earlier stop")
             assertEquals(2, sm.unseenExternalEvents())
         } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * The host's callback inside the macrostep: another thread posts `posted`
+     * and this one joins it, as a BasicHTTP send waits for the listener that
+     * posts the event it caused. The join is the only ordering; nothing sleeps.
+     * Answers, through [taken], whether the inbox took the post.
+     */
+    private fun postAndJoin(sm: ArrivalProbeMachine, taken: AtomicInteger) {
+        val posted = InboxInput.ExternalEvent<ArrivalProbeEvent>(
+            ArrivalProbeEvent.Posted,
+            EventMetadata.external(data = "posted"),
+        )
+        thrownOnAnotherThread { if (sm.inbox.post(posted)) taken.incrementAndGet() }
+    }
+
+    @Test
+    fun anEventPostedBeforeTheMachinesOwnSendIsTakenFirst() {
+        val postsTaken = AtomicInteger(0)
+        val sm = ArrivalProbeMachine({ machine -> postAndJoin(machine, postsTaken) })
+        sm.initialize()
+        try {
+            sm.send(ArrivalProbeEvent.Go)
+            sm.tick()
+            assertEquals(1, postsTaken.get(), "the callback's post was not taken")
+            assertEquals(
+                listOf("posted", "own"),
+                sm.taken.toList(),
+                "the machine's own send overtook an event that arrived before it",
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun anEventPostedBeforeACoroutineModeLoopsOwnSendIsTakenFirst() {
+        val recorded = CountDownLatch(2)
+        val postsTaken = AtomicInteger(0)
+        val sm = ArrivalProbeMachine({ machine -> postAndJoin(machine, postsTaken) }, recorded)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            sm.start(scope)
+            assertTrue(sm.inbox.post(InboxInput.ExternalEvent(ArrivalProbeEvent.Go, EventMetadata.external())))
+            assertTrue(recorded.await(boundSeconds, TimeUnit.SECONDS), "the loop took ${sm.taken}")
+            assertEquals(1, postsTaken.get(), "the callback's post was not taken")
+            assertEquals(
+                listOf("posted", "own"),
+                sm.taken.toList(),
+                "the loop's own send overtook an event that arrived before it",
+            )
+        } finally {
+            sm.stop()
+            scope.cancel()
             sm.cleanup()
         }
     }

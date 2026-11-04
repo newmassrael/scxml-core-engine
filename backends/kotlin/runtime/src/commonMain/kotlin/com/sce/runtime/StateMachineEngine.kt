@@ -704,7 +704,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * on it, which is how a post wakes the loop; in the synchronous mode the
      * owner takes what it holds at each macrostep boundary. Either way what is
      * taken is applied by [drainInbox] before the external queue is consulted,
-     * and what it still holds when it closes is applied then ([closeInbox]).
+     * and before the owner puts an event of its own on that queue
+     * ([enqueueExternal]); what it still holds when it closes is applied then
+     * ([closeInbox]).
      *
      * Replaced only when a closed one is opened again ([openInbox]), so what is
      * posted before a run starts is kept for that run. Volatile because the
@@ -826,18 +828,53 @@ abstract class StateMachineEngine<S : State, E : Event>(
         drainInbox()
     }
 
+    /** A [drainInbox] is applying what the inbox held; the owner's only. */
+    private var drainingInbox = false
+
     /**
-     * The macrostep boundary's half of the inbox (docs/adr/0084): apply, on the
-     * owner, everything posted so far, in the order it was taken, each by the
-     * owner-thread operation of the same name ([applyInboxInput]). Called before
-     * the external queue is consulted, so what was posted joins it behind what
-     * the macrostep that just ended queued.
+     * The owner's half of the inbox (docs/adr/0084): apply, on the owner,
+     * everything posted so far, in the order it was taken, each by the
+     * owner-thread operation of the same name ([applyInboxInput]). Called at
+     * each macrostep boundary, before the external queue is consulted, so what
+     * was posted joins it behind what the macrostep that just ended queued; and
+     * by [enqueueExternal], before the owner puts an event of its own on it.
+     *
+     * One drain at a time. Applying an input reaches [enqueueExternal] again: a
+     * posted event is raised by the owner's own body, and a posted ending raises
+     * its `done.invoke`. That call must not drain in turn, or the inputs posted
+     * after the one being applied would join the queue ahead of what it raises.
+     * Inside a drain it is a plain push, and the drain takes the rest in order.
      */
     private fun drainInbox() {
-        while (true) {
-            val input = eventChannel.tryReceive().getOrNull() ?: return
-            applyInboxInput(input)
+        if (drainingInbox) return
+        drainingInbox = true
+        try {
+            while (true) {
+                val input = eventChannel.tryReceive().getOrNull() ?: return
+                applyInboxInput(input)
+            }
+        } finally {
+            drainingInbox = false
         }
+    }
+
+    /**
+     * The one door onto the external queue for what the owner puts on it: a
+     * `<send>` to this session, an event a host raises on the owner, a host-run
+     * invocation's ending, a child's `done.invoke` or its send to `#_parent`, a
+     * delayed send come due. docs/adr/0084, D2: that queue takes events in the
+     * order they arrived, and what another thread posted before this call
+     * arrived first (W3C test 201: the BasicHTTP listener posts `event1` while
+     * the send waits for it, and the `timeout` sent next must come second), so
+     * the inbox is applied before [queued] joins the queue.
+     *
+     * The internal queue has no such door: it is the running macrostep's own,
+     * and arrival order is a property of the external queue, so a `<raise>` or
+     * a platform error waits for no post ([enqueueInternal]).
+     */
+    private fun enqueueExternal(queued: QueuedEvent<E>) {
+        drainInbox()
+        externalEventQueue.addLast(queued)
     }
 
     /**
@@ -847,6 +884,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * the external queue: the drain is the owner's, so it never asks again
      * whether to post. Asking would answer "post" on an engine that has no
      * owner yet, and stopping one closes the inbox this drain is emptying.
+     * Within the drain, that body's push drains nothing ([drainInbox]).
      */
     private fun applyInboxInput(input: InboxInput<E>) {
         when (input) {
@@ -2761,7 +2799,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             return
         }
         if (onOwner) {
-            externalEventQueue.addLast(QueuedEvent(event, metadata))
+            enqueueExternal(QueuedEvent(event, metadata))
         } else {
             postToInbox(InboxInput.ExternalEvent(event, metadata))
         }
@@ -4361,7 +4399,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // accepts E, so the cast back to E is type-safe by
             // construction.
             @Suppress("UNCHECKED_CAST")
-            externalEventQueue.addLast(QueuedEvent(entry.event as E, entry.metadata))
+            enqueueExternal(QueuedEvent(entry.event as E, entry.metadata))
         }
         return true
     }
@@ -5291,7 +5329,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     ): (() -> Unit)? {
         if (doneEvent == null) return null
         return {
-            externalEventQueue.addLast(QueuedEvent(doneEvent, EventMetadata(
+            enqueueExternal(QueuedEvent(doneEvent, EventMetadata(
                 type = "platform",
                 invokeId = invokeId,
                 data = child.donedataAtFinal(),

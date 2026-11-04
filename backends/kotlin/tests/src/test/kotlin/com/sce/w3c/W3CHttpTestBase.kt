@@ -9,6 +9,7 @@ package com.sce.w3c
 import com.sce.http.W3CHttpTestServer
 import com.sce.runtime.Event
 import com.sce.runtime.EventMetadata
+import com.sce.runtime.InboxInput
 import com.sce.runtime.State
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -56,23 +57,6 @@ abstract class W3CHttpTestBase<S : State, E : Event> : W3CTestBase<S, E>() {
             // an address the harness had told them nothing about.
             sm.basicHttpAccessUri = "http://localhost:$actualPort/test"
 
-            // What the server received, waiting for the engine's owner. The server
-            // answers on a thread of its own, and a synchronous-mode engine belongs
-            // to the thread that drives it (ARCHITECTURE.md "Engine Threading").
-            // This processor is synchronous: the POST returns only after the
-            // server has handed over the event it made, so the reply is raised
-            // on the owner as soon as the send that caused it returns, ahead of
-            // anything the document queues after the send (W3C test 201 sends
-            // `timeout` to itself right after the POST and must see `event1`
-            // first).
-            val received = java.util.concurrent.ConcurrentLinkedQueue<Pair<String, String>>()
-            val raiseReceived = {
-                while (true) {
-                    val (eventName, eventData) = received.poll() ?: break
-                    sm.sendEventByName(eventName, EventMetadata.external(data = eventData))
-                }
-            }
-
             // W3C SCXML C.2: Wire SM HTTP send -> HTTP POST to test server
             sm.onHttpSend = { request ->
                 val (body, contentType) = buildHttpPostBody(
@@ -92,14 +76,18 @@ abstract class W3CHttpTestBase<S : State, E : Event> : W3CTestBase<S, E>() {
                 } catch (_: Exception) {
                     // Match C++ pattern: log and continue
                 }
-                // On the owner, inside the send: what the POST produced.
-                raiseReceived()
             }
 
-            // W3C SCXML C.2: Wire server response -> SM event injection, by way of
-            // the owner (above, and before each tick below).
+            // W3C SCXML C.2: Wire server response -> SM event injection. The
+            // server answers on a thread of its own, and a synchronous-mode
+            // engine belongs to the thread that drives it (ARCHITECTURE.md
+            // "Engine Threading"), so the event is posted to its inbox. This
+            // processor is synchronous: the POST returns only after the server
+            // has posted the event it made, and the engine applies what its inbox
+            // holds before it queues an event of its own, so W3C test 201's
+            // `timeout`, sent right after the POST, is taken after `event1`.
             server.setEventCallback { eventName, eventData ->
-                received.add(eventName to eventData)
+                sm.inbox.post(InboxInput.ExternalEventByName(eventName, EventMetadata.external(data = eventData)))
             }
 
             sm.initialize()
@@ -109,7 +97,6 @@ abstract class W3CHttpTestBase<S : State, E : Event> : W3CTestBase<S, E>() {
                 val deadline = System.currentTimeMillis() + timeoutMs
                 while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
                     Thread.sleep(10)
-                    raiseReceived()
                     sm.tick()
                 }
             }

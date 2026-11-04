@@ -78,7 +78,8 @@ sealed class InboxInput<out E : Event> {
  * single-consumer queue, and the only part of an engine that is safe to use from
  * any thread. The engine's owner applies what was posted at its next macrostep
  * boundary, before it takes the next external event, in the order the posts were
- * taken.
+ * taken; or sooner, before it puts an event of its own on the external queue,
+ * which takes events in the order they arrived.
  */
 interface EngineInbox<E : Event> {
     /**
