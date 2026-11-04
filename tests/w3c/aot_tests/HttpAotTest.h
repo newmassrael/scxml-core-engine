@@ -29,13 +29,19 @@ namespace SCE::W3C::AotTests {
 /**
  * @brief AOT test base class for W3C SCXML C.2 BasicHTTP Event I/O Processor tests
  *
- * Provides HTTP server infrastructure for tests that require actual HTTP POST operations.
- * Unlike SimpleAotTest, this base class:
- * - Starts W3CHttpTestServer on localhost:8080/test
- * - Routes HTTP response events back to the state machine
- * - Runs async event processing loop until final state or timeout
+ * Runs a generated machine whose sends POST to the BasicHTTP fixture endpoint,
+ * routes the event the listener makes of each POST back to the machine, and
+ * drives the machine until a final state or a timeout.
  *
- * W3C SCXML C.2 BasicHTTP Event I/O Processor tests (518, 519, 520) require this infrastructure.
+ * One run on every platform; only the listener and the client differ:
+ * - natively the test starts a W3CHttpTestServer in process, which hands each
+ *   event to a callback on its own thread, and posts with CppHttplibClient;
+ * - under WASM the host starts the listener before main() (w3c/wasm_polyfill.js
+ *   runs w3c/standalone_http_server.js), which answers each POST with the event
+ *   it made, and the test posts with EmscriptenFetchClient.
+ * The two were separate runs once, and the WASM one fell behind: it never set
+ * the script engine an ECMAScript machine needs, and the machine's destructor
+ * then ran into a session it was never given.
  *
  * Example usage:
  * struct Test520 : public HttpAotTest<Test520, 520> {
@@ -58,45 +64,70 @@ public:
                          TestNum);
             return true;  // Report as PASS (skip, not fail)
         }
+#endif
 
         using SM = typename Derived::SM;
+        using Event = typename SM::Event;
+        using Policy = typename SM::PolicyType;
         SM sm;
         // W3C SCXML B.1: Inject script engine handle (Path B+ Q1=(d) C++=shared_ptr).
         if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {
             sm.setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
-                                                                       [](::SCE::IScriptEngine *){}));
+                                                                       [](::SCE::IScriptEngine *) {}));
         }
 
-        // What the server's thread hands the machine's owner (see `raiseReceived`
-        // below). Declared before the server, so it outlives the server's thread.
+        // What the listener made of the machine's POSTs, waiting for the
+        // machine's owner (see `raiseReceived` below). Declared before the
+        // listener, so it outlives a listener's thread.
         std::mutex receivedMutex;
         std::vector<typename SM::EventWithMetadata> received;
 
-        // W3C SCXML C.2: Create and start HTTP server
-        W3C::W3CHttpTestServer httpServer(W3C::basicHttpTestPort(), W3C::basicHttpTestPath());
+        // W3C SCXML C.2: the event the listener made of a POST, by name, as
+        // the machine's own event.
+        const auto deliver = [&receivedMutex, &received](const std::string &eventName, const std::string &eventData) {
+            SCE_LOG_DEBUG("HttpAotTest {}: the listener made event '{}' with data '{}'", TestNum, eventName, eventData);
+            for (int i = 0; i < 256; ++i) {
+                const auto candidate = static_cast<Event>(i);
+                if (candidate != Event::NONE && Policy::getEventName(candidate) == eventName) {
+                    std::lock_guard<std::mutex> lock(receivedMutex);
+                    received.emplace_back(candidate, eventData);
+                    return;
+                }
+            }
+            SCE_LOG_WARN("HttpAotTest {}: Unknown HTTP event: {}", TestNum, eventName);
+        };
 
+#ifndef __EMSCRIPTEN__
+        // The listener, in process: it answers on a thread of its own and
+        // hands each event over before the POST that made it returns.
+        W3C::W3CHttpTestServer httpServer(W3C::basicHttpTestPort(), W3C::basicHttpTestPath());
         if (!httpServer.start()) {
             SCE_LOG_ERROR("HttpAotTest {}: Failed to start HTTP server on port {}", TestNum, W3C::basicHttpTestPort());
             return false;
         }
-
-        SCE_LOG_DEBUG("HttpAotTest {}: HTTP server started on {}", TestNum, W3C::basicHttpTestAccessUri());
+        httpServer.setEventCallback(deliver);
+        using HttpClientType = SCE::CppHttplibClient;
+#else
+        // The listener, the host's: started before main(), at the same port
+        // and path, it answers each POST with the event it made.
+        using HttpClientType = SCE::EmscriptenFetchClient;
+#endif
+        SCE_LOG_DEBUG("HttpAotTest {}: listening at {}", TestNum, W3C::basicHttpTestAccessUri());
 
         // §scxml-C-2-3: the test owns the listener, so it declares the access
         // URI the machine publishes. The converted documents address their
         // sends through that published entry.
         sm.setBasicHttpAccessUri(W3C::basicHttpTestAccessUri());
 
-        // What the server received, waiting for the machine's owner. The server
-        // answers on a thread of its own, and the machine belongs to the thread
-        // that drives it (ARCHITECTURE.md "Engine Threading"). This processor is
-        // synchronous: the POST returns only after the server has handed over
-        // the event it made, so the event is raised on the owner as soon as the
-        // send that caused it returns, ahead of anything the document queues
-        // after the send (W3C test 201 sends `timeout` to itself right after
-        // the POST and must see `event1` first). Raised rather than posted to
-        // the inbox for that reason: a post would be applied at the macrostep
-        // boundary, behind what the rest of the macrostep queues.
+        // The machine belongs to the thread that drives it (ARCHITECTURE.md
+        // "Engine Threading"). This processor is synchronous: the POST returns
+        // only after the listener has handed over the event it made, so the
+        // event is raised on the owner as soon as the send that caused it
+        // returns, ahead of anything the document queues after the send (W3C
+        // test 201 sends `timeout` to itself right after the POST and must see
+        // `event1` first). Raised rather than posted to the inbox for that
+        // reason: a post would be applied at the macrostep boundary, behind
+        // what the rest of the macrostep queues.
         const auto raiseReceived = [&sm, &receivedMutex, &received] {
             std::vector<typename SM::EventWithMetadata> taken;
             {
@@ -108,45 +139,9 @@ public:
             }
         };
 
-        // W3C SCXML C.2: Setup HTTP event callback to route responses to state machine
-        // When HTTP server receives POST response, it hands the event to the owner (above)
-        httpServer.setEventCallback(
-            [&receivedMutex, &received](const std::string &eventName, const std::string &eventData) {
-                SCE_LOG_DEBUG("HttpAotTest {}: HTTP callback received event '{}' with data '{}'", TestNum, eventName,
-                              eventData);
-
-                // W3C SCXML C.2: Map event name string to Event enum
-                // Each test has different Event enum values, so we iterate to find match
-                using Event = typename SM::Event;
-                using Policy = typename SM::PolicyType;
-
-                // Find matching Event enum by comparing event names
-                Event matchedEvent = Event::NONE;
-                bool found = false;
-
-                // Iterate through all possible Event enum values (typically < 10)
-                for (int i = 0; i < 256 && !found; ++i) {
-                    Event candidateEvent = static_cast<Event>(i);
-                    if (Policy::getEventName(candidateEvent) == eventName) {
-                        matchedEvent = candidateEvent;
-                        found = true;
-                        SCE_LOG_DEBUG("HttpAotTest {}: Mapped '{}' to Event enum value {}", TestNum, eventName, i);
-                    }
-                }
-
-                if (found && matchedEvent != Event::NONE) {
-                    std::lock_guard<std::mutex> lock(receivedMutex);
-                    received.emplace_back(matchedEvent, eventData);
-                } else {
-                    SCE_LOG_WARN("HttpAotTest {}: Unknown HTTP event: {}", TestNum, eventName);
-                }
-            });
-
         // W3C SCXML C.2: Wire performHttpSend() callback (Kotlin W3CHttpTestBase parity)
         // Generated code calls engine.performHttpSend() which delegates to this callback.
-        // Synchronous send ensures server callback (which injects response event into SM)
-        // completes before performHttpSend returns, preserving event ordering.
-        sm.setHttpSendCallback([&raiseReceived](const SCE::Static::HttpSendRequest &request) {
+        sm.setHttpSendCallback([&raiseReceived, &deliver](const SCE::Static::HttpSendRequest &request) {
             SCE_LOG_DEBUG("HttpAotTest {}: performHttpSend target='{}' event='{}' content='{}'", TestNum,
                           request.target, request.eventName, request.content);
 
@@ -165,7 +160,7 @@ public:
             }
 
             // W3C SCXML C.2: Synchronous HTTP POST (Kotlin httpClient.send parity)
-            SCE::CppHttplibClient httpClient;
+            HttpClientType httpClient;
             SCE::HttpClient::Request httpReq;
             httpReq.method = "POST";
             httpReq.url = request.target;
@@ -174,7 +169,22 @@ public:
 
             auto future = httpClient.sendRequest(httpReq);
             try {
-                future.get();  // Synchronous: server callback fires before this returns
+                const auto response = future.get();
+                if (!response.success) {
+                    SCE_LOG_ERROR("HttpAotTest {}: HTTP POST failed (status {})", TestNum, response.statusCode);
+                }
+#ifdef __EMSCRIPTEN__
+                // The host's listener answers with the event it made.
+                if (response.success && !response.body.empty() && response.body.front() == '{') {
+                    const auto answer = nlohmann::json::parse(response.body);
+                    if (answer.contains("event")) {
+                        deliver(answer["event"].template get<std::string>(),
+                                answer.contains("data") ? answer["data"].dump() : std::string());
+                    }
+                }
+#else
+                (void)deliver;
+#endif
             } catch (const std::exception &e) {
                 SCE_LOG_ERROR("HttpAotTest {}: HTTP POST failed: {}", TestNum, e.what());
             }
@@ -182,25 +192,24 @@ public:
             raiseReceived();
         });
 
-        // Initialize state machine
         sm.initialize();
-        SCE_LOG_DEBUG("HttpAotTest {}: State machine initialized, starting async event loop", TestNum);
+        SCE_LOG_DEBUG("HttpAotTest {}: State machine initialized, starting event loop", TestNum);
 
-        // W3C SCXML C.2: Async event processing loop
-        // HTTP responses come back asynchronously, so we need to poll until final state
+        // W3C SCXML C.2: drive the machine until a final state or the timeout.
         auto startTime = std::chrono::steady_clock::now();
         constexpr auto timeout = std::chrono::seconds(5);
+        bool timedOut = false;
 
         while (!sm.isInFinalState()) {
             auto elapsed = std::chrono::steady_clock::now() - startTime;
             if (elapsed > timeout) {
                 SCE_LOG_ERROR("HttpAotTest {}: Timeout waiting for final state (elapsed: {}ms)", TestNum,
                               std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
-                httpServer.stop();
-                return false;
+                timedOut = true;
+                break;
             }
 
-            // Process any pending events, the server's first
+            // Process any pending events, the listener's first
             raiseReceived();
             sm.tick();
 
@@ -208,9 +217,13 @@ public:
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
-        // Stop HTTP server
+#ifndef __EMSCRIPTEN__
         httpServer.stop();
         SCE_LOG_DEBUG("HttpAotTest {}: HTTP server stopped", TestNum);
+#endif
+        if (timedOut) {
+            return false;
+        }
 
         // Check the run ENDED in Pass (§scxml-D-exitInterpreter empties the configuration)
         bool isPass = sm.terminalState() == SM::State::Pass;
@@ -218,108 +231,6 @@ public:
                       isPass);
 
         return isPass;
-#else
-        // W3C SCXML C.2 BasicHTTPEventProcessor: WASM platform
-        // External HTTP server started by polyfill_pre.js (standalone_http_server.js)
-        // No per-test server instantiation needed - global server handles all HTTP tests
-
-        using SM = typename Derived::SM;
-        SM sm;
-
-        // §scxml-C-2-3: the external listener started by polyfill_pre.js takes
-        // the same port and path as the native harness server, so the machine
-        // publishes the same access URI here.
-        sm.setBasicHttpAccessUri(W3C::basicHttpTestAccessUri());
-
-        // W3C SCXML C.2: Wire performHttpSend() callback for WASM (native parity)
-        // Generated code calls engine.performHttpSend() which delegates to this callback.
-        // EmscriptenFetchClient sends HTTP POST to external server (standalone_http_server.js),
-        // then parses JSON response to route events back into the state machine.
-        sm.setHttpSendCallback([&sm](const SCE::Static::HttpSendRequest &request) {
-            SCE_LOG_DEBUG("HttpAotTest {}: WASM performHttpSend target='{}' event='{}' content='{}'", TestNum,
-                          request.target, request.eventName, request.content);
-
-            // W3C SCXML C.2: Build HTTP POST body (Zero Duplication with SendHelper)
-            std::string body;
-            std::string contentType;
-
-            if (!request.eventName.empty() || !request.params.empty()) {
-                body = ::SCE::SendHelper::buildHttpPostBody(request.eventName, request.params);
-                contentType = "application/x-www-form-urlencoded";
-            } else if (!request.content.empty()) {
-                body = request.content;
-                contentType = "text/plain";
-            } else {
-                contentType = "application/x-www-form-urlencoded";
-            }
-
-            // W3C SCXML C.2: Send via EmscriptenFetchClient to external server
-            SCE::EmscriptenFetchClient httpClient;
-            SCE::HttpClient::Request httpReq;
-            httpReq.method = "POST";
-            httpReq.url = request.target;
-            httpReq.body = body;
-            httpReq.contentType = contentType;
-
-            auto future = httpClient.sendRequest(httpReq);
-            try {
-                auto response = future.get();
-
-                // W3C SCXML C.2: Parse JSON response and route event back to state machine
-                if (response.success && !response.body.empty() && response.body.front() == '{') {
-                    using json = nlohmann::json;
-                    json responseObj = json::parse(response.body);
-
-                    if (responseObj.contains("event")) {
-                        std::string eventName = responseObj["event"].template get<std::string>();
-                        std::string eventData;
-                        if (responseObj.contains("data")) {
-                            eventData = responseObj["data"].dump();
-                        }
-                        sm.raiseExternal(eventName, eventData);
-                    }
-                } else if (!response.success) {
-                    SCE_LOG_ERROR("HttpAotTest {}: WASM HTTP POST failed (status {})", TestNum, response.statusCode);
-                }
-            } catch (const std::exception &e) {
-                SCE_LOG_ERROR("HttpAotTest {}: WASM HTTP POST exception: {}", TestNum, e.what());
-            }
-        });
-
-        // W3C SCXML C.2: Initialize state machine
-        // HTTP POST will be sent during initialize() via performHttpSend callback
-        sm.initialize();
-        SCE_LOG_DEBUG("HttpAotTest {}: WASM state machine initialized", TestNum);
-
-        // W3C SCXML C.2: Async event processing loop
-        // HTTP responses come back asynchronously via EmscriptenFetchClient + external server
-        auto startTime = std::chrono::steady_clock::now();
-        constexpr auto timeout = std::chrono::seconds(5);
-
-        while (!sm.isInFinalState()) {
-            auto elapsed = std::chrono::steady_clock::now() - startTime;
-            if (elapsed > timeout) {
-                SCE_LOG_ERROR("HttpAotTest {}: WASM timeout waiting for final state (elapsed: {}ms)", TestNum,
-                              std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
-                SCE_LOG_ERROR("HttpAotTest {}: Make sure external HTTP server is running (started by polyfill_pre.js)",
-                              TestNum);
-                return false;
-            }
-
-            // Process any pending events
-            sm.tick();
-
-            // Small sleep to avoid busy-waiting
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-        // Check the run ENDED in Pass (§scxml-D-exitInterpreter empties the configuration)
-        bool isPass = sm.terminalState() == SM::State::Pass;
-        SCE_LOG_DEBUG("HttpAotTest {}: WASM final state={}, isPass={}", TestNum, static_cast<int>(sm.getCurrentState()),
-                      isPass);
-
-        return isPass;
-#endif
     }
 
     int getTestId() const override {
