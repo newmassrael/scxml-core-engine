@@ -273,10 +273,12 @@ func NothingInTransit(queue *ParentEventQueue, invokeID string) error {
 //
 // A machine any of whose record schemas or enums is past its first revision names
 // each such revision in `revisions` and writes the revised shape; any other
-// writes the first shape and no `revisions`. The state is format 2: the
-// machine's own id, how many times each `<invoke>` has started, and children,
-// each running child with its whole state, which the generated machine saved
-// through the child's own document, in document order.
+// writes the first shape and no `revisions`. A machine built for a configuration
+// of a product line records it in `features` (docs/adr/0057 §7); any other writes
+// none. The state is format 2: the machine's own id, how many times each
+// `<invoke>` has started, and children, each running child with its whole state,
+// which the generated machine saved through the child's own document, in
+// document order.
 //
 // Refused for a machine that is not running (never started, or ended at a
 // top-level `<final>`, where there is nothing left to resume), for one whose
@@ -360,6 +362,7 @@ func SaveSession[S comparable, E comparable](
 	state := &SavedState{
 		Shape:           savedShape,
 		Revisions:       revisions,
+		Features:        slices.Clone(shape.Features),
 		Configuration:   configuration,
 		Current:         policy.GetStateName(engine.GetCurrentState()),
 		Variables:       variables,

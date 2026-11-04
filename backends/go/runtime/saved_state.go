@@ -5,6 +5,7 @@ package sce
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -280,6 +281,13 @@ type SavedState struct {
 	// Revisions is the revision each record schema and enum past its first was
 	// saved at, ordered by key. Empty when every one is in its first revision.
 	Revisions []SavedRevision
+	// Features is the configuration of a product line the machine was built for
+	// (docs/adr/0057 §7): the features it turns on, sorted, each once. Nil for a
+	// machine of no product line, which is every machine of a document that
+	// imports no feature model; a non-nil empty slice is the configuration that
+	// turns no feature on. A restore judges it before the shape
+	// (CheckSavedFeatures).
+	Features []string
 	// SessionID is the session's own id (`_sessionid`). An XML Nmtoken in format
 	// 2; empty in a format-1 state, which holds none.
 	SessionID string
@@ -401,6 +409,11 @@ func (s *SavedState) writeSessionMembers(members *JSONObject) {
 			revisions.Set(saved.Key, saved.toJSONValue())
 		}
 		members.Set("revisions", revisions)
+	}
+	// Absent for a machine of no product line, so the text of every other
+	// machine is the text it was before configurations were recorded.
+	if s.Features != nil {
+		members.Set("features", stringsToJSON(s.Features))
 	}
 }
 
@@ -757,6 +770,30 @@ func savedSessionFromJSON(members *JSONObject, format int) (*SavedState, error) 
 			}
 			state.Revisions = append(state.Revisions, revision)
 		}
+	}
+
+	// Optional too: only a machine of a product line records the features it was
+	// built with, as a set, so each is named once and in order.
+	if members.Has("features") {
+		value, _ := members.Get("features")
+		items, ok := value.([]any)
+		if !ok {
+			return nil, refuse("'features' is not an array")
+		}
+		features := make([]string, 0, len(items))
+		for _, item := range items {
+			name, err := text(item, "features")
+			if err != nil {
+				return nil, err
+			}
+			features = append(features, name)
+		}
+		for at := 1; at < len(features); at++ {
+			if features[at-1] >= features[at] {
+				return nil, refuse("'features' is not in order or names a feature twice; it is a set, sorted")
+			}
+		}
+		state.Features = features
 	}
 
 	if state.Shape, err = fieldText("shape"); err != nil {
@@ -1165,6 +1202,10 @@ type SavedShape struct {
 	Records []RecordLineage
 	// Enums is each enum a value of the state is of, by its key, ordered by it.
 	Enums []EnumLineage
+	// Features is the configuration of a product line the machine was built for,
+	// sorted (SavedState.Features); nil for a machine of no product line, and a
+	// non-nil empty slice for the configuration that turns no feature on.
+	Features []string
 }
 
 // EnumLineage is an enum a value of a machine's state is of, as a saved state
@@ -1251,6 +1292,55 @@ type RecordHolder struct {
 	List     bool
 }
 
+// CheckSavedFeatures refuses saved unless it was taken in the configuration
+// features of a product line, or both are of none (docs/adr/0057 §7). Judged
+// before the shape, which differs too between builds that differ in states or
+// variables, so a state of another build is refused by the features that differ
+// and not by a digest. A build with fewer features lacks states or data the
+// state may hold, and one with more has data and invocations the saved run never
+// initialised or started: either is refused. Carrying a state across
+// configurations is a migration, which a restore does not do.
+//
+// Nil is no configuration and a non-nil empty slice the configuration that turns
+// no feature on, in saved.Features and in features alike.
+func CheckSavedFeatures(saved *SavedState, features []string) error {
+	list := func(names []string) string { return "[" + strings.Join(names, ", ") + "]" }
+	switch {
+	case saved.Features == nil && features == nil:
+		return nil
+	case saved.Features != nil && features != nil:
+		if slices.Equal(saved.Features, features) {
+			return nil
+		}
+		var onlySaved, onlyBuilt []string
+		for _, feature := range saved.Features {
+			if !slices.Contains(features, feature) {
+				onlySaved = append(onlySaved, feature)
+			}
+		}
+		for _, feature := range features {
+			if !slices.Contains(saved.Features, feature) {
+				onlyBuilt = append(onlyBuilt, feature)
+			}
+		}
+		var differ []string
+		if len(onlySaved) > 0 {
+			differ = append(differ, list(onlySaved)+" on only where it was saved")
+		}
+		if len(onlyBuilt) > 0 {
+			differ = append(differ, list(onlyBuilt)+" on only in this build")
+		}
+		return refuse("the saved state was taken with the features %s on, and this machine is built with %s: %s",
+			list(saved.Features), list(features), strings.Join(differ, ", "))
+	case saved.Features == nil:
+		return refuse("the saved state records no features, and this machine is built with the features %s on",
+			list(features))
+	default:
+		return refuse("the saved state was taken with the features %s on, and this machine is built from a "+
+			"document of no feature model", list(saved.Features))
+	}
+}
+
 // CheckSavedShape refuses saved unless it was saved from a document of this
 // shape, judged before any variable is read, so a state saved from another
 // document is refused for that and not for whichever variable it happens to
@@ -1276,7 +1366,13 @@ func CheckSavedShape(saved *SavedState, shape string) error {
 // declare it, and so is one that holds null in a field a later revision widened
 // to optional, since at the revision it was saved at the field was a value of its
 // present type and no build wrote it absent (docs/adr/0055, section 6).
+//
+// The configuration the state was taken in is judged first, before the shape
+// (CheckSavedFeatures).
 func UpgradeSavedState(saved *SavedState, shape *SavedShape) (*SavedState, error) {
+	if err := CheckSavedFeatures(saved, shape.Features); err != nil {
+		return nil, err
+	}
 	// A format-2 state names an enum by its document and a format-1 state by the
 	// alias it is imported under, so each is judged against its own shape
 	// (docs/adr/0045, section 2).

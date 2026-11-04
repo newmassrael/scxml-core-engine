@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -512,5 +513,145 @@ func TestARefusalInsideAChildNamesTheSessionItIsAbout(t *testing.T) {
 	outer := RefusalWithin(inner, "invokes[0].session")
 	if outer.Error() != "the session at invokes[0].session.invokes[1].session: 'x' is not a text" {
 		t.Fatal(outer.Error())
+	}
+}
+
+// featuredSession is a format-2 session of shape standing in `a`, holding
+// nothing, taken in the configuration features.
+func featuredSession(shape string, features []string) *SavedState {
+	return &SavedState{
+		Shape: shape, Configuration: []string{"a"}, Current: "a", Variables: NewJSONObject(),
+		Invokes: SavedInvokes{Resumed: true}, SessionID: "root", Features: features,
+	}
+}
+
+// The configuration a state was taken in is written as the last member of its
+// session, after `revisions`, and read back as it was; a machine of no product
+// line writes none, and its text is the one it was before configurations were
+// recorded (docs/adr/0057 §7).
+func TestASavedStateIsReadBackAsItWasWritten(t *testing.T) {
+	state := featuredSession("s", []string{"session-unicast", "tls"})
+	state.Revisions = []SavedRevision{{Key: "reading.taken", Revision: 3, Fields: strings.Repeat("0", 64)}}
+	text := state.ToJSON()
+	if want := `,"revisions":{"reading.taken":{"revision":3,"fields":"` + strings.Repeat("0", 64) +
+		`"}},"features":["session-unicast","tls"]}`; !strings.HasSuffix(text, want) {
+		t.Fatalf("written as %s, want it to end %s", text, want)
+	}
+	back, err := SavedStateFromJSON(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(back.Features, state.Features) {
+		t.Fatalf("read back with the features %q, want %q", back.Features, state.Features)
+	}
+	if written := back.ToJSON(); written != text {
+		t.Fatalf("written back as\n%s\nthe text is\n%s", written, text)
+	}
+
+	plain := *state
+	plain.Features = nil
+	if strings.Contains(plain.ToJSON(), "features") {
+		t.Fatalf("a machine of no product line writes %s", plain.ToJSON())
+	}
+	back, err = SavedStateFromJSON(plain.ToJSON())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Features != nil || back.ToJSON() != plain.ToJSON() {
+		t.Fatalf("read back with the features %q as %s", back.Features, back.ToJSON())
+	}
+
+	// The configuration that turns no feature on is one, not the absence of one.
+	noneOn := *state
+	noneOn.Features = []string{}
+	if !strings.HasSuffix(noneOn.ToJSON(), `,"features":[]}`) {
+		t.Fatalf("the configuration of no feature is written as %s", noneOn.ToJSON())
+	}
+	back, err = SavedStateFromJSON(noneOn.ToJSON())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Features == nil || len(back.Features) != 0 {
+		t.Fatalf("the configuration of no feature is read back as %#v", back.Features)
+	}
+}
+
+// A restore judges the configuration a state was taken in before its shape, and
+// names the features that differ (docs/adr/0057 §7).
+func TestAStateOfAnotherConfigurationIsRefusedByTheFeaturesThatDiffer(t *testing.T) {
+	taken := func(features []string) *SavedState { return featuredSession("first2", features) }
+	refused := func(saved *SavedState, built []string, want string) {
+		t.Helper()
+		err := CheckSavedFeatures(saved, built)
+		if err == nil || err.Error() != want {
+			t.Errorf("refused as %v, want %q", err, want)
+		}
+	}
+	for _, kept := range []struct{ saved, built []string }{
+		{nil, nil}, {[]string{}, []string{}}, {[]string{"a", "b"}, []string{"a", "b"}},
+	} {
+		if err := CheckSavedFeatures(taken(kept.saved), kept.built); err != nil {
+			t.Errorf("%#v against %#v: %v", kept.saved, kept.built, err)
+		}
+	}
+	refused(taken([]string{"a", "b"}), []string{"a", "c"},
+		"the saved state was taken with the features [a, b] on, and this machine is built with [a, c]: "+
+			"[b] on only where it was saved, [c] on only in this build")
+	refused(taken([]string{"a"}), []string{},
+		"the saved state was taken with the features [a] on, and this machine is built with []: "+
+			"[a] on only where it was saved")
+	refused(taken(nil), []string{"a"},
+		"the saved state records no features, and this machine is built with the features [a] on")
+	refused(taken([]string{}), nil,
+		"the saved state was taken with the features [] on, and this machine is built from a document of "+
+			"no feature model")
+	// No configuration is not the configuration of no feature.
+	refused(taken(nil), []string{},
+		"the saved state records no features, and this machine is built with the features [] on")
+
+	// Judged before the shape: a state of another build is refused for its
+	// features even where its shape differs too.
+	shape := &SavedShape{
+		First: "first", Revised: "revised", Format2First: "first2", Format2Revised: "revised2",
+		Features: []string{"a"},
+	}
+	other := taken([]string{"b"})
+	other.Shape = "other"
+	if _, err := UpgradeSavedState(other, shape); err == nil ||
+		!strings.HasPrefix(err.Error(), "the saved state was taken with the features [b] on") {
+		t.Fatalf("a state of another configuration and shape is refused as %v", err)
+	}
+	// Taken in the machine's own configuration, it is judged by its shape.
+	if _, err := UpgradeSavedState(taken([]string{"a"}), shape); err != nil {
+		t.Fatalf("a state of the machine's own configuration: %v", err)
+	}
+}
+
+// `features` is a set, written sorted: a text that repeats a feature or names
+// them out of order is refused as it is read.
+func TestTheFeaturesOfASavedStateAreASortedSet(t *testing.T) {
+	text := func(features string) string {
+		return `{"format":1,"shape":"s","configuration":["s"],"current":"s","variables":{},"history":{},` +
+			`"pending":[],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[],` +
+			`"features":` + features + `}`
+	}
+	read, err := SavedStateFromJSON(text(`["a","b"]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(read.Features, []string{"a", "b"}) {
+		t.Fatalf("read as %q", read.Features)
+	}
+	for features, want := range map[string]string{
+		`["b","a"]`:    "'features' is not in order or names a feature twice; it is a set, sorted",
+		`["a","a"]`:    "'features' is not in order or names a feature twice; it is a set, sorted",
+		`"a"`:          "'features' is not an array",
+		`{"tls":true}`: "'features' is not an array",
+		`["b","a",1]`:  "'features' is not a text",
+		`["a",null]`:   "'features' is not a text",
+	} {
+		if _, err := SavedStateFromJSON(text(features)); err == nil || err.Error() != want {
+			t.Errorf("%s: refused as %v, want %q", features, err, want)
+		}
 	}
 }

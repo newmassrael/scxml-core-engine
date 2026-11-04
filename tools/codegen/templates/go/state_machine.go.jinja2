@@ -413,6 +413,9 @@ var {{ machine_name }}SavedShape = sce.SavedShape{
 		},
 {% endfor %}
 	},
+{% if static_saved_shape.features is not none %}
+	Features: []string{ {%- for feature in static_saved_shape.features %}"{{ feature | escape_go }}"{{ ", " if not loop.last }}{% endfor -%} },
+{% endif %}
 }
 
 // {{ machine_name }}Histories is the document's `<history>` pseudo-states, by
