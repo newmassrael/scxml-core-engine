@@ -1612,6 +1612,15 @@ name = "a_plan_states_what_its_machines_require"
 path = "tests/a_plan_states_what_its_machines_require.rs"
 required-features = ["cli"]
 
+# Every C11 machine of the conformance registry states what it includes. It
+# generates each fixture as the conformance route does, by spawning
+# `sce-codegen generate` with the route's arguments, so it carries the `cli`
+# gate.
+[[test]]
+name = "a_c11_machine_includes_what_it_states_it_requires"
+path = "tests/a_c11_machine_includes_what_it_states_it_requires.rs"
+required-features = ["cli"]
+
 # `orchestrate --go-module-prefix` reaches every statechart of the set and every
 # child one carries. It spawns `sce-codegen orchestrate` and `check`, so it
 # carries the `cli` gate.

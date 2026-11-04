@@ -27,14 +27,21 @@
 //! the C11 runtime names a library for (`SCE_C_RUNTIME_REQUIREMENTS`,
 //! backends/c/runtime/CMakeLists.txt), so a requirement added to the
 //! generator cannot reach a build that links nothing for it.
+//!
+//! Each fixture is generated as the conformance route generates it
+//! (cmake/SCEStaticW3CTest.cmake): `sce-codegen generate` on the staged
+//! document with the fixture's directory as input root, then every child
+//! generation its plan holds, each statement read from the run's manifest. A
+//! library entry of its own refused documents the route accepts (test183's
+//! discarded self-send), so it judged a generation no build runs.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::OnceLock;
 
-use sce_build::generator::{GeneratedOutput, Language, RuntimeRequirement};
-use sce_build::w3c_registry::{W3cRegistry, W3C_REGISTRY_RELATIVE_PATH};
-use sce_build::{compile_scxml_lang_typed, find_template_dir_for};
+use sce_build::generator::RuntimeRequirement;
+use sce_build::w3c_registry::{W3cFixture, W3cRegistry, W3C_REGISTRY_RELATIVE_PATH};
 
 /// The C11 runtime's build, which names the library of every requirement.
 const C11_RUNTIME: &str = include_str!("../../backends/c/runtime/CMakeLists.txt");
@@ -85,39 +92,220 @@ fn misstatements(files: &[(String, String)], stated: &BTreeSet<RuntimeRequiremen
         .collect()
 }
 
-/// One fixture's C11 output: its id, its registry harness, and what the
-/// generation produced.
-type FixtureOutput = (String, String, GeneratedOutput);
+/// One generation the conformance route runs for a fixture: the C and header
+/// files it wrote, each with its text, and what its manifest states it
+/// requires (`runtime_requires`).
+struct Generation {
+    files: Vec<(String, String)>,
+    requires: BTreeSet<RuntimeRequirement>,
+}
+
+/// One fixture's C11 output: its id, its registry harness, and every
+/// generation the route runs for it, the fixture's own first.
+type FixtureOutput = (String, String, Vec<Generation>);
+
+/// What every generation of a fixture requires.
+fn fixture_requires(generations: &[Generation]) -> BTreeSet<RuntimeRequirement> {
+    generations
+        .iter()
+        .flat_map(|generation| generation.requires.iter().copied())
+        .collect()
+}
+
+/// `sce-codegen <args>`, which has to succeed; its standard output.
+fn codegen(args: &[&str], what: &str) -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
+        .args(args)
+        .output()
+        .expect("spawn sce-codegen");
+    assert!(
+        output.status.success(),
+        "{what} was refused:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+/// One generation run as the route runs it, read back from its manifest.
+fn generation(
+    document: &str,
+    extra: &[String],
+    out: &str,
+    input_root: &str,
+    what: &str,
+) -> Generation {
+    let mut args = vec!["generate", document];
+    args.extend(extra.iter().map(String::as_str));
+    args.extend([
+        "-l",
+        "c11",
+        "-o",
+        out,
+        "--input-root",
+        input_root,
+        "--no-format",
+    ]);
+    let stdout = codegen(&args, what);
+    let manifest: serde_json::Value = serde_json::from_str(
+        stdout
+            .lines()
+            .last()
+            .unwrap_or_else(|| panic!("{what} wrote no manifest")),
+    )
+    .unwrap_or_else(|e| panic!("{what}: the manifest is not JSON: {e}"));
+    let files = manifest["artifacts"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{what}: the manifest lists no artifacts"))
+        .iter()
+        .map(|artifact| artifact["path"].as_str().expect("an artifact has a path"))
+        .filter(|path| path.ends_with(".c") || path.ends_with(".h"))
+        .map(|path| {
+            let text = std::fs::read_to_string(path)
+                .unwrap_or_else(|e| panic!("{what}: read {path}: {e}"));
+            (path.to_string(), text)
+        })
+        .collect();
+    let requires = manifest["runtime_requires"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{what}: a C11 manifest states no runtime_requires"))
+        .iter()
+        .map(|name| {
+            let name = name.as_str().expect("a requirement is a string");
+            RuntimeRequirement::ALL
+                .into_iter()
+                .find(|requirement| requirement.wire_name() == name)
+                .unwrap_or_else(|| panic!("{what}: `{name}` is no requirement the generator knows"))
+        })
+        .collect();
+    Generation { files, requires }
+}
+
+/// Every generation the conformance route (cmake/SCEStaticW3CTest.cmake) runs
+/// for `fixture`, run as it runs them: the fixture's document staged into the
+/// output directory with its sidecar and generated with the fixture's
+/// directory as input root, then each child document the plan of it holds,
+/// with the arguments the plan states for it.
+fn route_generations(root: &Path, fixture: &W3cFixture) -> Vec<Generation> {
+    let stem = format!("test{}", fixture.id);
+    let resources = root.join(format!("resources/{}", fixture.id));
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = dir.path();
+    for staged in [format!("{stem}.scxml"), format!("{stem}.txt")] {
+        if resources.join(&staged).exists() {
+            std::fs::copy(resources.join(&staged), out.join(&staged))
+                .unwrap_or_else(|e| panic!("{stem}: stage {staged}: {e}"));
+        }
+    }
+    let document = out.join(format!("{stem}.scxml"));
+    let committed = resources.join(format!("{stem}.scxml"));
+    let (document, committed, out_dir, input_root) = (
+        document.to_str().expect("a UTF-8 path"),
+        committed.to_str().expect("a UTF-8 path"),
+        out.to_str().expect("a UTF-8 path"),
+        resources.to_str().expect("a UTF-8 path"),
+    );
+
+    // The child generations the route declares, from the plan it asks of the
+    // committed document: a generation's first line is
+    // `<child document>\t\t<argument>...`.
+    let plan = codegen(
+        &[
+            "--plan",
+            "--plan-children",
+            "generate",
+            committed,
+            "-l",
+            "c11",
+            "-o",
+            out_dir,
+            "--input-root",
+            input_root,
+            "--no-format",
+        ],
+        &format!("{stem}: the plan of the C11 generation the conformance route builds"),
+    );
+    let children: Vec<(String, Vec<String>)> = plan
+        .lines()
+        .filter_map(|line| {
+            let (child, rest) = line.split_once('\t')?;
+            let arguments = rest.strip_prefix('\t')?;
+            Some((
+                child.to_string(),
+                arguments
+                    .split('\t')
+                    .filter(|argument| !argument.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+            ))
+        })
+        .collect();
+    // The child documents the fixture's directory holds are staged beside it
+    // (`CHILDREN_HELD_IN`): the run reads them rather than writing them.
+    for line in plan.lines().filter(|line| !line.contains('\t')) {
+        let Some(name) = Path::new(line).file_name() else {
+            continue;
+        };
+        if line.ends_with(".scxml") && resources.join(name).exists() {
+            std::fs::copy(resources.join(name), out.join(name))
+                .unwrap_or_else(|e| panic!("{stem}: stage the child {line}: {e}"));
+        }
+    }
+
+    let mut generations = vec![generation(
+        document,
+        &[],
+        out_dir,
+        input_root,
+        &format!("{stem}: the C11 generation the conformance route builds"),
+    )];
+    for (child, arguments) in &children {
+        generations.push(generation(
+            child,
+            arguments,
+            out_dir,
+            input_root,
+            &format!("{stem}: the generation of its child {child}"),
+        ));
+    }
+    generations
+}
 
 /// The C11 output of every fixture the registry lists, generated once for
-/// every test here.
+/// every test here, by the generator the conformance route runs and with its
+/// arguments: a library entry of its own would be a second route, and one that
+/// refused documents the route accepts.
 fn registry_outputs() -> &'static [FixtureOutput] {
     static OUTPUTS: OnceLock<Vec<FixtureOutput>> = OnceLock::new();
     OUTPUTS.get_or_init(|| {
         let root = repo_root();
         let registry =
             W3cRegistry::load(&root.join(W3C_REGISTRY_RELATIVE_PATH)).expect("the registry loads");
-        let template_dir = find_template_dir_for(Language::C11);
-        registry
-            .fixtures()
-            .iter()
-            .map(|fixture| {
-                let document = root.join(format!("resources/{0}/test{0}.scxml", fixture.id));
-                let output = compile_scxml_lang_typed(
-                    document.to_str().expect("a UTF-8 path"),
-                    &template_dir,
-                    Language::C11,
-                )
-                .unwrap_or_else(|e| {
-                    panic!(
-                        "test{}: the C11 generation the conformance route builds was refused: \
-                         {e:?}",
-                        fixture.id
-                    )
-                });
-                (fixture.id.clone(), fixture.harness.clone(), output)
-            })
-            .collect()
+        let fixtures = registry.fixtures();
+        let workers = std::thread::available_parallelism().map_or(4, usize::from);
+        let chunk = fixtures.len().div_ceil(workers).max(1);
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = fixtures
+                .chunks(chunk)
+                .map(|part| {
+                    let root = &root;
+                    scope.spawn(move || {
+                        part.iter()
+                            .map(|fixture| {
+                                (
+                                    fixture.id.clone(),
+                                    fixture.harness.clone(),
+                                    route_generations(root, fixture),
+                                )
+                            })
+                            .collect::<Vec<FixtureOutput>>()
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|handle| handle.join().expect("a fixture's generation panicked"))
+                .collect()
+        })
     })
 }
 
@@ -132,9 +320,11 @@ fn every_registry_fixture_states_what_its_c11_machine_includes() {
     );
 
     let mut found = Vec::new();
-    for (id, _, output) in outputs {
-        for misstatement in misstatements(&output.files, &output.requires) {
-            found.push(format!("test{id}: {misstatement}"));
+    for (id, _, generations) in outputs {
+        for generation in generations {
+            for misstatement in misstatements(&generation.files, &generation.requires) {
+                found.push(format!("test{id}: {misstatement}"));
+            }
         }
     }
     assert!(
@@ -149,7 +339,7 @@ fn every_registry_fixture_states_what_its_c11_machine_includes() {
     for requirement in RuntimeRequirement::ALL {
         let stating = outputs
             .iter()
-            .filter(|(_, _, output)| output.requires.contains(&requirement))
+            .filter(|(_, _, generations)| fixture_requires(generations).contains(&requirement))
             .count();
         assert!(
             stating > 0 && stating < outputs.len(),
@@ -162,7 +352,7 @@ fn every_registry_fixture_states_what_its_c11_machine_includes() {
     assert!(
         outputs
             .iter()
-            .any(|(_, _, output)| output.requires.is_empty()),
+            .any(|(_, _, generations)| fixture_requires(generations).is_empty()),
         "no fixture's machine states nothing, so the freestanding profile is unmeasured"
     );
 }
@@ -171,9 +361,9 @@ fn every_registry_fixture_states_what_its_c11_machine_includes() {
 fn the_http_harness_names_the_machines_that_state_http() {
     let found: Vec<String> = registry_outputs()
         .iter()
-        .filter_map(|(id, harness, output)| {
+        .filter_map(|(id, harness, generations)| {
             let runs_the_server = harness == "http";
-            let sends = output.requires.contains(&RuntimeRequirement::Http);
+            let sends = fixture_requires(generations).contains(&RuntimeRequirement::Http);
             (runs_the_server != sends).then(|| {
                 format!(
                     "test{id}: harness `{harness}`, and its machine {} `http`",
@@ -197,9 +387,13 @@ fn the_http_harness_names_the_machines_that_state_http() {
 #[test]
 fn a_statement_that_is_not_what_the_machine_includes_is_refused() {
     let outputs = registry_outputs();
-    let (scripted_id, _, scripted) = outputs
-        .iter()
-        .find(|(_, _, output)| output.requires.contains(&RuntimeRequirement::Lua))
+    let every = || {
+        outputs
+            .iter()
+            .flat_map(|(id, _, generations)| generations.iter().map(move |g| (id, g)))
+    };
+    let (scripted_id, scripted) = every()
+        .find(|(_, generation)| generation.requires.contains(&RuntimeRequirement::Lua))
         .expect("a fixture whose machine embeds Lua");
     let mut dropped = scripted.requires.clone();
     dropped.remove(&RuntimeRequirement::Lua);
@@ -210,9 +404,8 @@ fn a_statement_that_is_not_what_the_machine_includes_is_refused() {
          {found:?}"
     );
 
-    let (plain_id, _, plain) = outputs
-        .iter()
-        .find(|(_, _, output)| output.requires.is_empty())
+    let (plain_id, plain) = every()
+        .find(|(_, generation)| generation.requires.is_empty())
         .expect("a fixture whose machine requires nothing");
     let added: BTreeSet<RuntimeRequirement> = [RuntimeRequirement::Http].into_iter().collect();
     let found = misstatements(&plain.files, &added);
@@ -294,23 +487,47 @@ fn every_requirement_the_generator_states_is_one_the_runtime_links() {
     );
 }
 
+/// The runtime's build with `left_out` taken out of its vocabulary, the
+/// declaration rebuilt from the vocabulary it parses rather than from a
+/// spelling of it, so a requirement added to both sides keeps the case live.
+fn without_in_vocabulary(cmake: &str, left_out: &str) -> String {
+    let re = regex::Regex::new(r"set_property\(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENTS[^)]*\)")
+        .expect("pattern");
+    let declared = re
+        .find(cmake)
+        .expect("backends/c/runtime/CMakeLists.txt declares SCE_C_RUNTIME_REQUIREMENTS")
+        .as_str();
+    let kept: Vec<String> = runtime_vocabulary(cmake)
+        .into_iter()
+        .filter(|name| name != left_out)
+        .collect();
+    cmake.replacen(
+        declared,
+        &format!(
+            "set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENTS {})",
+            kept.join(" ")
+        ),
+        1,
+    )
+}
+
 #[test]
 fn a_requirement_the_runtime_does_not_link_is_refused() {
-    let forgotten = C11_RUNTIME.replace(
-        "SCE_C_RUNTIME_REQUIREMENTS lua dom http)",
-        "SCE_C_RUNTIME_REQUIREMENTS lua dom)",
-    );
-    assert_ne!(
-        forgotten, C11_RUNTIME,
-        "the vocabulary is no longer spelled as this case expects"
-    );
-    let found = unmapped_requirements(&forgotten);
-    assert!(
-        found
-            .iter()
-            .any(|v| v.contains("`http` is not in SCE_C_RUNTIME_REQUIREMENTS")),
-        "a requirement missing from the vocabulary was accepted: {found:?}"
-    );
+    // Each requirement, left out of the vocabulary in turn, is reported.
+    for requirement in RuntimeRequirement::ALL.map(RuntimeRequirement::wire_name) {
+        let forgotten = without_in_vocabulary(C11_RUNTIME, requirement);
+        assert_ne!(
+            forgotten, C11_RUNTIME,
+            "`{requirement}` is not in the vocabulary this case parsed"
+        );
+        let found = unmapped_requirements(&forgotten);
+        assert!(
+            found.iter().any(|v| v.contains(&format!(
+                "`{requirement}` is not in SCE_C_RUNTIME_REQUIREMENTS"
+            ))),
+            "`{requirement}` missing from the vocabulary was accepted: {found:?}"
+        );
+    }
 
     let unregistered = C11_RUNTIME.replace(
         "set_property(GLOBAL PROPERTY SCE_C_RUNTIME_REQUIREMENT_dom sce_c_scripting)",
