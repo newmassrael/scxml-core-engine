@@ -165,9 +165,25 @@ host is the arrangement measured above to fail.
     push onto the external queue, while a run is going (what is posted before a run is kept for it), with
     `drainingInbox_` holding one drain at a time, and `processEvent` draining first as the Interpreter's does
     (`StaticExecutionEngine.h`);
-  - Rust, C11, Kotlin, Go, Python and Swift: each generated runtime applies its inbox at the one function its
-    external enqueue goes through, in that runtime's engine, and every event of the owner's own reaches the queue
-    only through it.
+  - Rust: `Engine::enqueue_external` (`engine.rs`), in `std` and `no_std` alike, with `draining_inbox`. While the
+    policy is lent to generated code (`with_policy`), a posted ending for a child session would reach the child that
+    code is using, so in `std` it waits in `held_child_endings` and the next drain made with the policy free (the
+    macrostep boundary at the latest) applies it first; an ending for the machine's own session is applied at once,
+    so its own external queue keeps arrival order;
+  - C11: `_raise_external`, the generated machine's only push onto its external queue (`state_machine.c.jinja2`),
+    with `draining_inbox`; an interrupt still only posts;
+  - Kotlin: `StateMachineEngine.enqueueExternal`, in the blocking and the coroutine mode (whose inbox stays the
+    `Channel`), with `drainingInbox`;
+  - Go: `Engine.enqueueExternal` (`inbox.go`), while the engine runs, with `drainingInbox`;
+  - Python: `Engine._enqueue_external`, while the run goes on, with `_draining_inbox`;
+  - Swift: `Engine.enqueueExternal`, with `drainingInbox`; the `Sendable` `EngineInbox` only posts.
+  Restoring a saved queue pushes its events back without draining on every runtime: they arrived before anything the
+  inbox holds now. The W3C HTTP harnesses of C++ and Kotlin post the listener's event to the inbox, as a host would,
+  where they used to raise it on the owner.
+  Left open: the rule orders one machine's own external queue. A tree's sessions share the root's inbox, and a
+  child's queue does not drain it, so an ending posted for a child session can still be taken after a `<send>` its
+  parent makes to that child in the same macrostep (Rust holds such endings for the boundary, which is the same
+  outcome). Ordering a child's queue against the root's inbox is a follow-up for every engine.
 - A post returns whether the inbox took it. A bounded inbox (C11 and `no_std` Rust, whose capacity the deployment
   declares) refuses a post when full and says so; nothing is dropped silently. A hosted runtime's inbox is unbounded.
 - A post wakes the owner through a waker the host installs (`wakeWith` and its spellings; a runtime with its own loop,
