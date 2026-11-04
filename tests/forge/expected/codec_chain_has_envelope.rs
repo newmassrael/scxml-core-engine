@@ -146,13 +146,24 @@ impl<S: CodecChainHasEnvelopeStorage> CodecChainHasEnvelopeIn<S> {
         // frame is judged by what cannot run out, and only a frame that parses
         // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
         // less than a bound, so this stands on every codec that takes one.
-        let mut _frame = *cursor;
+        let _frame = *cursor;
         match Self::store_into(cursor, _out) {
-            Err(CodecError::CapacityExceeded) => {
-                CodecChainHasEnvelope::store_into(&mut _frame, &mut CodecChainHasEnvelope::default())?;
-                Err(CodecError::CapacityExceeded)
-            }
+            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame)),
             stored => stored,
+        }
+    }
+
+    /// What a frame is that stopped the decode past a capacity (docs/adr/0077
+    /// §7): past the capacity when a form that cannot run out reads it, and
+    /// what that form refuses it as when it does not. Kept out of the decode
+    /// and never inlined into it, so the value the form reads takes no room in
+    /// the decode's frame; it runs only after the decode has stopped.
+    #[cold]
+    #[inline(never)]
+    fn past_capacity<'f>(mut _frame: SceCursor<'f>) -> CodecError where S: CodecChainHasEnvelopeFrom<'f> {
+        match CodecChainHasEnvelope::store_into(&mut _frame, &mut CodecChainHasEnvelope::default()) {
+            Ok(_) => CodecError::CapacityExceeded,
+            Err(refused) => refused,
         }
     }
 
@@ -177,9 +188,15 @@ impl<S: CodecChainHasEnvelopeStorage> CodecChainHasEnvelopeIn<S> {
             cursor.advance(1)?;
             _v
         };
-        let mut extensions: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecChainHasEnvelopeExtensionsField>>::List<CodecZenohExtEntryOwned<S>>, 4, 1>> = None;
-        if (header & 0x80u8) != 0 {
-            extensions.insert(Default::default()).refill(|_vec| {
+        // The arm is installed before its chain is read, and the chain read
+        // where the arm holds it; a chain of other kinds is read again into
+        // the arm they name.
+        let _extensions_at = *cursor;
+        let mut _has_extensions_2 = false;
+        let mut _extensions_first = true;
+        loop {
+            let mut _found_extensions_2 = false;
+            let mut _extensions_fill = |_vec: &mut <S as ::sce_forge_runtime::codec::HoldsList<CodecChainHasEnvelopeExtensionsField>>::List<CodecZenohExtEntryOwned<S>>| -> Result<(), CodecError> {
                 let mut _more = false;
                 for _ in 0..4u32 {
                     let _entry = CodecZenohExtEntryOwned::<S>::decode(cursor)?;
@@ -196,12 +213,25 @@ impl<S: CodecChainHasEnvelopeStorage> CodecChainHasEnvelopeIn<S> {
                 if _more {
                     return Err(CodecError::TooManyElements);
                 }
-                Ok(())
-            })?;
-        } else {
-            extensions = None;
+                _found_extensions_2 = ::sce_forge_runtime::codec::OfKind::<CodecChainHasEnvelopeExtensionsHas0x2Key>::first_of_kind(&*_vec).is_some();
+            Ok(())
+            };
+            let _extensions_settled = if (header & 0x80u8) != 0 {
+                if _has_extensions_2 { ::sce_forge_runtime::codec::decode_chain_in(&mut _out.extensions_has_0x2, |_c| CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions: _c, slices: Default::default() }, |_g| match _g { CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions: _c, .. } => Some(_c), _ => None }, &mut _extensions_fill)? } else { ::sce_forge_runtime::codec::decode_chain_in(&mut _out.extensions_has_0x2, |_c| CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: Some(_c), payload: Default::default() }, |_g| match _g { CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: Some(_c), .. } => Some(_c), _ => None }, &mut _extensions_fill)? }
+            } else {
+                _out.extensions_has_0x2 = if _has_extensions_2 { unreachable!("an absent chain holds no entry of any kind") } else { CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: None, payload: Default::default() } };
+                true
+            };
+            _has_extensions_2 = _found_extensions_2;
+            if _extensions_settled {
+                break;
+            }
+            if !_extensions_first {
+                unreachable!("a chain read again holds the kinds it was first read with");
+            }
+            _extensions_first = false;
+            *cursor = _extensions_at;
         }
-        let _has_extensions_2 = extensions.as_ref().is_some_and(|_c| _c.list_iter::<CodecZenohExtEntryOwned<S>>().any(|_e| u64::from(_e.ext_id()) == 2u64));
         let payload_len = if !_has_extensions_2 {
             let _v = cursor.read_vle_u64()?;
             Some(_v)
@@ -229,23 +259,26 @@ impl<S: CodecChainHasEnvelopeStorage> CodecChainHasEnvelopeIn<S> {
         } else {
             None
         };
-        let mut slices: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecChainHasEnvelopeSlicesField>>::List<CodecChainHasSliceOwned<S>>, 4>> = None;
-        if _has_extensions_2 {
+        if let CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { slices: _p, .. } = &mut _out.extensions_has_0x2 {
+            if _has_extensions_2 {
             let _n = slice_count.expect("co-gating: count present-if matches repeat");
             if _n > 4 {
                 return Err(CodecError::TooManyElements);
             }
-            slices.insert(Default::default()).refill(|_vec| {
+            _p.refill(|_vec| {
                 for _ in 0.._n {
                     ::sce_forge_runtime::codec::SceList::try_push(_vec, CodecChainHasSliceOwned::<S>::decode(cursor)?)?;
                 }
                 Ok(())
             })?;
         } else {
-            slices = None;
+            unreachable!("the arm its gates installed holds the field they read");
+        }
         }
         _out.header = header;
-        _out.extensions_has_0x2 = if _has_extensions_2 { CodecChainHasEnvelopeExtensionsHas0x2::Has0x2 { extensions: ::sce_forge_runtime::codec::Chain::new(extensions.expect("the gate found the chain").into_inner()).expect("the gates found the chain's kinds as the arm says"), slices: slices.unwrap_or_default() } } else { CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { extensions: extensions.map(|_l| ::sce_forge_runtime::codec::Chain::new(_l.into_inner()).expect("the gates found the chain's kinds as the arm says")), payload: payload.unwrap_or_default() } };
+        if let CodecChainHasEnvelopeExtensionsHas0x2::NotHas0x2 { payload: _p_payload, .. } = &mut _out.extensions_has_0x2 {
+            *_p_payload = payload.unwrap_or_default();
+        }
         _out.payload_len = payload_len;
         _out.slice_count = slice_count;
         Ok(())

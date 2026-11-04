@@ -135,13 +135,24 @@ impl<S: CodecZenohInterestStorage> CodecZenohInterestIn<S> {
         // frame is judged by what cannot run out, and only a frame that parses
         // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
         // less than a bound, so this stands on every codec that takes one.
-        let mut _frame = *cursor;
+        let _frame = *cursor;
         match Self::store_into(cursor, _out) {
-            Err(CodecError::CapacityExceeded) => {
-                CodecZenohInterestView::decode(&mut _frame)?;
-                Err(CodecError::CapacityExceeded)
-            }
+            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame)),
             stored => stored,
+        }
+    }
+
+    /// What a frame is that stopped the decode past a capacity (docs/adr/0077
+    /// §7): past the capacity when a form that cannot run out reads it, and
+    /// what that form refuses it as when it does not. Kept out of the decode
+    /// and never inlined into it, so the value the form reads takes no room in
+    /// the decode's frame; it runs only after the decode has stopped.
+    #[cold]
+    #[inline(never)]
+    fn past_capacity<'f>(mut _frame: SceCursor<'f>) -> CodecError where S: CodecZenohInterestFrom<'f> {
+        match CodecZenohInterestView::decode(&mut _frame) {
+            Ok(_) => CodecError::CapacityExceeded,
+            Err(refused) => refused,
         }
     }
 
@@ -167,11 +178,13 @@ impl<S: CodecZenohInterestStorage> CodecZenohInterestIn<S> {
             _v
         };
         let id = cursor.read_vle_u64()?;
-        let mut body: Option<CodecZenohInterestBodyOwned<S>> = None;
-        if (header & 0x20u8) != 0 || (header & 0x40u8) != 0 {
-            CodecZenohInterestBodyOwned::<S>::decode_into(cursor, body.insert(CodecZenohInterestBodyOwned::<S>::default()))?;
+        _out.header_current_or_future = match ((header & 0x20u8) != 0, (header & 0x40u8) != 0) { (true, false) => Some(CodecZenohInterestHeaderCurrentOrFuture::Current { body: Default::default() }), (false, true) => Some(CodecZenohInterestHeaderCurrentOrFuture::Future { body: Default::default() }), (true, true) => Some(CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body: Default::default() }), _ => None, };
+        if let Some(CodecZenohInterestHeaderCurrentOrFuture::Current { body: _p, .. }) | Some(CodecZenohInterestHeaderCurrentOrFuture::Future { body: _p, .. }) | Some(CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body: _p, .. }) = &mut _out.header_current_or_future {
+            if (header & 0x20u8) != 0 || (header & 0x40u8) != 0 {
+            CodecZenohInterestBodyOwned::<S>::decode_into(cursor, _p)?;
         } else {
-            body = None;
+            unreachable!("the arm its gates installed holds the field they read");
+        }
         }
         if (header & 0x80u8) != 0 {
             _out.extensions.insert(Default::default()).refill(|_vec| {
@@ -195,7 +208,6 @@ impl<S: CodecZenohInterestStorage> CodecZenohInterestIn<S> {
         }
         _out.header = header;
         _out.id = id;
-        _out.header_current_or_future = match ((header & 0x20u8) != 0, (header & 0x40u8) != 0) { (true, false) => Some(CodecZenohInterestHeaderCurrentOrFuture::Current { body: body.unwrap_or_default() }), (false, true) => Some(CodecZenohInterestHeaderCurrentOrFuture::Future { body: body.unwrap_or_default() }), (true, true) => Some(CodecZenohInterestHeaderCurrentOrFuture::CurrentFuture { body: body.unwrap_or_default() }), _ => None, };
         Ok(())
     }
 

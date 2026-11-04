@@ -124,13 +124,24 @@ impl<S: CodecChainHasTaggedStorage> CodecChainHasTaggedIn<S> {
         // frame is judged by what cannot run out, and only a frame that parses
         // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
         // less than a bound, so this stands on every codec that takes one.
-        let mut _frame = *cursor;
+        let _frame = *cursor;
         match Self::store_into(cursor, _out) {
-            Err(CodecError::CapacityExceeded) => {
-                CodecChainHasTagged::store_into(&mut _frame, &mut CodecChainHasTagged::default())?;
-                Err(CodecError::CapacityExceeded)
-            }
+            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame)),
             stored => stored,
+        }
+    }
+
+    /// What a frame is that stopped the decode past a capacity (docs/adr/0077
+    /// §7): past the capacity when a form that cannot run out reads it, and
+    /// what that form refuses it as when it does not. Kept out of the decode
+    /// and never inlined into it, so the value the form reads takes no room in
+    /// the decode's frame; it runs only after the decode has stopped.
+    #[cold]
+    #[inline(never)]
+    fn past_capacity<'f>(mut _frame: SceCursor<'f>) -> CodecError where S: CodecChainHasTaggedFrom<'f> {
+        match CodecChainHasTagged::store_into(&mut _frame, &mut CodecChainHasTagged::default()) {
+            Ok(_) => CodecError::CapacityExceeded,
+            Err(refused) => refused,
         }
     }
 
@@ -155,8 +166,17 @@ impl<S: CodecChainHasTaggedStorage> CodecChainHasTaggedIn<S> {
             cursor.advance(1)?;
             _v
         };
-        let mut entries: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecChainHasTaggedEntriesField>>::List<CodecChainHasTaggedEntry>, 3, 1> = Default::default();
-        entries.refill(|_vec| {
+        // The arm is installed before its chain is read, and the chain read
+        // where the arm holds it; a chain of other kinds is read again into
+        // the arm they name.
+        let _entries_at = *cursor;
+        let mut _has_entries_7 = false;
+        let mut _has_entries_9 = false;
+        let mut _entries_first = true;
+        loop {
+            let mut _found_entries_7 = false;
+            let mut _found_entries_9 = false;
+            let mut _entries_fill = |_vec: &mut <S as ::sce_forge_runtime::codec::HoldsList<CodecChainHasTaggedEntriesField>>::List<CodecChainHasTaggedEntry>| -> Result<(), CodecError> {
             let mut _more = false;
             for _ in 0..3u32 {
                 let _entry = CodecChainHasTaggedEntry::decode(cursor)?;
@@ -173,10 +193,22 @@ impl<S: CodecChainHasTaggedStorage> CodecChainHasTaggedIn<S> {
             if _more {
                 return Err(CodecError::TooManyElements);
             }
+            _found_entries_7 = ::sce_forge_runtime::codec::OfKind::<CodecChainHasTaggedEntriesHas0x7Key>::first_of_kind(&*_vec).is_some();
+            _found_entries_9 = ::sce_forge_runtime::codec::OfKind::<CodecChainHasTaggedEntriesHas0x9Key>::first_of_kind(&*_vec).is_some();
             Ok(())
-        })?;
-        let _has_entries_7 = entries.list_iter::<CodecChainHasTaggedEntry>().any(|_e| u64::from(_e.entry_type) == 7u64);
-        let _has_entries_9 = entries.list_iter::<CodecChainHasTaggedEntry>().any(|_e| u64::from(_e.entry_type) == 9u64);
+        };
+            let _entries_settled = match (_has_entries_7, _has_entries_9, (header & 0x01u8) != 0) { (true, true, true) => ::sce_forge_runtime::codec::decode_chain_in(&mut _out.entries_has_0x7_has_0x9_header_wide, |_c| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { entries: _c, priority: Default::default() }, |_g| match _g { CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { entries: _c, .. } => Some(_c), _ => None }, &mut _entries_fill)?, (true, true, false) => ::sce_forge_runtime::codec::decode_chain_in(&mut _out.entries_has_0x7_has_0x9_header_wide, |_c| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9 { entries: _c, priority: Default::default() }, |_g| match _g { CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9 { entries: _c, .. } => Some(_c), _ => None }, &mut _entries_fill)?, (true, false, true) => ::sce_forge_runtime::codec::decode_chain_in(&mut _out.entries_has_0x7_has_0x9_header_wide, |_c| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { entries: _c, priority: Default::default(), checksum: Default::default() }, |_g| match _g { CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { entries: _c, .. } => Some(_c), _ => None }, &mut _entries_fill)?, (false, true, true) => ::sce_forge_runtime::codec::decode_chain_in(&mut _out.entries_has_0x7_has_0x9_header_wide, |_c| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { entries: _c, priority: Default::default() }, |_g| match _g { CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { entries: _c, .. } => Some(_c), _ => None }, &mut _entries_fill)?, (true, false, false) => ::sce_forge_runtime::codec::decode_chain_in(&mut _out.entries_has_0x7_has_0x9_header_wide, |_c| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7 { entries: _c, priority: Default::default(), checksum: Default::default() }, |_g| match _g { CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7 { entries: _c, .. } => Some(_c), _ => None }, &mut _entries_fill)?, (false, true, false) => ::sce_forge_runtime::codec::decode_chain_in(&mut _out.entries_has_0x7_has_0x9_header_wide, |_c| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9 { entries: _c }, |_g| match _g { CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9 { entries: _c, .. } => Some(_c), _ => None }, &mut _entries_fill)?, (false, false, true) => ::sce_forge_runtime::codec::decode_chain_in(&mut _out.entries_has_0x7_has_0x9_header_wide, |_c| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { entries: _c, priority: Default::default(), checksum: Default::default() }, |_g| match _g { CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { entries: _c, .. } => Some(_c), _ => None }, &mut _entries_fill)?, (false, false, false) => ::sce_forge_runtime::codec::decode_chain_in(&mut _out.entries_has_0x7_has_0x9_header_wide, |_c| CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Neither { entries: _c, checksum: Default::default() }, |_g| match _g { CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Neither { entries: _c, .. } => Some(_c), _ => None }, &mut _entries_fill)?, };
+            _has_entries_7 = _found_entries_7;
+            _has_entries_9 = _found_entries_9;
+            if _entries_settled {
+                break;
+            }
+            if !_entries_first {
+                unreachable!("a chain read again holds the kinds it was first read with");
+            }
+            _entries_first = false;
+            *cursor = _entries_at;
+        }
         let priority = if _has_entries_7 || (header & 0x01u8) != 0 {
             let raw = cursor.peek_slice(1)?;
             let _v = raw[0];
@@ -194,7 +226,30 @@ impl<S: CodecChainHasTaggedStorage> CodecChainHasTaggedIn<S> {
             None
         };
         _out.header = header;
-        _out.entries_has_0x7_has_0x9_header_wide = match (_has_entries_7, _has_entries_9, (header & 0x01u8) != 0) { (true, true, true) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), priority: priority.unwrap_or_default() }, (true, true, false) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9 { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), priority: priority.unwrap_or_default() }, (true, false, true) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), priority: priority.unwrap_or_default(), checksum: checksum.unwrap_or_default() }, (false, true, true) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), priority: priority.unwrap_or_default() }, (true, false, false) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7 { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), priority: priority.unwrap_or_default(), checksum: checksum.unwrap_or_default() }, (false, true, false) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9 { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says") }, (false, false, true) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), priority: priority.unwrap_or_default(), checksum: checksum.unwrap_or_default() }, (false, false, false) => CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Neither { entries: ::sce_forge_runtime::codec::Chain::new(entries.into_inner()).expect("the gates found the chain's kinds as the arm says"), checksum: checksum.unwrap_or_default() }, };
+        match &mut _out.entries_has_0x7_has_0x9_header_wide {
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9Wide { priority: _p_priority, .. } => {
+            *_p_priority = priority.unwrap_or_default();
+            }
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Has0x9 { priority: _p_priority, .. } => {
+            *_p_priority = priority.unwrap_or_default();
+            }
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7Wide { priority: _p_priority, checksum: _p_checksum, .. } => {
+            *_p_priority = priority.unwrap_or_default(); *_p_checksum = checksum.unwrap_or_default();
+            }
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x9Wide { priority: _p_priority, .. } => {
+            *_p_priority = priority.unwrap_or_default();
+            }
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Has0x7 { priority: _p_priority, checksum: _p_checksum, .. } => {
+            *_p_priority = priority.unwrap_or_default(); *_p_checksum = checksum.unwrap_or_default();
+            }
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Wide { priority: _p_priority, checksum: _p_checksum, .. } => {
+            *_p_priority = priority.unwrap_or_default(); *_p_checksum = checksum.unwrap_or_default();
+            }
+            CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide::Neither { checksum: _p_checksum, .. } => {
+            *_p_checksum = checksum.unwrap_or_default();
+            }
+            _ => {}
+        }
         Ok(())
     }
 

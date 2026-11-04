@@ -135,13 +135,24 @@ impl<S: CodecRepeatUnconditionalCountStorage> CodecRepeatUnconditionalCountIn<S>
         // frame is judged by what cannot run out, and only a frame that parses
         // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
         // less than a bound, so this stands on every codec that takes one.
-        let mut _frame = *cursor;
+        let _frame = *cursor;
         match Self::store_into(cursor, _out) {
-            Err(CodecError::CapacityExceeded) => {
-                CodecRepeatUnconditionalCount::store_into(&mut _frame, &mut CodecRepeatUnconditionalCount::default())?;
-                Err(CodecError::CapacityExceeded)
-            }
+            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame)),
             stored => stored,
+        }
+    }
+
+    /// What a frame is that stopped the decode past a capacity (docs/adr/0077
+    /// §7): past the capacity when a form that cannot run out reads it, and
+    /// what that form refuses it as when it does not. Kept out of the decode
+    /// and never inlined into it, so the value the form reads takes no room in
+    /// the decode's frame; it runs only after the decode has stopped.
+    #[cold]
+    #[inline(never)]
+    fn past_capacity<'f>(mut _frame: SceCursor<'f>) -> CodecError where S: CodecRepeatUnconditionalCountFrom<'f> {
+        match CodecRepeatUnconditionalCount::store_into(&mut _frame, &mut CodecRepeatUnconditionalCount::default()) {
+            Ok(_) => CodecError::CapacityExceeded,
+            Err(refused) => refused,
         }
     }
 
@@ -172,34 +183,49 @@ impl<S: CodecRepeatUnconditionalCountStorage> CodecRepeatUnconditionalCountIn<S>
             cursor.advance(1)?;
             _v
         };
-        let mut links: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecRepeatUnconditionalCountLinksField>>::List<CodecRepeatElem>, 64> = Default::default();
-        if links_len > 64 {
+        _out.options_h = if (options & 0x01u8) != 0 { CodecRepeatUnconditionalCountOptionsH::H { links_weights: Default::default() } } else { CodecRepeatUnconditionalCountOptionsH::NotH { links: Default::default() } };
+        match &mut _out.options_h {
+            CodecRepeatUnconditionalCountOptionsH::NotH { links: _p, .. } => {
+            if links_len > 64 {
                 return Err(CodecError::TooManyElements);
             }
-            links.refill(|_vec| {
+            _p.refill(|_vec| {
             for _ in 0..links_len {
                 ::sce_forge_runtime::codec::SceList::try_push(_vec, CodecRepeatElem::decode(cursor)?)?;
             }
             Ok(())
         })?;
-        let mut weights: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecRepeatUnconditionalCountWeightsField>>::List<CodecRepeatElem>, 64>> = None;
-        if (options & 0x01u8) != 0 {
+            }
+            CodecRepeatUnconditionalCountOptionsH::H { links_weights: _p, .. } => {
+            if links_len > 64 {
+                return Err(CodecError::TooManyElements);
+            }
+            _p.refill_first(|_vec| {
+            for _ in 0..links_len {
+                ::sce_forge_runtime::codec::SceList::try_push(_vec, CodecRepeatElem::decode(cursor)?)?;
+            }
+            Ok(())
+        })?;
+            }
+        }
+        if let CodecRepeatUnconditionalCountOptionsH::H { links_weights: _p, .. } = &mut _out.options_h {
+            if (options & 0x01u8) != 0 {
             let _n = links_len;
             if _n > 64 {
                 return Err(CodecError::TooManyElements);
             }
-            weights.insert(Default::default()).refill(|_vec| {
+            _p.refill_second(|_vec| {
                 for _ in 0.._n {
                     ::sce_forge_runtime::codec::SceList::try_push(_vec, CodecRepeatElem::decode(cursor)?)?;
                 }
                 Ok(())
             })?;
         } else {
-            weights = None;
+            unreachable!("the arm its gates installed holds the field they read");
+        }
         }
         _out.options = options;
         _out.links_len = links_len;
-        _out.options_h = if (options & 0x01u8) != 0 { CodecRepeatUnconditionalCountOptionsH::H { links_weights: ::sce_forge_runtime::codec::Aligned::new(links, weights.expect("the gate read the list")).expect("one count read both lists") } } else { CodecRepeatUnconditionalCountOptionsH::NotH { links } };
         Ok(())
     }
 

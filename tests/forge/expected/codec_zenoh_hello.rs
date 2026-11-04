@@ -139,13 +139,24 @@ impl<S: CodecZenohHelloStorage> CodecZenohHelloIn<S> {
         // frame is judged by what cannot run out, and only a frame that parses
         // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
         // less than a bound, so this stands on every codec that takes one.
-        let mut _frame = *cursor;
+        let _frame = *cursor;
         match Self::store_into(cursor, _out, l) {
-            Err(CodecError::CapacityExceeded) => {
-                CodecZenohHelloView::decode(&mut _frame, l)?;
-                Err(CodecError::CapacityExceeded)
-            }
+            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame, l)),
             stored => stored,
+        }
+    }
+
+    /// What a frame is that stopped the decode past a capacity (docs/adr/0077
+    /// §7): past the capacity when a form that cannot run out reads it, and
+    /// what that form refuses it as when it does not. Kept out of the decode
+    /// and never inlined into it, so the value the form reads takes no room in
+    /// the decode's frame; it runs only after the decode has stopped.
+    #[cold]
+    #[inline(never)]
+    fn past_capacity<'f>(mut _frame: SceCursor<'f>, l: u8) -> CodecError where S: CodecZenohHelloFrom<'f> {
+        match CodecZenohHelloView::decode(&mut _frame, l) {
+            Ok(_) => CodecError::CapacityExceeded,
+            Err(refused) => refused,
         }
     }
 

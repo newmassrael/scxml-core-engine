@@ -138,13 +138,24 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufIn<S> {
         // frame is judged by what cannot run out, and only a frame that parses
         // is one this node cannot hold (docs/adr/0077 §7). Any profile may hold
         // less than a bound, so this stands on every codec that takes one.
-        let mut _frame = *cursor;
+        let _frame = *cursor;
         match Self::store_into(cursor, _out, after_shm) {
-            Err(CodecError::CapacityExceeded) => {
-                CodecZenohValueZbufView::decode(&mut _frame, after_shm)?;
-                Err(CodecError::CapacityExceeded)
-            }
+            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame, after_shm)),
             stored => stored,
+        }
+    }
+
+    /// What a frame is that stopped the decode past a capacity (docs/adr/0077
+    /// §7): past the capacity when a form that cannot run out reads it, and
+    /// what that form refuses it as when it does not. Kept out of the decode
+    /// and never inlined into it, so the value the form reads takes no room in
+    /// the decode's frame; it runs only after the decode has stopped.
+    #[cold]
+    #[inline(never)]
+    fn past_capacity<'f>(mut _frame: SceCursor<'f>, after_shm: u8) -> CodecError where S: CodecZenohValueZbufFrom<'f> {
+        match CodecZenohValueZbufView::decode(&mut _frame, after_shm) {
+            Ok(_) => CodecError::CapacityExceeded,
+            Err(refused) => refused,
         }
     }
 
@@ -196,19 +207,28 @@ impl<S: CodecZenohValueZbufStorage> CodecZenohValueZbufIn<S> {
         } else {
             None
         };
-        let mut slices: Option<::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsList<CodecZenohValueZbufSlicesField>>::List<CodecZenohValueSliceOwned<S>>, { usize::MAX }>> = None;
-        if (after_shm & 0x01u8) != 0 {
+        _out.after_shm = if (after_shm & 0x01u8) != 0 { CodecZenohValueZbufAfterShm::AfterShm { encoding: Default::default(), slices: Default::default(), value_len: Default::default() } } else { CodecZenohValueZbufAfterShm::NotAfterShm { value: Default::default() } };
+        if let CodecZenohValueZbufAfterShm::AfterShm { slices: _p, .. } = &mut _out.after_shm {
+            if (after_shm & 0x01u8) != 0 {
             let _n = slice_count.expect("co-gating: count present-if matches repeat");
-            slices.insert(Default::default()).refill(|_vec| {
+            _p.refill(|_vec| {
                 for _ in 0.._n {
                     ::sce_forge_runtime::codec::SceList::try_push(_vec, CodecZenohValueSliceOwned::<S>::decode(cursor)?)?;
                 }
                 Ok(())
             })?;
         } else {
-            slices = None;
+            unreachable!("the arm its gates installed holds the field they read");
         }
-        _out.after_shm = if (after_shm & 0x01u8) != 0 { CodecZenohValueZbufAfterShm::AfterShm { encoding: encoding.unwrap_or_default(), slices: slices.unwrap_or_default(), value_len } } else { CodecZenohValueZbufAfterShm::NotAfterShm { value: value.unwrap_or_default() } };
+        }
+        match &mut _out.after_shm {
+            CodecZenohValueZbufAfterShm::AfterShm { encoding: _p_encoding, value_len: _p_value_len, .. } => {
+            *_p_encoding = encoding.unwrap_or_default(); *_p_value_len = value_len;
+            }
+            CodecZenohValueZbufAfterShm::NotAfterShm { value: _p_value, .. } => {
+            *_p_value = value.unwrap_or_default();
+            }
+        }
         _out.slice_count = slice_count;
         Ok(())
     }

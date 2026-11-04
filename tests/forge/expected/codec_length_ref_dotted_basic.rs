@@ -99,13 +99,22 @@ impl<S: CodecLengthRefDottedBasicStorage> CodecLengthRefDottedBasicIn<S> {
     pub fn decode<'f>(cursor: &mut SceCursor<'f>) -> Result<Self, CodecError> where S: CodecLengthRefDottedBasicFrom<'f> {
         // Judged as [`Self::decode_into`] judges a frame past a capacity
         // (docs/adr/0077 §7).
-        let mut _frame = *cursor;
+        let _frame = *cursor;
         match Self::stored(cursor) {
-            Err(CodecError::CapacityExceeded) => {
-                CodecLengthRefDottedBasic::stored(&mut _frame)?;
-                Err(CodecError::CapacityExceeded)
-            }
+            Err(CodecError::CapacityExceeded) => Err(Self::past_capacity(_frame)),
             stored => stored,
+        }
+    }
+
+    /// What a frame is that stopped [`Self::decode`] past a capacity, judged
+    /// out of the decode's frame as [`Self::decode_into`] judges one
+    /// (docs/adr/0077 §7).
+    #[cold]
+    #[inline(never)]
+    fn past_capacity<'f>(mut _frame: SceCursor<'f>) -> CodecError where S: CodecLengthRefDottedBasicFrom<'f> {
+        match CodecLengthRefDottedBasic::stored(&mut _frame) {
+            Ok(_) => CodecError::CapacityExceeded,
+            Err(refused) => refused,
         }
     }
 
