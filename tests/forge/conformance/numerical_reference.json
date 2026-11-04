@@ -43973,6 +43973,15 @@
         {"source": {"options": 0, "options.H": {"arm": 1, "links": [{"seq": 3}]}}, "encoded": [0, 1, 0, 3], "note": "H clear: the links alone"},
         {"source": {"options": 1, "options.H": {"arm": 0, "links": [], "weights": []}}, "encoded": [1, 0], "note": "H set and no entry: both lists empty, the count zero"}
       ]
+    },
+    "codec_dma_aligned_basic": {
+      "fixture": "CodecDmaAlignedBasic",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a field aligned to a DMA burst starts at its declared byte, zeros before it.",
+      "sources": [
+        {"source": {"msg_id": 1, "reserved": 0, "aligned_payload": [72, 69, 76, 76, 79]}, "encoded": [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 72, 69, 76, 76, 79], "note": "the document's own oracle: 30 zero bytes, then the payload at byte 32"},
+        {"source": {"msg_id": 255, "reserved": 126, "aligned_payload": []}, "encoded": [255, 126, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "note": "no payload: the frame ends at the aligned byte"},
+        {"source": {"msg_id": 2, "reserved": 3, "aligned_payload": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]}, "encoded": [2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63], "note": "a payload at its bound"}
+      ]
     }
   },
   "string_lookups": {

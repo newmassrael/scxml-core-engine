@@ -303,6 +303,14 @@ as the runtime's `Aligned::new`, under the name the arm gives it, and the harnes
 gate group is spelled. One codec gains 3 cases. Three lists of one count, two that are both gated and two that are both
 always there stay refused by name, as the plan keeps them checks.
 
+*Landed (step 3, fifteenth part, 2026-11-04): a field aligned to a DMA burst, and step 3 over the fixtures.* The model
+reads `sce:dma-burst-align` (RFC §synth-5-B B3): the field starts at its declared byte, a multiple of the burst; the
+encode writes zeros up to it and the decode skips to it unread, as the generated decode does. One codec gains 3 cases,
+the first the document's own oracle. With it the model reads every positional codec of the conformance fixtures, and
+every one has byte cases (120 codecs, 326 cases). The shapes no fixture holds stay refused by name in the model and the
+literal alike: a variant whose caller supplies its tag, an arm under a build feature, and a flag input the value does
+not say, which the encode takes as an argument. CBOR and content-line codecs keep their own plans and models.
+
 ### 6. A backend moves one codec at a time, and the old encode goes when the last codec moves
 
 A printer lowers the plan's forms one at a time. A codec whose plan uses only lowered forms is encoded by the printer.

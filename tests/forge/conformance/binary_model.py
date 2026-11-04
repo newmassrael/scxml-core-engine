@@ -42,6 +42,9 @@ What the model reads so far, and refuses by name past it:
   `sce:length-arith` offset on the wire, within `sce:max-size`;
 * bytes or text to the end of the frame (`sce:bit-size="tail"`), within
   `sce:max-size`;
+* a field aligned to a DMA burst (`sce:dma-burst-align`): it starts at its
+  declared byte, a multiple of the burst; the encode writes zeros up to it
+  and the decode skips to it unread;
 * a codec it imports (`<sce:import>`), read from its own document: embedded
   in place (`<sce:embed>`), its encoded length said by a field before it where
   `sce:length-from` names one; or the entries of a list (`<sce:repeat>`),
@@ -119,6 +122,7 @@ READ_ATTRIBUTES = {
         f"{SCE}length-field",
         f"{SCE}length-arith",
         f"{SCE}max-size",
+        f"{SCE}dma-burst-align",
     },
     "embed": {"id", "type", f"{SCE}byte", f"{SCE}present-if", f"{SCE}length-from"},
     "repeat": {"id", "type", f"{SCE}byte", "count", "until-eof", "max-count", f"{SCE}present-if"},
@@ -320,6 +324,9 @@ class Field:
     #: Of a chain: each input its entries take as whether the entry before is
     #: of a kind (`<sce:entry-flag-bind previous-entry-id>`), the first clear.
     after_key: dict[str, int] = field(default_factory=dict)
+    #: Of a field aligned to a DMA burst: the byte it starts at, up to which
+    #: the encode writes zeros and which the decode skips to unread.
+    aligned_at: int | None = None
 
     def lawful(self) -> bool:
         """Whether this is a list held to a law (docs/adr/0065 §6 R8): its
@@ -677,6 +684,19 @@ def named_entry(chain: Field, key: int) -> dict:
     return entry
 
 
+def aligned_at(stem: str, node) -> int | None:
+    """Where a field aligned to a DMA burst (`sce:dma-burst-align`) starts:
+    its declared byte, a multiple of the burst, which the encode pads up to
+    with zeros and the decode moves to."""
+    burst = attribute_int(node, "dma-burst-align")
+    if burst is None:
+        return None
+    at = int(node.get(f"{SCE}byte"))
+    if burst <= 0 or at % burst:
+        raise Unread(f"{stem}: `{node.get('id')}` at byte {at} is not aligned to {burst}")
+    return at
+
+
 def attribute_int(node, name: str, namespace: str = SCE) -> int | None:
     value = node.get(f"{namespace}{name}")
     return int(value, 0) if value is not None else None
@@ -985,6 +1005,7 @@ def read_document(path: Path) -> Codec:
                 measured_by=length_field,
                 arith=attribute_int(node, "length-arith") or 0,
                 most=attribute_int(node, "max-size"),
+                aligned_at=aligned_at(stem, node),
             )
         )
     codec = Codec(root.get("name"), fields, inputs)
@@ -1451,6 +1472,12 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
                 raise ValueError(f"{codec.name}: `{f.id}` disagrees with its gate")
             if not holds:
                 continue
+        if f.aligned_at is not None:
+            # A field aligned to a DMA burst starts at its declared byte: zeros
+            # fill the frame up to it.
+            if len(out) > f.aligned_at:
+                raise ValueError(f"{codec.name}: `{f.id}` is past byte {f.aligned_at}")
+            out += bytes(f.aligned_at - len(out))
         if f.size == "variant":
             out += contents[f.id]
             continue
@@ -1525,10 +1552,18 @@ def decode_at(
         if at + n > end:
             raise ValueError(f"{codec.name}: the frame ends inside `{what}`")
 
+    start = at
     for f in codec.fields:
         if f.gate is not None and not gate_holds(codec, f.gate, carriers, inputs, raw):
             raw[f.id] = None
             continue
+        if f.aligned_at is not None:
+            # The padding before a field aligned to a DMA burst is skipped
+            # unread, as the generated decode skips it.
+            if at - start > f.aligned_at:
+                raise ValueError(f"{codec.name}: `{f.id}` is past byte {f.aligned_at}")
+            within(start + f.aligned_at - at, f.id)
+            at = start + f.aligned_at
         if f.sce_type in SEQUENCE:
             if f.measured_by is None:
                 n = end - at
@@ -2061,6 +2096,17 @@ FIXTURES = {
              "both flags and Z: the body, then one extension"),
         ],
         "a body a disjunction of two flags decides, each arm setting the flags it names.",
+    ),
+    "codec_dma_aligned_basic": Fixture(
+        [
+            ({"msg_id": 0x01, "reserved": 0x00, "aligned_payload": list(b"HELLO")},
+             "the document's own oracle: 30 zero bytes, then the payload at byte 32"),
+            ({"msg_id": 0xFF, "reserved": 0x7E, "aligned_payload": []},
+             "no payload: the frame ends at the aligned byte"),
+            ({"msg_id": 2, "reserved": 3, "aligned_payload": list(range(64))},
+             "a payload at its bound"),
+        ],
+        "a field aligned to a DMA burst starts at its declared byte, zeros before it.",
     ),
     "codec_repeat_unconditional_count": Fixture(
         [
