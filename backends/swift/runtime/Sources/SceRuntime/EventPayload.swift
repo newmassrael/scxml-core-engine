@@ -22,21 +22,97 @@
 // `sce_runtime.event_payload` (Python), `sce.LiftPayload` (Go) and
 // `SCE::Common::EventPayloadFields` (C++).
 
+/// The class of a refusal: the enum `sce:std/lift/refusal_code.scxml` declares,
+/// each case named and numbered as that document names and numbers it
+/// (docs/adr/0087, section 2.3).
+public enum RefusalCode: UInt8, CaseIterable, Equatable {
+    /// The text is empty, is not JSON, carries more than one JSON value, or holds
+    /// an object that repeats a name.
+    case notJson = 1
+    /// The text is one JSON value that is not an object.
+    case notObject = 2
+    /// A container is opened deeper than any a value of the schema holds.
+    case tooDeep = 3
+    /// A field of a record is absent and no revision default fills it.
+    case missing = 4
+    /// `null` stands where the type is not optional.
+    case nullNotOptional = 5
+    /// A value of another JSON kind.
+    case wrongKind = 6
+    /// A number not in its type's spelling.
+    case badNumber = 7
+    /// A whole number past its type's width, or a real past a `float32`'s range.
+    case outOfRange = 8
+    /// A text or byte string past its bound.
+    case tooLong = 9
+    /// A list past its bound.
+    case tooMany = 10
+    /// A name the enum does not declare.
+    case unknownVariant = 11
+    /// A byte string's text holding a character above U+00FF.
+    case notByteText = 12
+    /// A text holding U+0000.
+    case nulInText = 13
+
+    /// The name the enum declares the code by: the case's own name.
+    public var declaredName: String {
+        String(describing: self)
+    }
+
+    /// The code the enum declares by `name`, if it declares one.
+    public init?(declaredName name: String) {
+        guard let code = RefusalCode.allCases.first(where: { $0.declaredName == name }) else {
+            return nil
+        }
+        self = code
+    }
+}
+
 /// Why an event's data cannot be read as its schema's fields.
 ///
-/// A sentence, not a code: it rides in the `error.execution` event's data, where
-/// the document's own handler can read it.
+/// The sentence rides in the `error.execution` event's data, where the document's
+/// own handler can read it. Beside it the refusal carries what a statechart reads
+/// as data (docs/adr/0087, section 2.4): its code, the place as a strict RFC 6901
+/// pointer (`/items/2/tags/0`, `~` written `~0` and `/` written `~1`, empty for
+/// the whole text), and the bound the value broke, for a text, a byte string or a
+/// list past it.
 public struct PayloadRefusal: Error, Equatable, CustomStringConvertible {
     /// Why the payload was refused, in the words the document's handler reads.
     public var reason: String
+    /// The class of the refusal.
+    public var code: RefusalCode
+    /// The place refused, as a strict RFC 6901 pointer: empty for the whole text.
+    public var pointer: String
+    /// The bound the value broke, or nil for a refusal that names none.
+    public var bound: UInt32?
 
-    public init(_ reason: String) {
+    public init(_ reason: String, code: RefusalCode, pointer: String, bound: Int? = nil) {
         self.reason = reason
+        self.code = code
+        self.pointer = pointer
+        // A bound no `uint32` holds is no bound a type declares, and is held at the
+        // largest one.
+        self.bound = bound.map { UInt32(clamping: $0) }
     }
 
     public var description: String {
         reason
     }
+}
+
+/// `token` below the strict RFC 6901 pointer `prefix` (empty for the whole text):
+/// `/` and the token with `~` written `~0` and `/` written `~1` (RFC 6901,
+/// section 3).
+public func pointerBelow(_ prefix: String, _ token: String) -> String {
+    var escaped = ""
+    for scalar in token.unicodeScalars {
+        switch scalar {
+        case "~": escaped += "~0"
+        case "/": escaped += "~1"
+        default: escaped.unicodeScalars.append(scalar)
+        }
+    }
+    return prefix + "/" + escaped
 }
 
 /// The fields an event's data names, each in the spelling it was written in
@@ -52,9 +128,13 @@ public struct PayloadFields {
     /// The path of the record these are the fields of: empty for the payload.
     private let prefix: String
 
-    fileprivate init(fields: [(key: String, value: JSONValue)], prefix: String = "") {
+    /// The strict RFC 6901 pointer to the record: empty for the payload.
+    private let pointer: String
+
+    fileprivate init(fields: [(key: String, value: JSONValue)], prefix: String = "", pointer: String = "") {
         self.fields = fields
         self.prefix = prefix
+        self.pointer = pointer
     }
 
     /// Reads an event's data as the fields it names.
@@ -64,20 +144,26 @@ public struct PayloadFields {
     public static func decode(_ data: String) throws -> PayloadFields {
         let trimmed = trimmingJSONWhitespace(data)
         if trimmed.isEmpty {
-            throw PayloadRefusal("the event carries no data")
+            throw PayloadRefusal("the event carries no data", code: .notJson, pointer: "")
         }
         if trimmed.first != "{" {
+            // One sentence for a text that is no object, as it has always been; the
+            // code tells one JSON value that is not an object from a text that is not
+            // JSON at all (docs/adr/0087, section 2.3).
+            let oneValue = (try? parseJSON(trimmed)) != nil
             throw PayloadRefusal(
-                "the event's data is a bare value, and this event's schema declares named fields"
+                "the event's data is a bare value, and this event's schema declares named fields",
+                code: oneValue ? .notObject : .notJson,
+                pointer: ""
             )
         }
         let value: JSONValue
         do {
             value = try parseJSON(trimmed)
         } catch JSONError.trailing {
-            throw PayloadRefusal("the event's data carries more than one JSON value")
+            throw PayloadRefusal("the event's data carries more than one JSON value", code: .notJson, pointer: "")
         } catch let error as JSONError {
-            throw PayloadRefusal("the event's data is not JSON (\(error.malformedWhat))")
+            throw PayloadRefusal("the event's data is not JSON (\(error.malformedWhat))", code: .notJson, pointer: "")
         }
         guard case .object(let members) = value else {
             preconditionFailure("a text that starts with '{' and parses is an object")
@@ -104,8 +190,12 @@ public struct PayloadFields {
     /// added where the value lacks them.
     fileprivate func withDefaults(_ defaults: String) throws -> PayloadFields {
         guard case .object(let fallback)? = try? parseJSON(trimmingJSONWhitespace(defaults)) else {
+            // A text that is none is the generator's, not a sender's, and is refused as
+            // no JSON object of the whole.
             throw PayloadRefusal(
-                "the schema's defaults are not a JSON object, which the generator never writes"
+                "the schema's defaults are not a JSON object, which the generator never writes",
+                code: .notJson,
+                pointer: ""
             )
         }
         var merged = self
@@ -121,10 +211,11 @@ public struct PayloadFields {
     /// stepped over.
     public func field(_ name: String) throws -> PayloadValue {
         let path = joinPath(prefix, name)
+        let at = pointerBelow(pointer, name)
         guard let found = fields.first(where: { $0.key.utf8.elementsEqual(name.utf8) }) else {
-            throw PayloadRefusal("the event's data has no '\(path)'")
+            throw PayloadRefusal("the event's data has no '\(path)'", code: .missing, pointer: at)
         }
-        return PayloadValue(value: found.value, path: path)
+        return PayloadValue(value: found.value, path: path, pointer: at)
     }
 
     /// A field of `optional<T>` (docs/adr/0055, section 4): absent where the
@@ -205,9 +296,13 @@ public struct PayloadValue {
     /// The path that names this value.
     public let path: String
 
-    fileprivate init(value: JSONValue, path: String) {
+    /// The strict RFC 6901 pointer to this value (`/items/2`).
+    public let pointer: String
+
+    fileprivate init(value: JSONValue, path: String, pointer: String) {
         self.value = value
         self.path = path
+        self.pointer = pointer
     }
 
     /// Whether the value is `null`, the one spelling of an absent value.
@@ -218,15 +313,26 @@ public struct PayloadValue {
         return false
     }
 
-    /// A refusal of this value, saying `what` of it after its path:
+    /// A refusal of this value, of class `code`, saying `what` of it after its path:
     /// `'items/1/level' (x) is not a variant of Level`.
-    public func refuse(_ what: String) -> PayloadRefusal {
-        PayloadRefusal("'\(path)' \(what)")
+    public func refuse(_ code: RefusalCode, _ what: String, bound: Int? = nil) -> PayloadRefusal {
+        PayloadRefusal("'\(path)' \(what)", code: code, pointer: pointer, bound: bound)
+    }
+
+    /// The refusal of the text `name` this value carries, which the enum `alias`
+    /// does not declare a variant by.
+    public func unknownVariant(_ name: String, alias: String) -> PayloadRefusal {
+        refuse(.unknownVariant, "(\(name)) is not a variant of \(alias)")
     }
 
     /// The refusal of `null` where the type is not optional, or `otherwise`.
     private func wrongKind(_ otherwise: String) -> PayloadRefusal {
-        isNull ? refuse("is null, and its type is not optional") : refuse(otherwise)
+        isNull ? refuse(.nullNotOptional, "is null, and its type is not optional") : refuse(.wrongKind, otherwise)
+    }
+
+    /// The refusal of a number past the width its type declares.
+    private func pastWidth(_ text: String) -> PayloadRefusal {
+        refuse(.outOfRange, "does not fit the width its schema declares (\(text))")
     }
 
     /// A whole-number value's written spelling.
@@ -249,10 +355,12 @@ public struct PayloadValue {
     public func signed<T: FixedWidthInteger & SignedInteger>() throws -> T {
         let text = try number()
         guard let whole = Int64(text) else {
-            throw refuse("is not a whole number (\(text))")
+            // A whole number no Int64 holds is past every signed width; any other
+            // spelling is no whole number at all.
+            throw refuse(spellsWhole(text) ? .outOfRange : .badNumber, "is not a whole number (\(text))")
         }
         guard let narrowed = T(exactly: whole) else {
-            throw refuse("does not fit the width its schema declares (\(text))")
+            throw pastWidth(text)
         }
         return narrowed
     }
@@ -261,10 +369,13 @@ public struct PayloadValue {
     public func unsigned<T: FixedWidthInteger & UnsignedInteger>() throws -> T {
         let text = try number()
         guard let whole = UInt64(text) else {
-            throw refuse("is not a whole number at or above zero (\(text))")
+            // Below zero is no spelling of an unsigned number; a whole number no
+            // UInt64 holds is past every unsigned width.
+            let past = spellsWhole(text) && !text.hasPrefix("-")
+            throw refuse(past ? .outOfRange : .badNumber, "is not a whole number at or above zero (\(text))")
         }
         guard let narrowed = T(exactly: whole) else {
-            throw refuse("does not fit the width its schema declares (\(text))")
+            throw pastWidth(text)
         }
         return narrowed
     }
@@ -281,15 +392,16 @@ public struct PayloadValue {
         case .text(let text) where isDecimal(text, signed: signed):
             return text
         case .text(let text):
-            throw refuse("is not a whole number written as digits (\(text))")
+            throw refuse(.badNumber, "is not a whole number written as digits (\(text))")
         case .number(let text):
             guard let whole = Int128(text) else {
-                throw refuse("is not a whole number (\(text))")
+                throw refuse(.badNumber, "is not a whole number (\(text))")
             }
             if whole.magnitude <= exactInADouble {
                 return text
             }
             throw refuse(
+                .badNumber,
                 "is a number past 2^53 - 1, which is not exact everywhere (\(text)); "
                     + "a 64-bit integer that large is written as a text of its digits"
             )
@@ -303,7 +415,7 @@ public struct PayloadValue {
     public func signed64() throws -> Int64 {
         let text = try wide(signed: true)
         guard let whole = Int64(text) else {
-            throw refuse("does not fit the width its schema declares (\(text))")
+            throw pastWidth(text)
         }
         return whole
     }
@@ -313,7 +425,7 @@ public struct PayloadValue {
     public func unsigned64() throws -> UInt64 {
         let text = try wide(signed: false)
         guard let whole = UInt64(text) else {
-            throw refuse("does not fit the width its schema declares (\(text))")
+            throw pastWidth(text)
         }
         return whole
     }
@@ -329,10 +441,10 @@ public struct PayloadValue {
     public func float32() throws -> Float {
         let text = try number()
         guard let wide = Double(text) else {
-            throw refuse("is not a number (\(text))")
+            throw refuse(.badNumber, "is not a number (\(text))")
         }
         if abs(wide) > Double(Float.greatestFiniteMagnitude) {
-            throw refuse("does not fit the width its schema declares (\(text))")
+            throw pastWidth(text)
         }
         return Float(wide)
     }
@@ -341,7 +453,7 @@ public struct PayloadValue {
     public func float64() throws -> Double {
         let text = try number()
         guard let real = Double(text) else {
-            throw refuse("is not a number (\(text))")
+            throw refuse(.badNumber, "is not a number (\(text))")
         }
         return real
     }
@@ -356,9 +468,17 @@ public struct PayloadValue {
 
     /// The text the value carries, held to no bound: what an enum's variant is named
     /// by, which its reader matches against the names its enum declares.
+    ///
+    /// A text holding U+0000 is refused: a runtime that holds a text NUL-terminated
+    /// would end it there, so no runtime holds one, and every reader refuses the same
+    /// texts (docs/adr/0087, section 2.3). A byte string may hold the byte zero
+    /// (`bytes(bound:)`).
     public func name() throws -> String {
         guard case .text(let text) = value else {
             throw wrongKind("is not a text")
+        }
+        if text.utf8.contains(0) {
+            throw refuse(.nulInText, "carries U+0000, which no text holds")
         }
         return text
     }
@@ -388,7 +508,7 @@ public struct PayloadValue {
         out.reserveCapacity(text.utf8.count)
         for scalar in text.unicodeScalars {
             if scalar.value > 0xFF {
-                throw refuse("carries a character above U+00FF, which no single byte spells")
+                throw refuse(.notByteText, "carries a character above U+00FF, which no single byte spells")
             }
             out.append(UInt8(scalar.value))
         }
@@ -399,7 +519,7 @@ public struct PayloadValue {
     }
 
     private func pastBytes(_ held: Int, _ bound: Int) -> PayloadRefusal {
-        refuse("is \(held) bytes, past the \(bound) its type declares")
+        refuse(.tooLong, "is \(held) bytes, past the \(bound) its type declares", bound: bound)
     }
 
     /// A value of `optional<T>` (docs/adr/0055): absent where the value is `null`,
@@ -421,12 +541,14 @@ public struct PayloadValue {
             throw wrongKind("is not a list")
         }
         if items.count > bound {
-            throw refuse("holds \(items.count) elements, past the \(bound) its type declares")
+            throw refuse(.tooMany, "holds \(items.count) elements, past the \(bound) its type declares", bound: bound)
         }
         var out: [T] = []
         out.reserveCapacity(items.count)
         for (index, item) in items.enumerated() {
-            out.append(try read(PayloadValue(value: item, path: joinPath(path, String(index)))))
+            let token = String(index)
+            let element = PayloadValue(value: item, path: joinPath(path, token), pointer: pointerBelow(pointer, token))
+            out.append(try read(element))
         }
         return out
     }
@@ -440,7 +562,7 @@ public struct PayloadValue {
         guard case .object(let members) = value else {
             throw wrongKind("is not a record")
         }
-        var fields = PayloadFields(fields: members, prefix: path)
+        var fields = PayloadFields(fields: members, prefix: path, pointer: pointer)
         if let defaults {
             fields = try fields.withDefaults(defaults)
         }
@@ -451,6 +573,12 @@ public struct PayloadValue {
 /// `segment` below `prefix`, as a JSON Pointer's reference tokens are joined.
 private func joinPath(_ prefix: String, _ segment: String) -> String {
     prefix.isEmpty ? segment : prefix + "/" + segment
+}
+
+/// Whether `text` spells a whole number: digits, after a `-` or not.
+private func spellsWhole(_ text: String) -> Bool {
+    let digits = text.hasPrefix("-") ? text.utf8.dropFirst() : text.utf8[...]
+    return !digits.isEmpty && digits.allSatisfy { $0 >= UInt8(ascii: "0") && $0 <= UInt8(ascii: "9") }
 }
 
 /// A value a host built is past a bound its type declares: thrown by the check a

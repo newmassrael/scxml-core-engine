@@ -5848,13 +5848,14 @@ fn swift_payload_present_reader(
     match f.sce_type.present_type() {
         // An enum is the machine's own, lifted from the variant's declared name; a name
         // the enum does not declare is a payload that does not fit its schema, refused
-        // as a number out of range is.
+        // as a number out of range is, with the code and pointer of the refusal beside
+        // its sentence (docs/adr/0087, section 2.5).
         SceType::Enum(r) => {
             let e = static_enum_of(static_enums, &r.alias);
             format!(
                 "try {{ () throws -> {ty} in let name = try fields.text(\"{id}\"); \
                  guard let variant = {ty}(declaredName: name) else {{ \
-                 throw PayloadRefusal(\"'{id}' (\\(name)) is not a variant of {alias}\") }}; \
+                 throw try fields.field(\"{id}\").unknownVariant(name, alias: \"{alias}\") }}; \
                  return variant }}()",
                 ty = e.ty,
                 alias = r.alias

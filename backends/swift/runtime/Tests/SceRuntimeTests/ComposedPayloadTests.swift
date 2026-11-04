@@ -77,7 +77,7 @@ private func read(_ ty: Ty, _ v: PayloadValue) throws -> Held {
         case .enumeration:
             let name = try v.name()
             guard enumNames.contains(name) else {
-                throw v.refuse("(\(name)) is not a variant of Level")
+                throw v.unknownVariant(name, alias: "Level")
             }
             return .s(name)
         case .text: return .s(try v.text(bound: textBound))
