@@ -133,3 +133,11 @@ void SCE::InvokeNode::setStateId(const std::string &stateId) {
 const std::string &SCE::InvokeNode::getStateId() const {
     return stateId_;
 }
+
+void SCE::InvokeNode::setRequestSchema(const std::string &requestSchema) {
+    requestSchema_ = requestSchema;
+}
+
+const std::string &SCE::InvokeNode::getRequestSchema() const {
+    return requestSchema_;
+}

@@ -13,6 +13,7 @@
 #include "common/UniqueIdGenerator.h"
 #include "core/HostProcessor.h"
 #include "core/InvokeHelper.h"
+#include "core/TypedHostInvokeRequest.h"
 #include "events/EventDescriptor.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventRaiserService.h"
@@ -971,7 +972,9 @@ std::string SCXMLInvokeHandler::generateInvokeId(const std::string &stateId) con
  * the helpers it reads them with: the id to `idlocation`, `srcexpr`, `<content
  * expr>`, the `namelist`, then each `<param>` in document order. An attribute that
  * cannot be evaluated starts nothing; a `<param>` that cannot is reported and its
- * pair left out, and the invocation still starts. `eventData` is the pairs as a
+ * pair left out, and the invocation still starts, unless the request is typed by
+ * `sce:request` and the `<param>` is one of its record's fields
+ * (`typedRequestRequiresParam`), which starts nothing. `eventData` is the pairs as a
  * local delivery of a `<send>` with them would carry them, typed as the data model
  * holds them.
  *
@@ -1036,15 +1039,30 @@ evaluateHostInvokeRequest(IScriptEngine &scriptEngine, const IInvokeNode &invoke
     }
 
     const bool meshRequest = type == MESH_RPC_INVOKE_TYPE;
+    // A request typed by `sce:request` promised its host the whole record: a field
+    // whose value cannot be made starts nothing, where any other `<param>` is
+    // reported and left out (`typedRequestRequiresParam`, the rule the generated
+    // site follows).
+    const bool typedRequest = !invoke.getRequestSchema().empty();
     bool envelopeRefused = false;
     for (const auto &[name, expr, location] : invoke.getParams()) {
+        const bool requiredField = typedRequest && typedRequestRequiresParam(name);
         const std::string &valueSource = expr.empty() ? location : expr;
         if (valueSource.empty()) {
+            if (requiredField) {
+                raise("<invoke> <param name='" + name + "'> cannot be its request field: it names no location");
+                return std::nullopt;
+            }
             raise("<invoke> <param name='" + name + "'> names no location");
             continue;
         }
         const auto value = scriptEngine.evaluateExpression(sessionId, valueSource).get();
         if (!ScriptResultUtils::isSuccess(value)) {
+            if (requiredField) {
+                raise("<invoke> <param name='" + name +
+                      "'> cannot be its request field: the value could not be evaluated");
+                return std::nullopt;
+            }
             raise("<invoke> <param name='" + name + "'> " +
                   (expr.empty() ? "location could not be read" : "expr failed to evaluate"));
             continue;

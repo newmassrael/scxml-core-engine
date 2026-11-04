@@ -13,6 +13,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <variant>
 #include <vector>
@@ -238,6 +239,30 @@ inline std::optional<std::string> requestFieldWire(const ::ScriptValue &value, c
         refusal = D::quoted(name) + " has a type this runtime cannot read";
         return std::nullopt;
     }
+}
+
+/**
+ * @brief Whether a `<param>` of a request typed by `sce:request` supplies one of
+ * its record's fields, so that a value it cannot make refuses the start
+ * @param name The `<param>`'s name
+ *
+ * A typed request's `<param>`s are its record's fields, one each (the build
+ * holds them to it), beside the engine's own envelope: the deadline
+ * (`HOST_INVOKE_DEADLINE_PARAM`, which the ledger takes out before the host is
+ * asked) and a Mesh request's event and deadline. The host was promised the
+ * whole record, so a field whose value cannot be evaluated, or does not fit
+ * (`requestFieldWire`), is an argument that cannot be evaluated: the element
+ * raises `error.execution` and starts nothing, and the host is never asked.
+ * Every other `<param>`, and every `<param>` of an untyped request, is reported
+ * and its pair left out, and the invocation still starts.
+ *
+ * The one statement of which `<param>`s a typed request requires: the
+ * Interpreter, which has the element and not the record, asks it of each
+ * `<param>`, and the generated site refuses at the same `<param>`s, which the
+ * build reads off the record (`host_invoke_request_checks`).
+ */
+inline bool typedRequestRequiresParam(std::string_view name) {
+    return name != HOST_INVOKE_DEADLINE_PARAM && name != MESH_EVENT_PARAM && name != MESH_DEADLINE_PARAM;
 }
 
 /**

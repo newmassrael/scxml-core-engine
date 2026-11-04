@@ -47,6 +47,12 @@ public:
     // §scxml-6.4: State ID for invoke ID generation in "stateid.platformid" format (test 224)
     virtual void setStateId(const std::string &stateId) = 0;
     virtual const std::string &getStateId() const = 0;
+
+    // SCE Accepted Subset 2.12: `sce:request`, the event schema that types the
+    // request of an invocation a host runs; empty when it is untyped. A typed
+    // request promised its host the whole record (`typedRequestRequiresParam`).
+    virtual void setRequestSchema(const std::string &requestSchema) = 0;
+    virtual const std::string &getRequestSchema() const = 0;
 };
 
 }  // namespace SCE

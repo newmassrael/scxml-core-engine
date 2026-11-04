@@ -1308,7 +1308,13 @@ two are held field for field to one table,
 are the requests the build lowers a Mesh request to for the backends that route
 Mesh through the host (`host_processor_analyzer::lower_mesh`, `SCE_MESH.md`
 section 19), which the Interpreter's router is handed; the generated C++ engine
-keeps its own router.
+keeps its own router. A `<param>` that cannot be evaluated is reported and left
+out, and the invocation still starts, unless the request is typed by
+`sce:request`: then a `<param>` that supplies one of its record's fields starts
+nothing, on both engines, and which `<param>`s those are is stated once
+(`typedRequestRequiresParam` in `core/TypedHostInvokeRequest.h`; the generated
+site reads the same set off the record at build time, where it also holds each
+value to its field's type with `requestFieldWire`).
 
 An inline `<content>` is one text and one reading on both engines. Its text,
 which a host is handed as `content`, is the body sce-build's `content_body`

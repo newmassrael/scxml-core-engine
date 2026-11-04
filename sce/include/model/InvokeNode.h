@@ -58,6 +58,10 @@ public:
     void setStateId(const std::string &stateId) override;
     const std::string &getStateId() const override;
 
+    // SCE Accepted Subset 2.12: `sce:request`, the schema that types a host-run request
+    void setRequestSchema(const std::string &requestSchema) override;
+    const std::string &getRequestSchema() const override;
+
 private:
     std::string id_;
     std::string type_;
@@ -68,8 +72,9 @@ private:
     std::string finalize_;
     std::string typeExpr_;
     std::string srcExpr_;
-    std::string contentExpr_;  // W3C SCXML test 530: expr attribute for content element
-    std::string stateId_;      // §scxml-6.4: Parent state ID for invoke ID generation (test 224)
+    std::string contentExpr_;    // W3C SCXML test 530: expr attribute for content element
+    std::string stateId_;        // §scxml-6.4: Parent state ID for invoke ID generation (test 224)
+    std::string requestSchema_;  // SCE Accepted Subset 2.12: `sce:request`, empty when untyped
     bool autoForward_;
     std::vector<std::tuple<std::string, std::string, std::string>> params_;  // name, expr, location
 };

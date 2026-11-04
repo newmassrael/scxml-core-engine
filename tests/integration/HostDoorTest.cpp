@@ -21,6 +21,9 @@
 //   * a served invoke completes at once or later, fails, is cancelled when its
 //     state exits, and is ended by its deadline, each exactly once, and an
 //     ending of a start that is over is refused by its token;
+//   * a deadline comes due on the clock of the scheduler it is armed on;
+//   * a typed request whose field fails starts nothing, and an untyped one
+//     starts without the pair;
 //   * a Mesh request reaches the router the host registered, and with none it is
 //     error.execution;
 //   * an ending named by its session reaches the child session that started it.
@@ -568,6 +571,47 @@ TEST_F(HostDoorTest, ADeadlineComesDueOnTheClockOfTheSchedulerItIsArmedOn) {
     raiser_->processQueuedEvents();
     EXPECT_EQ(sm->terminalState().value_or(""), "expired") << "the deadline did not come due at 5000";
     EXPECT_TRUE(invoker_.saw(cancelled)) << "the host was not told to stop the run its deadline ended";
+}
+
+// A `<param>` that cannot be evaluated is reported (error.execution) and its pair
+// left out, and an untyped request still starts without it. A request typed by
+// `sce:request` (SCE Accepted Subset 2.12) promised its host the whole record, so
+// the same failure starts nothing and the host is never asked, as on the generated
+// engine (`typedRequestRequiresParam`). Both invokes stand in one state, so each
+// raises its error.execution once.
+TEST_F(HostDoorTest, ATypedRequestWhoseFieldFailsStartsNothingAndAnUntypedOneStartsWithoutIt) {
+    auto sm = prepare(R"scxml(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0"
+       datamodel="ecmascript" initial="asking" name="host_door_typed_request">
+  <datamodel>
+    <data id="refused" expr="0"/>
+  </datamodel>
+  <state id="asking">
+    <invoke id="plain" type="x-sce-host">
+      <param name="kept" expr="'yes'"/>
+      <param name="broken" expr="undefined.field"/>
+    </invoke>
+    <invoke id="typed" type="x-sce-host" sce:request="Ask">
+      <param name="kept" expr="'yes'"/>
+      <param name="broken" expr="undefined.field"/>
+    </invoke>
+    <transition event="error.execution">
+      <assign location="refused" expr="refused + 1"/>
+    </transition>
+  </state>
+</scxml>)scxml");
+    sm->registerInvoker(DECLARED_TYPE, recordingInvoker(invoker_));
+    ASSERT_TRUE(sm->start());
+
+    const auto plain = invoker_.latest("plain");
+    ASSERT_TRUE(plain.has_value()) << "an untyped request whose param failed did not start";
+    EXPECT_TRUE(plain->params.find("kept") != plain->params.end()) << "the pair that evaluated was left out";
+    EXPECT_TRUE(plain->params.find("broken") == plain->params.end()) << "the pair that failed was handed over";
+
+    EXPECT_FALSE(invoker_.latest("typed").has_value()) << "a typed request missing a field was started";
+    EXPECT_EQ(invoker_.requests().size(), 1u) << "the host was asked to start the typed request";
+    EXPECT_EQ(read("refused"), "2") << "each failure is one error.execution";
+    EXPECT_TRUE(sm->isStateActive("asking"));
 }
 
 // docs/adr/0084, D6: a Mesh request is served by the router the host registered,

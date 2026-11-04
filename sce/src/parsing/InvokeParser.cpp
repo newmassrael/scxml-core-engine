@@ -115,6 +115,13 @@ SCE::InvokeParser::parseInvokeNode(const std::shared_ptr<IXMLElement> &invokeEle
         invokeNode->setAutoForward(true);
     }
 
+    // SCE Accepted Subset 2.12: a request typed by an event schema promised its
+    // host the whole record, which decides what a `<param>` that cannot be
+    // evaluated does to the start (`typedRequestRequiresParam`).
+    if (invokeElement->hasAttribute("sce:request")) {
+        invokeNode->setRequestSchema(invokeElement->getAttribute("sce:request"));
+    }
+
     // Parse param elements
     parseParamElements(invokeElement, invokeNode);
 
