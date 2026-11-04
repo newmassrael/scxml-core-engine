@@ -3152,8 +3152,12 @@ if(EMSCRIPTEN)
         -sDISABLE_EXCEPTION_CATCHING=0
         -g1                             # Line number info only
         --profiling-funcs
-        --pre-js ${W3C_REGISTRY_PRE_JS}  # The registry's BasicHTTP fixtures, read by the polyfill
-        --pre-js ${POLYFILL_PRE_JS}    # Inject XMLHttpRequest polyfill and NODEFS for Node.js
+        # Each `--pre-js` is one `SHELL:` option with its file: CMake
+        # de-duplicates repeated link options, so two bare `--pre-js` flags
+        # become one with both files after it, and wasm-ld reads the second
+        # file as an input.
+        "SHELL:--pre-js ${W3C_REGISTRY_PRE_JS}"  # The registry's BasicHTTP fixtures, read by the polyfill
+        "SHELL:--pre-js ${POLYFILL_PRE_JS}"      # Inject XMLHttpRequest polyfill and NODEFS for Node.js
         -lnodefs.js                     # Enable NODEFS for Node.js filesystem access
         "-sEXPORTED_FUNCTIONS=['_main','_dom_getElementsByTagName_wrapper','_dom_getAttribute_wrapper']"  # Export main + DOM wrapper functions
     )
@@ -3283,8 +3287,9 @@ if(EMSCRIPTEN)
         -sDISABLE_EXCEPTION_CATCHING=0
         -g1
         --profiling-funcs
-        --pre-js ${W3C_REGISTRY_PRE_JS}  # The registry's BasicHTTP fixtures, read by the polyfill
-        --pre-js ${POLYFILL_PRE_JS}     # Inject XMLHttpRequest polyfill and NODEFS for Node.js
+        # One `SHELL:` option per pre-js, as w3c_test_cli's above says why.
+        "SHELL:--pre-js ${W3C_REGISTRY_PRE_JS}"  # The registry's BasicHTTP fixtures, read by the polyfill
+        "SHELL:--pre-js ${POLYFILL_PRE_JS}"      # Inject XMLHttpRequest polyfill and NODEFS for Node.js
         -lnodefs.js                     # Enable NODEFS for Node.js filesystem access
     )
     set_property(TARGET comprehensive_interactive_test APPEND PROPERTY
