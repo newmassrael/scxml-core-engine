@@ -222,14 +222,10 @@ impl PayloadFields {
         self.field(name)?.truth()
     }
 
-    /// A text field of at most `N` UTF-8 bytes ([`PayloadValue::text`]): one
-    /// past the bound is refused where it is read, and never cut (docs/adr/0086,
-    /// sections 4.4 and 7.4).
-    pub fn text<const N: usize>(
-        &self,
-        name: &str,
-    ) -> Result<sce_portable_bytes::SceString<N>, PayloadRefusal> {
-        self.field(name)?.text::<N>()
+    /// A text field, as the text it carries; [`PayloadValue::text`] holds a
+    /// text to the bound its type declares.
+    pub fn text(&self, name: &str) -> Result<crate::SceString, PayloadRefusal> {
+        self.field(name)?.name().map(crate::sce_string_from_str)
     }
 
     /// A byte-string field at the capacity its schema declares
@@ -755,14 +751,9 @@ mod tests {
             .expect("a delivery of the first revision reads");
         assert_eq!(fields.unsigned::<u8>("level"), Ok(4));
         assert_eq!(
-            fields.text::<8>("layout").map(|s| s.to_string()),
+            fields.text("layout").map(|s| s.to_string()),
             Ok("week".into())
         );
-        // A text past its bound is refused where it is read, not cut.
-        let refusal = fields
-            .text::<3>("layout")
-            .expect_err("four bytes past three");
-        assert!(refusal.reason().contains("past the 3"), "{refusal}");
         assert_eq!(fields.unsigned64("count"), Ok(7));
         assert_eq!(fields.truth("urgent"), Ok(true));
     }
@@ -775,7 +766,7 @@ mod tests {
         )
         .expect("a delivery of a later revision reads, an unknown field and all");
         assert_eq!(
-            fields.text::<8>("layout").map(|s| s.to_string()),
+            fields.text("layout").map(|s| s.to_string()),
             Ok("day".into())
         );
         assert_eq!(fields.truth("urgent"), Ok(false));
@@ -808,7 +799,7 @@ mod tests {
         assert_eq!(fields.optional("due", |f| f.signed64("due")), Ok(None));
         assert_eq!(
             fields
-                .optional("title", |f| f.text::<8>("title"))
+                .optional("title", |f| f.text("title"))
                 .map(|t| t.map(|s| s.to_string())),
             Ok(Some("soon".to_string()))
         );

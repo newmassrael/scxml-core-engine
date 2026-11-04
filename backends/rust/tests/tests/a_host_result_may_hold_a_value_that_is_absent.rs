@@ -133,7 +133,7 @@ fn a_present_field_is_read_as_its_value() {
         rows: 4,
         total: 40,
         at: Some(41),
-        label: Some("ab".parse().expect("within the field's bound")),
+        label: Some("ab".to_string()),
         hit: Some(true),
     });
     assert_eq!(
@@ -226,7 +226,7 @@ fn the_record_is_written_with_null_for_an_absent_value() {
         rows: 3,
         total: 5,
         at: None,
-        label: Some("ab".parse().expect("within the field's bound")),
+        label: Some("ab".to_string()),
         hit: Some(false),
     };
     assert_eq!(

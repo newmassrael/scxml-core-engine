@@ -947,26 +947,22 @@ Landing: the commit that adds this section; the Rust trees are regenerated after
 - An event payload's struct, and a host-run invocation's request and result, keep their text as
   `sce_rust_runtime::SceString` in this landing.
 
-## A Rust machine's payloads and host-run records hold their bounds too, and nothing is cut to fit (ADR 0086 §7.4)
+## A Rust machine builds a text by checked constructors and never cuts one (ADR 0086 §7.4)
 
 Landing: the commit that adds this section; every Rust tree is regenerated after it.
 
 - A generated machine names the bounded types through the runtime it already depends on,
   `sce_rust_runtime::portable::{SceString, SceBytes, BoundedList, sce_text, sce_bytes}`, a re-export of
-  `sce-portable-bytes` whole; a crate that holds a machine depends on `sce-rust-runtime` alone, as before the
-  bounded types. A schema unit, a forge unit, still names them `::sce_portable_bytes`: the two paths are one type.
-- An event payload's `string[N]` field, and a host-run request's or result's, is `SceString<N>`, where it was
-  `sce_rust_runtime::SceString`; a `bytes[N]` field is `SceBytes<N>` as before. A host builds one with
-  `"text".parse()?` or `SceString::from_text("text")?`, each refusing past `N`. `PayloadFields::text` reads
-  `text::<N>(name)` and refuses a text past `N` where the payload is read. A request's text past its bound is refused
-  at the start site, as error.execution, by the new `RequestFieldType::Text(N)`; the record a host's
-  `start_<invoke>` is handed never holds one.
+  `sce-portable-bytes` whole; a crate that holds a machine depends on `sce-rust-runtime` alone. A schema unit, a
+  forge unit, still names them `::sce_portable_bytes`: the two paths are one type.
 - `SceString::held` and `BoundedList::held` are gone: no value is cut to fit a bound. A literal is built by
   `sce_text!(N, "…")` or `sce_bytes!(N, b"…")`, which a literal past `N` does not compile; a value is built by
-  `from_text`/`from_slice`, which refuse it, or by `widened` from one of a smaller bound.
+  `from_text` / `from_slice`, which refuse it, by `"…".parse()`, or by `widened` from one of a smaller bound.
 - An id a `<send idlocation>` or an `<invoke idlocation>` writes into a string variable is held to that variable's
   bound as any text written to it is: one past it is refused, raises error.execution, and the send sends nothing
   or the invocation does not start.
 - `sce_rust_runtime::saved_state::record_bounded_string` is gone: a record's text field is read by `record_field`,
   whose `SceString<N>` holds the bound itself.
+- An event payload's struct and a host-run invocation's request and result are unchanged: they move to the bounded
+  types with ADR 0086 section 4.4 on every lane at ADR 0085 landing 4.
 

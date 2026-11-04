@@ -187,9 +187,8 @@ fn rust_holds_an_absent_field_as_an_option_and_writes_it_as_null() {
         for needle in [
             "pub due: Option<i64>",
             "pub done: Option<bool>",
-            // The machine's own bounded types (docs/adr/0086, section 7.4).
-            "pub note: Option<::sce_rust_runtime::portable::SceString<16>>",
-            "pub blob: Option<::sce_rust_runtime::portable::SceBytes<8>>",
+            "pub note: Option<::sce_rust_runtime::SceString>",
+            "pub blob: Option<::sce_rust_runtime::SceBytes<8>>",
             // An absent value is `null` and a present one what the field is
             // written as, the key written either way.
             "optional_json(",

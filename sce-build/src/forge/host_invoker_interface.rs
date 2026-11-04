@@ -133,11 +133,6 @@ fn records_of<'m>(
 /// variant name, or a `bytes` field's capacity.
 pub enum RequestFieldSpelling {
     Scalar(&'static str),
-    /// A `string` field's bound, in UTF-8 bytes: held at the start site by a
-    /// runtime whose record holds the bound in its type (Rust, docs/adr/0086,
-    /// section 7.4); a runtime whose record holds a plain string reads it as a
-    /// string.
-    Text(u32),
     Bytes(u32),
 }
 
@@ -176,10 +171,7 @@ fn request_field_spelling(f: &EntryField) -> RequestFieldSpelling {
         SceType::Float32 => "Float32",
         SceType::Float64 => "Float64",
         SceType::Bool => "Bool",
-        SceType::String => match f.max_size {
-            Some(bound) => return RequestFieldSpelling::Text(bound),
-            None => "String",
-        },
+        SceType::String => "String",
         SceType::Bytes => {
             return RequestFieldSpelling::Bytes(crate::forge::limits::resolve_bytes_max(f.max_size))
         }
@@ -215,7 +207,6 @@ pub fn request_checks(
 pub fn rust_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<String, String>> {
     request_checks(model, |spelling| match spelling {
         RequestFieldSpelling::Scalar(variant) => variant.to_string(),
-        RequestFieldSpelling::Text(cap) => format!("Text({cap})"),
         RequestFieldSpelling::Bytes(cap) => format!("Bytes({cap})"),
     })
 }
@@ -224,7 +215,6 @@ pub fn rust_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<Stri
 pub fn go_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<String, String>> {
     request_checks(model, |spelling| match spelling {
         RequestFieldSpelling::Scalar(variant) => format!("sce.RequestField{variant}"),
-        RequestFieldSpelling::Text(_) => "sce.RequestFieldString".to_string(),
         RequestFieldSpelling::Bytes(cap) => format!("sce.RequestFieldBytes({cap})"),
     })
 }
@@ -981,7 +971,6 @@ pub fn kotlin_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<St
         RequestFieldSpelling::Scalar(variant) => {
             format!("TypedRequest.FieldType.{}", variant.to_ascii_uppercase())
         }
-        RequestFieldSpelling::Text(_) => "TypedRequest.FieldType.STRING".to_string(),
         RequestFieldSpelling::Bytes(cap) => format!("TypedRequest.FieldType.bytes({cap})"),
     })
 }
@@ -1183,9 +1172,6 @@ pub fn cpp_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<Strin
     request_checks(model, |spelling| match spelling {
         RequestFieldSpelling::Scalar(variant) => {
             format!("::SCE::RequestFieldType{{::SCE::RequestFieldKind::{variant}}}")
-        }
-        RequestFieldSpelling::Text(_) => {
-            "::SCE::RequestFieldType{::SCE::RequestFieldKind::String}".to_string()
         }
         RequestFieldSpelling::Bytes(cap) => {
             format!("::SCE::RequestFieldType{{::SCE::RequestFieldKind::Bytes, {cap}}}")
@@ -1442,9 +1428,6 @@ pub fn c11_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<Strin
             "(sce_request_field_type_t){{SCE_REQUEST_FIELD_{}, 0u}}",
             variant.to_ascii_uppercase()
         ),
-        RequestFieldSpelling::Text(_) => {
-            "(sce_request_field_type_t){SCE_REQUEST_FIELD_STRING, 0u}".to_string()
-        }
         RequestFieldSpelling::Bytes(cap) => {
             format!("(sce_request_field_type_t){{SCE_REQUEST_FIELD_BYTES, {cap}u}}")
         }
@@ -1761,7 +1744,6 @@ fn python_spelling(spelling: RequestFieldSpelling) -> String {
         RequestFieldSpelling::Scalar(variant) => {
             format!("_RequestFieldType(\"{}\")", variant.to_ascii_lowercase())
         }
-        RequestFieldSpelling::Text(_) => "_RequestFieldType(\"string\")".to_string(),
         RequestFieldSpelling::Bytes(cap) => format!("_RequestFieldType(\"bytes\", {cap})"),
     }
 }

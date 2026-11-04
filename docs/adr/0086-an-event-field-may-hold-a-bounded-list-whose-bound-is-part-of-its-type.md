@@ -439,6 +439,16 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
      it, or by a widening from a smaller bound. A generated machine names the three types through the runtime it
      already depends on (`sce_rust_runtime::portable`), so a crate that holds a machine needs no other dependency.
 
+   **What waits for section 4.4 on every lane.** The struct of an entry event's payload and a host-run
+   invocation's request and result records keep the wire's text and byte string on Rust, the bound held where a
+   value of one is written into a machine's place, as every other lane holds it. Holding them in
+   `SceString<N>` would refuse a payload whose text is past its bound where the payload is read, which is section
+   4.4, and doing that on Rust alone would make a delivery one lane refuses whole and another refuses at the
+   assignment, reopening the atomicity of a record list's change. Those records move to the bounded types with
+   section 4.4 on every lane at once, at ADR 0085 landing 4 (one change, one event), beside the lift that holds a
+   top-level payload text to its bound (commit `509061aded`, parked for the same reason). A composed payload's
+   text is held at the lift already (section 4.1), on every lane that reads one.
+
    The bound refusal stays where the language puts it: an assignment or an `<sce:append>` that would pass a place's
    bound is refused at that statement and raises `error.execution` (section 5, docs/SCE_ACCEPTED_SUBSET.md
    section 2.15); a value the judge proved to fit is copied by a conversion that cannot fail. The generated public
