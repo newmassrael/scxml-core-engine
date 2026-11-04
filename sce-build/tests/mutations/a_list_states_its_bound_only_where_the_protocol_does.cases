@@ -6,9 +6,11 @@
 # A `<sce:repeat>` with no `max-count` and a `<sce:tlv-chain>` with no `max-depth`
 # have no bound, and nothing stands in for one (docs/adr/0077 §7): the walk reads
 # to its end, Rust holds the list at `{ usize::MAX }`, and what cannot hold it
-# (`Inline`, a deployment with no capacity for it, C11 with none, a Rust tree with
-# no views) says so by name. A defect here is a list cut at a number no document
-# states, or a form that compiles holding a list it cannot hold.
+# (`Inline`, a deployment with no capacity for it, C11 with none) says so by name.
+# A Rust tree with no views holds it: its decode past a capacity judges the frame
+# by no other form (amendment of 2026-11-05), so it has no refusal to lose. A
+# defect here is a list cut at a number no document states, or a form that
+# compiles holding a list it cannot hold.
 #
 # The oracle is `sce-build/tests/forge_conformance.rs`: a chain and a list of
 # twenty entries read on a growing profile, in a view and on a deployment of two,
@@ -42,15 +44,6 @@ edit("sce-build/src/forge/generator.rs",
     match most {
         Some(most) => most.to_string(),
         None => "16".to_string(),''')
-PY
-
-# A Rust tree with no views judges a frame past a capacity by a form that holds
-# lists at their bound, which a list with no bound does not compile into. Killed by
-# `what_cannot_hold_a_list_with_no_bound_refuses_it` (the refusal names `--views`).
-mutation_case "a Rust tree with no views takes a list with no bound" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     r'''    if matches!(lang, crate::generator::Language::Rust) && !views {''',
-     r'''    if matches!(lang, crate::generator::Language::Rust) && !views && false {''')
 PY
 
 # C11 holds every list in an array of its capacity, so a list with neither a bound

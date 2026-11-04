@@ -966,3 +966,21 @@ Landing: the commit that adds this section; every Rust tree is regenerated after
 - An event payload's struct and a host-run invocation's request and result are unchanged: they move to the bounded
   types with ADR 0086 section 4.4 on every lane at ADR 0085 landing 4.
 
+## A Rust decode reads a frame past a capacity once, and needs no view for it (ADR 0077 §7, amendment of 2026-11-05)
+
+Landing: the commit that adds this section; every Rust tree is regenerated after it.
+
+- A storing decode past what its profile holds reads the frame on, holding what fits, and answers `CapacityExceeded`
+  once the frame is read whole and every refusal of its own has had its turn. A frame gets the answer it got before;
+  the decode no longer reads it a second time, by a view or by the lent form, so no second form's value takes room in
+  the decode's stack frame. The earlier sections that say a decode past a capacity judges the frame by the view, or
+  by the lent form without one, no longer hold.
+- A Rust tree of a codec with a list of no bound is no longer refused without views. Generate it with `--views` where
+  the code reads a view, not to make a deployment's decode correct.
+- On `CapacityExceeded`, as on every `Err`, `decode_into` leaves the destination not to be read; each field of it
+  holds what its type says, and a list read past its capacity keeps the entries it held.
+- `SceList` has a provided method, `is_full`, which a list of a consumer's own profile implements where it has a
+  capacity (the default, `false`, is a list that grows). A list that has a capacity and does not implement it still
+  holds what fits, but keeps no entry of a kind a gate reads in place of another past its capacity.
+- `sce_forge_runtime::content_line::note_capacity` is also `sce_forge_runtime::codec::note_capacity`, one function.
+
